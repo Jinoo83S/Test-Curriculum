@@ -15,12 +15,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
+  apiKey: "AIzaSyBwUERcfAYMiqew0sp9zsY6_CnHef-nfK0",
   authDomain: "his-curriculum-8e737.firebaseapp.com",
   projectId: "his-curriculum-8e737",
   storageBucket: "his-curriculum-8e737.firebasestorage.app",
   messagingSenderId: "1091130688532",
-  appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
+  appId: "1:1091130688532:web:79622f9da3591ab2d3d301"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -585,7 +585,7 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
 
 function createDropCell(grade, rowId, semKey, templateId) {
   const cell = document.createElement("div");
-  cell.className = "drop-cell";
+  cell.className = templateId ? "drop-cell" : "drop-cell empty";
 
   if (templateId) {
     cell.appendChild(createPlacedCard(templateId, grade, rowId, semKey));
@@ -627,13 +627,66 @@ function createDropCell(grade, rowId, semKey, templateId) {
   return cell;
 }
 
-function createGradeHeader() {
+// Column resize state per grade column
+const colResizeState = new WeakMap();
+
+function applyColWidths(column, widths) {
+  const tpl = widths.join(" ");
+  column.querySelectorAll(".grade-header-row, .grade-data-row, .grade-summary-row").forEach((row) => {
+    row.style.gridTemplateColumns = tpl;
+  });
+}
+
+function initColResize(column, headerRow) {
+  const DEFAULT_WIDTHS = ["52px", "52px", "58px", "1fr", "1fr", "40px", "24px"];
+  const widths = [...DEFAULT_WIDTHS];
+  colResizeState.set(column, widths);
+
+  headerRow.querySelectorAll(".col-resize-handle").forEach((handle, i) => {
+    let startX, startW;
+
+    handle.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+      const headerCell = handle.parentElement;
+      startX = e.clientX;
+      startW = headerCell.getBoundingClientRect().width;
+      handle.classList.add("resizing");
+
+      function onMove(e) {
+        const delta = e.clientX - startX;
+        const newW = Math.max(36, startW + delta);
+        widths[i] = `${newW}px`;
+        applyColWidths(column, widths);
+      }
+
+      function onUp() {
+        handle.classList.remove("resizing");
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      }
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  });
+}
+
+function createGradeHeader(column) {
   const row = document.createElement("div");
   row.className = "grade-header-row";
-  ["범주", "구분", "교과군", "1학기", "2학기", "시수", ""].forEach((label) => {
+
+  ["범주", "구분", "교과군", "1학기", "2학기", "시수", ""].forEach((label, i) => {
     const cell = document.createElement("div");
     cell.className = "header-cell";
     cell.textContent = label;
+
+    // Add resize handle to all except last column
+    if (i < 6) {
+      const handle = document.createElement("div");
+      handle.className = "col-resize-handle";
+      cell.appendChild(handle);
+    }
+
     row.appendChild(cell);
   });
   return row;
@@ -742,7 +795,8 @@ function renderGradeBoard() {
     title.innerHTML = `${grade}<div class="grade-subtitle">Category / Semester / Credits</div>`;
 
     column.appendChild(title);
-    column.appendChild(createGradeHeader());
+    const headerRow = createGradeHeader(column);
+    column.appendChild(headerRow);
 
     state.gradeBoards[grade].forEach((rowData) => {
       column.appendChild(createGradeRow(grade, rowData));
@@ -763,6 +817,7 @@ function renderGradeBoard() {
     column.appendChild(createSummarySection(grade));
 
     gradeBoard.appendChild(column);
+    initColResize(column, headerRow);
   });
 }
 
