@@ -3,102 +3,93 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Curriculum Board</title>
+  <title>HIS Curriculum</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="page">
-    <header class="topbar">
-      <div>
-        <h1>Curriculum Board</h1>
-        <p class="subtitle">GitHub Pages + Firebase 공유 버전</p>
-      </div>
-
-      <div class="auth-bar">
-        <div id="userInfo" class="user-info">로그인 안 됨</div>
-        <button id="loginBtn">Google 로그인</button>
-        <button id="logoutBtn" class="secondary-btn hidden">로그아웃</button>
-        <button id="resetBtn" class="danger-btn hidden">전체 초기화</button>
-      </div>
-    </header>
-
-    <div id="loginNotice" class="login-notice">
-      이 보드는 Firebase에 저장됩니다. Google 로그인 후 편집할 수 있습니다.
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1>HIS Curriculum</h1>
+      <p class="subtitle">학년별 커리큘럼 보드</p>
     </div>
 
-    <main class="layout disabled" id="appLayout">
-      <aside class="subject-panel">
-        <h2>과목 카드 추가</h2>
+    <div class="topbar-right">
+      <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
+      <button id="loginBtn" class="primary-btn">Google 로그인</button>
+      <button id="logoutBtn" class="secondary-btn hidden">로그아웃</button>
+      <button id="resetBoardBtn" class="danger-btn">전체 초기화</button>
+    </div>
+  </header>
 
-        <div class="add-form">
-          <input type="text" id="newNameKo" placeholder="한글 이름" />
-          <input type="text" id="newNameEn" placeholder="영어 이름" />
-          <input type="text" id="newTeacher" placeholder="교사" />
-          <select id="newLanguage">
+  <main class="page">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>과목 카드</h2>
+
+        <div class="form-grid">
+          <input id="templateNameKo" type="text" placeholder="한글 이름" />
+          <input id="templateNameEn" type="text" placeholder="영어 이름" />
+          <input id="templateTeacher" type="text" placeholder="교사" />
+          <select id="templateLanguage">
             <option value="Korean">Korean</option>
             <option value="English">English</option>
             <option value="Both">Both</option>
           </select>
-          <button id="addSubjectBtn">카드 추가</button>
         </div>
 
-        <h2>과목 카드</h2>
-        <div id="cardPool" class="card-pool drop-area" data-area="pool"></div>
-      </aside>
+        <div class="button-row">
+          <button id="templateSubmitBtn" class="primary-btn">카드 추가</button>
+          <button id="templateCancelBtn" class="secondary-btn hidden">수정 취소</button>
+        </div>
 
-      <section class="board-section">
-        <div class="board">
-          <div class="board-header corner"></div>
-          <div class="board-header">1학기</div>
-          <div class="board-header">2학기</div>
+        <div id="templateList" class="template-list"></div>
+      </section>
 
-          <div class="grade-label">7학년</div>
-          <div class="drop-cell drop-area" data-cell="7-1"></div>
-          <div class="drop-cell drop-area" data-cell="7-2"></div>
+      <section class="panel">
+        <h2>범주 옵션 편집</h2>
 
-          <div class="grade-label">8학년</div>
-          <div class="drop-cell drop-area" data-cell="8-1"></div>
-          <div class="drop-cell drop-area" data-cell="8-2"></div>
+        <div class="option-box">
+          <h3>첫번째 범주</h3>
+          <div id="categoryOptionList" class="option-list"></div>
+          <div class="inline-form">
+            <input id="categoryOptionInput" type="text" placeholder="예: 교과" />
+            <button id="addCategoryOptionBtn" class="primary-btn">추가</button>
+          </div>
+        </div>
 
-          <div class="grade-label">9학년</div>
-          <div class="drop-cell drop-area" data-cell="9-1"></div>
-          <div class="drop-cell drop-area" data-cell="9-2"></div>
+        <div class="option-box">
+          <h3>두번째 범주</h3>
+          <div id="trackOptionList" class="option-list"></div>
+          <div class="inline-form">
+            <input id="trackOptionInput" type="text" placeholder="예: 공통" />
+            <button id="addTrackOptionBtn" class="primary-btn">추가</button>
+          </div>
+        </div>
 
-          <div class="grade-label">10학년</div>
-          <div class="drop-cell drop-area" data-cell="10-1"></div>
-          <div class="drop-cell drop-area" data-cell="10-2"></div>
-
-          <div class="grade-label">11학년</div>
-          <div class="drop-cell drop-area" data-cell="11-1"></div>
-          <div class="drop-cell drop-area" data-cell="11-2"></div>
-
-          <div class="grade-label">12학년</div>
-          <div class="drop-cell drop-area" data-cell="12-1"></div>
-          <div class="drop-cell drop-area" data-cell="12-2"></div>
+        <div class="option-box">
+          <h3>세번째 범주</h3>
+          <div id="groupOptionList" class="option-list"></div>
+          <div class="inline-form">
+            <input id="groupOptionInput" type="text" placeholder="예: 영어" />
+            <button id="addGroupOptionBtn" class="primary-btn">추가</button>
+          </div>
         </div>
       </section>
-    </main>
-  </div>
+    </aside>
 
-  <div id="editModal" class="modal hidden">
-    <div class="modal-content">
-      <h2>과목 카드 수정</h2>
-
-      <input type="text" id="editNameKo" placeholder="한글 이름" />
-      <input type="text" id="editNameEn" placeholder="영어 이름" />
-      <input type="text" id="editTeacher" placeholder="교사" />
-      <select id="editLanguage">
-        <option value="Korean">Korean</option>
-        <option value="English">English</option>
-        <option value="Both">Both</option>
-      </select>
-
-      <div class="modal-buttons">
-        <button id="saveEditBtn">저장</button>
-        <button id="cancelEditBtn" class="secondary-btn">취소</button>
+    <section class="main-panel">
+      <div id="loginOverlay" class="login-overlay">
+        <div class="login-overlay-box">
+          <h2>로그인이 필요합니다</h2>
+          <p>Google 로그인 후 공용 커리큘럼을 읽고 수정할 수 있습니다.</p>
+        </div>
       </div>
-    </div>
-  </div>
+
+      <div class="board-scroll">
+        <div id="gradeBoard" class="grade-board"></div>
+      </div>
+    </section>
+  </main>
 
   <script type="module" src="app.js"></script>
 </body>

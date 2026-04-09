@@ -1,20 +1,23 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
-  onAuthStateChanged,
-} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore,
   doc,
-  getDoc,
   setDoc,
   onSnapshot,
-  serverTimestamp,
-} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+/* =========================
+   Firebase 설정
+   app 등록 화면의 값을 넣으세요.
+   ========================= */
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
   authDomain: "his-curriculum-8e737.firebaseapp.com",
@@ -24,461 +27,894 @@ const firebaseConfig = {
   appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
 };
 
-const BOARD_DOCUMENT_PATH = ["boards", "main"];
-
-const defaultSubjects = [
-  { nameKo: "영어", nameEn: "English", teacher: "", language: "English" },
-  { nameKo: "수학", nameEn: "Math", teacher: "", language: "Both" },
-  { nameKo: "과학", nameEn: "Science", teacher: "", language: "Both" },
-  { nameKo: "성경", nameEn: "Bible", teacher: "", language: "English" },
-  { nameKo: "체육", nameEn: "PE", teacher: "", language: "Korean" },
-  { nameKo: "미술", nameEn: "Art", teacher: "", language: "Korean" },
-];
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
-const boardRef = doc(db, ...BOARD_DOCUMENT_PATH);
+const boardRef = doc(db, "boards", "main");
 
-const pool = document.getElementById("cardPool");
-const cells = document.querySelectorAll(".drop-cell");
-const areas = document.querySelectorAll(".drop-area");
-const resetBtn = document.getElementById("resetBtn");
+/* =========================
+   DOM
+   ========================= */
+const authStatus = document.getElementById("authStatus");
 const loginBtn = document.getElementById("loginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
-const userInfo = document.getElementById("userInfo");
-const loginNotice = document.getElementById("loginNotice");
-const appLayout = document.getElementById("appLayout");
+const resetBoardBtn = document.getElementById("resetBoardBtn");
+const loginOverlay = document.getElementById("loginOverlay");
 
-const addSubjectBtn = document.getElementById("addSubjectBtn");
-const newNameKo = document.getElementById("newNameKo");
-const newNameEn = document.getElementById("newNameEn");
-const newTeacher = document.getElementById("newTeacher");
-const newLanguage = document.getElementById("newLanguage");
+const templateNameKo = document.getElementById("templateNameKo");
+const templateNameEn = document.getElementById("templateNameEn");
+const templateTeacher = document.getElementById("templateTeacher");
+const templateLanguage = document.getElementById("templateLanguage");
+const templateSubmitBtn = document.getElementById("templateSubmitBtn");
+const templateCancelBtn = document.getElementById("templateCancelBtn");
+const templateList = document.getElementById("templateList");
 
-const editModal = document.getElementById("editModal");
-const editNameKo = document.getElementById("editNameKo");
-const editNameEn = document.getElementById("editNameEn");
-const editTeacher = document.getElementById("editTeacher");
-const editLanguage = document.getElementById("editLanguage");
-const saveEditBtn = document.getElementById("saveEditBtn");
-const cancelEditBtn = document.getElementById("cancelEditBtn");
+const categoryOptionList = document.getElementById("categoryOptionList");
+const trackOptionList = document.getElementById("trackOptionList");
+const groupOptionList = document.getElementById("groupOptionList");
 
-let draggedCardId = null;
-let editingCardId = null;
-let currentUser = null;
-let unsubscribeBoard = null;
-let isBoardLoaded = false;
+const categoryOptionInput = document.getElementById("categoryOptionInput");
+const trackOptionInput = document.getElementById("trackOptionInput");
+const groupOptionInput = document.getElementById("groupOptionInput");
 
-function makeId() {
-  return `subj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const addCategoryOptionBtn = document.getElementById("addCategoryOptionBtn");
+const addTrackOptionBtn = document.getElementById("addTrackOptionBtn");
+const addGroupOptionBtn = document.getElementById("addGroupOptionBtn");
+
+const gradeBoard = document.getElementById("gradeBoard");
+
+/* =========================
+   기본값
+   ========================= */
+const GRADE_KEYS = ["7학년", "8학년", "9학년", "10학년", "11학년", "12학년"];
+
+const DEFAULT_OPTIONS = {
+  category: ["교과", "창체"],
+  track: ["공통", "배정", "선택"],
+  group: ["국어", "영어", "수학", "사회", "과학", "정보", "예술", "체육", "성경", "창체", "기타"]
+};
+
+function uid(prefix = "id") {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function getCellKeys() {
-  return [...cells].map((cell) => cell.dataset.cell);
+function createDefaultTemplates() {
+  return [
+    { id: uid("tpl"), nameKo: "영어", nameEn: "English", teacher: "", language: "English" },
+    { id: uid("tpl"), nameKo: "국어", nameEn: "Korean Language Arts", teacher: "", language: "Korean" },
+    { id: uid("tpl"), nameKo: "수학", nameEn: "Mathematics", teacher: "", language: "Both" },
+    { id: uid("tpl"), nameKo: "과학", nameEn: "Science", teacher: "", language: "Both" }
+  ];
 }
 
-function stripGradeSuffix(text) {
-  if (!text) return "";
-  return String(text).replace(/\s+(7|8|9|10|11|12)$/g, "").trim();
-}
-
-function normalizeCard(card) {
+function createRow(options = DEFAULT_OPTIONS) {
   return {
-    id: card.id || makeId(),
-    nameKo: stripGradeSuffix(card.nameKo ?? card.name ?? ""),
-    nameEn: stripGradeSuffix(card.nameEn ?? ""),
-    teacher: card.teacher ?? "",
-    language: ["Korean", "English", "Both"].includes(card.language)
-      ? card.language
-      : "Both",
+    id: uid("row"),
+    category: options.category[0] || "",
+    track: options.track[0] || "",
+    group: options.group[0] || "",
+    credits: "",
+    sem1: null,
+    sem2: null
   };
 }
 
-function createInitialState() {
-  const state = {
-    pool: defaultSubjects.map((item) => normalizeCard(item)),
-    cells: {},
-  };
-
-  getCellKeys().forEach((key) => {
-    state.cells[key] = [];
+function createDefaultState() {
+  const gradeBoards = {};
+  GRADE_KEYS.forEach((grade) => {
+    gradeBoards[grade] = [createRow(), createRow(), createRow(), createRow()];
   });
 
-  return state;
-}
-
-let state = createInitialState();
-
-function normalizeState(source) {
-  const emptyTemplate = createInitialState();
-
-  const nextState = {
-    pool: Array.isArray(source?.pool)
-      ? source.pool.map(normalizeCard)
-      : emptyTemplate.pool,
-    cells: {},
-  };
-
-  getCellKeys().forEach((key) => {
-    const sourceCards = Array.isArray(source?.cells?.[key]) ? source.cells[key] : [];
-    nextState.cells[key] = sourceCards.map(normalizeCard);
-  });
-
-  return nextState;
-}
-
-async function saveState() {
-  if (!currentUser) return;
-
-  await setDoc(
-    boardRef,
-    {
-      state,
-      updatedAt: serverTimestamp(),
-      updatedBy: currentUser.email || currentUser.uid,
+  return {
+    options: {
+      category: [...DEFAULT_OPTIONS.category],
+      track: [...DEFAULT_OPTIONS.track],
+      group: [...DEFAULT_OPTIONS.group]
     },
-    { merge: true }
-  );
+    templates: createDefaultTemplates(),
+    gradeBoards
+  };
 }
 
-async function ensureBoardExists() {
-  const snap = await getDoc(boardRef);
-  if (!snap.exists()) {
-    state = createInitialState();
-    await saveState();
-  }
+/* =========================
+   상태
+   ========================= */
+let state = createDefaultState();
+let unsubscribeBoard = null;
+let currentDrag = null;
+let templateEditId = null;
+let saveTimer = null;
+
+/* =========================
+   유틸
+   ========================= */
+function normalizeTemplate(item = {}) {
+  return {
+    id: item.id || uid("tpl"),
+    nameKo: (item.nameKo || "").trim(),
+    nameEn: (item.nameEn || "").trim(),
+    teacher: (item.teacher || "").trim(),
+    language: ["Korean", "English", "Both"].includes(item.language) ? item.language : "Both"
+  };
 }
 
-function findCardById(cardId) {
-  const inPool = state.pool.find((card) => card.id === cardId);
-  if (inPool) return inPool;
+function normalizeRow(row = {}, options = DEFAULT_OPTIONS) {
+  const safeCategory = options.category.includes(row.category) ? row.category : (options.category[0] || "");
+  const safeTrack = options.track.includes(row.track) ? row.track : (options.track[0] || "");
+  const safeGroup = options.group.includes(row.group) ? row.group : (options.group[0] || "");
 
-  for (const key of Object.keys(state.cells)) {
-    const found = state.cells[key].find((card) => card.id === cardId);
-    if (found) return found;
-  }
-
-  return null;
+  return {
+    id: row.id || uid("row"),
+    category: safeCategory,
+    track: safeTrack,
+    group: safeGroup,
+    credits: row.credits ?? "",
+    sem1: row.sem1 ?? null,
+    sem2: row.sem2 ?? null
+  };
 }
 
-function removeCardById(cardId) {
-  state.pool = state.pool.filter((card) => card.id !== cardId);
+function normalizeState(raw = {}) {
+  const safeOptions = {
+    category: Array.isArray(raw.options?.category) && raw.options.category.length
+      ? [...raw.options.category]
+      : [...DEFAULT_OPTIONS.category],
+    track: Array.isArray(raw.options?.track) && raw.options.track.length
+      ? [...raw.options.track]
+      : [...DEFAULT_OPTIONS.track],
+    group: Array.isArray(raw.options?.group) && raw.options.group.length
+      ? [...raw.options.group]
+      : [...DEFAULT_OPTIONS.group]
+  };
 
-  Object.keys(state.cells).forEach((key) => {
-    state.cells[key] = state.cells[key].filter((card) => card.id !== cardId);
+  const safeTemplates = Array.isArray(raw.templates) && raw.templates.length
+    ? raw.templates.map(normalizeTemplate)
+    : createDefaultTemplates();
+
+  const safeBoards = {};
+  GRADE_KEYS.forEach((grade) => {
+    const rows = Array.isArray(raw.gradeBoards?.[grade]) ? raw.gradeBoards[grade] : [];
+    safeBoards[grade] = rows.length
+      ? rows.map((row) => normalizeRow(row, safeOptions))
+      : [createRow(safeOptions), createRow(safeOptions), createRow(safeOptions)];
+  });
+
+  return {
+    options: safeOptions,
+    templates: safeTemplates,
+    gradeBoards: safeBoards
+  };
+}
+
+function languageClass(language) {
+  return `lang-${String(language || "both").toLowerCase()}`;
+}
+
+function canEdit() {
+  return !!auth.currentUser;
+}
+
+function getTemplateById(templateId) {
+  return state.templates.find((item) => item.id === templateId) || null;
+}
+
+function ensureStateConsistency() {
+  state = normalizeState(state);
+}
+
+function scheduleSave() {
+  if (!canEdit()) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 250);
+}
+
+async function saveNow() {
+  if (!canEdit()) return;
+  ensureStateConsistency();
+  await setDoc(boardRef, {
+    state,
+    updatedAt: serverTimestamp()
   });
 }
 
-async function moveCardToArea(cardId, areaName) {
-  const card = findCardById(cardId);
-  if (!card) return;
-
-  removeCardById(cardId);
-
-  if (areaName === "pool") {
-    state.pool.push(card);
+function updateAuthUI(user) {
+  if (user) {
+    authStatus.textContent = `${user.displayName || user.email || "사용자"} 로그인됨`;
+    loginBtn.classList.add("hidden");
+    logoutBtn.classList.remove("hidden");
+    loginOverlay.classList.add("hidden");
   } else {
-    state.cells[areaName].push(card);
+    authStatus.textContent = "로그인이 필요합니다";
+    loginBtn.classList.remove("hidden");
+    logoutBtn.classList.add("hidden");
+    loginOverlay.classList.remove("hidden");
   }
-
-  render();
-  await saveState();
 }
 
-function getCardLabel(card) {
-  return card.nameKo || card.nameEn || "이름 없음";
+function setControlsDisabled(disabled) {
+  [
+    templateNameKo,
+    templateNameEn,
+    templateTeacher,
+    templateLanguage,
+    templateSubmitBtn,
+    templateCancelBtn,
+    categoryOptionInput,
+    trackOptionInput,
+    groupOptionInput,
+    addCategoryOptionBtn,
+    addTrackOptionBtn,
+    addGroupOptionBtn,
+    resetBoardBtn
+  ].forEach((el) => {
+    el.disabled = disabled;
+  });
 }
 
-async function addNewCard(cardData) {
-  if (!cardData.nameKo.trim() && !cardData.nameEn.trim()) {
-    alert("한글 이름 또는 영어 이름 중 하나는 입력해 주세요.");
+function resetTemplateForm() {
+  templateEditId = null;
+  templateNameKo.value = "";
+  templateNameEn.value = "";
+  templateTeacher.value = "";
+  templateLanguage.value = "Korean";
+  templateSubmitBtn.textContent = "카드 추가";
+  templateCancelBtn.classList.add("hidden");
+}
+
+/* =========================
+   옵션 편집
+   ========================= */
+function addOption(type, value) {
+  if (!canEdit()) return;
+
+  const trimmed = value.trim();
+  if (!trimmed) return;
+
+  if (state.options[type].includes(trimmed)) {
+    alert("이미 있는 옵션입니다.");
     return;
   }
 
-  state.pool.push(
-    normalizeCard({
-      id: makeId(),
-      ...cardData,
-    })
-  );
-
+  state.options[type].push(trimmed);
+  ensureStateConsistency();
   render();
-  await saveState();
+  scheduleSave();
 }
 
-async function updateCard(cardId, cardData) {
-  const card = findCardById(cardId);
-  if (!card) return;
+function removeOption(type, value) {
+  if (!canEdit()) return;
 
-  if (!cardData.nameKo.trim() && !cardData.nameEn.trim()) {
-    alert("한글 이름 또는 영어 이름 중 하나는 입력해 주세요.");
+  if (state.options[type].length <= 1) {
+    alert("최소 1개의 옵션은 남겨두어야 합니다.");
     return;
   }
 
-  card.nameKo = cardData.nameKo.trim();
-  card.nameEn = cardData.nameEn.trim();
-  card.teacher = cardData.teacher.trim();
-  card.language = cardData.language;
+  const ok = confirm(`"${value}" 옵션을 삭제할까요?`);
+  if (!ok) return;
+
+  state.options[type] = state.options[type].filter((item) => item !== value);
+  ensureStateConsistency();
+  render();
+  scheduleSave();
+}
+
+function renderOptionChips(container, type) {
+  container.innerHTML = "";
+
+  state.options[type].forEach((value) => {
+    const chip = document.createElement("div");
+    chip.className = "option-chip";
+
+    const text = document.createElement("span");
+    text.textContent = value;
+    chip.appendChild(text);
+
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "×";
+    del.disabled = !canEdit();
+    del.addEventListener("click", () => removeOption(type, value));
+    chip.appendChild(del);
+
+    container.appendChild(chip);
+  });
+}
+
+/* =========================
+   과목 카드 템플릿
+   ========================= */
+function submitTemplate() {
+  if (!canEdit()) return;
+
+  const data = normalizeTemplate({
+    id: templateEditId || uid("tpl"),
+    nameKo: templateNameKo.value,
+    nameEn: templateNameEn.value,
+    teacher: templateTeacher.value,
+    language: templateLanguage.value
+  });
+
+  if (!data.nameKo && !data.nameEn) {
+    alert("한글 이름 또는 영어 이름을 입력해 주세요.");
+    return;
+  }
+
+  if (templateEditId) {
+    state.templates = state.templates.map((item) => item.id === templateEditId ? data : item);
+  } else {
+    state.templates.push(data);
+  }
+
+  resetTemplateForm();
+  render();
+  scheduleSave();
+}
+
+function editTemplate(templateId) {
+  if (!canEdit()) return;
+
+  const item = getTemplateById(templateId);
+  if (!item) return;
+
+  templateEditId = templateId;
+  templateNameKo.value = item.nameKo;
+  templateNameEn.value = item.nameEn;
+  templateTeacher.value = item.teacher;
+  templateLanguage.value = item.language;
+  templateSubmitBtn.textContent = "카드 수정 저장";
+  templateCancelBtn.classList.remove("hidden");
+}
+
+function deleteTemplate(templateId) {
+  if (!canEdit()) return;
+
+  const item = getTemplateById(templateId);
+  if (!item) return;
+
+  const ok = confirm(`"${item.nameKo || item.nameEn}" 카드를 삭제할까요?`);
+  if (!ok) return;
+
+  state.templates = state.templates.filter((tpl) => tpl.id !== templateId);
+
+  GRADE_KEYS.forEach((grade) => {
+    state.gradeBoards[grade].forEach((row) => {
+      if (row.sem1 === templateId) row.sem1 = null;
+      if (row.sem2 === templateId) row.sem2 = null;
+    });
+  });
+
+  if (templateEditId === templateId) {
+    resetTemplateForm();
+  }
 
   render();
-  await saveState();
+  scheduleSave();
 }
 
-async function deleteCard(cardId) {
-  removeCardById(cardId);
-  render();
-  await saveState();
-}
+function createTemplateCard(item) {
+  const card = document.createElement("div");
+  card.className = `template-card ${languageClass(item.language)}`;
+  card.draggable = canEdit();
 
-function openEditModal(cardId) {
-  const card = findCardById(cardId);
-  if (!card) return;
+  card.addEventListener("dragstart", () => {
+    currentDrag = {
+      kind: "template",
+      templateId: item.id
+    };
+    card.classList.add("dragging");
+  });
 
-  editingCardId = cardId;
-  editNameKo.value = card.nameKo;
-  editNameEn.value = card.nameEn;
-  editTeacher.value = card.teacher;
-  editLanguage.value = card.language;
-  editModal.classList.remove("hidden");
-}
-
-function closeEditModal() {
-  editingCardId = null;
-  editModal.classList.add("hidden");
-}
-
-function createMetaBadge(text) {
-  const badge = document.createElement("span");
-  badge.className = "meta-badge";
-  badge.textContent = text;
-  return badge;
-}
-
-function createCardElement(card) {
-  const el = document.createElement("div");
-  el.className = `subject-card lang-${card.language.toLowerCase()}`;
-  el.draggable = true;
-  el.dataset.id = card.id;
+  card.addEventListener("dragend", () => {
+    currentDrag = null;
+    card.classList.remove("dragging");
+  });
 
   const main = document.createElement("div");
-  main.className = "card-main";
+  main.className = "template-main";
 
   const ko = document.createElement("div");
-  ko.className = "card-name-ko";
-  ko.textContent = card.nameKo || "-";
+  ko.className = "template-name-ko";
+  ko.textContent = item.nameKo || "-";
 
   const en = document.createElement("div");
-  en.className = "card-name-en";
-  en.textContent = card.nameEn || "-";
+  en.className = "template-name-en";
+  en.textContent = item.nameEn || "-";
 
   main.appendChild(ko);
   main.appendChild(en);
 
   const meta = document.createElement("div");
-  meta.className = "card-meta";
-  meta.appendChild(createMetaBadge(card.language));
-  if (card.teacher) {
-    meta.appendChild(createMetaBadge(card.teacher));
+  meta.className = "template-meta";
+  meta.appendChild(createMetaChip(item.language));
+  if (item.teacher) {
+    meta.appendChild(createMetaChip(item.teacher));
   }
 
   const actions = document.createElement("div");
-  actions.className = "card-actions";
+  actions.className = "template-actions";
 
   const editBtn = document.createElement("button");
+  editBtn.type = "button";
   editBtn.className = "edit-btn";
   editBtn.textContent = "수정";
-  editBtn.type = "button";
-
-  const deleteBtn = document.createElement("button");
-  deleteBtn.className = "delete-btn";
-  deleteBtn.textContent = "삭제";
-  deleteBtn.type = "button";
-
+  editBtn.disabled = !canEdit();
   editBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    openEditModal(card.id);
+    editTemplate(item.id);
   });
 
-  deleteBtn.addEventListener("click", async (e) => {
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "delete-btn";
+  deleteBtn.textContent = "삭제";
+  deleteBtn.disabled = !canEdit();
+  deleteBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    const ok = confirm(`"${getCardLabel(card)}" 카드를 삭제할까요?`);
-    if (!ok) return;
-    await deleteCard(card.id);
+    deleteTemplate(item.id);
   });
 
-  editBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-  deleteBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+  [editBtn, deleteBtn].forEach((btn) => {
+    btn.addEventListener("mousedown", (e) => e.stopPropagation());
+  });
 
   actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
 
-  el.appendChild(main);
-  el.appendChild(meta);
-  el.appendChild(actions);
+  card.appendChild(main);
+  card.appendChild(meta);
+  card.appendChild(actions);
 
-  el.addEventListener("dragstart", () => {
-    draggedCardId = card.id;
-    el.classList.add("dragging");
-  });
-
-  el.addEventListener("dragend", () => {
-    el.classList.remove("dragging");
-  });
-
-  return el;
+  return card;
 }
 
-function renderArea(target, cardList) {
-  target.innerHTML = "";
-  cardList.forEach((card) => {
-    target.appendChild(createCardElement(card));
+function renderTemplates() {
+  templateList.innerHTML = "";
+
+  state.templates.forEach((item) => {
+    templateList.appendChild(createTemplateCard(item));
   });
 }
 
-function render() {
-  renderArea(pool, state.pool);
+/* =========================
+   보드 편집
+   ========================= */
+function updateRowField(grade, rowId, field, value) {
+  if (!canEdit()) return;
 
-  cells.forEach((cell) => {
-    const key = cell.dataset.cell;
-    renderArea(cell, state.cells[key] || []);
-  });
+  const row = state.gradeBoards[grade].find((item) => item.id === rowId);
+  if (!row) return;
+
+  row[field] = value;
+  ensureStateConsistency();
+  render();
+  scheduleSave();
 }
 
-function setEditingEnabled(enabled) {
-  appLayout.classList.toggle("disabled", !enabled);
-  loginNotice.classList.toggle("hidden", enabled);
-  logoutBtn.classList.toggle("hidden", !enabled);
-  resetBtn.classList.toggle("hidden", !enabled);
-  loginBtn.classList.toggle("hidden", enabled);
+function clearCell(grade, rowId, semKey) {
+  if (!canEdit()) return;
+
+  const row = state.gradeBoards[grade].find((item) => item.id === rowId);
+  if (!row) return;
+
+  row[semKey] = null;
+  render();
+  scheduleSave();
 }
 
-areas.forEach((area) => {
-  area.addEventListener("dragover", (e) => {
-    if (!currentUser) return;
-    e.preventDefault();
-    area.classList.add("dragover");
-  });
+function addRow(grade) {
+  if (!canEdit()) return;
 
-  area.addEventListener("dragleave", () => {
-    area.classList.remove("dragover");
-  });
+  state.gradeBoards[grade].push(createRow(state.options));
+  render();
+  scheduleSave();
+}
 
-  area.addEventListener("drop", async (e) => {
-    if (!currentUser) return;
-    e.preventDefault();
-    area.classList.remove("dragover");
+function deleteRow(grade, rowId) {
+  if (!canEdit()) return;
 
-    if (!draggedCardId) return;
-
-    const targetArea = area.dataset.area || area.dataset.cell;
-    await moveCardToArea(draggedCardId, targetArea);
-    draggedCardId = null;
-  });
-});
-
-addSubjectBtn.addEventListener("click", async () => {
-  if (!currentUser) return;
-
-  await addNewCard({
-    nameKo: newNameKo.value,
-    nameEn: newNameEn.value,
-    teacher: newTeacher.value,
-    language: newLanguage.value,
-  });
-
-  newNameKo.value = "";
-  newNameEn.value = "";
-  newTeacher.value = "";
-  newLanguage.value = "Korean";
-  newNameKo.focus();
-});
-
-[newNameKo, newNameEn, newTeacher].forEach((input) => {
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      addSubjectBtn.click();
-    }
-  });
-});
-
-saveEditBtn.addEventListener("click", async () => {
-  if (!editingCardId) return;
-
-  await updateCard(editingCardId, {
-    nameKo: editNameKo.value,
-    nameEn: editNameEn.value,
-    teacher: editTeacher.value,
-    language: editLanguage.value,
-  });
-
-  closeEditModal();
-});
-
-cancelEditBtn.addEventListener("click", closeEditModal);
-
-editModal.addEventListener("click", (e) => {
-  if (e.target === editModal) {
-    closeEditModal();
-  }
-});
-
-resetBtn.addEventListener("click", async () => {
-  if (!currentUser) return;
-
-  const ok = confirm("전체 보드를 초기화할까요?");
+  const ok = confirm("이 행을 삭제할까요?");
   if (!ok) return;
 
-  state = createInitialState();
-  render();
-  await saveState();
-});
+  state.gradeBoards[grade] = state.gradeBoards[grade].filter((row) => row.id !== rowId);
 
-loginBtn.addEventListener("click", async () => {
+  if (state.gradeBoards[grade].length === 0) {
+    state.gradeBoards[grade].push(createRow(state.options));
+  }
+
+  render();
+  scheduleSave();
+}
+
+function movePlacedCard(sourceGrade, sourceRowId, sourceSemKey, targetGrade, targetRowId, targetSemKey) {
+  if (!canEdit()) return;
+
+  const sourceRow = state.gradeBoards[sourceGrade].find((row) => row.id === sourceRowId);
+  const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
+  if (!sourceRow || !targetRow) return;
+
+  const movingTemplateId = sourceRow[sourceSemKey];
+  sourceRow[sourceSemKey] = null;
+  targetRow[targetSemKey] = movingTemplateId;
+
+  render();
+  scheduleSave();
+}
+
+function placeTemplateToCell(templateId, targetGrade, targetRowId, targetSemKey) {
+  if (!canEdit()) return;
+
+  const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
+  if (!targetRow) return;
+
+  targetRow[targetSemKey] = templateId;
+  render();
+  scheduleSave();
+}
+
+function createMetaChip(text) {
+  const chip = document.createElement("span");
+  chip.className = "meta-chip";
+  chip.textContent = text;
+  return chip;
+}
+
+function createSelect(options, currentValue, onChange) {
+  const select = document.createElement("select");
+  select.className = "row-select";
+  select.disabled = !canEdit();
+
+  options.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    if (value === currentValue) option.selected = true;
+    select.appendChild(option);
+  });
+
+  select.addEventListener("change", (e) => onChange(e.target.value));
+  return select;
+}
+
+function createPlacedCard(templateId, grade, rowId, semKey) {
+  const item = getTemplateById(templateId);
+  if (!item) return document.createTextNode("");
+
+  const card = document.createElement("div");
+  card.className = `placed-card ${languageClass(item.language)}`;
+  card.draggable = canEdit();
+
+  card.addEventListener("dragstart", () => {
+    currentDrag = {
+      kind: "placed",
+      sourceGrade: grade,
+      sourceRowId: rowId,
+      sourceSemKey: semKey,
+      templateId
+    };
+    card.classList.add("dragging");
+  });
+
+  card.addEventListener("dragend", () => {
+    currentDrag = null;
+    card.classList.remove("dragging");
+  });
+
+  const top = document.createElement("div");
+  top.className = "placed-top";
+
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "placed-title-wrap";
+
+  const ko = document.createElement("div");
+  ko.className = "placed-title-ko";
+  ko.textContent = item.nameKo || "-";
+
+  const en = document.createElement("div");
+  en.className = "placed-title-en";
+  en.textContent = item.nameEn || "-";
+
+  titleWrap.appendChild(ko);
+  titleWrap.appendChild(en);
+
+  top.appendChild(titleWrap);
+
+  if (canEdit()) {
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "clear-cell-btn";
+    clearBtn.textContent = "×";
+    clearBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      clearCell(grade, rowId, semKey);
+    });
+    clearBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    top.appendChild(clearBtn);
+  }
+
+  const meta = document.createElement("div");
+  meta.className = "placed-meta";
+  meta.appendChild(createMetaChip(item.language));
+  if (item.teacher) {
+    meta.appendChild(createMetaChip(item.teacher));
+  }
+
+  card.appendChild(top);
+  card.appendChild(meta);
+
+  return card;
+}
+
+function createDropCell(grade, rowId, semKey, templateId) {
+  const cell = document.createElement("div");
+  cell.className = "drop-cell";
+
+  if (templateId) {
+    cell.appendChild(createPlacedCard(templateId, grade, rowId, semKey));
+  }
+
+  cell.addEventListener("dragover", (e) => {
+    if (!canEdit()) return;
+    e.preventDefault();
+    cell.classList.add("dragover");
+  });
+
+  cell.addEventListener("dragleave", () => {
+    cell.classList.remove("dragover");
+  });
+
+  cell.addEventListener("drop", (e) => {
+    if (!canEdit()) return;
+    e.preventDefault();
+    cell.classList.remove("dragover");
+    if (!currentDrag) return;
+
+    if (currentDrag.kind === "template") {
+      placeTemplateToCell(currentDrag.templateId, grade, rowId, semKey);
+      return;
+    }
+
+    if (currentDrag.kind === "placed") {
+      movePlacedCard(
+        currentDrag.sourceGrade,
+        currentDrag.sourceRowId,
+        currentDrag.sourceSemKey,
+        grade,
+        rowId,
+        semKey
+      );
+    }
+  });
+
+  return cell;
+}
+
+function createGradeHeader() {
+  const row = document.createElement("div");
+  row.className = "grade-header-row";
+
+  ["범주", "구분", "교과군", "1학기", "2학기", "시수", ""].forEach((label) => {
+    const cell = document.createElement("div");
+    cell.className = "header-cell";
+    cell.textContent = label;
+    row.appendChild(cell);
+  });
+
+  return row;
+}
+
+function createGradeRow(grade, rowData) {
+  const row = document.createElement("div");
+  row.className = "grade-data-row";
+
+  row.appendChild(
+    createSelect(state.options.category, rowData.category, (value) => {
+      updateRowField(grade, rowData.id, "category", value);
+    })
+  );
+
+  row.appendChild(
+    createSelect(state.options.track, rowData.track, (value) => {
+      updateRowField(grade, rowData.id, "track", value);
+    })
+  );
+
+  row.appendChild(
+    createSelect(state.options.group, rowData.group, (value) => {
+      updateRowField(grade, rowData.id, "group", value);
+    })
+  );
+
+  row.appendChild(createDropCell(grade, rowData.id, "sem1", rowData.sem1));
+  row.appendChild(createDropCell(grade, rowData.id, "sem2", rowData.sem2));
+
+  const creditInput = document.createElement("input");
+  creditInput.className = "credit-input";
+  creditInput.type = "text";
+  creditInput.value = rowData.credits;
+  creditInput.disabled = !canEdit();
+  creditInput.placeholder = "0";
+  creditInput.addEventListener("change", (e) => {
+    updateRowField(grade, rowData.id, "credits", e.target.value);
+  });
+  row.appendChild(creditInput);
+
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "row-delete-btn";
+  deleteBtn.textContent = "×";
+  deleteBtn.disabled = !canEdit();
+  deleteBtn.addEventListener("click", () => deleteRow(grade, rowData.id));
+  row.appendChild(deleteBtn);
+
+  return row;
+}
+
+function renderGradeBoard() {
+  gradeBoard.innerHTML = "";
+
+  GRADE_KEYS.forEach((grade) => {
+    const column = document.createElement("section");
+    column.className = "grade-column";
+
+    const title = document.createElement("div");
+    title.className = "grade-title";
+    title.innerHTML = `${grade}<div class="grade-subtitle">Category / Semester / Credits</div>`;
+
+    column.appendChild(title);
+    column.appendChild(createGradeHeader());
+
+    state.gradeBoards[grade].forEach((rowData) => {
+      column.appendChild(createGradeRow(grade, rowData));
+    });
+
+    const footer = document.createElement("div");
+    footer.className = "grade-footer";
+
+    const addBtn = document.createElement("button");
+    addBtn.type = "button";
+    addBtn.className = "add-row-btn";
+    addBtn.textContent = `${grade} 행 추가`;
+    addBtn.disabled = !canEdit();
+    addBtn.addEventListener("click", () => addRow(grade));
+
+    footer.appendChild(addBtn);
+    column.appendChild(footer);
+
+    gradeBoard.appendChild(column);
+  });
+}
+
+/* =========================
+   렌더링
+   ========================= */
+function render() {
+  ensureStateConsistency();
+  renderTemplates();
+  renderOptionChips(categoryOptionList, "category");
+  renderOptionChips(trackOptionList, "track");
+  renderOptionChips(groupOptionList, "group");
+  renderGradeBoard();
+  setControlsDisabled(!canEdit());
+}
+
+/* =========================
+   인증 및 Firestore 구독
+   ========================= */
+async function login() {
   try {
     await signInWithPopup(auth, provider);
   } catch (error) {
-    alert(`로그인 실패: ${error.message}`);
+    console.error(error);
+    alert("로그인에 실패했습니다.");
   }
-});
+}
 
-logoutBtn.addEventListener("click", async () => {
-  await signOut(auth);
-});
+async function logout() {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error(error);
+    alert("로그아웃에 실패했습니다.");
+  }
+}
 
-onAuthStateChanged(auth, async (user) => {
-  currentUser = user;
-
+function subscribeBoard() {
   if (unsubscribeBoard) {
     unsubscribeBoard();
     unsubscribeBoard = null;
   }
 
-  if (!user) {
-    userInfo.textContent = "로그인 안 됨";
-    setEditingEnabled(false);
-    state = createInitialState();
-    render();
-    isBoardLoaded = false;
-    return;
-  }
-
-  userInfo.textContent = user.email || user.displayName || "로그인됨";
-  setEditingEnabled(true);
-
-  try {
-    await ensureBoardExists();
-
-    unsubscribeBoard = onSnapshot(boardRef, (snap) => {
-      if (!snap.exists()) return;
-      state = normalizeState(snap.data().state);
+  unsubscribeBoard = onSnapshot(boardRef, async (snapshot) => {
+    if (!snapshot.exists()) {
+      state = createDefaultState();
       render();
-      isBoardLoaded = true;
-    });
-  } catch (error) {
-    alert(`보드 불러오기 실패: ${error.message}`);
+      await saveNow();
+      return;
+    }
+
+    state = normalizeState(snapshot.data().state || {});
+    render();
+  }, (error) => {
+    console.error(error);
+    alert("Firestore 데이터를 불러오지 못했습니다.");
+  });
+}
+
+onAuthStateChanged(auth, (user) => {
+  updateAuthUI(user);
+
+  if (user) {
+    subscribeBoard();
+  } else {
+    if (unsubscribeBoard) {
+      unsubscribeBoard();
+      unsubscribeBoard = null;
+    }
+    state = createDefaultState();
+    resetTemplateForm();
+    render();
   }
 });
 
+/* =========================
+   이벤트 바인딩
+   ========================= */
+loginBtn.addEventListener("click", login);
+logoutBtn.addEventListener("click", logout);
+
+templateSubmitBtn.addEventListener("click", submitTemplate);
+templateCancelBtn.addEventListener("click", resetTemplateForm);
+
+[templateNameKo, templateNameEn, templateTeacher].forEach((input) => {
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      submitTemplate();
+    }
+  });
+});
+
+addCategoryOptionBtn.addEventListener("click", () => {
+  addOption("category", categoryOptionInput.value);
+  categoryOptionInput.value = "";
+  categoryOptionInput.focus();
+});
+
+addTrackOptionBtn.addEventListener("click", () => {
+  addOption("track", trackOptionInput.value);
+  trackOptionInput.value = "";
+  trackOptionInput.focus();
+});
+
+addGroupOptionBtn.addEventListener("click", () => {
+  addOption("group", groupOptionInput.value);
+  groupOptionInput.value = "";
+  groupOptionInput.focus();
+});
+
+[categoryOptionInput, trackOptionInput, groupOptionInput].forEach((input) => {
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      if (input === categoryOptionInput) addCategoryOptionBtn.click();
+      if (input === trackOptionInput) addTrackOptionBtn.click();
+      if (input === groupOptionInput) addGroupOptionBtn.click();
+    }
+  });
+});
+
+resetBoardBtn.addEventListener("click", async () => {
+  if (!canEdit()) return;
+
+  const ok = confirm("공용 보드를 기본 상태로 초기화할까요?");
+  if (!ok) return;
+
+  state = createDefaultState();
+  resetTemplateForm();
+  render();
+  await saveNow();
+});
+
+/* =========================
+   초기 렌더링
+   ========================= */
 render();
