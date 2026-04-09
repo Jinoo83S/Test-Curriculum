@@ -29,14 +29,18 @@ body {
   padding: 10px 14px;
   border: none;
   border-radius: 8px;
-  background: #1f6feb;
-  color: white;
   cursor: pointer;
+  color: white;
+  font-weight: 700;
+}
+
+.danger-btn {
+  background: #d9534f;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 320px 1fr;
   gap: 20px;
 }
 
@@ -45,7 +49,7 @@ body {
   background: white;
   border-radius: 14px;
   padding: 18px;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
 }
 
 .subject-panel h2 {
@@ -53,14 +57,47 @@ body {
   font-size: 20px;
 }
 
+.add-subject-box {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.add-subject-box input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #cfd7e6;
+  border-radius: 8px;
+  font-size: 14px;
+}
+
+.add-subject-box button {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #1f6feb;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+}
+
 .card-pool {
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 4px;
+  border: 2px dashed #d5ddeb;
+  border-radius: 12px;
+  background: #fafbfe;
 }
 
 .subject-card {
-  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
   border-radius: 10px;
   background: #e8f0ff;
   border: 1px solid #c7d8ff;
@@ -70,6 +107,35 @@ body {
 
 .subject-card.dragging {
   opacity: 0.5;
+}
+
+.card-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.card-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card-actions button {
+  border: none;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.edit-btn {
+  background: #fff3cd;
+}
+
+.delete-btn {
+  background: #f8d7da;
 }
 
 .board {
@@ -105,21 +171,16 @@ body {
 }
 
 .drop-cell {
-  min-height: 120px;
+  min-height: 140px;
   background: #fafbfe;
   border: 2px dashed #c8d2e5;
   padding: 10px;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
-  align-content: flex-start;
 }
 
-.drop-cell.dragover {
+.drop-area.dragover {
   background: #eef5ff;
   border-color: #1f6feb;
-}
-
-.drop-cell .subject-card {
-  margin: 0;
 }

@@ -11,21 +11,24 @@
     <header class="topbar">
       <h1>Curriculum Board</h1>
       <div class="topbar-buttons">
-        <button id="resetBtn">초기화</button>
+        <button id="resetBtn" class="danger-btn">전체 초기화</button>
       </div>
     </header>
 
     <main class="layout">
       <aside class="subject-panel">
         <h2>과목 카드</h2>
-        <div id="cardPool" class="card-pool">
-          <div class="subject-card" draggable="true" data-subject="English 7">English 7</div>
-          <div class="subject-card" draggable="true" data-subject="Math 7">Math 7</div>
-          <div class="subject-card" draggable="true" data-subject="Science 7">Science 7</div>
-          <div class="subject-card" draggable="true" data-subject="Bible 7">Bible 7</div>
-          <div class="subject-card" draggable="true" data-subject="PE 7">PE 7</div>
-          <div class="subject-card" draggable="true" data-subject="Art 7">Art 7</div>
+
+        <div class="add-subject-box">
+          <input
+            type="text"
+            id="newSubjectInput"
+            placeholder="새 과목명 입력"
+          />
+          <button id="addSubjectBtn">추가</button>
         </div>
+
+        <div id="cardPool" class="card-pool drop-area" data-area="pool"></div>
       </aside>
 
       <section class="board-section">
@@ -35,28 +38,28 @@
           <div class="board-header">2학기</div>
 
           <div class="grade-label">7학년</div>
-          <div class="drop-cell" data-cell="7-1"></div>
-          <div class="drop-cell" data-cell="7-2"></div>
+          <div class="drop-cell drop-area" data-cell="7-1"></div>
+          <div class="drop-cell drop-area" data-cell="7-2"></div>
 
           <div class="grade-label">8학년</div>
-          <div class="drop-cell" data-cell="8-1"></div>
-          <div class="drop-cell" data-cell="8-2"></div>
+          <div class="drop-cell drop-area" data-cell="8-1"></div>
+          <div class="drop-cell drop-area" data-cell="8-2"></div>
 
           <div class="grade-label">9학년</div>
-          <div class="drop-cell" data-cell="9-1"></div>
-          <div class="drop-cell" data-cell="9-2"></div>
+          <div class="drop-cell drop-area" data-cell="9-1"></div>
+          <div class="drop-cell drop-area" data-cell="9-2"></div>
 
           <div class="grade-label">10학년</div>
-          <div class="drop-cell" data-cell="10-1"></div>
-          <div class="drop-cell" data-cell="10-2"></div>
+          <div class="drop-cell drop-area" data-cell="10-1"></div>
+          <div class="drop-cell drop-area" data-cell="10-2"></div>
 
           <div class="grade-label">11학년</div>
-          <div class="drop-cell" data-cell="11-1"></div>
-          <div class="drop-cell" data-cell="11-2"></div>
+          <div class="drop-cell drop-area" data-cell="11-1"></div>
+          <div class="drop-cell drop-area" data-cell="11-2"></div>
 
           <div class="grade-label">12학년</div>
-          <div class="drop-cell" data-cell="12-1"></div>
-          <div class="drop-cell" data-cell="12-2"></div>
+          <div class="drop-cell drop-area" data-cell="12-1"></div>
+          <div class="drop-cell drop-area" data-cell="12-2"></div>
         </div>
       </section>
     </main>
