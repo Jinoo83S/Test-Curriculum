@@ -439,7 +439,16 @@ function createTemplateCard(item) {
 
 function renderTemplates() {
   templateList.innerHTML = "";
-  state.templates.forEach((item) => templateList.appendChild(createTemplateCard(item)));
+
+  const sortedTemplates = [...state.templates].sort((a, b) => {
+    const aKey = (a.nameKo || a.nameEn || "").trim();
+    const bKey = (b.nameKo || b.nameEn || "").trim();
+    return aKey.localeCompare(bKey, "ko");
+  });
+
+  sortedTemplates.forEach((item) => {
+    templateList.appendChild(createTemplateCard(item));
+  });
 }
 
 function updateRowField(grade, rowId, field, value) {
