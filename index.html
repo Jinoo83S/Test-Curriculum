@@ -17,17 +17,21 @@
 
     <main class="layout">
       <aside class="subject-panel">
-        <h2>과목 카드</h2>
+        <h2>과목 카드 추가</h2>
 
-        <div class="add-subject-box">
-          <input
-            type="text"
-            id="newSubjectInput"
-            placeholder="새 과목명 입력"
-          />
-          <button id="addSubjectBtn">추가</button>
+        <div class="add-form">
+          <input type="text" id="newNameKo" placeholder="한글 이름" />
+          <input type="text" id="newNameEn" placeholder="영어 이름" />
+          <input type="text" id="newTeacher" placeholder="교사" />
+          <select id="newLanguage">
+            <option value="Korean">Korean</option>
+            <option value="English">English</option>
+            <option value="Both">Both</option>
+          </select>
+          <button id="addSubjectBtn">카드 추가</button>
         </div>
 
+        <h2>과목 카드</h2>
         <div id="cardPool" class="card-pool drop-area" data-area="pool"></div>
       </aside>
 
@@ -63,6 +67,26 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="editModal" class="modal hidden">
+    <div class="modal-content">
+      <h2>과목 카드 수정</h2>
+
+      <input type="text" id="editNameKo" placeholder="한글 이름" />
+      <input type="text" id="editNameEn" placeholder="영어 이름" />
+      <input type="text" id="editTeacher" placeholder="교사" />
+      <select id="editLanguage">
+        <option value="Korean">Korean</option>
+        <option value="English">English</option>
+        <option value="Both">Both</option>
+      </select>
+
+      <div class="modal-buttons">
+        <button id="saveEditBtn">저장</button>
+        <button id="cancelEditBtn" class="secondary-btn">취소</button>
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>

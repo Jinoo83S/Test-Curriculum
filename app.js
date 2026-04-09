@@ -1,22 +1,35 @@
-const STORAGE_KEY = "curriculum-board-v2";
+const STORAGE_KEY = "curriculum-board-v4";
 
 const defaultSubjects = [
-  "English 7",
-  "Math 7",
-  "Science 7",
-  "Bible 7",
-  "PE 7",
-  "Art 7"
+  { nameKo: "영어 7", nameEn: "English 7", teacher: "", language: "English" },
+  { nameKo: "수학 7", nameEn: "Math 7", teacher: "", language: "Both" },
+  { nameKo: "과학 7", nameEn: "Science 7", teacher: "", language: "Both" },
+  { nameKo: "성경 7", nameEn: "Bible 7", teacher: "", language: "English" },
+  { nameKo: "체육 7", nameEn: "PE 7", teacher: "", language: "Korean" },
+  { nameKo: "미술 7", nameEn: "Art 7", teacher: "", language: "Korean" }
 ];
 
 const pool = document.getElementById("cardPool");
 const cells = document.querySelectorAll(".drop-cell");
 const areas = document.querySelectorAll(".drop-area");
 const resetBtn = document.getElementById("resetBtn");
+
 const addSubjectBtn = document.getElementById("addSubjectBtn");
-const newSubjectInput = document.getElementById("newSubjectInput");
+const newNameKo = document.getElementById("newNameKo");
+const newNameEn = document.getElementById("newNameEn");
+const newTeacher = document.getElementById("newTeacher");
+const newLanguage = document.getElementById("newLanguage");
+
+const editModal = document.getElementById("editModal");
+const editNameKo = document.getElementById("editNameKo");
+const editNameEn = document.getElementById("editNameEn");
+const editTeacher = document.getElementById("editTeacher");
+const editLanguage = document.getElementById("editLanguage");
+const saveEditBtn = document.getElementById("saveEditBtn");
+const cancelEditBtn = document.getElementById("cancelEditBtn");
 
 let draggedCardId = null;
+let editingCardId = null;
 
 function makeId() {
   return `subj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -26,12 +39,19 @@ function getCellKeys() {
   return [...cells].map(cell => cell.dataset.cell);
 }
 
+function normalizeCard(card) {
+  return {
+    id: card.id || makeId(),
+    nameKo: card.nameKo ?? card.name ?? "",
+    nameEn: card.nameEn ?? "",
+    teacher: card.teacher ?? "",
+    language: ["Korean", "English", "Both"].includes(card.language) ? card.language : "Both"
+  };
+}
+
 function createInitialState() {
   const state = {
-    pool: defaultSubjects.map(name => ({
-      id: makeId(),
-      name
-    })),
+    pool: defaultSubjects.map(item => normalizeCard(item)),
     cells: {}
   };
 
@@ -44,12 +64,20 @@ function createInitialState() {
 
 let state = createInitialState();
 
+function getLegacySavedData() {
+  return (
+    localStorage.getItem(STORAGE_KEY) ||
+    localStorage.getItem("curriculum-board-v3") ||
+    localStorage.getItem("curriculum-board-v2")
+  );
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
 function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  const saved = getLegacySavedData();
 
   if (!saved) {
     state = createInitialState();
@@ -62,9 +90,14 @@ function loadState() {
     const emptyTemplate = createInitialState();
 
     state = {
-      pool: Array.isArray(parsed.pool) ? parsed.pool : emptyTemplate.pool,
-      cells: { ...emptyTemplate.cells, ...(parsed.cells || {}) }
+      pool: Array.isArray(parsed.pool) ? parsed.pool.map(normalizeCard) : emptyTemplate.pool,
+      cells: {}
     };
+
+    getCellKeys().forEach(key => {
+      const source = Array.isArray(parsed.cells?.[key]) ? parsed.cells[key] : [];
+      state.cells[key] = source.map(normalizeCard);
+    });
 
     saveState();
   } catch (e) {
@@ -109,14 +142,41 @@ function moveCardToArea(cardId, areaName) {
   render();
 }
 
-function updateCardName(cardId, newName) {
-  const trimmed = newName.trim();
-  if (!trimmed) return;
+function getCardLabel(card) {
+  return card.nameKo || card.nameEn || "이름 없음";
+}
 
+function addNewCard(cardData) {
+  if (!cardData.nameKo.trim() && !cardData.nameEn.trim()) {
+    alert("한글 이름 또는 영어 이름 중 하나는 입력해 주세요.");
+    return;
+  }
+
+  state.pool.push(
+    normalizeCard({
+      id: makeId(),
+      ...cardData
+    })
+  );
+
+  saveState();
+  render();
+}
+
+function updateCard(cardId, cardData) {
   const card = findCardById(cardId);
   if (!card) return;
 
-  card.name = trimmed;
+  if (!cardData.nameKo.trim() && !cardData.nameEn.trim()) {
+    alert("한글 이름 또는 영어 이름 중 하나는 입력해 주세요.");
+    return;
+  }
+
+  card.nameKo = cardData.nameKo.trim();
+  card.nameEn = cardData.nameEn.trim();
+  card.teacher = cardData.teacher.trim();
+  card.language = cardData.language;
+
   saveState();
   render();
 }
@@ -127,17 +187,28 @@ function deleteCard(cardId) {
   render();
 }
 
-function addNewCard(name) {
-  const trimmed = name.trim();
-  if (!trimmed) return;
+function openEditModal(cardId) {
+  const card = findCardById(cardId);
+  if (!card) return;
 
-  state.pool.push({
-    id: makeId(),
-    name: trimmed
-  });
+  editingCardId = cardId;
+  editNameKo.value = card.nameKo;
+  editNameEn.value = card.nameEn;
+  editTeacher.value = card.teacher;
+  editLanguage.value = card.language;
+  editModal.classList.remove("hidden");
+}
 
-  saveState();
-  render();
+function closeEditModal() {
+  editingCardId = null;
+  editModal.classList.add("hidden");
+}
+
+function createMetaBadge(text) {
+  const badge = document.createElement("span");
+  badge.className = "meta-badge";
+  badge.textContent = text;
+  return badge;
 }
 
 function createCardElement(card) {
@@ -146,9 +217,26 @@ function createCardElement(card) {
   el.draggable = true;
   el.dataset.id = card.id;
 
-  const title = document.createElement("div");
-  title.className = "card-title";
-  title.textContent = card.name;
+  const main = document.createElement("div");
+  main.className = "card-main";
+
+  const ko = document.createElement("div");
+  ko.className = "card-name-ko";
+  ko.textContent = card.nameKo || "-";
+
+  const en = document.createElement("div");
+  en.className = "card-name-en";
+  en.textContent = card.nameEn || "-";
+
+  main.appendChild(ko);
+  main.appendChild(en);
+
+  const meta = document.createElement("div");
+  meta.className = "card-meta";
+  meta.appendChild(createMetaBadge(`언어: ${card.language}`));
+  if (card.teacher) {
+    meta.appendChild(createMetaBadge(`교사: ${card.teacher}`));
+  }
 
   const actions = document.createElement("div");
   actions.className = "card-actions";
@@ -165,14 +253,12 @@ function createCardElement(card) {
 
   editBtn.addEventListener("click", e => {
     e.stopPropagation();
-    const nextName = prompt("과목명을 수정하세요.", card.name);
-    if (nextName === null) return;
-    updateCardName(card.id, nextName);
+    openEditModal(card.id);
   });
 
   deleteBtn.addEventListener("click", e => {
     e.stopPropagation();
-    const ok = confirm(`"${card.name}" 카드를 삭제할까요?`);
+    const ok = confirm(`"${getCardLabel(card)}" 카드를 삭제할까요?`);
     if (!ok) return;
     deleteCard(card.id);
   });
@@ -183,7 +269,8 @@ function createCardElement(card) {
   actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
 
-  el.appendChild(title);
+  el.appendChild(main);
+  el.appendChild(meta);
   el.appendChild(actions);
 
   el.addEventListener("dragstart", () => {
@@ -237,15 +324,46 @@ areas.forEach(area => {
 });
 
 addSubjectBtn.addEventListener("click", () => {
-  addNewCard(newSubjectInput.value);
-  newSubjectInput.value = "";
-  newSubjectInput.focus();
+  addNewCard({
+    nameKo: newNameKo.value,
+    nameEn: newNameEn.value,
+    teacher: newTeacher.value,
+    language: newLanguage.value
+  });
+
+  newNameKo.value = "";
+  newNameEn.value = "";
+  newTeacher.value = "";
+  newLanguage.value = "Korean";
+  newNameKo.focus();
 });
 
-newSubjectInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") {
-    addNewCard(newSubjectInput.value);
-    newSubjectInput.value = "";
+[newNameKo, newNameEn, newTeacher].forEach(input => {
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+      addSubjectBtn.click();
+    }
+  });
+});
+
+saveEditBtn.addEventListener("click", () => {
+  if (!editingCardId) return;
+
+  updateCard(editingCardId, {
+    nameKo: editNameKo.value,
+    nameEn: editNameEn.value,
+    teacher: editTeacher.value,
+    language: editLanguage.value
+  });
+
+  closeEditModal();
+});
+
+cancelEditBtn.addEventListener("click", closeEditModal);
+
+editModal.addEventListener("click", e => {
+  if (e.target === editModal) {
+    closeEditModal();
   }
 });
 
@@ -254,6 +372,8 @@ resetBtn.addEventListener("click", () => {
   if (!ok) return;
 
   localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem("curriculum-board-v3");
+  localStorage.removeItem("curriculum-board-v2");
   loadState();
   render();
 });
