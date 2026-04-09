@@ -6,7 +6,7 @@ service cloud.firestore {
         && request.auth.token.email in [
           'jinwoosuk@his.sc.kr',
           'haminbaek@his.sc.kr',
-          'teacher2@his.sc.kr'
+          'seyoonkim@his.sc.kr'
         ];
     }
   }
