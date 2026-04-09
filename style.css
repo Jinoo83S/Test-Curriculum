@@ -713,3 +713,39 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+
+/* C. 카드 내부가 줄어들 수 있게 설정 */
+.template-card {
+  min-width: 0;
+  height: 100%;
+}
+
+.template-main {
+  min-width: 0;
+}
+
+.template-name-ko,
+.template-name-en {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-meta {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.template-meta .meta-chip {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-actions {
+  margin-top: auto;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
