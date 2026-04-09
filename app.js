@@ -374,7 +374,7 @@ function createMetaChip(text) {
 
 function createTemplateCard(item) {
   const card = document.createElement("div");
-  card.className = `template-card ${languageClass(item.language)}`;
+  card.className = `template-card compact-card ${languageClass(item.language)}`;
   card.draggable = canEdit();
 
   card.addEventListener("dragstart", () => {
@@ -389,22 +389,14 @@ function createTemplateCard(item) {
 
   const main = document.createElement("div");
   main.className = "template-main";
+
   const ko = document.createElement("div");
   ko.className = "template-name-ko";
-  ko.textContent = item.nameKo || "-";
-  const en = document.createElement("div");
-  en.className = "template-name-en";
-  en.textContent = item.nameEn || "-";
+  ko.textContent = item.nameKo || item.nameEn || "-";
   main.appendChild(ko);
-  main.appendChild(en);
-
-  const meta = document.createElement("div");
-  meta.className = "template-meta";
-  meta.appendChild(createMetaChip(item.language));
-  if (item.teacher) meta.appendChild(createMetaChip(item.teacher));
 
   const actions = document.createElement("div");
-  actions.className = "template-actions";
+  actions.className = "template-actions compact-actions";
 
   const editBtn = document.createElement("button");
   editBtn.type = "button";
@@ -426,14 +418,30 @@ function createTemplateCard(item) {
     deleteTemplate(item.id);
   });
 
-  [editBtn, deleteBtn].forEach((btn) => btn.addEventListener("mousedown", (e) => e.stopPropagation()));
+  [editBtn, deleteBtn].forEach((btn) =>
+    btn.addEventListener("mousedown", (e) => e.stopPropagation())
+  );
 
   actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
 
   card.appendChild(main);
-  card.appendChild(meta);
   card.appendChild(actions);
+
+  card.addEventListener("click", (e) => {
+    if (e.target.closest("button")) return;
+
+    const wasExpanded = card.classList.contains("expanded");
+
+    document.querySelectorAll(".template-card.expanded").forEach((el) => {
+      el.classList.remove("expanded");
+    });
+
+    if (!wasExpanded) {
+      card.classList.add("expanded");
+    }
+  });
+
   return card;
 }
 
