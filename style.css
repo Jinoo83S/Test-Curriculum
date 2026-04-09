@@ -254,3 +254,24 @@ body {
   justify-content: flex-end;
   margin-top: 6px;
 }
+
+.subject-card.lang-korean {
+  color: #1d4ed8;
+}
+
+.subject-card.lang-english {
+  color: #dc2626;
+}
+
+.subject-card.lang-both {
+  color: #7c3aed;
+}
+
+.subject-card.lang-korean .meta-badge,
+.subject-card.lang-english .meta-badge,
+.subject-card.lang-both .meta-badge,
+.subject-card.lang-korean button,
+.subject-card.lang-english button,
+.subject-card.lang-both button {
+  color: inherit;
+}

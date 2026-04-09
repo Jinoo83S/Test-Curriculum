@@ -1,4 +1,4 @@
-const STORAGE_KEY = "curriculum-board-v4";
+const STORAGE_KEY = "curriculum-board-v5";
 
 const defaultSubjects = [
   { nameKo: "영어", nameEn: "English", teacher: "", language: "English" },
@@ -213,7 +213,7 @@ function createMetaBadge(text) {
 
 function createCardElement(card) {
   const el = document.createElement("div");
-  el.className = "subject-card";
+  el.className = `subject-card lang-${card.language.toLowerCase()}`;
   el.draggable = true;
   el.dataset.id = card.id;
 
