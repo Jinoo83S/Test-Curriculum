@@ -15,12 +15,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBwUERcfAYMiqew0sp9zsY6_CnHef-nfK0",
+  apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
   authDomain: "his-curriculum-8e737.firebaseapp.com",
   projectId: "his-curriculum-8e737",
   storageBucket: "his-curriculum-8e737.firebasestorage.app",
   messagingSenderId: "1091130688532",
-  appId: "1:1091130688532:web:79622f9da3591ab2d3d301"
+  appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
 };
 
 const app = initializeApp(firebaseConfig);
