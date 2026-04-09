@@ -731,6 +731,15 @@ function createGradeRow(grade, rowData) {
   return row;
 }
 
+/* 그룹 헤더 함수 */
+function createTrackGroupDivider(track) {
+  const divider = document.createElement("div");
+  divider.className = "track-group-divider";
+  divider.textContent = track || "구분 없음";
+  return divider;
+}
+
+
 function getGradeSummaryRows(grade) {
   const rows = state.gradeBoards[grade] || [];
   return state.options.category.map((category) => {
@@ -807,9 +816,19 @@ function renderGradeBoard() {
     const headerRow = createGradeHeader(column);
     column.appendChild(headerRow);
 
-    state.gradeBoards[grade].forEach((rowData) => {
-      column.appendChild(createGradeRow(grade, rowData));
-    });
+  /* 이렇게 하면 두번째 범주 값이 바뀔 때만 구분선/그룹 제목이 생깁니다. */
+  let previousTrack = null;
+
+  state.gradeBoards[grade].forEach((rowData, index) => {
+    const currentTrack = rowData.track || "";
+
+    if (index === 0 || currentTrack !== previousTrack) {
+      column.appendChild(createTrackGroupDivider(currentTrack));
+    }
+
+    column.appendChild(createGradeRow(grade, rowData));
+    previousTrack = currentTrack;
+  });
 
     const footer = document.createElement("div");
     footer.className = "grade-footer";
