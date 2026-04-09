@@ -1,0 +1,125 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #f5f7fb;
+  color: #222;
+}
+
+.page {
+  padding: 24px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 28px;
+}
+
+.topbar-buttons button {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #1f6feb;
+  color: white;
+  cursor: pointer;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+}
+
+.subject-panel,
+.board-section {
+  background: white;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+}
+
+.subject-panel h2 {
+  margin-top: 0;
+  font-size: 20px;
+}
+
+.card-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subject-card {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #e8f0ff;
+  border: 1px solid #c7d8ff;
+  cursor: grab;
+  user-select: none;
+}
+
+.subject-card.dragging {
+  opacity: 0.5;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr;
+  gap: 10px;
+}
+
+.board-header,
+.grade-label,
+.drop-cell {
+  border-radius: 10px;
+}
+
+.board-header {
+  background: #dbe7ff;
+  padding: 12px;
+  text-align: center;
+  font-weight: 700;
+}
+
+.corner {
+  background: transparent;
+}
+
+.grade-label {
+  background: #eef2f8;
+  padding: 16px 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.drop-cell {
+  min-height: 120px;
+  background: #fafbfe;
+  border: 2px dashed #c8d2e5;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-content: flex-start;
+}
+
+.drop-cell.dragover {
+  background: #eef5ff;
+  border-color: #1f6feb;
+}
+
+.drop-cell .subject-card {
+  margin: 0;
+}
