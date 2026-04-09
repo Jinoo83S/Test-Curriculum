@@ -1,4 +1,30 @@
-const STORAGE_KEY = "curriculum-board-v5";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  onSnapshot,
+  serverTimestamp,
+} from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
+  authDomain: "his-curriculum-8e737.firebaseapp.com",
+  projectId: "his-curriculum-8e737",
+  storageBucket: "his-curriculum-8e737.firebasestorage.app",
+  messagingSenderId: "1091130688532",
+  appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
+};
+
+const BOARD_DOCUMENT_PATH = ["boards", "main"];
 
 const defaultSubjects = [
   { nameKo: "영어", nameEn: "English", teacher: "", language: "English" },
@@ -6,13 +32,24 @@ const defaultSubjects = [
   { nameKo: "과학", nameEn: "Science", teacher: "", language: "Both" },
   { nameKo: "성경", nameEn: "Bible", teacher: "", language: "English" },
   { nameKo: "체육", nameEn: "PE", teacher: "", language: "Korean" },
-  { nameKo: "미술", nameEn: "Art", teacher: "", language: "Korean" }
+  { nameKo: "미술", nameEn: "Art", teacher: "", language: "Korean" },
 ];
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
+const boardRef = doc(db, ...BOARD_DOCUMENT_PATH);
 
 const pool = document.getElementById("cardPool");
 const cells = document.querySelectorAll(".drop-cell");
 const areas = document.querySelectorAll(".drop-area");
 const resetBtn = document.getElementById("resetBtn");
+const loginBtn = document.getElementById("loginBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const userInfo = document.getElementById("userInfo");
+const loginNotice = document.getElementById("loginNotice");
+const appLayout = document.getElementById("appLayout");
 
 const addSubjectBtn = document.getElementById("addSubjectBtn");
 const newNameKo = document.getElementById("newNameKo");
@@ -30,32 +67,42 @@ const cancelEditBtn = document.getElementById("cancelEditBtn");
 
 let draggedCardId = null;
 let editingCardId = null;
+let currentUser = null;
+let unsubscribeBoard = null;
+let isBoardLoaded = false;
 
 function makeId() {
   return `subj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function getCellKeys() {
-  return [...cells].map(cell => cell.dataset.cell);
+  return [...cells].map((cell) => cell.dataset.cell);
+}
+
+function stripGradeSuffix(text) {
+  if (!text) return "";
+  return String(text).replace(/\s+(7|8|9|10|11|12)$/g, "").trim();
 }
 
 function normalizeCard(card) {
   return {
     id: card.id || makeId(),
-    nameKo: card.nameKo ?? card.name ?? "",
-    nameEn: card.nameEn ?? "",
+    nameKo: stripGradeSuffix(card.nameKo ?? card.name ?? ""),
+    nameEn: stripGradeSuffix(card.nameEn ?? ""),
     teacher: card.teacher ?? "",
-    language: ["Korean", "English", "Both"].includes(card.language) ? card.language : "Both"
+    language: ["Korean", "English", "Both"].includes(card.language)
+      ? card.language
+      : "Both",
   };
 }
 
 function createInitialState() {
   const state = {
-    pool: defaultSubjects.map(item => normalizeCard(item)),
-    cells: {}
+    pool: defaultSubjects.map((item) => normalizeCard(item)),
+    cells: {},
   };
 
-  getCellKeys().forEach(key => {
+  getCellKeys().forEach((key) => {
     state.cells[key] = [];
   });
 
@@ -64,54 +111,52 @@ function createInitialState() {
 
 let state = createInitialState();
 
-function getLegacySavedData() {
-  return (
-    localStorage.getItem(STORAGE_KEY) ||
-    localStorage.getItem("curriculum-board-v3") ||
-    localStorage.getItem("curriculum-board-v2")
+function normalizeState(source) {
+  const emptyTemplate = createInitialState();
+
+  const nextState = {
+    pool: Array.isArray(source?.pool)
+      ? source.pool.map(normalizeCard)
+      : emptyTemplate.pool,
+    cells: {},
+  };
+
+  getCellKeys().forEach((key) => {
+    const sourceCards = Array.isArray(source?.cells?.[key]) ? source.cells[key] : [];
+    nextState.cells[key] = sourceCards.map(normalizeCard);
+  });
+
+  return nextState;
+}
+
+async function saveState() {
+  if (!currentUser) return;
+
+  await setDoc(
+    boardRef,
+    {
+      state,
+      updatedAt: serverTimestamp(),
+      updatedBy: currentUser.email || currentUser.uid,
+    },
+    { merge: true }
   );
 }
 
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-}
-
-function loadState() {
-  const saved = getLegacySavedData();
-
-  if (!saved) {
+async function ensureBoardExists() {
+  const snap = await getDoc(boardRef);
+  if (!snap.exists()) {
     state = createInitialState();
-    saveState();
-    return;
-  }
-
-  try {
-    const parsed = JSON.parse(saved);
-    const emptyTemplate = createInitialState();
-
-    state = {
-      pool: Array.isArray(parsed.pool) ? parsed.pool.map(normalizeCard) : emptyTemplate.pool,
-      cells: {}
-    };
-
-    getCellKeys().forEach(key => {
-      const source = Array.isArray(parsed.cells?.[key]) ? parsed.cells[key] : [];
-      state.cells[key] = source.map(normalizeCard);
-    });
-
-    saveState();
-  } catch (e) {
-    state = createInitialState();
-    saveState();
+    await saveState();
   }
 }
 
 function findCardById(cardId) {
-  const inPool = state.pool.find(card => card.id === cardId);
+  const inPool = state.pool.find((card) => card.id === cardId);
   if (inPool) return inPool;
 
   for (const key of Object.keys(state.cells)) {
-    const found = state.cells[key].find(card => card.id === cardId);
+    const found = state.cells[key].find((card) => card.id === cardId);
     if (found) return found;
   }
 
@@ -119,14 +164,14 @@ function findCardById(cardId) {
 }
 
 function removeCardById(cardId) {
-  state.pool = state.pool.filter(card => card.id !== cardId);
+  state.pool = state.pool.filter((card) => card.id !== cardId);
 
-  Object.keys(state.cells).forEach(key => {
-    state.cells[key] = state.cells[key].filter(card => card.id !== cardId);
+  Object.keys(state.cells).forEach((key) => {
+    state.cells[key] = state.cells[key].filter((card) => card.id !== cardId);
   });
 }
 
-function moveCardToArea(cardId, areaName) {
+async function moveCardToArea(cardId, areaName) {
   const card = findCardById(cardId);
   if (!card) return;
 
@@ -138,15 +183,15 @@ function moveCardToArea(cardId, areaName) {
     state.cells[areaName].push(card);
   }
 
-  saveState();
   render();
+  await saveState();
 }
 
 function getCardLabel(card) {
   return card.nameKo || card.nameEn || "이름 없음";
 }
 
-function addNewCard(cardData) {
+async function addNewCard(cardData) {
   if (!cardData.nameKo.trim() && !cardData.nameEn.trim()) {
     alert("한글 이름 또는 영어 이름 중 하나는 입력해 주세요.");
     return;
@@ -155,15 +200,15 @@ function addNewCard(cardData) {
   state.pool.push(
     normalizeCard({
       id: makeId(),
-      ...cardData
+      ...cardData,
     })
   );
 
-  saveState();
   render();
+  await saveState();
 }
 
-function updateCard(cardId, cardData) {
+async function updateCard(cardId, cardData) {
   const card = findCardById(cardId);
   if (!card) return;
 
@@ -177,14 +222,14 @@ function updateCard(cardId, cardData) {
   card.teacher = cardData.teacher.trim();
   card.language = cardData.language;
 
-  saveState();
   render();
+  await saveState();
 }
 
-function deleteCard(cardId) {
+async function deleteCard(cardId) {
   removeCardById(cardId);
-  saveState();
   render();
+  await saveState();
 }
 
 function openEditModal(cardId) {
@@ -233,9 +278,9 @@ function createCardElement(card) {
 
   const meta = document.createElement("div");
   meta.className = "card-meta";
-  meta.appendChild(createMetaBadge(`${card.language}`));
+  meta.appendChild(createMetaBadge(card.language));
   if (card.teacher) {
-    meta.appendChild(createMetaBadge(`${card.teacher}`));
+    meta.appendChild(createMetaBadge(card.teacher));
   }
 
   const actions = document.createElement("div");
@@ -251,20 +296,20 @@ function createCardElement(card) {
   deleteBtn.textContent = "삭제";
   deleteBtn.type = "button";
 
-  editBtn.addEventListener("click", e => {
+  editBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     openEditModal(card.id);
   });
 
-  deleteBtn.addEventListener("click", e => {
+  deleteBtn.addEventListener("click", async (e) => {
     e.stopPropagation();
     const ok = confirm(`"${getCardLabel(card)}" 카드를 삭제할까요?`);
     if (!ok) return;
-    deleteCard(card.id);
+    await deleteCard(card.id);
   });
 
-  editBtn.addEventListener("mousedown", e => e.stopPropagation());
-  deleteBtn.addEventListener("mousedown", e => e.stopPropagation());
+  editBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+  deleteBtn.addEventListener("mousedown", (e) => e.stopPropagation());
 
   actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
@@ -287,7 +332,7 @@ function createCardElement(card) {
 
 function renderArea(target, cardList) {
   target.innerHTML = "";
-  cardList.forEach(card => {
+  cardList.forEach((card) => {
     target.appendChild(createCardElement(card));
   });
 }
@@ -295,14 +340,23 @@ function renderArea(target, cardList) {
 function render() {
   renderArea(pool, state.pool);
 
-  cells.forEach(cell => {
+  cells.forEach((cell) => {
     const key = cell.dataset.cell;
     renderArea(cell, state.cells[key] || []);
   });
 }
 
-areas.forEach(area => {
-  area.addEventListener("dragover", e => {
+function setEditingEnabled(enabled) {
+  appLayout.classList.toggle("disabled", !enabled);
+  loginNotice.classList.toggle("hidden", enabled);
+  logoutBtn.classList.toggle("hidden", !enabled);
+  resetBtn.classList.toggle("hidden", !enabled);
+  loginBtn.classList.toggle("hidden", enabled);
+}
+
+areas.forEach((area) => {
+  area.addEventListener("dragover", (e) => {
+    if (!currentUser) return;
     e.preventDefault();
     area.classList.add("dragover");
   });
@@ -311,24 +365,27 @@ areas.forEach(area => {
     area.classList.remove("dragover");
   });
 
-  area.addEventListener("drop", e => {
+  area.addEventListener("drop", async (e) => {
+    if (!currentUser) return;
     e.preventDefault();
     area.classList.remove("dragover");
 
     if (!draggedCardId) return;
 
     const targetArea = area.dataset.area || area.dataset.cell;
-    moveCardToArea(draggedCardId, targetArea);
+    await moveCardToArea(draggedCardId, targetArea);
     draggedCardId = null;
   });
 });
 
-addSubjectBtn.addEventListener("click", () => {
-  addNewCard({
+addSubjectBtn.addEventListener("click", async () => {
+  if (!currentUser) return;
+
+  await addNewCard({
     nameKo: newNameKo.value,
     nameEn: newNameEn.value,
     teacher: newTeacher.value,
-    language: newLanguage.value
+    language: newLanguage.value,
   });
 
   newNameKo.value = "";
@@ -338,22 +395,22 @@ addSubjectBtn.addEventListener("click", () => {
   newNameKo.focus();
 });
 
-[newNameKo, newNameEn, newTeacher].forEach(input => {
-  input.addEventListener("keydown", e => {
+[newNameKo, newNameEn, newTeacher].forEach((input) => {
+  input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       addSubjectBtn.click();
     }
   });
 });
 
-saveEditBtn.addEventListener("click", () => {
+saveEditBtn.addEventListener("click", async () => {
   if (!editingCardId) return;
 
-  updateCard(editingCardId, {
+  await updateCard(editingCardId, {
     nameKo: editNameKo.value,
     nameEn: editNameEn.value,
     teacher: editTeacher.value,
-    language: editLanguage.value
+    language: editLanguage.value,
   });
 
   closeEditModal();
@@ -361,22 +418,67 @@ saveEditBtn.addEventListener("click", () => {
 
 cancelEditBtn.addEventListener("click", closeEditModal);
 
-editModal.addEventListener("click", e => {
+editModal.addEventListener("click", (e) => {
   if (e.target === editModal) {
     closeEditModal();
   }
 });
 
-resetBtn.addEventListener("click", () => {
+resetBtn.addEventListener("click", async () => {
+  if (!currentUser) return;
+
   const ok = confirm("전체 보드를 초기화할까요?");
   if (!ok) return;
 
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem("curriculum-board-v3");
-  localStorage.removeItem("curriculum-board-v2");
-  loadState();
+  state = createInitialState();
   render();
+  await saveState();
 });
 
-loadState();
+loginBtn.addEventListener("click", async () => {
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    alert(`로그인 실패: ${error.message}`);
+  }
+});
+
+logoutBtn.addEventListener("click", async () => {
+  await signOut(auth);
+});
+
+onAuthStateChanged(auth, async (user) => {
+  currentUser = user;
+
+  if (unsubscribeBoard) {
+    unsubscribeBoard();
+    unsubscribeBoard = null;
+  }
+
+  if (!user) {
+    userInfo.textContent = "로그인 안 됨";
+    setEditingEnabled(false);
+    state = createInitialState();
+    render();
+    isBoardLoaded = false;
+    return;
+  }
+
+  userInfo.textContent = user.email || user.displayName || "로그인됨";
+  setEditingEnabled(true);
+
+  try {
+    await ensureBoardExists();
+
+    unsubscribeBoard = onSnapshot(boardRef, (snap) => {
+      if (!snap.exists()) return;
+      state = normalizeState(snap.data().state);
+      render();
+      isBoardLoaded = true;
+    });
+  } catch (error) {
+    alert(`보드 불러오기 실패: ${error.message}`);
+  }
+});
+
 render();

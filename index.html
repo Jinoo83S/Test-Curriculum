@@ -9,13 +9,24 @@
 <body>
   <div class="page">
     <header class="topbar">
-      <h1>Curriculum Board</h1>
-      <div class="topbar-buttons">
-        <button id="resetBtn" class="danger-btn">전체 초기화</button>
+      <div>
+        <h1>Curriculum Board</h1>
+        <p class="subtitle">GitHub Pages + Firebase 공유 버전</p>
+      </div>
+
+      <div class="auth-bar">
+        <div id="userInfo" class="user-info">로그인 안 됨</div>
+        <button id="loginBtn">Google 로그인</button>
+        <button id="logoutBtn" class="secondary-btn hidden">로그아웃</button>
+        <button id="resetBtn" class="danger-btn hidden">전체 초기화</button>
       </div>
     </header>
 
-    <main class="layout">
+    <div id="loginNotice" class="login-notice">
+      이 보드는 Firebase에 저장됩니다. Google 로그인 후 편집할 수 있습니다.
+    </div>
+
+    <main class="layout disabled" id="appLayout">
       <aside class="subject-panel">
         <h2>과목 카드 추가</h2>
 
@@ -89,6 +100,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
