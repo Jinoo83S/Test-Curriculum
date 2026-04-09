@@ -274,12 +274,24 @@ button {
   padding: 24px;
   max-width: 420px;
   text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
 }
 
-.login-overlay-box h2 {
-  margin-top: 0;
-  margin-bottom: 8px;
+.tab-bar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  background: #eef2ff;
+  color: #334155;
+}
+
+.tab-btn.active {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .board-scroll {
@@ -321,7 +333,8 @@ button {
 }
 
 .grade-header-row,
-.grade-data-row {
+.grade-data-row,
+.grade-summary-row {
   display: grid;
   grid-template-columns: 92px 92px 100px 1fr 1fr 76px 42px;
   gap: 8px;
@@ -336,7 +349,8 @@ button {
   font-weight: 700;
 }
 
-.header-cell {
+.header-cell,
+.summary-cell {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -430,6 +444,7 @@ button {
   display: flex;
   justify-content: center;
   background: #fafcff;
+  border-top: 1px solid #edf1f7;
 }
 
 .add-row-btn {
@@ -437,6 +452,43 @@ button {
   background: #e0ecff;
   color: #1d4ed8;
   border-radius: 10px;
+}
+
+.summary-wrap {
+  border-top: 1px solid #dbe2ef;
+  background: #fbfcff;
+}
+
+.summary-title {
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  background: #f8fbff;
+}
+
+.grade-summary-row {
+  background: #fbfdff;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.grade-summary-row:first-of-type {
+  border-top: none;
+}
+
+.summary-category {
+  font-weight: 700;
+}
+
+.summary-label {
+  grid-column: 1 / span 3;
+  justify-content: flex-start;
+  padding-left: 8px;
+  font-weight: 700;
+}
+
+.summary-spacer {
+  background: transparent;
 }
 
 .lang-korean {
@@ -456,10 +508,7 @@ button {
 .lang-both .meta-chip,
 .lang-korean .template-name-en,
 .lang-english .template-name-en,
-.lang-both .template-name-en,
-.lang-korean .placed-title-en,
-.lang-english .placed-title-en,
-.lang-both .placed-title-en {
+.lang-both .template-name-en {
   color: inherit;
 }
 

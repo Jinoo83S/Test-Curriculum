@@ -14,17 +14,13 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-/* =========================
-   Firebase 설정
-   app 등록 화면의 값을 넣으세요.
-   ========================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
+  apiKey: "AIzaSyBwUERcfAYMiqew0sp9zsY6_CnHef-nfK0",
   authDomain: "his-curriculum-8e737.firebaseapp.com",
   projectId: "his-curriculum-8e737",
   storageBucket: "his-curriculum-8e737.firebasestorage.app",
   messagingSenderId: "1091130688532",
-  appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
+  appId: "1:1091130688532:web:79622f9da3591ab2d3d301"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -33,9 +29,6 @@ const db = getFirestore(app);
 const provider = new GoogleAuthProvider();
 const boardRef = doc(db, "boards", "main");
 
-/* =========================
-   DOM
-   ========================= */
 const authStatus = document.getElementById("authStatus");
 const loginBtn = document.getElementById("loginBtn");
 const logoutBtn = document.getElementById("logoutBtn");
@@ -62,12 +55,15 @@ const addCategoryOptionBtn = document.getElementById("addCategoryOptionBtn");
 const addTrackOptionBtn = document.getElementById("addTrackOptionBtn");
 const addGroupOptionBtn = document.getElementById("addGroupOptionBtn");
 
+const tab7to9Btn = document.getElementById("tab7to9Btn");
+const tab10to12Btn = document.getElementById("tab10to12Btn");
 const gradeBoard = document.getElementById("gradeBoard");
 
-/* =========================
-   기본값
-   ========================= */
 const GRADE_KEYS = ["7학년", "8학년", "9학년", "10학년", "11학년", "12학년"];
+const GRADE_GROUPS = {
+  tab7to9: ["7학년", "8학년", "9학년"],
+  tab10to12: ["10학년", "11학년", "12학년"]
+};
 
 const DEFAULT_OPTIONS = {
   category: ["교과", "창체"],
@@ -117,18 +113,13 @@ function createDefaultState() {
   };
 }
 
-/* =========================
-   상태
-   ========================= */
 let state = createDefaultState();
 let unsubscribeBoard = null;
 let currentDrag = null;
 let templateEditId = null;
 let saveTimer = null;
+let activeTab = "tab7to9";
 
-/* =========================
-   유틸
-   ========================= */
 function normalizeTemplate(item = {}) {
   return {
     id: item.id || uid("tpl"),
@@ -248,7 +239,7 @@ function setControlsDisabled(disabled) {
     addGroupOptionBtn,
     resetBoardBtn
   ].forEach((el) => {
-    el.disabled = disabled;
+    if (el) el.disabled = disabled;
   });
 }
 
@@ -262,20 +253,14 @@ function resetTemplateForm() {
   templateCancelBtn.classList.add("hidden");
 }
 
-/* =========================
-   옵션 편집
-   ========================= */
 function addOption(type, value) {
   if (!canEdit()) return;
-
   const trimmed = value.trim();
   if (!trimmed) return;
-
   if (state.options[type].includes(trimmed)) {
     alert("이미 있는 옵션입니다.");
     return;
   }
-
   state.options[type].push(trimmed);
   ensureStateConsistency();
   render();
@@ -284,15 +269,12 @@ function addOption(type, value) {
 
 function removeOption(type, value) {
   if (!canEdit()) return;
-
   if (state.options[type].length <= 1) {
     alert("최소 1개의 옵션은 남겨두어야 합니다.");
     return;
   }
-
   const ok = confirm(`"${value}" 옵션을 삭제할까요?`);
   if (!ok) return;
-
   state.options[type] = state.options[type].filter((item) => item !== value);
   ensureStateConsistency();
   render();
@@ -301,7 +283,6 @@ function removeOption(type, value) {
 
 function renderOptionChips(container, type) {
   container.innerHTML = "";
-
   state.options[type].forEach((value) => {
     const chip = document.createElement("div");
     chip.className = "option-chip";
@@ -321,9 +302,6 @@ function renderOptionChips(container, type) {
   });
 }
 
-/* =========================
-   과목 카드 템플릿
-   ========================= */
 function submitTemplate() {
   if (!canEdit()) return;
 
@@ -353,7 +331,6 @@ function submitTemplate() {
 
 function editTemplate(templateId) {
   if (!canEdit()) return;
-
   const item = getTemplateById(templateId);
   if (!item) return;
 
@@ -368,7 +345,6 @@ function editTemplate(templateId) {
 
 function deleteTemplate(templateId) {
   if (!canEdit()) return;
-
   const item = getTemplateById(templateId);
   if (!item) return;
 
@@ -384,12 +360,16 @@ function deleteTemplate(templateId) {
     });
   });
 
-  if (templateEditId === templateId) {
-    resetTemplateForm();
-  }
-
+  if (templateEditId === templateId) resetTemplateForm();
   render();
   scheduleSave();
+}
+
+function createMetaChip(text) {
+  const chip = document.createElement("span");
+  chip.className = "meta-chip";
+  chip.textContent = text;
+  return chip;
 }
 
 function createTemplateCard(item) {
@@ -398,10 +378,7 @@ function createTemplateCard(item) {
   card.draggable = canEdit();
 
   card.addEventListener("dragstart", () => {
-    currentDrag = {
-      kind: "template",
-      templateId: item.id
-    };
+    currentDrag = { kind: "template", templateId: item.id };
     card.classList.add("dragging");
   });
 
@@ -412,24 +389,19 @@ function createTemplateCard(item) {
 
   const main = document.createElement("div");
   main.className = "template-main";
-
   const ko = document.createElement("div");
   ko.className = "template-name-ko";
   ko.textContent = item.nameKo || "-";
-
   const en = document.createElement("div");
   en.className = "template-name-en";
   en.textContent = item.nameEn || "-";
-
   main.appendChild(ko);
   main.appendChild(en);
 
   const meta = document.createElement("div");
   meta.className = "template-meta";
   meta.appendChild(createMetaChip(item.language));
-  if (item.teacher) {
-    meta.appendChild(createMetaChip(item.teacher));
-  }
+  if (item.teacher) meta.appendChild(createMetaChip(item.teacher));
 
   const actions = document.createElement("div");
   actions.className = "template-actions";
@@ -454,9 +426,7 @@ function createTemplateCard(item) {
     deleteTemplate(item.id);
   });
 
-  [editBtn, deleteBtn].forEach((btn) => {
-    btn.addEventListener("mousedown", (e) => e.stopPropagation());
-  });
+  [editBtn, deleteBtn].forEach((btn) => btn.addEventListener("mousedown", (e) => e.stopPropagation()));
 
   actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
@@ -464,27 +434,18 @@ function createTemplateCard(item) {
   card.appendChild(main);
   card.appendChild(meta);
   card.appendChild(actions);
-
   return card;
 }
 
 function renderTemplates() {
   templateList.innerHTML = "";
-
-  state.templates.forEach((item) => {
-    templateList.appendChild(createTemplateCard(item));
-  });
+  state.templates.forEach((item) => templateList.appendChild(createTemplateCard(item)));
 }
 
-/* =========================
-   보드 편집
-   ========================= */
 function updateRowField(grade, rowId, field, value) {
   if (!canEdit()) return;
-
   const row = state.gradeBoards[grade].find((item) => item.id === rowId);
   if (!row) return;
-
   row[field] = value;
   ensureStateConsistency();
   render();
@@ -493,10 +454,8 @@ function updateRowField(grade, rowId, field, value) {
 
 function clearCell(grade, rowId, semKey) {
   if (!canEdit()) return;
-
   const row = state.gradeBoards[grade].find((item) => item.id === rowId);
   if (!row) return;
-
   row[semKey] = null;
   render();
   scheduleSave();
@@ -504,7 +463,6 @@ function clearCell(grade, rowId, semKey) {
 
 function addRow(grade) {
   if (!canEdit()) return;
-
   state.gradeBoards[grade].push(createRow(state.options));
   render();
   scheduleSave();
@@ -512,51 +470,35 @@ function addRow(grade) {
 
 function deleteRow(grade, rowId) {
   if (!canEdit()) return;
-
   const ok = confirm("이 행을 삭제할까요?");
   if (!ok) return;
-
   state.gradeBoards[grade] = state.gradeBoards[grade].filter((row) => row.id !== rowId);
-
   if (state.gradeBoards[grade].length === 0) {
     state.gradeBoards[grade].push(createRow(state.options));
   }
-
   render();
   scheduleSave();
 }
 
 function movePlacedCard(sourceGrade, sourceRowId, sourceSemKey, targetGrade, targetRowId, targetSemKey) {
   if (!canEdit()) return;
-
   const sourceRow = state.gradeBoards[sourceGrade].find((row) => row.id === sourceRowId);
   const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
   if (!sourceRow || !targetRow) return;
-
   const movingTemplateId = sourceRow[sourceSemKey];
   sourceRow[sourceSemKey] = null;
   targetRow[targetSemKey] = movingTemplateId;
-
   render();
   scheduleSave();
 }
 
 function placeTemplateToCell(templateId, targetGrade, targetRowId, targetSemKey) {
   if (!canEdit()) return;
-
   const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
   if (!targetRow) return;
-
   targetRow[targetSemKey] = templateId;
   render();
   scheduleSave();
-}
-
-function createMetaChip(text) {
-  const chip = document.createElement("span");
-  chip.className = "meta-chip";
-  chip.textContent = text;
-  return chip;
 }
 
 function createSelect(options, currentValue, onChange) {
@@ -616,7 +558,6 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
 
   titleWrap.appendChild(ko);
   titleWrap.appendChild(en);
-
   top.appendChild(titleWrap);
 
   if (canEdit()) {
@@ -635,13 +576,10 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
   const meta = document.createElement("div");
   meta.className = "placed-meta";
   meta.appendChild(createMetaChip(item.language));
-  if (item.teacher) {
-    meta.appendChild(createMetaChip(item.teacher));
-  }
+  if (item.teacher) meta.appendChild(createMetaChip(item.teacher));
 
   card.appendChild(top);
   card.appendChild(meta);
-
   return card;
 }
 
@@ -692,14 +630,12 @@ function createDropCell(grade, rowId, semKey, templateId) {
 function createGradeHeader() {
   const row = document.createElement("div");
   row.className = "grade-header-row";
-
   ["범주", "구분", "교과군", "1학기", "2학기", "시수", ""].forEach((label) => {
     const cell = document.createElement("div");
     cell.className = "header-cell";
     cell.textContent = label;
     row.appendChild(cell);
   });
-
   return row;
 }
 
@@ -707,24 +643,9 @@ function createGradeRow(grade, rowData) {
   const row = document.createElement("div");
   row.className = "grade-data-row";
 
-  row.appendChild(
-    createSelect(state.options.category, rowData.category, (value) => {
-      updateRowField(grade, rowData.id, "category", value);
-    })
-  );
-
-  row.appendChild(
-    createSelect(state.options.track, rowData.track, (value) => {
-      updateRowField(grade, rowData.id, "track", value);
-    })
-  );
-
-  row.appendChild(
-    createSelect(state.options.group, rowData.group, (value) => {
-      updateRowField(grade, rowData.id, "group", value);
-    })
-  );
-
+  row.appendChild(createSelect(state.options.category, rowData.category, (value) => updateRowField(grade, rowData.id, "category", value)));
+  row.appendChild(createSelect(state.options.track, rowData.track, (value) => updateRowField(grade, rowData.id, "track", value)));
+  row.appendChild(createSelect(state.options.group, rowData.group, (value) => updateRowField(grade, rowData.id, "group", value)));
   row.appendChild(createDropCell(grade, rowData.id, "sem1", rowData.sem1));
   row.appendChild(createDropCell(grade, rowData.id, "sem2", rowData.sem2));
 
@@ -734,9 +655,7 @@ function createGradeRow(grade, rowData) {
   creditInput.value = rowData.credits;
   creditInput.disabled = !canEdit();
   creditInput.placeholder = "0";
-  creditInput.addEventListener("change", (e) => {
-    updateRowField(grade, rowData.id, "credits", e.target.value);
-  });
+  creditInput.addEventListener("change", (e) => updateRowField(grade, rowData.id, "credits", e.target.value));
   row.appendChild(creditInput);
 
   const deleteBtn = document.createElement("button");
@@ -750,10 +669,71 @@ function createGradeRow(grade, rowData) {
   return row;
 }
 
+function getGradeSummaryRows(grade) {
+  const rows = state.gradeBoards[grade] || [];
+  return state.options.category.map((category) => {
+    const matchedRows = rows.filter((row) => row.category === category && (row.sem1 || row.sem2));
+    const totalCourses = matchedRows.length;
+    const totalCredits = matchedRows.reduce((sum, row) => {
+      const value = Number(String(row.credits).replace(/[^0-9.-]/g, ""));
+      return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+
+    return {
+      category,
+      totalCourses,
+      totalCredits
+    };
+  });
+}
+
+function createSummarySection(grade) {
+  const wrap = document.createElement("div");
+  wrap.className = "summary-wrap";
+
+  const title = document.createElement("div");
+  title.className = "summary-title";
+  title.textContent = "총과목수 / 이수단위";
+  wrap.appendChild(title);
+
+  getGradeSummaryRows(grade).forEach((summary) => {
+    const row = document.createElement("div");
+    row.className = "grade-summary-row";
+
+    const label = document.createElement("div");
+    label.className = "summary-cell summary-label summary-category";
+    label.textContent = summary.category;
+    row.appendChild(label);
+
+    const courseCell = document.createElement("div");
+    courseCell.className = "summary-cell";
+    courseCell.textContent = `Total #Courses ${summary.totalCourses}`;
+    row.appendChild(courseCell);
+
+    const creditCell = document.createElement("div");
+    creditCell.className = "summary-cell";
+    creditCell.textContent = `Total #Credits ${summary.totalCredits}`;
+    row.appendChild(creditCell);
+
+    const spacer1 = document.createElement("div");
+    spacer1.className = "summary-spacer";
+    row.appendChild(spacer1);
+
+    const spacer2 = document.createElement("div");
+    spacer2.className = "summary-spacer";
+    row.appendChild(spacer2);
+
+    wrap.appendChild(row);
+  });
+
+  return wrap;
+}
+
 function renderGradeBoard() {
   gradeBoard.innerHTML = "";
+  const visibleGrades = GRADE_GROUPS[activeTab];
 
-  GRADE_KEYS.forEach((grade) => {
+  visibleGrades.forEach((grade) => {
     const column = document.createElement("section");
     column.className = "grade-column";
 
@@ -780,27 +760,28 @@ function renderGradeBoard() {
 
     footer.appendChild(addBtn);
     column.appendChild(footer);
+    column.appendChild(createSummarySection(grade));
 
     gradeBoard.appendChild(column);
   });
 }
 
-/* =========================
-   렌더링
-   ========================= */
+function renderTabs() {
+  tab7to9Btn.classList.toggle("active", activeTab === "tab7to9");
+  tab10to12Btn.classList.toggle("active", activeTab === "tab10to12");
+}
+
 function render() {
   ensureStateConsistency();
   renderTemplates();
   renderOptionChips(categoryOptionList, "category");
   renderOptionChips(trackOptionList, "track");
   renderOptionChips(groupOptionList, "group");
+  renderTabs();
   renderGradeBoard();
   setControlsDisabled(!canEdit());
 }
 
-/* =========================
-   인증 및 Firestore 구독
-   ========================= */
 async function login() {
   try {
     await signInWithPopup(auth, provider);
@@ -857,20 +838,25 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-/* =========================
-   이벤트 바인딩
-   ========================= */
 loginBtn.addEventListener("click", login);
 logoutBtn.addEventListener("click", logout);
+
+tab7to9Btn.addEventListener("click", () => {
+  activeTab = "tab7to9";
+  render();
+});
+
+tab10to12Btn.addEventListener("click", () => {
+  activeTab = "tab10to12";
+  render();
+});
 
 templateSubmitBtn.addEventListener("click", submitTemplate);
 templateCancelBtn.addEventListener("click", resetTemplateForm);
 
 [templateNameKo, templateNameEn, templateTeacher].forEach((input) => {
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      submitTemplate();
-    }
+    if (e.key === "Enter") submitTemplate();
   });
 });
 
@@ -904,17 +890,12 @@ addGroupOptionBtn.addEventListener("click", () => {
 
 resetBoardBtn.addEventListener("click", async () => {
   if (!canEdit()) return;
-
   const ok = confirm("공용 보드를 기본 상태로 초기화할까요?");
   if (!ok) return;
-
   state = createDefaultState();
   resetTemplateForm();
   render();
   await saveNow();
 });
 
-/* =========================
-   초기 렌더링
-   ========================= */
 render();
