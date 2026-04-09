@@ -1,12 +1,12 @@
 const STORAGE_KEY = "curriculum-board-v4";
 
 const defaultSubjects = [
-  { nameKo: "영어 7", nameEn: "English 7", teacher: "", language: "English" },
-  { nameKo: "수학 7", nameEn: "Math 7", teacher: "", language: "Both" },
-  { nameKo: "과학 7", nameEn: "Science 7", teacher: "", language: "Both" },
-  { nameKo: "성경 7", nameEn: "Bible 7", teacher: "", language: "English" },
-  { nameKo: "체육 7", nameEn: "PE 7", teacher: "", language: "Korean" },
-  { nameKo: "미술 7", nameEn: "Art 7", teacher: "", language: "Korean" }
+  { nameKo: "영어", nameEn: "English", teacher: "", language: "English" },
+  { nameKo: "수학", nameEn: "Math", teacher: "", language: "Both" },
+  { nameKo: "과학", nameEn: "Science", teacher: "", language: "Both" },
+  { nameKo: "성경", nameEn: "Bible", teacher: "", language: "English" },
+  { nameKo: "체육", nameEn: "PE", teacher: "", language: "Korean" },
+  { nameKo: "미술", nameEn: "Art", teacher: "", language: "Korean" }
 ];
 
 const pool = document.getElementById("cardPool");
@@ -233,9 +233,9 @@ function createCardElement(card) {
 
   const meta = document.createElement("div");
   meta.className = "card-meta";
-  meta.appendChild(createMetaBadge(`언어: ${card.language}`));
+  meta.appendChild(createMetaBadge(`${card.language}`));
   if (card.teacher) {
-    meta.appendChild(createMetaBadge(`교사: ${card.teacher}`));
+    meta.appendChild(createMetaBadge(`${card.teacher}`));
   }
 
   const actions = document.createElement("div");
