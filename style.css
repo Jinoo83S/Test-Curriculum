@@ -687,3 +687,30 @@ button {
   .main-panel { height: 80vh; }
   .grade-column { min-width: 240px; }
 }
+
+
+/* ── GPT - 지금처럼 한 줄 유지 + 말줄임표 ── */
+/* 긴 과목명이 칸 밖으로 밀려나지 않게 */
+.drop-cell {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.placed-card {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.placed-top,
+.placed-title-wrap,
+.placed-meta {
+  min-width: 0;
+}
+
+.placed-meta .meta-chip {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
