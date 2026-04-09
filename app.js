@@ -954,3 +954,64 @@ resetBoardBtn.addEventListener("click", async () => {
 });
 
 render();
+
+function exportCSV() {
+  const grades = GRADE_GROUPS[activeTab];
+  const rows = [["학년", "범주", "구분", "교과군", "1학기(한글)", "1학기(영어)", "2학기(한글)", "2학기(영어)", "시수"]];
+
+  grades.forEach((grade) => {
+    state.gradeBoards[grade].forEach((row) => {
+      const sem1 = getTemplateById(row.sem1);
+      const sem2 = getTemplateById(row.sem2);
+      rows.push([
+        grade,
+        row.category,
+        row.track,
+        row.group,
+        sem1?.nameKo || "",
+        sem1?.nameEn || "",
+        sem2?.nameKo || "",
+        sem2?.nameEn || "",
+        row.credits
+      ]);
+    });
+  });
+
+  const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Korean
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `HIS_Curriculum_${activeTab}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
+
+function exportXLSX() {
+  const wb = XLSX.utils.book_new();
+  const grades = GRADE_GROUPS[activeTab];
+
+  const wsData = [["학년", "범주", "구분", "교과군", "1학기(한글)", "1학기(영어)", "2학기(한글)", "2학기(영어)", "시수"]];
+
+  grades.forEach((grade) => {
+    state.gradeBoards[grade].forEach((row) => {
+      const sem1 = getTemplateById(row.sem1);
+      const sem2 = getTemplateById(row.sem2);
+      wsData.push([
+        grade, row.category, row.track, row.group,
+        sem1?.nameKo || "", sem1?.nameEn || "",
+        sem2?.nameKo || "", sem2?.nameEn || "",
+        row.credits
+      ]);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  ws["!cols"] = [10, 8, 8, 12, 18, 22, 18, 22, 6].map((w) => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws, activeTab === "tab7to9" ? "7-9학년" : "10-12학년");
+  XLSX.writeFile(wb, `HIS_Curriculum.xlsx`);
+}
+
+document.getElementById("exportXlsxBtn").addEventListener("click", exportXLSX);

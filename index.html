@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS Curriculum</title>
   <link rel="stylesheet" href="style.css" />
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+
 </head>
 <body>
   <header class="topbar">
@@ -15,6 +18,8 @@
 
     <div class="topbar-right">
       <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
+      <button id="exportXlsxBtn" class="secondary-btn">엑셀 내보내기</button>
+      <button id="exportCsvBtn" class="secondary-btn">CSV 내보내기</button>
       <button id="loginBtn" class="primary-btn">Google 로그인</button>
       <button id="logoutBtn" class="secondary-btn hidden">로그아웃</button>
       <button id="resetBoardBtn" class="danger-btn">전체 초기화</button>
