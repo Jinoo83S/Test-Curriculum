@@ -597,6 +597,26 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
 
   card.appendChild(top);
   card.appendChild(meta);
+
+  // 기본은 접힌 상태 (영어명, 교사 숨김)
+  meta.classList.add("placed-meta-hidden");
+  en.classList.add("placed-title-en-hidden");
+
+  card.addEventListener("click", (e) => {
+    if (e.target.closest("button")) return;
+    const isExpanded = card.classList.toggle("placed-expanded");
+    meta.classList.toggle("placed-meta-hidden", !isExpanded);
+    en.classList.toggle("placed-title-en-hidden", !isExpanded);
+    // 같은 보드 내 다른 카드는 닫기
+    document.querySelectorAll(".placed-card.placed-expanded").forEach((other) => {
+      if (other !== card) {
+        other.classList.remove("placed-expanded");
+        other.querySelector(".placed-meta")?.classList.add("placed-meta-hidden");
+        other.querySelector(".placed-title-en")?.classList.add("placed-title-en-hidden");
+      }
+    });
+  });
+
   return card;
 }
 
@@ -649,7 +669,7 @@ const colResizeState = new WeakMap();
 
 function applyColWidths(column, widths) {
   const tpl = widths.join(" ");
-  column.querySelectorAll(".grade-header-row, .grade-data-row").forEach((row) => {
+  column.querySelectorAll(".grade-header-row, .grade-data-row, .grade-summary-row").forEach((row) => {
     row.style.gridTemplateColumns = tpl;
   });
 }
@@ -1023,7 +1043,7 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-document.getElementById("exportXlsxBtn").addEventListener("click", exportXLSX);
+document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
 
 function exportXLSX() {
   const wb = XLSX.utils.book_new();
@@ -1049,3 +1069,5 @@ function exportXLSX() {
   XLSX.utils.book_append_sheet(wb, ws, activeTab === "tab7to9" ? "7-9학년" : "10-12학년");
   XLSX.writeFile(wb, `HIS_Curriculum.xlsx`);
 }
+
+document.getElementById("exportXlsxBtn").addEventListener("click", exportXLSX);
