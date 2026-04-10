@@ -156,11 +156,10 @@ button {
 }
 
 /* ── Template Cards ── */
-/* ── Template Cards ── */
 .template-list {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 4px;
 }
 
@@ -186,7 +185,7 @@ button {
 
 .template-main {
   min-width: 0;
-  padding: 6px 8px;
+  padding: 5px 7px;
 }
 
 .template-name-ko {
@@ -210,12 +209,17 @@ button {
 .template-card.expanded {
   background: #eef5ff;
   border-color: #60a5fa;
+  grid-column: 1 / -1;  /* 확장 시 2열 전체 차지 */
+}
+
+.template-card.expanded .template-name-ko {
+  white-space: normal;  /* 확장 시 줄바꿈 허용 */
 }
 
 .template-card.expanded .template-actions {
   display: flex;
   gap: 4px;
-  padding: 0 8px 8px;
+  padding: 0 7px 6px;
 }
 
 .template-actions button {
@@ -490,23 +494,12 @@ button {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  cursor: pointer;
+  cursor: grab;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  transition: box-shadow 0.15s;
 }
 
 .placed-card:hover {
   box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-}
-
-.placed-card.placed-expanded {
-  background: #f0f6ff;
-  box-shadow: 0 2px 8px rgba(37,99,235,0.15);
-}
-
-/* 교사/언어 칩 숨김 (클릭 전) */
-.placed-meta-hidden {
-  display: none !important;
 }
 
 .placed-top {
@@ -722,53 +715,7 @@ button {
 }
 
 
-/* C. 카드 내부가 줄어들 수 있게 설정 */
-.template-card {
-  min-width: 0;
-  height: 100%;
-}
-
-.template-main {
-  min-width: 0;
-}
-
-.template-name-ko,
-.template-name-en {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.template-meta {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.template-meta .meta-chip {
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.template-actions {
-  margin-top: auto;
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-/* 그룹 분리 1*/
-/*.track-group-divider {
-  padding: 4px 10px;
-  background: #eef4ff;
-  color: #1e3a5f;
-  font-size: 11px;
-  font-weight: 700;
-  border-top: 1px solid #c7d2e8;
-  border-bottom: 1px solid #dbe2ef;
-}*/
-
-/* 그룹 분리 2*/
+/* ── Track Group Divider ── */
 .track-group-divider {
   padding: 5px 10px;
   background: #e8f0ff;
@@ -780,7 +727,6 @@ button {
   letter-spacing: 0.2px;
 }
 
-/* 그룹 헤더 바로아래칸 - 그룹 헤더 바로 아래 첫 행이 더 붙어 보이게 하려면:*/
 .track-group-divider + .grade-data-row {
   border-top: none;
 }
