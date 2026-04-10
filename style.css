@@ -504,11 +504,7 @@ button {
   box-shadow: 0 2px 8px rgba(37,99,235,0.15);
 }
 
-/* 기본 숨김 */
-.placed-title-en-hidden {
-  display: none !important;
-}
-
+/* 교사/언어 칩 숨김 (클릭 전) */
 .placed-meta-hidden {
   display: none !important;
 }
