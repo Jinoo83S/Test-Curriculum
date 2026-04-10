@@ -649,7 +649,7 @@ const colResizeState = new WeakMap();
 
 function applyColWidths(column, widths) {
   const tpl = widths.join(" ");
-  column.querySelectorAll(".grade-header-row, .grade-data-row, .grade-summary-row").forEach((row) => {
+  column.querySelectorAll(".grade-header-row, .grade-data-row").forEach((row) => {
     row.style.gridTemplateColumns = tpl;
   });
 }
@@ -1023,7 +1023,7 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
+document.getElementById("exportXlsxBtn").addEventListener("click", exportXLSX);
 
 function exportXLSX() {
   const wb = XLSX.utils.book_new();
@@ -1049,5 +1049,3 @@ function exportXLSX() {
   XLSX.utils.book_append_sheet(wb, ws, activeTab === "tab7to9" ? "7-9학년" : "10-12학년");
   XLSX.writeFile(wb, `HIS_Curriculum.xlsx`);
 }
-
-document.getElementById("exportXlsxBtn").addEventListener("click", exportXLSX);
