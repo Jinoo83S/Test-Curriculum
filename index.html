@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS Curriculum</title>
   <link rel="stylesheet" href="style.css" />
-
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-
 </head>
 <body>
   <header class="topbar">
@@ -18,11 +16,10 @@
 
     <div class="topbar-right">
       <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
-      <button id="exportXlsxBtn" class="secondary-btn">엑셀 내보내기</button>
-      <!-- /* <button id="exportCsvBtn" class="secondary-btn">CSV 내보내기</button> */-->
-      <button id="loginBtn" class="primary-btn">Google 로그인</button>
-      <button id="logoutBtn" class="secondary-btn hidden">로그아웃</button>
-      <button id="resetBoardBtn" class="danger-btn">전체 초기화</button>
+      <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
+      <button id="loginBtn" class="primary-btn" type="button">Google 로그인</button>
+      <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
+      <button id="resetBoardBtn" class="danger-btn" type="button">전체 초기화</button>
     </div>
   </header>
 
@@ -32,31 +29,31 @@
         <h2>과목 카드</h2>
 
         <div id="templateList" class="template-list"></div>
-        <div><br></div>
+        <div class="section-gap"></div>
 
-        <div id="commonTemplateFields" class="form-grid template-fields-wrap">
+        <div id="commonTemplateFields" class="form-grid">
           <input id="templateNameKo" type="text" placeholder="한글 이름" />
           <input id="templateNameEn" type="text" placeholder="영어 이름" />
           <input id="templateTeacher" type="text" placeholder="교사" />
         </div>
 
-        <label class="template-mode-toggle">
+        <label class="semester-mode-toggle">
           <input id="templateSeparateSemesters" type="checkbox" />
           <span>1·2학기 이름/교사가 다를 때 따로 입력</span>
         </label>
 
-        <div id="semesterTemplateFields" class="semester-template-fields hidden">
-          <div class="semester-block">
-            <div class="semester-block-title">1학기</div>
-            <div class="form-grid template-fields-wrap">
+        <div id="semesterTemplateFields" class="semester-fields hidden">
+          <div class="semester-field-card">
+            <div class="semester-field-title">1학기</div>
+            <div class="form-grid">
               <input id="templateSem1NameKo" type="text" placeholder="1학기 한글 이름" />
               <input id="templateSem1NameEn" type="text" placeholder="1학기 영어 이름" />
               <input id="templateSem1Teacher" type="text" placeholder="1학기 교사" />
             </div>
           </div>
-          <div class="semester-block">
-            <div class="semester-block-title">2학기</div>
-            <div class="form-grid template-fields-wrap">
+          <div class="semester-field-card">
+            <div class="semester-field-title">2학기</div>
+            <div class="form-grid">
               <input id="templateSem2NameKo" type="text" placeholder="2학기 한글 이름" />
               <input id="templateSem2NameEn" type="text" placeholder="2학기 영어 이름" />
               <input id="templateSem2Teacher" type="text" placeholder="2학기 교사" />
@@ -64,7 +61,7 @@
           </div>
         </div>
 
-        <div class="form-grid" style="margin-top:6px;">
+        <div class="form-grid form-grid-tight">
           <select id="templateLanguage">
             <option value="Korean">Korean</option>
             <option value="English">English</option>
@@ -73,10 +70,9 @@
         </div>
 
         <div class="button-row">
-          <button id="templateSubmitBtn" class="primary-btn">카드 추가</button>
-          <button id="templateCancelBtn" class="secondary-btn hidden">수정 취소</button>
+          <button id="templateSubmitBtn" class="primary-btn" type="button">카드 추가</button>
+          <button id="templateCancelBtn" class="secondary-btn hidden" type="button">수정 취소</button>
         </div>
-
       </section>
 
       <section class="panel">
@@ -87,7 +83,7 @@
           <div id="categoryOptionList" class="option-list"></div>
           <div class="inline-form">
             <input id="categoryOptionInput" type="text" placeholder="예: 교과" />
-            <button id="addCategoryOptionBtn" class="primary-btn">추가</button>
+            <button id="addCategoryOptionBtn" class="primary-btn" type="button">추가</button>
           </div>
         </div>
 
@@ -96,7 +92,7 @@
           <div id="trackOptionList" class="option-list"></div>
           <div class="inline-form">
             <input id="trackOptionInput" type="text" placeholder="예: 공통" />
-            <button id="addTrackOptionBtn" class="primary-btn">추가</button>
+            <button id="addTrackOptionBtn" class="primary-btn" type="button">추가</button>
           </div>
         </div>
 
@@ -105,7 +101,7 @@
           <div id="groupOptionList" class="option-list"></div>
           <div class="inline-form">
             <input id="groupOptionInput" type="text" placeholder="예: 영어" />
-            <button id="addGroupOptionBtn" class="primary-btn">추가</button>
+            <button id="addGroupOptionBtn" class="primary-btn" type="button">추가</button>
           </div>
         </div>
       </section>
