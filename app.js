@@ -70,6 +70,7 @@ const DEFAULT_OPTIONS = {
   track: ["공통", "배정", "선택"],
   group: ["국어", "영어", "수학", "사회", "과학", "정보", "예술", "체육", "성경", "창체", "기타"]
 };
+const DEFAULT_ROW_COUNT = 4;
 
 function uid(prefix = "id") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -99,7 +100,7 @@ function createRow(options = DEFAULT_OPTIONS) {
 function createDefaultState() {
   const gradeBoards = {};
   GRADE_KEYS.forEach((grade) => {
-    gradeBoards[grade] = [createRow(), createRow(), createRow(), createRow()];
+    gradeBoards[grade] = Array.from({ length: DEFAULT_ROW_COUNT }, () => createRow(DEFAULT_OPTIONS));
   });
 
   return {
@@ -168,7 +169,7 @@ function normalizeState(raw = {}) {
     const rows = Array.isArray(raw.gradeBoards?.[grade]) ? raw.gradeBoards[grade] : [];
     safeBoards[grade] = rows.length
       ? rows.map((row) => normalizeRow(row, safeOptions))
-      : [createRow(safeOptions), createRow(safeOptions), createRow(safeOptions)];
+      : Array.from({ length: DEFAULT_ROW_COUNT }, () => createRow(safeOptions));
   });
 
   return {
@@ -530,8 +531,19 @@ function movePlacedCard(sourceGrade, sourceRowId, sourceSemKey, targetGrade, tar
   const sourceRow = state.gradeBoards[sourceGrade].find((row) => row.id === sourceRowId);
   const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
   if (!sourceRow || !targetRow) return;
+
+  if (
+    sourceGrade === targetGrade &&
+    sourceRowId === targetRowId &&
+    sourceSemKey === targetSemKey
+  ) {
+    return;
+  }
+
   const movingTemplateId = sourceRow[sourceSemKey];
-  sourceRow[sourceSemKey] = null;
+  const replacedTemplateId = targetRow[targetSemKey] || null;
+
+  sourceRow[sourceSemKey] = replacedTemplateId;
   targetRow[targetSemKey] = movingTemplateId;
   render();
   scheduleSave();
@@ -541,6 +553,19 @@ function placeTemplateToCell(templateId, targetGrade, targetRowId, targetSemKey)
   if (!canEdit()) return;
   const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
   if (!targetRow) return;
+
+  const existingTemplateId = targetRow[targetSemKey];
+  if (existingTemplateId && existingTemplateId !== templateId) {
+    const existingTemplate = getTemplateById(existingTemplateId);
+    const movingTemplate = getTemplateById(templateId);
+    const ok = confirm(
+      `이미 "${existingTemplate?.nameKo || existingTemplate?.nameEn || "과목"}" 카드가 있습니다.
+` +
+      `"${movingTemplate?.nameKo || movingTemplate?.nameEn || "새 카드"}" 카드로 바꿀까요?`
+    );
+    if (!ok) return;
+  }
+
   targetRow[targetSemKey] = templateId;
   render();
   scheduleSave();
@@ -733,6 +758,72 @@ function initColResize(column, headerRow) {
   });
 }
 
+function createSpacerGradeRow() {
+  const row = document.createElement("div");
+  row.className = "grade-data-row spacer-row";
+  for (let i = 0; i < 7; i += 1) {
+    const cell = document.createElement("div");
+    cell.className = "spacer-cell";
+    row.appendChild(cell);
+  }
+  return row;
+}
+
+function getUnknownOrderedValues(values, knownOrder) {
+  const known = new Set(knownOrder);
+  return values.filter((value, index) => value && !known.has(value) && values.indexOf(value) === index);
+}
+
+function getVisibleCategoryOrder(visibleGrades) {
+  const visibleRows = visibleGrades.flatMap((grade) => state.gradeBoards[grade] || []);
+  const visibleCategories = visibleRows.map((row) => row.category).filter(Boolean);
+  return [
+    ...state.options.category.filter((category) => visibleCategories.includes(category)),
+    ...getUnknownOrderedValues(visibleCategories, state.options.category)
+  ];
+}
+
+function getVisibleTrackOrder(visibleGrades, category) {
+  const tracks = visibleGrades.flatMap((grade) =>
+    (state.gradeBoards[grade] || [])
+      .filter((row) => row.category === category)
+      .map((row) => row.track)
+      .filter(Boolean)
+  );
+
+  return [
+    ...state.options.track.filter((track) => tracks.includes(track)),
+    ...getUnknownOrderedValues(tracks, state.options.track)
+  ];
+}
+
+function getAlignedBoardBlueprint(visibleGrades) {
+  const categories = getVisibleCategoryOrder(visibleGrades);
+  const blueprint = [];
+
+  categories.forEach((category) => {
+    const tracks = getVisibleTrackOrder(visibleGrades, category);
+    tracks.forEach((track) => {
+      const rowsByGrade = {};
+      let maxRows = 0;
+
+      visibleGrades.forEach((grade) => {
+        const rows = (state.gradeBoards[grade] || []).filter(
+          (row) => row.category === category && row.track === track
+        );
+        rowsByGrade[grade] = rows;
+        maxRows = Math.max(maxRows, rows.length);
+      });
+
+      if (maxRows > 0) {
+        blueprint.push({ category, track, maxRows, rowsByGrade });
+      }
+    });
+  });
+
+  return blueprint;
+}
+
 function createGradeHeader(column) {
   const row = document.createElement("div");
   row.className = "grade-header-row";
@@ -855,26 +946,36 @@ function createSummarySection(grade) {
 
     const label = document.createElement("div");
     label.className = "summary-cell summary-label summary-category";
+    label.style.gridColumn = "1 / 2";
     label.textContent = summary.category;
     row.appendChild(label);
 
+    const emptyTrack = document.createElement("div");
+    emptyTrack.className = "summary-cell summary-spacer";
+    emptyTrack.style.gridColumn = "2 / 3";
+    row.appendChild(emptyTrack);
+
+    const emptyGroup = document.createElement("div");
+    emptyGroup.className = "summary-cell summary-spacer";
+    emptyGroup.style.gridColumn = "3 / 4";
+    row.appendChild(emptyGroup);
+
     const courseCell = document.createElement("div");
     courseCell.className = "summary-cell";
+    courseCell.style.gridColumn = "4 / 6";
     courseCell.textContent = `Total #Courses ${summary.totalCourses}`;
     row.appendChild(courseCell);
 
     const creditCell = document.createElement("div");
     creditCell.className = "summary-cell";
+    creditCell.style.gridColumn = "6 / 7";
     creditCell.textContent = `Total #Credits ${summary.totalCredits}`;
     row.appendChild(creditCell);
 
-    const spacer1 = document.createElement("div");
-    spacer1.className = "summary-spacer";
-    row.appendChild(spacer1);
-
-    const spacer2 = document.createElement("div");
-    spacer2.className = "summary-spacer";
-    row.appendChild(spacer2);
+    const emptyDelete = document.createElement("div");
+    emptyDelete.className = "summary-cell summary-spacer";
+    emptyDelete.style.gridColumn = "7 / 8";
+    row.appendChild(emptyDelete);
 
     wrap.appendChild(row);
   });
@@ -885,6 +986,8 @@ function createSummarySection(grade) {
 function renderGradeBoard() {
   gradeBoard.innerHTML = "";
   const visibleGrades = GRADE_GROUPS[activeTab];
+  const alignedBlueprint = getAlignedBoardBlueprint(visibleGrades);
+  const columnMap = new Map();
 
   visibleGrades.forEach((grade) => {
     const column = document.createElement("section");
@@ -898,47 +1001,26 @@ function renderGradeBoard() {
     const headerRow = createGradeHeader(column);
     column.appendChild(headerRow);
 
-  // 1단계: category 순서대로, 2단계: 그 안에서 track 순서대로 그룹핑
-  const rows = state.gradeBoards[grade];
-  const categoryOrder = state.options.category;
-  const trackOrder = state.options.track;
-
-  categoryOrder.forEach((category) => {
-    const categoryRows = rows.filter((r) => r.category === category);
-    if (categoryRows.length === 0) return;
-
-
-    // 그 안에서 track별로 묶기
-    trackOrder.forEach((track) => {
-      const trackRows = categoryRows.filter((r) => r.track === track);
-      if (trackRows.length === 0) return;
-
-      // 구분 헤더 (작은)
-      column.appendChild(createTrackGroupDivider(track));
-      trackRows.forEach((rowData) => {
-        column.appendChild(createGradeRow(grade, rowData));
-      });
-    });
-
-    // track 옵션에 없는 값 처리 (기타)
-    const knownTracks = new Set(trackOrder);
-    const unknownRows = categoryRows.filter((r) => !knownTracks.has(r.track));
-    if (unknownRows.length > 0) {
-      column.appendChild(createTrackGroupDivider("-"));
-      unknownRows.forEach((rowData) => {
-        column.appendChild(createGradeRow(grade, rowData));
-      });
-    }
+    gradeBoard.appendChild(column);
+    initColResize(column, headerRow);
+    columnMap.set(grade, column);
   });
 
-  // category 옵션에 없는 값 처리 (기타)
-  const knownCategories = new Set(categoryOrder);
-  const unknownCatRows = rows.filter((r) => !knownCategories.has(r.category));
-  if (unknownCatRows.length > 0) {
-    unknownCatRows.forEach((rowData) => {
-      column.appendChild(createGradeRow(grade, rowData));
+  alignedBlueprint.forEach(({ track, maxRows, rowsByGrade }) => {
+    visibleGrades.forEach((grade) => {
+      const column = columnMap.get(grade);
+      column.appendChild(createTrackGroupDivider(track));
+
+      const rows = rowsByGrade[grade] || [];
+      for (let i = 0; i < maxRows; i += 1) {
+        const rowData = rows[i];
+        column.appendChild(rowData ? createGradeRow(grade, rowData) : createSpacerGradeRow());
+      }
     });
-  }
+  });
+
+  visibleGrades.forEach((grade) => {
+    const column = columnMap.get(grade);
 
     const footer = document.createElement("div");
     footer.className = "grade-footer";
@@ -953,9 +1035,6 @@ function renderGradeBoard() {
     footer.appendChild(addBtn);
     column.appendChild(footer);
     column.appendChild(createSummarySection(grade));
-
-    gradeBoard.appendChild(column);
-    initColResize(column, headerRow);
   });
 }
 
