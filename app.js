@@ -451,8 +451,13 @@ function createTemplateCard(item) {
     btn.addEventListener("mousedown", (e) => e.stopPropagation())
   );
 
+  const teacherInfo = document.createElement("span");
+  teacherInfo.className = "template-teacher-inline";
+  teacherInfo.textContent = `교사: ${item.teacher || "-"}`;
+
   actions.appendChild(editBtn);
   actions.appendChild(deleteBtn);
+  actions.appendChild(teacherInfo);
 
   card.appendChild(main);
   card.appendChild(actions);

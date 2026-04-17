@@ -218,7 +218,9 @@ button {
 
 .template-card.expanded .template-actions {
   display: flex;
+  align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
   padding: 0 7px 6px;
 }
 
@@ -226,6 +228,21 @@ button {
   padding: 2px 7px;
   font-size: 10px;
   border-radius: 5px;
+}
+
+.template-teacher-inline {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .edit-btn   { background: #fef3c7; color: #92400e; }
@@ -401,12 +418,38 @@ button {
   background: #f0f6ff;
 }
 
+.grade-data-row.spacer-row {
+  position: relative;
+  background: #eef2f7 !important;
+}
+
 .grade-data-row.spacer-row:hover {
-  background: transparent;
+  background: #eef2f7 !important;
 }
 
 .spacer-cell {
-  border-right: 1px solid #e5e7eb;
+  position: relative;
+  border-right: 1px solid #d8dee9;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.spacer-cell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(135deg, rgba(148, 163, 184, 0.20), rgba(226, 232, 240, 0.38)),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255,255,255,0.18) 0,
+      rgba(255,255,255,0.18) 8px,
+      rgba(148,163,184,0.06) 8px,
+      rgba(148,163,184,0.06) 16px
+    );
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
 }
 
 .spacer-cell:last-child {
