@@ -758,7 +758,13 @@ function createGradeRow(grade, rowData) {
   const row = document.createElement("div");
   row.className = "grade-data-row";
 
-  row.appendChild(createSelect(state.options.category, rowData.category, (value) => updateRowField(grade, rowData.id, "category", value)));
+  const categorySelect = createSelect(
+    state.options.category,
+    rowData.category,
+    (value) => updateRowField(grade, rowData.id, "category", value)
+  );
+  styleCategorySelect(categorySelect, rowData.category);
+  row.appendChild(categorySelect);
   row.appendChild(createSelect(state.options.track, rowData.track, (value) => updateRowField(grade, rowData.id, "track", value)));
   row.appendChild(createSelect(state.options.group, rowData.group, (value) => updateRowField(grade, rowData.id, "group", value)));
   row.appendChild(createDropCell(grade, rowData.id, "sem1", rowData.sem1));
@@ -784,19 +790,35 @@ function createGradeRow(grade, rowData) {
   return row;
 }
 
-/* 그룹 헤더 함수 */
-function createCategoryGroupDivider(category) {
-  const divider = document.createElement("div");
-  divider.className = "category-group-divider";
-  divider.textContent = category || "범주 없음";
-  return divider;
-}
-
 function createTrackGroupDivider(track) {
   const divider = document.createElement("div");
   divider.className = "track-group-divider";
   divider.textContent = track || "구분 없음";
   return divider;
+}
+
+const CATEGORY_PALETTE = [
+  { bg: "#dbeafe", text: "#1e3a8a" },
+  { bg: "#dcfce7", text: "#166534" },
+  { bg: "#fef3c7", text: "#92400e" },
+  { bg: "#fce7f3", text: "#9d174d" },
+  { bg: "#ede9fe", text: "#5b21b6" },
+  { bg: "#cffafe", text: "#155e75" }
+];
+
+function getCategoryColor(category) {
+  const index = state.options.category.indexOf(category);
+  if (index < 0) {
+    return { bg: "#f3f4f6", text: "#374151" };
+  }
+  return CATEGORY_PALETTE[index % CATEGORY_PALETTE.length];
+}
+
+function styleCategorySelect(select, category) {
+  const color = getCategoryColor(category);
+  select.classList.add("category-select");
+  select.style.backgroundColor = color.bg;
+  select.style.color = color.text;
 }
 
 
@@ -885,9 +907,6 @@ function renderGradeBoard() {
     const categoryRows = rows.filter((r) => r.category === category);
     if (categoryRows.length === 0) return;
 
-    // 범주 헤더 (큰)
-    column.appendChild(createCategoryGroupDivider(category));
-
     // 그 안에서 track별로 묶기
     trackOrder.forEach((track) => {
       const trackRows = categoryRows.filter((r) => r.track === track);
@@ -915,7 +934,6 @@ function renderGradeBoard() {
   const knownCategories = new Set(categoryOrder);
   const unknownCatRows = rows.filter((r) => !knownCategories.has(r.category));
   if (unknownCatRows.length > 0) {
-    column.appendChild(createCategoryGroupDivider("기타"));
     unknownCatRows.forEach((rowData) => {
       column.appendChild(createGradeRow(grade, rowData));
     });
@@ -1106,7 +1124,10 @@ function exportCSV() {
   URL.revokeObjectURL(url);
 }
 
-document.getElementById("exportCsvBtn").addEventListener("click", exportCSV);
+const exportCsvBtn = document.getElementById("exportCsvBtn");
+if (exportCsvBtn) {
+  exportCsvBtn.addEventListener("click", exportCSV);
+}
 
 function exportXLSX() {
   const wb = XLSX.utils.book_new();
@@ -1133,4 +1154,7 @@ function exportXLSX() {
   XLSX.writeFile(wb, `HIS_Curriculum.xlsx`);
 }
 
-document.getElementById("exportXlsxBtn").addEventListener("click", exportXLSX);
+const exportXlsxBtn = document.getElementById("exportXlsxBtn");
+if (exportXlsxBtn) {
+  exportXlsxBtn.addEventListener("click", exportXLSX);
+}
