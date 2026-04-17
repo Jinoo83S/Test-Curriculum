@@ -34,10 +34,37 @@
         <div id="templateList" class="template-list"></div>
         <div><br></div>
 
-        <div class="form-grid">
+        <div id="commonTemplateFields" class="form-grid template-fields-wrap">
           <input id="templateNameKo" type="text" placeholder="한글 이름" />
           <input id="templateNameEn" type="text" placeholder="영어 이름" />
           <input id="templateTeacher" type="text" placeholder="교사" />
+        </div>
+
+        <label class="template-mode-toggle">
+          <input id="templateSeparateSemesters" type="checkbox" />
+          <span>1·2학기 이름/교사가 다를 때 따로 입력</span>
+        </label>
+
+        <div id="semesterTemplateFields" class="semester-template-fields hidden">
+          <div class="semester-block">
+            <div class="semester-block-title">1학기</div>
+            <div class="form-grid template-fields-wrap">
+              <input id="templateSem1NameKo" type="text" placeholder="1학기 한글 이름" />
+              <input id="templateSem1NameEn" type="text" placeholder="1학기 영어 이름" />
+              <input id="templateSem1Teacher" type="text" placeholder="1학기 교사" />
+            </div>
+          </div>
+          <div class="semester-block">
+            <div class="semester-block-title">2학기</div>
+            <div class="form-grid template-fields-wrap">
+              <input id="templateSem2NameKo" type="text" placeholder="2학기 한글 이름" />
+              <input id="templateSem2NameEn" type="text" placeholder="2학기 영어 이름" />
+              <input id="templateSem2Teacher" type="text" placeholder="2학기 교사" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grid" style="margin-top:6px;">
           <select id="templateLanguage">
             <option value="Korean">Korean</option>
             <option value="English">English</option>

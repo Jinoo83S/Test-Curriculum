@@ -43,6 +43,16 @@ const templateSubmitBtn = document.getElementById("templateSubmitBtn");
 const templateCancelBtn = document.getElementById("templateCancelBtn");
 const templateList = document.getElementById("templateList");
 
+const commonTemplateFields = document.getElementById("commonTemplateFields");
+const templateSeparateSemesters = document.getElementById("templateSeparateSemesters");
+const semesterTemplateFields = document.getElementById("semesterTemplateFields");
+const templateSem1NameKo = document.getElementById("templateSem1NameKo");
+const templateSem1NameEn = document.getElementById("templateSem1NameEn");
+const templateSem1Teacher = document.getElementById("templateSem1Teacher");
+const templateSem2NameKo = document.getElementById("templateSem2NameKo");
+const templateSem2NameEn = document.getElementById("templateSem2NameEn");
+const templateSem2Teacher = document.getElementById("templateSem2Teacher");
+
 const categoryOptionList = document.getElementById("categoryOptionList");
 const trackOptionList = document.getElementById("trackOptionList");
 const groupOptionList = document.getElementById("groupOptionList");
@@ -58,6 +68,8 @@ const addGroupOptionBtn = document.getElementById("addGroupOptionBtn");
 const tab7to9Btn = document.getElementById("tab7to9Btn");
 const tab10to12Btn = document.getElementById("tab10to12Btn");
 const gradeBoard = document.getElementById("gradeBoard");
+const exportXlsxBtn = document.getElementById("exportXlsxBtn");
+const exportCsvBtn = document.getElementById("exportCsvBtn");
 
 const GRADE_KEYS = ["7학년", "8학년", "9학년", "10학년", "11학년", "12학년"];
 const GRADE_GROUPS = {
@@ -71,17 +83,23 @@ const DEFAULT_OPTIONS = {
   group: ["국어", "영어", "수학", "사회", "과학", "정보", "예술", "체육", "성경", "창체", "기타"]
 };
 const DEFAULT_ROW_COUNT = 4;
+const SEMESTERS = ["sem1", "sem2"];
+const SEMESTER_LABELS = { sem1: "1학기", sem2: "2학기" };
 
 function uid(prefix = "id") {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function clean(value) {
+  return String(value ?? "").trim();
+}
+
 function createDefaultTemplates() {
   return [
-    { id: uid("tpl"), nameKo: "영어", nameEn: "English", teacher: "", language: "English" },
-    { id: uid("tpl"), nameKo: "국어", nameEn: "Korean Language Arts", teacher: "", language: "Korean" },
-    { id: uid("tpl"), nameKo: "수학", nameEn: "Mathematics", teacher: "", language: "Both" },
-    { id: uid("tpl"), nameKo: "과학", nameEn: "Science", teacher: "", language: "Both" }
+    { id: uid("tpl"), nameKo: "영어", nameEn: "English", teacher: "", language: "English", useSemesterOverrides: false },
+    { id: uid("tpl"), nameKo: "국어", nameEn: "Korean Language Arts", teacher: "", language: "Korean", useSemesterOverrides: false },
+    { id: uid("tpl"), nameKo: "수학", nameEn: "Mathematics", teacher: "", language: "Both", useSemesterOverrides: false },
+    { id: uid("tpl"), nameKo: "과학", nameEn: "Science", teacher: "", language: "Both", useSemesterOverrides: false }
   ];
 }
 
@@ -92,8 +110,7 @@ function createRow(options = DEFAULT_OPTIONS) {
     track: options.track[0] || "",
     group: options.group[0] || "",
     credits: "",
-    sem1: null,
-    sem2: null
+    templateId: null
   };
 }
 
@@ -122,12 +139,24 @@ let saveTimer = null;
 let activeTab = "tab7to9";
 
 function normalizeTemplate(item = {}) {
+  const useSemesterOverrides = Boolean(
+    item.useSemesterOverrides || item.splitBySemester || item.separateBySemester ||
+    item.sem1NameKo || item.sem1NameEn || item.sem1Teacher || item.sem2NameKo || item.sem2NameEn || item.sem2Teacher
+  );
+
   return {
     id: item.id || uid("tpl"),
-    nameKo: (item.nameKo || "").trim(),
-    nameEn: (item.nameEn || "").trim(),
-    teacher: (item.teacher || "").trim(),
-    language: ["Korean", "English", "Both"].includes(item.language) ? item.language : "Both"
+    language: ["Korean", "English", "Both"].includes(item.language) ? item.language : "Both",
+    useSemesterOverrides,
+    nameKo: clean(item.nameKo),
+    nameEn: clean(item.nameEn),
+    teacher: clean(item.teacher),
+    sem1NameKo: clean(item.sem1NameKo),
+    sem1NameEn: clean(item.sem1NameEn),
+    sem1Teacher: clean(item.sem1Teacher),
+    sem2NameKo: clean(item.sem2NameKo),
+    sem2NameEn: clean(item.sem2NameEn),
+    sem2Teacher: clean(item.sem2Teacher)
   };
 }
 
@@ -135,6 +164,7 @@ function normalizeRow(row = {}, options = DEFAULT_OPTIONS) {
   const safeCategory = options.category.includes(row.category) ? row.category : (options.category[0] || "");
   const safeTrack = options.track.includes(row.track) ? row.track : (options.track[0] || "");
   const safeGroup = options.group.includes(row.group) ? row.group : (options.group[0] || "");
+  const templateId = row.templateId ?? row.sem1 ?? row.sem2 ?? null;
 
   return {
     id: row.id || uid("row"),
@@ -142,22 +172,15 @@ function normalizeRow(row = {}, options = DEFAULT_OPTIONS) {
     track: safeTrack,
     group: safeGroup,
     credits: row.credits ?? "",
-    sem1: row.sem1 ?? null,
-    sem2: row.sem2 ?? null
+    templateId
   };
 }
 
 function normalizeState(raw = {}) {
   const safeOptions = {
-    category: Array.isArray(raw.options?.category) && raw.options.category.length
-      ? [...raw.options.category]
-      : [...DEFAULT_OPTIONS.category],
-    track: Array.isArray(raw.options?.track) && raw.options.track.length
-      ? [...raw.options.track]
-      : [...DEFAULT_OPTIONS.track],
-    group: Array.isArray(raw.options?.group) && raw.options.group.length
-      ? [...raw.options.group]
-      : [...DEFAULT_OPTIONS.group]
+    category: Array.isArray(raw.options?.category) && raw.options.category.length ? [...raw.options.category] : [...DEFAULT_OPTIONS.category],
+    track: Array.isArray(raw.options?.track) && raw.options.track.length ? [...raw.options.track] : [...DEFAULT_OPTIONS.track],
+    group: Array.isArray(raw.options?.group) && raw.options.group.length ? [...raw.options.group] : [...DEFAULT_OPTIONS.group]
   };
 
   const safeTemplates = Array.isArray(raw.templates) && raw.templates.length
@@ -179,8 +202,8 @@ function normalizeState(raw = {}) {
   };
 }
 
-function languageClass(language) {
-  return `lang-${String(language || "both").toLowerCase()}`;
+function ensureStateConsistency() {
+  state = normalizeState(state);
 }
 
 function canEdit() {
@@ -191,23 +214,56 @@ function getTemplateById(templateId) {
   return state.templates.find((item) => item.id === templateId) || null;
 }
 
-function ensureStateConsistency() {
-  state = normalizeState(state);
+function getSemesterTemplateData(templateOrId, semKey) {
+  const item = typeof templateOrId === "string" ? getTemplateById(templateOrId) : templateOrId;
+  if (!item) return { nameKo: "", nameEn: "", teacher: "", language: "Both" };
+
+  if (!item.useSemesterOverrides) {
+    return {
+      nameKo: item.nameKo,
+      nameEn: item.nameEn,
+      teacher: item.teacher,
+      language: item.language
+    };
+  }
+
+  if (semKey === "sem1") {
+    return {
+      nameKo: item.sem1NameKo || item.nameKo,
+      nameEn: item.sem1NameEn || item.nameEn,
+      teacher: item.sem1Teacher || item.teacher,
+      language: item.language
+    };
+  }
+
+  return {
+    nameKo: item.sem2NameKo || item.nameKo,
+    nameEn: item.sem2NameEn || item.nameEn,
+    teacher: item.sem2Teacher || item.teacher,
+    language: item.language
+  };
 }
 
-function scheduleSave() {
-  if (!canEdit()) return;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNow, 250);
+function getTemplateCardTitle(item) {
+  if (!item.useSemesterOverrides) {
+    return item.nameKo || item.nameEn || "-";
+  }
+
+  const sem1 = getSemesterTemplateData(item, "sem1");
+  const sem2 = getSemesterTemplateData(item, "sem2");
+  const left = sem1.nameKo || sem1.nameEn || "-";
+  const right = sem2.nameKo || sem2.nameEn || "-";
+  if (left === right) return left;
+  return `1:${left} / 2:${right}`;
 }
 
-async function saveNow() {
-  if (!canEdit()) return;
-  ensureStateConsistency();
-  await setDoc(boardRef, {
-    state,
-    updatedAt: serverTimestamp()
-  });
+function getTemplateTeacherSummary(item) {
+  if (!item.useSemesterOverrides) {
+    return `교사: ${item.teacher || "-"}`;
+  }
+  const sem1 = getSemesterTemplateData(item, "sem1");
+  const sem2 = getSemesterTemplateData(item, "sem2");
+  return `교사: 1학기 ${sem1.teacher || "-"} · 2학기 ${sem2.teacher || "-"}`;
 }
 
 function updateAuthUI(user) {
@@ -224,20 +280,20 @@ function updateAuthUI(user) {
   }
 }
 
+function toggleSemesterMode() {
+  const separate = templateSeparateSemesters.checked;
+  commonTemplateFields.classList.toggle("hidden", separate);
+  semesterTemplateFields.classList.toggle("hidden", !separate);
+}
+
 function setControlsDisabled(disabled) {
   [
-    templateNameKo,
-    templateNameEn,
-    templateTeacher,
-    templateLanguage,
-    templateSubmitBtn,
-    templateCancelBtn,
-    categoryOptionInput,
-    trackOptionInput,
-    groupOptionInput,
-    addCategoryOptionBtn,
-    addTrackOptionBtn,
-    addGroupOptionBtn,
+    templateNameKo, templateNameEn, templateTeacher, templateLanguage,
+    templateSubmitBtn, templateCancelBtn, templateSeparateSemesters,
+    templateSem1NameKo, templateSem1NameEn, templateSem1Teacher,
+    templateSem2NameKo, templateSem2NameEn, templateSem2Teacher,
+    categoryOptionInput, trackOptionInput, groupOptionInput,
+    addCategoryOptionBtn, addTrackOptionBtn, addGroupOptionBtn,
     resetBoardBtn
   ].forEach((el) => {
     if (el) el.disabled = disabled;
@@ -249,14 +305,34 @@ function resetTemplateForm() {
   templateNameKo.value = "";
   templateNameEn.value = "";
   templateTeacher.value = "";
+  templateSem1NameKo.value = "";
+  templateSem1NameEn.value = "";
+  templateSem1Teacher.value = "";
+  templateSem2NameKo.value = "";
+  templateSem2NameEn.value = "";
+  templateSem2Teacher.value = "";
+  templateSeparateSemesters.checked = false;
   templateLanguage.value = "Korean";
   templateSubmitBtn.textContent = "카드 추가";
   templateCancelBtn.classList.add("hidden");
+  toggleSemesterMode();
+}
+
+function scheduleSave() {
+  if (!canEdit()) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 250);
+}
+
+async function saveNow() {
+  if (!canEdit()) return;
+  ensureStateConsistency();
+  await setDoc(boardRef, { state, updatedAt: serverTimestamp() });
 }
 
 function addOption(type, value) {
   if (!canEdit()) return;
-  const trimmed = value.trim();
+  const trimmed = clean(value);
   if (!trimmed) return;
   if (state.options[type].includes(trimmed)) {
     alert("이미 있는 옵션입니다.");
@@ -302,31 +378,26 @@ function renderOptionChips(container, type) {
     upBtn.type = "button";
     upBtn.className = "order-btn";
     upBtn.textContent = "↑";
-    upBtn.title = "위로";
     upBtn.disabled = !canEdit() || index === 0;
     upBtn.addEventListener("click", () => moveOption(type, index, -1));
-    chip.appendChild(upBtn);
 
     const text = document.createElement("span");
     text.textContent = value;
-    chip.appendChild(text);
 
     const downBtn = document.createElement("button");
     downBtn.type = "button";
     downBtn.className = "order-btn";
     downBtn.textContent = "↓";
-    downBtn.title = "아래로";
     downBtn.disabled = !canEdit() || index === state.options[type].length - 1;
     downBtn.addEventListener("click", () => moveOption(type, index, 1));
-    chip.appendChild(downBtn);
 
-    const del = document.createElement("button");
-    del.type = "button";
-    del.textContent = "×";
-    del.disabled = !canEdit();
-    del.addEventListener("click", () => removeOption(type, value));
-    chip.appendChild(del);
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.textContent = "×";
+    delBtn.disabled = !canEdit();
+    delBtn.addEventListener("click", () => removeOption(type, value));
 
+    chip.append(upBtn, text, downBtn, delBtn);
     container.appendChild(chip);
   });
 }
@@ -334,15 +405,30 @@ function renderOptionChips(container, type) {
 function submitTemplate() {
   if (!canEdit()) return;
 
+  const useSemesterOverrides = templateSeparateSemesters.checked;
   const data = normalizeTemplate({
     id: templateEditId || uid("tpl"),
+    language: templateLanguage.value,
+    useSemesterOverrides,
     nameKo: templateNameKo.value,
     nameEn: templateNameEn.value,
     teacher: templateTeacher.value,
-    language: templateLanguage.value
+    sem1NameKo: templateSem1NameKo.value,
+    sem1NameEn: templateSem1NameEn.value,
+    sem1Teacher: templateSem1Teacher.value,
+    sem2NameKo: templateSem2NameKo.value,
+    sem2NameEn: templateSem2NameEn.value,
+    sem2Teacher: templateSem2Teacher.value
   });
 
-  if (!data.nameKo && !data.nameEn) {
+  if (useSemesterOverrides) {
+    const sem1 = getSemesterTemplateData(data, "sem1");
+    const sem2 = getSemesterTemplateData(data, "sem2");
+    if (!(sem1.nameKo || sem1.nameEn || sem2.nameKo || sem2.nameEn)) {
+      alert("1학기 또는 2학기 과목명을 입력해 주세요.");
+      return;
+    }
+  } else if (!(data.nameKo || data.nameEn)) {
     alert("한글 이름 또는 영어 이름을 입력해 주세요.");
     return;
   }
@@ -367,9 +453,17 @@ function editTemplate(templateId) {
   templateNameKo.value = item.nameKo;
   templateNameEn.value = item.nameEn;
   templateTeacher.value = item.teacher;
+  templateSem1NameKo.value = item.sem1NameKo;
+  templateSem1NameEn.value = item.sem1NameEn;
+  templateSem1Teacher.value = item.sem1Teacher;
+  templateSem2NameKo.value = item.sem2NameKo;
+  templateSem2NameEn.value = item.sem2NameEn;
+  templateSem2Teacher.value = item.sem2Teacher;
+  templateSeparateSemesters.checked = item.useSemesterOverrides;
   templateLanguage.value = item.language;
   templateSubmitBtn.textContent = "카드 수정 저장";
   templateCancelBtn.classList.remove("hidden");
+  toggleSemesterMode();
 }
 
 function deleteTemplate(templateId) {
@@ -377,15 +471,13 @@ function deleteTemplate(templateId) {
   const item = getTemplateById(templateId);
   if (!item) return;
 
-  const ok = confirm(`"${item.nameKo || item.nameEn}" 카드를 삭제할까요?`);
+  const ok = confirm(`"${getTemplateCardTitle(item)}" 카드를 삭제할까요?`);
   if (!ok) return;
 
   state.templates = state.templates.filter((tpl) => tpl.id !== templateId);
-
   GRADE_KEYS.forEach((grade) => {
     state.gradeBoards[grade].forEach((row) => {
-      if (row.sem1 === templateId) row.sem1 = null;
-      if (row.sem2 === templateId) row.sem2 = null;
+      if (row.templateId === templateId) row.templateId = null;
     });
   });
 
@@ -401,6 +493,10 @@ function createMetaChip(text) {
   return chip;
 }
 
+function languageClass(language) {
+  return `lang-${String(language || "both").toLowerCase()}`;
+}
+
 function createTemplateCard(item) {
   const card = document.createElement("div");
   card.className = `template-card compact-card ${languageClass(item.language)}`;
@@ -410,7 +506,6 @@ function createTemplateCard(item) {
     currentDrag = { kind: "template", templateId: item.id };
     card.classList.add("dragging");
   });
-
   card.addEventListener("dragend", () => {
     currentDrag = null;
     card.classList.remove("dragging");
@@ -418,10 +513,9 @@ function createTemplateCard(item) {
 
   const main = document.createElement("div");
   main.className = "template-main";
-
   const ko = document.createElement("div");
   ko.className = "template-name-ko";
-  ko.textContent = item.nameKo || item.nameEn || "-";
+  ko.textContent = getTemplateCardTitle(item);
   main.appendChild(ko);
 
   const actions = document.createElement("div");
@@ -447,33 +541,20 @@ function createTemplateCard(item) {
     deleteTemplate(item.id);
   });
 
-  [editBtn, deleteBtn].forEach((btn) =>
-    btn.addEventListener("mousedown", (e) => e.stopPropagation())
-  );
+  [editBtn, deleteBtn].forEach((btn) => btn.addEventListener("mousedown", (e) => e.stopPropagation()));
 
   const teacherInfo = document.createElement("span");
   teacherInfo.className = "template-teacher-inline";
-  teacherInfo.textContent = `교사: ${item.teacher || "-"}`;
+  teacherInfo.textContent = getTemplateTeacherSummary(item);
 
-  actions.appendChild(editBtn);
-  actions.appendChild(deleteBtn);
-  actions.appendChild(teacherInfo);
-
-  card.appendChild(main);
-  card.appendChild(actions);
+  actions.append(editBtn, deleteBtn, teacherInfo);
+  card.append(main, actions);
 
   card.addEventListener("click", (e) => {
     if (e.target.closest("button")) return;
-
     const wasExpanded = card.classList.contains("expanded");
-
-    document.querySelectorAll(".template-card.expanded").forEach((el) => {
-      el.classList.remove("expanded");
-    });
-
-    if (!wasExpanded) {
-      card.classList.add("expanded");
-    }
+    document.querySelectorAll(".template-card.expanded").forEach((el) => el.classList.remove("expanded"));
+    if (!wasExpanded) card.classList.add("expanded");
   });
 
   return card;
@@ -481,21 +562,17 @@ function createTemplateCard(item) {
 
 function renderTemplates() {
   templateList.innerHTML = "";
+  const sortedTemplates = [...state.templates].sort((a, b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
+  sortedTemplates.forEach((item) => templateList.appendChild(createTemplateCard(item)));
+}
 
-  const sortedTemplates = [...state.templates].sort((a, b) => {
-    const aKey = (a.nameKo || a.nameEn || "").trim();
-    const bKey = (b.nameKo || b.nameEn || "").trim();
-    return aKey.localeCompare(bKey, "ko");
-  });
-
-  sortedTemplates.forEach((item) => {
-    templateList.appendChild(createTemplateCard(item));
-  });
+function getRowById(grade, rowId) {
+  return state.gradeBoards[grade].find((row) => row.id === rowId) || null;
 }
 
 function updateRowField(grade, rowId, field, value) {
   if (!canEdit()) return;
-  const row = state.gradeBoards[grade].find((item) => item.id === rowId);
+  const row = getRowById(grade, rowId);
   if (!row) return;
   row[field] = value;
   ensureStateConsistency();
@@ -503,11 +580,11 @@ function updateRowField(grade, rowId, field, value) {
   scheduleSave();
 }
 
-function clearCell(grade, rowId, semKey) {
+function clearCell(grade, rowId) {
   if (!canEdit()) return;
-  const row = state.gradeBoards[grade].find((item) => item.id === rowId);
+  const row = getRowById(grade, rowId);
   if (!row) return;
-  row[semKey] = null;
+  row.templateId = null;
   render();
   scheduleSave();
 }
@@ -521,57 +598,45 @@ function addRow(grade) {
 
 function deleteRow(grade, rowId) {
   if (!canEdit()) return;
-  const ok = confirm("이 행을 삭제할까요?");
-  if (!ok) return;
+  if (!confirm("이 행을 삭제할까요?")) return;
   state.gradeBoards[grade] = state.gradeBoards[grade].filter((row) => row.id !== rowId);
-  if (state.gradeBoards[grade].length === 0) {
-    state.gradeBoards[grade].push(createRow(state.options));
-  }
+  if (!state.gradeBoards[grade].length) state.gradeBoards[grade].push(createRow(state.options));
   render();
   scheduleSave();
 }
 
-function movePlacedCard(sourceGrade, sourceRowId, sourceSemKey, targetGrade, targetRowId, targetSemKey) {
+function movePlacedCard(sourceGrade, sourceRowId, targetGrade, targetRowId) {
   if (!canEdit()) return;
-  const sourceRow = state.gradeBoards[sourceGrade].find((row) => row.id === sourceRowId);
-  const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
+  const sourceRow = getRowById(sourceGrade, sourceRowId);
+  const targetRow = getRowById(targetGrade, targetRowId);
   if (!sourceRow || !targetRow) return;
+  if (sourceGrade === targetGrade && sourceRowId === targetRowId) return;
 
-  if (
-    sourceGrade === targetGrade &&
-    sourceRowId === targetRowId &&
-    sourceSemKey === targetSemKey
-  ) {
-    return;
-  }
-
-  const movingTemplateId = sourceRow[sourceSemKey];
-  const replacedTemplateId = targetRow[targetSemKey] || null;
-
-  sourceRow[sourceSemKey] = replacedTemplateId;
-  targetRow[targetSemKey] = movingTemplateId;
+  const movingTemplateId = sourceRow.templateId;
+  const replacedTemplateId = targetRow.templateId || null;
+  sourceRow.templateId = replacedTemplateId;
+  targetRow.templateId = movingTemplateId;
   render();
   scheduleSave();
 }
 
-function placeTemplateToCell(templateId, targetGrade, targetRowId, targetSemKey) {
+function placeTemplateToRow(templateId, targetGrade, targetRowId) {
   if (!canEdit()) return;
-  const targetRow = state.gradeBoards[targetGrade].find((row) => row.id === targetRowId);
+  const targetRow = getRowById(targetGrade, targetRowId);
   if (!targetRow) return;
 
-  const existingTemplateId = targetRow[targetSemKey];
+  const existingTemplateId = targetRow.templateId;
   if (existingTemplateId && existingTemplateId !== templateId) {
     const existingTemplate = getTemplateById(existingTemplateId);
     const movingTemplate = getTemplateById(templateId);
     const ok = confirm(
-      `이미 "${existingTemplate?.nameKo || existingTemplate?.nameEn || "과목"}" 카드가 있습니다.
-` +
-      `"${movingTemplate?.nameKo || movingTemplate?.nameEn || "새 카드"}" 카드로 바꿀까요?`
+      `이미 \"${getTemplateCardTitle(existingTemplate)}\" 카드가 있습니다.\n` +
+      `\"${getTemplateCardTitle(movingTemplate)}\" 카드로 바꿀까요?\n(1·2학기 모두 함께 변경됩니다)`
     );
     if (!ok) return;
   }
 
-  targetRow[targetSemKey] = templateId;
+  targetRow.templateId = templateId;
   render();
   scheduleSave();
 }
@@ -596,22 +661,16 @@ function createSelect(options, currentValue, onChange) {
 function createPlacedCard(templateId, grade, rowId, semKey) {
   const item = getTemplateById(templateId);
   if (!item) return document.createTextNode("");
+  const semesterData = getSemesterTemplateData(item, semKey);
 
   const card = document.createElement("div");
-  card.className = `placed-card ${languageClass(item.language)}`;
+  card.className = `placed-card ${languageClass(semesterData.language)}`;
   card.draggable = canEdit();
 
   card.addEventListener("dragstart", () => {
-    currentDrag = {
-      kind: "placed",
-      sourceGrade: grade,
-      sourceRowId: rowId,
-      sourceSemKey: semKey,
-      templateId
-    };
+    currentDrag = { kind: "placed", sourceGrade: grade, sourceRowId: rowId, templateId };
     card.classList.add("dragging");
   });
-
   card.addEventListener("dragend", () => {
     currentDrag = null;
     card.classList.remove("dragging");
@@ -619,20 +678,18 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
 
   const top = document.createElement("div");
   top.className = "placed-top";
-
   const titleWrap = document.createElement("div");
   titleWrap.className = "placed-title-wrap";
 
   const ko = document.createElement("div");
   ko.className = "placed-title-ko";
-  ko.textContent = item.nameKo || "-";
+  ko.textContent = semesterData.nameKo || semesterData.nameEn || "-";
 
   const en = document.createElement("div");
   en.className = "placed-title-en";
-  en.textContent = item.nameEn || "-";
+  en.textContent = semesterData.nameEn || "-";
 
-  titleWrap.appendChild(ko);
-  titleWrap.appendChild(en);
+  titleWrap.append(ko, en);
   top.appendChild(titleWrap);
 
   if (canEdit()) {
@@ -640,30 +697,26 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
     clearBtn.type = "button";
     clearBtn.className = "clear-cell-btn";
     clearBtn.textContent = "×";
+    clearBtn.title = "1·2학기 모두 제거";
     clearBtn.addEventListener("click", (e) => {
       e.stopPropagation();
-      clearCell(grade, rowId, semKey);
+      clearCell(grade, rowId);
     });
     clearBtn.addEventListener("mousedown", (e) => e.stopPropagation());
     top.appendChild(clearBtn);
   }
 
   const meta = document.createElement("div");
-  meta.className = "placed-meta";
-  meta.appendChild(createMetaChip(item.language));
-  if (item.teacher) meta.appendChild(createMetaChip(item.teacher));
+  meta.className = "placed-meta placed-meta-hidden";
+  meta.appendChild(createMetaChip(SEMESTER_LABELS[semKey]));
+  meta.appendChild(createMetaChip(semesterData.language));
+  if (semesterData.teacher) meta.appendChild(createMetaChip(semesterData.teacher));
 
-  card.appendChild(top);
-  card.appendChild(meta);
-
-  // 기본: 교사/언어 칩만 숨김, 영어명은 항상 표시
-  meta.classList.add("placed-meta-hidden");
-
+  card.append(top, meta);
   card.addEventListener("click", (e) => {
     if (e.target.closest("button")) return;
     const isExpanded = card.classList.toggle("placed-expanded");
     meta.classList.toggle("placed-meta-hidden", !isExpanded);
-    // 다른 열린 카드 닫기
     document.querySelectorAll(".placed-card.placed-expanded").forEach((other) => {
       if (other !== card) {
         other.classList.remove("placed-expanded");
@@ -679,20 +732,14 @@ function createDropCell(grade, rowId, semKey, templateId) {
   const cell = document.createElement("div");
   cell.className = templateId ? "drop-cell" : "drop-cell empty";
 
-  if (templateId) {
-    cell.appendChild(createPlacedCard(templateId, grade, rowId, semKey));
-  }
+  if (templateId) cell.appendChild(createPlacedCard(templateId, grade, rowId, semKey));
 
   cell.addEventListener("dragover", (e) => {
     if (!canEdit()) return;
     e.preventDefault();
     cell.classList.add("dragover");
   });
-
-  cell.addEventListener("dragleave", () => {
-    cell.classList.remove("dragover");
-  });
-
+  cell.addEventListener("dragleave", () => cell.classList.remove("dragover"));
   cell.addEventListener("drop", (e) => {
     if (!canEdit()) return;
     e.preventDefault();
@@ -700,26 +747,18 @@ function createDropCell(grade, rowId, semKey, templateId) {
     if (!currentDrag) return;
 
     if (currentDrag.kind === "template") {
-      placeTemplateToCell(currentDrag.templateId, grade, rowId, semKey);
+      placeTemplateToRow(currentDrag.templateId, grade, rowId);
       return;
     }
 
     if (currentDrag.kind === "placed") {
-      movePlacedCard(
-        currentDrag.sourceGrade,
-        currentDrag.sourceRowId,
-        currentDrag.sourceSemKey,
-        grade,
-        rowId,
-        semKey
-      );
+      movePlacedCard(currentDrag.sourceGrade, currentDrag.sourceRowId, grade, rowId);
     }
   });
 
   return cell;
 }
 
-// Column resize state per grade column
 const colResizeState = new WeakMap();
 
 function applyColWidths(column, widths) {
@@ -730,13 +769,12 @@ function applyColWidths(column, widths) {
 }
 
 function initColResize(column, headerRow) {
-  const DEFAULT_WIDTHS = ["52px", "52px", "58px", "1fr", "1fr", "40px", "24px"];
-  const widths = [...DEFAULT_WIDTHS];
+  const defaultWidths = ["52px", "52px", "58px", "1fr", "1fr", "40px", "24px"];
+  const widths = [...defaultWidths];
   colResizeState.set(column, widths);
 
   headerRow.querySelectorAll(".col-resize-handle").forEach((handle, i) => {
     let startX, startW;
-
     handle.addEventListener("mousedown", (e) => {
       e.preventDefault();
       const headerCell = handle.parentElement;
@@ -744,19 +782,16 @@ function initColResize(column, headerRow) {
       startW = headerCell.getBoundingClientRect().width;
       handle.classList.add("resizing");
 
-      function onMove(e) {
-        const delta = e.clientX - startX;
-        const newW = Math.max(36, startW + delta);
-        widths[i] = `${newW}px`;
+      function onMove(ev) {
+        const delta = ev.clientX - startX;
+        widths[i] = `${Math.max(36, startW + delta)}px`;
         applyColWidths(column, widths);
       }
-
       function onUp() {
         handle.classList.remove("resizing");
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
       }
-
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
     });
@@ -795,7 +830,6 @@ function getVisibleTrackOrder(visibleGrades, category) {
       .map((row) => row.track)
       .filter(Boolean)
   );
-
   return [
     ...state.options.track.filter((track) => tracks.includes(track)),
     ...getUnknownOrderedValues(tracks, state.options.track)
@@ -811,60 +845,69 @@ function getAlignedBoardBlueprint(visibleGrades) {
     tracks.forEach((track) => {
       const rowsByGrade = {};
       let maxRows = 0;
-
       visibleGrades.forEach((grade) => {
-        const rows = (state.gradeBoards[grade] || []).filter(
-          (row) => row.category === category && row.track === track
-        );
+        const rows = (state.gradeBoards[grade] || []).filter((row) => row.category === category && row.track === track);
         rowsByGrade[grade] = rows;
         maxRows = Math.max(maxRows, rows.length);
       });
-
-      if (maxRows > 0) {
-        blueprint.push({ category, track, maxRows, rowsByGrade });
-      }
+      if (maxRows > 0) blueprint.push({ category, track, maxRows, rowsByGrade });
     });
   });
 
   return blueprint;
 }
 
-function createGradeHeader(column) {
+function createGradeHeader() {
   const row = document.createElement("div");
   row.className = "grade-header-row";
-
   ["범주", "구분", "교과군", "1학기", "2학기", "시수", ""].forEach((label, i) => {
     const cell = document.createElement("div");
     cell.className = "header-cell";
     cell.textContent = label;
-
-    // Add resize handle to all except last column
     if (i < 6) {
       const handle = document.createElement("div");
       handle.className = "col-resize-handle";
       cell.appendChild(handle);
     }
-
     row.appendChild(cell);
   });
   return row;
+}
+
+const CATEGORY_PALETTE = [
+  { bg: "#dbeafe", text: "#1e3a8a" },
+  { bg: "#dcfce7", text: "#166534" },
+  { bg: "#fef3c7", text: "#92400e" },
+  { bg: "#fce7f3", text: "#9d174d" },
+  { bg: "#ede9fe", text: "#5b21b6" },
+  { bg: "#cffafe", text: "#155e75" }
+];
+
+function getCategoryColor(category) {
+  const index = state.options.category.indexOf(category);
+  if (index < 0) return { bg: "#f3f4f6", text: "#374151" };
+  return CATEGORY_PALETTE[index % CATEGORY_PALETTE.length];
+}
+
+function styleCategorySelect(select, category) {
+  const color = getCategoryColor(category);
+  select.classList.add("category-select");
+  select.style.backgroundColor = color.bg;
+  select.style.color = color.text;
 }
 
 function createGradeRow(grade, rowData) {
   const row = document.createElement("div");
   row.className = "grade-data-row";
 
-  const categorySelect = createSelect(
-    state.options.category,
-    rowData.category,
-    (value) => updateRowField(grade, rowData.id, "category", value)
-  );
+  const categorySelect = createSelect(state.options.category, rowData.category, (value) => updateRowField(grade, rowData.id, "category", value));
   styleCategorySelect(categorySelect, rowData.category);
+
   row.appendChild(categorySelect);
   row.appendChild(createSelect(state.options.track, rowData.track, (value) => updateRowField(grade, rowData.id, "track", value)));
   row.appendChild(createSelect(state.options.group, rowData.group, (value) => updateRowField(grade, rowData.id, "group", value)));
-  row.appendChild(createDropCell(grade, rowData.id, "sem1", rowData.sem1));
-  row.appendChild(createDropCell(grade, rowData.id, "sem2", rowData.sem2));
+  row.appendChild(createDropCell(grade, rowData.id, "sem1", rowData.templateId));
+  row.appendChild(createDropCell(grade, rowData.id, "sem2", rowData.templateId));
 
   const creditInput = document.createElement("input");
   creditInput.className = "credit-input";
@@ -893,53 +936,22 @@ function createTrackGroupDivider(track) {
   return divider;
 }
 
-const CATEGORY_PALETTE = [
-  { bg: "#dbeafe", text: "#1e3a8a" },
-  { bg: "#dcfce7", text: "#166534" },
-  { bg: "#fef3c7", text: "#92400e" },
-  { bg: "#fce7f3", text: "#9d174d" },
-  { bg: "#ede9fe", text: "#5b21b6" },
-  { bg: "#cffafe", text: "#155e75" }
-];
-
-function getCategoryColor(category) {
-  const index = state.options.category.indexOf(category);
-  if (index < 0) {
-    return { bg: "#f3f4f6", text: "#374151" };
-  }
-  return CATEGORY_PALETTE[index % CATEGORY_PALETTE.length];
-}
-
-function styleCategorySelect(select, category) {
-  const color = getCategoryColor(category);
-  select.classList.add("category-select");
-  select.style.backgroundColor = color.bg;
-  select.style.color = color.text;
-}
-
-
 function getGradeSummaryRows(grade) {
   const rows = state.gradeBoards[grade] || [];
   return state.options.category.map((category) => {
-    const matchedRows = rows.filter((row) => row.category === category && (row.sem1 || row.sem2));
+    const matchedRows = rows.filter((row) => row.category === category && row.templateId);
     const totalCourses = matchedRows.length;
     const totalCredits = matchedRows.reduce((sum, row) => {
       const value = Number(String(row.credits).replace(/[^0-9.-]/g, ""));
       return sum + (Number.isFinite(value) ? value : 0);
     }, 0);
-
-    return {
-      category,
-      totalCourses,
-      totalCredits
-    };
+    return { category, totalCourses, totalCredits };
   });
 }
 
 function createSummarySection(grade) {
   const wrap = document.createElement("div");
   wrap.className = "summary-wrap";
-
   const title = document.createElement("div");
   title.className = "summary-title";
   title.textContent = "총과목수 / 이수단위";
@@ -953,35 +965,30 @@ function createSummarySection(grade) {
     label.className = "summary-cell summary-label summary-category";
     label.style.gridColumn = "1 / 2";
     label.textContent = summary.category;
-    row.appendChild(label);
 
     const emptyTrack = document.createElement("div");
     emptyTrack.className = "summary-cell summary-spacer";
     emptyTrack.style.gridColumn = "2 / 3";
-    row.appendChild(emptyTrack);
 
     const emptyGroup = document.createElement("div");
     emptyGroup.className = "summary-cell summary-spacer";
     emptyGroup.style.gridColumn = "3 / 4";
-    row.appendChild(emptyGroup);
 
     const courseCell = document.createElement("div");
     courseCell.className = "summary-cell";
     courseCell.style.gridColumn = "4 / 6";
     courseCell.textContent = `Total #Courses ${summary.totalCourses}`;
-    row.appendChild(courseCell);
 
     const creditCell = document.createElement("div");
     creditCell.className = "summary-cell";
     creditCell.style.gridColumn = "6 / 7";
     creditCell.textContent = `Total #Credits ${summary.totalCredits}`;
-    row.appendChild(creditCell);
 
     const emptyDelete = document.createElement("div");
     emptyDelete.className = "summary-cell summary-spacer";
     emptyDelete.style.gridColumn = "7 / 8";
-    row.appendChild(emptyDelete);
 
+    row.append(label, emptyTrack, emptyGroup, courseCell, creditCell, emptyDelete);
     wrap.appendChild(row);
   });
 
@@ -1002,10 +1009,8 @@ function renderGradeBoard() {
     title.className = "grade-title";
     title.innerHTML = `${grade}<div class="grade-subtitle">Category / Semester / Credits</div>`;
 
-    column.appendChild(title);
-    const headerRow = createGradeHeader(column);
-    column.appendChild(headerRow);
-
+    const headerRow = createGradeHeader();
+    column.append(title, headerRow);
     gradeBoard.appendChild(column);
     initColResize(column, headerRow);
     columnMap.set(grade, column);
@@ -1015,31 +1020,25 @@ function renderGradeBoard() {
     visibleGrades.forEach((grade) => {
       const column = columnMap.get(grade);
       column.appendChild(createTrackGroupDivider(track));
-
       const rows = rowsByGrade[grade] || [];
       for (let i = 0; i < maxRows; i += 1) {
-        const rowData = rows[i];
-        column.appendChild(rowData ? createGradeRow(grade, rowData) : createSpacerGradeRow());
+        column.appendChild(rows[i] ? createGradeRow(grade, rows[i]) : createSpacerGradeRow());
       }
     });
   });
 
   visibleGrades.forEach((grade) => {
     const column = columnMap.get(grade);
-
     const footer = document.createElement("div");
     footer.className = "grade-footer";
-
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "add-row-btn";
     addBtn.textContent = `${grade} 행 추가`;
     addBtn.disabled = !canEdit();
     addBtn.addEventListener("click", () => addRow(grade));
-
     footer.appendChild(addBtn);
-    column.appendChild(footer);
-    column.appendChild(createSummarySection(grade));
+    column.append(footer, createSummarySection(grade));
   });
 }
 
@@ -1078,11 +1077,7 @@ async function logout() {
 }
 
 function subscribeBoard() {
-  if (unsubscribeBoard) {
-    unsubscribeBoard();
-    unsubscribeBoard = null;
-  }
-
+  if (unsubscribeBoard) unsubscribeBoard();
   unsubscribeBoard = onSnapshot(boardRef, async (snapshot) => {
     if (!snapshot.exists()) {
       state = createDefaultState();
@@ -1090,7 +1085,6 @@ function subscribeBoard() {
       await saveNow();
       return;
     }
-
     state = normalizeState(snapshot.data().state || {});
     render();
   }, (error) => {
@@ -1101,7 +1095,6 @@ function subscribeBoard() {
 
 onAuthStateChanged(auth, (user) => {
   updateAuthUI(user);
-
   if (user) {
     subscribeBoard();
   } else {
@@ -1115,92 +1108,32 @@ onAuthStateChanged(auth, (user) => {
   }
 });
 
-loginBtn.addEventListener("click", login);
-logoutBtn.addEventListener("click", logout);
-
-tab7to9Btn.addEventListener("click", () => {
-  activeTab = "tab7to9";
-  render();
-});
-
-tab10to12Btn.addEventListener("click", () => {
-  activeTab = "tab10to12";
-  render();
-});
-
-templateSubmitBtn.addEventListener("click", submitTemplate);
-templateCancelBtn.addEventListener("click", resetTemplateForm);
-
-[templateNameKo, templateNameEn, templateTeacher].forEach((input) => {
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") submitTemplate();
-  });
-});
-
-addCategoryOptionBtn.addEventListener("click", () => {
-  addOption("category", categoryOptionInput.value);
-  categoryOptionInput.value = "";
-  categoryOptionInput.focus();
-});
-
-addTrackOptionBtn.addEventListener("click", () => {
-  addOption("track", trackOptionInput.value);
-  trackOptionInput.value = "";
-  trackOptionInput.focus();
-});
-
-addGroupOptionBtn.addEventListener("click", () => {
-  addOption("group", groupOptionInput.value);
-  groupOptionInput.value = "";
-  groupOptionInput.focus();
-});
-
-[categoryOptionInput, trackOptionInput, groupOptionInput].forEach((input) => {
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      if (input === categoryOptionInput) addCategoryOptionBtn.click();
-      if (input === trackOptionInput) addTrackOptionBtn.click();
-      if (input === groupOptionInput) addGroupOptionBtn.click();
-    }
-  });
-});
-
-resetBoardBtn.addEventListener("click", async () => {
-  if (!canEdit()) return;
-  const ok = confirm("공용 보드를 기본 상태로 초기화할까요?");
-  if (!ok) return;
-  state = createDefaultState();
-  resetTemplateForm();
-  render();
-  await saveNow();
-});
-
-render();
-
 function exportCSV() {
   const grades = GRADE_GROUPS[activeTab];
-  const rows = [["학년", "범주", "구분", "교과군", "1학기(한글)", "1학기(영어)", "2학기(한글)", "2학기(영어)", "시수"]];
+  const rows = [["학년", "범주", "구분", "교과군", "1학기(한글)", "1학기(영어)", "1학기(교사)", "2학기(한글)", "2학기(영어)", "2학기(교사)", "시수"]];
 
   grades.forEach((grade) => {
     state.gradeBoards[grade].forEach((row) => {
-      const sem1 = getTemplateById(row.sem1);
-      const sem2 = getTemplateById(row.sem2);
+      const sem1 = getSemesterTemplateData(row.templateId, "sem1");
+      const sem2 = getSemesterTemplateData(row.templateId, "sem2");
       rows.push([
         grade,
         row.category,
         row.track,
         row.group,
-        sem1?.nameKo || "",
-        sem1?.nameEn || "",
-        sem2?.nameKo || "",
-        sem2?.nameEn || "",
+        sem1.nameKo || "",
+        sem1.nameEn || "",
+        sem1.teacher || "",
+        sem2.nameKo || "",
+        sem2.nameEn || "",
+        sem2.teacher || "",
         row.credits
       ]);
     });
   });
 
   const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Korean
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -1208,37 +1141,96 @@ function exportCSV() {
   a.click();
   URL.revokeObjectURL(url);
 }
-const exportCsvBtn = document.getElementById("exportCsvBtn");
-if (exportCsvBtn) {
-  exportCsvBtn.addEventListener("click", exportCSV);
-}
 
 function exportXLSX() {
   const wb = XLSX.utils.book_new();
   const grades = GRADE_GROUPS[activeTab];
-
-  const wsData = [["학년", "범주", "구분", "교과군", "1학기(한글)", "1학기(영어)", "2학기(한글)", "2학기(영어)", "시수"]];
+  const wsData = [["학년", "범주", "구분", "교과군", "1학기(한글)", "1학기(영어)", "1학기(교사)", "2학기(한글)", "2학기(영어)", "2학기(교사)", "시수"]];
 
   grades.forEach((grade) => {
     state.gradeBoards[grade].forEach((row) => {
-      const sem1 = getTemplateById(row.sem1);
-      const sem2 = getTemplateById(row.sem2);
+      const sem1 = getSemesterTemplateData(row.templateId, "sem1");
+      const sem2 = getSemesterTemplateData(row.templateId, "sem2");
       wsData.push([
-        grade, row.category, row.track, row.group,
-        sem1?.nameKo || "", sem1?.nameEn || "",
-        sem2?.nameKo || "", sem2?.nameEn || "",
+        grade,
+        row.category,
+        row.track,
+        row.group,
+        sem1.nameKo || "",
+        sem1.nameEn || "",
+        sem1.teacher || "",
+        sem2.nameKo || "",
+        sem2.nameEn || "",
+        sem2.teacher || "",
         row.credits
       ]);
     });
   });
 
   const ws = XLSX.utils.aoa_to_sheet(wsData);
-  ws["!cols"] = [10, 8, 8, 12, 18, 22, 18, 22, 6].map((w) => ({ wch: w }));
+  ws["!cols"] = [10, 8, 8, 12, 18, 22, 14, 18, 22, 14, 6].map((w) => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, activeTab === "tab7to9" ? "7-9학년" : "10-12학년");
-  XLSX.writeFile(wb, `HIS_Curriculum.xlsx`);
+  XLSX.writeFile(wb, "HIS_Curriculum.xlsx");
 }
 
-const exportXlsxBtn = document.getElementById("exportXlsxBtn");
-if (exportXlsxBtn) {
-  exportXlsxBtn.addEventListener("click", exportXLSX);
-}
+loginBtn?.addEventListener("click", login);
+logoutBtn?.addEventListener("click", logout);
+exportXlsxBtn?.addEventListener("click", exportXLSX);
+exportCsvBtn?.addEventListener("click", exportCSV);
+
+resetBoardBtn?.addEventListener("click", async () => {
+  if (!canEdit()) return;
+  if (!confirm("공용 보드를 기본 상태로 초기화할까요?")) return;
+  state = createDefaultState();
+  resetTemplateForm();
+  render();
+  await saveNow();
+});
+
+tab7to9Btn?.addEventListener("click", () => {
+  activeTab = "tab7to9";
+  render();
+});
+
+tab10to12Btn?.addEventListener("click", () => {
+  activeTab = "tab10to12";
+  render();
+});
+
+templateSubmitBtn?.addEventListener("click", submitTemplate);
+templateCancelBtn?.addEventListener("click", resetTemplateForm);
+templateSeparateSemesters?.addEventListener("change", toggleSemesterMode);
+
+[templateNameKo, templateNameEn, templateTeacher, templateSem1NameKo, templateSem1NameEn, templateSem1Teacher, templateSem2NameKo, templateSem2NameEn, templateSem2Teacher].forEach((input) => {
+  input?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") submitTemplate();
+  });
+});
+
+addCategoryOptionBtn?.addEventListener("click", () => {
+  addOption("category", categoryOptionInput.value);
+  categoryOptionInput.value = "";
+  categoryOptionInput.focus();
+});
+addTrackOptionBtn?.addEventListener("click", () => {
+  addOption("track", trackOptionInput.value);
+  trackOptionInput.value = "";
+  trackOptionInput.focus();
+});
+addGroupOptionBtn?.addEventListener("click", () => {
+  addOption("group", groupOptionInput.value);
+  groupOptionInput.value = "";
+  groupOptionInput.focus();
+});
+
+[categoryOptionInput, trackOptionInput, groupOptionInput].forEach((input) => {
+  input?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    if (input === categoryOptionInput) addCategoryOptionBtn.click();
+    if (input === trackOptionInput) addTrackOptionBtn.click();
+    if (input === groupOptionInput) addGroupOptionBtn.click();
+  });
+});
+
+resetTemplateForm();
+render();
