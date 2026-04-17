@@ -552,6 +552,10 @@ button {
   gap: 2px;
 }
 
+.placed-meta.placed-meta-hidden {
+  display: none;
+}
+
 .placed-meta .meta-chip {
   font-size: 9px;
   padding: 1px 4px;

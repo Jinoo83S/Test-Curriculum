@@ -598,7 +598,7 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
   card.appendChild(top);
   card.appendChild(meta);
 
-  // 기본: 교사/언어 칩만 숨김, 영어명은 항상 표시
+  // 기본: 언어/교사 칩만 숨김, 한글명+영어명은 상시 표시
   meta.classList.add("placed-meta-hidden");
 
   card.addEventListener("click", (e) => {
