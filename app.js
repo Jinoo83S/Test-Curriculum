@@ -790,6 +790,19 @@ function createGradeRow(grade, rowData) {
   return row;
 }
 
+function createSpacerRow() {
+  const row = document.createElement("div");
+  row.className = "grade-data-row spacer-row";
+
+  for (let i = 0; i < 7; i += 1) {
+    const cell = document.createElement("div");
+    cell.className = "spacer-cell";
+    row.appendChild(cell);
+  }
+
+  return row;
+}
+
 function createTrackGroupDivider(track) {
   const divider = document.createElement("div");
   divider.className = "track-group-divider";
@@ -885,6 +898,7 @@ function createSummarySection(grade) {
 function renderGradeBoard() {
   gradeBoard.innerHTML = "";
   const visibleGrades = GRADE_GROUPS[activeTab];
+  const columnsByGrade = {};
 
   visibleGrades.forEach((grade) => {
     const column = document.createElement("section");
@@ -897,47 +911,97 @@ function renderGradeBoard() {
     column.appendChild(title);
     const headerRow = createGradeHeader(column);
     column.appendChild(headerRow);
+    columnsByGrade[grade] = { column, headerRow };
+    gradeBoard.appendChild(column);
+  });
 
-  // 1단계: category 순서대로, 2단계: 그 안에서 track 순서대로 그룹핑
-  const rows = state.gradeBoards[grade];
+  // 1단계: category 순서대로, 2단계: track을 학년 간 같은 세로 위치로 정렬
   const categoryOrder = state.options.category;
   const trackOrder = state.options.track;
+  const knownTracks = new Set(trackOrder);
 
   categoryOrder.forEach((category) => {
-    const categoryRows = rows.filter((r) => r.category === category);
-    if (categoryRows.length === 0) return;
+    const hasAnyCategoryRows = visibleGrades.some((grade) =>
+      (state.gradeBoards[grade] || []).some((row) => row.category === category)
+    );
+    if (!hasAnyCategoryRows) return;
 
-    // 그 안에서 track별로 묶기
     trackOrder.forEach((track) => {
-      const trackRows = categoryRows.filter((r) => r.track === track);
-      if (trackRows.length === 0) return;
+      const rowsByGrade = {};
+      let maxRowCount = 0;
 
-      // 구분 헤더 (작은)
-      column.appendChild(createTrackGroupDivider(track));
-      trackRows.forEach((rowData) => {
-        column.appendChild(createGradeRow(grade, rowData));
+      visibleGrades.forEach((grade) => {
+        rowsByGrade[grade] = (state.gradeBoards[grade] || []).filter(
+          (row) => row.category === category && row.track === track
+        );
+        maxRowCount = Math.max(maxRowCount, rowsByGrade[grade].length);
+      });
+
+      if (maxRowCount === 0) return;
+
+      visibleGrades.forEach((grade) => {
+        columnsByGrade[grade].column.appendChild(createTrackGroupDivider(track));
+        rowsByGrade[grade].forEach((rowData) => {
+          columnsByGrade[grade].column.appendChild(createGradeRow(grade, rowData));
+        });
+
+        for (let i = rowsByGrade[grade].length; i < maxRowCount; i += 1) {
+          columnsByGrade[grade].column.appendChild(createSpacerRow());
+        }
       });
     });
 
-    // track 옵션에 없는 값 처리 (기타)
-    const knownTracks = new Set(trackOrder);
-    const unknownRows = categoryRows.filter((r) => !knownTracks.has(r.track));
-    if (unknownRows.length > 0) {
-      column.appendChild(createTrackGroupDivider("-"));
-      unknownRows.forEach((rowData) => {
-        column.appendChild(createGradeRow(grade, rowData));
+    // track 옵션에 없는 값도 동일한 높이로 맞춤
+    const unknownRowsByGrade = {};
+    let maxUnknownRowCount = 0;
+
+    visibleGrades.forEach((grade) => {
+      unknownRowsByGrade[grade] = (state.gradeBoards[grade] || []).filter(
+        (row) => row.category === category && !knownTracks.has(row.track)
+      );
+      maxUnknownRowCount = Math.max(maxUnknownRowCount, unknownRowsByGrade[grade].length);
+    });
+
+    if (maxUnknownRowCount > 0) {
+      visibleGrades.forEach((grade) => {
+        columnsByGrade[grade].column.appendChild(createTrackGroupDivider("-"));
+        unknownRowsByGrade[grade].forEach((rowData) => {
+          columnsByGrade[grade].column.appendChild(createGradeRow(grade, rowData));
+        });
+
+        for (let i = unknownRowsByGrade[grade].length; i < maxUnknownRowCount; i += 1) {
+          columnsByGrade[grade].column.appendChild(createSpacerRow());
+        }
       });
     }
   });
 
   // category 옵션에 없는 값 처리 (기타)
   const knownCategories = new Set(categoryOrder);
-  const unknownCatRows = rows.filter((r) => !knownCategories.has(r.category));
-  if (unknownCatRows.length > 0) {
-    unknownCatRows.forEach((rowData) => {
-      column.appendChild(createGradeRow(grade, rowData));
+  const unknownCategoriesRowsByGrade = {};
+  let maxUnknownCategoryRows = 0;
+
+  visibleGrades.forEach((grade) => {
+    unknownCategoriesRowsByGrade[grade] = (state.gradeBoards[grade] || []).filter(
+      (row) => !knownCategories.has(row.category)
+    );
+    maxUnknownCategoryRows = Math.max(maxUnknownCategoryRows, unknownCategoriesRowsByGrade[grade].length);
+  });
+
+  if (maxUnknownCategoryRows > 0) {
+    visibleGrades.forEach((grade) => {
+      unknownCategoriesRowsByGrade[grade].forEach((rowData) => {
+        columnsByGrade[grade].column.appendChild(createGradeRow(grade, rowData));
+      });
+
+      for (let i = unknownCategoriesRowsByGrade[grade].length; i < maxUnknownCategoryRows; i += 1) {
+        columnsByGrade[grade].column.appendChild(createSpacerRow());
+      }
     });
   }
+
+  visibleGrades.forEach((grade) => {
+    const { column, headerRow } = columnsByGrade[grade];
 
     const footer = document.createElement("div");
     footer.className = "grade-footer";
@@ -953,7 +1017,6 @@ function renderGradeBoard() {
     column.appendChild(footer);
     column.appendChild(createSummarySection(grade));
 
-    gradeBoard.appendChild(column);
     initColResize(column, headerRow);
   });
 }

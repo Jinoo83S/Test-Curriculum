@@ -401,6 +401,18 @@ button {
   background: #f0f6ff;
 }
 
+.grade-data-row.spacer-row:hover {
+  background: transparent;
+}
+
+.spacer-cell {
+  border-right: 1px solid #e5e7eb;
+}
+
+.spacer-cell:last-child {
+  border-right: none;
+}
+
 /* ── Header Cell ── */
 .header-cell {
   padding: 5px 3px;
