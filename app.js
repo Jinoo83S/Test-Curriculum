@@ -281,15 +281,43 @@ function removeOption(type, value) {
   scheduleSave();
 }
 
+function moveOption(type, index, direction) {
+  if (!canEdit()) return;
+  const arr = state.options[type];
+  const newIndex = index + direction;
+  if (newIndex < 0 || newIndex >= arr.length) return;
+  [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+  render();
+  scheduleSave();
+}
+
 function renderOptionChips(container, type) {
   container.innerHTML = "";
-  state.options[type].forEach((value) => {
+  state.options[type].forEach((value, index) => {
     const chip = document.createElement("div");
     chip.className = "option-chip";
+
+    const upBtn = document.createElement("button");
+    upBtn.type = "button";
+    upBtn.className = "order-btn";
+    upBtn.textContent = "↑";
+    upBtn.title = "위로";
+    upBtn.disabled = !canEdit() || index === 0;
+    upBtn.addEventListener("click", () => moveOption(type, index, -1));
+    chip.appendChild(upBtn);
 
     const text = document.createElement("span");
     text.textContent = value;
     chip.appendChild(text);
+
+    const downBtn = document.createElement("button");
+    downBtn.type = "button";
+    downBtn.className = "order-btn";
+    downBtn.textContent = "↓";
+    downBtn.title = "아래로";
+    downBtn.disabled = !canEdit() || index === state.options[type].length - 1;
+    downBtn.addEventListener("click", () => moveOption(type, index, 1));
+    chip.appendChild(downBtn);
 
     const del = document.createElement("button");
     del.type = "button";
@@ -598,7 +626,7 @@ function createPlacedCard(templateId, grade, rowId, semKey) {
   card.appendChild(top);
   card.appendChild(meta);
 
-  // 기본: 언어/교사 칩만 숨김, 한글명+영어명은 상시 표시
+  // 기본: 교사/언어 칩만 숨김, 영어명은 항상 표시
   meta.classList.add("placed-meta-hidden");
 
   card.addEventListener("click", (e) => {
@@ -757,6 +785,13 @@ function createGradeRow(grade, rowData) {
 }
 
 /* 그룹 헤더 함수 */
+function createCategoryGroupDivider(category) {
+  const divider = document.createElement("div");
+  divider.className = "category-group-divider";
+  divider.textContent = category || "범주 없음";
+  return divider;
+}
+
 function createTrackGroupDivider(track) {
   const divider = document.createElement("div");
   divider.className = "track-group-divider";
@@ -841,19 +876,50 @@ function renderGradeBoard() {
     const headerRow = createGradeHeader(column);
     column.appendChild(headerRow);
 
-  /* 이렇게 하면 두번째 범주 값이 바뀔 때만 구분선/그룹 제목이 생깁니다. */
-  let previousTrack = null;
+  // 1단계: category 순서대로, 2단계: 그 안에서 track 순서대로 그룹핑
+  const rows = state.gradeBoards[grade];
+  const categoryOrder = state.options.category;
+  const trackOrder = state.options.track;
 
-  state.gradeBoards[grade].forEach((rowData, index) => {
-    const currentTrack = rowData.track || "";
+  categoryOrder.forEach((category) => {
+    const categoryRows = rows.filter((r) => r.category === category);
+    if (categoryRows.length === 0) return;
 
-    if (index === 0 || currentTrack !== previousTrack) {
-      column.appendChild(createTrackGroupDivider(currentTrack));
+    // 범주 헤더 (큰)
+    column.appendChild(createCategoryGroupDivider(category));
+
+    // 그 안에서 track별로 묶기
+    trackOrder.forEach((track) => {
+      const trackRows = categoryRows.filter((r) => r.track === track);
+      if (trackRows.length === 0) return;
+
+      // 구분 헤더 (작은)
+      column.appendChild(createTrackGroupDivider(track));
+      trackRows.forEach((rowData) => {
+        column.appendChild(createGradeRow(grade, rowData));
+      });
+    });
+
+    // track 옵션에 없는 값 처리 (기타)
+    const knownTracks = new Set(trackOrder);
+    const unknownRows = categoryRows.filter((r) => !knownTracks.has(r.track));
+    if (unknownRows.length > 0) {
+      column.appendChild(createTrackGroupDivider("-"));
+      unknownRows.forEach((rowData) => {
+        column.appendChild(createGradeRow(grade, rowData));
+      });
     }
-
-    column.appendChild(createGradeRow(grade, rowData));
-    previousTrack = currentTrack;
   });
+
+  // category 옵션에 없는 값 처리 (기타)
+  const knownCategories = new Set(categoryOrder);
+  const unknownCatRows = rows.filter((r) => !knownCategories.has(r.category));
+  if (unknownCatRows.length > 0) {
+    column.appendChild(createCategoryGroupDivider("기타"));
+    unknownCatRows.forEach((rowData) => {
+      column.appendChild(createGradeRow(grade, rowData));
+    });
+  }
 
     const footer = document.createElement("div");
     footer.className = "grade-footer";

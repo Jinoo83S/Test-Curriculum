@@ -719,18 +719,52 @@ button {
 }
 
 
-/* ── Track Group Divider ── */
+/* ── Category Group Divider (1단계 - 큰 헤더) ── */
+.category-group-divider {
+  padding: 7px 10px;
+  background: #1e3a5f;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+  border-top: 3px solid #0f2240;
+  border-bottom: 1px solid #2d5a9e;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* ── Track Group Divider (2단계 - 작은 헤더) ── */
 .track-group-divider {
-  padding: 5px 10px;
+  padding: 4px 10px 4px 18px;
   background: #e8f0ff;
   color: #1e3a5f;
   font-size: 11px;
   font-weight: 700;
-  border-top: 2px solid #b6c8e0;
+  border-top: 1px solid #b6c8e0;
   border-bottom: 1px solid #dbe2ef;
   letter-spacing: 0.2px;
 }
 
 .track-group-divider + .grade-data-row {
   border-top: none;
+}
+
+/* ── Option Chip ↑↓ 버튼 ── */
+.order-btn {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 9px;
+  padding: 0;
+  line-height: 1;
+}
+
+.order-btn:hover:not(:disabled) {
+  background: #93c5fd;
+}
+
+.order-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
