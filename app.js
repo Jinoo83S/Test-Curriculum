@@ -423,21 +423,6 @@ function createTemplateCard(item) {
   ko.textContent = item.nameKo || item.nameEn || "-";
   main.appendChild(ko);
 
-  const details = document.createElement("div");
-  details.className = "template-details";
-
-  const en = document.createElement("div");
-  en.className = "template-detail-line template-detail-en";
-  en.textContent = item.nameEn || "영문명 없음";
-  details.appendChild(en);
-
-  if (item.teacher) {
-    const teacher = document.createElement("div");
-    teacher.className = "template-detail-line template-detail-teacher";
-    teacher.textContent = item.teacher;
-    details.appendChild(teacher);
-  }
-
   const actions = document.createElement("div");
   actions.className = "template-actions compact-actions";
 
@@ -469,7 +454,6 @@ function createTemplateCard(item) {
   actions.appendChild(deleteBtn);
 
   card.appendChild(main);
-  card.appendChild(details);
   card.appendChild(actions);
 
   card.addEventListener("click", (e) => {

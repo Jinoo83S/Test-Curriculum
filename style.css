@@ -202,35 +202,6 @@ button {
   display: none;
 }
 
-.template-details {
-  display: none;
-  padding: 0 7px 8px;
-  border-top: 1px solid #e8eefb;
-  margin-top: 2px;
-}
-
-.template-card.expanded .template-details {
-  display: grid;
-  gap: 4px;
-}
-
-.template-detail-line {
-  min-width: 0;
-  font-size: 11px;
-  line-height: 1.35;
-  white-space: normal;
-  word-break: break-word;
-}
-
-.template-detail-en {
-  color: #1e3a8a;
-  font-weight: 600;
-}
-
-.template-detail-teacher {
-  color: #6b7280;
-}
-
 .template-actions {
   display: none;
 }
