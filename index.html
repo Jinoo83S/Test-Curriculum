@@ -13,6 +13,9 @@
       <h1>HIS Curriculum</h1>
       <p class="subtitle">학년별 커리큘럼 보드</p>
     </div>
+    <div class="topbar-center">
+      <button id="openStudentMgmtBtn" class="topbar-nav-btn" type="button">📋 학생 명단</button>
+    </div>
     <div class="topbar-right">
       <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
       <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
@@ -213,6 +216,83 @@
       </div>
     </section>
   </main>
+
+      <!-- ④ 학생 명단 관리 뷰 -->
+      <div id="studentMgmtView" class="main-view hidden">
+        <div class="student-mgmt-layout">
+
+          <!-- Left: Class list -->
+          <div class="student-sidebar">
+            <div class="student-sidebar-header">
+              <h3>학년 · 반</h3>
+              <button id="addClassBtn" class="primary-btn compact-btn" type="button">+ 반 추가</button>
+            </div>
+            <div id="classList" class="class-list"></div>
+          </div>
+
+          <!-- Right: Student list for selected class -->
+          <div class="student-main">
+            <div id="studentMainEmpty" class="student-main-empty">
+              <p>왼쪽에서 반을 선택하세요</p>
+            </div>
+            <div id="studentMainContent" class="hidden">
+              <div class="student-main-header">
+                <div class="student-main-title-wrap">
+                  <input id="classNameInput" type="text" class="class-name-input" placeholder="반 이름" />
+                  <select id="classGradeSelect" class="class-grade-select">
+                    <option value="7학년">7학년</option>
+                    <option value="8학년">8학년</option>
+                    <option value="9학년">9학년</option>
+                    <option value="10학년">10학년</option>
+                    <option value="11학년">11학년</option>
+                    <option value="12학년">12학년</option>
+                  </select>
+                  <button id="deleteClassBtn" class="danger-btn compact-btn" type="button">반 삭제</button>
+                </div>
+                <div class="student-count-badge">학생 <span id="studentCount">0</span>명</div>
+              </div>
+
+              <!-- Excel paste area -->
+              <div class="paste-area-wrap">
+                <div class="paste-label">
+                  📋 엑셀에서 복사 후 아래 영역에 붙여넣기
+                  <span class="paste-hint">첫 번째 열: 이름 (헤더행 포함 가능)</span>
+                </div>
+                <textarea id="excelPasteArea" class="excel-paste-area" placeholder="엑셀 데이터를 여기에 붙여넣으세요 (Ctrl+V)&#10;예) 홍길동&#9;남&#9;2007-03-15&#10;    김영희&#9;여&#9;2007-06-20"></textarea>
+                <div class="paste-actions">
+                  <button id="parsePasteBtn" class="primary-btn" type="button">명단 추가</button>
+                  <button id="clearPasteBtn" class="secondary-btn" type="button">붙여넣기 영역 지우기</button>
+                  <span class="paste-columns-hint">열 구성: <strong>이름</strong> [성별] [생년월일] [기타...]</span>
+                </div>
+              </div>
+
+              <!-- Student table -->
+              <div class="student-table-wrap">
+                <table class="student-table">
+                  <thead>
+                    <tr>
+                      <th class="col-num">번호</th>
+                      <th>이름</th>
+                      <th class="col-gender">성별</th>
+                      <th class="col-birth">생년월일</th>
+                      <th class="col-extra">기타</th>
+                      <th class="col-del">삭제</th>
+                    </tr>
+                  </thead>
+                  <tbody id="studentTableBody"></tbody>
+                </table>
+                <div id="studentTableEmpty" class="student-table-empty hidden">아직 학생 명단이 없습니다.</div>
+              </div>
+
+              <div class="student-main-footer">
+                <button id="addStudentRowBtn" class="secondary-btn" type="button">+ 학생 직접 추가</button>
+                <button id="exportStudentXlsxBtn" class="secondary-btn" type="button">📥 엑셀 내보내기</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
 
   <script type="module" src="app.js"></script>
 </body>

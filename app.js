@@ -1229,3 +1229,365 @@ templateManagerTableWrap.addEventListener("click",e=>{
 // SECTION 24 · Initialize
 // ================================================================
 render();
+
+// ================================================================
+// SECTION 25 · Student Management
+// ================================================================
+
+// ── DOM refs ──────────────────────────────────────────────────────
+const openStudentMgmtBtn  = document.getElementById("openStudentMgmtBtn");
+const studentMgmtView     = document.getElementById("studentMgmtView");
+const classList           = document.getElementById("classList");
+const addClassBtn         = document.getElementById("addClassBtn");
+
+const studentMainEmpty    = document.getElementById("studentMainEmpty");
+const studentMainContent  = document.getElementById("studentMainContent");
+const classNameInput      = document.getElementById("classNameInput");
+const classGradeSelect    = document.getElementById("classGradeSelect");
+const deleteClassBtn      = document.getElementById("deleteClassBtn");
+const studentCount        = document.getElementById("studentCount");
+
+const excelPasteArea      = document.getElementById("excelPasteArea");
+const parsePasteBtn       = document.getElementById("parsePasteBtn");
+const clearPasteBtn       = document.getElementById("clearPasteBtn");
+
+const studentTableBody    = document.getElementById("studentTableBody");
+const studentTableEmpty   = document.getElementById("studentTableEmpty");
+const addStudentRowBtn    = document.getElementById("addStudentRowBtn");
+const exportStudentXlsxBtn= document.getElementById("exportStudentXlsxBtn");
+
+// ── State ─────────────────────────────────────────────────────────
+let studentMgmtOpen   = false;
+let selectedClassId   = null;
+
+// Ensure state has classes array
+if (!state.classes) state.classes = [];
+
+// ── Data helpers ──────────────────────────────────────────────────
+function normalizeStudent(s = {}) {
+  return {
+    id:     s.id     || uid("stu"),
+    name:   clean(s.name),
+    gender: clean(s.gender),
+    birth:  clean(s.birth),
+    extra:  clean(s.extra)
+  };
+}
+
+function normalizeClass(c = {}) {
+  return {
+    id:       c.id       || uid("cls"),
+    grade:    GRADE_KEYS.includes(c.grade) ? c.grade : "7학년",
+    name:     clean(c.name) || "새 반",
+    students: Array.isArray(c.students) ? c.students.map(normalizeStudent) : []
+  };
+}
+
+function getClassById(classId) {
+  return (state.classes || []).find(c => c.id === classId) || null;
+}
+
+function ensureClasses() {
+  if (!state.classes) state.classes = [];
+}
+
+// ── Normalise state (extend existing fn) ─────────────────────────
+// Patch: keep classes on every normalizeState call
+const _origNormalizeState = normalizeState;
+function normalizeStateWithClasses(raw = {}) {
+  const s = _origNormalizeState(raw);
+  s.classes = Array.isArray(raw.classes) ? raw.classes.map(normalizeClass) : [];
+  return s;
+}
+
+// Override saveNow to include classes
+async function saveNowWithClasses() {
+  if (!canEdit()) return;
+  ensureClasses();
+  // merge classes into state before save
+  await setDoc(boardRef, { state, updatedAt: serverTimestamp() });
+}
+
+// ── Parse Excel paste ─────────────────────────────────────────────
+function parseExcelPaste(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const students = [];
+  for (const line of lines) {
+    const cols = line.split(/\t/).map(c => c.trim());
+    if (!cols[0]) continue;
+    // Skip if first column looks like a header
+    const firstLower = cols[0].toLowerCase();
+    if (firstLower === "이름" || firstLower === "name" || firstLower === "학생") continue;
+    students.push(normalizeStudent({
+      name:   cols[0] || "",
+      gender: cols[1] || "",
+      birth:  cols[2] || "",
+      extra:  cols.slice(3).join(" ").trim()
+    }));
+  }
+  return students;
+}
+
+// ── Render: class sidebar ─────────────────────────────────────────
+function renderClassList() {
+  classList.innerHTML = "";
+  ensureClasses();
+  if (!state.classes.length) {
+    const empty = document.createElement("div");
+    empty.className = "class-list-empty";
+    empty.textContent = "반이 없습니다. '+ 반 추가'를 눌러 시작하세요.";
+    classList.appendChild(empty);
+    return;
+  }
+
+  // Group by grade
+  const byGrade = {};
+  GRADE_KEYS.forEach(g => { byGrade[g] = []; });
+  state.classes.forEach(c => {
+    if (!byGrade[c.grade]) byGrade[c.grade] = [];
+    byGrade[c.grade].push(c);
+  });
+
+  GRADE_KEYS.forEach(grade => {
+    const items = byGrade[grade] || [];
+    if (!items.length) return;
+
+    const grpHdr = document.createElement("div");
+    grpHdr.className = "class-grade-header";
+    grpHdr.textContent = grade;
+    classList.appendChild(grpHdr);
+
+    items.forEach(cls => {
+      const item = document.createElement("div");
+      item.className = "class-list-item" + (cls.id === selectedClassId ? " active" : "");
+      item.dataset.classId = cls.id;
+
+      const nameEl = document.createElement("span");
+      nameEl.className = "class-item-name";
+      nameEl.textContent = cls.name;
+
+      const cnt = document.createElement("span");
+      cnt.className = "class-item-count";
+      cnt.textContent = `${cls.students.length}명`;
+
+      item.append(nameEl, cnt);
+      item.addEventListener("click", () => selectClass(cls.id));
+      classList.appendChild(item);
+    });
+  });
+}
+
+// ── Render: student table ─────────────────────────────────────────
+function renderStudentTable() {
+  const cls = getClassById(selectedClassId);
+  if (!cls) return;
+
+  classNameInput.value   = cls.name;
+  classGradeSelect.value = cls.grade;
+  studentCount.textContent = cls.students.length;
+
+  studentTableBody.innerHTML = "";
+  const hasStudents = cls.students.length > 0;
+  studentTableEmpty.classList.toggle("hidden", hasStudents);
+
+  cls.students.forEach((stu, idx) => {
+    const tr = document.createElement("tr");
+    tr.dataset.stuId = stu.id;
+
+    const fields = [
+      { key: "name",   placeholder: "이름",   cls: "" },
+      { key: "gender", placeholder: "성별",   cls: "col-gender" },
+      { key: "birth",  placeholder: "생년월일", cls: "col-birth" },
+      { key: "extra",  placeholder: "기타",   cls: "col-extra" }
+    ];
+
+    // Number cell
+    const numTd = document.createElement("td");
+    numTd.className = "col-num";
+    numTd.textContent = idx + 1;
+    tr.appendChild(numTd);
+
+    fields.forEach(f => {
+      const td = document.createElement("td");
+      if (f.cls) td.className = f.cls;
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.value = stu[f.key];
+      inp.placeholder = f.placeholder;
+      inp.disabled = !canEdit();
+      inp.addEventListener("change", e => {
+        stu[f.key] = e.target.value;
+        if (f.key === "name") renderClassList(); // refresh count
+        scheduleSaveStudents();
+      });
+      td.appendChild(inp);
+      tr.appendChild(td);
+    });
+
+    // Delete button
+    const delTd = document.createElement("td");
+    delTd.className = "col-del";
+    const delBtn = makeBtn("×", "stu-del-btn", () => {
+      cls.students = cls.students.filter(s => s.id !== stu.id);
+      renderStudentTable();
+      renderClassList();
+      scheduleSaveStudents();
+    });
+    delBtn.disabled = !canEdit();
+    delTd.appendChild(delBtn);
+    tr.appendChild(delTd);
+
+    studentTableBody.appendChild(tr);
+  });
+}
+
+// ── Actions ───────────────────────────────────────────────────────
+function selectClass(classId) {
+  selectedClassId = classId;
+  const cls = getClassById(classId);
+  if (!cls) { studentMainEmpty.classList.remove("hidden"); studentMainContent.classList.add("hidden"); return; }
+  studentMainEmpty.classList.add("hidden");
+  studentMainContent.classList.remove("hidden");
+  renderStudentTable();
+  renderClassList();
+}
+
+function addNewClass() {
+  if (!canEdit()) return;
+  ensureClasses();
+  const cls = normalizeClass({ grade: "7학년", name: `새 반 ${state.classes.length + 1}` });
+  state.classes.push(cls);
+  renderClassList();
+  selectClass(cls.id);
+  scheduleSaveStudents();
+  // Focus name input
+  setTimeout(() => { classNameInput.focus(); classNameInput.select(); }, 50);
+}
+
+function deleteSelectedClass() {
+  if (!canEdit()) return;
+  const cls = getClassById(selectedClassId);
+  if (!cls) return;
+  if (!confirm(`"${cls.grade} ${cls.name}" 반을 삭제할까요? 학생 명단도 함께 삭제됩니다.`)) return;
+  state.classes = state.classes.filter(c => c.id !== selectedClassId);
+  selectedClassId = null;
+  studentMainEmpty.classList.remove("hidden");
+  studentMainContent.classList.add("hidden");
+  renderClassList();
+  scheduleSaveStudents();
+}
+
+function applyExcelPaste() {
+  if (!canEdit()) return;
+  const raw = excelPasteArea.value.trim();
+  if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
+  const cls = getClassById(selectedClassId); if (!cls) return;
+  const parsed = parseExcelPaste(raw);
+  if (!parsed.length) { alert("파싱된 학생이 없습니다. 데이터를 확인해 주세요."); return; }
+  cls.students.push(...parsed);
+  excelPasteArea.value = "";
+  renderStudentTable();
+  renderClassList();
+  scheduleSaveStudents();
+}
+
+function addBlankStudent() {
+  if (!canEdit()) return;
+  const cls = getClassById(selectedClassId); if (!cls) return;
+  cls.students.push(normalizeStudent({}));
+  renderStudentTable();
+  studentCount.textContent = cls.students.length;
+  // Scroll to bottom and focus last name input
+  setTimeout(() => {
+    const rows = studentTableBody.querySelectorAll("tr");
+    const last = rows[rows.length - 1];
+    if (last) { last.scrollIntoView({ behavior: "smooth", block: "nearest" }); last.querySelector("input")?.focus(); }
+  }, 50);
+  scheduleSaveStudents();
+}
+
+function exportStudentXlsx() {
+  const cls = getClassById(selectedClassId); if (!cls) return;
+  const wb = XLSX.utils.book_new();
+  const rows = [["번호", "이름", "성별", "생년월일", "기타"]];
+  cls.students.forEach((s, i) => rows.push([i + 1, s.name, s.gender, s.birth, s.extra]));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"] = [{ wch: 6 }, { wch: 12 }, { wch: 6 }, { wch: 14 }, { wch: 20 }];
+  XLSX.utils.book_append_sheet(wb, ws, `${cls.grade} ${cls.name}`);
+  XLSX.writeFile(wb, `HIS_${cls.grade}_${cls.name}_명단.xlsx`);
+}
+
+// ── Save ──────────────────────────────────────────────────────────
+let studentSaveTimer = null;
+function scheduleSaveStudents() {
+  if (!canEdit()) return;
+  clearTimeout(studentSaveTimer);
+  studentSaveTimer = setTimeout(async () => {
+    await setDoc(boardRef, { state, updatedAt: serverTimestamp() });
+  }, 400);
+}
+
+// ── View toggle ───────────────────────────────────────────────────
+function openStudentMgmt() {
+  studentMgmtOpen = true;
+  // Hide sidebar main views, show student view
+  boardView.classList.add("hidden");
+  groupManagerView.classList.add("hidden");
+  templateManagerView.classList.add("hidden");
+  studentMgmtView.classList.remove("hidden");
+  openStudentMgmtBtn.classList.add("active");
+  ensureClasses();
+  renderClassList();
+}
+
+function closeStudentMgmt() {
+  studentMgmtOpen = false;
+  studentMgmtView.classList.add("hidden");
+  openStudentMgmtBtn.classList.remove("active");
+  // Restore previous view
+  if (activeMainView === "board") boardView.classList.remove("hidden");
+  else if (activeMainView === "groups") groupManagerView.classList.remove("hidden");
+  else if (activeMainView === "manager") templateManagerView.classList.remove("hidden");
+}
+
+// ── Patch render() to also handle student view ───────────────────
+const _origRender = render;
+render = function() {
+  if (studentMgmtOpen) {
+    // keep student view; just refresh controls
+    setControlsDisabled(!canEdit());
+    return;
+  }
+  _origRender();
+};
+
+// ── Event listeners ───────────────────────────────────────────────
+openStudentMgmtBtn.addEventListener("click", () => {
+  studentMgmtOpen ? closeStudentMgmt() : openStudentMgmt();
+});
+
+addClassBtn.addEventListener("click", addNewClass);
+deleteClassBtn.addEventListener("click", deleteSelectedClass);
+
+classNameInput.addEventListener("change", e => {
+  const cls = getClassById(selectedClassId); if (!cls) return;
+  cls.name = e.target.value;
+  renderClassList();
+  scheduleSaveStudents();
+});
+
+classGradeSelect.addEventListener("change", e => {
+  const cls = getClassById(selectedClassId); if (!cls) return;
+  cls.grade = e.target.value;
+  renderClassList();
+  scheduleSaveStudents();
+});
+
+parsePasteBtn.addEventListener("click", applyExcelPaste);
+clearPasteBtn.addEventListener("click", () => { excelPasteArea.value = ""; });
+addStudentRowBtn.addEventListener("click", addBlankStudent);
+exportStudentXlsxBtn.addEventListener("click", exportStudentXlsx);
+
+// ── Also load classes on Firestore snapshot ───────────────────────
+// Patch subscribeBoard to restore classes after snapshot
+const _origSubscribeBoard = subscribeBoard;

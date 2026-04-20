@@ -29,19 +29,7 @@ button {
 .danger-btn   { background: #dc2626; color: white; }
 
 /* ── Topbar ─────────────────────────────────────────── */
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: #1e3a5f;
-  color: white;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  height: 52px;
-}
+/* .topbar moved to bottom (grid layout) */
 
 .topbar-left h1 {
   margin: 0;
@@ -1554,4 +1542,345 @@ button {
 }
 .group-mgr-card-top .school-level-dot {
   margin-top: 4px;
+}
+
+/* ================================================================
+   STUDENT MANAGEMENT
+   ================================================================ */
+
+/* ── Topbar center slot ────────────────────────────────────────── */
+.topbar-center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-nav-btn {
+  padding: 6px 16px;
+  background: rgba(255,255,255,0.14);
+  color: white;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.22);
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.topbar-nav-btn:hover  { background: rgba(255,255,255,0.24); }
+.topbar-nav-btn.active { background: #2563eb; border-color: #1d4ed8; }
+
+/* ── Topbar layout: stretch center ────────────────────────────── */
+.topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1e3a5f;
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 52px;
+}
+
+/* ── Student management layout ─────────────────────────────────── */
+.student-mgmt-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Class sidebar ────────────────────────────────────────────── */
+.student-sidebar {
+  border-right: 1px solid #dbe2ef;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.student-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #dbe2ef;
+  background: #eef4ff;
+  flex-shrink: 0;
+}
+
+.student-sidebar-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: #1e3a5f;
+}
+
+.class-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 6px;
+}
+
+.class-list-empty {
+  padding: 20px 12px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.class-grade-header {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #1e3a5f;
+  background: linear-gradient(90deg, #dce8f8, #eef4ff);
+  border-radius: 5px;
+  border-left: 3px solid #2563eb;
+  margin: 6px 2px 4px;
+}
+
+.class-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  margin: 2px 0;
+}
+.class-list-item:hover  { background: #f0f6ff; }
+.class-list-item.active { background: #dbeafe; border-left: 3px solid #2563eb; padding-left: 9px; }
+
+.class-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.class-list-item.active .class-item-name { color: #1d4ed8; }
+
+.class-item-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  background: #e5e7eb;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+/* ── Student main area ────────────────────────────────────────── */
+.student-main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px 18px;
+}
+
+.student-main-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 15px;
+}
+
+#studentMainContent {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  gap: 12px;
+}
+#studentMainContent.hidden { display: none !important; }
+
+/* ── Class header ─────────────────────────────────────────────── */
+.student-main-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.student-main-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.class-name-input {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e3a5f;
+  width: 180px;
+}
+.class-name-input:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+
+.class-grade-select {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f8fbff;
+  color: #1e3a5f;
+}
+
+.student-count-badge {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #dbeafe;
+  padding: 4px 12px;
+  border-radius: 999px;
+}
+
+/* ── Excel paste area ─────────────────────────────────────────── */
+.paste-area-wrap {
+  background: #f8fbff;
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+  padding: 12px;
+  flex-shrink: 0;
+}
+
+.paste-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.paste-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: #64748b;
+}
+
+.excel-paste-area {
+  width: 100%;
+  height: 72px;
+  padding: 8px 10px;
+  border: 1px solid #c7d2e8;
+  border-radius: 7px;
+  font-size: 12px;
+  font-family: monospace;
+  resize: vertical;
+  background: white;
+  color: #1f2937;
+}
+.excel-paste-area:focus { outline: none; border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+
+.paste-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.paste-columns-hint {
+  font-size: 11px;
+  color: #64748b;
+  margin-left: auto;
+}
+
+/* ── Student table ────────────────────────────────────────────── */
+.student-table-wrap {
+  flex: 1;
+  overflow: auto;
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+  background: white;
+  min-height: 0;
+}
+
+.student-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 560px;
+}
+
+.student-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #dce8f8;
+  color: #1e3a5f;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 2px solid #b6c8e0;
+  white-space: nowrap;
+}
+
+.student-table tbody tr:nth-child(even) { background: #f8fbff; }
+.student-table tbody tr:hover { background: #eef4ff; }
+
+.student-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #e5edf7;
+  vertical-align: middle;
+}
+
+.student-table td input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 13px;
+  color: #1f2937;
+}
+.student-table td input:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.08);
+}
+
+.student-table .col-num  { width: 46px; text-align: center; color: #9ca3af; font-size: 12px; }
+.student-table .col-gender { width: 60px; }
+.student-table .col-birth  { width: 130px; }
+.student-table .col-extra  { min-width: 140px; }
+.student-table .col-del  { width: 40px; text-align: center; }
+
+.stu-del-btn {
+  background: transparent;
+  color: #d1d5db;
+  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  padding: 0;
+  line-height: 1;
+  transition: all 0.12s;
+}
+.stu-del-btn:hover { background: #fee2e2; color: #dc2626; }
+
+.student-table-empty {
+  padding: 32px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+/* ── Footer ───────────────────────────────────────────────────── */
+.student-main-footer {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-top: 4px;
 }
