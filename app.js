@@ -73,6 +73,8 @@ const groupManagerBoard   = document.getElementById("groupManagerBoard");
 const openGroupManagerBtn    = document.getElementById("openGroupManagerBtn");
 const openTemplateManagerBtn = document.getElementById("openTemplateManagerBtn");
 const groupManagerBackBtn    = document.getElementById("groupManagerBackBtn");
+const sidebarSchoolLevelFilter   = document.getElementById("sidebarSchoolLevelFilter");
+const templateManagerLevelFilter = document.getElementById("templateManagerLevelFilter");
 const groupManagerAddGroupBtn= document.getElementById("groupManagerAddGroupBtn");
 
 const templateManagerBackBtn        = document.getElementById("templateManagerBackBtn");
@@ -148,7 +150,8 @@ function normalizeTemplate(item={}) {
     nameKo:clean(item.nameKo), nameEn:clean(item.nameEn), teacher:clean(item.teacher),
     sem1NameKo:s1ko, sem1NameEn:s1en, sem1Teacher:s1te,
     sem2NameKo:s2ko, sem2NameEn:s2en, sem2Teacher:s2te,
-    calcGroupId: clean(item.calcGroupId)||null
+    calcGroupId: clean(item.calcGroupId)||null,
+    schoolLevel: ["중등","고등","공통"].includes(item.schoolLevel)?item.schoolLevel:"공통"
   };
 }
 
@@ -263,7 +266,9 @@ let activeTab        = "tab7to9";
 // "board" | "groups" | "manager"
 let activeMainView   = "board";
 let templateManagerDraft = null;
-const templateManagerUi  = { search:"", language:"all", split:"all", sort:"ko-asc" };
+const templateManagerUi  = { search:"", language:"all", split:"all", sort:"ko-asc", level:"전체" };
+let sidebarSchoolLevel   = "전체";
+let groupManagerSchoolLevel = "전체";
 
 const tabBoardCache = { tab7to9:null, tab10to12:null };
 const dirtyTabs     = new Set(["tab7to9","tab10to12"]);
@@ -612,10 +617,12 @@ function createTemplateCard(item){
 function renderTemplates(){
   templateList.innerHTML="";
   const groups=state.templateGroups||[];
+  // Filter by school level
+  const levelFilter = t => sidebarSchoolLevel==="전체" || t.schoolLevel===sidebarSchoolLevel || t.schoolLevel==="공통";
 
   // ① Grouped templates
   groups.forEach(group=>{
-    const members=state.templates.filter(t=>t.calcGroupId===group.id)
+    const members=state.templates.filter(t=>t.calcGroupId===group.id&&levelFilter(t))
       .sort((a,b)=>getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b),"ko"));
     if(!members.length) return;
     const hdr=document.createElement("div"); hdr.className="template-group-header"; hdr.textContent=group.name;
@@ -626,7 +633,7 @@ function renderTemplates(){
   // ② Ungrouped templates
   const validGroupIds=new Set(groups.map(g=>g.id));
   const ungrouped=state.templates
-    .filter(t=>!t.calcGroupId||!validGroupIds.has(t.calcGroupId))
+    .filter(t=>(!t.calcGroupId||!validGroupIds.has(t.calcGroupId))&&levelFilter(t))
     .sort((a,b)=>getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b),"ko"));
 
   if(ungrouped.length){
@@ -699,8 +706,9 @@ function createGroupCol(colGroupId, colGroupName){
   });
 
   const validGroupIds=new Set((state.templateGroups||[]).map(g=>g.id));
+  const gmLevelFilter = t => groupManagerSchoolLevel==="전체" || t.schoolLevel===groupManagerSchoolLevel || t.schoolLevel==="공통";
   const members=state.templates.filter(t=>
-    colGroupId ? t.calcGroupId===colGroupId : (!t.calcGroupId||!validGroupIds.has(t.calcGroupId))
+    gmLevelFilter(t)&&(colGroupId ? t.calcGroupId===colGroupId : (!t.calcGroupId||!validGroupIds.has(t.calcGroupId)))
   ).sort((a,b)=>getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b),"ko"));
 
   if(!members.length){
@@ -713,8 +721,21 @@ function createGroupCol(colGroupId, colGroupName){
 
 function renderGroupManager(){
   groupManagerBoard.innerHTML="";
-  groupManagerBoard.appendChild(createGroupCol(null,"미배정"));
-  (state.templateGroups||[]).forEach(g=>groupManagerBoard.appendChild(createGroupCol(g.id,g.name)));
+  // Level filter bar
+  const filterBar=document.createElement("div"); filterBar.className="group-level-filter-bar";
+  ["전체","중등","고등"].forEach(level=>{
+    const btn=document.createElement("button"); btn.type="button";
+    btn.className="group-level-btn"+(groupManagerSchoolLevel===level?" active":"");
+    btn.textContent=level==="전체"?"전체":level==="중등"?"📘 중등":"📗 고등";
+    btn.addEventListener("click",()=>{ groupManagerSchoolLevel=level; renderGroupManager(); });
+    filterBar.appendChild(btn);
+  });
+  groupManagerBoard.appendChild(filterBar);
+  // Columns
+  const colWrap=document.createElement("div"); colWrap.className="group-col-wrap";
+  colWrap.appendChild(createGroupCol(null,"미배정"));
+  (state.templateGroups||[]).forEach(g=>colWrap.appendChild(createGroupCol(g.id,g.name)));
+  groupManagerBoard.appendChild(colWrap);
 }
 
 // ================================================================
@@ -768,8 +789,7 @@ function createMergedPlacedCard(templateId,grade,rowData){
   const tw=document.createElement("div"); tw.className="placed-title-wrap";
   const ko=document.createElement("div"); ko.className="placed-title-ko"; ko.textContent=sd.nameKo||sd.nameEn||"-";
   const en=document.createElement("div"); en.className="placed-title-en"; en.textContent=sd.nameEn||"-";
-  const badge=document.createElement("span"); badge.className="merged-badge"; badge.textContent="1·2학기";
-  tw.append(ko,en,badge); top.appendChild(tw);
+  tw.append(ko,en); top.appendChild(tw);
   if(canEdit()){
     const cb=makeBtn("×","clear-cell-btn",e=>{ e.stopPropagation(); clearRowBoth(grade,rowData.id); });
     cb.title="과목 제거"; cb.addEventListener("mousedown",e=>e.stopPropagation()); top.appendChild(cb);
@@ -987,6 +1007,7 @@ function getTemplateManagerFilteredRows(){
     if(templateManagerUi.language!=="all"&&item.language!==templateManagerUi.language) return false;
     if(templateManagerUi.split==="split"&&!item.useSemesterOverrides) return false;
     if(templateManagerUi.split==="same" &&item.useSemesterOverrides)  return false;
+    if(templateManagerUi.level!=="전체"&&item.schoolLevel!==templateManagerUi.level) return false;
     if(srch){ const h=[item.nameKo,item.nameEn,item.teacher,item.sem1NameKo,item.sem1NameEn,item.sem1Teacher,item.sem2NameKo,item.sem2NameEn,item.sem2Teacher].join(" ").toLowerCase(); if(!h.includes(srch)) return false; }
     return true;
   });
@@ -1021,6 +1042,11 @@ function renderTemplateManagerTable(){
     return `<tr data-template-id="${item.id}">
       <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-template">삭제</button></td>
       <td class="col-usage usage-cell">${gradeChips}</td>
+      <td class="col-schoollevel">
+        <select data-field="schoolLevel">
+          ${["중등","고등","공통"].map(l=>`<option value="${l}" ${item.schoolLevel===l?"selected":""}>${l}</option>`).join("")}
+        </select>
+      </td>
       <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
       <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
       <td><input type="text" data-field="teacher" value="${escapeHtml(item.teacher)}" /></td>
@@ -1041,6 +1067,7 @@ function renderTemplateManagerTable(){
       <thead><tr>
         <th class="col-delete">삭제</th>
         <th class="col-usage">적용 학년</th>
+        <th class="col-schoollevel">구분</th>
         <th>한글 이름</th><th>영어 이름</th><th>공통 교사</th>
         <th class="col-language">언어</th>
         <th class="col-group">계산 그룹</th>
@@ -1141,6 +1168,8 @@ templateManagerSearchInput.addEventListener("input",   e=>{ templateManagerUi.se
 templateManagerLanguageFilter.addEventListener("change",e=>{ templateManagerUi.language=e.target.value; renderTemplateManager(); });
 templateManagerSplitFilter.addEventListener("change",  e=>{ templateManagerUi.split=e.target.value; renderTemplateManager(); });
 templateManagerSortSelect.addEventListener("change",   e=>{ templateManagerUi.sort=e.target.value; renderTemplateManager(); });
+templateManagerLevelFilter.addEventListener("change",  e=>{ templateManagerUi.level=e.target.value; renderTemplateManager(); });
+sidebarSchoolLevelFilter.addEventListener("change",    e=>{ sidebarSchoolLevel=e.target.value; renderTemplates(); });
 
 templateManagerTableWrap.addEventListener("input",e=>{
   const row=e.target.closest("tr[data-template-id]"); if(!row) return;
@@ -1151,7 +1180,7 @@ templateManagerTableWrap.addEventListener("change",e=>{
   const row=e.target.closest("tr[data-template-id]"); if(!row) return;
   const d=ensureTemplateManagerDraft(); const item=d.templates.find(t=>t.id===row.dataset.templateId); if(!item) return;
   const f=e.target.dataset.field; if(!f) return; item[f]=e.target.type==="checkbox"?e.target.checked:e.target.value;
-  if(["language","calcGroupId","useSemesterOverrides"].includes(f)) renderTemplateManager();
+  if(["language","calcGroupId","useSemesterOverrides","schoolLevel"].includes(f)) renderTemplateManager();
 });
 templateManagerTableWrap.addEventListener("click",e=>{
   const btn=e.target.closest("button[data-action='delete-template']"); if(!btn) return;

@@ -985,12 +985,7 @@ button {
   justify-content: flex-end;
 }
 
-.manager-toolbar {
-  display: grid;
-  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(120px, 0.75fr));
-  gap: 8px;
-  margin-bottom: 12px;
-}
+/* manager-toolbar moved to bottom */
 
 .manager-toolbar input,
 .manager-toolbar select,
@@ -1265,14 +1260,7 @@ button {
 }
 
 /* ── Group Manager View ──────────────────────────────── */
-.group-manager-board {
-  display: flex;
-  gap: 12px;
-  flex: 1;
-  overflow-x: auto;
-  padding: 4px 2px 12px;
-  align-items: flex-start;
-}
+/* group-manager-board moved to bottom */
 
 .group-col {
   min-width: 220px;
@@ -1408,4 +1396,79 @@ button {
   padding: 1px 5px;
   margin-top: 2px;
   letter-spacing: 0.2px;
+}
+
+/* ── Sidebar school level filter ─────────────────────── */
+.school-level-bar {
+  margin-bottom: 6px;
+}
+
+.school-level-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #c7d2e8;
+  border-radius: 7px;
+  background: #eef4ff;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+  cursor: pointer;
+}
+.school-level-select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+}
+
+/* ── Group manager level filter bar ─────────────────── */
+.group-manager-board {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  overflow: auto;
+  padding: 4px 2px 12px;
+}
+
+.group-level-filter-bar {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.group-level-btn {
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.group-level-btn:hover  { background: #dbeafe; color: #1d4ed8; }
+.group-level-btn.active { background: #2563eb; color: white; border-color: #1d4ed8; }
+
+.group-col-wrap {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  align-items: flex-start;
+  flex: 1;
+  padding-bottom: 4px;
+}
+
+/* ── Template manager schoolLevel column ─────────────── */
+.col-schoollevel {
+  width: 80px;
+  min-width: 80px;
+}
+
+/* ── Manager toolbar 5-column layout ────────────────── */
+.manager-toolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) repeat(4, minmax(100px, 0.7fr));
+  gap: 8px;
+  margin-bottom: 12px;
 }
