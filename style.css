@@ -611,6 +611,39 @@ button {
   background: linear-gradient(135deg, white 85%, rgba(99,102,241,0.06) 100%);
 }
 
+/* "1·2학기" badge on merged cards */
+.merged-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: #6366f1;
+  background: #e0e7ff;
+  border-radius: 999px;
+  padding: 1px 5px;
+  margin-top: 2px;
+  letter-spacing: 0.2px;
+}
+
+/* ÷ split button */
+.split-btn {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  border-radius: 999px !important;
+  padding: 0;
+  background: rgba(99,102,241,0.15) !important;
+  color: #6366f1 !important;
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+  margin-top: 1px;
+  font-weight: 800;
+}
+
+.split-btn:hover {
+  background: rgba(99,102,241,0.3) !important;
+}
+
 /* ── Placed card internals ───────────────────────────── */
 .placed-top {
   display: flex;
@@ -835,6 +868,35 @@ button {
   .template-card.expanded .template-semester-preview { grid-template-columns: 1fr; }
 }
 
+
+/* ── Section heading row ───────────────────────────────── */
+.section-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.section-heading-row h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.compact-btn {
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+/* ── Main view switching ──────────────────────────────── */
+.main-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+/* ── Grade title totals ──────────────────────────────── */
 .grade-title-top {
   display: flex;
   align-items: center;
@@ -893,4 +955,216 @@ button {
   font-weight: 700;
   color: #1e3a5f;
   background: #eef4ff;
+}
+
+/* ── Template manager ────────────────────────────────── */
+.manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.manager-header h2 {
+  margin: 0;
+  color: #1e3a5f;
+  font-size: 18px;
+}
+
+.manager-subtitle {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.manager-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(120px, 0.75fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.manager-toolbar input,
+.manager-toolbar select,
+.manager-table input,
+.manager-table select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 12px;
+  color: #1f2937;
+}
+
+.manager-toolbar input:focus,
+.manager-toolbar select:focus,
+.manager-table input:focus,
+.manager-table select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+}
+
+.manager-scroll {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.manager-section {
+  background: #f8fbff;
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.manager-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #dbe2ef;
+  background: #eef4ff;
+}
+
+.manager-section-header h3 {
+  margin: 0;
+  font-size: 13px;
+  color: #1e3a5f;
+}
+
+.manager-section-note {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.manager-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1d4ed8;
+}
+
+.manager-table-wrap {
+  overflow: auto;
+  background: white;
+}
+
+.manager-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 1320px;
+}
+
+.manager-table.groups-table {
+  min-width: 560px;
+}
+
+.manager-table th,
+.manager-table td {
+  border-bottom: 1px solid #e5edf7;
+  border-right: 1px solid #eef2f7;
+  padding: 6px;
+  vertical-align: middle;
+  background: white;
+}
+
+.manager-table th:last-child,
+.manager-table td:last-child {
+  border-right: none;
+}
+
+.manager-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #dce8f8;
+  color: #1e3a5f;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.manager-table tbody tr:nth-child(even) td {
+  background: #fcfdff;
+}
+
+.manager-table .col-delete {
+  width: 74px;
+  text-align: center;
+}
+
+.manager-table .col-toggle {
+  width: 86px;
+  text-align: center;
+}
+
+.manager-table .col-language {
+  width: 110px;
+}
+
+.manager-table .col-group {
+  width: 150px;
+}
+
+.manager-table .col-credit {
+  width: 110px;
+}
+
+.manager-table .toggle-cell {
+  text-align: center;
+}
+
+.manager-table .toggle-cell input {
+  width: 16px;
+  height: 16px;
+}
+
+.manager-table .row-delete-btn-inline {
+  width: 100%;
+  padding: 6px 8px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+}
+
+.manager-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: #64748b;
+}
+
+.manager-note-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .manager-header,
+  .manager-section-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .manager-toolbar {
+    grid-template-columns: 1fr;
+  }
 }

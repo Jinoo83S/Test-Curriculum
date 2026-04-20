@@ -64,6 +64,21 @@ const addGroupOptionBtn    = document.getElementById("addGroupOptionBtn");
 const tab7to9Btn   = document.getElementById("tab7to9Btn");
 const tab10to12Btn = document.getElementById("tab10to12Btn");
 const gradeBoard   = document.getElementById("gradeBoard");
+const boardView = document.getElementById("boardView");
+const templateManagerView = document.getElementById("templateManagerView");
+const openTemplateManagerBtn = document.getElementById("openTemplateManagerBtn");
+const templateManagerBackBtn = document.getElementById("templateManagerBackBtn");
+const templateManagerSearchInput = document.getElementById("templateManagerSearchInput");
+const templateManagerLanguageFilter = document.getElementById("templateManagerLanguageFilter");
+const templateManagerSplitFilter = document.getElementById("templateManagerSplitFilter");
+const templateManagerSortSelect = document.getElementById("templateManagerSortSelect");
+const templateManagerCount = document.getElementById("templateManagerCount");
+const templateManagerTableWrap = document.getElementById("templateManagerTableWrap");
+const templateManagerAddRowBtn = document.getElementById("templateManagerAddRowBtn");
+const templateManagerSaveBtn = document.getElementById("templateManagerSaveBtn");
+const templateManagerDiscardBtn = document.getElementById("templateManagerDiscardBtn");
+const templateGroupTableWrap = document.getElementById("templateGroupTableWrap");
+const addTemplateGroupBtn = document.getElementById("addTemplateGroupBtn");
 
 // ================================================================
 // SECTION 3 · Constants
@@ -110,6 +125,10 @@ function uniqueOrdered(values) {
   return out;
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 /** Tiny helper: create a <button> with one click handler */
 function makeBtn(text, className, onClick) {
   const btn = document.createElement("button");
@@ -123,6 +142,14 @@ function makeBtn(text, className, onClick) {
 // ================================================================
 // SECTION 5 · Data Model: Templates
 // ================================================================
+function normalizeTemplateGroup(item = {}) {
+  return {
+    id: item.id || uid("grp"),
+    name: clean(item.name),
+    creditValue: clean(item.creditValue)
+  };
+}
+
 function normalizeTemplate(item = {}) {
   const language = ["Korean", "English", "Both"].includes(item.language) ? item.language : "Both";
   const sem1NameKo  = clean(item.sem1NameKo);
@@ -143,7 +170,8 @@ function normalizeTemplate(item = {}) {
     nameEn:   clean(item.nameEn),
     teacher:  clean(item.teacher),
     sem1NameKo, sem1NameEn, sem1Teacher,
-    sem2NameKo, sem2NameEn, sem2Teacher
+    sem2NameKo, sem2NameEn, sem2Teacher,
+    calcGroupId: clean(item.calcGroupId) || null
   };
 }
 
@@ -161,6 +189,10 @@ function getSemesterTemplateData(templateOrId, semKey) {
 
 function getTemplateById(templateId) {
   return state.templates.find((t) => t.id === templateId) || null;
+}
+
+function getTemplateGroupById(groupId, sourceState = state) {
+  return (sourceState.templateGroups || []).find((g) => g.id === groupId) || null;
 }
 
 function getTemplateCardTitle(item) {
@@ -184,20 +216,12 @@ function getCommonTeacherCandidate(item) {
   return t1 && t1 === t2 ? t1 : "";
 }
 
-/** #7 — true if 1·2학기 data are effectively identical */
 function isSemesterDataSame(item) {
   if (!item) return false;
   if (!item.useSemesterOverrides) return true;
   const s1 = getSemesterTemplateData(item, "sem1");
   const s2 = getSemesterTemplateData(item, "sem2");
   return s1.nameKo === s2.nameKo && s1.nameEn === s2.nameEn && s1.teacher === s2.teacher;
-}
-
-function shouldRenderMergedRow(rowData) {
-  if (!rowData?.sem1TemplateId || !rowData?.sem2TemplateId) return false;
-  if (rowData.sem1TemplateId !== rowData.sem2TemplateId) return false;
-  const item = getTemplateById(rowData.sem1TemplateId);
-  return isSemesterDataSame(item);
 }
 
 function createDefaultTemplates() {
@@ -212,15 +236,13 @@ function createDefaultTemplates() {
 // ================================================================
 // SECTION 6 · Data Model: Rows & Boards
 // ================================================================
-
-/** #2 — Row now carries sem1TemplateId + sem2TemplateId separately */
 function createRow(options = DEFAULT_OPTIONS, seed = {}) {
   return {
     id:            uid("row"),
     category:      clean(seed.category) || options.category[0] || "",
     track:         clean(seed.track)    || options.track[0]    || "",
     group:         clean(seed.group)    || options.group[0]    || "",
-    credits:       clean(seed.credits),          // #10 — copied from seed
+    credits:       clean(seed.credits),
     sem1TemplateId: null,
     sem2TemplateId: null
   };
@@ -234,7 +256,6 @@ function normalizeRow(row = {}, options = DEFAULT_OPTIONS) {
   const safeGroup = options.group.includes(row.group)
     ? row.group : (clean(row.group) || options.group[0] || "");
 
-  // Migration: old single templateId → both sems
   const legacyId = row.templateId ?? row.sem1 ?? row.sem2 ?? null;
   const sem1TemplateId = (row.sem1TemplateId !== undefined) ? (row.sem1TemplateId ?? null) : legacyId;
   const sem2TemplateId = (row.sem2TemplateId !== undefined) ? (row.sem2TemplateId ?? null) : legacyId;
@@ -262,6 +283,7 @@ function createDefaultState() {
       group:    [...DEFAULT_OPTIONS.group]
     },
     templates:   createDefaultTemplates(),
+    templateGroups: [],
     gradeBoards
   };
 }
@@ -278,6 +300,9 @@ function normalizeState(raw = {}) {
   const safeTemplates = Array.isArray(raw.templates) && raw.templates.length
     ? raw.templates.map(normalizeTemplate)
     : createDefaultTemplates();
+  const safeTemplateGroups = Array.isArray(raw.templateGroups)
+    ? raw.templateGroups.map(normalizeTemplateGroup).filter((group) => group.name)
+    : [];
   const gradeBoards = {};
   GRADE_KEYS.forEach((grade) => {
     const rows = Array.isArray(raw.gradeBoards?.[grade]) ? raw.gradeBoards[grade] : [];
@@ -285,7 +310,7 @@ function normalizeState(raw = {}) {
       ? rows.map((r) => normalizeRow(r, safeOptions))
       : Array.from({ length: DEFAULT_ROW_COUNT }, () => createRow(safeOptions));
   });
-  return { options: safeOptions, templates: safeTemplates, gradeBoards };
+  return { options: safeOptions, templates: safeTemplates, templateGroups: safeTemplateGroups, gradeBoards };
 }
 
 // ================================================================
@@ -297,14 +322,47 @@ let currentDrag    = null;
 let templateEditId = null;
 let saveTimer      = null;
 let activeTab      = "tab7to9";
+let activeMainView = "board";
+let templateManagerDraft = null;
+const templateManagerUi = {
+  search: "",
+  language: "all",
+  split: "all",
+  sort: "ko-asc"
+};
 
-/** #6 — Per-tab DOM cache */
-const tabBoardCache = { tab7to9: null, tab10to12: null }; // null | Element[]
+const tabBoardCache = { tab7to9: null, tab10to12: null };
 const dirtyTabs     = new Set(["tab7to9", "tab10to12"]);
 
 function invalidateTabs() {
   dirtyTabs.add("tab7to9");
   dirtyTabs.add("tab10to12");
+}
+
+function resetTemplateManagerDraft() {
+  templateManagerDraft = null;
+}
+
+function ensureTemplateManagerDraft() {
+  if (!templateManagerDraft) {
+    templateManagerDraft = {
+      templates: state.templates.map((item) => normalizeTemplate(cloneJson(item))),
+      templateGroups: (state.templateGroups || []).map((item) => normalizeTemplateGroup(cloneJson(item)))
+    };
+  }
+  return templateManagerDraft;
+}
+
+function openTemplateManager() {
+  activeMainView = "manager";
+  ensureTemplateManagerDraft();
+  render();
+}
+
+function closeTemplateManager() {
+  activeMainView = "board";
+  resetTemplateManagerDraft();
+  render();
 }
 
 // ================================================================
@@ -343,12 +401,14 @@ function subscribeBoard() {
   unsubscribeBoard = onSnapshot(boardRef, async (snap) => {
     if (!snap.exists()) {
       state = createDefaultState();
+      resetTemplateManagerDraft();
       invalidateTabs();
       render();
       await saveNow();
       return;
     }
     state = normalizeState(snap.data().state || {});
+    resetTemplateManagerDraft();
     invalidateTabs();
     render();
   }, (err) => {
@@ -364,6 +424,7 @@ onAuthStateChanged(auth, (user) => {
   } else {
     if (unsubscribeBoard) { unsubscribeBoard(); unsubscribeBoard = null; }
     state = createDefaultState();
+    resetTemplateManagerDraft();
     resetTemplateForm();
     invalidateTabs();
     render();
@@ -390,7 +451,7 @@ async function saveNow() {
 }
 
 // ================================================================
-// SECTION 10 · Column Resize with localStorage Persistence  (#3)
+// SECTION 10 · Column Resize with localStorage Persistence
 // ================================================================
 function loadColWidths(grade) {
   try {
@@ -399,13 +460,13 @@ function loadColWidths(grade) {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length === DEFAULT_COL_WIDTHS.length) return parsed;
     }
-  } catch (_) { /* ignore */ }
+  } catch (_) {}
   return [...DEFAULT_COL_WIDTHS];
 }
 
 function saveColWidths(grade, widths) {
   try { localStorage.setItem(colWidthsKey(grade), JSON.stringify(widths)); }
-  catch (_) { /* ignore */ }
+  catch (_) {}
 }
 
 function applyColWidths(column, widths) {
@@ -433,7 +494,7 @@ function initColResize(column, headerRow, grade) {
       };
       const onUp = () => {
         handle.classList.remove("resizing");
-        saveColWidths(grade, widths);        // #3 — persist on mouseup
+        saveColWidths(grade, widths);
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
       };
@@ -498,7 +559,6 @@ function updateRowField(grade, rowId, field, value) {
   scheduleSave();
 }
 
-/** #10 — Also copies credits from the last row */
 function addRow(grade) {
   if (!canEdit()) return;
   const rows = state.gradeBoards[grade] || [];
@@ -507,7 +567,7 @@ function addRow(grade) {
     category: lastRow.category,
     track:    lastRow.track,
     group:    lastRow.group,
-    credits:  lastRow.credits    // #10
+    credits:  lastRow.credits
   }));
   invalidateTabs();
   render();
@@ -527,10 +587,8 @@ function deleteRow(grade, rowId) {
 }
 
 // ================================================================
-// SECTION 13 · State Mutations — Drag & Drop (#2)
+// SECTION 13 · State Mutations — Drag & Drop
 // ================================================================
-
-/** Place a template into one specific semester of a row */
 function placeTemplateTo(templateId, grade, rowId, semKey) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId);
@@ -551,7 +609,6 @@ function placeTemplateTo(templateId, grade, rowId, semKey) {
   scheduleSave();
 }
 
-/** Place a template into BOTH semesters (merged drop) */
 function placeBothSems(templateId, grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId);
@@ -563,7 +620,6 @@ function placeBothSems(templateId, grade, rowId) {
   scheduleSave();
 }
 
-/** Clear one semester slot */
 function clearRowSem(grade, rowId, semKey) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId);
@@ -574,7 +630,6 @@ function clearRowSem(grade, rowId, semKey) {
   scheduleSave();
 }
 
-/** Clear both semester slots */
 function clearRowBoth(grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId);
@@ -586,18 +641,6 @@ function clearRowBoth(grade, rowId) {
   scheduleSave();
 }
 
-/** Split merged row: keep sem1, clear sem2 */
-function splitMergedRow(grade, rowId) {
-  if (!canEdit()) return;
-  const row = getRowById(grade, rowId);
-  if (!row) return;
-  row.sem2TemplateId = null;
-  invalidateTabs();
-  render();
-  scheduleSave();
-}
-
-/** Swap two single-sem slots */
 function movePlaced(srcGrade, srcRowId, srcSemKey, dstGrade, dstRowId, dstSemKey) {
   if (!canEdit()) return;
   const srcRow = getRowById(srcGrade, srcRowId);
@@ -665,10 +708,13 @@ function submitTemplate() {
     return;
   }
   if (templateEditId) {
+    const prev = getTemplateById(templateEditId);
+    if (prev?.calcGroupId) data.calcGroupId = prev.calcGroupId;
     state.templates = state.templates.map((t) => (t.id === templateEditId ? data : t));
   } else {
     state.templates.push(data);
   }
+  resetTemplateManagerDraft();
   resetTemplateForm();
   invalidateTabs();
   render();
@@ -709,6 +755,7 @@ function deleteTemplate(templateId) {
     });
   });
   if (templateEditId === templateId) resetTemplateForm();
+  resetTemplateManagerDraft();
   invalidateTabs();
   render();
   scheduleSave();
@@ -725,7 +772,11 @@ function setControlsDisabled(disabled) {
     templateSem2NameKo, templateSem2NameEn, templateSem2Teacher,
     categoryOptionInput, trackOptionInput, groupOptionInput,
     addCategoryOptionBtn, addTrackOptionBtn, addGroupOptionBtn,
-    resetBoardBtn, exportXlsxBtn
+    resetBoardBtn, exportXlsxBtn,
+    openTemplateManagerBtn, templateManagerBackBtn, templateManagerAddRowBtn,
+    templateManagerSaveBtn, templateManagerDiscardBtn, addTemplateGroupBtn,
+    templateManagerSearchInput, templateManagerLanguageFilter,
+    templateManagerSplitFilter, templateManagerSortSelect
   ].forEach((el) => { if (el) el.disabled = disabled; });
 }
 
@@ -786,7 +837,6 @@ function createTemplateCard(item) {
     card.classList.remove("dragging");
   });
 
-  // Title row
   const main = document.createElement("div");
   main.className = "template-main";
   const title = document.createElement("div");
@@ -794,7 +844,6 @@ function createTemplateCard(item) {
   title.textContent = getTemplateCardTitle(item);
   main.appendChild(title);
 
-  // Action row
   const actions = document.createElement("div");
   actions.className = "template-actions compact-actions";
   const editBtn   = makeBtn("수정", "edit-btn",   () => editTemplate(item.id));
@@ -807,12 +856,11 @@ function createTemplateCard(item) {
   teacherInfo.textContent = getTemplateTeacherSummary(item) || "-";
   actions.append(editBtn, deleteBtn, teacherInfo);
 
-  // #7 — Semester preview: single if same, dual if different
   const preview = document.createElement("div");
   preview.className = "template-semester-preview";
   if (isSemesterDataSame(item)) {
     const single = createSemesterPreviewItem(item, "sem1");
-    single.style.gridColumn = "1 / -1";  // span full width
+    single.style.gridColumn = "1 / -1";
     preview.appendChild(single);
   } else {
     preview.append(
@@ -862,11 +910,6 @@ function renderOptionChips(container, type) {
 // ================================================================
 // SECTION 17 · Board: Placed Cards
 // ================================================================
-
-/**
- * Build the expanded meta section showing BOTH semesters (#8).
- * Used by both single-sem cards and the merged card.
- */
 function buildExpandedMeta(sem1Item, sem2Item) {
   const meta = document.createElement("div");
   meta.className = "placed-meta placed-meta-hidden";
@@ -875,7 +918,6 @@ function buildExpandedMeta(sem1Item, sem2Item) {
   const s2 = sem2Item ? getSemesterTemplateData(sem2Item, "sem2") : null;
 
   const chips = [];
-
   if (s1 && s1.teacher) chips.push(s1.teacher);
   if (s2 && s2.teacher) chips.push(s2.teacher);
 
@@ -893,13 +935,6 @@ function buildMetaChip(text) {
   return chip;
 }
 
-function buildMetaLabel(text) {
-  const label = document.createElement("div");
-  label.className = "meta-sem-label";
-  label.textContent = text;
-  return label;
-}
-
 function attachExpandClick(card, meta) {
   card.addEventListener("click", (e) => {
     if (e.target.closest("button")) return;
@@ -915,7 +950,6 @@ function attachExpandClick(card, meta) {
   });
 }
 
-/** Single-semester placed card (sem1 OR sem2) */
 function createPlacedCard(templateId, grade, rowData, semKey) {
   const item = getTemplateById(templateId);
   if (!item) return document.createTextNode("");
@@ -934,7 +968,6 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
     card.classList.remove("dragging");
   });
 
-  // Top row: title + clear button
   const top = document.createElement("div");
   top.className = "placed-top";
 
@@ -954,12 +987,11 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
       e.stopPropagation();
       clearRowSem(grade, rowData.id, semKey);
     });
-    clearBtn.title = `${SEMESTER_LABELS[semKey]} 제거`;
+    clearBtn.title = "과목 제거";
     clearBtn.addEventListener("mousedown", (e) => e.stopPropagation());
     top.appendChild(clearBtn);
   }
 
-  // #8 — Expanded meta shows BOTH semesters
   const otherSemKey      = semKey === "sem1" ? "sem2" : "sem1";
   const otherTemplateId  = semKey === "sem1" ? rowData.sem2TemplateId : rowData.sem1TemplateId;
   const otherItem        = otherTemplateId ? getTemplateById(otherTemplateId) : null;
@@ -972,7 +1004,6 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
   return card;
 }
 
-/** Merged placed card: sem1 === sem2, spans both columns (#9) */
 function createMergedPlacedCard(templateId, grade, rowData) {
   const item = getTemplateById(templateId);
   if (!item) return document.createTextNode("");
@@ -1053,7 +1084,6 @@ function createDropCell(grade, rowData, semKey, templateId) {
 
     if (currentDrag.kind === "placed") {
       if (currentDrag.sourceSemKey === "merged") {
-        // Merged card → single sem cell: place in this sem, clear source both
         const movingId = currentDrag.templateId;
         const dstRow   = getRowById(grade, rowData.id);
         const srcRow   = getRowById(currentDrag.sourceGrade, currentDrag.sourceRowId);
@@ -1074,7 +1104,6 @@ function createDropCell(grade, rowData, semKey, templateId) {
   return cell;
 }
 
-/** Merged drop cell: spans grid columns 4–5 (#9) */
 function createMergedDropCell(grade, rowData, templateId) {
   const cell = document.createElement("div");
   cell.className = "drop-cell merged-drop-cell";
@@ -1105,7 +1134,6 @@ function createMergedDropCell(grade, rowData, templateId) {
       if (!dstRow) return;
 
       if (currentDrag.sourceSemKey === "merged") {
-        // Merged ↔ merged: swap
         if (srcRow && !(currentDrag.sourceGrade === grade && currentDrag.sourceRowId === rowData.id)) {
           const oldDst = dstRow.sem1TemplateId;
           dstRow.sem1TemplateId = movingId;
@@ -1115,7 +1143,6 @@ function createMergedDropCell(grade, rowData, templateId) {
           invalidateTabs(); render(); scheduleSave();
         }
       } else {
-        // Single sem card → merged cell: fill both, clear source sem
         dstRow.sem1TemplateId = movingId;
         dstRow.sem2TemplateId = movingId;
         if (srcRow) srcRow[`${currentDrag.sourceSemKey}TemplateId`] = null;
@@ -1151,6 +1178,13 @@ function styleCategorySelect(select, category) {
   select.style.color = color.text;
 }
 
+function shouldRenderMergedRow(rowData) {
+  if (!rowData?.sem1TemplateId || !rowData?.sem2TemplateId) return false;
+  if (rowData.sem1TemplateId !== rowData.sem2TemplateId) return false;
+  const item = getTemplateById(rowData.sem1TemplateId);
+  return isSemesterDataSame(item);
+}
+
 function createGradeRow(grade, rowData) {
   const row = document.createElement("div");
   row.className = "grade-data-row";
@@ -1164,13 +1198,11 @@ function createGradeRow(grade, rowData) {
   row.appendChild(createSelect(state.options.group, rowData.group,
     (v) => updateRowField(grade, rowData.id, "group", v)));
 
-  // #9 — Merged cell only when 1·2학기 표시 내용이 실제로 동일할 때
   const { sem1TemplateId, sem2TemplateId } = rowData;
   const isMerged = shouldRenderMergedRow(rowData);
 
   if (isMerged) {
     row.appendChild(createMergedDropCell(grade, rowData, sem1TemplateId));
-    // No explicit sem2 cell; merged div occupies grid columns 4–5
   } else {
     row.appendChild(createDropCell(grade, rowData, "sem1", sem1TemplateId));
     row.appendChild(createDropCell(grade, rowData, "sem2", sem2TemplateId));
@@ -1260,13 +1292,32 @@ function getRepresentativeTrackCredit(rows) {
   return rows.reduce((max, row) => Math.max(max, parseCreditValue(row.credits)), 0);
 }
 
+function getRowTemplateGroupId(row) {
+  const semIds = uniqueOrdered([row.sem1TemplateId, row.sem2TemplateId].filter(Boolean));
+  const groupIds = uniqueOrdered(
+    semIds.map((id) => getTemplateById(id)?.calcGroupId).filter(Boolean)
+  );
+  return groupIds.length === 1 ? groupIds[0] : null;
+}
+
 function summarizeCategoryRows(category, rows) {
   const activeRows = (rows || []).filter(hasPlacedTemplate);
 
-  // 교과
   if (clean(category) === "교과") {
     const commonRows = activeRows.filter((row) => clean(row.track) === "공통");
     const nonCommonRows = activeRows.filter((row) => clean(row.track) !== "공통");
+
+    const commonGroupMap = new Map();
+    const commonUngrouped = [];
+    commonRows.forEach((row) => {
+      const groupId = getRowTemplateGroupId(row);
+      if (groupId) {
+        if (!commonGroupMap.has(groupId)) commonGroupMap.set(groupId, []);
+        commonGroupMap.get(groupId).push(row);
+      } else {
+        commonUngrouped.push(row);
+      }
+    });
 
     const groupedByTrack = new Map();
     nonCommonRows.forEach((row) => {
@@ -1276,19 +1327,31 @@ function summarizeCategoryRows(category, rows) {
     });
 
     const totalCourses =
-      commonRows.length + groupedByTrack.size;
+      commonUngrouped.length + commonGroupMap.size + groupedByTrack.size;
 
-    const totalCredits =
-      commonRows.reduce((sum, row) => sum + parseCreditValue(row.credits), 0) +
-      Array.from(groupedByTrack.values()).reduce(
-        (sum, groupRows) => sum + getRepresentativeTrackCredit(groupRows),
-        0
-      );
+    const commonCredits = commonUngrouped.reduce((sum, row) => sum + parseCreditValue(row.credits), 0);
+    const commonGroupedCredits = Array.from(commonGroupMap.entries()).reduce((sum, [groupId, groupRows]) => {
+      const group = getTemplateGroupById(groupId);
+      const representative = clean(group?.creditValue) ? parseCreditValue(group.creditValue) : getRepresentativeTrackCredit(groupRows);
+      return sum + representative;
+    }, 0);
 
-    return { totalCourses, totalCredits };
+    const groupedTrackCredits = Array.from(groupedByTrack.values()).reduce((sum, groupRows) => {
+      const templateGroupIds = uniqueOrdered(groupRows.map(getRowTemplateGroupId).filter(Boolean));
+      if (templateGroupIds.length === 1) {
+        const group = getTemplateGroupById(templateGroupIds[0]);
+        const representative = clean(group?.creditValue) ? parseCreditValue(group.creditValue) : getRepresentativeTrackCredit(groupRows);
+        return sum + representative;
+      }
+      return sum + getRepresentativeTrackCredit(groupRows);
+    }, 0);
+
+    return {
+      totalCourses,
+      totalCredits: commonCredits + commonGroupedCredits + groupedTrackCredits
+    };
   }
 
-  // 창체
   return {
     totalCourses: activeRows.length,
     totalCredits: activeRows.length
@@ -1336,10 +1399,8 @@ function createCategorySummaryRow(grade, category) {
 }
 
 // ================================================================
-// SECTION 20 · Board: Build & Render with Tab Cache (#6)
+// SECTION 20 · Board: Build & Render with Tab Cache
 // ================================================================
-
-/** Build a fresh tab board DOM and return the grade column elements */
 function buildTabBoard(visibleGrades) {
   const columns = [];
 
@@ -1348,7 +1409,6 @@ function buildTabBoard(visibleGrades) {
     column.className = "grade-column";
 
     const gradeSummary = getGradeSummary(grade);
-
     const titleEl = document.createElement("div");
     titleEl.className = "grade-title";
     titleEl.innerHTML = `
@@ -1379,11 +1439,9 @@ function buildTabBoard(visibleGrades) {
     if (!hasAny) return;
 
     const tracks = getOrderedTracksForCategory(visibleGrades, category);
-
     tracks.forEach((track) => {
       const rowsByGrade = {};
       let maxRows = 0;
-
       visibleGrades.forEach((grade) => {
         const rs = (state.gradeBoards[grade] || []).filter((r) =>
           r.category === category && r.track === track
@@ -1391,7 +1449,6 @@ function buildTabBoard(visibleGrades) {
         rowsByGrade[grade] = rs;
         maxRows = Math.max(maxRows, rs.length);
       });
-
       if (!maxRows) return;
 
       visibleGrades.forEach((grade) => {
@@ -1408,7 +1465,6 @@ function buildTabBoard(visibleGrades) {
       }
     });
 
-    // 카테고리별 요약을 바로 아래에 붙임
     visibleGrades.forEach((grade) => {
       colByGrade[grade].column.appendChild(createCategorySummaryRow(grade, category));
     });
@@ -1417,17 +1473,207 @@ function buildTabBoard(visibleGrades) {
   columns.forEach(({ grade, column, headerRow }) => {
     const footer = document.createElement("div");
     footer.className = "grade-footer";
-
     const addBtn = makeBtn(`${grade} 행 추가`, "add-row-btn", () => addRow(grade));
     addBtn.disabled = !canEdit();
-
     footer.appendChild(addBtn);
     column.appendChild(footer);
-
     initColResize(column, headerRow, grade);
   });
 
   return columns.map((c) => c.column);
+}
+
+function getTemplateManagerFilteredRows() {
+  const draft = ensureTemplateManagerDraft();
+  const search = clean(templateManagerUi.search).toLowerCase();
+  const filtered = draft.templates.filter((item) => {
+    if (templateManagerUi.language !== "all" && item.language !== templateManagerUi.language) return false;
+    if (templateManagerUi.split === "split" && !item.useSemesterOverrides) return false;
+    if (templateManagerUi.split === "same" && item.useSemesterOverrides) return false;
+    if (search) {
+      const haystack = [
+        item.nameKo, item.nameEn, item.teacher,
+        item.sem1NameKo, item.sem1NameEn, item.sem1Teacher,
+        item.sem2NameKo, item.sem2NameEn, item.sem2Teacher
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const getSortValue = (item, key) => clean(key === "en" ? (item.nameEn || item.sem1NameEn || item.nameKo) : (item.nameKo || item.sem1NameKo || item.nameEn));
+  filtered.sort((a, b) => {
+    switch (templateManagerUi.sort) {
+      case "ko-desc":
+        return getSortValue(b, "ko").localeCompare(getSortValue(a, "ko"), "ko");
+      case "en-asc":
+        return getSortValue(a, "en").localeCompare(getSortValue(b, "en"), "en");
+      case "language":
+        return `${a.language}-${getSortValue(a, "ko")}`.localeCompare(`${b.language}-${getSortValue(b, "ko")}`, "ko");
+      case "group": {
+        const ga = getTemplateGroupById(a.calcGroupId, draft)?.name || "";
+        const gb = getTemplateGroupById(b.calcGroupId, draft)?.name || "";
+        return `${ga}-${getSortValue(a, "ko")}`.localeCompare(`${gb}-${getSortValue(b, "ko")}`, "ko");
+      }
+      case "ko-asc":
+      default:
+        return getSortValue(a, "ko").localeCompare(getSortValue(b, "ko"), "ko");
+    }
+  });
+
+  return filtered;
+}
+
+function renderTemplateManagerTable() {
+  const draft = ensureTemplateManagerDraft();
+  const rows = getTemplateManagerFilteredRows();
+  templateManagerCount.textContent = `${rows.length} / ${draft.templates.length}개 표시`;
+
+  if (!rows.length) {
+    templateManagerTableWrap.innerHTML = '<div class="manager-empty">검색 조건에 맞는 과목카드가 없습니다.</div>';
+    return;
+  }
+
+  const buildGroupOptions = (selectedId) => ['<option value="">없음</option>']
+    .concat(draft.templateGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${selectedId === group.id ? 'selected' : ''}>${escapeHtml(group.name)}</option>`))
+    .join('');
+
+  const bodyRows = rows.map((item) => `
+    <tr data-template-id="${item.id}">
+      <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-template">삭제</button></td>
+      <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
+      <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
+      <td><input type="text" data-field="teacher" value="${escapeHtml(item.teacher)}" /></td>
+      <td class="col-language">
+        <select data-field="language">
+          ${['Korean','English','Both'].map((language) => `<option value="${language}" ${item.language === language ? 'selected' : ''}>${language}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-group">
+        <select data-field="calcGroupId">
+          ${buildGroupOptions(item.calcGroupId || "")}
+        </select>
+      </td>
+      <td class="col-toggle toggle-cell"><input type="checkbox" data-field="useSemesterOverrides" ${item.useSemesterOverrides ? 'checked' : ''} /></td>
+      <td><input type="text" data-field="sem1NameKo" value="${escapeHtml(item.sem1NameKo)}" /></td>
+      <td><input type="text" data-field="sem1NameEn" value="${escapeHtml(item.sem1NameEn)}" /></td>
+      <td><input type="text" data-field="sem1Teacher" value="${escapeHtml(item.sem1Teacher)}" /></td>
+      <td><input type="text" data-field="sem2NameKo" value="${escapeHtml(item.sem2NameKo)}" /></td>
+      <td><input type="text" data-field="sem2NameEn" value="${escapeHtml(item.sem2NameEn)}" /></td>
+      <td><input type="text" data-field="sem2Teacher" value="${escapeHtml(item.sem2Teacher)}" /></td>
+    </tr>
+  `).join('');
+
+  templateManagerTableWrap.innerHTML = `
+    <table class="manager-table">
+      <thead>
+        <tr>
+          <th class="col-delete">삭제</th>
+          <th>한글 이름</th>
+          <th>영어 이름</th>
+          <th>공통 교사</th>
+          <th class="col-language">언어</th>
+          <th class="col-group">계산 그룹</th>
+          <th class="col-toggle">학기 분리</th>
+          <th>1학기 한글</th>
+          <th>1학기 영어</th>
+          <th>1학기 교사</th>
+          <th>2학기 한글</th>
+          <th>2학기 영어</th>
+          <th>2학기 교사</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  `;
+}
+
+function renderTemplateGroupTable() {
+  const draft = ensureTemplateManagerDraft();
+  if (!draft.templateGroups.length) {
+    templateGroupTableWrap.innerHTML = '<div class="manager-empty">아직 계산 그룹이 없습니다.</div>';
+    return;
+  }
+
+  const bodyRows = draft.templateGroups.map((group) => {
+    const memberCount = draft.templates.filter((item) => item.calcGroupId === group.id).length;
+    return `
+      <tr data-group-id="${group.id}">
+        <td><input type="text" data-field="name" value="${escapeHtml(group.name)}" /></td>
+        <td class="col-credit"><input type="text" data-field="creditValue" value="${escapeHtml(group.creditValue)}" placeholder="대표 시수" /></td>
+        <td><span class="manager-note-chip">연결 ${memberCount}개</span></td>
+        <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-group">삭제</button></td>
+      </tr>
+    `;
+  }).join('');
+
+  templateGroupTableWrap.innerHTML = `
+    <table class="manager-table groups-table">
+      <thead>
+        <tr>
+          <th>그룹명</th>
+          <th class="col-credit">대표 시수</th>
+          <th>연결 카드 수</th>
+          <th class="col-delete">삭제</th>
+        </tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  `;
+}
+
+function renderTemplateManager() {
+  ensureTemplateManagerDraft();
+  renderTemplateManagerTable();
+  renderTemplateGroupTable();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function addTemplateManagerRow() {
+  if (!canEdit()) return;
+  const draft = ensureTemplateManagerDraft();
+  draft.templates.unshift(normalizeTemplate({ id: uid("tpl"), language: "Both" }));
+  renderTemplateManager();
+}
+
+function addTemplateGroupDraft() {
+  if (!canEdit()) return;
+  const draft = ensureTemplateManagerDraft();
+  draft.templateGroups.push(normalizeTemplateGroup({ id: uid("grp"), name: `그룹 ${draft.templateGroups.length + 1}`, creditValue: "" }));
+  renderTemplateManager();
+}
+
+function saveTemplateManagerDraftLocally() {
+  const draft = ensureTemplateManagerDraft();
+  const validGroupIds = new Set(draft.templateGroups.map((group) => group.id));
+  draft.templates = draft.templates.map((item) => {
+    const normalized = normalizeTemplate(item);
+    if (normalized.calcGroupId && !validGroupIds.has(normalized.calcGroupId)) normalized.calcGroupId = null;
+    return normalized;
+  });
+  draft.templateGroups = draft.templateGroups.map(normalizeTemplateGroup);
+}
+
+async function commitTemplateManagerDraft() {
+  if (!canEdit()) return;
+  saveTemplateManagerDraftLocally();
+  state.templates = ensureTemplateManagerDraft().templates.map((item) => normalizeTemplate(cloneJson(item)));
+  state.templateGroups = ensureTemplateManagerDraft().templateGroups.map((item) => normalizeTemplateGroup(cloneJson(item)));
+  if (templateEditId) {
+    const edited = getTemplateById(templateEditId);
+    if (edited) editTemplate(templateEditId);
+    else resetTemplateForm();
+  }
+  invalidateTabs();
+  render();
+  await saveNow();
 }
 
 function renderTabs() {
@@ -1435,22 +1681,19 @@ function renderTabs() {
   tab10to12Btn.classList.toggle("active", activeTab === "tab10to12");
 }
 
-/** #6 — Only rebuild if tab is dirty; otherwise swap cached DOM nodes */
 function renderGradeBoard() {
   const tab = activeTab;
 
   if (!dirtyTabs.has(tab) && tabBoardCache[tab]) {
-    // Restore from cache (re-append preserved column elements)
     gradeBoard.innerHTML = "";
     tabBoardCache[tab].forEach((el) => gradeBoard.appendChild(el));
     return;
   }
 
-  // Build fresh
   const columnEls = buildTabBoard(GRADE_GROUPS[tab]);
   gradeBoard.innerHTML = "";
   columnEls.forEach((el) => gradeBoard.appendChild(el));
-  tabBoardCache[tab] = columnEls;   // cache the live DOM nodes
+  tabBoardCache[tab] = columnEls;
   dirtyTabs.delete(tab);
 }
 
@@ -1462,6 +1705,10 @@ function render() {
   renderOptionChips(groupOptionList, "group");
   renderTabs();
   renderGradeBoard();
+  boardView.classList.toggle("hidden", activeMainView !== "board");
+  templateManagerView.classList.toggle("hidden", activeMainView !== "manager");
+  openTemplateManagerBtn.textContent = activeMainView === "manager" ? "보드 보기" : "표 편집";
+  if (activeMainView === "manager") renderTemplateManager();
   setControlsDisabled(!canEdit());
   toggleSemesterMode();
 }
@@ -1510,6 +1757,7 @@ resetBoardBtn.addEventListener("click", async () => {
   if (!canEdit()) return;
   if (!confirm("공용 보드를 기본 상태로 초기화할까요?")) return;
   state = createDefaultState();
+  resetTemplateManagerDraft();
   resetTemplateForm();
   invalidateTabs();
   render();
@@ -1520,14 +1768,14 @@ tab7to9Btn.addEventListener("click", () => {
   if (activeTab === "tab7to9") return;
   activeTab = "tab7to9";
   renderTabs();
-  renderGradeBoard();  // #6 — only swaps DOM, no rebuild if clean
+  renderGradeBoard();
 });
 
 tab10to12Btn.addEventListener("click", () => {
   if (activeTab === "tab10to12") return;
   activeTab = "tab10to12";
   renderTabs();
-  renderGradeBoard();  // #6
+  renderGradeBoard();
 });
 
 templateSubmitBtn.addEventListener("click", submitTemplate);
@@ -1575,6 +1823,109 @@ addGroupOptionBtn.addEventListener("click", () => {
   [groupOptionInput,    addGroupOptionBtn]
 ].forEach(([inp, btn]) => {
   inp.addEventListener("keydown", (e) => { if (e.key === "Enter") btn.click(); });
+});
+
+openTemplateManagerBtn.addEventListener("click", () => {
+  if (activeMainView === "manager") {
+    closeTemplateManager();
+  } else {
+    openTemplateManager();
+  }
+});
+
+templateManagerBackBtn.addEventListener("click", closeTemplateManager);
+templateManagerAddRowBtn.addEventListener("click", addTemplateManagerRow);
+templateManagerDiscardBtn.addEventListener("click", () => {
+  if (!canEdit()) return;
+  if (!confirm("과목카드 편집 화면의 변경 내용을 취소할까요?")) return;
+  resetTemplateManagerDraft();
+  renderTemplateManager();
+});
+templateManagerSaveBtn.addEventListener("click", commitTemplateManagerDraft);
+addTemplateGroupBtn.addEventListener("click", addTemplateGroupDraft);
+
+templateManagerSearchInput.addEventListener("input", (e) => {
+  templateManagerUi.search = e.target.value;
+  renderTemplateManager();
+});
+templateManagerLanguageFilter.addEventListener("change", (e) => {
+  templateManagerUi.language = e.target.value;
+  renderTemplateManager();
+});
+templateManagerSplitFilter.addEventListener("change", (e) => {
+  templateManagerUi.split = e.target.value;
+  renderTemplateManager();
+});
+templateManagerSortSelect.addEventListener("change", (e) => {
+  templateManagerUi.sort = e.target.value;
+  renderTemplateManager();
+});
+
+templateManagerTableWrap.addEventListener("input", (e) => {
+  const row = e.target.closest("tr[data-template-id]");
+  if (!row) return;
+  const draft = ensureTemplateManagerDraft();
+  const item = draft.templates.find((template) => template.id === row.dataset.templateId);
+  if (!item) return;
+  const field = e.target.dataset.field;
+  if (!field) return;
+  item[field] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+});
+
+templateManagerTableWrap.addEventListener("change", (e) => {
+  const row = e.target.closest("tr[data-template-id]");
+  if (!row) return;
+  const draft = ensureTemplateManagerDraft();
+  const item = draft.templates.find((template) => template.id === row.dataset.templateId);
+  if (!item) return;
+  const field = e.target.dataset.field;
+  if (!field) return;
+  item[field] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  if (["language", "calcGroupId", "useSemesterOverrides"].includes(field)) {
+    renderTemplateManager();
+  }
+});
+
+templateManagerTableWrap.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action='delete-template']");
+  if (!btn) return;
+  if (!canEdit()) return;
+  const row = btn.closest("tr[data-template-id]");
+  if (!row) return;
+  const draft = ensureTemplateManagerDraft();
+  const target = draft.templates.find((template) => template.id === row.dataset.templateId);
+  if (!target) return;
+  if (!confirm(`"${getTemplateCardTitle(target)}" 카드를 삭제할까요?`)) return;
+  draft.templates = draft.templates.filter((template) => template.id !== target.id);
+  renderTemplateManager();
+});
+
+templateGroupTableWrap.addEventListener("input", (e) => {
+  const row = e.target.closest("tr[data-group-id]");
+  if (!row) return;
+  const draft = ensureTemplateManagerDraft();
+  const group = draft.templateGroups.find((item) => item.id === row.dataset.groupId);
+  if (!group) return;
+  const field = e.target.dataset.field;
+  if (!field) return;
+  group[field] = e.target.value;
+});
+
+templateGroupTableWrap.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-action='delete-group']");
+  if (!btn) return;
+  if (!canEdit()) return;
+  const row = btn.closest("tr[data-group-id]");
+  if (!row) return;
+  const draft = ensureTemplateManagerDraft();
+  const group = draft.templateGroups.find((item) => item.id === row.dataset.groupId);
+  if (!group) return;
+  if (!confirm(`"${group.name}" 계산 그룹을 삭제할까요?`)) return;
+  draft.templateGroups = draft.templateGroups.filter((item) => item.id !== group.id);
+  draft.templates.forEach((template) => {
+    if (template.calcGroupId === group.id) template.calcGroupId = null;
+  });
+  renderTemplateManager();
 });
 
 // ================================================================

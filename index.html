@@ -26,7 +26,10 @@
   <main class="page">
     <aside class="sidebar">
       <section class="panel">
-        <h2>과목 카드</h2>
+        <div class="section-heading-row">
+          <h2>과목 카드</h2>
+          <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
+        </div>
 
         <div id="templateList" class="template-list"></div>
         <div class="section-gap"></div>
@@ -115,13 +118,73 @@
         </div>
       </div>
 
-      <div class="tab-bar">
-        <button id="tab7to9Btn" class="tab-btn active" type="button">7 · 8 · 9</button>
-        <button id="tab10to12Btn" class="tab-btn" type="button">10 · 11 · 12</button>
+      <div id="boardView" class="main-view">
+        <div class="tab-bar">
+          <button id="tab7to9Btn" class="tab-btn active" type="button">7 · 8 · 9</button>
+          <button id="tab10to12Btn" class="tab-btn" type="button">10 · 11 · 12</button>
+        </div>
+
+        <div class="board-scroll">
+          <div id="gradeBoard" class="grade-board"></div>
+        </div>
       </div>
 
-      <div class="board-scroll">
-        <div id="gradeBoard" class="grade-board"></div>
+      <div id="templateManagerView" class="main-view hidden">
+        <div class="manager-header">
+          <div>
+            <h2>과목카드 편집</h2>
+            <p class="manager-subtitle">과목카드와 계산 그룹을 표 형태로 한 번에 관리합니다. 저장 버튼을 눌러야 반영됩니다.</p>
+          </div>
+          <div class="manager-actions">
+            <button id="templateManagerBackBtn" class="secondary-btn" type="button">커리큘럼으로</button>
+            <button id="templateManagerAddRowBtn" class="secondary-btn" type="button">과목카드 추가</button>
+            <button id="templateManagerDiscardBtn" class="secondary-btn" type="button">변경 취소</button>
+            <button id="templateManagerSaveBtn" class="primary-btn" type="button">저장</button>
+          </div>
+        </div>
+
+        <div class="manager-toolbar">
+          <input id="templateManagerSearchInput" type="text" placeholder="과목명/교사 검색" />
+          <select id="templateManagerLanguageFilter">
+            <option value="all">전체 언어</option>
+            <option value="Korean">Korean</option>
+            <option value="English">English</option>
+            <option value="Both">Both</option>
+          </select>
+          <select id="templateManagerSplitFilter">
+            <option value="all">전체 카드</option>
+            <option value="split">학기 분리 카드만</option>
+            <option value="same">공통 카드만</option>
+          </select>
+          <select id="templateManagerSortSelect">
+            <option value="ko-asc">한글명 ↑</option>
+            <option value="ko-desc">한글명 ↓</option>
+            <option value="en-asc">영문명 ↑</option>
+            <option value="language">언어별</option>
+            <option value="group">계산그룹별</option>
+          </select>
+        </div>
+
+        <div class="manager-scroll">
+          <section class="manager-section">
+            <div class="manager-section-header">
+              <h3>과목카드 표 편집</h3>
+              <span id="templateManagerCount" class="manager-count"></span>
+            </div>
+            <div id="templateManagerTableWrap" class="manager-table-wrap"></div>
+          </section>
+
+          <section class="manager-section">
+            <div class="manager-section-header">
+              <div>
+                <h3>계산 그룹 관리</h3>
+                <p class="manager-section-note">같은 계산 그룹에 속한 과목은 총과목수/이수단위 계산 시 하나처럼 계산됩니다. 대표 시수를 비워두면 해당 그룹 내 최대 시수를 사용합니다.</p>
+              </div>
+              <button id="addTemplateGroupBtn" class="secondary-btn" type="button">그룹 추가</button>
+            </div>
+            <div id="templateGroupTableWrap" class="manager-table-wrap"></div>
+          </section>
+        </div>
       </div>
     </section>
   </main>
