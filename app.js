@@ -874,28 +874,15 @@ function buildExpandedMeta(sem1Item, sem2Item) {
   const s1 = sem1Item ? getSemesterTemplateData(sem1Item, "sem1") : null;
   const s2 = sem2Item ? getSemesterTemplateData(sem2Item, "sem2") : null;
 
-  const sameSem = (
-    sem1Item && sem2Item &&
-    sem1Item.id === sem2Item.id &&
-    s1.teacher === s2.teacher
-  );
+  const chips = [];
 
-  if (sameSem) {
-    // Single teacher line
-    if (s1.teacher) {
-      meta.appendChild(buildMetaChip(s1.teacher));
-    }
-  } else {
-    // Show both with labels if they have teachers
-    if (s1 && s1.teacher) {
-      meta.appendChild(buildMetaLabel("1학기"));
-      meta.appendChild(buildMetaChip(s1.teacher));
-    }
-    if (s2 && s2.teacher) {
-      meta.appendChild(buildMetaLabel("2학기"));
-      meta.appendChild(buildMetaChip(s2.teacher));
-    }
-  }
+  if (s1 && s1.teacher) chips.push(s1.teacher);
+  if (s2 && s2.teacher) chips.push(s2.teacher);
+
+  uniqueOrdered(chips).forEach((teacher) => {
+    meta.appendChild(buildMetaChip(teacher));
+  });
+
   return meta;
 }
 
@@ -1009,19 +996,16 @@ function createMergedPlacedCard(templateId, grade, rowData) {
 
   const titleWrap = document.createElement("div");
   titleWrap.className = "placed-title-wrap";
+
   const ko = document.createElement("div");
   ko.className = "placed-title-ko";
   ko.textContent = sem1Data.nameKo || sem1Data.nameEn || "-";
+
   const en = document.createElement("div");
   en.className = "placed-title-en";
   en.textContent = sem1Data.nameEn || "-";
 
-  // "1·2학기" badge
-  const badge = document.createElement("span");
-  badge.className = "merged-badge";
-  badge.textContent = "1·2학기";
-
-  titleWrap.append(ko, en, badge);
+  titleWrap.append(ko, en);
   top.appendChild(titleWrap);
 
   if (canEdit()) {
@@ -1029,13 +1013,12 @@ function createMergedPlacedCard(templateId, grade, rowData) {
       e.stopPropagation();
       clearRowBoth(grade, rowData.id);
     });
-    clearBtn.title = "1·2학기 모두 제거";
+    clearBtn.title = "과목 제거";
     clearBtn.addEventListener("mousedown", (e) => e.stopPropagation());
 
     top.appendChild(clearBtn);
   }
 
-  // #8 — Expanded meta shows both sem teachers
   const meta = buildExpandedMeta(item, item);
 
   card.append(top, meta);

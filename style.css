@@ -611,39 +611,6 @@ button {
   background: linear-gradient(135deg, white 85%, rgba(99,102,241,0.06) 100%);
 }
 
-/* "1·2학기" badge on merged cards */
-.merged-badge {
-  display: inline-block;
-  font-size: 9px;
-  font-weight: 700;
-  color: #6366f1;
-  background: #e0e7ff;
-  border-radius: 999px;
-  padding: 1px 5px;
-  margin-top: 2px;
-  letter-spacing: 0.2px;
-}
-
-/* ÷ split button */
-.split-btn {
-  width: 16px;
-  height: 16px;
-  min-width: 16px;
-  border-radius: 999px !important;
-  padding: 0;
-  background: rgba(99,102,241,0.15) !important;
-  color: #6366f1 !important;
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1;
-  margin-top: 1px;
-  font-weight: 800;
-}
-
-.split-btn:hover {
-  background: rgba(99,102,241,0.3) !important;
-}
-
 /* ── Placed card internals ───────────────────────────── */
 .placed-top {
   display: flex;
