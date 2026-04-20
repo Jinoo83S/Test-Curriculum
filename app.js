@@ -79,7 +79,6 @@ const templateManagerSaveBtn = document.getElementById("templateManagerSaveBtn")
 const templateManagerDiscardBtn = document.getElementById("templateManagerDiscardBtn");
 const templateGroupTableWrap = document.getElementById("templateGroupTableWrap");
 const addTemplateGroupBtn = document.getElementById("addTemplateGroupBtn");
-const templateManagerSaveStatus = document.getElementById("templateManagerSaveStatus");
 
 // ================================================================
 // SECTION 3 · Constants
@@ -234,62 +233,6 @@ function createDefaultTemplates() {
   ];
 }
 
-function getTemplateUsageSummary(templateId) {
-  const usage = [];
-
-  GRADE_KEYS.forEach((grade) => {
-    (state.gradeBoards[grade] || []).forEach((row) => {
-      const labels = [];
-
-      if (row.sem1TemplateId === templateId) labels.push("1학기");
-      if (row.sem2TemplateId === templateId) labels.push("2학기");
-
-      if (labels.length) {
-        usage.push(`${grade} ${labels.join("+")}`);
-      }
-    });
-  });
-
-  return usage;
-}
-
-function enableDragScroll(element) {
-  if (!element || element.dataset.dragScrollBound === "yes") return;
-  element.dataset.dragScrollBound = "yes";
-
-  let isDown = false;
-  let startX = 0;
-  let startY = 0;
-  let scrollLeft = 0;
-  let scrollTop = 0;
-
-  element.addEventListener("mousedown", (e) => {
-    const target = e.target;
-    if (target.closest("input, select, button, textarea, label")) return;
-
-    isDown = true;
-    element.classList.add("dragging-scroll");
-    startX = e.pageX;
-    startY = e.pageY;
-    scrollLeft = element.scrollLeft;
-    scrollTop = element.scrollTop;
-    e.preventDefault();
-  });
-
-  window.addEventListener("mouseup", () => {
-    isDown = false;
-    element.classList.remove("dragging-scroll");
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!isDown) return;
-    const dx = e.pageX - startX;
-    const dy = e.pageY - startY;
-    element.scrollLeft = scrollLeft - dx;
-    element.scrollTop = scrollTop - dy;
-  });
-}
-
 // ================================================================
 // SECTION 6 · Data Model: Rows & Boards
 // ================================================================
@@ -381,8 +324,6 @@ let saveTimer      = null;
 let activeTab      = "tab7to9";
 let activeMainView = "board";
 let templateManagerDraft = null;
-let templateManagerDirty = false;
-
 const templateManagerUi = {
   search: "",
   language: "all",
@@ -415,40 +356,13 @@ function ensureTemplateManagerDraft() {
 function openTemplateManager() {
   activeMainView = "manager";
   ensureTemplateManagerDraft();
-  setTemplateManagerDirty(false);
   render();
 }
 
 function closeTemplateManager() {
   activeMainView = "board";
   resetTemplateManagerDraft();
-  setTemplateManagerDirty(false);
   render();
-}
-
-function setTemplateManagerDirty(isDirty) {
-  templateManagerDirty = isDirty;
-  updateTemplateManagerSaveStatus();
-}
-
-function updateTemplateManagerSaveStatus(mode = null) {
-  if (!templateManagerSaveStatus) return;
-
-  templateManagerSaveStatus.classList.remove("dirty", "saved", "saving");
-
-  if (mode === "saving") {
-    templateManagerSaveStatus.textContent = "저장 중...";
-    templateManagerSaveStatus.classList.add("saving");
-    return;
-  }
-
-  if (templateManagerDirty) {
-    templateManagerSaveStatus.textContent = "미저장 변경사항";
-    templateManagerSaveStatus.classList.add("dirty");
-  } else {
-    templateManagerSaveStatus.textContent = "저장됨";
-    templateManagerSaveStatus.classList.add("saved");
-  }
 }
 
 // ================================================================
@@ -1624,46 +1538,37 @@ function renderTemplateManagerTable() {
     .concat(draft.templateGroups.map((group) => `<option value="${escapeHtml(group.id)}" ${selectedId === group.id ? 'selected' : ''}>${escapeHtml(group.name)}</option>`))
     .join('');
 
-  const bodyRows = rows.map((item) => {
-    const usage = getTemplateUsageSummary(item.id);
-    const usageHtml = usage.length
-      ? usage.map((label) => `<span class="usage-chip">${escapeHtml(label)}</span>`).join("")
-      : `<span class="manager-note-chip">미사용</span>`;
-
-    return `
-      <tr data-template-id="${item.id}">
-        <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-template">삭제</button></td>
-        <td class="col-usage"><div class="usage-cell">${usageHtml}</div></td>
-        <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
-        <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
-        <td><input type="text" data-field="teacher" value="${escapeHtml(item.teacher)}" /></td>
-        <td class="col-language">
-          <select data-field="language">
-            ${['Korean','English','Both'].map((language) => `<option value="${language}" ${item.language === language ? 'selected' : ''}>${language}</option>`).join('')}
-          </select>
-        </td>
-        <td class="col-group">
-          <select data-field="calcGroupId">
-            ${buildGroupOptions(item.calcGroupId || "")}
-          </select>
-        </td>
-        <td class="col-toggle toggle-cell"><input type="checkbox" data-field="useSemesterOverrides" ${item.useSemesterOverrides ? 'checked' : ''} /></td>
-        <td><input type="text" data-field="sem1NameKo" value="${escapeHtml(item.sem1NameKo)}" /></td>
-        <td><input type="text" data-field="sem1NameEn" value="${escapeHtml(item.sem1NameEn)}" /></td>
-        <td><input type="text" data-field="sem1Teacher" value="${escapeHtml(item.sem1Teacher)}" /></td>
-        <td><input type="text" data-field="sem2NameKo" value="${escapeHtml(item.sem2NameKo)}" /></td>
-        <td><input type="text" data-field="sem2NameEn" value="${escapeHtml(item.sem2NameEn)}" /></td>
-        <td><input type="text" data-field="sem2Teacher" value="${escapeHtml(item.sem2Teacher)}" /></td>
-      </tr>
-    `;
-  }).join('');
+  const bodyRows = rows.map((item) => `
+    <tr data-template-id="${item.id}">
+      <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-template">삭제</button></td>
+      <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
+      <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
+      <td><input type="text" data-field="teacher" value="${escapeHtml(item.teacher)}" /></td>
+      <td class="col-language">
+        <select data-field="language">
+          ${['Korean','English','Both'].map((language) => `<option value="${language}" ${item.language === language ? 'selected' : ''}>${language}</option>`).join('')}
+        </select>
+      </td>
+      <td class="col-group">
+        <select data-field="calcGroupId">
+          ${buildGroupOptions(item.calcGroupId || "")}
+        </select>
+      </td>
+      <td class="col-toggle toggle-cell"><input type="checkbox" data-field="useSemesterOverrides" ${item.useSemesterOverrides ? 'checked' : ''} /></td>
+      <td><input type="text" data-field="sem1NameKo" value="${escapeHtml(item.sem1NameKo)}" /></td>
+      <td><input type="text" data-field="sem1NameEn" value="${escapeHtml(item.sem1NameEn)}" /></td>
+      <td><input type="text" data-field="sem1Teacher" value="${escapeHtml(item.sem1Teacher)}" /></td>
+      <td><input type="text" data-field="sem2NameKo" value="${escapeHtml(item.sem2NameKo)}" /></td>
+      <td><input type="text" data-field="sem2NameEn" value="${escapeHtml(item.sem2NameEn)}" /></td>
+      <td><input type="text" data-field="sem2Teacher" value="${escapeHtml(item.sem2Teacher)}" /></td>
+    </tr>
+  `).join('');
 
   templateManagerTableWrap.innerHTML = `
     <table class="manager-table">
       <thead>
         <tr>
           <th class="col-delete">삭제</th>
-          <th class="col-usage">적용 학년/학기</th>
           <th>한글 이름</th>
           <th>영어 이름</th>
           <th>공통 교사</th>
@@ -1681,7 +1586,6 @@ function renderTemplateManagerTable() {
       <tbody>${bodyRows}</tbody>
     </table>
   `;
-  setTemplateManagerDirty(true);
 }
 
 function renderTemplateGroupTable() {
@@ -1716,7 +1620,6 @@ function renderTemplateGroupTable() {
       <tbody>${bodyRows}</tbody>
     </table>
   `;
-  enableDragScroll(templateGroupTableWrap);
 }
 
 function renderTemplateManager() {
@@ -1738,7 +1641,6 @@ function addTemplateManagerRow() {
   const draft = ensureTemplateManagerDraft();
   draft.templates.unshift(normalizeTemplate({ id: uid("tpl"), language: "Both" }));
   renderTemplateManager();
-  setTemplateManagerDirty(true);
 }
 
 function addTemplateGroupDraft() {
@@ -1746,7 +1648,6 @@ function addTemplateGroupDraft() {
   const draft = ensureTemplateManagerDraft();
   draft.templateGroups.push(normalizeTemplateGroup({ id: uid("grp"), name: `그룹 ${draft.templateGroups.length + 1}`, creditValue: "" }));
   renderTemplateManager();
-  setTemplateManagerDirty(true);
 }
 
 function saveTemplateManagerDraftLocally() {
@@ -1762,7 +1663,6 @@ function saveTemplateManagerDraftLocally() {
 
 async function commitTemplateManagerDraft() {
   if (!canEdit()) return;
-  updateTemplateManagerSaveStatus("saving");
   saveTemplateManagerDraftLocally();
   state.templates = ensureTemplateManagerDraft().templates.map((item) => normalizeTemplate(cloneJson(item)));
   state.templateGroups = ensureTemplateManagerDraft().templateGroups.map((item) => normalizeTemplateGroup(cloneJson(item)));
@@ -1774,7 +1674,6 @@ async function commitTemplateManagerDraft() {
   invalidateTabs();
   render();
   await saveNow();
-  setTemplateManagerDirty(false);
 }
 
 function renderTabs() {
@@ -1940,7 +1839,6 @@ templateManagerDiscardBtn.addEventListener("click", () => {
   if (!canEdit()) return;
   if (!confirm("과목카드 편집 화면의 변경 내용을 취소할까요?")) return;
   resetTemplateManagerDraft();
-  setTemplateManagerDirty(false);
   renderTemplateManager();
 });
 templateManagerSaveBtn.addEventListener("click", commitTemplateManagerDraft);
@@ -1972,7 +1870,6 @@ templateManagerTableWrap.addEventListener("input", (e) => {
   const field = e.target.dataset.field;
   if (!field) return;
   item[field] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-  setTemplateManagerDirty(true);
 });
 
 templateManagerTableWrap.addEventListener("change", (e) => {
@@ -1987,7 +1884,6 @@ templateManagerTableWrap.addEventListener("change", (e) => {
   if (["language", "calcGroupId", "useSemesterOverrides"].includes(field)) {
     renderTemplateManager();
   }
-  setTemplateManagerDirty(true);
 });
 
 templateManagerTableWrap.addEventListener("click", (e) => {
@@ -2036,5 +1932,3 @@ templateGroupTableWrap.addEventListener("click", (e) => {
 // SECTION 23 · Initialize
 // ================================================================
 render();
-updateTemplateManagerSaveStatus();
-enableDragScroll(templateManagerTableWrap);
