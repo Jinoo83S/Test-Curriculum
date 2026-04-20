@@ -1168,3 +1168,71 @@ button {
     grid-template-columns: 1fr;
   }
 }
+
+.manager-table-wrap,
+.manager-group-table-wrap {
+  overflow: auto;
+  cursor: grab;
+  user-select: none;
+}
+
+.manager-table-wrap.dragging-scroll,
+.manager-group-table-wrap.dragging-scroll {
+  cursor: grabbing;
+}
+
+.manager-table-wrap table,
+.manager-group-table-wrap table {
+  min-width: 1500px;
+}
+
+.manager-save-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  margin-right: 8px;
+}
+
+.manager-save-status.dirty {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.manager-save-status.saved {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.manager-save-status.saving {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.col-usage {
+  min-width: 170px;
+  width: 170px;
+}
+
+.usage-cell {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #374151;
+  white-space: normal;
+}
+
+.usage-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  margin: 2px 4px 2px 0;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 10px;
+  font-weight: 700;
+}
