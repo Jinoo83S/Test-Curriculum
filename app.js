@@ -85,8 +85,6 @@ const templateManagerTableWrap      = document.getElementById("templateManagerTa
 const templateManagerAddRowBtn      = document.getElementById("templateManagerAddRowBtn");
 const templateManagerSaveBtn        = document.getElementById("templateManagerSaveBtn");
 const templateManagerDiscardBtn     = document.getElementById("templateManagerDiscardBtn");
-const templateGroupTableWrap        = document.getElementById("templateGroupTableWrap");
-const addTemplateGroupBtn           = document.getElementById("addTemplateGroupBtn");
 
 // ================================================================
 // SECTION 3 · Constants
@@ -550,7 +548,7 @@ function setControlsDisabled(disabled){
    openGroupManagerBtn,openTemplateManagerBtn,
    groupManagerBackBtn,groupManagerAddGroupBtn,
    templateManagerBackBtn,templateManagerAddRowBtn,templateManagerSaveBtn,
-   templateManagerDiscardBtn,addTemplateGroupBtn,
+   templateManagerDiscardBtn,
    templateManagerSearchInput,templateManagerLanguageFilter,
    templateManagerSplitFilter,templateManagerSortSelect
   ].forEach(el=>{ if(el) el.disabled=disabled; });
@@ -1054,25 +1052,10 @@ function renderTemplateManagerTable(){
     </table>`;
 }
 
-function renderTemplateGroupTable(){
-  const draft=ensureTemplateManagerDraft();
-  if(!draft.templateGroups.length){ templateGroupTableWrap.innerHTML='<div class="manager-empty">아직 계산 그룹이 없습니다.</div>'; return; }
-  const bodyRows=draft.templateGroups.map(g=>{ const mc=draft.templates.filter(t=>t.calcGroupId===g.id).length; return `<tr data-group-id="${g.id}">
-    <td><input type="text" data-field="name" value="${escapeHtml(g.name)}" /></td>
-    <td class="col-credit"><input type="text" data-field="creditValue" value="${escapeHtml(g.creditValue)}" placeholder="대표 시수" /></td>
-    <td><span class="manager-note-chip">연결 ${mc}개</span></td>
-    <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-group">삭제</button></td>
-  </tr>`; }).join("");
-  templateGroupTableWrap.innerHTML=`<table class="manager-table groups-table">
-    <thead><tr><th>그룹명</th><th class="col-credit">대표 시수</th><th>연결 카드 수</th><th class="col-delete">삭제</th></tr></thead>
-    <tbody>${bodyRows}</tbody>
-  </table>`;
-}
 
-function renderTemplateManager(){ ensureTemplateManagerDraft(); renderTemplateManagerTable(); renderTemplateGroupTable(); }
+function renderTemplateManager(){ ensureTemplateManagerDraft(); renderTemplateManagerTable(); }
 
 function addTemplateManagerRow(){ if(!canEdit()) return; const d=ensureTemplateManagerDraft(); d.templates.unshift(normalizeTemplate({id:uid("tpl"),language:"Both"})); renderTemplateManager(); }
-function addTemplateGroupDraft(){ if(!canEdit()) return; const d=ensureTemplateManagerDraft(); d.templateGroups.push(normalizeTemplateGroup({id:uid("grp"),name:`그룹 ${d.templateGroups.length+1}`,creditValue:""})); renderTemplateManager(); }
 function saveTemplateManagerDraftLocally(){
   const d=ensureTemplateManagerDraft(); const vgids=new Set(d.templateGroups.map(g=>g.id));
   d.templates=d.templates.map(item=>{ const n=normalizeTemplate(item); if(n.calcGroupId&&!vgids.has(n.calcGroupId)) n.calcGroupId=null; return n; });
@@ -1154,7 +1137,6 @@ addGroupOptionBtn.addEventListener("click",   ()=>{ addOption("group",   groupOp
 templateManagerAddRowBtn.addEventListener("click",addTemplateManagerRow);
 templateManagerDiscardBtn.addEventListener("click",()=>{ if(!canEdit()) return; if(!confirm("변경 내용을 취소할까요?")) return; resetTemplateManagerDraft(); renderTemplateManager(); });
 templateManagerSaveBtn.addEventListener("click",commitTemplateManagerDraft);
-addTemplateGroupBtn.addEventListener("click",addTemplateGroupDraft);
 templateManagerSearchInput.addEventListener("input",   e=>{ templateManagerUi.search=e.target.value; renderTemplateManager(); });
 templateManagerLanguageFilter.addEventListener("change",e=>{ templateManagerUi.language=e.target.value; renderTemplateManager(); });
 templateManagerSplitFilter.addEventListener("change",  e=>{ templateManagerUi.split=e.target.value; renderTemplateManager(); });
@@ -1178,19 +1160,6 @@ templateManagerTableWrap.addEventListener("click",e=>{
   const d=ensureTemplateManagerDraft(); const tgt=d.templates.find(t=>t.id===row.dataset.templateId); if(!tgt) return;
   if(!confirm(`"${getTemplateCardTitle(tgt)}" 카드를 삭제할까요?`)) return;
   d.templates=d.templates.filter(t=>t.id!==tgt.id); renderTemplateManager();
-});
-templateGroupTableWrap.addEventListener("input",e=>{
-  const row=e.target.closest("tr[data-group-id]"); if(!row) return;
-  const d=ensureTemplateManagerDraft(); const g=d.templateGroups.find(g=>g.id===row.dataset.groupId); if(!g) return;
-  const f=e.target.dataset.field; if(!f) return; g[f]=e.target.value;
-});
-templateGroupTableWrap.addEventListener("click",e=>{
-  const btn=e.target.closest("button[data-action='delete-group']"); if(!btn) return;
-  if(!canEdit()) return;
-  const row=btn.closest("tr[data-group-id]"); if(!row) return;
-  const d=ensureTemplateManagerDraft(); const g=d.templateGroups.find(g=>g.id===row.dataset.groupId); if(!g) return;
-  if(!confirm(`"${g.name}" 계산 그룹을 삭제할까요?`)) return;
-  d.templateGroups=d.templateGroups.filter(g2=>g2.id!==g.id); d.templates.forEach(t=>{ if(t.calcGroupId===g.id) t.calcGroupId=null; }); renderTemplateManager();
 });
 
 // ================================================================
