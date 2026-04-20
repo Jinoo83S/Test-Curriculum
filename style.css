@@ -222,19 +222,9 @@ button {
 .template-card.dragging,
 .placed-card.dragging { opacity: 0.4; }
 
-.template-main {
-  min-width: 0;
-  padding: 5px 7px;
-}
+/* .template-main moved to bottom */
 
-.template-name-ko {
-  font-weight: 700;
-  font-size: 12px;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* .template-name-ko moved to bottom */
 
 .template-actions,
 .template-semester-preview { display: none; }
@@ -1471,4 +1461,96 @@ button {
   grid-template-columns: minmax(160px, 1.4fr) repeat(4, minmax(100px, 0.7fr));
   gap: 8px;
   margin-bottom: 12px;
+}
+
+/* ── School level dot badge (on template cards) ──────── */
+.template-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 5px 7px;
+}
+
+.template-name-ko {
+  flex: 1;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.school-level-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-top: 3px;
+  display: inline-block;
+}
+
+.level-dot-middle {
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,0.22);
+}
+
+.level-dot-high {
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16,185,129,0.22);
+}
+
+/* ── Form: 2-col grid for language + level picker ─────── */
+.form-grid-2col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ── Level picker (segmented button in form) ─────────── */
+.level-picker {
+  display: flex;
+  border-radius: 7px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+}
+
+.level-btn {
+  flex: 1;
+  padding: 5px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  background: white;
+  color: #6b7280;
+  border: none;
+  border-right: 1px solid #d1d5db;
+  border-radius: 0;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.level-btn:last-child { border-right: none; }
+.level-btn:hover { background: #f3f4f6; }
+
+.level-btn[data-level="중등"].active {
+  background: #3b82f6;
+  color: white;
+}
+.level-btn[data-level="고등"].active {
+  background: #10b981;
+  color: white;
+}
+.level-btn[data-level="공통"].active {
+  background: #6b7280;
+  color: white;
+}
+
+/* ── Group manager card top row ──────────────────────── */
+.group-mgr-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+.group-mgr-card-top .school-level-dot {
+  margin-top: 4px;
 }
