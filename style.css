@@ -1,6 +1,4 @@
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
@@ -10,11 +8,26 @@ body {
   font-size: 13px;
 }
 
-.hidden {
-  display: none !important;
+.hidden { display: none !important; }
+
+button {
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
 }
 
-/* ── Topbar ── */
+.primary-btn,
+.secondary-btn,
+.danger-btn {
+  padding: 6px 12px;
+}
+
+.primary-btn  { background: #2563eb; color: white; }
+.secondary-btn { background: #e5e7eb; color: #111827; }
+.danger-btn   { background: #dc2626; color: white; }
+
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -57,25 +70,6 @@ body {
   border-radius: 20px;
 }
 
-button {
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 12px;
-}
-
-.primary-btn,
-.secondary-btn,
-.danger-btn {
-  padding: 6px 12px;
-}
-
-.primary-btn  { background: #2563eb; color: white; }
-.secondary-btn { background: #e5e7eb; color: #111827; }
-.danger-btn   { background: #dc2626; color: white; }
-
-/* ── Layout ── */
 .page {
   display: grid;
   grid-template-columns: 320px 1fr;
@@ -98,7 +92,6 @@ button {
   gap: 8px;
 }
 
-/* ── Sidebar Panel ── */
 .panel {
   background: white;
   border-radius: 10px;
@@ -124,10 +117,14 @@ button {
   color: #374151;
 }
 
+.section-gap { height: 10px; }
+
 .form-grid {
   display: grid;
   gap: 6px;
 }
+
+.form-grid-tight { margin-top: 8px; }
 
 .form-grid input,
 .form-grid select,
@@ -155,7 +152,46 @@ button {
   margin-top: 8px;
 }
 
-/* ── Template Cards ── */
+.semester-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid #d1d9e6;
+  border-radius: 8px;
+  background: #f8fbff;
+  cursor: pointer;
+  font-weight: 600;
+  color: #1e3a5f;
+}
+
+.semester-mode-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.semester-fields {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.semester-field-card {
+  border: 1px solid #d1d9e6;
+  border-radius: 8px;
+  background: #f8fbff;
+  padding: 10px;
+}
+
+.semester-field-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+  margin-bottom: 8px;
+}
+
 .template-list {
   margin-top: 8px;
   display: grid;
@@ -179,9 +215,7 @@ button {
 }
 
 .template-card.dragging,
-.placed-card.dragging {
-  opacity: 0.4;
-}
+.placed-card.dragging { opacity: 0.4; }
 
 .template-main {
   min-width: 0;
@@ -197,29 +231,30 @@ button {
   text-overflow: ellipsis;
 }
 
-.template-name-en,
-.template-meta {
-  display: none;
-}
-
-.template-actions {
-  display: none;
-}
+.template-actions,
+.template-semester-preview { display: none; }
 
 .template-card.expanded {
   background: #eef5ff;
   border-color: #60a5fa;
-  grid-column: 1 / -1;  /* 확장 시 2열 전체 차지 */
+  grid-column: 1 / -1;
 }
 
-.template-card.expanded .template-name-ko {
-  white-space: normal;  /* 확장 시 줄바꿈 허용 */
-}
+.template-card.expanded .template-name-ko { white-space: normal; }
 
 .template-card.expanded .template-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   padding: 0 7px 6px;
+  align-items: center;
+}
+
+.template-card.expanded .template-semester-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 0 7px 7px;
 }
 
 .template-actions button {
@@ -231,7 +266,53 @@ button {
 .edit-btn   { background: #fef3c7; color: #92400e; }
 .delete-btn { background: #fee2e2; color: #991b1b; }
 
-/* ── Option Chips ── */
+.template-teacher-inline {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.semester-preview-item {
+  min-width: 0;
+  border: 1px solid #d6e0f2;
+  border-radius: 7px;
+  background: rgba(255,255,255,0.9);
+  padding: 6px 7px;
+}
+
+.semester-preview-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #1e3a5f;
+  margin-bottom: 4px;
+}
+
+.semester-preview-name {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.semester-preview-en,
+.semester-preview-teacher {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .option-box + .option-box { margin-top: 12px; }
 
 .option-list {
@@ -263,13 +344,24 @@ button {
   line-height: 1;
 }
 
+.order-btn {
+  width: 15px;
+  height: 15px;
+  border-radius: 3px !important;
+  background: #dbeafe !important;
+  color: #1d4ed8 !important;
+  font-size: 9px !important;
+}
+
+.order-btn:hover:not(:disabled) { background: #93c5fd !important; }
+.order-btn:disabled { opacity: 0.25; cursor: default; }
+
 .inline-form {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 5px;
 }
 
-/* ── Main Panel ── */
 .main-panel {
   position: relative;
   background: white;
@@ -304,7 +396,6 @@ button {
   box-shadow: 0 10px 30px rgba(0,0,0,0.1);
 }
 
-/* ── Tab Bar ── */
 .tab-bar {
   display: flex;
   gap: 4px;
@@ -331,13 +422,11 @@ button {
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
-/* ── Board Scroll ── */
 .board-scroll {
   flex: 1;
   overflow: auto;
 }
 
-/* ── Grade Board ── */
 .grade-board {
   display: flex;
   gap: 8px;
@@ -345,7 +434,6 @@ button {
   align-items: flex-start;
 }
 
-/* ── Grade Column ── */
 .grade-column {
   flex: 1;
   min-width: 260px;
@@ -373,10 +461,13 @@ button {
   margin-top: 1px;
 }
 
-/* ── Table Header ── */
-.grade-header-row {
+.grade-header-row,
+.grade-data-row {
   display: grid;
   grid-template-columns: 52px 52px 58px 1fr 1fr 40px 24px;
+}
+
+.grade-header-row {
   background: #dce8f8;
   border-bottom: 2px solid #b6c8e0;
   font-size: 11px;
@@ -384,36 +475,16 @@ button {
   color: #1e3a5f;
 }
 
-/* ── Data Row ── */
 .grade-data-row {
-  display: grid;
-  grid-template-columns: 52px 52px 58px 1fr 1fr 40px 24px;
   border-bottom: 1px solid #edf1f7;
   align-items: stretch;
   min-height: 48px;
 }
 
-.grade-data-row:nth-child(even) {
-  background: #fafcff;
-}
+.grade-data-row:nth-child(even) { background: #fafcff; }
+.grade-data-row:hover { background: #f0f6ff; }
+.grade-data-row.spacer-row:hover { background: transparent; }
 
-.grade-data-row:hover {
-  background: #f0f6ff;
-}
-
-.grade-data-row.spacer-row:hover {
-  background: transparent;
-}
-
-.spacer-cell {
-  border-right: 1px solid #e5e7eb;
-}
-
-.spacer-cell:last-child {
-  border-right: none;
-}
-
-/* ── Header Cell ── */
 .header-cell {
   padding: 5px 3px;
   display: flex;
@@ -425,10 +496,8 @@ button {
   white-space: nowrap;
   overflow: hidden;
 }
-
 .header-cell:last-child { border-right: none; }
 
-/* Resize handle */
 .col-resize-handle {
   position: absolute;
   right: 0;
@@ -438,13 +507,9 @@ button {
   cursor: col-resize;
   z-index: 2;
 }
-
 .col-resize-handle:hover,
-.col-resize-handle.resizing {
-  background: #2563eb;
-}
+.col-resize-handle.resizing { background: #2563eb; }
 
-/* ── Compact Select ── */
 .row-select {
   width: 100%;
   height: 100%;
@@ -476,16 +541,16 @@ button {
   box-shadow: inset 3px 0 0 rgba(0, 0, 0, 0.16);
 }
 
-/* ── Drop Cell ── */
 .drop-cell {
-  border: none;
   border-right: 1px solid #e5e7eb;
   background: transparent;
   padding: 3px;
   display: flex;
   align-items: stretch;
   min-height: 46px;
+  min-width: 0;
   position: relative;
+  overflow: hidden;
 }
 
 .drop-cell.empty::after {
@@ -502,9 +567,10 @@ button {
   box-shadow: inset 0 0 0 2px #2563eb;
 }
 
-/* ── Placed Card ── */
 .placed-card {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border-radius: 4px;
   border-left: 3px solid currentColor;
   background: white;
@@ -514,17 +580,17 @@ button {
   gap: 1px;
   cursor: grab;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  overflow: hidden;
 }
 
-.placed-card:hover {
-  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-}
+.placed-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
 
 .placed-top {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 2px;
+  min-width: 0;
 }
 
 .placed-title-wrap {
@@ -543,7 +609,7 @@ button {
 
 .placed-title-en {
   font-size: 10px;
-  opacity: 0.8;
+  opacity: 0.85;
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -568,18 +634,24 @@ button {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
+  min-width: 0;
 }
 
-.placed-meta.placed-meta-hidden {
-  display: none;
-}
+.placed-meta.placed-meta-hidden { display: none; }
 
-.placed-meta .meta-chip {
-  font-size: 9px;
+.meta-chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 1px 4px;
+  border-radius: 999px;
+  background: rgba(226,232,240,0.95);
+  font-size: 9px;
 }
 
-/* ── Credit Input ── */
 .credit-input {
   width: 100%;
   height: 100%;
@@ -592,23 +664,16 @@ button {
   color: #1e3a5f;
   padding: 2px 2px;
 }
-
 .credit-input:focus {
   outline: none;
   background: #eef2ff;
   box-shadow: inset 0 0 0 2px #2563eb;
 }
+.credit-input::placeholder { color: #d1d5db; font-weight: 400; }
 
-.credit-input::placeholder {
-  color: #d1d5db;
-  font-weight: 400;
-}
-
-/* ── Row Delete Button ── */
 .row-delete-btn {
   background: transparent;
   color: #d1d5db;
-  border-radius: 4px;
   font-size: 14px;
   width: 100%;
   height: 100%;
@@ -618,13 +683,38 @@ button {
   transition: all 0.15s;
   padding: 0;
 }
+.row-delete-btn:hover { background: #fee2e2; color: #dc2626; }
 
-.row-delete-btn:hover {
-  background: #fee2e2;
-  color: #dc2626;
+.track-group-divider {
+  padding: 4px 10px 4px 18px;
+  background: #e8f0ff;
+  color: #1e3a5f;
+  font-size: 11px;
+  font-weight: 700;
+  border-top: 1px solid #b6c8e0;
+  border-bottom: 1px solid #dbe2ef;
+  letter-spacing: 0.2px;
 }
 
-/* ── Grade Footer ── */
+.grade-data-row.spacer-row {
+  background:
+    linear-gradient(rgba(238,242,247,0.84), rgba(238,242,247,0.84)),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255,255,255,0.38) 0px,
+      rgba(255,255,255,0.38) 9px,
+      rgba(222,228,236,0.55) 9px,
+      rgba(222,228,236,0.55) 18px
+    );
+}
+
+.spacer-cell {
+  min-height: 48px;
+  border-right: 1px solid rgba(229,231,235,0.8);
+  backdrop-filter: blur(1.5px);
+}
+.spacer-cell:last-child { border-right: none; }
+
 .grade-footer {
   padding: 5px 8px;
   display: flex;
@@ -642,10 +732,8 @@ button {
   font-weight: 600;
   width: 100%;
 }
-
 .add-row-btn:hover { background: #bfdbfe; }
 
-/* ── Summary Section ── */
 .summary-wrap {
   border-top: 2px solid #dbe2ef;
   background: #f8fbff;
@@ -658,13 +746,11 @@ button {
   color: #1e3a5f;
   background: #dce8f8;
   border-bottom: 1px solid #c7d2e8;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .grade-summary-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1.2fr 1fr;
   border-bottom: 1px solid #edf1f7;
   font-size: 11px;
 }
@@ -675,29 +761,19 @@ button {
   align-items: center;
   border-right: 1px solid #edf1f7;
 }
-
 .summary-cell:last-child { border-right: none; }
+.summary-label { font-weight: 700; color: #1e3a5f; }
 
-.summary-label {
-  font-weight: 700;
-  color: #1e3a5f;
-}
-
-.summary-spacer { background: transparent; }
-
-/* ── Language Colors ── */
 .lang-korean  { color: #1d4ed8; }
 .lang-english { color: #dc2626; }
 .lang-both    { color: #7c3aed; }
+.lang-korean .template-name-ko,
+.lang-english .template-name-ko,
+.lang-both .template-name-ko,
+.lang-korean .placed-title-en,
+.lang-english .placed-title-en,
+.lang-both .placed-title-en { color: inherit; }
 
-.lang-korean  .meta-chip,
-.lang-english .meta-chip,
-.lang-both    .meta-chip,
-.lang-korean  .template-name-en,
-.lang-english .template-name-en,
-.lang-both    .template-name-en { color: inherit; }
-
-/* ── Responsive ── */
 @media (max-width: 900px) {
   .page {
     grid-template-columns: 1fr;
@@ -707,69 +783,5 @@ button {
   .sidebar { height: auto; }
   .main-panel { height: 80vh; }
   .grade-column { min-width: 240px; }
-}
-
-
-/* ── GPT - 지금처럼 한 줄 유지 + 말줄임표 ── */
-/* 긴 과목명이 칸 밖으로 밀려나지 않게 */
-.drop-cell {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.placed-card {
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-}
-
-.placed-top,
-.placed-title-wrap,
-.placed-meta {
-  min-width: 0;
-}
-
-.placed-meta .meta-chip {
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-
-/* ── Track Group Divider (2단계 - 작은 헤더) ── */
-.track-group-divider {
-  padding: 4px 10px 4px 18px;
-  background: #e8f0ff;
-  color: #1e3a5f;
-  font-size: 11px;
-  font-weight: 700;
-  border-top: 1px solid #b6c8e0;
-  border-bottom: 1px solid #dbe2ef;
-  letter-spacing: 0.2px;
-}
-
-.track-group-divider + .grade-data-row {
-  border-top: none;
-}
-
-/* ── Option Chip ↑↓ 버튼 ── */
-.order-btn {
-  width: 15px;
-  height: 15px;
-  border-radius: 3px;
-  background: #dbeafe;
-  color: #1d4ed8;
-  font-size: 9px;
-  padding: 0;
-  line-height: 1;
-}
-
-.order-btn:hover:not(:disabled) {
-  background: #93c5fd;
-}
-
-.order-btn:disabled {
-  opacity: 0.25;
-  cursor: default;
+  .template-card.expanded .template-semester-preview { grid-template-columns: 1fr; }
 }
