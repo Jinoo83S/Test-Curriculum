@@ -186,10 +186,18 @@ function getCommonTeacherCandidate(item) {
 
 /** #7 — true if 1·2학기 data are effectively identical */
 function isSemesterDataSame(item) {
+  if (!item) return false;
   if (!item.useSemesterOverrides) return true;
   const s1 = getSemesterTemplateData(item, "sem1");
   const s2 = getSemesterTemplateData(item, "sem2");
   return s1.nameKo === s2.nameKo && s1.nameEn === s2.nameEn && s1.teacher === s2.teacher;
+}
+
+function shouldRenderMergedRow(rowData) {
+  if (!rowData?.sem1TemplateId || !rowData?.sem2TemplateId) return false;
+  if (rowData.sem1TemplateId !== rowData.sem2TemplateId) return false;
+  const item = getTemplateById(rowData.sem1TemplateId);
+  return isSemesterDataSame(item);
 }
 
 function createDefaultTemplates() {
@@ -1017,13 +1025,6 @@ function createMergedPlacedCard(templateId, grade, rowData) {
   top.appendChild(titleWrap);
 
   if (canEdit()) {
-    const splitBtn = makeBtn("÷", "split-btn", (e) => {
-      e.stopPropagation();
-      splitMergedRow(grade, rowData.id);
-    });
-    splitBtn.title = "1·2학기 분리";
-    splitBtn.addEventListener("mousedown", (e) => e.stopPropagation());
-
     const clearBtn = makeBtn("×", "clear-cell-btn", (e) => {
       e.stopPropagation();
       clearRowBoth(grade, rowData.id);
@@ -1031,7 +1032,7 @@ function createMergedPlacedCard(templateId, grade, rowData) {
     clearBtn.title = "1·2학기 모두 제거";
     clearBtn.addEventListener("mousedown", (e) => e.stopPropagation());
 
-    top.append(splitBtn, clearBtn);
+    top.appendChild(clearBtn);
   }
 
   // #8 — Expanded meta shows both sem teachers
@@ -1063,7 +1064,7 @@ function createDropCell(grade, rowData, semKey, templateId) {
     if (!currentDrag) return;
 
     if (currentDrag.kind === "template") {
-      placeTemplateTo(currentDrag.templateId, grade, rowData.id, semKey);
+      placeBothSems(currentDrag.templateId, grade, rowData.id);
       return;
     }
 
@@ -1180,9 +1181,9 @@ function createGradeRow(grade, rowData) {
   row.appendChild(createSelect(state.options.group, rowData.group,
     (v) => updateRowField(grade, rowData.id, "group", v)));
 
-  // #9 — Merged cell if sem1 === sem2 (both non-null)
+  // #9 — Merged cell only when 1·2학기 표시 내용이 실제로 동일할 때
   const { sem1TemplateId, sem2TemplateId } = rowData;
-  const isMerged = sem1TemplateId && sem1TemplateId === sem2TemplateId;
+  const isMerged = shouldRenderMergedRow(rowData);
 
   if (isMerged) {
     row.appendChild(createMergedDropCell(grade, rowData, sem1TemplateId));
