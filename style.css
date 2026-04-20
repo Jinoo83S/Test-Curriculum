@@ -883,6 +883,7 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;   /* keeps flex children bounded */
   flex: 1;
 }
 
@@ -1013,7 +1014,7 @@ button {
   background: #f8fbff;
   border: 1px solid #dbe2ef;
   border-radius: 10px;
-  overflow: hidden;
+  /* overflow: hidden removed — was preventing inner scroll */
 }
 
 .manager-section-header {
