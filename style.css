@@ -867,3 +867,63 @@ button {
   .grade-column { min-width: 240px; }
   .template-card.expanded .template-semester-preview { grid-template-columns: 1fr; }
 }
+
+.grade-title-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.grade-title-name {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.grade-title-totals {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.grade-title-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.14);
+  color: #e0ecff;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.category-summary-row {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr 1fr;
+  border-top: 1px solid #c7d2e8;
+  border-bottom: 1px solid #dbe2ef;
+  background: #f8fbff;
+  font-size: 11px;
+}
+
+.category-summary-label,
+.category-summary-value {
+  padding: 6px 8px;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid #e5edf7;
+  min-height: 32px;
+}
+
+.category-summary-label:last-child,
+.category-summary-value:last-child {
+  border-right: none;
+}
+
+.category-summary-label {
+  font-weight: 700;
+  color: #1e3a5f;
+  background: #eef4ff;
+}

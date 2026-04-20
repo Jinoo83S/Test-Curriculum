@@ -1264,44 +1264,92 @@ function getOrderedTracksForCategory(grades, category) {
   return tracks;
 }
 
-function getGradeSummaryRows(grade) {
-  const rows = state.gradeBoards[grade] || [];
-  return state.options.category.map((category) => {
-    const matched = rows.filter((r) =>
-      r.category === category && (r.sem1TemplateId || r.sem2TemplateId)
-    );
-    const totalCourses = matched.length;
-    const totalCredits = matched.reduce((sum, r) => {
-      const v = Number(String(r.credits).replace(/[^0-9.-]/g, ""));
-      return sum + (Number.isFinite(v) ? v : 0);
-    }, 0);
-    return { category, totalCourses, totalCredits };
-  });
+function hasPlacedTemplate(row) {
+  return !!(row?.sem1TemplateId || row?.sem2TemplateId);
 }
 
-function createSummarySection(grade) {
-  const wrap = document.createElement("div");
-  wrap.className = "summary-wrap";
-  const title = document.createElement("div");
-  title.className = "summary-title";
-  title.textContent = "총과목수 / 이수단위";
-  wrap.appendChild(title);
-  getGradeSummaryRows(grade).forEach((s) => {
-    const row    = document.createElement("div");
-    row.className = "grade-summary-row";
-    const label  = document.createElement("div");
-    label.className = "summary-cell summary-label";
-    label.textContent = s.category;
-    const courses= document.createElement("div");
-    courses.className = "summary-cell";
-    courses.textContent = `Total #Courses ${s.totalCourses}`;
-    const credits= document.createElement("div");
-    credits.className = "summary-cell";
-    credits.textContent = `Total #Credits ${s.totalCredits}`;
-    row.append(label, courses, credits);
-    wrap.appendChild(row);
-  });
-  return wrap;
+function parseCreditValue(value) {
+  const n = Number(String(value ?? "").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function getRepresentativeTrackCredit(rows) {
+  return rows.reduce((max, row) => Math.max(max, parseCreditValue(row.credits)), 0);
+}
+
+function summarizeCategoryRows(category, rows) {
+  const activeRows = (rows || []).filter(hasPlacedTemplate);
+
+  // 교과
+  if (clean(category) === "교과") {
+    const commonRows = activeRows.filter((row) => clean(row.track) === "공통");
+    const nonCommonRows = activeRows.filter((row) => clean(row.track) !== "공통");
+
+    const groupedByTrack = new Map();
+    nonCommonRows.forEach((row) => {
+      const key = clean(row.track) || row.id;
+      if (!groupedByTrack.has(key)) groupedByTrack.set(key, []);
+      groupedByTrack.get(key).push(row);
+    });
+
+    const totalCourses =
+      commonRows.length + groupedByTrack.size;
+
+    const totalCredits =
+      commonRows.reduce((sum, row) => sum + parseCreditValue(row.credits), 0) +
+      Array.from(groupedByTrack.values()).reduce(
+        (sum, groupRows) => sum + getRepresentativeTrackCredit(groupRows),
+        0
+      );
+
+    return { totalCourses, totalCredits };
+  }
+
+  // 창체
+  return {
+    totalCourses: activeRows.length,
+    totalCredits: activeRows.length
+  };
+}
+
+function getCategorySummary(grade, category) {
+  const rows = (state.gradeBoards[grade] || []).filter((row) => row.category === category);
+  return summarizeCategoryRows(category, rows);
+}
+
+function getGradeSummary(grade) {
+  const categories = [...state.options.category];
+  return categories.reduce(
+    (acc, category) => {
+      const summary = getCategorySummary(grade, category);
+      acc.totalCourses += summary.totalCourses;
+      acc.totalCredits += summary.totalCredits;
+      return acc;
+    },
+    { totalCourses: 0, totalCredits: 0 }
+  );
+}
+
+function createCategorySummaryRow(grade, category) {
+  const summary = getCategorySummary(grade, category);
+
+  const row = document.createElement("div");
+  row.className = "category-summary-row";
+
+  const label = document.createElement("div");
+  label.className = "category-summary-label";
+  label.textContent = `${category} 합계`;
+
+  const courses = document.createElement("div");
+  courses.className = "category-summary-value";
+  courses.textContent = `Total #Courses ${summary.totalCourses}`;
+
+  const credits = document.createElement("div");
+  credits.className = "category-summary-value";
+  credits.textContent = `Total #Credits ${summary.totalCredits}`;
+
+  row.append(label, courses, credits);
+  return row;
 }
 
 // ================================================================
@@ -1316,9 +1364,20 @@ function buildTabBoard(visibleGrades) {
     const column = document.createElement("section");
     column.className = "grade-column";
 
+    const gradeSummary = getGradeSummary(grade);
+
     const titleEl = document.createElement("div");
     titleEl.className = "grade-title";
-    titleEl.innerHTML = `${grade}<div class="grade-subtitle">Category / Semester / Credits</div>`;
+    titleEl.innerHTML = `
+      <div class="grade-title-top">
+        <span class="grade-title-name">${grade}</span>
+        <div class="grade-title-totals">
+          <span class="grade-title-badge">Total #Courses ${gradeSummary.totalCourses}</span>
+          <span class="grade-title-badge">Total #Credits ${gradeSummary.totalCredits}</span>
+        </div>
+      </div>
+      <div class="grade-subtitle">Category / Semester / Credits</div>
+    `;
     column.appendChild(titleEl);
 
     const headerRow = createGradeHeader(column);
@@ -1337,9 +1396,11 @@ function buildTabBoard(visibleGrades) {
     if (!hasAny) return;
 
     const tracks = getOrderedTracksForCategory(visibleGrades, category);
+
     tracks.forEach((track) => {
       const rowsByGrade = {};
       let maxRows = 0;
+
       visibleGrades.forEach((grade) => {
         const rs = (state.gradeBoards[grade] || []).filter((r) =>
           r.category === category && r.track === track
@@ -1347,6 +1408,7 @@ function buildTabBoard(visibleGrades) {
         rowsByGrade[grade] = rs;
         maxRows = Math.max(maxRows, rs.length);
       });
+
       if (!maxRows) return;
 
       visibleGrades.forEach((grade) => {
@@ -1362,17 +1424,24 @@ function buildTabBoard(visibleGrades) {
         });
       }
     });
+
+    // 카테고리별 요약을 바로 아래에 붙임
+    visibleGrades.forEach((grade) => {
+      colByGrade[grade].column.appendChild(createCategorySummaryRow(grade, category));
+    });
   });
 
   columns.forEach(({ grade, column, headerRow }) => {
     const footer = document.createElement("div");
     footer.className = "grade-footer";
+
     const addBtn = makeBtn(`${grade} 행 추가`, "add-row-btn", () => addRow(grade));
     addBtn.disabled = !canEdit();
+
     footer.appendChild(addBtn);
     column.appendChild(footer);
-    column.appendChild(createSummarySection(grade));
-    initColResize(column, headerRow, grade);   // #3 — grade-specific, persisted
+
+    initColResize(column, headerRow, grade);
   });
 
   return columns.map((c) => c.column);
