@@ -13,7 +13,6 @@
       <h1>HIS Curriculum</h1>
       <p class="subtitle">학년별 커리큘럼 보드</p>
     </div>
-
     <div class="topbar-right">
       <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
       <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
@@ -28,7 +27,10 @@
       <section class="panel">
         <div class="section-heading-row">
           <h2>과목 카드</h2>
-          <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
+          <div class="sidebar-btn-group">
+            <button id="openGroupManagerBtn" class="secondary-btn compact-btn" type="button">그룹 관리</button>
+            <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
+          </div>
         </div>
 
         <div id="templateList" class="template-list"></div>
@@ -80,7 +82,6 @@
 
       <section class="panel">
         <h2>범주 옵션 편집</h2>
-
         <div class="option-box">
           <h3>범주</h3>
           <div id="categoryOptionList" class="option-list"></div>
@@ -89,7 +90,6 @@
             <button id="addCategoryOptionBtn" class="primary-btn" type="button">추가</button>
           </div>
         </div>
-
         <div class="option-box">
           <h3>구분</h3>
           <div id="trackOptionList" class="option-list"></div>
@@ -98,7 +98,6 @@
             <button id="addTrackOptionBtn" class="primary-btn" type="button">추가</button>
           </div>
         </div>
-
         <div class="option-box">
           <h3>교과군</h3>
           <div id="groupOptionList" class="option-list"></div>
@@ -118,21 +117,40 @@
         </div>
       </div>
 
+      <!-- ① 보드 뷰 -->
       <div id="boardView" class="main-view">
         <div class="tab-bar">
           <button id="tab7to9Btn" class="tab-btn active" type="button">7 · 8 · 9</button>
           <button id="tab10to12Btn" class="tab-btn" type="button">10 · 11 · 12</button>
         </div>
-
         <div class="board-scroll">
           <div id="gradeBoard" class="grade-board"></div>
         </div>
       </div>
 
+      <!-- ② 그룹 관리 뷰 -->
+      <div id="groupManagerView" class="main-view hidden">
+        <div class="manager-header">
+          <div>
+            <h2>과목카드 그룹 관리</h2>
+            <p class="manager-subtitle">
+              사이드바에서 카드를 드래그하여 그룹에 배정하세요.
+              그룹명을 클릭하여 수정할 수 있습니다. 변경 즉시 저장됩니다.
+            </p>
+          </div>
+          <div class="manager-actions">
+            <button id="groupManagerBackBtn" class="secondary-btn" type="button">커리큘럼으로</button>
+            <button id="groupManagerAddGroupBtn" class="primary-btn" type="button">그룹 추가</button>
+          </div>
+        </div>
+        <div id="groupManagerBoard" class="group-manager-board"></div>
+      </div>
+
+      <!-- ③ 표 편집 뷰 -->
       <div id="templateManagerView" class="main-view hidden">
         <div class="manager-header">
           <div>
-            <h2>과목카드 편집</h2>
+            <h2>과목카드 표 편집</h2>
             <p class="manager-subtitle">과목카드와 계산 그룹을 표 형태로 한 번에 관리합니다. 저장 버튼을 눌러야 반영됩니다.</p>
           </div>
           <div class="manager-actions">
@@ -179,7 +197,7 @@
             <div class="manager-section-header">
               <div>
                 <h3>계산 그룹 관리</h3>
-                <p class="manager-section-note">같은 계산 그룹에 속한 과목은 총과목수/이수단위 계산 시 하나처럼 계산됩니다. 대표 시수를 비워두면 해당 그룹 내 최대 시수를 사용합니다.</p>
+                <p class="manager-section-note">같은 계산 그룹에 속한 과목은 총과목수/이수단위 계산 시 하나처럼 계산됩니다.</p>
               </div>
               <button id="addTemplateGroupBtn" class="secondary-btn" type="button">그룹 추가</button>
             </div>

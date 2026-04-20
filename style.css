@@ -1236,3 +1236,174 @@ button {
   font-size: 10px;
   font-weight: 700;
 }
+/* ── Sidebar: template group headers ─────────────────── */
+.sidebar-btn-group {
+  display: flex;
+  gap: 4px;
+}
+
+.template-group-header {
+  width: 100%;
+  padding: 4px 8px;
+  margin-top: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #1e3a5f;
+  background: #dce8f8;
+  border-radius: 5px;
+  border-left: 3px solid #2563eb;
+}
+
+.template-group-header-none {
+  color: #64748b;
+  background: #f1f5f9;
+  border-left-color: #94a3b8;
+}
+
+/* ── Group Manager View ──────────────────────────────── */
+.group-manager-board {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  overflow-x: auto;
+  padding: 4px 2px 12px;
+  align-items: flex-start;
+}
+
+.group-col {
+  min-width: 220px;
+  max-width: 260px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: white;
+  border: 1px solid #c7d2e8;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.group-col-unassigned {
+  background: #f8fbff;
+  border-color: #b6c8e0;
+}
+
+.group-col-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #dce8f8;
+  border-bottom: 1px solid #b6c8e0;
+}
+
+.group-col-unassigned .group-col-header {
+  background: #e8f0fb;
+}
+
+.group-col-name-input {
+  flex: 1;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-weight: 700;
+  font-size: 12px;
+  background: transparent;
+  color: #1e3a5f;
+  min-width: 0;
+}
+.group-col-name-input:focus {
+  border-color: #2563eb;
+  background: white;
+  outline: none;
+}
+
+.group-col-name-label {
+  flex: 1;
+  font-weight: 700;
+  font-size: 12px;
+  color: #374151;
+}
+
+.group-col-del-btn {
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.group-col-del-btn:hover { background: #fecaca; }
+
+.group-col-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 120px;
+  transition: background 0.12s;
+}
+
+.group-col-body.dragover {
+  background: #dbeafe;
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.group-col-placeholder {
+  padding: 18px 8px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 11px;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}
+
+/* ── Group manager card ──────────────────────────────── */
+.group-mgr-card {
+  border-radius: 6px;
+  border-left: 3px solid currentColor;
+  background: white;
+  padding: 5px 8px;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: box-shadow 0.12s;
+}
+.group-mgr-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.14); }
+.group-mgr-card.dragging { opacity: 0.4; }
+
+.group-mgr-card-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: currentColor;
+  line-height: 1.3;
+}
+
+.group-mgr-card-teacher {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+/* ── Merged placed card ──────────────────────────────── */
+.placed-card-merged {
+  border-left: 3px solid currentColor;
+  border-top: 2px solid currentColor;
+  background: linear-gradient(135deg, white 85%, rgba(99,102,241,0.06) 100%);
+}
+
+.merged-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: #6366f1;
+  background: #e0e7ff;
+  border-radius: 999px;
+  padding: 1px 5px;
+  margin-top: 2px;
+  letter-spacing: 0.2px;
+}
