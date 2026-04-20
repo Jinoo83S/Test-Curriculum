@@ -1,787 +1,131 @@
-* { box-sizing: border-box; }
-
-body {
-  margin: 0;
-  font-family: 'Segoe UI', Arial, sans-serif;
-  background: #f0f2f7;
-  color: #1f2937;
-  font-size: 13px;
-}
-
-.hidden { display: none !important; }
-
-button {
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 12px;
-}
-
-.primary-btn,
-.secondary-btn,
-.danger-btn {
-  padding: 6px 12px;
-}
-
-.primary-btn  { background: #2563eb; color: white; }
-.secondary-btn { background: #e5e7eb; color: #111827; }
-.danger-btn   { background: #dc2626; color: white; }
-
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
-  background: #1e3a5f;
-  color: white;
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  height: 52px;
-}
-
-.topbar-left h1 {
-  margin: 0;
-  font-size: 18px;
-  color: white;
-  font-weight: 700;
-}
-
-.subtitle {
-  margin: 2px 0 0;
-  color: #93c5fd;
-  font-size: 11px;
-}
-
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.auth-status {
-  font-size: 12px;
-  color: #bfdbfe;
-  padding: 4px 10px;
-  background: rgba(255,255,255,0.12);
-  border-radius: 20px;
-}
-
-.page {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 10px;
-  padding: 10px;
-  height: calc(100vh - 52px);
-  overflow: hidden;
-}
-
-.sidebar,
-.main-panel {
-  min-width: 0;
-}
-
-.sidebar {
-  overflow-y: auto;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.panel {
-  background: white;
-  border-radius: 10px;
-  padding: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-}
-
-.panel h2 {
-  margin: 0 0 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e3a5f;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #e8eefb;
-  padding-bottom: 6px;
-}
-
-.panel h3 {
-  margin: 0 0 6px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #374151;
-}
-
-.section-gap { height: 10px; }
-
-.form-grid {
-  display: grid;
-  gap: 6px;
-}
-
-.form-grid-tight { margin-top: 8px; }
-
-.form-grid input,
-.form-grid select,
-.inline-form input {
-  width: 100%;
-  padding: 6px 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: white;
-  font-size: 12px;
-  color: #1f2937;
-}
-
-.form-grid input:focus,
-.form-grid select:focus,
-.inline-form input:focus {
-  outline: none;
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
-}
-
-.button-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.semester-mode-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 9px 10px;
-  border: 1px solid #d1d9e6;
-  border-radius: 8px;
-  background: #f8fbff;
-  cursor: pointer;
-  font-weight: 600;
-  color: #1e3a5f;
-}
-
-.semester-mode-toggle input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-}
-
-.semester-fields {
-  margin-top: 10px;
-  display: grid;
-  gap: 10px;
-}
-
-.semester-field-card {
-  border: 1px solid #d1d9e6;
-  border-radius: 8px;
-  background: #f8fbff;
-  padding: 10px;
-}
-
-.semester-field-title {
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e3a5f;
-  margin-bottom: 8px;
-}
-
-.template-list {
-  margin-top: 8px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 4px;
-}
-
-.template-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fbff;
-  cursor: grab;
-  transition: box-shadow 0.15s, border-color 0.15s, background 0.15s;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.template-card:hover {
-  box-shadow: 0 2px 6px rgba(37,99,235,0.10);
-  border-color: #93c5fd;
-}
-
-.template-card.dragging,
-.placed-card.dragging { opacity: 0.4; }
-
-.template-main {
-  min-width: 0;
-  padding: 5px 7px;
-}
-
-.template-name-ko {
-  font-weight: 700;
-  font-size: 12px;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.template-actions,
-.template-semester-preview { display: none; }
-
-.template-card.expanded {
-  background: #eef5ff;
-  border-color: #60a5fa;
-  grid-column: 1 / -1;
-}
-
-.template-card.expanded .template-name-ko { white-space: normal; }
-
-.template-card.expanded .template-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 7px 6px;
-  align-items: center;
-}
-
-.template-card.expanded .template-semester-preview {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding: 0 7px 7px;
-}
-
-.template-actions button {
-  padding: 2px 7px;
-  font-size: 10px;
-  border-radius: 5px;
-}
-
-.edit-btn   { background: #fef3c7; color: #92400e; }
-.delete-btn { background: #fee2e2; color: #991b1b; }
-
-.template-teacher-inline {
-  display: inline-flex;
-  align-items: center;
-  min-height: 20px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #e0e7ff;
-  color: #3730a3;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.semester-preview-item {
-  min-width: 0;
-  border: 1px solid #d6e0f2;
-  border-radius: 7px;
-  background: rgba(255,255,255,0.9);
-  padding: 6px 7px;
-}
-
-.semester-preview-label {
-  font-size: 10px;
-  font-weight: 700;
-  color: #1e3a5f;
-  margin-bottom: 4px;
-}
-
-.semester-preview-name {
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.25;
-  color: #1f2937;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.semester-preview-en,
-.semester-preview-teacher {
-  font-size: 10px;
-  color: #64748b;
-  margin-top: 2px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.option-box + .option-box { margin-top: 12px; }
-
-.option-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-bottom: 7px;
-}
-
-.option-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-  font-size: 11px;
-}
-
-.option-chip button {
-  width: 15px;
-  height: 15px;
-  border-radius: 999px;
-  background: white;
-  color: #dc2626;
-  font-size: 11px;
-  padding: 0;
-  line-height: 1;
-}
-
-.order-btn {
-  width: 15px;
-  height: 15px;
-  border-radius: 3px !important;
-  background: #dbeafe !important;
-  color: #1d4ed8 !important;
-  font-size: 9px !important;
-}
-
-.order-btn:hover:not(:disabled) { background: #93c5fd !important; }
-.order-btn:disabled { opacity: 0.25; cursor: default; }
-
-.inline-form {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 5px;
-}
-
-.main-panel {
-  position: relative;
-  background: white;
-  border-radius: 10px;
-  padding: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.login-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(255,255,255,0.82);
-  backdrop-filter: blur(3px);
-  z-index: 8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-}
-
-.login-overlay-box {
-  background: white;
-  border: 1px solid #dbe2ef;
-  border-radius: 14px;
-  padding: 28px;
-  max-width: 380px;
-  text-align: center;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-}
-
-.tab-bar {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 10px;
-  background: #f1f5f9;
-  border-radius: 8px;
-  padding: 3px;
-  width: fit-content;
-}
-
-.tab-btn {
-  padding: 5px 14px;
-  background: transparent;
-  color: #475569;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  transition: all 0.15s;
-}
-
-.tab-btn.active {
-  background: white;
-  color: #1e3a5f;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-}
-
-.board-scroll {
-  flex: 1;
-  overflow: auto;
-}
-
-.grade-board {
-  display: flex;
-  gap: 8px;
-  height: 100%;
-  align-items: flex-start;
-}
-
-.grade-column {
-  flex: 1;
-  min-width: 260px;
-  background: #fcfdff;
-  border: 1px solid #c7d2e8;
-  border-radius: 10px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.grade-title {
-  padding: 7px 10px;
-  background: #1e3a5f;
-  color: white;
-  font-size: 14px;
-  font-weight: 800;
-  text-align: center;
-}
-
-.grade-subtitle {
-  font-size: 10px;
-  font-weight: 400;
-  color: #93c5fd;
-  margin-top: 1px;
-}
-
-.grade-header-row,
-.grade-data-row {
-  display: grid;
-  grid-template-columns: 52px 52px 58px 1fr 1fr 40px 24px;
-}
-
-.grade-header-row {
-  background: #dce8f8;
-  border-bottom: 2px solid #b6c8e0;
-  font-size: 11px;
-  font-weight: 700;
-  color: #1e3a5f;
-}
-
-.grade-data-row {
-  border-bottom: 1px solid #edf1f7;
-  align-items: stretch;
-  min-height: 48px;
-}
-
-.grade-data-row:nth-child(even) { background: #fafcff; }
-.grade-data-row:hover { background: #f0f6ff; }
-.grade-data-row.spacer-row:hover { background: transparent; }
-
-.header-cell {
-  padding: 5px 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  border-right: 1px solid #b6c8e0;
-  position: relative;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.header-cell:last-child { border-right: none; }
-
-.col-resize-handle {
-  position: absolute;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  width: 4px;
-  cursor: col-resize;
-  z-index: 2;
-}
-.col-resize-handle:hover,
-.col-resize-handle.resizing { background: #2563eb; }
-
-.row-select {
-  width: 100%;
-  height: 100%;
-  padding: 2px 14px 2px 4px;
-  border: none;
-  border-right: 1px solid #e5e7eb;
-  background: transparent;
-  font-size: 11px;
-  color: #374151;
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%236b7280'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 3px center;
-  text-overflow: ellipsis;
-  overflow: hidden;
-}
-
-.row-select:focus {
-  outline: none;
-  background-color: #eef2ff;
-  box-shadow: inset 0 0 0 2px #2563eb;
-}
-
-.row-select.category-select {
-  font-weight: 700;
-  border-right: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: inset 3px 0 0 rgba(0, 0, 0, 0.16);
-}
-
-.drop-cell {
-  border-right: 1px solid #e5e7eb;
-  background: transparent;
-  padding: 3px;
-  display: flex;
-  align-items: stretch;
-  min-height: 46px;
-  min-width: 0;
-  position: relative;
-  overflow: hidden;
-}
-
-.drop-cell.empty::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1px dashed #c8d5e8;
-  border-radius: 4px;
-  pointer-events: none;
-}
-
-.drop-cell.dragover {
-  background: #dbeafe;
-  box-shadow: inset 0 0 0 2px #2563eb;
-}
-
-.placed-card {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  border-radius: 4px;
-  border-left: 3px solid currentColor;
-  background: white;
-  padding: 3px 5px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  cursor: grab;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  overflow: hidden;
-}
-
-.placed-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
-
-.placed-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 2px;
-  min-width: 0;
-}
-
-.placed-title-wrap {
-  min-width: 0;
-  flex: 1;
-}
-
-.placed-title-ko {
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.placed-title-en {
-  font-size: 10px;
-  opacity: 0.85;
-  line-height: 1.2;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.clear-cell-btn {
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
-  border-radius: 999px;
-  padding: 0;
-  background: rgba(0,0,0,0.1);
-  color: #374151;
-  flex-shrink: 0;
-  font-size: 10px;
-  line-height: 1;
-  margin-top: 1px;
-}
-
-.placed-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  min-width: 0;
-}
-
-.placed-meta.placed-meta-hidden { display: none; }
-
-.meta-chip {
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  padding: 1px 4px;
-  border-radius: 999px;
-  background: rgba(226,232,240,0.95);
-  font-size: 9px;
-}
-
-.credit-input {
-  width: 100%;
-  height: 100%;
-  text-align: center;
-  border: none;
-  border-right: 1px solid #e5e7eb;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-  color: #1e3a5f;
-  padding: 2px 2px;
-}
-.credit-input:focus {
-  outline: none;
-  background: #eef2ff;
-  box-shadow: inset 0 0 0 2px #2563eb;
-}
-.credit-input::placeholder { color: #d1d5db; font-weight: 400; }
-
-.row-delete-btn {
-  background: transparent;
-  color: #d1d5db;
-  font-size: 14px;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-  padding: 0;
-}
-.row-delete-btn:hover { background: #fee2e2; color: #dc2626; }
-
-.track-group-divider {
-  padding: 4px 10px 4px 18px;
-  background: #e8f0ff;
-  color: #1e3a5f;
-  font-size: 11px;
-  font-weight: 700;
-  border-top: 1px solid #b6c8e0;
-  border-bottom: 1px solid #dbe2ef;
-  letter-spacing: 0.2px;
-}
-
-.grade-data-row.spacer-row {
-  background:
-    linear-gradient(rgba(238,242,247,0.84), rgba(238,242,247,0.84)),
-    repeating-linear-gradient(
-      135deg,
-      rgba(255,255,255,0.38) 0px,
-      rgba(255,255,255,0.38) 9px,
-      rgba(222,228,236,0.55) 9px,
-      rgba(222,228,236,0.55) 18px
-    );
-}
-
-.spacer-cell {
-  min-height: 48px;
-  border-right: 1px solid rgba(229,231,235,0.8);
-  backdrop-filter: blur(1.5px);
-}
-.spacer-cell:last-child { border-right: none; }
-
-.grade-footer {
-  padding: 5px 8px;
-  display: flex;
-  justify-content: center;
-  background: #f8fbff;
-  border-top: 1px solid #dbe2ef;
-}
-
-.add-row-btn {
-  padding: 4px 10px;
-  background: #dbeafe;
-  color: #1d4ed8;
-  border-radius: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  width: 100%;
-}
-.add-row-btn:hover { background: #bfdbfe; }
-
-.summary-wrap {
-  border-top: 2px solid #dbe2ef;
-  background: #f8fbff;
-}
-
-.summary-title {
-  padding: 5px 10px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #1e3a5f;
-  background: #dce8f8;
-  border-bottom: 1px solid #c7d2e8;
-}
-
-.grade-summary-row {
-  display: grid;
-  grid-template-columns: 1fr 1.2fr 1fr;
-  border-bottom: 1px solid #edf1f7;
-  font-size: 11px;
-}
-
-.summary-cell {
-  padding: 4px 8px;
-  display: flex;
-  align-items: center;
-  border-right: 1px solid #edf1f7;
-}
-.summary-cell:last-child { border-right: none; }
-.summary-label { font-weight: 700; color: #1e3a5f; }
-
-.lang-korean  { color: #1d4ed8; }
-.lang-english { color: #dc2626; }
-.lang-both    { color: #7c3aed; }
-.lang-korean .template-name-ko,
-.lang-english .template-name-ko,
-.lang-both .template-name-ko,
-.lang-korean .placed-title-en,
-.lang-english .placed-title-en,
-.lang-both .placed-title-en { color: inherit; }
-
-@media (max-width: 900px) {
-  .page {
-    grid-template-columns: 1fr;
-    height: auto;
-    overflow: visible;
-  }
-  .sidebar { height: auto; }
-  .main-panel { height: 80vh; }
-  .grade-column { min-width: 240px; }
-  .template-card.expanded .template-semester-preview { grid-template-columns: 1fr; }
-}
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIS Curriculum</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <h1>HIS Curriculum</h1>
+      <p class="subtitle">학년별 커리큘럼 보드</p>
+    </div>
+
+    <div class="topbar-right">
+      <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
+      <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
+      <button id="loginBtn" class="primary-btn" type="button">Google 로그인</button>
+      <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
+      <button id="resetBoardBtn" class="danger-btn" type="button">전체 초기화</button>
+    </div>
+  </header>
+
+  <main class="page">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>과목 카드</h2>
+
+        <div id="templateList" class="template-list"></div>
+        <div class="section-gap"></div>
+
+        <div id="commonTemplateFields" class="form-grid">
+          <input id="templateNameKo" type="text" placeholder="한글 이름" />
+          <input id="templateNameEn" type="text" placeholder="영어 이름" />
+          <input id="templateTeacher" type="text" placeholder="교사" />
+        </div>
+
+        <label class="semester-mode-toggle">
+          <input id="templateSeparateSemesters" type="checkbox" />
+          <span>1·2학기 이름/교사가 다를 때 따로 입력</span>
+        </label>
+
+        <div id="semesterTemplateFields" class="semester-fields hidden">
+          <div class="semester-field-card">
+            <div class="semester-field-title">1학기</div>
+            <div class="form-grid">
+              <input id="templateSem1NameKo" type="text" placeholder="1학기 한글 이름" />
+              <input id="templateSem1NameEn" type="text" placeholder="1학기 영어 이름" />
+              <input id="templateSem1Teacher" type="text" placeholder="1학기 교사" />
+            </div>
+          </div>
+          <div class="semester-field-card">
+            <div class="semester-field-title">2학기</div>
+            <div class="form-grid">
+              <input id="templateSem2NameKo" type="text" placeholder="2학기 한글 이름" />
+              <input id="templateSem2NameEn" type="text" placeholder="2학기 영어 이름" />
+              <input id="templateSem2Teacher" type="text" placeholder="2학기 교사" />
+            </div>
+          </div>
+        </div>
+
+        <div class="form-grid form-grid-tight">
+          <select id="templateLanguage">
+            <option value="Korean">Korean</option>
+            <option value="English">English</option>
+            <option value="Both">Both</option>
+          </select>
+        </div>
+
+        <div class="button-row">
+          <button id="templateSubmitBtn" class="primary-btn" type="button">카드 추가</button>
+          <button id="templateCancelBtn" class="secondary-btn hidden" type="button">수정 취소</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>범주 옵션 편집</h2>
+
+        <div class="option-box">
+          <h3>범주</h3>
+          <div id="categoryOptionList" class="option-list"></div>
+          <div class="inline-form">
+            <input id="categoryOptionInput" type="text" placeholder="예: 교과" />
+            <button id="addCategoryOptionBtn" class="primary-btn" type="button">추가</button>
+          </div>
+        </div>
+
+        <div class="option-box">
+          <h3>구분</h3>
+          <div id="trackOptionList" class="option-list"></div>
+          <div class="inline-form">
+            <input id="trackOptionInput" type="text" placeholder="예: 공통" />
+            <button id="addTrackOptionBtn" class="primary-btn" type="button">추가</button>
+          </div>
+        </div>
+
+        <div class="option-box">
+          <h3>교과군</h3>
+          <div id="groupOptionList" class="option-list"></div>
+          <div class="inline-form">
+            <input id="groupOptionInput" type="text" placeholder="예: 영어" />
+            <button id="addGroupOptionBtn" class="primary-btn" type="button">추가</button>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="main-panel">
+      <div id="loginOverlay" class="login-overlay">
+        <div class="login-overlay-box">
+          <h2>로그인이 필요합니다</h2>
+          <p>Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.</p>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <button id="tab7to9Btn" class="tab-btn active" type="button">7 · 8 · 9</button>
+        <button id="tab10to12Btn" class="tab-btn" type="button">10 · 11 · 12</button>
+      </div>
+
+      <div class="board-scroll">
+        <div id="gradeBoard" class="grade-board"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
