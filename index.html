@@ -8,294 +8,290 @@
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-left">
-      <h1>HIS Curriculum</h1>
-      <p class="subtitle">학년별 커리큘럼 보드</p>
-    </div>
-    <div class="topbar-center">
-      <button id="openStudentMgmtBtn" class="topbar-nav-btn" type="button">📋 학생 명단</button>
-    </div>
-    <div class="topbar-right">
-      <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
-      <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
-      <button id="loginBtn" class="primary-btn" type="button">Google 로그인</button>
-      <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
-      <button id="resetBoardBtn" class="danger-btn" type="button">전체 초기화</button>
-    </div>
-  </header>
 
-  <main class="page">
-    <aside class="sidebar">
-      <section class="panel">
-        <div class="section-heading-row">
-          <h2>과목 카드</h2>
-          <div class="sidebar-btn-group">
-            <button id="openGroupManagerBtn" class="secondary-btn compact-btn" type="button">그룹 관리</button>
-            <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
-          </div>
-        </div>
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>HIS Curriculum</h1>
+    <p class="subtitle">한동글로벌학교</p>
+  </div>
 
-        <div class="school-level-bar">
-          <select id="sidebarSchoolLevelFilter" class="school-level-select">
-            <option value="전체">전체 과목카드</option>
-            <option value="중등">📘 중등 (7-9학년)</option>
-            <option value="고등">📗 고등 (10-12학년)</option>
-          </select>
-        </div>
-        <div id="templateList" class="template-list"></div>
-        <div class="section-gap"></div>
+  <!-- ── 5-section navigation ── -->
+  <nav class="topbar-nav">
+    <button id="navBoardBtn"    class="topbar-nav-btn active"    type="button">📋 커리큘럼</button>
+    <button id="navStudentsBtn" class="topbar-nav-btn"           type="button">👨‍🎓 학생 명단</button>
+    <button id="navTeachersBtn" class="topbar-nav-btn"           type="button">👩‍🏫 선생님 명단</button>
+    <button id="navRostersBtn"  class="topbar-nav-btn"           type="button">📚 수강 명단</button>
+  </nav>
 
-        <div id="commonTemplateFields" class="form-grid">
-          <input id="templateNameKo" type="text" placeholder="한글 이름" />
-          <input id="templateNameEn" type="text" placeholder="영어 이름" />
-          <input id="templateTeacher" type="text" placeholder="교사" />
-        </div>
+  <div class="topbar-right">
+    <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
+    <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
+    <button id="loginBtn"      class="primary-btn"   type="button">Google 로그인</button>
+    <button id="logoutBtn"     class="secondary-btn hidden" type="button">로그아웃</button>
+    <button id="resetBoardBtn" class="danger-btn"    type="button">보드 초기화</button>
+  </div>
+</header>
 
-        <label class="semester-mode-toggle">
-          <input id="templateSeparateSemesters" type="checkbox" />
-          <span>1·2학기 이름/교사가 다를 때 따로 입력</span>
-        </label>
+<main class="page">
 
-        <div id="semesterTemplateFields" class="semester-fields hidden">
-          <div class="semester-field-card">
-            <div class="semester-field-title">1학기</div>
-            <div class="form-grid">
-              <input id="templateSem1NameKo" type="text" placeholder="1학기 한글 이름" />
-              <input id="templateSem1NameEn" type="text" placeholder="1학기 영어 이름" />
-              <input id="templateSem1Teacher" type="text" placeholder="1학기 교사" />
-            </div>
-          </div>
-          <div class="semester-field-card">
-            <div class="semester-field-title">2학기</div>
-            <div class="form-grid">
-              <input id="templateSem2NameKo" type="text" placeholder="2학기 한글 이름" />
-              <input id="templateSem2NameEn" type="text" placeholder="2학기 영어 이름" />
-              <input id="templateSem2Teacher" type="text" placeholder="2학기 교사" />
-            </div>
-          </div>
-        </div>
+  <!-- ════════════════════════════════════════════════════════════
+       SIDEBAR — shown only in curriculum view
+       ════════════════════════════════════════════════════════════ -->
+  <aside class="sidebar" id="appSidebar">
 
-        <div class="form-grid-2col form-grid-tight">
-          <select id="templateLanguage">
-            <option value="Korean">Korean</option>
-            <option value="English">English</option>
-            <option value="Both">Both</option>
-          </select>
-          <div class="level-picker" id="templateSchoolLevelPicker">
-            <button type="button" class="level-btn" data-level="중등">중등</button>
-            <button type="button" class="level-btn active" data-level="공통">공통</button>
-            <button type="button" class="level-btn" data-level="고등">고등</button>
-          </div>
-        </div>
-
-        <div class="button-row">
-          <button id="templateSubmitBtn" class="primary-btn" type="button">카드 추가</button>
-          <button id="templateCancelBtn" class="secondary-btn hidden" type="button">수정 취소</button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>범주 옵션 편집</h2>
-        <div class="option-box">
-          <h3>범주</h3>
-          <div id="categoryOptionList" class="option-list"></div>
-          <div class="inline-form">
-            <input id="categoryOptionInput" type="text" placeholder="예: 교과" />
-            <button id="addCategoryOptionBtn" class="primary-btn" type="button">추가</button>
-          </div>
-        </div>
-        <div class="option-box">
-          <h3>구분</h3>
-          <div id="trackOptionList" class="option-list"></div>
-          <div class="inline-form">
-            <input id="trackOptionInput" type="text" placeholder="예: 공통" />
-            <button id="addTrackOptionBtn" class="primary-btn" type="button">추가</button>
-          </div>
-        </div>
-        <div class="option-box">
-          <h3>교과군</h3>
-          <div id="groupOptionList" class="option-list"></div>
-          <div class="inline-form">
-            <input id="groupOptionInput" type="text" placeholder="예: 영어" />
-            <button id="addGroupOptionBtn" class="primary-btn" type="button">추가</button>
-          </div>
-        </div>
-      </section>
-    </aside>
-
-    <section class="main-panel">
-      <div id="loginOverlay" class="login-overlay">
-        <div class="login-overlay-box">
-          <h2>로그인이 필요합니다</h2>
-          <p>Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.</p>
+    <!-- ── Subject cards ── -->
+    <section class="panel">
+      <div class="section-heading-row">
+        <h2>과목 카드</h2>
+        <div class="sidebar-btn-group">
+          <button id="openGroupManagerBtn"    class="secondary-btn compact-btn" type="button">그룹 관리</button>
+          <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
         </div>
       </div>
 
-      <!-- ① 보드 뷰 -->
-      <div id="boardView" class="main-view">
-        <div class="tab-bar">
-          <button id="tab7to9Btn" class="tab-btn active" type="button">7 · 8 · 9</button>
-          <button id="tab10to12Btn" class="tab-btn" type="button">10 · 11 · 12</button>
+      <div class="school-level-bar">
+        <select id="sidebarSchoolLevelFilter" class="school-level-select">
+          <option value="전체">전체 과목카드</option>
+          <option value="중등">📘 중등 (7-9학년)</option>
+          <option value="고등">📗 고등 (10-12학년)</option>
+        </select>
+      </div>
+
+      <div id="templateList" class="template-list"></div>
+      <div class="section-gap"></div>
+
+      <!-- Add / Edit form -->
+      <div id="commonTemplateFields" class="form-grid">
+        <input id="templateNameKo" type="text" placeholder="한글 이름" />
+        <input id="templateNameEn" type="text" placeholder="영어 이름" />
+        <input id="templateTeacher" type="text" placeholder="교사" />
+      </div>
+
+      <label class="semester-mode-toggle">
+        <input id="templateSeparateSemesters" type="checkbox" />
+        <span>1·2학기 이름/교사가 다를 때 따로 입력</span>
+      </label>
+
+      <div id="semesterTemplateFields" class="semester-fields hidden">
+        <div class="semester-field-card">
+          <div class="semester-field-title">1학기</div>
+          <div class="form-grid">
+            <input id="templateSem1NameKo"  type="text" placeholder="1학기 한글" />
+            <input id="templateSem1NameEn"  type="text" placeholder="1학기 영어" />
+            <input id="templateSem1Teacher" type="text" placeholder="1학기 교사" />
+          </div>
         </div>
-        <div class="board-scroll">
-          <div id="gradeBoard" class="grade-board"></div>
+        <div class="semester-field-card">
+          <div class="semester-field-title">2학기</div>
+          <div class="form-grid">
+            <input id="templateSem2NameKo"  type="text" placeholder="2학기 한글" />
+            <input id="templateSem2NameEn"  type="text" placeholder="2학기 영어" />
+            <input id="templateSem2Teacher" type="text" placeholder="2학기 교사" />
+          </div>
         </div>
       </div>
 
-      <!-- ② 그룹 관리 뷰 -->
-      <div id="groupManagerView" class="main-view hidden">
-        <div class="manager-header">
-          <div>
-            <h2>과목카드 그룹 관리</h2>
-            <p class="manager-subtitle">
-              사이드바에서 카드를 드래그하여 그룹에 배정하세요.
-              그룹명을 클릭하여 수정할 수 있습니다. 변경 즉시 저장됩니다.
-            </p>
-          </div>
-          <div class="manager-actions">
-            <button id="groupManagerBackBtn" class="secondary-btn" type="button">커리큘럼으로</button>
-            <button id="groupManagerAddGroupBtn" class="primary-btn" type="button">그룹 추가</button>
-          </div>
-        </div>
-        <div id="groupManagerBoard" class="group-manager-board"></div>
-      </div>
-
-      <!-- ③ 표 편집 뷰 -->
-      <div id="templateManagerView" class="main-view hidden">
-        <div class="manager-header">
-          <div>
-            <h2>과목카드 표 편집</h2>
-            <p class="manager-subtitle">과목카드와 계산 그룹을 표 형태로 한 번에 관리합니다. 저장 버튼을 눌러야 반영됩니다.</p>
-          </div>
-          <div class="manager-actions">
-            <span id="templateManagerSaveStatus" class="manager-save-status">저장됨</span>
-            <button id="templateManagerBackBtn" class="secondary-btn" type="button">커리큘럼으로</button>
-            <button id="templateManagerAddRowBtn" class="secondary-btn" type="button">과목카드 추가</button>
-            <button id="templateManagerDiscardBtn" class="secondary-btn" type="button">변경 취소</button>
-            <button id="templateManagerSaveBtn" class="primary-btn" type="button">저장</button>
-          </div>
-        </div>
-
-        <div class="manager-toolbar">
-          <input id="templateManagerSearchInput" type="text" placeholder="과목명/교사 검색" />
-          <select id="templateManagerLanguageFilter">
-            <option value="all">전체 언어</option>
-            <option value="Korean">Korean</option>
-            <option value="English">English</option>
-            <option value="Both">Both</option>
-          </select>
-          <select id="templateManagerSplitFilter">
-            <option value="all">전체 카드</option>
-            <option value="split">학기 분리 카드만</option>
-            <option value="same">공통 카드만</option>
-          </select>
-          <select id="templateManagerSortSelect">
-            <option value="ko-asc">한글명 ↑</option>
-            <option value="ko-desc">한글명 ↓</option>
-            <option value="en-asc">영문명 ↑</option>
-            <option value="language">언어별</option>
-            <option value="group">계산그룹별</option>
-          </select>
-          <select id="templateManagerLevelFilter">
-            <option value="전체">전체 (중+고)</option>
-            <option value="중등">📘 중등</option>
-            <option value="고등">📗 고등</option>
-          </select>
-        </div>
-
-        <div class="manager-scroll">
-          <section class="manager-section">
-            <div class="manager-section-header">
-              <h3>과목카드 표 편집</h3>
-              <span id="templateManagerCount" class="manager-count"></span>
-            </div>
-            <div id="templateManagerTableWrap" class="manager-table-wrap"></div>
-          </section>
+      <div class="form-grid-2col form-grid-tight">
+        <select id="templateLanguage">
+          <option value="Korean">Korean</option>
+          <option value="English">English</option>
+          <option value="Both">Both</option>
+        </select>
+        <div class="level-picker" id="templateSchoolLevelPicker">
+          <button type="button" class="level-btn" data-level="중등">중등</button>
+          <button type="button" class="level-btn active" data-level="공통">공통</button>
+          <button type="button" class="level-btn" data-level="고등">고등</button>
         </div>
       </div>
 
-      <!-- ④ 학생 명단 관리 뷰 -->
-      <div id="studentMgmtView" class="main-view hidden">
-        <div class="student-mgmt-layout">
-
-          <!-- Left: Class list -->
-          <div class="student-sidebar">
-            <div class="student-sidebar-header">
-              <h3>학년 · 반</h3>
-              <button id="addClassBtn" class="primary-btn compact-btn" type="button">+ 반 추가</button>
-            </div>
-            <div id="classList" class="class-list"></div>
-          </div>
-
-          <!-- Right: Student list for selected class -->
-          <div class="student-main">
-            <div id="studentMainEmpty" class="student-main-empty">
-              <p>왼쪽에서 반을 선택하세요</p>
-            </div>
-            <div id="studentMainContent" class="hidden">
-              <div class="student-main-header">
-                <div class="student-main-title-wrap">
-                  <input id="classNameInput" type="text" class="class-name-input" placeholder="반 이름" />
-                  <select id="classGradeSelect" class="class-grade-select">
-                    <option value="7학년">7학년</option>
-                    <option value="8학년">8학년</option>
-                    <option value="9학년">9학년</option>
-                    <option value="10학년">10학년</option>
-                    <option value="11학년">11학년</option>
-                    <option value="12학년">12학년</option>
-                  </select>
-                  <button id="deleteClassBtn" class="danger-btn compact-btn" type="button">반 삭제</button>
-                </div>
-                <div class="student-count-badge">학생 <span id="studentCount">0</span>명</div>
-              </div>
-
-              <!-- Excel paste area -->
-              <div class="paste-area-wrap">
-                <div class="paste-label">
-                  📋 엑셀에서 복사 후 아래 영역에 붙여넣기
-                  <span class="paste-hint">첫 번째 열: 이름 (헤더행 포함 가능)</span>
-                </div>
-                <textarea id="excelPasteArea" class="excel-paste-area" placeholder="엑셀 데이터를 여기에 붙여넣으세요 (Ctrl+V)&#10;예) 홍길동&#9;남&#9;2007-03-15&#10;    김영희&#9;여&#9;2007-06-20"></textarea>
-                <div class="paste-actions">
-                  <button id="parsePasteBtn" class="primary-btn" type="button">명단 추가</button>
-                  <button id="clearPasteBtn" class="secondary-btn" type="button">붙여넣기 영역 지우기</button>
-                  <span class="paste-columns-hint">열 구성: <strong>이름</strong> [성별] [생년월일] [기타...]</span>
-                </div>
-              </div>
-
-              <!-- Student table -->
-              <div class="student-table-wrap">
-                <table class="student-table">
-                  <thead>
-                    <tr>
-                      <th class="col-num">번호</th>
-                      <th>이름</th>
-                      <th class="col-gender">성별</th>
-                      <th class="col-birth">생년월일</th>
-                      <th class="col-extra">기타</th>
-                      <th class="col-del">삭제</th>
-                    </tr>
-                  </thead>
-                  <tbody id="studentTableBody"></tbody>
-                </table>
-                <div id="studentTableEmpty" class="student-table-empty hidden">아직 학생 명단이 없습니다.</div>
-              </div>
-
-              <div class="student-main-footer">
-                <button id="addStudentRowBtn" class="secondary-btn" type="button">+ 학생 직접 추가</button>
-                <button id="exportStudentXlsxBtn" class="secondary-btn" type="button">📥 엑셀 내보내기</button>
-              </div>
-            </div>
-          </div>
-
-        </div>
+      <div class="button-row">
+        <button id="templateSubmitBtn" class="primary-btn" type="button">카드 추가</button>
+        <button id="templateCancelBtn" class="secondary-btn hidden" type="button">수정 취소</button>
       </div>
-
     </section>
-  </main>
 
+    <!-- ── Category/Track/Group options ── -->
+    <section class="panel">
+      <h2>범주 옵션 편집</h2>
+      <div class="option-box">
+        <h3>범주</h3>
+        <div id="categoryOptionList" class="option-list"></div>
+        <div class="inline-form">
+          <input id="categoryOptionInput" type="text" placeholder="예: 교과" />
+          <button id="addCategoryOptionBtn" class="primary-btn" type="button">추가</button>
+        </div>
+      </div>
+      <div class="option-box">
+        <h3>구분</h3>
+        <div id="trackOptionList" class="option-list"></div>
+        <div class="inline-form">
+          <input id="trackOptionInput" type="text" placeholder="예: 공통" />
+          <button id="addTrackOptionBtn" class="primary-btn" type="button">추가</button>
+        </div>
+      </div>
+      <div class="option-box">
+        <h3>교과군</h3>
+        <div id="groupOptionList" class="option-list"></div>
+        <div class="inline-form">
+          <input id="groupOptionInput" type="text" placeholder="예: 영어" />
+          <button id="addGroupOptionBtn" class="primary-btn" type="button">추가</button>
+        </div>
+      </div>
+    </section>
 
-  <script type="module" src="app.js"></script>
+  </aside>
+
+  <!-- ════════════════════════════════════════════════════════════
+       MAIN PANEL
+       ════════════════════════════════════════════════════════════ -->
+  <section class="main-panel">
+
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-overlay-box">
+        <h2>로그인이 필요합니다</h2>
+        <p>Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.</p>
+      </div>
+    </div>
+
+    <!-- ① 커리큘럼 보드 -->
+    <div id="boardView" class="main-view">
+      <div class="tab-bar">
+        <button id="tab7to9Btn"   class="tab-btn active" type="button">7 · 8 · 9</button>
+        <button id="tab10to12Btn" class="tab-btn"        type="button">10 · 11 · 12</button>
+      </div>
+      <div class="board-scroll">
+        <div id="gradeBoard" class="grade-board"></div>
+      </div>
+    </div>
+
+    <!-- ② 그룹 관리 -->
+    <div id="groupManagerView" class="main-view hidden">
+      <div class="manager-header">
+        <div>
+          <h2>과목카드 그룹 관리</h2>
+          <p class="manager-subtitle">사이드바에서 카드를 드래그하여 그룹에 배정하세요. 변경 즉시 저장됩니다.</p>
+        </div>
+        <div class="manager-actions">
+          <button id="groupManagerBackBtn"    class="secondary-btn" type="button">커리큘럼으로</button>
+          <button id="groupManagerAddGroupBtn" class="primary-btn"  type="button">그룹 추가</button>
+        </div>
+      </div>
+      <div id="groupManagerBoard" class="group-manager-board"></div>
+    </div>
+
+    <!-- ③ 표 편집 -->
+    <div id="templateManagerView" class="main-view hidden">
+      <div class="manager-header">
+        <div>
+          <h2>과목카드 표 편집</h2>
+          <p class="manager-subtitle">과목카드를 표 형태로 한 번에 관리합니다. 저장 버튼을 눌러야 반영됩니다.</p>
+        </div>
+        <div class="manager-actions">
+          <button id="templateManagerBackBtn"    class="secondary-btn" type="button">커리큘럼으로</button>
+          <button id="templateManagerAddRowBtn"  class="secondary-btn" type="button">과목카드 추가</button>
+          <button id="templateManagerDiscardBtn" class="secondary-btn" type="button">변경 취소</button>
+          <button id="templateManagerSaveBtn"    class="primary-btn"   type="button">저장</button>
+        </div>
+      </div>
+      <div class="manager-toolbar">
+        <input id="templateManagerSearchInput" type="text" placeholder="과목명/교사 검색" />
+        <select id="templateManagerLanguageFilter">
+          <option value="all">전체 언어</option>
+          <option value="Korean">Korean</option>
+          <option value="English">English</option>
+          <option value="Both">Both</option>
+        </select>
+        <select id="templateManagerSplitFilter">
+          <option value="all">전체 카드</option>
+          <option value="split">학기 분리</option>
+          <option value="same">공통 카드</option>
+        </select>
+        <select id="templateManagerSortSelect">
+          <option value="ko-asc">한글명 ↑</option>
+          <option value="ko-desc">한글명 ↓</option>
+          <option value="en-asc">영문명 ↑</option>
+          <option value="language">언어별</option>
+          <option value="group">그룹별</option>
+        </select>
+        <select id="templateManagerLevelFilter">
+          <option value="전체">전체 (중+고)</option>
+          <option value="중등">📘 중등</option>
+          <option value="고등">📗 고등</option>
+        </select>
+      </div>
+      <div class="manager-scroll">
+        <section class="manager-section">
+          <div class="manager-section-header">
+            <h3>과목카드 표 편집</h3>
+            <span id="templateManagerCount" class="manager-count"></span>
+          </div>
+          <div id="templateManagerTableWrap" class="manager-table-wrap"></div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ④ 학생 명단 -->
+    <div id="studentMgmtView" class="main-view hidden">
+      <div class="student-mgmt-layout">
+        <div class="student-sidebar">
+          <div class="student-sidebar-header">
+            <h3>학년 · 반</h3>
+            <button id="addClassBtn" class="primary-btn compact-btn" type="button">+ 반 추가</button>
+          </div>
+          <div id="classList" class="class-list"></div>
+        </div>
+        <div class="student-main">
+          <div id="studentMainEmpty" class="student-main-empty"><p>왼쪽에서 반을 선택하세요</p></div>
+          <div id="studentMainContent" class="hidden">
+            <div class="student-main-header">
+              <div class="student-main-title-wrap">
+                <input id="classNameInput" type="text" class="class-name-input" placeholder="반 이름" />
+                <select id="classGradeSelect" class="class-grade-select">
+                  <option value="7학년">7학년</option><option value="8학년">8학년</option><option value="9학년">9학년</option>
+                  <option value="10학년">10학년</option><option value="11학년">11학년</option><option value="12학년">12학년</option>
+                </select>
+                <button id="deleteClassBtn" class="danger-btn compact-btn" type="button">반 삭제</button>
+              </div>
+              <div class="student-count-badge">학생 <span id="studentCount">0</span>명</div>
+            </div>
+            <div class="paste-area-wrap">
+              <div class="paste-label">📋 엑셀에서 복사 후 아래 영역에 붙여넣기 <span class="paste-hint">첫 번째 열: 이름</span></div>
+              <textarea id="excelPasteArea" class="excel-paste-area" placeholder="엑셀 데이터를 여기에 붙여넣으세요 (Ctrl+V)&#10;예) 홍길동&#9;남&#9;2007-03-15"></textarea>
+              <div class="paste-actions">
+                <button id="parsePasteBtn" class="primary-btn" type="button">명단 추가</button>
+                <button id="clearPasteBtn" class="secondary-btn" type="button">지우기</button>
+                <span class="paste-columns-hint">열 구성: <strong>이름</strong> [성별] [생년월일] [기타]</span>
+              </div>
+            </div>
+            <div class="student-table-wrap">
+              <table class="student-table">
+                <thead><tr><th class="col-num">번호</th><th>이름</th><th class="col-gender">성별</th><th class="col-birth">생년월일</th><th class="col-extra">기타</th><th class="col-del">삭제</th></tr></thead>
+                <tbody id="studentTableBody"></tbody>
+              </table>
+              <div id="studentTableEmpty" class="student-table-empty hidden">아직 학생 명단이 없습니다.</div>
+            </div>
+            <div class="student-main-footer">
+              <button id="addStudentRowBtn"    class="secondary-btn" type="button">+ 학생 직접 추가</button>
+              <button id="exportStudentXlsxBtn" class="secondary-btn" type="button">📥 엑셀 내보내기</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ⑤ 선생님 명단 -->
+    <div id="teacherMgmtView" class="main-view hidden">
+      <div id="teacherContent" class="full-page-content"></div>
+    </div>
+
+    <!-- ⑥ 수강 명단 (과목당 학생 구성) -->
+    <div id="rosterMgmtView" class="main-view hidden">
+      <div id="rosterContent" class="full-page-content"></div>
+    </div>
+
+  </section>
+</main>
+
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

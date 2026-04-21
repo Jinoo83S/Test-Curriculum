@@ -1884,3 +1884,308 @@ button {
   flex-shrink: 0;
   padding-top: 4px;
 }
+
+/* ================================================================
+   NEW LAYOUT STYLES (multi-section)
+   ================================================================ */
+
+/* ── Topbar grid layout ──────────────────────────────────────────── */
+.topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #1e3a5f;
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 52px;
+}
+
+.topbar-nav {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.topbar-nav-btn {
+  padding: 5px 14px;
+  background: rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.8);
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.18);
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.topbar-nav-btn:hover  { background: rgba(255,255,255,0.22); color: white; }
+.topbar-nav-btn.active { background: #2563eb; color: white; border-color: #1d4ed8; }
+
+/* ── Full page content (teachers, rosters) ────────────────────── */
+.full-page-content {
+  padding: 16px 20px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+/* ── Teacher management ──────────────────────────────────────── */
+.teacher-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.teacher-header h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #1e3a5f;
+  flex: 1;
+}
+
+.teacher-count {
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+
+.teacher-table-wrap {
+  overflow: auto;
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+  background: white;
+}
+
+.teacher-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 640px;
+}
+
+.teacher-table thead th {
+  position: sticky;
+  top: 0;
+  background: #dce8f8;
+  color: #1e3a5f;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 2px solid #b6c8e0;
+  white-space: nowrap;
+}
+
+.teacher-table tbody tr:nth-child(even) { background: #f8fbff; }
+.teacher-table tbody tr:hover { background: #eef4ff; }
+
+.teacher-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid #e5edf7;
+  vertical-align: middle;
+}
+
+.teacher-table td input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font-size: 13px;
+  color: #1f2937;
+}
+.teacher-table td input:focus {
+  outline: none;
+  border-color: #2563eb;
+  background: white;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.08);
+}
+
+/* ── Roster management ────────────────────────────────────────── */
+.roster-layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.roster-left {
+  border-right: 1px solid #dbe2ef;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.roster-left-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #dbe2ef;
+  background: #eef4ff;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.roster-left-header h3 { margin: 0; font-size: 13px; font-weight: 800; color: #1e3a5f; }
+
+.roster-grade-filter {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 11px;
+  background: white;
+  color: #374151;
+}
+
+.roster-template-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 6px;
+}
+
+.roster-template-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+  margin: 2px 0;
+}
+.roster-template-item:hover  { background: #f0f6ff; }
+.roster-template-item.active { background: #dbeafe; border-left: 3px solid #2563eb; padding-left: 9px; }
+
+.roster-template-name  { font-size: 13px; font-weight: 600; color: #1f2937; }
+.roster-template-count { font-size: 11px; font-weight: 700; color: #6b7280; background: #e5e7eb; padding: 1px 7px; border-radius: 999px; }
+.roster-template-empty { padding: 20px 12px; text-align: center; color: #9ca3af; font-size: 12px; }
+
+.roster-right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.roster-right-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+  font-size: 15px;
+}
+
+.roster-right-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.roster-right-title {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.roster-right-title h3 { margin: 0; font-size: 18px; color: #1e3a5f; }
+
+.roster-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid #dbe2ef;
+  padding-bottom: 6px;
+  flex-shrink: 0;
+}
+
+.roster-enrolled-wrap {
+  overflow: auto;
+  border: 1px solid #dbe2ef;
+  border-radius: 8px;
+  max-height: 220px;
+  flex-shrink: 0;
+}
+
+.roster-enrolled-empty { padding: 16px; text-align: center; color: #9ca3af; font-size: 12px; }
+
+.roster-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 480px;
+}
+.roster-table thead th {
+  position: sticky;
+  top: 0;
+  background: #dce8f8;
+  color: #1e3a5f;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 8px;
+  border-bottom: 2px solid #b6c8e0;
+  text-align: left;
+}
+.roster-table tbody tr:nth-child(even) { background: #f8fbff; }
+.roster-table td { padding: 5px 8px; border-bottom: 1px solid #e5edf7; font-size: 13px; vertical-align: middle; }
+.roster-class-name { color: #64748b; font-size: 11px; }
+
+.roster-add-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.roster-class-card {
+  background: white;
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 180px;
+  max-width: 260px;
+}
+
+.roster-class-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+
+.roster-class-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+
+.roster-stu-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.roster-stu-chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #f1f5f9;
+  color: #374151;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.roster-stu-chip:hover    { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+.roster-stu-chip.enrolled { background: #dbeafe; color: #1d4ed8; border-color: #2563eb; }
+.roster-stu-chip.enrolled:hover { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
