@@ -1530,7 +1530,7 @@ function scheduleSaveStudents() {
 // ── View toggle ───────────────────────────────────────────────────
 function openStudentMgmt() {
   studentMgmtOpen = true;
-  // Hide sidebar main views, show student view
+  // Hide all main views
   boardView.classList.add("hidden");
   groupManagerView.classList.add("hidden");
   templateManagerView.classList.add("hidden");
@@ -1538,6 +1538,7 @@ function openStudentMgmt() {
   openStudentMgmtBtn.classList.add("active");
   ensureClasses();
   renderClassList();
+  setControlsDisabled(!canEdit());
 }
 
 function closeStudentMgmt() {
@@ -1550,16 +1551,7 @@ function closeStudentMgmt() {
   else if (activeMainView === "manager") templateManagerView.classList.remove("hidden");
 }
 
-// ── Patch render() to also handle student view ───────────────────
-const _origRender = render;
-render = function() {
-  if (studentMgmtOpen) {
-    // keep student view; just refresh controls
-    setControlsDisabled(!canEdit());
-    return;
-  }
-  _origRender();
-};
+// render() override removed — handled directly in open/close functions
 
 // ── Event listeners ───────────────────────────────────────────────
 openStudentMgmtBtn.addEventListener("click", () => {
