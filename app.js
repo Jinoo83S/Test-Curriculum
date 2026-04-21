@@ -312,7 +312,11 @@ function subscribeBoard(){
   if(unsubscribeBoard){ unsubscribeBoard(); unsubscribeBoard=null; }
   unsubscribeBoard=onSnapshot(boardRef,async snap=>{
     if(!snap.exists()){ state=createDefaultState(); resetTemplateManagerDraft(); invalidateTabs(); render(); await saveNow(); return; }
-    state=normalizeState(snap.data().state||{}); resetTemplateManagerDraft(); invalidateTabs(); render();
+    const prevClasses = state.classes||[];
+    state=normalizeState(snap.data().state||{});
+    // Prevent snapshot from wiping in-memory students not yet saved
+    if(state.classes.length===0 && prevClasses.length>0) state.classes=prevClasses;
+    resetTemplateManagerDraft(); invalidateTabs(); render();
   },err=>{ console.error(err); alert("Firestore 데이터를 불러오지 못했습니다."); });
 }
 
@@ -1013,12 +1017,15 @@ function render(){
   boardView.classList.toggle("hidden",          activeMainView!=="board");
   groupManagerView.classList.toggle("hidden",   activeMainView!=="groups");
   templateManagerView.classList.toggle("hidden",activeMainView!=="manager");
+  if(studentMgmtView) studentMgmtView.classList.toggle("hidden", activeMainView!=="students");
 
   openGroupManagerBtn.textContent   =activeMainView==="groups"  ?"보드 보기":"그룹 관리";
   openTemplateManagerBtn.textContent=activeMainView==="manager" ?"보드 보기":"표 편집";
+  if(openStudentMgmtBtn) openStudentMgmtBtn.classList.toggle("active", activeMainView==="students");
 
-  if(activeMainView==="groups")  renderGroupManager();
-  if(activeMainView==="manager") renderTemplateManager();
+  if(activeMainView==="groups")   renderGroupManager();
+  if(activeMainView==="manager")  renderTemplateManager();
+  if(activeMainView==="students") renderClassList();
 
   setControlsDisabled(!canEdit());
   toggleSemesterMode();
@@ -1313,16 +1320,26 @@ function parseExcelPaste(raw) {
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const students = [];
   for (const line of lines) {
-    const cols = line.split(/\t/).map(c => c.trim());
-    if (!cols[0]) continue;
-    // Skip if first column looks like a header
-    const firstLower = cols[0].toLowerCase();
-    if (firstLower === "이름" || firstLower === "name" || firstLower === "학생") continue;
+    // Try tab-separated first (Excel default), then 2+ spaces
+    let cols = line.split(/\t/).map(c => c.trim());
+    if (cols.length === 1) {
+      // Fallback: split on 2+ consecutive spaces
+      cols = line.split(/\s{2,}/).map(c => c.trim()).filter(Boolean);
+    }
+    if (!cols.length || !cols[0]) continue;
+    const firstLower = cols[0].toLowerCase().replace(/\s/g, "");
+    // Skip header rows
+    if (["이름","name","학생","성명","student"].includes(firstLower)) continue;
+    // Skip purely numeric rows that look like row numbers
+    if (/^\d+$/.test(cols[0]) && cols.length === 1) continue;
+    // If first col is a number and next is a name, shift
+    let nameIdx = 0;
+    if (/^\d+$/.test(cols[0]) && cols.length > 1) nameIdx = 1;
     students.push(normalizeStudent({
-      name:   cols[0] || "",
-      gender: cols[1] || "",
-      birth:  cols[2] || "",
-      extra:  cols.slice(3).join(" ").trim()
+      name:   cols[nameIdx]   || "",
+      gender: cols[nameIdx+1] || "",
+      birth:  cols[nameIdx+2] || "",
+      extra:  cols.slice(nameIdx+3).join(" ").trim()
     }));
   }
   return students;
@@ -1478,17 +1495,18 @@ function deleteSelectedClass() {
 }
 
 function applyExcelPaste() {
-  if (!canEdit()) return;
-  const raw = excelPasteArea.value.trim();
-  if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
-  const cls = getClassById(selectedClassId); if (!cls) return;
+  const raw = excelPasteArea ? excelPasteArea.value.trim() : "";
+  if (!raw) { alert("붙여넣기 영역이 비어 있습니다.\n엑셀에서 셀을 복사(Ctrl+C) 후 붙여넣기(Ctrl+V) 해주세요."); return; }
+  const cls = getClassById(selectedClassId);
+  if (!cls) { alert("먼저 왼쪽에서 반을 선택해 주세요."); return; }
   const parsed = parseExcelPaste(raw);
-  if (!parsed.length) { alert("파싱된 학생이 없습니다. 데이터를 확인해 주세요."); return; }
+  if (!parsed.length) { alert("파싱된 학생이 없습니다.\n엑셀에서 이름이 포함된 셀을 선택 후 복사해 주세요."); return; }
   cls.students.push(...parsed);
-  excelPasteArea.value = "";
+  if (excelPasteArea) excelPasteArea.value = "";
   renderStudentTable();
   renderClassList();
-  scheduleSaveStudents();
+  if (canEdit()) scheduleSaveStudents();
+  alert(`${parsed.length}명이 추가되었습니다.`);
 }
 
 function addBlankStudent() {
@@ -1522,33 +1540,31 @@ let studentSaveTimer = null;
 function scheduleSaveStudents() {
   if (!canEdit()) return;
   clearTimeout(studentSaveTimer);
+  // Save immediately — no delay to prevent Firestore snapshot overwriting in-memory changes
   studentSaveTimer = setTimeout(async () => {
-    await setDoc(boardRef, { state, updatedAt: serverTimestamp() });
-  }, 400);
+    try {
+      await setDoc(boardRef, { state, updatedAt: serverTimestamp() });
+    } catch(e) {
+      console.error("Student save failed:", e);
+    }
+  }, 200);
 }
 
 // ── View toggle ───────────────────────────────────────────────────
 function openStudentMgmt() {
+  activeMainView = "students";
   studentMgmtOpen = true;
-  // Hide all main views
-  boardView.classList.add("hidden");
-  groupManagerView.classList.add("hidden");
-  templateManagerView.classList.add("hidden");
-  studentMgmtView.classList.remove("hidden");
   openStudentMgmtBtn.classList.add("active");
   ensureClasses();
+  render();  // render() now handles all view switching including students
   renderClassList();
-  setControlsDisabled(!canEdit());
 }
 
 function closeStudentMgmt() {
   studentMgmtOpen = false;
-  studentMgmtView.classList.add("hidden");
+  activeMainView = "board";
   openStudentMgmtBtn.classList.remove("active");
-  // Restore previous view
-  if (activeMainView === "board") boardView.classList.remove("hidden");
-  else if (activeMainView === "groups") groupManagerView.classList.remove("hidden");
-  else if (activeMainView === "manager") templateManagerView.classList.remove("hidden");
+  render();
 }
 
 // render() override removed — handled directly in open/close functions
