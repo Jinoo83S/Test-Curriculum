@@ -5,8 +5,8 @@ import { uid, clean, makeBtn, escapeHtml } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, normalizeTeacher } from "./state.js";
 
-const tDomain  = () => appState.teachers;
-export const getTeachers   = () => tDomain().teachers;
+const tDomain   = () => appState.teachers;
+export const getTeachers    = () => tDomain().teachers;
 export const getTeacherById = id => getTeachers().find(t => t.id === id) || null;
 
 // ── Mutations ─────────────────────────────────────────────────────
@@ -15,64 +15,123 @@ export function addTeacher(data = {}) {
   const t = normalizeTeacher({ ...data, id: uid("tch") });
   getTeachers().push(t); scheduleSave("teachers"); return t;
 }
-
 export function updateTeacher(id, field, value) {
   if (!canEdit()) return;
   const t = getTeacherById(id); if (!t) return;
   t[field] = value; scheduleSave("teachers");
 }
-
 export function deleteTeacher(id) {
   if (!canEdit()) return;
   const t = getTeacherById(id); if (!t) return;
   if (!confirm(`"${t.name}" 선생님을 삭제할까요?`)) return;
-  tDomain().teachers = getTeachers().filter(t2 => t2.id !== id); scheduleSave("teachers"); return true;
+  tDomain().teachers = getTeachers().filter(t2 => t2.id !== id);
+  scheduleSave("teachers"); return true;
+}
+
+// ── Excel Paste Parser ────────────────────────────────────────────
+export function parseTeacherPaste(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const teachers = [];
+  for (const line of lines) {
+    let cols = line.split(/\t/).map(c => c.trim());
+    if (cols.length === 1) cols = line.split(/\s{2,}/).map(c => c.trim()).filter(Boolean);
+    if (!cols.length || !cols[0]) continue;
+    const firstLower = cols[0].toLowerCase().replace(/\s/g, "");
+    if (["이름","name","선생님","교사","성명","teacher"].includes(firstLower)) continue;
+    teachers.push(normalizeTeacher({
+      name:     cols[0] || "",
+      subjects: cols[1] ? cols[1].split(/[,，、]/).map(s => s.trim()).filter(Boolean) : [],
+      email:    cols[2] || "",
+      note:     cols.slice(3).join(" ").trim()
+    }));
+  }
+  return teachers;
 }
 
 // ── Teacher View Rendering ────────────────────────────────────────
 export function renderTeacherView(container) {
   container.innerHTML = "";
 
-  // Header + Add button
+  // ── Header ──────────────────────────────────────────────────────
   const hdr = document.createElement("div"); hdr.className = "teacher-header";
   const title = document.createElement("h2"); title.textContent = "선생님 명단 관리";
+  const btnWrap = document.createElement("div"); btnWrap.className = "teacher-header-btns";
   const addBtn = makeBtn("+ 선생님 추가", "primary-btn", () => {
     if (!canEdit()) return;
-    addTeacher({ name:"새 선생님", subjects:[], email:"", note:"" });
+    addTeacher({ name:"새 선생님" });
     renderTeacherView(container);
   });
   addBtn.disabled = !canEdit();
-  const exportBtn = makeBtn("📥 엑셀 내보내기", "secondary-btn", () => exportTeachersXlsx());
-  hdr.append(title, addBtn, exportBtn); container.appendChild(hdr);
+  const exportBtn = makeBtn("📥 엑셀 내보내기", "secondary-btn", exportTeachersXlsx);
+  btnWrap.append(addBtn, exportBtn);
+  hdr.append(title, btnWrap);
+  container.appendChild(hdr);
 
-  // Count
-  const cnt = document.createElement("div"); cnt.className = "teacher-count"; cnt.textContent = `총 ${getTeachers().length}명`;
+  // ── Count ────────────────────────────────────────────────────────
+  const cnt = document.createElement("div"); cnt.className = "teacher-count";
+  cnt.textContent = `총 ${getTeachers().length}명`;
   container.appendChild(cnt);
 
-  // Table
+  // ── Paste area ───────────────────────────────────────────────────
+  const pasteWrap = document.createElement("div"); pasteWrap.className = "paste-area-wrap";
+  pasteWrap.innerHTML = `
+    <div class="paste-label">
+      📋 엑셀에서 복사 후 아래 영역에 붙여넣기
+      <span class="paste-hint">열 구성: <strong>이름</strong> [담당과목(쉼표구분)] [이메일] [메모]</span>
+    </div>`;
+  const textarea = document.createElement("textarea");
+  textarea.className = "excel-paste-area"; textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 김선생\t영어,국어\tkimteacher@his.sc.kr";
+  pasteWrap.appendChild(textarea);
+  const pasteActions = document.createElement("div"); pasteActions.className = "paste-actions";
+  const parseBtn  = makeBtn("명단 추가", "primary-btn", () => {
+    const raw = textarea.value.trim();
+    if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
+    const parsed = parseTeacherPaste(raw);
+    if (!parsed.length) { alert("파싱된 선생님이 없습니다."); return; }
+    parsed.forEach(t => getTeachers().push(t));
+    scheduleSave("teachers"); textarea.value = "";
+    renderTeacherView(container);
+    alert(`${parsed.length}명이 추가되었습니다.`);
+  });
+  parseBtn.disabled = !canEdit();
+  const clearBtn  = makeBtn("지우기", "secondary-btn", () => { textarea.value = ""; });
+  pasteActions.append(parseBtn, clearBtn);
+  pasteWrap.appendChild(pasteActions);
+  container.appendChild(pasteWrap);
+
+  // ── Table ────────────────────────────────────────────────────────
   if (!getTeachers().length) {
-    const empty = document.createElement("div"); empty.className = "manager-empty"; empty.textContent = "선생님 명단이 없습니다. '+ 선생님 추가'를 눌러 시작하세요."; container.appendChild(empty); return;
+    const empty = document.createElement("div"); empty.className = "manager-empty";
+    empty.textContent = "선생님 명단이 없습니다."; container.appendChild(empty); return;
   }
 
   const wrap = document.createElement("div"); wrap.className = "teacher-table-wrap";
   const table = document.createElement("table"); table.className = "teacher-table";
-  table.innerHTML = `<thead><tr><th>이름</th><th>담당 과목</th><th>이메일</th><th>메모</th><th class="col-del">삭제</th></tr></thead>`;
+  table.innerHTML = `<thead><tr>
+    <th style="width:140px">이름</th>
+    <th>담당 과목 <span class="paste-hint">(쉼표로 여러 과목 입력)</span></th>
+    <th style="width:200px">이메일</th>
+    <th>메모</th>
+    <th class="col-del" style="width:40px">삭제</th>
+  </tr></thead>`;
   const tbody = document.createElement("tbody");
 
   getTeachers().forEach(t => {
     const tr = document.createElement("tr");
     [
-      { key:"name",     ph:"이름",     wide:false },
-      { key:"subjects", ph:"담당 과목 (쉼표 구분)", wide:true  },
-      { key:"email",    ph:"이메일",   wide:false },
-      { key:"note",     ph:"메모",     wide:true  }
+      { key:"name",     ph:"이름",             type:"text"  },
+      { key:"subjects", ph:"수학, 과학, …",    type:"text"  },
+      { key:"email",    ph:"이메일",           type:"email" },
+      { key:"note",     ph:"메모",             type:"text"  }
     ].forEach(f => {
       const td = document.createElement("td");
-      const inp = document.createElement("input"); inp.type = "text"; inp.disabled = !canEdit();
+      const inp = document.createElement("input"); inp.type = f.type; inp.disabled = !canEdit();
       inp.value = f.key === "subjects" ? t.subjects.join(", ") : (t[f.key] || "");
       inp.placeholder = f.ph;
       inp.addEventListener("change", e => {
-        const val = f.key === "subjects" ? e.target.value.split(",").map(s => s.trim()).filter(Boolean) : e.target.value;
+        const val = f.key === "subjects"
+          ? e.target.value.split(/[,，、]/).map(s => s.trim()).filter(Boolean)
+          : e.target.value;
         updateTeacher(t.id, f.key, val);
       });
       td.appendChild(inp); tr.appendChild(td);
