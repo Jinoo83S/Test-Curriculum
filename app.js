@@ -1,10 +1,9 @@
 // ================================================================
 // app.js · Main Entry: Auth + Navigation + Events
 // ================================================================
-import { auth } from "./config.js";
+import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
-import { GRADE_GROUPS } from "./config.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption } from "./curriculum.js";
@@ -18,15 +17,12 @@ import {
   setTemplateEditId, setTemplateFormSchoolLevel,
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
-  normalizeTemplate as normTpl,
   setSidebarLevel, setGroupManagerLevel
 } from "./templates.js";
-import { normalizeTemplate, normalizeTemplateGroup } from "./state.js";
-const normTplFn = (item) => normalizeTemplate(item);
+import { normalizeTemplate } from "./state.js";
 
 // ── Student imports ───────────────────────────────────────────────
-import { renderClassList, renderStudentTable, parseExcelPaste, exportStudentXlsx, addNewClass, deleteClass, updateClass, addStudentToClass } from "./students.js";
-import { getClassById } from "./students.js";
+import { renderClassList, renderStudentTable, parseExcelPaste, exportStudentXlsx, addNewClass, deleteClass, updateClass, addStudentToClass, getClassById } from "./students.js";
 
 // ── Teacher imports ───────────────────────────────────────────────
 import { renderTeacherView } from "./teachers.js";
@@ -279,17 +275,22 @@ function fillTemplateForm(id) {
 function submitTemplateForm() {
   if (!canEdit()) return;
   const useSep = templateSepCheck?.checked;
+  const editId = templateEditId;
+  const newId  = editId || `tpl-${Date.now()}-${Math.random().toString(36).slice(2,9)}`;
   const data = normalizeTemplate({
-    id: templateEditId || (import("./utils.js").then(m=>m.uid("tpl")), `tpl-${Date.now()}`),
-    language: templateLanguage?.value, useSemesterOverrides: useSep,
-    nameKo: templateNameKo?.value, nameEn: templateNameEn?.value, teacher: templateTeacher?.value,
-    sem1NameKo: sem1NameKo?.value, sem1NameEn: sem1NameEn?.value, sem1Teacher: sem1Teacher?.value,
-    sem2NameKo: sem2NameKo?.value, sem2NameEn: sem2NameEn?.value, sem2Teacher: sem2Teacher?.value,
+    id: newId,
+    language: templateLanguage?.value || "Korean",
+    useSemesterOverrides: useSep,
+    nameKo: templateNameKo?.value || "", nameEn: templateNameEn?.value || "", teacher: templateTeacher?.value || "",
+    sem1NameKo: sem1NameKo?.value || "", sem1NameEn: sem1NameEn?.value || "", sem1Teacher: sem1Teacher?.value || "",
+    sem2NameKo: sem2NameKo?.value || "", sem2NameEn: sem2NameEn?.value || "", sem2Teacher: sem2Teacher?.value || "",
     schoolLevel: templateFormSchoolLevel
   });
+  if (!data.nameKo && !data.nameEn && !(useSep && (data.sem1NameKo || data.sem1NameEn))) {
+    alert("한글 이름 또는 영어 이름을 입력해 주세요."); return;
+  }
   const prev = getTemplateById(data.id);
   if (prev) data.calcGroupId = prev.calcGroupId || null;
-  if (!data.nameKo && !data.nameEn && !(useSep && (data.sem1NameKo || data.sem1NameEn))) { alert("한글 이름 또는 영어 이름을 입력해 주세요."); return; }
   const tpls = appState.templates.templates;
   const idx = tpls.findIndex(t => t.id === data.id);
   if (idx >= 0) tpls[idx] = data; else tpls.push(data);
@@ -339,12 +340,10 @@ exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
 resetBoardBtn?.addEventListener("click", async () => {
   if (!canEdit()) return;
   if (!confirm("커리큘럼 보드를 초기화할까요? (과목카드/학생 데이터는 유지됩니다)")) return;
-  const { createDefaultState } = await import("./state.js").catch(() => ({}));
-  // Reset only curriculum domain
   const opts = { category:["교과","창체"], track:["공통","배정","선택"], group:["선택","국어","영어","수학","사회","과학","정보","예술","체육","자율활동","동아리","채플","기타"] };
   const gradeBoards = {};
-  const GRADE_KEYS = ["7학년","8학년","9학년","10학년","11학년","12학년"];
-  GRADE_KEYS.forEach(g => { gradeBoards[g] = Array.from({ length:4 }, () => ({ id:`row-${Date.now()}-${Math.random().toString(36).slice(2,9)}`, category:opts.category[0], track:opts.track[0], group:opts.group[0], credits:"", sem1TemplateId:null, sem2TemplateId:null })); });
+  const GK = ["7학년","8학년","9학년","10학년","11학년","12학년"];
+  GK.forEach(g => { gradeBoards[g] = Array.from({ length:4 }, () => ({ id:`row-${Date.now()}-${Math.random().toString(36).slice(2,9)}`, category:opts.category[0], track:opts.track[0], group:opts.group[0], credits:"", sem1TemplateId:null, sem2TemplateId:null })); });
   appState.curriculum = { options:opts, gradeBoards };
   invalidateTabs(); await saveNow("curriculum"); render();
 });
