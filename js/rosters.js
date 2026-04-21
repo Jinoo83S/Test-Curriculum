@@ -140,7 +140,7 @@ function renderRosterDetail(panel, container) {
   const rcnt   = document.createElement("span"); rcnt.className = "student-count-badge";
   rcnt.textContent = `${roster.length}명 수강`;
   rtitle.append(rname, rcnt);
-  const clearBtn  = makeBtn("명단 초기화", "danger-btn compact-btn",   () => { clearRoster(selectedRosterTemplateId); renderRosterView(container.parentElement || container); });
+  const clearBtn  = makeBtn("명단 초기화", "danger-btn compact-btn",   () => { clearRoster(selectedRosterTemplateId); renderRosterView(container); });
   clearBtn.disabled = !canEdit();
   const exportBtn = makeBtn("📥 내보내기", "secondary-btn compact-btn", () => exportRosterXlsx(selectedRosterTemplateId));
   rhdr.append(rtitle, clearBtn, exportBtn);
@@ -168,7 +168,7 @@ function renderRosterDetail(panel, container) {
       const delTd = document.createElement("td");
       const delBtn = makeBtn("×", "stu-del-btn", () => {
         removeFromRoster(selectedRosterTemplateId, entry.classId, entry.studentId);
-        renderRosterView(container.parentElement || container);
+        renderRosterView(container);
       });
       delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd);
       tbody.appendChild(tr);
@@ -187,7 +187,7 @@ function renderRosterDetail(panel, container) {
 
   // Grade filter
   const gradeOpts = ["전체", ...GRADE_KEYS];
-  const gradeSel  = buildFilterSelect("학년", gradeOpts, filterGrade, v => { filterGrade = v; filterClass = "전체"; renderRosterView(container.parentElement || container); });
+  const gradeSel  = buildFilterSelect("학년", gradeOpts, filterGrade, v => { filterGrade = v; filterClass = "전체"; renderRosterView(container); });
 
   // Class filter — only show classes of selected grade
   const classOpts = ["전체", ...getClasses()
@@ -195,15 +195,15 @@ function renderRosterDetail(panel, container) {
     .map(c => c.name)
     .filter((v, i, a) => a.indexOf(v) === i)
   ];
-  const classSel = buildFilterSelect("반", classOpts, filterClass, v => { filterClass = v; renderRosterView(container.parentElement || container); });
+  const classSel = buildFilterSelect("반", classOpts, filterClass, v => { filterClass = v; renderRosterView(container); });
 
   // Gender filter
-  const genderSel = buildFilterSelect("성별", ["전체","남","여"], filterGender, v => { filterGender = v; renderRosterView(container.parentElement || container); });
+  const genderSel = buildFilterSelect("성별", ["전체","남","여"], filterGender, v => { filterGender = v; renderRosterView(container); });
 
   // "전체 추가" for all filtered students
   const addAllBtn = makeBtn("필터 전체 추가", "primary-btn compact-btn", () => {
     getFilteredStudentEntries().forEach(({ classId, studentId }) => addToRoster(selectedRosterTemplateId, classId, studentId));
-    renderRosterView(container.parentElement || container);
+    renderRosterView(container);
   });
   addAllBtn.disabled = !canEdit();
 
@@ -234,7 +234,7 @@ function renderRosterDetail(panel, container) {
 
       const allBtn = makeBtn("전체 추가", "secondary-btn compact-btn", () => {
         filteredStudents.forEach(s => addToRoster(selectedRosterTemplateId, cls.id, s.id));
-        renderRosterView(container.parentElement || container);
+        renderRosterView(container);
       });
       allBtn.disabled = !canEdit();
       clsHdr.append(label, allBtn); clsCard.appendChild(clsHdr);
@@ -249,7 +249,7 @@ function renderRosterDetail(panel, container) {
         stuBtn.addEventListener("click", () => {
           if (enrolled) removeFromRoster(selectedRosterTemplateId, cls.id, s.id);
           else          addToRoster(selectedRosterTemplateId, cls.id, s.id);
-          renderRosterView(container.parentElement || container);
+          renderRosterView(container);
         });
         stuList.appendChild(stuBtn);
       });
