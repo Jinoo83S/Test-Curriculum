@@ -147,7 +147,10 @@ function normalizeRostersDomain(raw = {}) {
   if (raw.rosters && typeof raw.rosters === "object") {
     Object.entries(raw.rosters).forEach(([tid, entries]) => {
       if (Array.isArray(entries)) {
-        rosters[tid] = entries.filter(e => e && e.classId && e.studentId).map(e => ({ classId: String(e.classId), studentId: String(e.studentId) }));
+        rosters[tid] = entries.filter(e => e && e.classId && e.studentId).map(e => ({
+          classId: String(e.classId), studentId: String(e.studentId),
+          sectionIdx: Number.isInteger(e.sectionIdx) ? e.sectionIdx : 0
+        }));
       }
     });
   }
