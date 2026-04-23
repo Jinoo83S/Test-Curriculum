@@ -330,7 +330,8 @@ setOnTemplateChange(() => {
   updateTeacherDatalist();
   invalidateTabs();
   renderSidebar();
-  if (activeMainView === "board") renderBoardTab();
+  if (activeMainView === "board")    renderBoardTab();
+  if (activeMainView === "manager")  renderTemplateManagerView();
   if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
 });
 

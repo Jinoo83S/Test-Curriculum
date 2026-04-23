@@ -353,21 +353,22 @@ export function parseTemplatePaste(raw) {
   const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const result = [];
   for (const line of lines) {
-    const cols = line.split(/\t/).map(c => c.trim());
+    // Try tab split first, fall back to 2+ spaces
+    let cols = line.split(/\t/).map(c => c.trim());
+    if (cols.length < 2) cols = line.split(/\s{2,}/).map(c => c.trim()).filter((_, i, a) => i === 0 || a[i]);
     if (!cols[0]) continue;
-    // Skip header row
+    // Skip header rows only (exact header keywords)
     const firstLower = cols[0].toLowerCase().replace(/\s/g,"");
-    if (["한글이름","이름","name","nameko","korean","subject","과목"].includes(firstLower)) continue;
+    if (["한글이름","이름","nameko","subject","과목","subjectname"].includes(firstLower)) continue;
 
     const nameKo   = cols[0] || "";
     const nameEn   = cols[1] || "";
     const teacher  = cols[2] || "";
     const rawLang  = cols[3] || "";
     const rawLevel = cols[4] || "";
-    const language   = ["Korean","English","Both"].includes(rawLang)  ? rawLang  : "Both";
-    const schoolLevel= ["중등","고등","공통"].includes(rawLevel) ? rawLevel : "공통";
+    const language    = ["Korean","English","Both"].includes(rawLang)  ? rawLang  : "Both";
+    const schoolLevel = ["중등","고등","공통"].includes(rawLevel) ? rawLevel : "공통";
 
-    // Semester split: columns 5-10 present
     const s1ko = cols[5] || ""; const s1en = cols[6] || ""; const s1te = cols[7] || "";
     const s2ko = cols[8] || ""; const s2en = cols[9] || ""; const s2te = cols[10] || "";
     const hasSplit = s1ko || s1en || s1te || s2ko || s2en || s2te;

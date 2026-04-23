@@ -194,7 +194,16 @@
         </div>
       </div>
       <div class="manager-toolbar">
-        <input id="templateManagerSearchInput" type="text" placeholder="과목명/교사 검색" />
+        <!-- Group 1: Search -->
+        <input id="templateManagerSearchInput" type="text" placeholder="🔍 과목명/교사 검색" class="tpl-search-input" />
+        <div class="toolbar-divider"></div>
+        <!-- Group 2: Filters -->
+        <span class="toolbar-group-label">필터</span>
+        <select id="templateManagerLevelFilter">
+          <option value="전체">전체 (중+고)</option>
+          <option value="중등">📘 중등</option>
+          <option value="고등">📗 고등</option>
+        </select>
         <select id="templateManagerLanguageFilter">
           <option value="all">전체 언어</option>
           <option value="Korean">Korean</option>
@@ -206,6 +215,9 @@
           <option value="split">학기 분리</option>
           <option value="same">공통 카드</option>
         </select>
+        <div class="toolbar-divider"></div>
+        <!-- Group 3: Sort -->
+        <span class="toolbar-group-label">정렬</span>
         <select id="templateManagerSortSelect">
           <option value="ko-asc">한글명 ↑</option>
           <option value="ko-desc">한글명 ↓</option>
@@ -213,12 +225,7 @@
           <option value="language">언어별</option>
           <option value="group">그룹별</option>
         </select>
-        <button id="templateManagerSortBtn" class="secondary-btn" type="button">정렬 적용</button>
-        <select id="templateManagerLevelFilter">
-          <option value="전체">전체 (중+고)</option>
-          <option value="중등">📘 중등</option>
-          <option value="고등">📗 고등</option>
-        </select>
+        <button id="templateManagerSortBtn" class="secondary-btn compact-btn" type="button">적용</button>
       </div>
       <details id="tplMgrPasteDetails" class="tpl-paste-details">
         <summary class="tpl-paste-summary">📋 엑셀 일괄 붙여넣기</summary>
