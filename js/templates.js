@@ -39,8 +39,22 @@ export function isSemesterDataSame(item) {
   return s1.nameKo === s2.nameKo && s1.nameEn === s2.nameEn && s1.teacher === s2.teacher;
 }
 
+/** Split a teacher field string into individual names */
+export function splitTeacherNames(str) {
+  return clean(str).split(/[,，]/).map(s => s.trim()).filter(Boolean);
+}
+
+/** Return deduplicated list of all teacher names on this template */
+export function getTemplateTeacherNames(item) {
+  const all = [
+    getSemesterTemplateData(item, "sem1").teacher,
+    getSemesterTemplateData(item, "sem2").teacher,
+  ].flatMap(splitTeacherNames);
+  return uniqueOrdered(all);
+}
+
 export function getTemplateTeacherSummary(item) {
-  return uniqueOrdered([getSemesterTemplateData(item, "sem1").teacher, getSemesterTemplateData(item, "sem2").teacher].filter(Boolean)).join(" · ");
+  return getTemplateTeacherNames(item).join(" · ");
 }
 
 function getCommonTeacherCandidate(item) {
@@ -84,8 +98,9 @@ export function getSubjectsForTeacher(teacherName) {
   const seen = new Set();
   const result = [];
   templates().forEach(t => {
-    const teacherFields = [t.teacher, t.sem1Teacher, t.sem2Teacher].map(clean).filter(Boolean);
-    if (teacherFields.includes(name)) {
+    const allNames = [t.teacher, t.sem1Teacher, t.sem2Teacher]
+      .flatMap(splitTeacherNames);
+    if (allNames.includes(name)) {
       const title = getTemplateCardTitle(t);
       if (title && !seen.has(title)) { seen.add(title); result.push(title); }
     }
@@ -436,7 +451,16 @@ export function renderTemplateManagerTable(wrap, countEl) {
   if (!rows.length) { wrap.innerHTML = '<div class="manager-empty">검색 조건에 맞는 과목카드가 없습니다.</div>'; return; }
 
   const buildGroupOpts = selId => ['<option value="">없음</option>'].concat(groups().map(g => `<option value="${escapeHtml(g.id)}" ${selId===g.id?"selected":""}>${escapeHtml(g.name)}</option>`)).join("");
-  const tInput = (field, val) => `<input type="text" list="tpl-teacher-list" data-field="${field}" value="${escapeHtml(val)}" placeholder="교사명 검색" />`;
+  const tInput = (field, val) =>
+    `<div class="teacher-multi-wrap" data-field-wrap="${field}">
+      <input type="text" list="tpl-teacher-list" data-field="${field}" value="${escapeHtml(val)}"
+        placeholder="교사명 (여러 명: 쉼표 구분)" class="teacher-multi-input" />
+      <div class="teacher-chips-preview">${
+        splitTeacherNames(val).map(n =>
+          `<span class="teacher-name-chip">${escapeHtml(n)}</span>`
+        ).join("")
+      }</div>
+    </div>`;
 
   const bodyRows = rows.map(item => {
     const grades = getTemplateAppliedGrades(item.id);
@@ -477,7 +501,12 @@ export function handleTableInput(e) {
   const item = tDomain().templates.find(t => t.id === row.dataset.templateId); if (!item) return;
   const f = e.target.dataset.field; if (!f) return;
   item[f] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-  // Save is deferred to handleTableChange (blur/select) — avoids per-keystroke writes
+  // Refresh teacher chip preview
+  if (["teacher","sem1Teacher","sem2Teacher"].includes(f)) {
+    const wrap = e.target.closest(".teacher-multi-wrap");
+    const preview = wrap?.querySelector(".teacher-chips-preview");
+    if (preview) preview.innerHTML = splitTeacherNames(e.target.value).map(n => `<span class="teacher-name-chip">${escapeHtml(n)}</span>`).join("");
+  }
 }
 
 export function handleTableChange(e, rerender) {

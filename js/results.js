@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js";
 import { clean, escapeHtml } from "./utils.js";
 import { appState } from "./state.js";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary } from "./templates.js";
+import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js";
 import { getRosterMeta, getClassCount } from "./rosters.js";
 
 // ── Data builder ─────────────────────────────────────────────────
@@ -149,7 +149,10 @@ function buildTable2(rows) {
   // Group rows by teacher
   const byTeacher = {};
   rows.forEach(r => {
-    const teacherKeys = r.teacher ? r.teacher.split(/[\/,·]/).map(t => t.replace(/^(1학기:|2학기:|Sem\d:)\s*/i, "").trim()).filter(Boolean) : ["(미배정)"];
+    const rawNames = r.teacher
+      ? r.teacher.split("/").flatMap(seg => splitTeacherNames(seg.replace(/^(1학기:|2학기:|Sem\d:)\s*/i, "")))
+      : [];
+    const teacherKeys = rawNames.length ? [...new Set(rawNames)] : ["(미배정)"];
     teacherKeys.forEach(teacher => {
       if (!byTeacher[teacher]) byTeacher[teacher] = [];
       byTeacher[teacher].push(r);
@@ -214,7 +217,10 @@ export function exportResultsXlsx() {
   // Sheet 2: teacher view
   const byT = {};
   rows.forEach(r => {
-    const tk = r.teacher ? r.teacher.split(/[\/,·]/).map(t => t.replace(/^(1학기:|2학기:|Sem\d:)\s*/i,"").trim()).filter(Boolean) : ["(미배정)"];
+    const rawNames2 = r.teacher
+      ? r.teacher.split("/").flatMap(seg => splitTeacherNames(seg.replace(/^(1학기:|2학기:|Sem\d:)\s*/i, "")))
+      : [];
+    const tk = rawNames2.length ? [...new Set(rawNames2)] : ["(미배정)"];
     tk.forEach(t => { if (!byT[t]) byT[t] = []; byT[t].push(r); });
   });
   const s2data = [["교사","학년","범주","과목(한글)","과목(영어)","학급별시수","학급수","담당총시수","교사합계시수"]];

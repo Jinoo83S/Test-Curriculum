@@ -2555,3 +2555,14 @@ button {
   color: #0369a1; margin-top: 2px;
 }
 .results-teacher-sep td { padding: 2px; background: #e2e8f0 !important; }
+
+/* ── Multi-teacher input in table ────────────────────────────── */
+.teacher-multi-wrap { display: flex; flex-direction: column; gap: 3px; min-width: 120px; }
+.teacher-multi-input { width: 100%; }
+.teacher-chips-preview { display: flex; flex-wrap: wrap; gap: 3px; min-height: 4px; }
+.teacher-name-chip {
+  display: inline-flex; align-items: center;
+  padding: 1px 7px; border-radius: 999px;
+  background: #dbeafe; color: #1e40af;
+  font-size: 10px; font-weight: 600; white-space: nowrap;
+}
