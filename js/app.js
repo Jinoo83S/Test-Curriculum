@@ -18,7 +18,8 @@ import {
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
   setSidebarLevel, setGroupManagerLevel,
-  copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels
+  copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
+  clearStableOrder, parseTemplatePaste, addParsedTemplates
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
@@ -91,6 +92,7 @@ const tplMgrLang    = document.getElementById("templateManagerLanguageFilter");
 const tplMgrSplit   = document.getElementById("templateManagerSplitFilter");
 const tplMgrSort    = document.getElementById("templateManagerSortSelect");
 const tplMgrLevel   = document.getElementById("templateManagerLevelFilter");
+const tplMgrSortBtn = document.getElementById("templateManagerSortBtn");
 const studentMgrView= document.getElementById("studentMgmtView");
 const teacherMgrView= document.getElementById("teacherMgmtView");
 const rosterMgrView = document.getElementById("rosterMgmtView");
@@ -233,7 +235,7 @@ function setControlsDisabled(disabled) {
    resetBoardBtn, exportXlsxBtn, openGroupManagerBtn, openTemplateManagerBtn,
    groupMgrBackBtn, groupMgrAddBtn,
    tplMgrBackBtn, tplMgrAddBtn, tplMgrSaveBtn, tplMgrDiscBtn,
-   tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrLevel,
+   tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrSortBtn, tplMgrLevel,
    addClassBtn, deleteClassBtn, classNameInput, classGradeSelect,
    parsePasteBtn, clearPasteBtn, addStudentRowBtn, exportStudentBtn
   ].forEach(el => { if (el) el.disabled = disabled; });
@@ -386,7 +388,7 @@ navButtons.rosters?.addEventListener("click", () => {
 
 // ── Sidebar view toggles ──────────────────────────────────────────
 openGroupManagerBtn?.addEventListener("click", () => { activeMainView === "groups" ? closeToBoard() : (setView("groups"), renderGroupManagerView()); });
-openTemplateManagerBtn?.addEventListener("click", () => { activeMainView === "manager" ? closeToBoard() : (setView("manager"), renderTemplateManagerView()); });
+openTemplateManagerBtn?.addEventListener("click", () => { activeMainView === "manager" ? closeToBoard() : (clearStableOrder(), setView("manager"), renderTemplateManagerView()); });
 groupMgrBackBtn?.addEventListener("click", closeToBoard);
 tplMgrBackBtn?.addEventListener("click", closeToBoard);
 groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); renderSidebar(); });
@@ -419,14 +421,35 @@ addGroupOptionBtn?.addEventListener("click",    () => { addOption("group",    gr
 tplMgrAddBtn?.addEventListener("click", () => { addTemplateManagerRow(); renderTemplateManagerView(); });
 tplMgrDiscBtn?.addEventListener("click", () => { if (!canEdit()) return; renderTemplateManagerView(); renderSidebar(); });
 tplMgrSaveBtn?.addEventListener("click", async () => { await commitDraft(); invalidateTabs(); render(); });
-tplMgrSearch?.addEventListener("input", e => { managerUi.search = e.target.value; renderTemplateManagerView(); });
-tplMgrLang?.addEventListener("change",  e => { managerUi.language = e.target.value; renderTemplateManagerView(); });
-tplMgrSplit?.addEventListener("change", e => { managerUi.split = e.target.value; renderTemplateManagerView(); });
-tplMgrSort?.addEventListener("change",  e => { managerUi.sort = e.target.value; renderTemplateManagerView(); });
-tplMgrLevel?.addEventListener("change", e => { managerUi.level = e.target.value; renderTemplateManagerView(); });
+tplMgrSearch?.addEventListener("input", e => { managerUi.search = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
+tplMgrLang?.addEventListener("change",  e => { managerUi.language = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
+tplMgrSplit?.addEventListener("change", e => { managerUi.split = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
+tplMgrSort?.addEventListener("change",  e => { managerUi.sort = e.target.value; /* apply only on button click */ });
+tplMgrLevel?.addEventListener("change", e => { managerUi.level = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
+tplMgrSortBtn?.addEventListener("click", () => { clearStableOrder(); renderTemplateManagerView(); });
 tplMgrTableWrap?.addEventListener("input",  e => handleTableInput(e));
 tplMgrTableWrap?.addEventListener("change", e => handleTableChange(e, renderTemplateManagerView));
 tplMgrTableWrap?.addEventListener("click",  e => handleTableDeleteClick(e, renderTemplateManagerView));
+
+// ── Template manager paste ────────────────────────────────────────
+const tplPasteArea    = document.getElementById("tplPasteArea");
+const tplPasteBtn     = document.getElementById("tplPasteBtn");
+const tplPasteClearBtn= document.getElementById("tplPasteClearBtn");
+
+tplPasteBtn?.addEventListener("click", () => {
+  if (!canEdit()) return;
+  const raw = tplPasteArea?.value.trim();
+  if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
+  const parsed = parseTemplatePaste(raw);
+  if (!parsed.length) { alert("파싱된 과목카드가 없습니다.\n첫 번째 열에 한글 이름이 있는지 확인하세요."); return; }
+  const added = addParsedTemplates(parsed);
+  if (tplPasteArea) tplPasteArea.value = "";
+  document.getElementById("tplMgrPasteDetails")?.removeAttribute("open");
+  renderTemplateManagerView();
+  renderSidebar();
+  alert(`${added}개 과목카드가 추가되었습니다.`);
+});
+tplPasteClearBtn?.addEventListener("click", () => { if (tplPasteArea) tplPasteArea.value = ""; });
 
 // ── Student management ────────────────────────────────────────────
 addClassBtn?.addEventListener("click", () => {

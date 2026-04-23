@@ -213,12 +213,31 @@
           <option value="language">언어별</option>
           <option value="group">그룹별</option>
         </select>
+        <button id="templateManagerSortBtn" class="secondary-btn" type="button">정렬 적용</button>
         <select id="templateManagerLevelFilter">
           <option value="전체">전체 (중+고)</option>
           <option value="중등">📘 중등</option>
           <option value="고등">📗 고등</option>
         </select>
       </div>
+      <details id="tplMgrPasteDetails" class="tpl-paste-details">
+        <summary class="tpl-paste-summary">📋 엑셀 일괄 붙여넣기</summary>
+        <div class="paste-area-wrap tpl-paste-body">
+          <div class="paste-label">
+            열 구성 <span class="paste-hint">
+              <strong>한글이름</strong> [영어이름] [교사] [언어: Korean·English·Both] [구분: 중등·고등·공통]
+              &nbsp;·&nbsp; 학기분리 추가: [1학기한글] [1학기영어] [1학기교사] [2학기한글] [2학기영어] [2학기교사]
+            </span>
+          </div>
+          <textarea id="tplPasteArea" class="excel-paste-area" rows="5"
+            placeholder="엑셀에서 복사 후 붙여넣기 (Ctrl+V)&#10;예) 수학&#9;Mathematics&#9;백예지&#9;Korean&#9;중등&#10;체육&#9;Physical Education&#9;이강평&#9;Both&#9;공통"></textarea>
+          <div class="paste-actions">
+            <button id="tplPasteBtn"      class="primary-btn"   type="button">과목카드 추가</button>
+            <button id="tplPasteClearBtn" class="secondary-btn" type="button">지우기</button>
+          </div>
+        </div>
+      </details>
+
       <div class="manager-scroll">
         <section class="manager-section">
           <div class="manager-section-header">

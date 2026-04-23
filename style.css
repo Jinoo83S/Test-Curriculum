@@ -2095,7 +2095,31 @@ button {
   font-style: italic;
 }
 
-/* ── Roster management ────────────────────────────────────────── */
+/* ── Template manager paste section ─────────────────────────────── */
+.tpl-paste-details {
+  margin: 0 0 0 0;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+.tpl-paste-summary {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.tpl-paste-summary::-webkit-details-marker { display: none; }
+.tpl-paste-summary::after { content: "▶"; font-size: 10px; margin-left: 4px; transition: transform 0.15s; }
+.tpl-paste-details[open] .tpl-paste-summary::after { transform: rotate(90deg); }
+.tpl-paste-body {
+  padding: 0 20px 16px;
+  border-top: 1px solid #f3f4f6;
+}
 .roster-layout {
   display: grid;
   grid-template-columns: 280px 1fr;

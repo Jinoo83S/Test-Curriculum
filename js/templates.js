@@ -348,8 +348,58 @@ export function updateTeacherDatalist() {
   dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join("");
 }
 
+/** Parse TSV pasted from Excel into template objects */
+export function parseTemplatePaste(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const result = [];
+  for (const line of lines) {
+    const cols = line.split(/\t/).map(c => c.trim());
+    if (!cols[0]) continue;
+    // Skip header row
+    const firstLower = cols[0].toLowerCase().replace(/\s/g,"");
+    if (["한글이름","이름","name","nameko","korean","subject","과목"].includes(firstLower)) continue;
+
+    const nameKo   = cols[0] || "";
+    const nameEn   = cols[1] || "";
+    const teacher  = cols[2] || "";
+    const rawLang  = cols[3] || "";
+    const rawLevel = cols[4] || "";
+    const language   = ["Korean","English","Both"].includes(rawLang)  ? rawLang  : "Both";
+    const schoolLevel= ["중등","고등","공통"].includes(rawLevel) ? rawLevel : "공통";
+
+    // Semester split: columns 5-10 present
+    const s1ko = cols[5] || ""; const s1en = cols[6] || ""; const s1te = cols[7] || "";
+    const s2ko = cols[8] || ""; const s2en = cols[9] || ""; const s2te = cols[10] || "";
+    const hasSplit = s1ko || s1en || s1te || s2ko || s2en || s2te;
+
+    result.push(normalizeTemplate({
+      id: uid("tpl"), nameKo, nameEn, teacher, language, schoolLevel,
+      useSemesterOverrides: !!hasSplit,
+      sem1NameKo:  hasSplit ? (s1ko || nameKo)  : "",
+      sem1NameEn:  hasSplit ? (s1en || nameEn)  : "",
+      sem1Teacher: hasSplit ? (s1te || teacher) : "",
+      sem2NameKo:  hasSplit ? (s2ko || nameKo)  : "",
+      sem2NameEn:  hasSplit ? (s2en || nameEn)  : "",
+      sem2Teacher: hasSplit ? (s2te || teacher) : "",
+    }));
+  }
+  return result;
+}
+
+export function addParsedTemplates(items) {
+  if (!canEdit()) return 0;
+  items.forEach(t => tDomain().templates.push(t));
+  clearStableOrder();
+  scheduleSave("templates");
+  _onTemplateChange();
+  return items.length;
+}
+
 // ── Template Manager Table View ───────────────────────────────────
-export const managerUi = { search:"", language:"all", split:"all", sort:"ko-asc", level:"전체" };
+export const managerUi = { search:"", language:"all", split:"all", sort:"ko-asc", level:"전체", stableIds: null };
+
+/** Call before re-rendering when filter/sort should be re-applied */
+export function clearStableOrder() { managerUi.stableIds = null; }
 
 export function getFilteredTemplates() {
   const srch = clean(managerUi.search).toLowerCase();
@@ -361,16 +411,25 @@ export function getFilteredTemplates() {
     if (srch) { const h = [item.nameKo,item.nameEn,item.teacher,item.sem1NameKo,item.sem1NameEn,item.sem1Teacher,item.sem2NameKo,item.sem2NameEn,item.sem2Teacher].join(" ").toLowerCase(); if (!h.includes(srch)) return false; }
     return true;
   });
-  const sv = (item, k) => clean(k === "en" ? (item.nameEn||item.sem1NameEn||item.nameKo) : (item.nameKo||item.sem1NameKo||item.nameEn));
-  filtered.sort((a,b) => {
-    switch (managerUi.sort) {
-      case "ko-desc": return sv(b,"ko").localeCompare(sv(a,"ko"),"ko");
-      case "en-asc":  return sv(a,"en").localeCompare(sv(b,"en"),"en");
-      case "language": return `${a.language}-${sv(a,"ko")}`.localeCompare(`${b.language}-${sv(b,"ko")}`,"ko");
-      case "group": { const ga = getTemplateGroupById(a.calcGroupId)?.name||""; const gb = getTemplateGroupById(b.calcGroupId)?.name||""; return `${ga}-${sv(a,"ko")}`.localeCompare(`${gb}-${sv(b,"ko")}`,"ko"); }
-      default: return sv(a,"ko").localeCompare(sv(b,"ko"),"ko");
-    }
-  });
+
+  if (managerUi.stableIds !== null) {
+    // Maintain current display order — don't re-sort during edits
+    const orderMap = new Map(managerUi.stableIds.map((id, i) => [id, i]));
+    filtered.sort((a, b) => (orderMap.has(a.id) ? orderMap.get(a.id) : 99999) - (orderMap.has(b.id) ? orderMap.get(b.id) : 99999));
+  } else {
+    // Apply sort and lock in this order
+    const sv = (item, k) => clean(k === "en" ? (item.nameEn||item.sem1NameEn||item.nameKo) : (item.nameKo||item.sem1NameKo||item.nameEn));
+    filtered.sort((a,b) => {
+      switch (managerUi.sort) {
+        case "ko-desc": return sv(b,"ko").localeCompare(sv(a,"ko"),"ko");
+        case "en-asc":  return sv(a,"en").localeCompare(sv(b,"en"),"en");
+        case "language": return `${a.language}-${sv(a,"ko")}`.localeCompare(`${b.language}-${sv(b,"ko")}`,"ko");
+        case "group": { const ga = getTemplateGroupById(a.calcGroupId)?.name||""; const gb = getTemplateGroupById(b.calcGroupId)?.name||""; return `${ga}-${sv(a,"ko")}`.localeCompare(`${gb}-${sv(b,"ko")}`,"ko"); }
+        default: return sv(a,"ko").localeCompare(sv(b,"ko"),"ko");
+      }
+    });
+    managerUi.stableIds = filtered.map(t => t.id); // lock order until next explicit sort
+  }
   return filtered;
 }
 
