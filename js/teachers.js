@@ -4,6 +4,7 @@
 import { uid, clean, makeBtn, escapeHtml } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, normalizeTeacher } from "./state.js";
+import { getSubjectsForTeacher } from "./templates.js";
 
 const tDomain   = () => appState.teachers;
 export const getTeachers    = () => tDomain().teachers;
@@ -38,11 +39,11 @@ export function parseTeacherPaste(raw) {
     if (!cols.length || !cols[0]) continue;
     const firstLower = cols[0].toLowerCase().replace(/\s/g, "");
     if (["이름","name","선생님","교사","성명","teacher"].includes(firstLower)) continue;
+    // Columns: 이름, [이메일], [메모] — subjects auto-derived from templates
     teachers.push(normalizeTeacher({
-      name:     cols[0] || "",
-      subjects: cols[1] ? cols[1].split(/[,，、]/).map(s => s.trim()).filter(Boolean) : [],
-      email:    cols[2] || "",
-      note:     cols.slice(3).join(" ").trim()
+      name:  cols[0] || "",
+      email: cols[1] || "",
+      note:  cols.slice(2).join(" ").trim()
     }));
   }
   return teachers;
@@ -77,10 +78,10 @@ export function renderTeacherView(container) {
   pasteWrap.innerHTML = `
     <div class="paste-label">
       📋 엑셀에서 복사 후 아래 영역에 붙여넣기
-      <span class="paste-hint">열 구성: <strong>이름</strong> [담당과목(쉼표구분)] [이메일] [메모]</span>
+      <span class="paste-hint">열 구성: <strong>이름</strong> [이메일] [메모] — 담당과목은 과목카드에서 자동 연동</span>
     </div>`;
   const textarea = document.createElement("textarea");
-  textarea.className = "excel-paste-area"; textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 김선생\t영어,국어\tkimteacher@his.sc.kr";
+  textarea.className = "excel-paste-area"; textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 김선생\tkimteacher@his.sc.kr\t메모";
   pasteWrap.appendChild(textarea);
   const pasteActions = document.createElement("div"); pasteActions.className = "paste-actions";
   const parseBtn  = makeBtn("명단 추가", "primary-btn", () => {
@@ -109,9 +110,9 @@ export function renderTeacherView(container) {
   const table = document.createElement("table"); table.className = "teacher-table";
   table.innerHTML = `<thead><tr>
     <th style="width:140px">이름</th>
-    <th>담당 과목 <span class="paste-hint">(쉼표로 여러 과목 입력)</span></th>
     <th style="width:200px">이메일</th>
     <th>메모</th>
+    <th>담당 과목 <span class="paste-hint">(과목카드에서 자동 연동)</span></th>
     <th class="col-del" style="width:40px">삭제</th>
   </tr></thead>`;
   const tbody = document.createElement("tbody");
@@ -119,23 +120,30 @@ export function renderTeacherView(container) {
   getTeachers().forEach(t => {
     const tr = document.createElement("tr");
     [
-      { key:"name",     ph:"이름",             type:"text"  },
-      { key:"subjects", ph:"수학, 과학, …",    type:"text"  },
-      { key:"email",    ph:"이메일",           type:"email" },
-      { key:"note",     ph:"메모",             type:"text"  }
+      { key:"name",  ph:"이름",  type:"text"  },
+      { key:"email", ph:"이메일", type:"email" },
+      { key:"note",  ph:"메모",  type:"text"  }
     ].forEach(f => {
       const td = document.createElement("td");
       const inp = document.createElement("input"); inp.type = f.type; inp.disabled = !canEdit();
-      inp.value = f.key === "subjects" ? t.subjects.join(", ") : (t[f.key] || "");
+      inp.value = t[f.key] || "";
       inp.placeholder = f.ph;
-      inp.addEventListener("change", e => {
-        const val = f.key === "subjects"
-          ? e.target.value.split(/[,，、]/).map(s => s.trim()).filter(Boolean)
-          : e.target.value;
-        updateTeacher(t.id, f.key, val);
-      });
+      inp.addEventListener("change", e => updateTeacher(t.id, f.key, e.target.value));
       td.appendChild(inp); tr.appendChild(td);
     });
+
+    // Auto-derived subjects (read-only)
+    const subTd = document.createElement("td"); subTd.className = "teacher-subjects-cell";
+    const derivedSubjects = getSubjectsForTeacher(t.name);
+    if (derivedSubjects.length) {
+      derivedSubjects.forEach(s => {
+        const chip = document.createElement("span"); chip.className = "teacher-subject-chip"; chip.textContent = s;
+        subTd.appendChild(chip);
+      });
+    } else {
+      subTd.innerHTML = '<span class="teacher-subjects-empty">과목카드에서 자동 연동</span>';
+    }
+    tr.appendChild(subTd);
 
     const delTd = document.createElement("td"); delTd.className = "col-del";
     const delBtn = makeBtn("×", "stu-del-btn", () => { if (deleteTeacher(t.id)) renderTeacherView(container); });

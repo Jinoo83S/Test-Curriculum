@@ -2066,6 +2066,27 @@ button {
   background: white;
   box-shadow: 0 0 0 2px rgba(37,99,235,0.08);
 }
+.teacher-subjects-cell {
+  vertical-align: middle;
+  padding: 4px 8px;
+}
+.teacher-subject-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin: 2px 3px 2px 0;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.teacher-subjects-empty {
+  color: #9ca3af;
+  font-size: 11px;
+  font-style: italic;
+}
 
 /* ── Roster management ────────────────────────────────────────── */
 .roster-layout {

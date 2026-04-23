@@ -18,7 +18,7 @@ import {
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
   setSidebarLevel, setGroupManagerLevel,
-  copyTemplate
+  copyTemplate, setOnTemplateChange
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
@@ -319,6 +319,14 @@ function updateAuthUI(user) {
 // ================================================================
 setOnUpdate(domain => render(domain));
 
+// Req 2: when table edits happen, sync sidebar + board immediately
+setOnTemplateChange(() => {
+  invalidateTabs();
+  renderSidebar();
+  if (activeMainView === "board") renderBoardTab();
+  if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
+});
+
 onAuth(async (user) => {
   updateAuthUI(user);
   if (user) {
@@ -404,7 +412,7 @@ addGroupOptionBtn?.addEventListener("click",    () => { addOption("group",    gr
 
 // ── Template manager ──────────────────────────────────────────────
 tplMgrAddBtn?.addEventListener("click", () => { addTemplateManagerRow(); renderTemplateManagerView(); });
-tplMgrDiscBtn?.addEventListener("click", () => { if (!canEdit()) return; if (!confirm("변경 내용을 취소할까요?")) return; resetDraft(); renderTemplateManagerView(); });
+tplMgrDiscBtn?.addEventListener("click", () => { if (!canEdit()) return; renderTemplateManagerView(); renderSidebar(); });
 tplMgrSaveBtn?.addEventListener("click", async () => { await commitDraft(); invalidateTabs(); render(); });
 tplMgrSearch?.addEventListener("input", e => { managerUi.search = e.target.value; renderTemplateManagerView(); });
 tplMgrLang?.addEventListener("change",  e => { managerUi.language = e.target.value; renderTemplateManagerView(); });

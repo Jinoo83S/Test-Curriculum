@@ -53,6 +53,22 @@ export function getTemplateAppliedGrades(templateId) {
   return GRADE_KEYS.filter(grade => (appState.curriculum.gradeBoards[grade] || []).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId)).map(g => g.replace("학년",""));
 }
 
+/** Return list of subject titles where this teacher name appears in any template */
+export function getSubjectsForTeacher(teacherName) {
+  const name = clean(teacherName);
+  if (!name) return [];
+  const seen = new Set();
+  const result = [];
+  templates().forEach(t => {
+    const teacherFields = [t.teacher, t.sem1Teacher, t.sem2Teacher].map(clean).filter(Boolean);
+    if (teacherFields.includes(name)) {
+      const title = getTemplateCardTitle(t);
+      if (title && !seen.has(title)) { seen.add(title); result.push(title); }
+    }
+  });
+  return result;
+}
+
 // ── Template Mutations ────────────────────────────────────────────
 export function deleteTemplate(templateId) {
   if (!canEdit()) return;
@@ -114,23 +130,20 @@ export let templateFormSchoolLevel = "공통";
 export const setTemplateEditId = v => { templateEditId = v; };
 export const setTemplateFormSchoolLevel = v => { templateFormSchoolLevel = v; };
 
-// ── Template Manager Draft ────────────────────────────────────────
-let _draft = null;
+// ── Template Manager Draft (now live-state passthrough) ───────────
+// Changes go directly to appState; no separate draft copy needed.
+let _onTemplateChange = () => {};
+export const setOnTemplateChange = (fn) => { _onTemplateChange = fn; };
+
 export function getOrCreateDraft() {
-  if (!_draft) _draft = { templates: templates().map(t => normalizeTemplate(cloneJson(t))), templateGroups: groups().map(g => normalizeTemplateGroup(cloneJson(g))) };
-  return _draft;
+  // Return reference to live state — edits are immediately reflected everywhere
+  return { templates: tDomain().templates, templateGroups: tDomain().templateGroups };
 }
-export function resetDraft() { _draft = null; }
+export function resetDraft() { /* no-op: live-state editing, nothing to discard */ }
 
 export async function commitDraft() {
   if (!canEdit()) return;
-  const d = getOrCreateDraft();
-  const vgids = new Set(d.templateGroups.map(g => g.id));
-  d.templates = d.templates.map(t => { const n = normalizeTemplate(t); if (n.calcGroupId && !vgids.has(n.calcGroupId)) n.calcGroupId = null; return n; });
-  d.templateGroups = d.templateGroups.map(normalizeTemplateGroup);
-  tDomain().templates      = d.templates.map(t => normalizeTemplate(cloneJson(t)));
-  tDomain().templateGroups = d.templateGroups.map(g => normalizeTemplateGroup(cloneJson(g)));
-  resetDraft(); scheduleSave("templates");
+  scheduleSave("templates"); // force immediate save
 }
 
 // ── Sidebar: Template Cards ───────────────────────────────────────
@@ -368,16 +381,31 @@ export function renderTemplateManagerTable(wrap, countEl) {
 
 export function handleTableInput(e) {
   const row = e.target.closest("tr[data-template-id]"); if (!row) return;
-  const d = getOrCreateDraft(); const item = d.templates.find(t => t.id === row.dataset.templateId); if (!item) return;
+  const item = tDomain().templates.find(t => t.id === row.dataset.templateId); if (!item) return;
   const f = e.target.dataset.field; if (!f) return;
   item[f] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  // Save is deferred to handleTableChange (blur/select) — avoids per-keystroke writes
 }
 
 export function handleTableChange(e, rerender) {
   const row = e.target.closest("tr[data-template-id]"); if (!row) return;
-  const d = getOrCreateDraft(); const item = d.templates.find(t => t.id === row.dataset.templateId); if (!item) return;
+  const item = tDomain().templates.find(t => t.id === row.dataset.templateId); if (!item) return;
   const f = e.target.dataset.field; if (!f) return;
-  item[f] = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+  const newVal = e.target.type === "checkbox" ? e.target.checked : e.target.value;
+
+  // Req 3: when enabling semester split, auto-fill semester fields from base fields
+  if (f === "useSemesterOverrides" && newVal === true) {
+    if (!item.sem1NameKo)  item.sem1NameKo  = item.nameKo  || "";
+    if (!item.sem1NameEn)  item.sem1NameEn  = item.nameEn  || "";
+    if (!item.sem1Teacher) item.sem1Teacher = item.teacher || "";
+    if (!item.sem2NameKo)  item.sem2NameKo  = item.nameKo  || "";
+    if (!item.sem2NameEn)  item.sem2NameEn  = item.nameEn  || "";
+    if (!item.sem2Teacher) item.sem2Teacher = item.teacher || "";
+  }
+
+  item[f] = newVal;
+  scheduleSave("templates");
+  _onTemplateChange(); // Req 2: sync sidebar
   if (["language","calcGroupId","useSemesterOverrides","schoolLevel"].includes(f)) rerender && rerender();
 }
 
@@ -385,12 +413,17 @@ export function handleTableDeleteClick(e, rerender) {
   const btn = e.target.closest("button[data-action='delete-template']"); if (!btn) return;
   if (!canEdit()) return;
   const row = btn.closest("tr[data-template-id]"); if (!row) return;
-  const d = getOrCreateDraft(); const tgt = d.templates.find(t => t.id === row.dataset.templateId); if (!tgt) return;
+  const tgt = tDomain().templates.find(t => t.id === row.dataset.templateId); if (!tgt) return;
   if (!confirm(`"${getTemplateCardTitle(tgt)}" 카드를 삭제할까요?`)) return;
-  d.templates = d.templates.filter(t => t.id !== tgt.id); rerender && rerender();
+  tDomain().templates = tDomain().templates.filter(t => t.id !== tgt.id);
+  scheduleSave("templates");
+  _onTemplateChange();
+  rerender && rerender();
 }
 
 export function addTemplateManagerRow() {
   if (!canEdit()) return;
-  const d = getOrCreateDraft(); d.templates.unshift(normalizeTemplate({ id:uid("tpl"), language:"Both" }));
+  tDomain().templates.unshift(normalizeTemplate({ id:uid("tpl"), language:"Both" }));
+  scheduleSave("templates");
+  _onTemplateChange();
 }
