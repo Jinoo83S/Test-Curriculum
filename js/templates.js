@@ -282,14 +282,7 @@ export function renderTemplates(container, { onEdit, onDelete, onCopy }) {
   const validGroupIds = new Set(groups().map(g => g.id));
   const callbacks = { onEdit, onDelete, onCopy };
 
-  groups().forEach(group => {
-    const members = templates().filter(t => t.calcGroupId === group.id && levelFilter(t));
-    if (!members.length) return;
-    const hdr = document.createElement("div"); hdr.className = "template-group-header"; hdr.textContent = group.name;
-    container.appendChild(hdr);
-    appendSectionDivided(container, members, callbacks, members.length > 1);
-  });
-
+  // ── 그룹 없음 먼저 (상단) ──────────────────────────────────────
   const ungrouped = templates().filter(t => (!t.calcGroupId || !validGroupIds.has(t.calcGroupId)) && levelFilter(t));
   if (ungrouped.length) {
     if (groups().length) {
@@ -297,6 +290,15 @@ export function renderTemplates(container, { onEdit, onDelete, onCopy }) {
     }
     appendSectionDivided(container, ungrouped, callbacks, true);
   }
+
+  // ── 이름 있는 그룹 (하단) ────────────────────────────────────
+  groups().forEach(group => {
+    const members = templates().filter(t => t.calcGroupId === group.id && levelFilter(t));
+    if (!members.length) return;
+    const hdr = document.createElement("div"); hdr.className = "template-group-header"; hdr.textContent = group.name;
+    container.appendChild(hdr);
+    appendSectionDivided(container, members, callbacks, members.length > 1);
+  });
 }
 
 // ── Group Manager View ────────────────────────────────────────────
