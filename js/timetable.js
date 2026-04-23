@@ -528,37 +528,70 @@ function checkPlacementValid(item, slot, placed) {
   return true;
 }
 
-export function autoAssign(gradeKey) {
+// ── Auto-assign ALL grades simultaneously ─────────────────────────
+export function autoAssignAll() {
   if (!canEdit()) return;
-  if (!confirm(`"${gradeKey}" 시간표를 자동 배치할까요?\n기존 배치 내용이 초기화됩니다.`)) return;
 
-  // Build required placements
+  const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
+  if (!activeGrades.length) { alert("커리큘럼에 배치된 과목이 없습니다."); return; }
+
+  if (!confirm(
+    `전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n` +
+    `기존 시간표가 모두 초기화됩니다. 계속할까요?`
+  )) return;
+
+  // ── 1. 전체 학년 required 수집 ──────────────────────────────────
   const required = [];
-  getSubjectsForGrade(gradeKey).forEach(tpl => {
-    const credits  = getCreditsForTemplate(gradeKey, tpl.id);
-    const sections = getSectionCount(tpl.id);
-    const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
-    for (let sec = 0; sec < sections; sec++) {
-      for (let slot = 0; slot < credits; slot++) {
-        required.push({ templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
+  GRADE_KEYS.forEach(gradeKey => {
+    getSubjectsForGrade(gradeKey).forEach(tpl => {
+      const credits  = getCreditsForTemplate(gradeKey, tpl.id);
+      const sections = getSectionCount(tpl.id);
+      const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
+      for (let sec = 0; sec < sections; sec++) {
+        for (let i = 0; i < credits; i++) {
+          required.push({ templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
+        }
       }
-    }
+    });
   });
+
   if (!required.length) { alert("배치할 과목이 없습니다."); return; }
 
-  // Clear existing for this grade
-  ttDomain().entries = entries().filter(e => e.gradeKey !== gradeKey);
+  // ── 2. 전체 초기화 ───────────────────────────────────────────────
+  ttDomain().entries = [];
 
-  // Available slots
+  // ── 3. 슬롯 풀 ──────────────────────────────────────────────────
   const pc = ttConfig().periodCount;
   const baseSlots = [];
-  for (let day = 0; day < 5; day++) for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
+  for (let day = 0; day < 5; day++)
+    for (let period = 0; period < pc; period++)
+      baseSlots.push({ day, period });
 
-  const MAX_ATTEMPTS = 5;
+  // ── 4. 교사 부하 계산 → 가장 바쁜 교사 먼저 배치 (CSP 휴리스틱) ──
+  const teacherLoad = new Map();
+  required.forEach(r => {
+    if (r.teacherName) teacherLoad.set(r.teacherName, (teacherLoad.get(r.teacherName) || 0) + 1);
+  });
+  // 같은 교사가 많은 과목 먼저 배치 → 제약 충돌 최소화
+  const sortByConstraint = arr => [...arr].sort((a, b) =>
+    (teacherLoad.get(b.teacherName) || 0) - (teacherLoad.get(a.teacherName) || 0)
+  );
+
+  // ── 5. 랜덤 그리디 반복 (최대 8회) ─────────────────────────────
+  const MAX_ATTEMPTS = 8;
   let bestPlaced = [], bestFailed = [...required];
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const shuffledReq = shuffle([...required]);
+    // 교사 부하 순 정렬 후 동일 부하 내에서 섞기
+    const groups = new Map();
+    required.forEach(r => {
+      const k = teacherLoad.get(r.teacherName) || 0;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(r);
+    });
+    const sortedKeys = [...groups.keys()].sort((a, b) => b - a);
+    const shuffledReq = sortedKeys.flatMap(k => shuffle(groups.get(k)));
+
     const placed = [], failed = [];
 
     for (const item of shuffledReq) {
@@ -578,16 +611,27 @@ export function autoAssign(gradeKey) {
     if (bestFailed.length === 0) break;
   }
 
-  // Commit
+  // ── 6. 커밋 ────────────────────────────────────────────────────
   bestPlaced.forEach(e => entries().push(normalizeTimetableEntry({ id: uid("ent"), ...e })));
   scheduleSave("timetable");
   recomputeConflicts(); renderAll();
 
-  const failedNames = [...new Set(bestFailed.map(f => getTemplateCardTitle(getTemplateById(f.templateId) || {}) || "?"))];
-  if (bestFailed.length > 0) {
-    alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${bestFailed.length}개: ${failedNames.join(", ")}\n\n교사 제약 조건을 완화하거나 직접 배치해 주세요.`);
+  // ── 7. 결과 보고 ────────────────────────────────────────────────
+  if (bestFailed.length === 0) {
+    alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!\n대상 학년: ${activeGrades.join(", ")}`);
   } else {
-    alert(`✅ ${bestPlaced.length}개 모두 배치 완료!`);
+    const failedNames = [...new Set(bestFailed.map(f => {
+      const tpl = getTemplateById(f.templateId);
+      return `${f.gradeKey} · ${getTemplateCardTitle(tpl) || "?"}` +
+        (getSectionCount(f.templateId) > 1 ? ` (${f.sectionIdx + 1}분반)` : "");
+    }))];
+    alert(
+      `✅ ${bestPlaced.length}개 배치 완료\n` +
+      `⚠️ 미배치 ${bestFailed.length}슬롯 (${failedNames.length}개 과목):\n` +
+      failedNames.slice(0, 12).join("\n") +
+      (failedNames.length > 12 ? `\n... 외 ${failedNames.length - 12}개` : "") +
+      `\n\n💡 교사 제약 조건 완화 또는 직접 배치로 보완하세요.`
+    );
   }
 }
 
@@ -693,9 +737,6 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
   ttDomain().entries = entries().filter(e => e.gradeKey !== currentGrade);
   scheduleSave("timetable"); recomputeConflicts(); renderAll();
 });
-$("ttAutoAssignBtn")?.addEventListener("click", () => {
-  if (currentView !== "grade") { alert("학년별 보기에서만 자동 배치를 실행할 수 있습니다."); return; }
-  autoAssign(currentGrade);
-});
+$("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 
 renderAll();
