@@ -18,7 +18,7 @@ import {
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
   setSidebarLevel, setGroupManagerLevel,
-  copyTemplate, setOnTemplateChange
+  copyTemplate, setOnTemplateChange, updateTeacherDatalist
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
@@ -157,6 +157,9 @@ function renderBoardTab() {
 }
 
 function renderSidebar() {
+  // Keep sidebar teacher inputs linked to datalist
+  [templateTeacher, sem1Teacher, sem2Teacher].forEach(el => { if (el) el.setAttribute("list", "tpl-teacher-list"); });
+  updateTeacherDatalist();
   renderTemplates(templateListEl, {
     onEdit: (id) => fillTemplateForm(id),
     onDelete: (id) => { deleteTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); },
@@ -321,6 +324,7 @@ setOnUpdate(domain => render(domain));
 
 // Req 2: when table edits happen, sync sidebar + board immediately
 setOnTemplateChange(() => {
+  updateTeacherDatalist();
   invalidateTabs();
   renderSidebar();
   if (activeMainView === "board") renderBoardTab();

@@ -313,13 +313,22 @@ export function renderGroupManager(board, onRender) {
   board.appendChild(wrap);
 }
 
+// ── Teacher datalist (shared by table + sidebar form) ────────────
+export function updateTeacherDatalist() {
+  let dl = document.getElementById("tpl-teacher-list");
+  if (!dl) { dl = document.createElement("datalist"); dl.id = "tpl-teacher-list"; document.body.appendChild(dl); }
+  const names = (appState.teachers?.teachers || [])
+    .map(t => clean(t.name)).filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "ko"));
+  dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join("");
+}
+
 // ── Template Manager Table View ───────────────────────────────────
 export const managerUi = { search:"", language:"all", split:"all", sort:"ko-asc", level:"전체" };
 
-export function getFilteredTemplates(draft) {
-  const src = draft || { templates: templates(), templateGroups: groups() };
+export function getFilteredTemplates() {
   const srch = clean(managerUi.search).toLowerCase();
-  const filtered = src.templates.filter(item => {
+  const filtered = templates().filter(item => {
     if (managerUi.language !== "all" && item.language !== managerUi.language) return false;
     if (managerUi.split  === "split" && !item.useSemesterOverrides) return false;
     if (managerUi.split  === "same"  &&  item.useSemesterOverrides) return false;
@@ -333,7 +342,7 @@ export function getFilteredTemplates(draft) {
       case "ko-desc": return sv(b,"ko").localeCompare(sv(a,"ko"),"ko");
       case "en-asc":  return sv(a,"en").localeCompare(sv(b,"en"),"en");
       case "language": return `${a.language}-${sv(a,"ko")}`.localeCompare(`${b.language}-${sv(b,"ko")}`,"ko");
-      case "group": { const ga = getTemplateGroupById(a.calcGroupId, src)?.name||""; const gb = getTemplateGroupById(b.calcGroupId, src)?.name||""; return `${ga}-${sv(a,"ko")}`.localeCompare(`${gb}-${sv(b,"ko")}`,"ko"); }
+      case "group": { const ga = getTemplateGroupById(a.calcGroupId)?.name||""; const gb = getTemplateGroupById(b.calcGroupId)?.name||""; return `${ga}-${sv(a,"ko")}`.localeCompare(`${gb}-${sv(b,"ko")}`,"ko"); }
       default: return sv(a,"ko").localeCompare(sv(b,"ko"),"ko");
     }
   });
@@ -341,12 +350,13 @@ export function getFilteredTemplates(draft) {
 }
 
 export function renderTemplateManagerTable(wrap, countEl) {
-  const draft = getOrCreateDraft();
-  const rows  = getFilteredTemplates(draft);
-  if (countEl) countEl.textContent = `${rows.length} / ${draft.templates.length}개 표시`;
+  updateTeacherDatalist();
+  const rows = getFilteredTemplates();
+  if (countEl) countEl.textContent = `${rows.length} / ${tDomain().templates.length}개 표시`;
   if (!rows.length) { wrap.innerHTML = '<div class="manager-empty">검색 조건에 맞는 과목카드가 없습니다.</div>'; return; }
 
-  const buildGroupOpts = selId => ['<option value="">없음</option>'].concat(draft.templateGroups.map(g => `<option value="${escapeHtml(g.id)}" ${selId===g.id?"selected":""}>${escapeHtml(g.name)}</option>`)).join("");
+  const buildGroupOpts = selId => ['<option value="">없음</option>'].concat(groups().map(g => `<option value="${escapeHtml(g.id)}" ${selId===g.id?"selected":""}>${escapeHtml(g.name)}</option>`)).join("");
+  const tInput = (field, val) => `<input type="text" list="tpl-teacher-list" data-field="${field}" value="${escapeHtml(val)}" placeholder="교사명 검색" />`;
 
   const bodyRows = rows.map(item => {
     const grades = getTemplateAppliedGrades(item.id);
@@ -357,16 +367,16 @@ export function renderTemplateManagerTable(wrap, countEl) {
       <td class="col-schoollevel"><select data-field="schoolLevel">${["중등","고등","공통"].map(l=>`<option value="${l}" ${item.schoolLevel===l?"selected":""}>${l}</option>`).join("")}</select></td>
       <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
       <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
-      <td><input type="text" data-field="teacher" value="${escapeHtml(item.teacher)}" /></td>
+      <td>${tInput("teacher", item.teacher)}</td>
       <td class="col-language"><select data-field="language">${["Korean","English","Both"].map(l=>`<option value="${l}" ${item.language===l?"selected":""}>${l}</option>`).join("")}</select></td>
       <td class="col-group"><select data-field="calcGroupId">${buildGroupOpts(item.calcGroupId||"")}</select></td>
       <td class="col-toggle toggle-cell"><input type="checkbox" data-field="useSemesterOverrides" ${item.useSemesterOverrides?"checked":""} /></td>
       <td><input type="text" data-field="sem1NameKo" value="${escapeHtml(item.sem1NameKo)}" /></td>
       <td><input type="text" data-field="sem1NameEn" value="${escapeHtml(item.sem1NameEn)}" /></td>
-      <td><input type="text" data-field="sem1Teacher" value="${escapeHtml(item.sem1Teacher)}" /></td>
+      <td>${tInput("sem1Teacher", item.sem1Teacher)}</td>
       <td><input type="text" data-field="sem2NameKo" value="${escapeHtml(item.sem2NameKo)}" /></td>
       <td><input type="text" data-field="sem2NameEn" value="${escapeHtml(item.sem2NameEn)}" /></td>
-      <td><input type="text" data-field="sem2Teacher" value="${escapeHtml(item.sem2Teacher)}" /></td>
+      <td>${tInput("sem2Teacher", item.sem2Teacher)}</td>
     </tr>`;
   }).join("");
 
