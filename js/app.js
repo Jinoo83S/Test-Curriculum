@@ -17,7 +17,8 @@ import {
   setTemplateEditId, setTemplateFormSchoolLevel,
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
-  setSidebarLevel, setGroupManagerLevel
+  setSidebarLevel, setGroupManagerLevel,
+  copyTemplate
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
@@ -158,7 +159,8 @@ function renderBoardTab() {
 function renderSidebar() {
   renderTemplates(templateListEl, {
     onEdit: (id) => fillTemplateForm(id),
-    onDelete: (id) => { deleteTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); }
+    onDelete: (id) => { deleteTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); },
+    onCopy: (id) => { copyTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); }
   });
   renderOptionChips(categoryOptionList, "category");
   renderOptionChips(trackOptionList, "track");

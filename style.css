@@ -1212,6 +1212,69 @@ button {
   font-size: 10px;
   font-weight: 700;
 }
+
+/* ── Grade chips (sidebar + roster) ─────────────────────── */
+.template-applied-grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 3px 6px 2px;
+  min-height: 20px;
+}
+.grade-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.grade-chip-none {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+.grade-chip-sm {
+  font-size: 9px;
+  padding: 1px 5px;
+}
+.copy-btn {
+  background: #d1fae5;
+  color: #065f46;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+.copy-btn:hover { background: #a7f3d0; }
+
+/* ── Group type selector ─────────────────────────────────── */
+.group-type-wrap {
+  margin-top: 4px;
+}
+.group-type-select {
+  width: 100%;
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+}
+.group-type-select:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Roster template grades ──────────────────────────────── */
+.roster-template-grades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px 0 1px;
+}
 /* ── Sidebar: template group headers ─────────────────── */
 .sidebar-btn-group {
   display: flex;

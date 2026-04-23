@@ -87,7 +87,13 @@ function normalizeCurriculumDomain(raw = {}) {
 
 // ── Templates ─────────────────────────────────────────────────────
 export function normalizeTemplateGroup(item = {}) {
-  return { id: item.id || uid("grp"), name: clean(item.name), creditValue: clean(item.creditValue) };
+  const validTypes = ["concurrent", "cross-grade"];
+  return {
+    id: item.id || uid("grp"),
+    name: clean(item.name),
+    creditValue: clean(item.creditValue),
+    groupType: validTypes.includes(item.groupType) ? item.groupType : "concurrent"
+  };
 }
 
 export function normalizeTemplate(item = {}) {

@@ -64,6 +64,24 @@ export function deleteTemplate(templateId) {
   scheduleSave("templates"); scheduleSave("curriculum");
 }
 
+export function copyTemplate(templateId) {
+  if (!canEdit()) return null;
+  const src = getTemplateById(templateId); if (!src) return null;
+  const copy = normalizeTemplate({
+    ...cloneJson(src),
+    id: uid("tpl"),
+    nameKo:    src.nameKo    ? src.nameKo    + " (복사)" : "",
+    nameEn:    src.nameEn    ? src.nameEn    + " (copy)" : "",
+    sem1NameKo: src.sem1NameKo ? src.sem1NameKo + " (복사)" : "",
+    sem1NameEn: src.sem1NameEn ? src.sem1NameEn + " (copy)" : "",
+    sem2NameKo: src.sem2NameKo ? src.sem2NameKo + " (복사)" : "",
+    sem2NameEn: src.sem2NameEn ? src.sem2NameEn + " (copy)" : "",
+  });
+  templates().push(copy);
+  scheduleSave("templates");
+  return copy;
+}
+
 export function assignTemplateGroup(templateId, groupId) {
   if (!canEdit()) return;
   const item = templates().find(t => t.id === templateId); if (!item) return;
@@ -131,7 +149,7 @@ function createSemesterPreviewItem(item, semKey) {
   return wrap;
 }
 
-export function createTemplateCard(item, { onEdit, onDelete }) {
+export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
   const card = document.createElement("div");
   card.className = `template-card compact-card ${languageClass(item.language)}`;
   card.draggable = canEdit();
@@ -147,17 +165,31 @@ export function createTemplateCard(item, { onEdit, onDelete }) {
 
   const actions = document.createElement("div"); actions.className = "template-actions compact-actions";
   const editBtn   = makeBtn("수정", "edit-btn",   () => onEdit && onEdit(item.id));
+  const copyBtn   = makeBtn("복사", "copy-btn",   () => onCopy && onCopy(item.id));
   const deleteBtn = makeBtn("삭제", "delete-btn", () => onDelete && onDelete(item.id));
-  editBtn.disabled = !canEdit(); deleteBtn.disabled = !canEdit();
-  [editBtn, deleteBtn].forEach(b => b.addEventListener("mousedown", e => e.stopPropagation()));
+  editBtn.disabled = !canEdit(); copyBtn.disabled = !canEdit(); deleteBtn.disabled = !canEdit();
+  [editBtn, copyBtn, deleteBtn].forEach(b => b.addEventListener("mousedown", e => e.stopPropagation()));
   const tInfo = document.createElement("span"); tInfo.className = "template-teacher-inline"; tInfo.textContent = getTemplateTeacherSummary(item) || "-";
-  actions.append(editBtn, deleteBtn, tInfo);
+  actions.append(editBtn, copyBtn, deleteBtn, tInfo);
+
+  // Applied grades display
+  const gradesEl = document.createElement("div"); gradesEl.className = "template-applied-grades";
+  const appliedGrades = getTemplateAppliedGrades(item.id);
+  if (appliedGrades.length) {
+    appliedGrades.forEach(g => {
+      const chip = document.createElement("span"); chip.className = "grade-chip"; chip.textContent = g + "학년";
+      gradesEl.appendChild(chip);
+    });
+  } else {
+    const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-none"; chip.textContent = "미배정";
+    gradesEl.appendChild(chip);
+  }
 
   const preview = document.createElement("div"); preview.className = "template-semester-preview";
   if (isSemesterDataSame(item)) { const s = createSemesterPreviewItem(item, "sem1"); s.style.gridColumn = "1 / -1"; preview.appendChild(s); }
   else { preview.append(createSemesterPreviewItem(item, "sem1"), createSemesterPreviewItem(item, "sem2")); }
 
-  card.append(main, actions, preview);
+  card.append(main, actions, gradesEl, preview);
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
     const was = card.classList.contains("expanded");
@@ -167,7 +199,7 @@ export function createTemplateCard(item, { onEdit, onDelete }) {
   return card;
 }
 
-export function renderTemplates(container, { onEdit, onDelete }) {
+export function renderTemplates(container, { onEdit, onDelete, onCopy }) {
   container.innerHTML = "";
   const validGroupIds = new Set(groups().map(g => g.id));
 
@@ -176,13 +208,13 @@ export function renderTemplates(container, { onEdit, onDelete }) {
     if (!members.length) return;
     const hdr = document.createElement("div"); hdr.className = "template-group-header"; hdr.textContent = group.name;
     container.appendChild(hdr);
-    members.forEach(t => container.appendChild(createTemplateCard(t, { onEdit, onDelete })));
+    members.forEach(t => container.appendChild(createTemplateCard(t, { onEdit, onDelete, onCopy })));
   });
 
   const ungrouped = templates().filter(t => (!t.calcGroupId || !validGroupIds.has(t.calcGroupId)) && levelFilter(t)).sort((a,b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
   if (ungrouped.length) {
     if (groups().length) { const sep = document.createElement("div"); sep.className = "template-group-header template-group-header-none"; sep.textContent = "그룹 없음"; container.appendChild(sep); }
-    ungrouped.forEach(t => container.appendChild(createTemplateCard(t, { onEdit, onDelete })));
+    ungrouped.forEach(t => container.appendChild(createTemplateCard(t, { onEdit, onDelete, onCopy })));
   }
 }
 
@@ -210,6 +242,27 @@ function createGroupCol(colGroupId, colGroupName, onRender) {
     const inp = document.createElement("input"); inp.type = "text"; inp.className = "group-col-name-input"; inp.value = colGroupName; inp.disabled = !canEdit();
     inp.addEventListener("change", e => { renameLiveTemplateGroup(colGroupId, e.target.value); onRender && onRender(); });
     hdr.appendChild(inp);
+
+    // Group type selector
+    const groupObj = groups().find(g => g.id === colGroupId);
+    const typeWrap = document.createElement("div"); typeWrap.className = "group-type-wrap";
+    const typeSel  = document.createElement("select"); typeSel.className = "group-type-select"; typeSel.disabled = !canEdit();
+    const typeOpts = [
+      { value: "concurrent",  label: "⏰ 동시 수업" },
+      { value: "cross-grade", label: "🔗 다학년 통합" }
+    ];
+    typeOpts.forEach(({ value, label }) => {
+      const o = document.createElement("option"); o.value = value; o.textContent = label;
+      if (groupObj?.groupType === value) o.selected = true;
+      typeSel.appendChild(o);
+    });
+    typeSel.addEventListener("change", e => {
+      const g = groups().find(g => g.id === colGroupId); if (!g) return;
+      g.groupType = e.target.value; scheduleSave("templates"); onRender && onRender();
+    });
+    typeWrap.appendChild(typeSel);
+    hdr.appendChild(typeWrap);
+
     const del = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(colGroupId); onRender && onRender(); }); del.disabled = !canEdit(); hdr.appendChild(del);
   } else {
     const lbl = document.createElement("span"); lbl.className = "group-col-name-label"; lbl.textContent = "미배정"; hdr.appendChild(lbl);

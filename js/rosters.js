@@ -6,7 +6,7 @@ import { makeBtn, languageClass } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave } from "./state.js";
 import { getClasses, getClassById } from "./students.js";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary } from "./templates.js";
+import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, getTemplateAppliedGrades } from "./templates.js";
 
 const rDomain = () => appState.rosters;
 const rosters = () => rDomain().rosters;
@@ -103,10 +103,23 @@ export function renderRosterView(container) {
       label.textContent = buildRosterItemLabel(tpl);
       label.title = buildRosterItemLabel(tpl);   // full text on hover
 
+      // Applied grade chips
+      const gradesEl = document.createElement("div"); gradesEl.className = "roster-template-grades";
+      const appliedGrades = getTemplateAppliedGrades(tpl.id);
+      if (appliedGrades.length) {
+        appliedGrades.forEach(g => {
+          const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm"; chip.textContent = g + "학년";
+          gradesEl.appendChild(chip);
+        });
+      } else {
+        const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-none grade-chip-sm"; chip.textContent = "미배정";
+        gradesEl.appendChild(chip);
+      }
+
       const cnt = document.createElement("div"); cnt.className = "roster-template-count";
       cnt.textContent = `${enrolledCount(tpl)}명`;
 
-      item.append(label, cnt);
+      item.append(label, gradesEl, cnt);
       item.addEventListener("click", () => { selectedRosterTemplateId = tpl.id; renderRosterView(container); });
       tplList.appendChild(item);
     });
