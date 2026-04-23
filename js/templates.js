@@ -245,23 +245,57 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
   return card;
 }
 
+const isAssigned = t => getTemplateAppliedGrades(t.id).length > 0;
+const sortByAssign = list => {
+  const koSort = (a, b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko");
+  const unassigned = list.filter(t => !isAssigned(t)).sort(koSort);
+  const assigned   = list.filter(t =>  isAssigned(t)).sort(koSort);
+  return { unassigned, assigned };
+};
+
+function appendSection(container, items, callbacks) {
+  items.forEach(t => container.appendChild(createTemplateCard(t, callbacks)));
+}
+
+function appendSectionDivided(container, list, callbacks, showDivider) {
+  const { unassigned, assigned } = sortByAssign(list);
+
+  if (unassigned.length) {
+    if (showDivider) {
+      const d = document.createElement("div"); d.className = "template-assign-divider unassigned-divider";
+      d.textContent = `⬜ 미배정 (${unassigned.length})`; container.appendChild(d);
+    }
+    appendSection(container, unassigned, callbacks);
+  }
+  if (assigned.length) {
+    if (showDivider) {
+      const d = document.createElement("div"); d.className = "template-assign-divider assigned-divider";
+      d.textContent = `✅ 배정됨 (${assigned.length})`; container.appendChild(d);
+    }
+    appendSection(container, assigned, callbacks);
+  }
+}
+
 export function renderTemplates(container, { onEdit, onDelete, onCopy }) {
   syncSchoolLevels();
   container.innerHTML = "";
   const validGroupIds = new Set(groups().map(g => g.id));
+  const callbacks = { onEdit, onDelete, onCopy };
 
   groups().forEach(group => {
-    const members = templates().filter(t => t.calcGroupId === group.id && levelFilter(t)).sort((a,b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
+    const members = templates().filter(t => t.calcGroupId === group.id && levelFilter(t));
     if (!members.length) return;
     const hdr = document.createElement("div"); hdr.className = "template-group-header"; hdr.textContent = group.name;
     container.appendChild(hdr);
-    members.forEach(t => container.appendChild(createTemplateCard(t, { onEdit, onDelete, onCopy })));
+    appendSectionDivided(container, members, callbacks, members.length > 1);
   });
 
-  const ungrouped = templates().filter(t => (!t.calcGroupId || !validGroupIds.has(t.calcGroupId)) && levelFilter(t)).sort((a,b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
+  const ungrouped = templates().filter(t => (!t.calcGroupId || !validGroupIds.has(t.calcGroupId)) && levelFilter(t));
   if (ungrouped.length) {
-    if (groups().length) { const sep = document.createElement("div"); sep.className = "template-group-header template-group-header-none"; sep.textContent = "그룹 없음"; container.appendChild(sep); }
-    ungrouped.forEach(t => container.appendChild(createTemplateCard(t, { onEdit, onDelete, onCopy })));
+    if (groups().length) {
+      const sep = document.createElement("div"); sep.className = "template-group-header template-group-header-none"; sep.textContent = "그룹 없음"; container.appendChild(sep);
+    }
+    appendSectionDivided(container, ungrouped, callbacks, true);
   }
 }
 
