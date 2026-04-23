@@ -23,12 +23,14 @@ export const provider = new GoogleAuthProvider();
 // Keeps curriculum separate from student/teacher data.
 // Prevents accidental full-overwrite on partial saves.
 export const refs = {
-  curriculum: doc(db, "boards", "curriculum"),   // gradeBoards + options
-  templates:  doc(db, "boards", "templates"),    // templates + templateGroups
-  classes:    doc(db, "boards", "classes"),      // classes (학년/반) + students
-  teachers:   doc(db, "boards", "teachers"),     // teacher list
-  rosters:    doc(db, "boards", "rosters"),      // per-template student rosters
-  legacy:     doc(db, "boards", "main"),         // read-only: migrate old data
+  curriculum: doc(db, "boards", "curriculum"),
+  templates:  doc(db, "boards", "templates"),
+  classes:    doc(db, "boards", "classes"),
+  teachers:   doc(db, "boards", "teachers"),
+  rosters:    doc(db, "boards", "rosters"),
+  rooms:      doc(db, "boards", "rooms"),
+  timetable:  doc(db, "boards", "timetable"),
+  legacy:     doc(db, "boards", "main"),
 };
 
 // ── Grade / group constants ───────────────────────────────────────

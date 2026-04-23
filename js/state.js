@@ -15,7 +15,8 @@ export const setCurrentDrag = (v) => { currentDrag = v; };
 // ── Load flags: never save before initial load ────────────────────
 export const initialLoad = {
   curriculum: false, templates: false,
-  classes: false, teachers: false, rosters: false
+  classes: false, teachers: false, rosters: false,
+  rooms: false, timetable: false
 };
 
 // ── Per-domain save timers ────────────────────────────────────────
@@ -164,6 +165,64 @@ function normalizeRostersDomain(raw = {}) {
   return { rosters, rosterMeta };
 }
 
+// ── Rooms ──────────────────────────────────────────────────────────
+export const ROOM_TYPES = ["일반", "특별", "체육관", "음악실", "과학실", "기타"];
+export function normalizeRoom(r = {}) {
+  return {
+    id: r.id || uid("room"),
+    name: clean(r.name) || "새 교실",
+    capacity: Number.isFinite(parseInt(r.capacity)) ? parseInt(r.capacity) : 0,
+    type: ROOM_TYPES.includes(r.type) ? r.type : "일반",
+    grade: GRADE_KEYS.includes(r.grade) ? r.grade : "",
+    note: clean(r.note)
+  };
+}
+function normalizeRoomsDomain(raw = {}) {
+  return { rooms: Array.isArray(raw.rooms) ? raw.rooms.map(normalizeRoom) : [] };
+}
+
+// ── Timetable ──────────────────────────────────────────────────────
+export function normalizeTimetableEntry(e = {}) {
+  return {
+    id: e.id || uid("ent"),
+    day:    (Number.isInteger(e.day)    && e.day >= 0    && e.day <= 4)    ? e.day    : 0,
+    period: (Number.isInteger(e.period) && e.period >= 0 && e.period <= 11) ? e.period : 0,
+    templateId:  clean(e.templateId) || null,
+    sectionIdx:  Number.isInteger(e.sectionIdx) ? e.sectionIdx : 0,
+    teacherName: clean(e.teacherName),
+    roomId:      clean(e.roomId) || null,
+    gradeKey:    clean(e.gradeKey)
+  };
+}
+export function normalizeTimetableConstraint(c = {}) {
+  return {
+    maxPerDay:      (Number.isInteger(c.maxPerDay)      && c.maxPerDay > 0)      ? c.maxPerDay      : 6,
+    maxConsecutive: (Number.isInteger(c.maxConsecutive) && c.maxConsecutive > 0) ? c.maxConsecutive : 3,
+    unavailableSlots: Array.isArray(c.unavailableSlots)
+      ? c.unavailableSlots.filter(s => Number.isInteger(s.day) && Number.isInteger(s.period))
+      : []
+  };
+}
+function normalizeTimetableDomain(raw = {}) {
+  const pc = Math.max(1, Math.min(12, parseInt(raw.config?.periodCount) || 7));
+  const pl = Array.isArray(raw.config?.periodLabels) && raw.config.periodLabels.length === pc
+    ? raw.config.periodLabels.map(clean)
+    : Array.from({ length: pc }, (_, i) => `${i + 1}교시`);
+  const constraints = {};
+  if (raw.teacherConstraints && typeof raw.teacherConstraints === "object") {
+    Object.entries(raw.teacherConstraints).forEach(([k, v]) => {
+      constraints[k] = normalizeTimetableConstraint(v);
+    });
+  }
+  return {
+    config: { periodCount: pc, periodLabels: pl },
+    entries: Array.isArray(raw.entries)
+      ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
+      : [],
+    teacherConstraints: constraints
+  };
+}
+
 // ================================================================
 // APPLICATION STATE
 // ================================================================
@@ -173,6 +232,8 @@ export const appState = {
   classes:    normalizeClassesDomain({}),
   teachers:   normalizeTeachersDomain({}),
   rosters:    normalizeRostersDomain({}),
+  rooms:      normalizeRoomsDomain({}),
+  timetable:  normalizeTimetableDomain({}),
 };
 
 // Ensure consistency (re-normalize in place)
@@ -182,6 +243,8 @@ export function ensureConsistency(domain) {
   if (domain === "classes")    appState.classes    = normalizeClassesDomain(appState.classes);
   if (domain === "teachers")   appState.teachers   = normalizeTeachersDomain(appState.teachers);
   if (domain === "rosters")    appState.rosters    = normalizeRostersDomain(appState.rosters);
+  if (domain === "rooms")      appState.rooms      = normalizeRoomsDomain(appState.rooms);
+  if (domain === "timetable")  appState.timetable  = normalizeTimetableDomain(appState.timetable);
 }
 
 // ================================================================
@@ -224,6 +287,8 @@ export function subscribeAll() {
     classes:    normalizeClassesDomain,
     teachers:   normalizeTeachersDomain,
     rosters:    normalizeRostersDomain,
+    rooms:      normalizeRoomsDomain,
+    timetable:  normalizeTimetableDomain,
   };
   Object.entries(domains).forEach(([domain, fn]) => {
     if (unsubs[domain]) unsubs[domain]();
