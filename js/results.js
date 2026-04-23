@@ -115,10 +115,17 @@ function buildTable1(rows) {
   <tr><th>한글</th><th>English</th></tr></thead>`;
   const tbody = document.createElement("tbody");
 
-  // Group by grade for rowspan
-  let prevGrade = null, gradeCount = 0;
   const gradeGroups = {};
   rows.forEach(r => { gradeGroups[r.grade] = (gradeGroups[r.grade] || 0) + 1; });
+  let prevGrade = null;
+
+  function mkTd(cls, html, extra = {}) {
+    const td = document.createElement("td");
+    if (cls) td.className = cls;
+    td.innerHTML = html;
+    if (extra.rowSpan) td.rowSpan = extra.rowSpan;
+    return td;
+  }
 
   rows.forEach(r => {
     const tr = document.createElement("tr");
@@ -128,17 +135,19 @@ function buildTable1(rows) {
       tr.appendChild(td); prevGrade = r.grade;
     }
     const totalClass = r.total > 0 ? "results-total-cell" : "";
-    tr.innerHTML += `
-      <td class="results-category">${escapeHtml(r.category)}</td>
-      <td>${escapeHtml(r.track)}</td>
-      <td>${escapeHtml(r.group)}</td>
-      <td class="results-name-ko">${escapeHtml(r.nameKo)}${r.isSplit ? ' <span class="results-split-badge">학기분리</span>' : ""}</td>
-      <td class="results-name-en">${escapeHtml(r.nameEn)}</td>
-      <td class="results-lang">${escapeHtml(r.language)}</td>
-      <td class="results-teacher">${escapeHtml(r.teacher)}</td>
-      <td class="results-num">${r.credits || "-"}</td>
-      <td class="results-num">${r.classCount > 0 ? r.classCount : "-"}</td>
-      <td class="results-num ${totalClass}">${r.total > 0 ? r.total : "-"}</td>`;
+    const nameSuffix = r.isSplit ? ' <span class="results-split-badge">학기분리</span>' : "";
+    [
+      mkTd("results-category", escapeHtml(r.category)),
+      mkTd("", escapeHtml(r.track)),
+      mkTd("", escapeHtml(r.group)),
+      mkTd("results-name-ko", escapeHtml(r.nameKo) + nameSuffix),
+      mkTd("results-name-en", escapeHtml(r.nameEn)),
+      mkTd("results-lang", escapeHtml(r.language)),
+      mkTd("results-teacher", escapeHtml(r.teacher)),
+      mkTd("results-num", String(r.credits || "-")),
+      mkTd("results-num", r.classCount > 0 ? String(r.classCount) : "-"),
+      mkTd("results-num " + totalClass, r.total > 0 ? String(r.total) : "-"),
+    ].forEach(td => tr.appendChild(td));
     tbody.appendChild(tr);
   });
 

@@ -157,7 +157,7 @@ export function renderTeacherView(container) {
 export function exportTeachersXlsx() {
   const wb = XLSX.utils.book_new();
   const rows = [["이름","담당 과목","이메일","메모"]];
-  getTeachers().forEach(t => rows.push([t.name, t.subjects.join(", "), t.email, t.note]));
+  getTeachers().forEach(t => rows.push([t.name, getSubjectsForTeacher(t.name).join(", "), t.email, t.note]));
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = [{ wch:12 },{ wch:30 },{ wch:24 },{ wch:30 }];
   XLSX.utils.book_append_sheet(wb, ws, "선생님 명단");
