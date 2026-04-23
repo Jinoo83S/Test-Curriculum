@@ -18,7 +18,7 @@ import {
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
   setSidebarLevel, setGroupManagerLevel,
-  copyTemplate, setOnTemplateChange, updateTeacherDatalist
+  copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
@@ -201,6 +201,7 @@ function renderStudentTableView() {
 function render(domain) {
   setControlsDisabled(!canEdit());
   if (domain === "curriculum" || domain === "templates") {
+    syncSchoolLevels(); // keep schoolLevel in sync with board placement
     invalidateTabs();
     if (activeMainView === "board") renderBoardTab();
     if (activeMainView === "groups" || activeMainView === "manager" || !domain) renderSidebar();

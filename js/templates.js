@@ -53,6 +53,30 @@ export function getTemplateAppliedGrades(templateId) {
   return GRADE_KEYS.filter(grade => (appState.curriculum.gradeBoards[grade] || []).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId)).map(g => g.replace("학년",""));
 }
 
+const MIDDLE_GRADES = ["7학년","8학년","9학년"];
+const HIGH_GRADES   = ["10학년","11학년","12학년"];
+
+/** Derive 중등/고등/공통 from where a template is placed in the curriculum board */
+export function deriveSchoolLevelFromCurriculum(templateId) {
+  const boards = appState.curriculum.gradeBoards;
+  const inMid  = MIDDLE_GRADES.some(g => (boards[g]||[]).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId));
+  const inHigh = HIGH_GRADES.some(g =>   (boards[g]||[]).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId));
+  if (inMid && inHigh) return "공통";
+  if (inMid)  return "중등";
+  if (inHigh) return "고등";
+  return null; // unplaced — keep stored value
+}
+
+/** Auto-sync schoolLevel for all templates from curriculum placement. Saves only when changed. */
+export function syncSchoolLevels() {
+  let changed = false;
+  templates().forEach(t => {
+    const derived = deriveSchoolLevelFromCurriculum(t.id);
+    if (derived && t.schoolLevel !== derived) { t.schoolLevel = derived; changed = true; }
+  });
+  if (changed) scheduleSave("templates");
+}
+
 /** Return list of subject titles where this teacher name appears in any template */
 export function getSubjectsForTeacher(teacherName) {
   const name = clean(teacherName);
@@ -213,6 +237,7 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
 }
 
 export function renderTemplates(container, { onEdit, onDelete, onCopy }) {
+  syncSchoolLevels();
   container.innerHTML = "";
   const validGroupIds = new Set(groups().map(g => g.id));
 
@@ -350,6 +375,7 @@ export function getFilteredTemplates() {
 }
 
 export function renderTemplateManagerTable(wrap, countEl) {
+  syncSchoolLevels();
   updateTeacherDatalist();
   const rows = getFilteredTemplates();
   if (countEl) countEl.textContent = `${rows.length} / ${tDomain().templates.length}개 표시`;
@@ -360,11 +386,14 @@ export function renderTemplateManagerTable(wrap, countEl) {
 
   const bodyRows = rows.map(item => {
     const grades = getTemplateAppliedGrades(item.id);
+    const derivedLevel = deriveSchoolLevelFromCurriculum(item.id);
+    const effectiveLevel = derivedLevel || item.schoolLevel || "공통";
     const gradeChips = grades.length ? grades.map(g => `<span class="usage-chip">${g}</span>`).join("") : '<span style="color:#9ca3af;font-size:10px">-</span>';
+    const levelDerivedMark = derivedLevel ? ' title="커리큘럼 배치에서 자동 연동"' : ' title="수동 설정"';
     return `<tr data-template-id="${item.id}">
       <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-template">삭제</button></td>
       <td class="col-usage usage-cell">${gradeChips}</td>
-      <td class="col-schoollevel"><select data-field="schoolLevel">${["중등","고등","공통"].map(l=>`<option value="${l}" ${item.schoolLevel===l?"selected":""}>${l}</option>`).join("")}</select></td>
+      <td class="col-schoollevel"><select data-field="schoolLevel"${levelDerivedMark} class="${derivedLevel ? "level-select-derived" : ""}">${["중등","고등","공통"].map(l=>`<option value="${l}" ${effectiveLevel===l?"selected":""}>${l}</option>`).join("")}</select></td>
       <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
       <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
       <td>${tInput("teacher", item.teacher)}</td>

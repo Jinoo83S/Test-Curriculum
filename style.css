@@ -1240,6 +1240,13 @@ button {
   font-size: 9px;
   padding: 1px 5px;
 }
+/* Auto-derived schoolLevel select indicator */
+.level-select-derived {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+  font-weight: 600;
+}
 .copy-btn {
   background: #d1fae5;
   color: #065f46;
