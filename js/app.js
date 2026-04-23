@@ -32,6 +32,9 @@ import { renderTeacherView } from "./teachers.js";
 // ── Roster imports ────────────────────────────────────────────────
 import { renderRosterView } from "./rosters.js";
 
+// ── Results imports ───────────────────────────────────────────────
+import { renderResultsView } from "./results.js";
+
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");
 const loginBtn         = document.getElementById("loginBtn");
@@ -98,6 +101,8 @@ const teacherMgrView= document.getElementById("teacherMgmtView");
 const rosterMgrView = document.getElementById("rosterMgmtView");
 const teacherContent= document.getElementById("teacherContent");
 const rosterContent = document.getElementById("rosterContent");
+const resultsMgrView = document.getElementById("resultsMgmtView");
+const resultsContent = document.getElementById("resultsContent");
 
 // ── DOM: Student management sub-elements ──────────────────────────
 const classListEl       = document.getElementById("classList");
@@ -122,6 +127,7 @@ const navButtons = {
   students: document.getElementById("navStudentsBtn"),
   teachers: document.getElementById("navTeachersBtn"),
   rosters:  document.getElementById("navRostersBtn"),
+  results:  document.getElementById("navResultsBtn"),
 };
 
 // ================================================================
@@ -139,7 +145,7 @@ export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("t
 // ── View switching ─────────────────────────────────────────────────
 function setView(view) {
   activeMainView = view;
-  const allViews = { board:boardView, groups:groupMgrView, manager:tplMgrView, students:studentMgrView, teachers:teacherMgrView, rosters:rosterMgrView };
+  const allViews = { board:boardView, groups:groupMgrView, manager:tplMgrView, students:studentMgrView, teachers:teacherMgrView, rosters:rosterMgrView, results:resultsMgrView };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
   // Update nav button states
   Object.entries(navButtons).forEach(([k, btn]) => btn?.classList.toggle("active", k === view));
@@ -214,7 +220,8 @@ function render(domain) {
   if (activeMainView === "manager") renderTemplateManagerView();
   if (activeMainView === "students") renderStudentView();
   if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
-  if (activeMainView === "rosters" && rosterContent) renderRosterView(rosterContent);
+  if (activeMainView === "rosters"  && rosterContent)  renderRosterView(rosterContent);
+  if (activeMainView === "results"  && resultsContent) renderResultsView(resultsContent);
   renderTabBtns();
 }
 
@@ -390,6 +397,10 @@ navButtons.teachers?.addEventListener("click", () => {
 
 navButtons.rosters?.addEventListener("click", () => {
   setView("rosters"); if (rosterContent) renderRosterView(rosterContent);
+});
+
+navButtons.results?.addEventListener("click", () => {
+  setView("results"); if (resultsContent) renderResultsView(resultsContent);
 });
 
 // ── Sidebar view toggles ──────────────────────────────────────────
