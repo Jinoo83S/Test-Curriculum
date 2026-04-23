@@ -110,12 +110,6 @@ export function copyTemplate(templateId) {
   const copy = normalizeTemplate({
     ...cloneJson(src),
     id: uid("tpl"),
-    nameKo:    src.nameKo    ? src.nameKo    + " (복사)" : "",
-    nameEn:    src.nameEn    ? src.nameEn    + " (copy)" : "",
-    sem1NameKo: src.sem1NameKo ? src.sem1NameKo + " (복사)" : "",
-    sem1NameEn: src.sem1NameEn ? src.sem1NameEn + " (copy)" : "",
-    sem2NameKo: src.sem2NameKo ? src.sem2NameKo + " (복사)" : "",
-    sem2NameEn: src.sem2NameEn ? src.sem2NameEn + " (copy)" : "",
   });
   templates().push(copy);
   scheduleSave("templates");

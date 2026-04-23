@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption } from "./curriculum.js";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -333,6 +333,11 @@ setOnTemplateChange(() => {
   if (activeMainView === "board")    renderBoardTab();
   if (activeMainView === "manager")  renderTemplateManagerView();
   if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
+});
+
+// Req 4: sidebar grade chips update on board drag-drop
+setOnCurriculumChange(() => {
+  renderSidebar();
 });
 
 onAuth(async (user) => {

@@ -329,16 +329,57 @@ button {
 }
 
 .order-btn {
-  width: 15px;
-  height: 15px;
-  border-radius: 3px !important;
-  background: #dbeafe !important;
-  color: #1d4ed8 !important;
-  font-size: 9px !important;
+  width: 15px; height: 15px; border-radius: 3px !important;
+  background: #dbeafe !important; color: #1d4ed8 !important; font-size: 9px !important;
 }
-
 .order-btn:hover:not(:disabled) { background: #93c5fd !important; }
 .order-btn:disabled { opacity: 0.25; cursor: default; }
+
+/* ── Drag-handle chip reorder ──────────────────────────────────── */
+.drag-handle {
+  cursor: grab;
+  color: #9ca3af;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+  user-select: none;
+}
+.drag-handle:active { cursor: grabbing; }
+.chip-dragging  { opacity: 0.4; }
+.chip-dragover  { outline: 2px solid #2563eb; background: #dbeafe !important; }
+
+/* ── Roster class count ────────────────────────────────────────── */
+.roster-class-count-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+.roster-class-count-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0369a1;
+  white-space: nowrap;
+}
+.roster-class-count-input {
+  width: 56px;
+  padding: 3px 6px;
+  border: 1px solid #bae6fd;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0c4a6e;
+  background: white;
+  text-align: center;
+}
+.roster-class-count-input:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 2px rgba(14,165,233,0.15);
+}
 
 .inline-form {
   display: grid;

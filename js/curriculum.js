@@ -10,6 +10,10 @@ import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loa
 const curriculum = () => appState.curriculum;
 const opts       = () => curriculum().options;
 
+// Callback for sidebar re-render after board mutations
+let _onCurriculumChange = () => {};
+export const setOnCurriculumChange = (fn) => { _onCurriculumChange = fn; };
+
 export function getRowById(grade, rowId) {
   return (curriculum().gradeBoards[grade] || []).find(r => r.id === rowId) || null;
 }
@@ -72,6 +76,7 @@ export function placeBothSems(templateId, grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
   row.sem1TemplateId = templateId; row.sem2TemplateId = templateId; scheduleSave("curriculum");
+  _onCurriculumChange();
 }
 
 export function placeTemplateTo(templateId, grade, rowId, semKey) {
@@ -82,19 +87,19 @@ export function placeTemplateTo(templateId, grade, rowId, semKey) {
     const exT = getTemplateById(ex); const nT = getTemplateById(templateId);
     if (!confirm(`${SEMESTER_LABELS[semKey]}에 이미 "${getTemplateCardTitle(exT)}" 카드가 있습니다.\n"${getTemplateCardTitle(nT)}" 카드로 바꿀까요?`)) return;
   }
-  row[`${semKey}TemplateId`] = templateId; scheduleSave("curriculum");
+  row[`${semKey}TemplateId`] = templateId; scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function clearRowSem(grade, rowId, semKey) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
-  row[`${semKey}TemplateId`] = null; scheduleSave("curriculum");
+  row[`${semKey}TemplateId`] = null; scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function clearRowBoth(grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
-  row.sem1TemplateId = null; row.sem2TemplateId = null; scheduleSave("curriculum");
+  row.sem1TemplateId = null; row.sem2TemplateId = null; scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
@@ -103,7 +108,7 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   if (!sRow || !dRow) return;
   if (sGrade === dGrade && sRowId === dRowId && sSemKey === dSemKey) return;
   const mv = sRow[`${sSemKey}TemplateId`]; const re = dRow[`${dSemKey}TemplateId`];
-  sRow[`${sSemKey}TemplateId`] = re; dRow[`${dSemKey}TemplateId`] = mv; scheduleSave("curriculum");
+  sRow[`${sSemKey}TemplateId`] = re; dRow[`${dSemKey}TemplateId`] = mv; scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 function getTemplateCardTitle(item) {
@@ -243,7 +248,7 @@ function createDropCell(grade, rowData, semKey, templateId) {
     if (drag.kind === "placed") {
       if (drag.sourceSemKey === "merged") {
         const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId);
-        if (dRow) { const rep = dRow[`${semKey}TemplateId`]; dRow[`${semKey}TemplateId`] = mv; if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { sRow.sem1TemplateId = rep; sRow.sem2TemplateId = rep; } scheduleSave("curriculum"); }
+        if (dRow) { const rep = dRow[`${semKey}TemplateId`]; dRow[`${semKey}TemplateId`] = mv; if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { sRow.sem1TemplateId = rep; sRow.sem2TemplateId = rep; } scheduleSave("curriculum"); _onCurriculumChange(); }
       } else { movePlaced(drag.sourceGrade, drag.sourceRowId, drag.sourceSemKey, grade, rowData.id, semKey); }
     }
   });
@@ -362,16 +367,51 @@ export function buildTabBoard(visibleGrades) {
 // ── Options Chips Rendering ───────────────────────────────────────
 export function renderOptionChips(container, type) {
   container.innerHTML = "";
-  opts()[type].forEach((value, index) => {
-    const chip = document.createElement("div"); chip.className = "option-chip";
-    const up   = makeBtn("↑", "order-btn", () => { moveOption(type, index, -1); }); // re-render handled by caller
-    const down = makeBtn("↓", "order-btn", () => { moveOption(type, index, 1); });
-    const del  = makeBtn("×", "", () => { removeOption(type, value); });
-    const txt  = document.createElement("span"); txt.textContent = value;
-    up.disabled   = !canEdit() || index === 0;
-    down.disabled = !canEdit() || index === opts()[type].length - 1;
-    del.disabled  = !canEdit();
-    chip.append(up, txt, down, del); container.appendChild(chip);
+  const items = opts()[type];
+
+  items.forEach((value, index) => {
+    const chip = document.createElement("div");
+    chip.className = "option-chip";
+    chip.draggable = canEdit();
+    chip.dataset.index = index;
+
+    // Drag handle
+    const handle = document.createElement("span");
+    handle.className = "drag-handle";
+    handle.textContent = "⠿";
+    handle.title = "드래그하여 순서 변경";
+
+    const txt = document.createElement("span");
+    txt.textContent = value;
+
+    const del = makeBtn("×", "", () => { removeOption(type, value); });
+    del.disabled = !canEdit();
+
+    chip.append(handle, txt, del);
+
+    // Drag events
+    chip.addEventListener("dragstart", e => {
+      if (!canEdit()) { e.preventDefault(); return; }
+      chip.classList.add("chip-dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(index));
+    });
+    chip.addEventListener("dragend", () => chip.classList.remove("chip-dragging"));
+    chip.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); chip.classList.add("chip-dragover"); });
+    chip.addEventListener("dragleave", () => chip.classList.remove("chip-dragover"));
+    chip.addEventListener("drop", e => {
+      e.preventDefault(); chip.classList.remove("chip-dragover");
+      const fromIdx = parseInt(e.dataTransfer.getData("text/plain"), 10);
+      const toIdx   = parseInt(chip.dataset.index, 10);
+      if (isNaN(fromIdx) || fromIdx === toIdx) return;
+      const arr = opts()[type];
+      const [moved] = arr.splice(fromIdx, 1);
+      arr.splice(toIdx, 0, moved);
+      scheduleSave("curriculum");
+      renderOptionChips(container, type); // re-render with new order
+    });
+
+    container.appendChild(chip);
   });
 }
 

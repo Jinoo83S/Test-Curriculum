@@ -151,7 +151,14 @@ function normalizeRostersDomain(raw = {}) {
       }
     });
   }
-  return { rosters };
+  // rosterMeta[templateId] = { classCount: "" }
+  const rosterMeta = {};
+  if (raw.rosterMeta && typeof raw.rosterMeta === "object") {
+    Object.entries(raw.rosterMeta).forEach(([tid, meta]) => {
+      rosterMeta[tid] = { classCount: clean(meta?.classCount) };
+    });
+  }
+  return { rosters, rosterMeta };
 }
 
 // ================================================================

@@ -10,8 +10,16 @@ import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemp
 
 const rDomain = () => appState.rosters;
 const rosters = () => rDomain().rosters;
+const rosterMeta = () => rDomain().rosterMeta || (rDomain().rosterMeta = {});
 
 export function getRoster(templateId) { return rosters()[templateId] || []; }
+export function getRosterMeta(templateId) { return rosterMeta()[templateId] || { classCount: "" }; }
+export function setRosterClassCount(templateId, value) {
+  if (!canEdit()) return;
+  if (!rosterMeta()[templateId]) rosterMeta()[templateId] = {};
+  rosterMeta()[templateId].classCount = value;
+  scheduleSave("rosters");
+}
 
 export function addToRoster(templateId, classId, studentId) {
   if (!canEdit()) return;
@@ -153,10 +161,24 @@ function renderRosterDetail(panel, container) {
   const rcnt   = document.createElement("span"); rcnt.className = "student-count-badge";
   rcnt.textContent = `${roster.length}명 수강`;
   rtitle.append(rname, rcnt);
+
+  // Class count input
+  const meta = getRosterMeta(selectedRosterTemplateId);
+  const classCountWrap = document.createElement("div"); classCountWrap.className = "roster-class-count-wrap";
+  const classCountLabel = document.createElement("label"); classCountLabel.className = "roster-class-count-label"; classCountLabel.textContent = "반 수:";
+  const classCountInput = document.createElement("input");
+  classCountInput.type = "number"; classCountInput.min = "0"; classCountInput.step = "1";
+  classCountInput.className = "roster-class-count-input";
+  classCountInput.value = meta.classCount || "";
+  classCountInput.placeholder = "0";
+  classCountInput.disabled = !canEdit();
+  classCountInput.addEventListener("change", e => setRosterClassCount(selectedRosterTemplateId, e.target.value));
+  classCountWrap.append(classCountLabel, classCountInput);
+
   const clearBtn  = makeBtn("명단 초기화", "danger-btn compact-btn",   () => { clearRoster(selectedRosterTemplateId); renderRosterView(container); });
   clearBtn.disabled = !canEdit();
   const exportBtn = makeBtn("📥 내보내기", "secondary-btn compact-btn", () => exportRosterXlsx(selectedRosterTemplateId));
-  rhdr.append(rtitle, clearBtn, exportBtn);
+  rhdr.append(rtitle, classCountWrap, clearBtn, exportBtn);
   panel.appendChild(rhdr);
 
   // ── Enrolled table ────────────────────────────────────────────
