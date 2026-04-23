@@ -72,8 +72,14 @@ function updatePeriodLabel(idx, value) {
 function setPeriodCount(n) {
   if (!canEdit()) return;
   const count = Math.max(1, Math.min(12, n));
-  const labels = Array.from({ length: count }, (_, i) => ttConfig().periodLabels[i] || `${i+1}교시`);
+  const labels = Array.from({ length: count }, (_, i) => ttConfig().periodLabels[i] || `${i}교시`);
   ttConfig().periodCount = count; ttConfig().periodLabels = labels;
+  scheduleSave("timetable");
+}
+function setLunchConfig(afterPeriod, show) {
+  if (!canEdit()) return;
+  if (afterPeriod !== undefined) ttConfig().lunchAfterPeriod = afterPeriod;
+  if (show !== undefined) ttConfig().showLunch = show;
   scheduleSave("timetable");
 }
 
@@ -163,16 +169,37 @@ function buildGrid(periods, days, wrap, getEntries) {
   const table = document.createElement("table"); table.className = "tt-table";
   const thead = document.createElement("thead"); const hrow = document.createElement("tr");
   const corner = document.createElement("th"); corner.className = "tt-corner";
-  corner.innerHTML = `<span class="tt-period-count-wrap">
-    교시 수: <input type="number" id="ttPeriodCountInp" min="1" max="12" value="${ttConfig().periodCount}" style="width:44px">
-    <button id="ttApplyPeriods" type="button">적용</button>
-  </span>`;
+  corner.innerHTML = `<div class="tt-corner-inner">
+    <div class="tt-period-count-wrap">
+      교시 수: <input type="number" id="ttPeriodCountInp" min="1" max="12" value="${ttConfig().periodCount}" style="width:44px">
+      <button id="ttApplyPeriods" type="button">적용</button>
+    </div>
+    <div class="tt-lunch-wrap">
+      <label><input type="checkbox" id="ttShowLunch" ${ttConfig().showLunch ? "checked" : ""}> 점심</label>
+      <select id="ttLunchAfter" style="font-size:10px;padding:1px 3px">
+        ${periods.map((l,i) => `<option value="${i}" ${i === ttConfig().lunchAfterPeriod ? "selected" : ""}>${l} 후</option>`).join("")}
+      </select>
+    </div>
+  </div>`;
   hrow.appendChild(corner);
   days.forEach(d => { const th = document.createElement("th"); th.className = "tt-day-header"; th.textContent = d; hrow.appendChild(th); });
   thead.appendChild(hrow); table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  const lunchAfter = ttConfig().lunchAfterPeriod;
+  const showLunch  = ttConfig().showLunch;
+
   periods.forEach((label, period) => {
+    // Insert lunch row AFTER lunchAfterPeriod
+    if (showLunch && period === lunchAfter + 1) {
+      const lunchTr = document.createElement("tr"); lunchTr.className = "tt-lunch-row";
+      const lunchTd = document.createElement("td"); lunchTd.className = "tt-period-label tt-lunch-label"; lunchTd.textContent = "🍱"; lunchTr.appendChild(lunchTd);
+      days.forEach(() => {
+        const td = document.createElement("td"); td.className = "tt-lunch-cell"; td.textContent = "점심시간"; lunchTr.appendChild(td);
+      });
+      tbody.appendChild(lunchTr);
+    }
+
     const tr = document.createElement("tr");
     const pTd = document.createElement("td"); pTd.className = "tt-period-label";
     const pInp = document.createElement("input"); pInp.type = "text"; pInp.value = label; pInp.disabled = !canEdit();
@@ -197,10 +224,13 @@ function buildGrid(periods, days, wrap, getEntries) {
   });
   table.appendChild(tbody); wrap.appendChild(table);
 
-  // Wire period count
+  // Wire controls
   setTimeout(() => {
     const inp = $("ttPeriodCountInp"); const btn = $("ttApplyPeriods");
-    btn?.addEventListener("click", () => { setPeriodCount(parseInt(inp?.value) || 7); renderAll(); });
+    btn?.addEventListener("click", () => { setPeriodCount(parseInt(inp?.value) || 8); renderAll(); });
+    const lunchChk = $("ttShowLunch"); const lunchSel = $("ttLunchAfter");
+    lunchChk?.addEventListener("change", e => { setLunchConfig(undefined, e.target.checked); renderAll(); });
+    lunchSel?.addEventListener("change", e => { setLunchConfig(parseInt(e.target.value), undefined); renderAll(); });
   }, 0);
   return table;
 }
@@ -270,13 +300,18 @@ function handleDrop(data, day, period) {
 
 // ── Subject panel ─────────────────────────────────────────────────
 function renderSubjectPanel() {
-  const panel = ttPanel(); if (!panel) return;
+  const hdrEl  = $("ttPanelHeader");
+  const panel  = $("ttPanel");
+  if (!panel) return;
   panel.innerHTML = "";
-
-  const hdr = document.createElement("div"); hdr.className = "tt-panel-header";
-  const title = document.createElement("div"); title.className = "tt-panel-title"; title.textContent = "과목 카드";
-  const gradeLabel = document.createElement("div"); gradeLabel.className = "tt-panel-grade"; gradeLabel.textContent = currentView === "grade" ? currentGrade : "";
-  hdr.append(title, gradeLabel); panel.appendChild(hdr);
+  if (hdrEl) {
+    hdrEl.innerHTML = "";
+    const row = document.createElement("div"); row.className = "tt-panel-header";
+    const title = document.createElement("div"); title.className = "tt-panel-title"; title.textContent = "과목 카드";
+    const gradeLabel = document.createElement("div"); gradeLabel.className = "tt-panel-grade";
+    gradeLabel.textContent = currentView === "grade" ? currentGrade : "";
+    row.append(title, gradeLabel); hdrEl.appendChild(row);
+  }
 
   if (currentView !== "grade") {
     const info = document.createElement("div"); info.className = "tt-empty";
@@ -334,37 +369,62 @@ function renderConstraintsPanel() {
   const el = $("ttConstraintsContent"); if (!el) return;
   el.innerHTML = "";
 
-  const allTeachers = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
+  // Show ALL teachers from templates (so constraints can be set before auto-assign)
+  const fromTemplates = [...new Set(
+    (appState.templates.templates || []).flatMap(t =>
+      splitTeacherNames([t.teacher, t.sem1Teacher, t.sem2Teacher].join(","))
+    ).filter(Boolean)
+  )];
+  const fromEntries = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
+  const allTeachers = [...new Set([...fromTemplates, ...fromEntries])].sort((a, b) => a.localeCompare(b, "ko"));
+
   if (!allTeachers.length) {
-    el.innerHTML = '<div class="tt-empty">시간표에 배치된 교사가 없습니다.</div>'; return;
+    el.innerHTML = '<div class="tt-empty">과목카드에 등록된 교사가 없습니다.</div>'; return;
   }
 
+  const hdrRow = document.createElement("div"); hdrRow.className = "tt-con-hint";
+  hdrRow.textContent = "자동 배치 전 제약 조건을 설정하세요."; el.appendChild(hdrRow);
+
   const table = document.createElement("table"); table.className = "tt-constraint-table";
-  table.innerHTML = `<thead><tr><th>교사</th><th>하루 최대 수업</th><th>최대 연속 수업</th><th>총 시수</th></tr></thead>`;
+  table.innerHTML = `<thead><tr>
+    <th>교사</th>
+    <th>하루 최대 수업 <span class="tt-con-default">(기본: 6)</span></th>
+    <th>최대 연속 수업 <span class="tt-con-default">(기본: 3)</span></th>
+    <th>현재 배치</th>
+    <th>충돌</th>
+  </tr></thead>`;
   const tbody = document.createElement("tbody");
 
-  allTeachers.sort((a, b) => a.localeCompare(b, "ko")).forEach(teacher => {
-    const c = constraints()[teacher] || { maxPerDay: 6, maxConsecutive: 3, unavailableSlots: [] };
-    const total = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
+  allTeachers.forEach(teacher => {
+    const c = constraints()[teacher] || { maxPerDay: 6, maxConsecutive: 3 };
+    const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher));
+    const total = placed.length;
+    const hasViolation = [...constraintMap.entries()].some(([id, s]) => {
+      const e = entries().find(e => e.id === id);
+      return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size > 0;
+    });
     const tr = document.createElement("tr");
 
-    // Teacher name
     const nameTd = document.createElement("td"); nameTd.className = "tt-con-name"; nameTd.textContent = teacher; tr.appendChild(nameTd);
-    // Max per day
-    const mpdTd = document.createElement("td");
-    const mpdInp = document.createElement("input"); mpdInp.type = "number"; mpdInp.min = "1"; mpdInp.max = "12"; mpdInp.value = c.maxPerDay; mpdInp.disabled = !canEdit();
-    mpdInp.addEventListener("change", e => { updateConstraint(teacher, "maxPerDay", parseInt(e.target.value) || 6); });
-    mpdTd.appendChild(mpdInp); tr.appendChild(mpdTd);
-    // Max consecutive
-    const mcTd = document.createElement("td");
-    const mcInp = document.createElement("input"); mcInp.type = "number"; mcInp.min = "1"; mcInp.max = "12"; mcInp.value = c.maxConsecutive; mcInp.disabled = !canEdit();
-    mcInp.addEventListener("change", e => { updateConstraint(teacher, "maxConsecutive", parseInt(e.target.value) || 3); });
-    mcTd.appendChild(mcInp); tr.appendChild(mcTd);
-    // Total
+
+    [
+      { key: "maxPerDay",      default: 6,  min: 1, max: 12 },
+      { key: "maxConsecutive", default: 3,  min: 1, max: 12 }
+    ].forEach(f => {
+      const td = document.createElement("td");
+      const inp = document.createElement("input"); inp.type = "number"; inp.min = f.min; inp.max = f.max;
+      inp.value = c[f.key] ?? f.default; inp.disabled = !canEdit();
+      inp.addEventListener("change", e => updateConstraint(teacher, f.key, parseInt(e.target.value) || f.default));
+      td.appendChild(inp); tr.appendChild(td);
+    });
+
     const totalTd = document.createElement("td"); totalTd.className = "tt-con-total";
-    const constraintViol = constraintMap.get ? [...constraintMap.entries()].filter(([id, s]) => { const e = entries().find(e => e.id === id); return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size > 0; }) : [];
-    totalTd.textContent = total + (constraintViol.length ? ` ⚠️` : "");
-    tr.appendChild(totalTd);
+    totalTd.textContent = total ? `${total}시수` : "-"; tr.appendChild(totalTd);
+
+    const conflTd = document.createElement("td"); conflTd.className = "tt-con-total";
+    conflTd.textContent = hasViolation ? "⚠️" : total ? "✅" : "";
+    conflTd.title = hasViolation ? "제약 위반 있음" : ""; tr.appendChild(conflTd);
+
     tbody.appendChild(tr);
   });
   table.appendChild(tbody); el.appendChild(table);
@@ -407,6 +467,128 @@ function renderConflictBar() {
   const totalConflicts = [...conflictMap.values(), ...constraintMap.values()].filter(s => s.size > 0).length;
   bar.textContent = totalConflicts > 0 ? `⚠️ 충돌 ${totalConflicts}건 발견` : "✅ 충돌 없음";
   bar.className = "tt-conflict-bar " + (totalConflicts > 0 ? "tt-conflict-bar-warn" : "tt-conflict-bar-ok");
+}
+
+// ── Auto-assign ───────────────────────────────────────────────────
+const shuffle = arr => { const a = [...arr]; for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
+
+function isConcurrentTpl(templateId) {
+  const tpl = appState.templates.templates?.find(t => t.id === templateId);
+  const gid = tpl?.calcGroupId;
+  if (!gid) return false;
+  const grp = appState.templates.templateGroups?.find(g => g.id === gid);
+  return grp?.groupType === "concurrent";
+}
+function sameGroupTpl(tidA, tidB) {
+  const tA = appState.templates.templates?.find(t => t.id === tidA);
+  const tB = appState.templates.templates?.find(t => t.id === tidB);
+  return tA?.calcGroupId && tA.calcGroupId === tB?.calcGroupId;
+}
+
+function checkPlacementValid(item, slot, placed) {
+  const existing = [...entries(), ...placed];
+  const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+  const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
+
+  // 1. Teacher conflict
+  for (const e of slotEnts) {
+    const et = splitTeacherNames(e.teacherName).filter(Boolean);
+    if (teachers.some(t => et.includes(t))) return false;
+  }
+
+  // 2. Same (templateId, gradeKey, sectionIdx) already in this slot
+  if (slotEnts.some(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && e.sectionIdx === item.sectionIdx)) return false;
+
+  // 3. Student conflict (same grade, same slot)
+  const sameGrade = slotEnts.filter(e => e.gradeKey === item.gradeKey);
+  for (const e of sameGrade) {
+    const conc = isConcurrentTpl(item.templateId) && isConcurrentTpl(e.templateId) && sameGroupTpl(item.templateId, e.templateId);
+    if (!conc) return false;
+  }
+
+  // 4. Teacher max per day
+  const dayEnts = existing.filter(e => e.day === slot.day);
+  for (const teacher of teachers) {
+    const count = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
+    const max = constraints()[teacher]?.maxPerDay || 6;
+    if (count >= max) return false;
+  }
+
+  // 5. Teacher max consecutive
+  for (const teacher of teachers) {
+    const dayPeriods = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).map(e => e.period);
+    const all = [...dayPeriods, slot.period].sort((a,b) => a-b);
+    let maxC = 1, cur = 1;
+    for (let i = 1; i < all.length; i++) {
+      cur = all[i] === all[i-1]+1 ? cur+1 : 1;
+      maxC = Math.max(maxC, cur);
+    }
+    if (maxC > (constraints()[teacher]?.maxConsecutive || 3)) return false;
+  }
+  return true;
+}
+
+export function autoAssign(gradeKey) {
+  if (!canEdit()) return;
+  if (!confirm(`"${gradeKey}" 시간표를 자동 배치할까요?\n기존 배치 내용이 초기화됩니다.`)) return;
+
+  // Build required placements
+  const required = [];
+  getSubjectsForGrade(gradeKey).forEach(tpl => {
+    const credits  = getCreditsForTemplate(gradeKey, tpl.id);
+    const sections = getSectionCount(tpl.id);
+    const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
+    for (let sec = 0; sec < sections; sec++) {
+      for (let slot = 0; slot < credits; slot++) {
+        required.push({ templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
+      }
+    }
+  });
+  if (!required.length) { alert("배치할 과목이 없습니다."); return; }
+
+  // Clear existing for this grade
+  ttDomain().entries = entries().filter(e => e.gradeKey !== gradeKey);
+
+  // Available slots
+  const pc = ttConfig().periodCount;
+  const baseSlots = [];
+  for (let day = 0; day < 5; day++) for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
+
+  const MAX_ATTEMPTS = 5;
+  let bestPlaced = [], bestFailed = [...required];
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const shuffledReq = shuffle([...required]);
+    const placed = [], failed = [];
+
+    for (const item of shuffledReq) {
+      let found = false;
+      for (const slot of shuffle([...baseSlots])) {
+        if (checkPlacementValid(item, slot, placed)) {
+          placed.push({ ...item, ...slot }); found = true; break;
+        }
+      }
+      if (!found) failed.push(item);
+    }
+
+    if (placed.length > bestPlaced.length) {
+      bestPlaced = placed;
+      bestFailed = failed;
+    }
+    if (bestFailed.length === 0) break;
+  }
+
+  // Commit
+  bestPlaced.forEach(e => entries().push(normalizeTimetableEntry({ id: uid("ent"), ...e })));
+  scheduleSave("timetable");
+  recomputeConflicts(); renderAll();
+
+  const failedNames = [...new Set(bestFailed.map(f => getTemplateCardTitle(getTemplateById(f.templateId) || {}) || "?"))];
+  if (bestFailed.length > 0) {
+    alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${bestFailed.length}개: ${failedNames.join(", ")}\n\n교사 제약 조건을 완화하거나 직접 배치해 주세요.`);
+  } else {
+    alert(`✅ ${bestPlaced.length}개 모두 배치 완료!`);
+  }
 }
 
 // ── Master render ─────────────────────────────────────────────────
@@ -504,5 +686,16 @@ $("ttLoginBtn")?.addEventListener("click", login);
 $("ttLogoutBtn")?.addEventListener("click", logout);
 $("ttExportBtn")?.addEventListener("click", exportXlsx);
 $("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); alert("저장되었습니다."); });
+$("ttClearGradeBtn")?.addEventListener("click", () => {
+  if (!canEdit()) return;
+  if (currentView !== "grade") { alert("학년별 보기에서 실행하세요."); return; }
+  if (!confirm(`"${currentGrade}" 시간표를 초기화할까요?`)) return;
+  ttDomain().entries = entries().filter(e => e.gradeKey !== currentGrade);
+  scheduleSave("timetable"); recomputeConflicts(); renderAll();
+});
+$("ttAutoAssignBtn")?.addEventListener("click", () => {
+  if (currentView !== "grade") { alert("학년별 보기에서만 자동 배치를 실행할 수 있습니다."); return; }
+  autoAssign(currentGrade);
+});
 
 renderAll();

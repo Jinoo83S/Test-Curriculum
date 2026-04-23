@@ -204,10 +204,10 @@ export function normalizeTimetableConstraint(c = {}) {
   };
 }
 function normalizeTimetableDomain(raw = {}) {
-  const pc = Math.max(1, Math.min(12, parseInt(raw.config?.periodCount) || 7));
+  const pc = Math.max(1, Math.min(12, parseInt(raw.config?.periodCount) || 8));
   const pl = Array.isArray(raw.config?.periodLabels) && raw.config.periodLabels.length === pc
     ? raw.config.periodLabels.map(clean)
-    : Array.from({ length: pc }, (_, i) => `${i + 1}교시`);
+    : Array.from({ length: pc }, (_, i) => `${i}교시`);  // starts from 0교시
   const constraints = {};
   if (raw.teacherConstraints && typeof raw.teacherConstraints === "object") {
     Object.entries(raw.teacherConstraints).forEach(([k, v]) => {
@@ -215,7 +215,12 @@ function normalizeTimetableDomain(raw = {}) {
     });
   }
   return {
-    config: { periodCount: pc, periodLabels: pl },
+    config: {
+      periodCount: pc,
+      periodLabels: pl,
+      lunchAfterPeriod: Number.isInteger(raw.config?.lunchAfterPeriod) ? raw.config.lunchAfterPeriod : 4,
+      showLunch: raw.config?.showLunch !== false
+    },
     entries: Array.isArray(raw.entries)
       ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
       : [],

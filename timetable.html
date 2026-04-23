@@ -38,7 +38,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* ── Subject panel ── */
 .tt-panel{width:200px;min-width:160px;background:white;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
-.tt-panel-header{padding:8px 10px;border-bottom:1px solid #f1f5f9;background:#f8fafc}
+.tt-panel-header-fixed{padding:8px 10px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0}
+.tt-panel-header{display:flex;justify-content:space-between;align-items:center}
 .tt-panel-title{font-size:12px;font-weight:700;color:#1e3a5f}
 .tt-panel-grade{font-size:11px;color:#2563eb;font-weight:600}
 .tt-panel-scroll{flex:1;overflow-y:auto;padding:6px}
@@ -54,7 +55,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── Grid area ── */
 .tt-grid-wrap{flex:1;overflow:auto;padding:12px}
 .tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
-.tt-corner{width:76px;background:#f8fafc;border:1px solid #e2e8f0;padding:6px;vertical-align:top}
+.tt-corner{width:90px;background:#f8fafc;border:1px solid #e2e8f0;padding:5px;vertical-align:top}
+.tt-corner-inner{display:flex;flex-direction:column;gap:5px}
+.tt-lunch-wrap{display:flex;align-items:center;gap:4px;font-size:10px}
+.tt-lunch-wrap label{display:flex;align-items:center;gap:2px;cursor:pointer;white-space:nowrap}
+.tt-lunch-row .tt-period-label{text-align:center;font-size:14px}
+.tt-lunch-cell{background:#fef9c3;color:#92400e;text-align:center;font-size:11px;font-weight:600;padding:4px;border:1px solid #fde68a}
+.tt-auto-btn{padding:4px 10px;border:none;border-radius:6px;background:#7c3aed;color:white;cursor:pointer;font-size:12px;font-weight:600}
+.tt-auto-btn:hover{background:#6d28d9}
+.tt-clear-btn{padding:4px 10px;border:1px solid #fca5a5;border-radius:6px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:12px;font-weight:600}
+.tt-clear-btn:hover{background:#fee2e2}
+.tt-toolbar-right{display:flex;gap:6px;margin-left:auto}
+.tt-con-hint{font-size:11px;color:#6b7280;margin-bottom:8px;padding:4px 6px;background:#f8fafc;border-radius:4px}
+.tt-con-default{font-size:10px;font-weight:400;color:#9ca3af}
 .tt-period-count-wrap{display:flex;flex-direction:column;gap:4px;font-size:11px}
 .tt-period-count-wrap input{width:40px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px}
 .tt-period-count-wrap button{padding:2px 6px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;border-radius:4px;cursor:pointer;font-size:11px}
@@ -141,12 +154,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <select id="ttTeacherSelect" class="hidden"></select>
   <select id="ttRoomSelect" class="hidden"></select>
   <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
+  <div class="tt-toolbar-right">
+    <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 현 학년 초기화</button>
+    <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
+  </div>
 </div>
 
 <!-- ── Body ── -->
 <div class="tt-body">
   <!-- Subject panel -->
   <aside class="tt-panel">
+    <div id="ttPanelHeader" class="tt-panel-header-fixed"></div>
     <div id="ttPanel" class="tt-panel-scroll"></div>
   </aside>
 

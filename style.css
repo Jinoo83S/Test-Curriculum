@@ -1714,6 +1714,7 @@ button {
 }
 .topbar-nav-btn:hover  { background: rgba(255,255,255,0.24); }
 .topbar-nav-btn.active { background: #2563eb; border-color: #1d4ed8; }
+a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: center; }
 
 /* ── Topbar layout: stretch center ────────────────────────────── */
 .topbar {
