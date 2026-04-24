@@ -161,7 +161,8 @@ function closeToBoard() { resetDraft(); setView("board"); renderSidebar(); }
 function renderBoardTab() {
   const tab = activeTab;
   if (!dirtyTabs.has(tab) && tabBoardCache[tab]) { gradeBoard.innerHTML = ""; tabBoardCache[tab].forEach(el => gradeBoard.appendChild(el)); return; }
-  const els = buildTabBoard(GRADE_GROUPS[tab]); gradeBoard.innerHTML = ""; els.forEach(el => gradeBoard.appendChild(el)); tabBoardCache[tab] = els; dirtyTabs.delete(tab);
+  const els = buildTabBoard(GRADE_GROUPS[tab], () => { invalidateTabs(); renderBoardTab(); renderSidebar(); });
+  gradeBoard.innerHTML = ""; els.forEach(el => gradeBoard.appendChild(el)); tabBoardCache[tab] = els; dirtyTabs.delete(tab);
 }
 
 function renderSidebar() {

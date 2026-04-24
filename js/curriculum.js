@@ -41,6 +41,34 @@ export function addRow(grade) {
   scheduleSave("curriculum");
 }
 
+export function addRowWithTemplate(grade, templateId) {
+  if (!canEdit() || !templateId) return null;
+  const rows = curriculum().gradeBoards[grade] || [];
+
+  // Infer category/track/group from other grades that already use this template
+  let seed = {};
+  GRADE_KEYS.forEach(g => {
+    const existing = (curriculum().gradeBoards[g] || []).find(r =>
+      r.sem1TemplateId === templateId || r.sem2TemplateId === templateId
+    );
+    if (existing && !seed.category) seed = { category: existing.category, track: existing.track, group: existing.group, credits: existing.credits };
+  });
+  // Fallback: copy from last row of this grade
+  if (!seed.category && rows.length) {
+    const last = rows[rows.length - 1];
+    seed = { category: last.category, track: last.track, group: last.group, credits: last.credits };
+  }
+
+  const newRow = createRow(opts(), seed);
+  newRow.sem1TemplateId = templateId;
+  newRow.sem2TemplateId = templateId;
+  rows.push(newRow);
+  curriculum().gradeBoards[grade] = rows;
+  scheduleSave("curriculum");
+  _onCurriculumChange();
+  return newRow;
+}
+
 export function deleteRow(grade, rowId) {
   if (!canEdit()) return;
   if (!confirm("이 행을 삭제할까요?")) return;
@@ -327,7 +355,7 @@ function getOrderedTracks(grades, category) {
   return tracks;
 }
 
-export function buildTabBoard(visibleGrades) {
+export function buildTabBoard(visibleGrades, onUpdate) {
   const columns = [];
   visibleGrades.forEach(grade => {
     const col = document.createElement("section"); col.className = "grade-column";
@@ -357,7 +385,21 @@ export function buildTabBoard(visibleGrades) {
   columns.forEach(({ grade, col, hr }) => {
     const footer = document.createElement("div"); footer.className = "grade-footer";
     const addBtn = makeBtn(`${grade} 행 추가`, "add-row-btn", () => addRow(grade));
-    addBtn.disabled = !canEdit(); footer.appendChild(addBtn); col.appendChild(footer);
+    addBtn.disabled = !canEdit(); footer.appendChild(addBtn);
+
+    // Drop zone for dragging template card → auto-creates new row
+    const dropZone = document.createElement("div"); dropZone.className = "grade-footer-dropzone";
+    dropZone.textContent = "여기에 과목 드롭 → 새 행 추가";
+    dropZone.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); dropZone.classList.add("dropzone-active"); });
+    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dropzone-active"));
+    dropZone.addEventListener("drop", e => {
+      e.preventDefault(); dropZone.classList.remove("dropzone-active");
+      const drag = currentDrag; if (!drag || drag.kind !== "template") return;
+      addRowWithTemplate(grade, drag.templateId);
+      onUpdate?.();
+    });
+    footer.appendChild(dropZone);
+    col.appendChild(footer);
     initColResize(col, hr, grade);
   });
 

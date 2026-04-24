@@ -65,7 +65,7 @@ button {
   grid-template-columns: 320px 1fr;
   gap: 10px;
   padding: 10px;
-  height: calc(100vh - 52px);
+  height: calc(100vh - 44px);
   overflow: hidden;
 }
 
@@ -425,19 +425,19 @@ button {
 /* ── Tabs ────────────────────────────────────────────── */
 .tab-bar {
   display: flex;
-  gap: 4px;
-  margin-bottom: 10px;
+  gap: 3px;
+  margin-bottom: 6px;
   background: #f1f5f9;
-  border-radius: 8px;
-  padding: 3px;
+  border-radius: 7px;
+  padding: 2px;
   width: fit-content;
 }
 
 .tab-btn {
-  padding: 5px 14px;
+  padding: 3px 12px;
   background: transparent;
   color: #475569;
-  border-radius: 6px;
+  border-radius: 5px;
   font-size: 12px;
   font-weight: 600;
   transition: all 0.15s;
@@ -507,7 +507,7 @@ button {
 .grade-data-row {
   border-bottom: 1px solid #edf1f7;
   align-items: stretch;
-  min-height: 48px;
+  min-height: 36px;
 }
 
 .grade-data-row:nth-child(even) { background: #fafcff; }
@@ -575,10 +575,10 @@ button {
 .drop-cell {
   border-right: 1px solid #e5e7eb;
   background: transparent;
-  padding: 3px;
+  padding: 2px;
   display: flex;
   align-items: stretch;
-  min-height: 46px;
+  min-height: 34px;
   min-width: 0;
   position: relative;
   overflow: hidden;
@@ -813,15 +813,16 @@ button {
 
 /* ── Footer & add-row ────────────────────────────────── */
 .grade-footer {
-  padding: 5px 8px;
+  padding: 4px 6px;
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  gap: 3px;
   background: #f8fbff;
   border-top: 1px solid #dbe2ef;
 }
 
 .add-row-btn {
-  padding: 4px 10px;
+  padding: 3px 8px;
   background: #dbeafe;
   color: #1d4ed8;
   border-radius: 5px;
@@ -830,6 +831,25 @@ button {
   width: 100%;
 }
 .add-row-btn:hover { background: #bfdbfe; }
+
+.grade-footer-dropzone {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1.5px dashed #bfdbfe;
+  border-radius: 5px;
+  font-size: 10px;
+  color: #93c5fd;
+  text-align: center;
+  transition: all 0.15s;
+  cursor: default;
+  background: transparent;
+}
+.grade-footer-dropzone.dropzone-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+}
 
 /* ── Summary ─────────────────────────────────────────── */
 .summary-wrap {
@@ -1621,13 +1641,13 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 4px;
-  padding: 5px 7px;
+  padding: 3px 6px;
 }
 
 .template-name-ko {
   flex: 1;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
@@ -1740,13 +1760,13 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 0 14px;
   background: #1e3a5f;
   color: white;
   position: sticky;
   top: 0;
   z-index: 20;
-  height: 52px;
+  height: 44px;
 }
 
 /* ── Student management layout ─────────────────────────────────── */
@@ -2060,13 +2080,13 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   grid-template-columns: auto 1fr auto;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
+  padding: 0 14px;
   background: #1e3a5f;
   color: white;
   position: sticky;
   top: 0;
   z-index: 20;
-  height: 52px;
+  height: 44px;
 }
 
 .topbar-nav {
@@ -2076,11 +2096,11 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 
 .topbar-nav-btn {
-  padding: 5px 14px;
+  padding: 4px 11px;
   background: rgba(255,255,255,0.12);
   color: rgba(255,255,255,0.8);
   border-radius: 20px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   border: 1px solid rgba(255,255,255,0.18);
   transition: all 0.15s;
