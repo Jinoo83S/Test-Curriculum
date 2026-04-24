@@ -100,9 +100,32 @@ export function moveOption(type, index, dir) {
 }
 
 // ── Drag & Drop Mutations ─────────────────────────────────────────
+/** When a template is dropped onto an empty row cell, infer category/track/group from other grades */
+function autoFillRowFromTemplate(grade, rowId, templateId) {
+  const row = getRowById(grade, rowId); if (!row) return;
+  // Already has a template — don't overwrite category
+  const alreadyFilled = row.sem1TemplateId || row.sem2TemplateId;
+  if (alreadyFilled) return;
+  // Look for same template in other grades
+  let seed = null;
+  GRADE_KEYS.forEach(g => {
+    if (seed) return;
+    const existing = (curriculum().gradeBoards[g] || []).find(r =>
+      (r.sem1TemplateId === templateId || r.sem2TemplateId === templateId) && r.id !== rowId
+    );
+    if (existing) seed = { category: existing.category, track: existing.track, group: existing.group, credits: existing.credits };
+  });
+  if (!seed) return;
+  if (seed.category) row.category = seed.category;
+  if (seed.track)    row.track    = seed.track;
+  if (seed.group)    row.group    = seed.group;
+  if (seed.credits)  row.credits  = seed.credits;
+}
+
 export function placeBothSems(templateId, grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
+  autoFillRowFromTemplate(grade, rowId, templateId);
   row.sem1TemplateId = templateId; row.sem2TemplateId = templateId; scheduleSave("curriculum");
   _onCurriculumChange();
 }
@@ -272,7 +295,10 @@ function createDropCell(grade, rowData, semKey, templateId) {
   cell.addEventListener("drop", e => {
     if (!canEdit()) return; e.preventDefault(); cell.classList.remove("dragover");
     const drag = currentDrag; if (!drag) return;
-    if (drag.kind === "template") { placeBothSems(drag.templateId, grade, rowData.id); return; }
+    if (drag.kind === "template") {
+      if (!templateId) autoFillRowFromTemplate(grade, rowData.id, drag.templateId);
+      placeBothSems(drag.templateId, grade, rowData.id); return;
+    }
     if (drag.kind === "placed") {
       if (drag.sourceSemKey === "merged") {
         const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId);
@@ -361,7 +387,7 @@ export function buildTabBoard(visibleGrades, onUpdate) {
     const col = document.createElement("section"); col.className = "grade-column";
     const gs = getGradeSummary(grade);
     const titleEl = document.createElement("div"); titleEl.className = "grade-title";
-    titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">Total #Courses ${gs.totalCourses}</span><span class="grade-title-badge">Total #Credits ${gs.totalCredits}</span></div></div><div class="grade-subtitle">Category / Semester / Credits</div>`;
+    titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">Total #Courses ${gs.totalCourses}</span><span class="grade-title-badge">Total #Credits ${gs.totalCredits}</span></div></div>`;
     col.appendChild(titleEl);
     const hr = createGradeHeader(); col.appendChild(hr);
     columns.push({ grade, col, hr });
@@ -386,19 +412,6 @@ export function buildTabBoard(visibleGrades, onUpdate) {
     const footer = document.createElement("div"); footer.className = "grade-footer";
     const addBtn = makeBtn(`${grade} 행 추가`, "add-row-btn", () => addRow(grade));
     addBtn.disabled = !canEdit(); footer.appendChild(addBtn);
-
-    // Drop zone for dragging template card → auto-creates new row
-    const dropZone = document.createElement("div"); dropZone.className = "grade-footer-dropzone";
-    dropZone.textContent = "여기에 과목 드롭 → 새 행 추가";
-    dropZone.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); dropZone.classList.add("dropzone-active"); });
-    dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dropzone-active"));
-    dropZone.addEventListener("drop", e => {
-      e.preventDefault(); dropZone.classList.remove("dropzone-active");
-      const drag = currentDrag; if (!drag || drag.kind !== "template") return;
-      addRowWithTemplate(grade, drag.templateId);
-      onUpdate?.();
-    });
-    footer.appendChild(dropZone);
     col.appendChild(footer);
     initColResize(col, hr, grade);
   });

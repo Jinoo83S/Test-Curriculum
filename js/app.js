@@ -75,8 +75,8 @@ const sem2Teacher = document.getElementById("templateSem2Teacher");
 const levelPicker = document.getElementById("templateSchoolLevelPicker");
 
 // ── DOM: Main views ───────────────────────────────────────────────
-const tab7to9Btn    = document.getElementById("tab7to9Btn");
-const tab10to12Btn  = document.getElementById("tab10to12Btn");
+const navBoardMiddleBtn = document.getElementById("navBoardMiddleBtn");
+const navBoardHighBtn   = document.getElementById("navBoardHighBtn");
 const gradeBoard    = document.getElementById("gradeBoard");
 const boardView     = document.getElementById("boardView");
 const groupMgrView  = document.getElementById("groupManagerView");
@@ -123,7 +123,8 @@ const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
 const navButtons = {
-  board:    document.getElementById("navBoardBtn"),
+  boardMiddle: navBoardMiddleBtn,
+  boardHigh:   navBoardHighBtn,
   students: document.getElementById("navStudentsBtn"),
   teachers: document.getElementById("navTeachersBtn"),
   rosters:  document.getElementById("navRostersBtn"),
@@ -148,7 +149,12 @@ function setView(view) {
   const allViews = { board:boardView, groups:groupMgrView, manager:tplMgrView, students:studentMgrView, teachers:teacherMgrView, rosters:rosterMgrView, results:resultsMgrView };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
   // Update nav button states
-  Object.entries(navButtons).forEach(([k, btn]) => btn?.classList.toggle("active", k === view));
+  Object.values(navButtons).forEach(btn => btn?.classList.remove("active"));
+  if (view === "board") {
+    (activeTab === "tab7to9" ? navBoardMiddleBtn : navBoardHighBtn)?.classList.add("active");
+  } else {
+    navButtons[view]?.classList.add("active");
+  }
   openGroupManagerBtn.textContent    = view === "groups"  ? "보드 보기" : "그룹 관리";
   openTemplateManagerBtn.textContent = view === "manager" ? "보드 보기" : "표 편집";
 }
