@@ -310,12 +310,30 @@ function createGroupManagerCard(item) {
   const card = document.createElement("div"); card.className = `group-mgr-card ${languageClass(item.language)}`; card.draggable = canEdit();
   card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"template", templateId:item.id }); card.classList.add("dragging"); });
   card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
+
   const tRow = document.createElement("div"); tRow.className = "group-mgr-card-top";
   const t = document.createElement("div"); t.className = "group-mgr-card-title"; t.textContent = getTemplateCardTitle(item);
   tRow.appendChild(t);
-  if (item.schoolLevel && item.schoolLevel !== "공통") { const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot); }
+  if (item.schoolLevel && item.schoolLevel !== "공통") {
+    const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot);
+  }
+
   const s = document.createElement("div"); s.className = "group-mgr-card-teacher"; s.textContent = getTemplateTeacherSummary(item);
-  card.append(tRow, s); return card;
+
+  // Grade chips row
+  const gradesRow = document.createElement("div"); gradesRow.className = "group-mgr-card-grades";
+  const appliedGrades = getTemplateAppliedGrades(item.id);
+  if (appliedGrades.length) {
+    appliedGrades.forEach(g => {
+      const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm"; chip.textContent = g + "학년";
+      gradesRow.appendChild(chip);
+    });
+  } else {
+    const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm grade-chip-none"; chip.textContent = "미배정";
+    gradesRow.appendChild(chip);
+  }
+
+  card.append(tRow, s, gradesRow); return card;
 }
 
 function createGroupCol(colGroupId, colGroupName, onRender) {
