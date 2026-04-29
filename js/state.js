@@ -93,7 +93,8 @@ export function normalizeTemplateGroup(item = {}) {
     id: item.id || uid("grp"),
     name: clean(item.name),
     creditValue: clean(item.creditValue),
-    groupType: validTypes.includes(item.groupType) ? item.groupType : "concurrent"
+    groupType: validTypes.includes(item.groupType) ? item.groupType : "concurrent",
+    linkedGroupId: clean(item.linkedGroupId) || null  // groups that must share time slots
   };
 }
 

@@ -474,8 +474,7 @@ const shuffle = arr => { const a = [...arr]; for (let i = a.length-1; i > 0; i--
 
 function isConcurrentTpl(templateId) {
   const tpl = appState.templates.templates?.find(t => t.id === templateId);
-  const gid = tpl?.calcGroupId;
-  if (!gid) return false;
+  const gid = tpl?.calcGroupId; if (!gid) return false;
   const grp = appState.templates.templateGroups?.find(g => g.id === gid);
   return grp?.groupType === "concurrent";
 }
@@ -484,26 +483,38 @@ function sameGroupTpl(tidA, tidB) {
   const tB = appState.templates.templates?.find(t => t.id === tidB);
   return tA?.calcGroupId && tA.calcGroupId === tB?.calcGroupId;
 }
+function getGroupId(tid) {
+  return appState.templates.templates?.find(t => t.id === tid)?.calcGroupId || null;
+}
+function linkedGroups(tidA, tidB) {
+  const gA = getGroupId(tidA), gB = getGroupId(tidB);
+  if (!gA || !gB || gA === gB) return false;
+  const groups = appState.templates.templateGroups || [];
+  const grpA = groups.find(g => g.id === gA);
+  const grpB = groups.find(g => g.id === gB);
+  return grpA?.linkedGroupId === gB || grpB?.linkedGroupId === gA;
+}
 
 function checkPlacementValid(item, slot, placed) {
   const existing = [...entries(), ...placed];
   const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
   const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
 
-  // 1. Teacher conflict
+  // 1. Teacher conflict (always applies)
   for (const e of slotEnts) {
     const et = splitTeacherNames(e.teacherName).filter(Boolean);
     if (teachers.some(t => et.includes(t))) return false;
   }
 
-  // 2. Same (templateId, gradeKey, sectionIdx) already in this slot
+  // 2. Exact duplicate (same template+grade+section in same slot)
   if (slotEnts.some(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && e.sectionIdx === item.sectionIdx)) return false;
 
   // 3. Student conflict (same grade, same slot)
   const sameGrade = slotEnts.filter(e => e.gradeKey === item.gradeKey);
   for (const e of sameGrade) {
     const conc = isConcurrentTpl(item.templateId) && isConcurrentTpl(e.templateId) && sameGroupTpl(item.templateId, e.templateId);
-    if (!conc) return false;
+    const linked = linkedGroups(item.templateId, e.templateId);
+    if (!conc && !linked) return false;
   }
 
   // 4. Teacher max per day
@@ -582,19 +593,82 @@ export function autoAssignAll() {
   let bestPlaced = [], bestFailed = [...required];
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    // 교사 부하 순 정렬 후 동일 부하 내에서 섞기
-    const groups = new Map();
-    required.forEach(r => {
-      const k = teacherLoad.get(r.teacherName) || 0;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(r);
+    const groups = appState.templates.templateGroups || [];
+    // Build linked group pairs (bidirectional)
+    const linkedPairs = new Map(); // groupId → Set of linked groupIds
+    groups.forEach(g => {
+      if (g.linkedGroupId) {
+        if (!linkedPairs.has(g.id)) linkedPairs.set(g.id, new Set());
+        if (!linkedPairs.has(g.linkedGroupId)) linkedPairs.set(g.linkedGroupId, new Set());
+        linkedPairs.get(g.id).add(g.linkedGroupId);
+        linkedPairs.get(g.linkedGroupId).add(g.id);
+      }
     });
-    const sortedKeys = [...groups.keys()].sort((a, b) => b - a);
-    const shuffledReq = sortedKeys.flatMap(k => shuffle(groups.get(k)));
 
+    // Group required items by their groupId for linked scheduling
+    const getGroupId = item => appState.templates.templates?.find(t => t.id === item.templateId)?.calcGroupId || null;
+
+    // Separate linked groups into blocks, others remain independent
+    const linkedBlocks = []; // [[items from groupA], [items from groupB]] - must share slots
+    const independent = [];
+    const processedGroups = new Set();
+
+    // Build blocks of linked groups
+    const allGroupIds = [...new Set(required.map(getGroupId).filter(Boolean))];
+    allGroupIds.forEach(gid => {
+      if (processedGroups.has(gid)) return;
+      const linked = linkedPairs.get(gid);
+      if (linked && linked.size > 0) {
+        const blockGroups = [gid, ...linked];
+        blockGroups.forEach(id => processedGroups.add(id));
+        const blockItems = blockGroups.map(id => required.filter(item => getGroupId(item) === id));
+        linkedBlocks.push(blockItems);
+      }
+    });
+    required.forEach(item => {
+      const gid = getGroupId(item);
+      if (!gid || !processedGroups.has(gid)) independent.push(item);
+    });
+
+    const sortedKeys = [...new Map().keys()]; // unused
+    const shuffledIndep = shuffle([...independent]);
     const placed = [], failed = [];
 
-    for (const item of shuffledReq) {
+    // Place linked blocks first (most constrained)
+    for (const block of linkedBlocks) {
+      // block = [[groupA items], [groupB items], ...]
+      // Items within each group need same number of slots
+      const maxSlots = Math.max(...block.map(g => g.length));
+      for (let slotIdx = 0; slotIdx < maxSlots; slotIdx++) {
+        // Find a slot that works for ALL groups in this block simultaneously
+        let foundSlot = null;
+        for (const slot of shuffle([...baseSlots])) {
+          let valid = true;
+          const hypothetical = [];
+          for (const groupItems of block) {
+            const item = groupItems[slotIdx];
+            if (!item) continue;
+            if (!checkPlacementValid(item, slot, [...placed, ...hypothetical])) { valid = false; break; }
+            hypothetical.push({ ...item, ...slot });
+          }
+          if (valid) { foundSlot = slot; break; }
+        }
+        if (foundSlot) {
+          for (const groupItems of block) {
+            const item = groupItems[slotIdx];
+            if (item) placed.push({ ...item, ...foundSlot });
+          }
+        } else {
+          for (const groupItems of block) {
+            const item = groupItems[slotIdx];
+            if (item) failed.push(item);
+          }
+        }
+      }
+    }
+
+    // Place independent items
+    for (const item of shuffledIndep) {
       let found = false;
       for (const slot of shuffle([...baseSlots])) {
         if (checkPlacementValid(item, slot, placed)) {

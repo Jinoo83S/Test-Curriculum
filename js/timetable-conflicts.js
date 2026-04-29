@@ -10,24 +10,22 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
-  // Pre-build lookup: templateId → calcGroupId
   const tplGroupMap = new Map(templates.map(t => [t.id, t.calcGroupId || null]));
   const groupTypeMap = new Map(templateGroups.map(g => [g.id, g.groupType]));
+  const groupLinkMap = new Map(templateGroups.map(g => [g.id, g.linkedGroupId || null]));
 
-  const isConcurrent = tid => {
-    const gid = tplGroupMap.get(tid);
-    return gid ? groupTypeMap.get(gid) === "concurrent" : false;
-  };
-  const isCrossGrade = tid => {
-    const gid = tplGroupMap.get(tid);
-    return gid ? groupTypeMap.get(gid) === "cross-grade" : false;
-  };
-  const sameGroup = (tidA, tidB) => {
-    const g = tplGroupMap.get(tidA);
-    return g && g === tplGroupMap.get(tidB);
+  const getGroupId = tid => tplGroupMap.get(tid) || null;
+  const isConcurrent = tid => { const g = getGroupId(tid); return g ? groupTypeMap.get(g) === "concurrent" : false; };
+  const isCrossGrade = tid => { const g = getGroupId(tid); return g ? groupTypeMap.get(g) === "cross-grade" : false; };
+  const sameGroup = (tidA, tidB) => { const g = getGroupId(tidA); return g && g === getGroupId(tidB); };
+
+  // Check if two templates are in "linked" groups (must share time slots)
+  const linkedGroups = (tidA, tidB) => {
+    const gA = getGroupId(tidA), gB = getGroupId(tidB);
+    if (!gA || !gB || gA === gB) return false;
+    return groupLinkMap.get(gA) === gB || groupLinkMap.get(gB) === gA;
   };
 
-  // Group by slot
   const bySlot = new Map();
   entries.forEach(e => {
     const k = `${e.day}:${e.period}`;
@@ -40,7 +38,7 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
       for (let j = i + 1; j < slotEntries.length; j++) {
         const a = slotEntries[i], b = slotEntries[j];
 
-        // Teacher conflict — always applies
+        // Teacher conflict — always applies (even concurrent teachers conflict)
         if (a.teacherName && b.teacherName) {
           const ta = splitTeacherNames(a.teacherName);
           const tb = splitTeacherNames(b.teacherName);
@@ -50,18 +48,23 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
           }
         }
 
-        // Room conflict — always applies
+        // Room conflict
         if (a.roomId && b.roomId && a.roomId === b.roomId) {
-          result.get(a.id).add("room");
-          result.get(b.id).add("room");
+          // cross-grade in same group share a room intentionally
+          if (!(isCrossGrade(a.templateId) && isCrossGrade(b.templateId) && sameGroup(a.templateId, b.templateId))) {
+            result.get(a.id).add("room");
+            result.get(b.id).add("room");
+          }
         }
 
         // Student conflict
-        // cross-grade same group → intentionally together, no conflict
+        // 1. cross-grade same group → intentional co-teaching
         if (isCrossGrade(a.templateId) && isCrossGrade(b.templateId) && sameGroup(a.templateId, b.templateId)) continue;
-        // Same grade + concurrent same group → intentionally parallel, no conflict
-        if (a.gradeKey === b.gradeKey && isConcurrent(a.templateId) && isConcurrent(b.templateId) && sameGroup(a.templateId, b.templateId)) continue;
-        // Same grade → student conflict
+        // 2. concurrent same group (parallel classes same grade) → no student conflict
+        if (isConcurrent(a.templateId) && isConcurrent(b.templateId) && sameGroup(a.templateId, b.templateId)) continue;
+        // 3. linked groups (e.g. 선택8 + 선택9 run simultaneously) → no student conflict between grades
+        if (linkedGroups(a.templateId, b.templateId)) continue;
+        // 4. Same grade → student conflict
         if (a.gradeKey && b.gradeKey && a.gradeKey === b.gradeKey) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");

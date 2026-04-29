@@ -364,6 +364,33 @@ function createGroupCol(colGroupId, colGroupName, onRender) {
     typeWrap.appendChild(typeSel);
     hdr.appendChild(typeWrap);
 
+    // Linked group selector (for time-block synchronization)
+    const linkWrap = document.createElement("div"); linkWrap.className = "group-link-wrap";
+    const linkLbl = document.createElement("label"); linkLbl.className = "group-link-label"; linkLbl.textContent = "동시 블록:";
+    const linkSel = document.createElement("select"); linkSel.className = "group-link-select"; linkSel.disabled = !canEdit();
+    const noLink = document.createElement("option"); noLink.value = ""; noLink.textContent = "없음"; linkSel.appendChild(noLink);
+    groups().filter(g => g.id !== colGroupId).forEach(g => {
+      const o = document.createElement("option"); o.value = g.id; o.textContent = g.name;
+      if (groupObj?.linkedGroupId === g.id) o.selected = true;
+      linkSel.appendChild(o);
+    });
+    linkSel.addEventListener("change", e => {
+      const g = groups().find(g => g.id === colGroupId); if (!g) return;
+      const newLink = e.target.value || null;
+      // Bidirectional link
+      if (g.linkedGroupId && g.linkedGroupId !== newLink) {
+        const old = groups().find(g2 => g2.id === g.linkedGroupId);
+        if (old && old.linkedGroupId === colGroupId) old.linkedGroupId = null;
+      }
+      g.linkedGroupId = newLink;
+      if (newLink) {
+        const other = groups().find(g2 => g2.id === newLink);
+        if (other) other.linkedGroupId = colGroupId;
+      }
+      scheduleSave("templates"); onRender && onRender();
+    });
+    linkWrap.append(linkLbl, linkSel);
+    hdr.appendChild(linkWrap);
     const del = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(colGroupId); onRender && onRender(); }); del.disabled = !canEdit(); hdr.appendChild(del);
   } else {
     const lbl = document.createElement("span"); lbl.className = "group-col-name-label"; lbl.textContent = "미배정"; hdr.appendChild(lbl);
