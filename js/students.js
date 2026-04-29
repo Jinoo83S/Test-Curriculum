@@ -24,7 +24,13 @@ export function deleteClass(classId) {
   const cls = getClassById(classId); if (!cls) return;
   if (!confirm(`"${cls.grade} ${cls.name}" 반을 삭제할까요?`)) return;
   clsDomain().classes = getClasses().filter(c => c.id !== classId);
+  // Cascade: remove all roster entries for this class
+  const rosters = appState.rosters?.rosters;
+  if (rosters) Object.keys(rosters).forEach(tid => {
+    rosters[tid] = rosters[tid].filter(e => e.classId !== classId);
+  });
   scheduleSave("classes");
+  scheduleSave("rosters");
   return true;
 }
 
@@ -53,7 +59,13 @@ export function deleteStudent(classId, studentId) {
   if (!canEdit()) return;
   const cls = getClassById(classId); if (!cls) return;
   cls.students = cls.students.filter(s => s.id !== studentId);
+  // Cascade: remove from all rosters
+  const rosters = appState.rosters?.rosters;
+  if (rosters) Object.keys(rosters).forEach(tid => {
+    rosters[tid] = rosters[tid].filter(e => !(e.classId === classId && e.studentId === studentId));
+  });
   scheduleSave("classes");
+  scheduleSave("rosters");
 }
 
 // ── Excel Paste Parser ────────────────────────────────────────────

@@ -134,6 +134,7 @@ function renderGrid() {
   const wrap = ttGrid(); if (!wrap) return;
   wrap.innerHTML = "";
   if (currentView === "grade")   renderGradeGrid(wrap);
+  else if (currentView === "all")     renderAllGradesGrid(wrap);
   else if (currentView === "teacher") renderTeacherGrid(wrap);
   else if (currentView === "room")    renderRoomGrid(wrap);
 }
@@ -163,6 +164,88 @@ function renderRoomGrid(wrap) {
   buildGrid(periods, days, wrap, (day, period) => {
     return entries().filter(e => e.roomId === currentRoom && e.day === day && e.period === period);
   });
+}
+
+function renderAllGradesGrid(wrap) {
+  const days     = ["월","화","수","목","금"];
+  const periods  = ttConfig().periodLabels;
+  const lunchAfter = ttConfig().lunchAfterPeriod;
+  const showLunch  = ttConfig().showLunch;
+  const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
+  if (!activeGrades.length) { wrap.innerHTML = '<div class="tt-empty">커리큘럼에 배치된 과목이 없습니다.</div>'; return; }
+
+  const outerWrap = document.createElement("div"); outerWrap.className = "tt-all-wrap";
+  const table = document.createElement("table"); table.className = "tt-all-table";
+
+  // Header rows: row1 = grade headers (colspan 5), row2 = day subheaders
+  const thead = document.createElement("thead");
+  const row1 = document.createElement("tr");
+  // period column header
+  const cornerTh = document.createElement("th"); cornerTh.className = "tt-all-period"; cornerTh.rowSpan = 2; row1.appendChild(cornerTh);
+  activeGrades.forEach(grade => {
+    const th = document.createElement("th"); th.className = "tt-all-th-grade"; th.colSpan = 5;
+    th.textContent = grade; row1.appendChild(th);
+    // Separator
+    const sep = document.createElement("th"); sep.style.width = "4px"; sep.style.background = "#1e3a5f"; sep.rowSpan = 2; row1.appendChild(sep);
+  });
+  thead.appendChild(row1);
+  const row2 = document.createElement("tr");
+  activeGrades.forEach(() => {
+    days.forEach(d => {
+      const th = document.createElement("th"); th.className = "tt-all-th-day"; th.textContent = d; row2.appendChild(th);
+    });
+    row2.appendChild(document.createElement("th")); // separator spacer
+  });
+  thead.appendChild(row2);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+
+  const buildCell = (grade, day, period) => {
+    const td = document.createElement("td"); td.className = "tt-all-cell";
+    const cellEntries = entries().filter(e => e.gradeKey === grade && e.day === day && e.period === period);
+    if (!cellEntries.length) { td.innerHTML = '<div style="color:#d1d5db;text-align:center;padding:4px 0;font-size:14px">+</div>'; return td; }
+    cellEntries.forEach(entry => {
+      const tpl = getTemplateById(entry.templateId); if (!tpl) return;
+      const cat = getCategoryForTemplate(grade, entry.templateId);
+      const color = getCategoryColor(cat);
+      const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
+      const div = document.createElement("div");
+      div.className = "tt-all-entry" + (conflicts.size > 0 ? " tt-all-conflict" : "");
+      div.style.background = color.bg; div.style.color = color.text; div.style.borderColor = color.text;
+      if (conflicts.size > 0) div.title = getConflictLabel(conflicts);
+      const nameEl = document.createElement("div"); nameEl.textContent = getTemplateCardTitle(tpl);
+      const teacherEl = document.createElement("div"); teacherEl.className = "tt-all-entry-teacher"; teacherEl.textContent = entry.teacherName || "";
+      div.append(nameEl, teacherEl); td.appendChild(div);
+    });
+    return td;
+  };
+
+  periods.forEach((label, period) => {
+    // Lunch row before this period
+    if (showLunch && period === lunchAfter + 1) {
+      const lunchTr = document.createElement("tr"); lunchTr.className = "tt-all-lunch";
+      const lTd = document.createElement("td"); lTd.textContent = "🍱"; lTd.style.cssText = "text-align:center;font-size:13px;border:1px solid #fde68a;position:sticky;left:0;z-index:2;background:#fef9c3";
+      lunchTr.appendChild(lTd);
+      activeGrades.forEach(() => {
+        for (let d = 0; d < 5; d++) { const td = document.createElement("td"); td.textContent = "점심시간"; lunchTr.appendChild(td); }
+        lunchTr.appendChild(document.createElement("td")); // sep
+      });
+      tbody.appendChild(lunchTr);
+    }
+
+    const tr = document.createElement("tr");
+    const periodTd = document.createElement("td"); periodTd.className = "tt-all-period"; periodTd.textContent = label; tr.appendChild(periodTd);
+    activeGrades.forEach((grade, gi) => {
+      days.forEach((_, day) => tr.appendChild(buildCell(grade, day, period)));
+      const sep = document.createElement("td"); sep.style.cssText = "width:4px;background:#f1f5f9;border:none"; tr.appendChild(sep);
+    });
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  outerWrap.appendChild(table);
+  wrap.appendChild(outerWrap);
 }
 
 function buildGrid(periods, days, wrap, getEntries) {
@@ -459,6 +542,9 @@ function renderViewSelectors() {
   gradeEl?.classList.toggle("hidden", currentView !== "grade");
   teacherEl?.classList.toggle("hidden", currentView !== "teacher");
   roomEl?.classList.toggle("hidden", currentView !== "room");
+  // In all-grades view, hide the subject panel (it's grade-specific)
+  const panelEl = document.querySelector(".tt-panel");
+  if (panelEl) panelEl.style.display = currentView === "all" ? "none" : "";
 }
 
 // ── Conflict summary bar ──────────────────────────────────────────
@@ -517,11 +603,14 @@ function checkPlacementValid(item, slot, placed) {
     if (!conc && !linked) return false;
   }
 
-  // 4. Teacher max per day
+  // 4. Teacher max per day + unavailable slots
   const dayEnts = existing.filter(e => e.day === slot.day);
   for (const teacher of teachers) {
+    const c = constraints()[teacher];
+    // Unavailable slot check
+    if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
     const count = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
-    const max = constraints()[teacher]?.maxPerDay || 6;
+    const max = c?.maxPerDay || 6;
     if (count >= max) return false;
   }
 
