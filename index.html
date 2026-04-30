@@ -39,13 +39,15 @@
   <!-- ════════════════════════════════════════════════════════════
        SIDEBAR — shown only in curriculum view
        ════════════════════════════════════════════════════════════ -->
-  <aside class="sidebar" id="appSidebar">
+  <aside class="sidebar" id="appSidebar" style="position:relative">
+    <div id="appSidebarResizer" class="sidebar-resizer" style="position:absolute;right:-3px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10;background:transparent"></div>
 
     <!-- ── Subject cards ── -->
     <section class="panel">
       <div class="section-heading-row">
         <h2>과목 카드</h2>
         <div class="sidebar-btn-group">
+          <button id="appSidebarToggle" class="sidebar-toggle-inline" type="button" title="사이드바 접기">◀</button>
           <button id="openGroupManagerBtn"    class="secondary-btn compact-btn" type="button">그룹 관리</button>
           <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
         </div>
@@ -146,7 +148,6 @@
   <!-- ════════════════════════════════════════════════════════════
        MAIN PANEL
        ════════════════════════════════════════════════════════════ -->
-  <div class="sidebar-resizer" id="appSidebarResizer"></div>
   <section class="main-panel">
 
     <div id="loginOverlay" class="login-overlay">
@@ -327,36 +328,35 @@
 </main>
 
 <script type="module" src="js/app.js"></script>
-
-<button id="curSidebarToggle" title="사이드바 보이기/숨기기">◀</button>
 <script>
-(function(){
-  const sb = document.getElementById("appSidebar");
-  const rz = document.getElementById("appSidebarResizer");
-  const btn= document.getElementById("curSidebarToggle");
+(function() {
+  const sb  = document.getElementById("appSidebar");
+  const rz  = document.getElementById("appSidebarResizer");
+  const btn = document.getElementById("appSidebarToggle");
+  if (!sb) return;
   let w = parseInt(localStorage.getItem("cur_sbW") || "280");
   let collapsed = false;
+  sb.style.position = "relative";
 
-  function applyW(newW, col) {
+  function apply(newW, col) {
     collapsed = col;
-    if (col) { sb.classList.add("sidebar-collapsed"); btn.textContent = "▶"; btn.style.left = "10px"; }
-    else { sb.classList.remove("sidebar-collapsed"); sb.style.width = newW + "px"; btn.textContent = "◀"; btn.style.left = (newW + 22) + "px"; }
+    if (col) { sb.classList.add("sidebar-collapsed"); if (btn) btn.textContent = "▶"; }
+    else { sb.classList.remove("sidebar-collapsed"); sb.style.width = newW + "px"; if (btn) btn.textContent = "◀"; }
   }
-  applyW(w, false);
+  apply(w, false);
 
   rz.addEventListener("mousedown", e => {
     e.preventDefault();
     const x0 = e.clientX, w0 = sb.offsetWidth;
-    const mv = ev => { w = Math.max(120, Math.min(480, w0 + ev.clientX - x0)); applyW(w, false); };
+    const mv = ev => { w = Math.max(120, Math.min(480, w0 + ev.clientX - x0)); apply(w, false); };
     const up = () => { localStorage.setItem("cur_sbW", w); document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); };
     document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
   });
-  btn.addEventListener("click", () => {
-    if (collapsed) applyW(w, false);
-    else { w = sb.offsetWidth; localStorage.setItem("cur_sbW", w); applyW(w, true); }
+  btn?.addEventListener("click", () => {
+    if (collapsed) apply(w, false);
+    else { w = sb.offsetWidth; localStorage.setItem("cur_sbW", w); apply(w, true); }
   });
 })();
 </script>
-
 </body>
 </html>

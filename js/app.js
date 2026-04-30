@@ -75,8 +75,7 @@ const sem2Teacher = document.getElementById("templateSem2Teacher");
 const levelPicker = document.getElementById("templateSchoolLevelPicker");
 
 // ── DOM: Main views ───────────────────────────────────────────────
-const navBoardMiddleBtn = document.getElementById("navBoardMiddleBtn");
-const navBoardHighBtn   = document.getElementById("navBoardHighBtn");
+const navBoardBtn = document.getElementById("navBoardBtn");
 const gradeBoard    = document.getElementById("gradeBoard");
 const boardView     = document.getElementById("boardView");
 const groupMgrView  = document.getElementById("groupManagerView");
@@ -123,8 +122,7 @@ const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
 const navButtons = {
-  boardMiddle: navBoardMiddleBtn,
-  boardHigh:   navBoardHighBtn,
+  board: navBoardBtn,
   students: document.getElementById("navStudentsBtn"),
   teachers: document.getElementById("navTeachersBtn"),
   rosters:  document.getElementById("navRostersBtn"),
@@ -151,7 +149,7 @@ function setView(view) {
   // Update nav button states
   Object.values(navButtons).forEach(btn => btn?.classList.remove("active"));
   if (view === "board") {
-    (activeTab === "tab7to9" ? navBoardMiddleBtn : navBoardHighBtn)?.classList.add("active");
+    navBoardBtn?.classList.add("active");
   } else {
     navButtons[view]?.classList.add("active");
   }
@@ -235,6 +233,7 @@ function render(domain) {
 function renderTabBtns() {
   tab7to9Btn?.classList.toggle("active", activeTab === "tab7to9");
   tab10to12Btn?.classList.toggle("active", activeTab === "tab10to12");
+  navBoardBtn?.classList.toggle("active", activeMainView === "board");
 }
 
 // ================================================================

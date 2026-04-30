@@ -10,111 +10,126 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f1f5f9;color:#1e293b;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
 
 /* ── Topbar ── */
-.tt-topbar{display:flex;align-items:center;gap:8px;padding:0 14px;height:44px;background:#1e3a5f;color:white;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+.tt-topbar{display:flex;align-items:center;gap:12px;padding:0 16px;height:48px;background:#1e3a5f;color:white;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,.25)}
 .tt-back{color:#93c5fd;text-decoration:none;font-size:12px;white-space:nowrap}
 .tt-back:hover{color:white}
-.tt-topbar h1{font-size:14px;font-weight:700;color:white;white-space:nowrap}
-.tt-topbar-right{display:flex;align-items:center;gap:6px;margin-left:auto}
+.tt-topbar h1{font-size:15px;font-weight:700;color:white;white-space:nowrap}
+.tt-topbar-right{display:flex;align-items:center;gap:8px;margin-left:auto}
 .tt-auth-status{font-size:11px;color:#93c5fd;white-space:nowrap}
-/* Unified topbar button base */
-.tt-topbar button{padding:4px 10px;border:1px solid rgba(255,255,255,.3);border-radius:6px;background:rgba(255,255,255,.1);color:white;cursor:pointer;font-size:12px;font-weight:600;transition:background .1s}
-.tt-topbar button:hover{background:rgba(255,255,255,.22)}
-.tt-save-btn{background:#2563eb!important;border-color:#2563eb!important}
-.tt-save-btn:hover{background:#1d4ed8!important}
-.tt-auto-btn{background:#7c3aed!important;border-color:#7c3aed!important}
-.tt-auto-btn:hover{background:#6d28d9!important}
-.tt-clear-btn{background:rgba(220,38,38,.2)!important;border-color:rgba(252,165,165,.5)!important}
-.tt-clear-btn:hover{background:rgba(220,38,38,.35)!important}
+.tt-topbar button{padding:4px 10px;border:1px solid rgba(255,255,255,.3);border-radius:6px;background:rgba(255,255,255,.1);color:white;cursor:pointer;font-size:12px}
+.tt-topbar button:hover{background:rgba(255,255,255,.2)}
+.tt-topbar .tt-save-btn{background:#2563eb;border-color:#2563eb}
+.tt-topbar .tt-save-btn:hover{background:#1d4ed8}
 
 /* ── Toolbar ── */
-.tt-toolbar{display:flex;align-items:center;gap:8px;padding:5px 14px;background:white;border-bottom:1px solid #e2e8f0;flex-shrink:0}
+.tt-toolbar{display:flex;align-items:center;gap:8px;padding:6px 16px;background:white;border-bottom:1px solid #e2e8f0;flex-shrink:0;flex-wrap:wrap}
 .tt-view-btns{display:flex;gap:0}
-.tt-view-btn{padding:4px 12px;border:1px solid #d1d5db;background:white;cursor:pointer;font-size:12px;font-weight:600;color:#6b7280;transition:all .1s}
+.tt-view-btn{padding:5px 12px;border:1px solid #d1d5db;background:white;cursor:pointer;font-size:12px;font-weight:600;color:#6b7280}
 .tt-view-btn:first-child{border-radius:6px 0 0 6px}
 .tt-view-btn:last-child{border-radius:0 6px 6px 0}
 .tt-view-btn.active{background:#2563eb;color:white;border-color:#2563eb}
 .tt-toolbar select,.tt-toolbar input[type="number"]{padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;height:30px}
-.tt-conflict-bar{padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600}
+.tt-conflict-bar{padding:4px 12px;border-radius:6px;font-size:12px;font-weight:600;margin-left:auto}
 .tt-conflict-bar-ok{background:#dcfce7;color:#166534}
 .tt-conflict-bar-warn{background:#fef3c7;color:#92400e}
-.tt-toolbar-right{display:flex;gap:6px;margin-left:auto;align-items:center}
-.tt-panel-toggle{padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;background:#f8fafc;cursor:pointer;font-size:11px;color:#374151;font-weight:600}
-.tt-panel-toggle:hover{background:#eff6ff;color:#2563eb;border-color:#93c5fd}
 
 /* ── Main layout ── */
-.tt-body{display:flex;flex:1;overflow:hidden;position:relative}
+.tt-body{display:flex;flex:1;overflow:hidden;gap:0}
 
-/* ── Subject panel (resizable) ── */
-.tt-panel{width:190px;min-width:0;background:white;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;position:relative;transition:width 0.15s}
-.tt-panel.tt-panel-collapsed{width:0!important;border-right:none}
-.tt-panel-resizer{position:absolute;right:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10;background:transparent;touch-action:none}
-.tt-panel-resizer::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:#d1d5db;transition:background .1s}
-.tt-panel-resizer:hover::after{background:#2563eb}
-.tt-panel-header-fixed{padding:7px 9px 5px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0;min-width:0}
+/* ── Subject panel ── */
+.tt-panel{width:200px;min-width:160px;background:white;border-right:1px solid #e2e8f0;display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+.tt-panel-header-fixed{padding:8px 10px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc;flex-shrink:0}
 .tt-panel-header{display:flex;justify-content:space-between;align-items:center}
 .tt-panel-title{font-size:12px;font-weight:700;color:#1e3a5f}
 .tt-panel-grade{font-size:11px;color:#2563eb;font-weight:600}
-.tt-panel-scroll{flex:1;overflow-y:auto;padding:5px}
-.tt-subject-card{border-left:3px solid #2563eb;border-radius:6px;padding:5px 7px;margin-bottom:4px;cursor:grab;user-select:none;border:1px solid #e2e8f0;border-left-width:3px}
-.tt-subject-card:hover{box-shadow:0 2px 6px rgba(0,0,0,.1)}
+.tt-panel-scroll{flex:1;overflow-y:auto;padding:6px}
+.tt-subject-card{border-left:3px solid #2563eb;border-radius:6px;padding:6px 8px;margin-bottom:5px;cursor:grab;user-select:none;transition:box-shadow .1s;border:1px solid #e2e8f0;border-left-width:3px}
+.tt-subject-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.1)}
 .tt-subject-card.tt-dragging{opacity:.4}
-.tt-sc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:3px}
-.tt-sc-name{font-size:11px;font-weight:600;line-height:1.3;flex:1}
-.tt-sc-badge{font-size:10px;font-weight:700;padding:1px 5px;border-radius:999px;white-space:nowrap}
-.tt-sc-bot{font-size:10px;color:#6b7280;margin-top:2px;display:flex;justify-content:space-between}
-.tt-sc-sec{background:#ede9fe;color:#5b21b6;padding:1px 4px;border-radius:999px;font-size:9px;font-weight:700}
+.tt-sc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:4px}
+.tt-sc-name{font-size:12px;font-weight:600;line-height:1.3;flex:1}
+.tt-sc-badge{font-size:10px;font-weight:700;padding:1px 5px;border-radius:999px;white-space:nowrap;flex-shrink:0}
+.tt-sc-bot{font-size:10px;color:#6b7280;margin-top:2px;display:flex;justify-content:space-between;align-items:center}
+.tt-sc-sec{background:#ede9fe;color:#5b21b6;padding:1px 5px;border-radius:999px;font-size:9px;font-weight:700}
 
 /* ── Grid area ── */
-.tt-grid-wrap{flex:1;overflow:auto;padding:10px}
-
-/* ── Grade / teacher / room grid ── */
+.tt-grid-wrap{flex:1;overflow:auto;padding:12px}
 .tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
-.tt-corner{width:76px;background:#f8fafc;border:1px solid #e2e8f0;padding:4px;vertical-align:top}
-.tt-corner-inner{display:flex;flex-direction:column;gap:4px}
-.tt-period-count-wrap{font-size:10px;display:flex;flex-direction:column;gap:3px}
-.tt-period-count-wrap input{width:38px;padding:2px 3px;border:1px solid #d1d5db;border-radius:3px}
-.tt-period-count-wrap button{padding:2px 5px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;border-radius:3px;cursor:pointer;font-size:10px}
-.tt-lunch-wrap{display:flex;align-items:center;gap:3px;font-size:10px;flex-wrap:wrap}
+.tt-corner{width:90px;background:#f8fafc;border:1px solid #e2e8f0;padding:5px;vertical-align:top}
+.tt-corner-inner{display:flex;flex-direction:column;gap:5px}
+.tt-lunch-wrap{display:flex;align-items:center;gap:4px;font-size:10px}
 .tt-lunch-wrap label{display:flex;align-items:center;gap:2px;cursor:pointer;white-space:nowrap}
-.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:7px 4px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 76px)/5)}
-.tt-period-label{background:#f8fafc;border:1px solid #e2e8f0;text-align:center;vertical-align:middle;padding:3px}
-.tt-period-label input{width:100%;border:none;background:transparent;text-align:center;font-size:10px;font-weight:600;color:#374151;padding:1px}
-.tt-lunch-row .tt-period-label{text-align:center;font-size:13px}
-.tt-lunch-cell{background:#fef9c3;color:#92400e;text-align:center;font-size:11px;font-weight:600;padding:3px;border:1px solid #fde68a}
-.tt-cell{border:1px solid #e2e8f0;vertical-align:top;padding:2px;min-height:54px;transition:background .1s;display:flex;flex-direction:column;gap:2px}
+.tt-lunch-row .tt-period-label{text-align:center;font-size:14px}
+.tt-lunch-cell{background:#fef9c3;color:#92400e;text-align:center;font-size:11px;font-weight:600;padding:4px;border:1px solid #fde68a}
+/* All-grades view */
+.tt-all-wrap{overflow:auto;padding:8px}
+.tt-all-table{border-collapse:collapse;font-size:11px;white-space:nowrap}
+.tt-all-th-grade{background:#1e3a5f;color:white;text-align:center;padding:5px 8px;font-size:12px;font-weight:700;border:1px solid #2d4f7c;min-width:110px}
+.tt-all-th-day{background:#2d4f7c;color:white;text-align:center;padding:3px 6px;border:1px solid #3d5f8c;font-size:11px;font-weight:600}
+.tt-all-period{background:#f8fafc;border:1px solid #e2e8f0;padding:3px 6px;font-size:10px;font-weight:700;color:#374151;text-align:center;width:52px;position:sticky;left:0;z-index:2}
+.tt-all-cell{border:1px solid #e2e8f0;padding:2px;vertical-align:top;min-width:100px;max-width:130px;min-height:44px;background:white}
+.tt-all-cell:hover{background:#f0f9ff}
+.tt-all-lunch td{background:#fef9c3!important;color:#92400e;text-align:center;font-size:10px;font-weight:700;padding:3px;border:1px solid #fde68a}
+.tt-all-entry{border-radius:3px;padding:2px 4px;margin:1px 0;font-size:10px;font-weight:600;line-height:1.3;cursor:default;border-left:3px solid currentColor}
+.tt-all-entry-teacher{font-size:9px;color:#6b7280;font-weight:400;margin-top:1px}
+.tt-all-conflict{outline:1.5px solid #ef4444}
+.tt-all-grade-sep{background:#f1f5f9!important}
+.tt-clear-btn{padding:4px 10px;border:1px solid rgba(252,165,165,.5);border-radius:6px;background:rgba(220,38,38,.15);color:white;cursor:pointer;font-size:12px;font-weight:600}
+.tt-clear-btn:hover{background:rgba(220,38,38,.3)}
+.tt-auto-btn{padding:4px 10px;border:1px solid #a78bfa;border-radius:6px;background:#7c3aed;color:white;cursor:pointer;font-size:12px;font-weight:600}
+.tt-auto-btn:hover{background:#6d28d9}
+/* Sidebar resizer */
+.tt-panel-resizer{position:absolute;right:-4px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10}
+.tt-panel-resizer::after{content:"";position:absolute;left:3px;top:0;bottom:0;width:2px;background:#d1d5db;border-radius:1px;transition:background .1s}
+.tt-panel-resizer:hover::after{background:#2563eb}
+.tt-panel-collapsed{width:0!important;min-width:0!important;overflow:hidden}
+/* Bottom resizer */
+.tt-bottom-resizer{position:absolute;top:-4px;left:0;right:0;height:8px;cursor:row-resize;z-index:10}
+.tt-bottom-resizer::after{content:"";position:absolute;top:3px;left:0;right:0;height:2px;background:#d1d5db;transition:background .1s}
+.tt-bottom-resizer:hover::after{background:#2563eb}
+.tt-bottom.tt-bottom-collapsed{height:0!important;overflow:hidden}
+/* Group link (also needed here for group manager in curriculum) */
+.group-link-wrap{display:flex;align-items:center;gap:4px;margin-top:4px;flex-wrap:wrap}
+.group-link-label{font-size:10px;color:#6b7280;white-space:nowrap;font-weight:600}
+.group-link-select{font-size:10px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;background:#f0fdf4;color:#166534;min-width:80px}
+.tt-con-hint{font-size:11px;color:#6b7280;margin-bottom:8px;padding:4px 6px;background:#f8fafc;border-radius:4px}
+.tt-toolbar-right{display:flex;gap:6px;align-items:center}
+.tt-panel-toggle{padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;background:#f8fafc;cursor:pointer;font-size:11px;color:#374151;font-weight:600}
+.tt-panel-toggle:hover{background:#eff6ff;color:#2563eb;border-color:#93c5fd}
+.tt-con-default{font-size:10px;font-weight:400;color:#9ca3af}
+.tt-period-count-wrap{display:flex;flex-direction:column;gap:4px;font-size:11px}
+.tt-period-count-wrap input{width:40px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px}
+.tt-period-count-wrap button{padding:2px 6px;border:1px solid #2563eb;background:#eff6ff;color:#2563eb;border-radius:4px;cursor:pointer;font-size:11px}
+.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:4px 4px;font-size:12px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 90px)/5)}
+.tt-period-label{background:#f8fafc;border:1px solid #e2e8f0;text-align:center;vertical-align:middle;padding:4px}
+.tt-period-label input{width:100%;border:none;background:transparent;text-align:center;font-size:11px;font-weight:600;color:#374151;padding:2px}
+.tt-cell{border:1px solid #e2e8f0;vertical-align:top;padding:2px;min-height:60px;transition:background .1s;position:relative;display:flex;flex-direction:column;gap:2px}
 .tt-cell.tt-dragover{background:#dbeafe;outline:2px dashed #2563eb}
-.tt-cell-ph{flex:1;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:16px}
+.tt-cell-ph{height:56px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:18px}
 .tt-cell-ph::before{content:"+"}
+.group-link-wrap{display:flex;align-items:center;gap:4px;margin-top:4px;flex-wrap:wrap}
+.group-link-label{font-size:10px;color:#6b7280;white-space:nowrap;font-weight:600}
+.group-link-select{font-size:10px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;background:#f0fdf4;color:#166534;min-width:80px}
 
 /* ── Entry card ── */
-.tt-entry-card{border:1px solid #e2e8f0;border-radius:4px;padding:3px 4px;position:relative;font-size:11px;border-left-width:3px}
+.tt-entry-card{border:1px solid #e2e8f0;border-radius:5px;padding:4px 5px;margin:2px 0;position:relative;font-size:11px}
 .tt-entry-card.tt-entry-conflict{outline:2px solid #ef4444;animation:tt-pulse .8s ease-in-out infinite alternate}
 @keyframes tt-pulse{from{outline-color:#ef4444}to{outline-color:#fca5a5}}
-.tt-entry-grade{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,.12);margin-bottom:2px;white-space:nowrap}
-.tt-entry-title{font-weight:700;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 16px)}
+.tt-entry-title{font-weight:700;font-size:11px;line-height:1.3;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:calc(100% - 18px)}
 .tt-entry-row{display:flex;gap:2px;margin-top:2px}
 .tt-entry-select{flex:1;min-width:0;font-size:10px;padding:1px 2px;border:1px solid rgba(0,0,0,.15);border-radius:3px;background:rgba(255,255,255,.7)}
 .tt-entry-remove{position:absolute;top:2px;right:2px;width:14px;height:14px;border:none;background:rgba(0,0,0,.1);border-radius:3px;cursor:pointer;font-size:10px;line-height:1;color:#374151;padding:0}
 .tt-entry-remove:hover{background:rgba(220,38,38,.2);color:#dc2626}
-/* Compact mode (all-grades, teacher views) */
-.tt-entry-card.tt-compact{padding:2px 3px;font-size:10px}
-.tt-entry-card.tt-compact .tt-entry-title{font-size:10px}
-.tt-entry-card.tt-compact .tt-entry-grade{font-size:8px;padding:0 4px}
 
-/* ── Bottom panel (resizable) ── */
-.tt-bottom{flex-shrink:0;border-top:1px solid #e2e8f0;background:white;height:220px;min-height:0;overflow:hidden;position:relative;transition:height 0.15s}
-.tt-bottom.tt-bottom-collapsed{height:0!important}
-.tt-bottom-resizer{position:absolute;top:-4px;left:0;right:0;height:8px;cursor:row-resize;z-index:10;background:transparent;touch-action:none}
-.tt-bottom-resizer::after{content:"";position:absolute;top:3px;left:0;right:0;height:2px;background:#d1d5db;transition:background .1s}
-.tt-bottom-resizer:hover::after{background:#2563eb}
-.tt-bottom-scroll{height:100%;overflow-y:auto}
-.tt-bottom-tab{display:flex;border-bottom:1px solid #e2e8f0;background:#f8fafc;position:sticky;top:0;z-index:1}
-.tt-bottom-tab-btn{padding:7px 14px;border:none;background:transparent;cursor:pointer;font-size:12px;font-weight:600;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-1px}
+/* ── Bottom panels ── */
+.tt-bottom{flex-shrink:0;border-top:1px solid #e2e8f0;background:white;height:220px;overflow:hidden;position:relative}
+.tt-bottom-tab{display:flex;border-bottom:1px solid #e2e8f0}
+.tt-bottom-tab-btn{padding:8px 16px;border:none;background:transparent;cursor:pointer;font-size:12px;font-weight:600;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-1px}
 .tt-bottom-tab-btn.active{color:#2563eb;border-bottom-color:#2563eb}
-.tt-bottom-content{padding:10px}
-.tt-empty{padding:12px;text-align:center;color:#9ca3af;font-size:12px}
+.tt-bottom-content{padding:12px}
+.tt-empty{padding:16px;text-align:center;color:#9ca3af;font-size:12px}
 
-/* ── Constraint table ── */
+/* ── Constraints table ── */
 .tt-constraint-table{width:100%;border-collapse:collapse;font-size:12px}
 .tt-constraint-table th{background:#f8fafc;padding:5px 10px;border:1px solid #e2e8f0;font-weight:600;text-align:left;white-space:nowrap}
 .tt-constraint-table td{padding:4px 10px;border:1px solid #f1f5f9;vertical-align:middle}
@@ -122,15 +137,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-con-name{font-weight:600;color:#1e3a5f;white-space:nowrap}
 .tt-con-total{text-align:center;font-weight:700;color:#374151}
 .tt-constraint-table tr:hover td{background:#f8fafc}
-.tt-con-hint{font-size:11px;color:#6b7280;margin-bottom:8px;padding:4px 6px;background:#f8fafc;border-radius:4px}
-.tt-con-default{font-size:10px;font-weight:400;color:#9ca3af}
 
 /* ── Rooms table ── */
 .rooms-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
 .rooms-header h3{font-size:13px;font-weight:700;color:#1e3a5f}
 .rooms-table-wrap{overflow-x:auto}
 .rooms-table{width:100%;border-collapse:collapse;font-size:12px}
-.rooms-table th{background:#f8fafc;padding:5px 8px;border:1px solid #e2e8f0;font-weight:600;white-space:nowrap}
+.rooms-table th{background:#f8fafc;padding:5px 8px;border:1px solid #e2e8f0;font-weight:600;white-space:nowrap;text-align:left}
 .rooms-table td{padding:4px 8px;border:1px solid #f1f5f9}
 .rooms-table input,.rooms-table select{width:100%;padding:3px 5px;border:1px solid #d1d5db;border-radius:4px;font-size:11px}
 .rooms-table input[type="number"]{width:60px}
@@ -138,16 +151,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .col-del{width:32px;text-align:center}
 .stu-del-btn{width:22px;height:22px;border:none;background:#fee2e2;color:#dc2626;border-radius:4px;cursor:pointer;font-size:14px;line-height:1}
 .stu-del-btn:hover{background:#fecaca}
-
-/* ── Group link ── */
-.group-link-wrap{display:flex;align-items:center;gap:4px;margin-top:4px;flex-wrap:wrap}
-.group-link-label{font-size:10px;color:#6b7280;white-space:nowrap;font-weight:600}
-.group-link-select{font-size:10px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;background:#f0fdf4;color:#166534;min-width:80px;cursor:pointer}
-
-/* ── Group type select ── */
-.group-type-wrap{margin-top:3px}
-.group-type-select{width:100%;font-size:11px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;background:#f9fafb;cursor:pointer}
-.group-type-select:disabled{opacity:.5}
 
 /* ── Utilities ── */
 .hidden{display:none!important}
@@ -161,15 +164,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- ── Topbar ── -->
 <header class="tt-topbar">
-  <a href="index.html" class="tt-back">← HIS</a>
+  <a href="index.html" class="tt-back">← HIS Curriculum</a>
   <h1>시간표 편집</h1>
   <div class="tt-topbar-right">
     <span class="tt-auth-status" id="ttAuthStatus">로딩 중...</span>
     <button id="ttLoginBtn">Google 로그인</button>
     <button id="ttLogoutBtn" class="hidden">로그아웃</button>
-    <button id="ttExportBtn">📥 엑셀</button>
-    <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
-    <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
+    <button id="ttExportBtn">📥 엑셀 내보내기</button>
     <button id="ttSaveBtn" class="tt-save-btn">💾 저장</button>
   </div>
 </header>
@@ -177,24 +178,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- ── Toolbar ── -->
 <div class="tt-toolbar">
   <div class="tt-view-btns">
-    <button class="tt-view-btn active" data-view="all"     type="button">🗂 전체</button>
-    <button class="tt-view-btn"        data-view="teacher" type="button">👩‍🏫 교사별</button>
-    <button class="tt-view-btn"        data-view="room"    type="button">🏫 교실별</button>
-    <button class="tt-view-btn"        data-view="grade"   type="button">📋 학년별</button>
+    <button class="tt-view-btn active" data-view="grade" type="button">📋 학년별</button>
+    <button class="tt-view-btn" data-view="all" type="button">🗂 전체 보기</button>
+    <button class="tt-view-btn" data-view="teacher" type="button">👩‍🏫 교사별</button>
+    <button class="tt-view-btn" data-view="room" type="button">🏫 교실별</button>
   </div>
-  <select id="ttGradeSelect"   class="hidden"></select>
+  <select id="ttGradeSelect"></select>
   <select id="ttTeacherSelect" class="hidden"></select>
-  <select id="ttRoomSelect"    class="hidden"></select>
-  <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
+  <select id="ttRoomSelect" class="hidden"></select>
   <div class="tt-toolbar-right">
-    <button class="tt-panel-toggle" id="ttToggleSidebar" title="사이드바 보이기/숨기기">◀ 패널</button>
-    <button class="tt-panel-toggle" id="ttToggleBottom"  title="하단 패널 보이기/숨기기">▼ 하단</button>
+    <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
+    <button id="ttToggleSidebar" class="tt-panel-toggle" type="button" title="사이드바 보이기/숨기기">◀ 패널</button>
+    <button id="ttToggleBottom"  class="tt-panel-toggle" type="button" title="하단 보이기/숨기기">▼ 하단</button>
   </div>
 </div>
 
 <!-- ── Body ── -->
 <div class="tt-body">
-  <aside class="tt-panel" id="ttPanelWrap">
+  <aside class="tt-panel" id="ttPanelWrap" style="position:relative">
     <div class="tt-panel-resizer" id="ttPanelResizer"></div>
     <div id="ttPanelHeader" class="tt-panel-header-fixed"></div>
     <div id="ttPanel" class="tt-panel-scroll"></div>
@@ -204,24 +205,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<!-- ── Bottom panel (resizable) ── -->
+<!-- ── Bottom panels (resizable) ── -->
 <div class="tt-bottom" id="ttBottom">
   <div class="tt-bottom-resizer" id="ttBottomResizer"></div>
-  <div class="tt-bottom-scroll">
-    <div class="tt-bottom-tab">
-      <button class="tt-bottom-tab-btn active" data-tab="constraints">👩‍🏫 교사 제약</button>
-      <button class="tt-bottom-tab-btn"         data-tab="rooms">🏫 교실 관리</button>
-    </div>
-    <div class="tt-bottom-content">
-      <div id="ttConstraintsContent"></div>
-      <div id="ttRoomsContent" class="hidden"></div>
-    </div>
+  <div class="tt-bottom-inner" style="height:100%;overflow-y:auto">
+  <div class="tt-bottom-tab">
+    <button class="tt-bottom-tab-btn active" data-tab="constraints" type="button">👩‍🏫 교사 제약 조건</button>
+    <button class="tt-bottom-tab-btn" data-tab="rooms" type="button">🏫 교실 관리</button>
+  </div>
+  <div class="tt-bottom-content">
+    <div id="ttConstraintsContent"></div>
+    <div id="ttRoomsContent" class="hidden"></div>
+  </div>
   </div>
 </div>
 
 <script type="module" src="js/timetable.js"></script>
 <script>
-// ── Bottom tabs ────────────────────────────────────────────────────
+// Bottom tab switching
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.remove("active"));
@@ -232,57 +233,61 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   });
 });
 
-// ── Sidebar resize & toggle ────────────────────────────────────────
-const panelWrap  = document.getElementById("ttPanelWrap");
-const panelResz  = document.getElementById("ttPanelResizer");
-const btnSidebar = document.getElementById("ttToggleSidebar");
-let sbW = parseInt(localStorage.getItem("tt_sbW") || "190");
-let sbCollapsed = false;
+// ── Sidebar resize & toggle ─────────────────────────────────────────
+(function() {
+  const panel = document.getElementById("ttPanelWrap");
+  const resizer = document.getElementById("ttPanelResizer");
+  const btn = document.getElementById("ttToggleSidebar");
+  let w = parseInt(localStorage.getItem("tt_sbW") || "190");
+  let collapsed = false;
 
-function applySidebar(w, collapsed) {
-  sbCollapsed = collapsed;
-  if (collapsed) { panelWrap.classList.add("tt-panel-collapsed"); btnSidebar.textContent = "▶ 패널"; }
-  else { panelWrap.classList.remove("tt-panel-collapsed"); panelWrap.style.width = w + "px"; btnSidebar.textContent = "◀ 패널"; }
-}
-applySidebar(sbW, false);
+  function apply(newW, col) {
+    collapsed = col;
+    if (col) { panel.classList.add("tt-panel-collapsed"); btn.textContent = "▶ 패널"; }
+    else { panel.classList.remove("tt-panel-collapsed"); panel.style.width = newW + "px"; btn.textContent = "◀ 패널"; }
+  }
+  apply(w, false);
 
-panelResz.addEventListener("mousedown", e => {
-  e.preventDefault();
-  const x0 = e.clientX, w0 = panelWrap.offsetWidth;
-  const move = ev => { sbW = Math.max(120, Math.min(420, w0 + ev.clientX - x0)); applySidebar(sbW, false); };
-  const up   = () => { localStorage.setItem("tt_sbW", sbW); document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
-  document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
-});
-btnSidebar.addEventListener("click", () => {
-  if (sbCollapsed) applySidebar(sbW, false);
-  else { sbW = panelWrap.offsetWidth; localStorage.setItem("tt_sbW", sbW); applySidebar(sbW, true); }
-});
+  resizer.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = panel.offsetWidth;
+    const mv = ev => { w = Math.max(120, Math.min(420, w0 + ev.clientX - x0)); apply(w, false); };
+    const up = () => { localStorage.setItem("tt_sbW", w); document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
+  });
+  btn?.addEventListener("click", () => {
+    if (collapsed) apply(w, false);
+    else { w = panel.offsetWidth; localStorage.setItem("tt_sbW", w); apply(w, true); }
+  });
+})();
 
-// ── Bottom resize & toggle ─────────────────────────────────────────
-const bottom   = document.getElementById("ttBottom");
-const botResz  = document.getElementById("ttBottomResizer");
-const btnBottom= document.getElementById("ttToggleBottom");
-let botH = parseInt(localStorage.getItem("tt_botH") || "220");
-let botCollapsed = false;
+// ── Bottom resize & toggle ──────────────────────────────────────────
+(function() {
+  const bottom = document.getElementById("ttBottom");
+  const resizer = document.getElementById("ttBottomResizer");
+  const btn = document.getElementById("ttToggleBottom");
+  let h = parseInt(localStorage.getItem("tt_botH") || "220");
+  let collapsed = false;
 
-function applyBottom(h, collapsed) {
-  botCollapsed = collapsed;
-  if (collapsed) { bottom.classList.add("tt-bottom-collapsed"); btnBottom.textContent = "▲ 하단"; }
-  else { bottom.classList.remove("tt-bottom-collapsed"); bottom.style.height = h + "px"; btnBottom.textContent = "▼ 하단"; }
-}
-applyBottom(botH, false);
+  function apply(newH, col) {
+    collapsed = col;
+    if (col) { bottom.classList.add("tt-bottom-collapsed"); btn.textContent = "▲ 하단"; bottom.style.height = "0"; }
+    else { bottom.classList.remove("tt-bottom-collapsed"); bottom.style.height = newH + "px"; btn.textContent = "▼ 하단"; }
+  }
+  apply(h, false);
 
-botResz.addEventListener("mousedown", e => {
-  e.preventDefault();
-  const y0 = e.clientY, h0 = bottom.offsetHeight;
-  const move = ev => { botH = Math.max(60, Math.min(600, h0 - (ev.clientY - y0))); applyBottom(botH, false); };
-  const up   = () => { localStorage.setItem("tt_botH", botH); document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
-  document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
-});
-btnBottom.addEventListener("click", () => {
-  if (botCollapsed) applyBottom(botH, false);
-  else { botH = bottom.offsetHeight; localStorage.setItem("tt_botH", botH); applyBottom(botH, true); }
-});
+  resizer.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const y0 = e.clientY, h0 = bottom.offsetHeight;
+    const mv = ev => { h = Math.max(60, Math.min(600, h0 - (ev.clientY - y0))); apply(h, false); };
+    const up = () => { localStorage.setItem("tt_botH", h); document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
+  });
+  btn?.addEventListener("click", () => {
+    if (collapsed) apply(h, false);
+    else { h = bottom.offsetHeight; localStorage.setItem("tt_botH", h); apply(h, true); }
+  });
+})();
 </script>
 </body>
 </html>

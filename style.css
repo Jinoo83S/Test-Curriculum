@@ -68,27 +68,33 @@ button {
   overflow: hidden;
 }
 
+/* ── Curriculum sidebar resize ──────────────────────────────────── */
 .sidebar-resizer {
-  width: 6px; min-width: 6px; flex-shrink: 0; cursor: col-resize; background: transparent; position: relative; margin: 0 2px;
+  width: 6px; min-width: 6px; cursor: col-resize; background: transparent;
+  flex-shrink: 0; position: relative;
 }
-.sidebar-resizer::after { content:""; position:absolute; left:2px; top:0; bottom:0; width:2px; background:#d1d5db; border-radius:1px; transition: background .1s; }
-.sidebar-resizer:hover::after { background:#2563eb; }
+.sidebar-resizer::after { content: ""; position: absolute; left: 2px; top: 0; bottom: 0; width: 2px; background: #d1d5db; border-radius: 1px; transition: background .1s; }
+.sidebar-resizer:hover::after { background: #2563eb; }
 
-/* Curriculum sidebar toggle btn */
-#curSidebarToggle {
-  position: fixed; top: 54px; left: 10px; z-index: 200;
-  width: 22px; height: 40px;
-  border: 1px solid #d1d5db; border-radius: 0 4px 4px 0;
-  background: white; cursor: pointer; font-size: 10px; color: #6b7280;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 2px 0 4px rgba(0,0,0,.07); padding: 0;
+/* Sidebar toggle button — inline in header row (not fixed overlay) */
+.sidebar-toggle-inline {
+  padding: 2px 6px; border: 1px solid #d1d5db; border-radius: 4px;
+  background: #f8fafc; cursor: pointer; font-size: 10px; color: #374151;
+  flex-shrink: 0; font-weight: 600;
 }
-#curSidebarToggle:hover { background: #eff6ff; color: #2563eb; }
+.sidebar-toggle-inline:hover { background: #eff6ff; color: #2563eb; border-color: #93c5fd; }
+
+.sidebar-collapsed { width: 0!important; min-width: 0!important; overflow: hidden; }
+
+/* ── Group link / Group type ─────────────────────────────────────── */
+.group-link-wrap { display: flex; align-items: center; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.group-link-label { font-size: 10px; color: #6b7280; white-space: nowrap; font-weight: 600; }
+.group-link-select { font-size: 10px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px; background: #f0fdf4; color: #166534; min-width: 80px; cursor: pointer; }
+.group-type-wrap { margin-top: 3px; }
+.group-type-select { width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; }
 
 .sidebar,
-.main-panel {
-  min-width: 0;
-}
+.main-panel { min-width: 0; }
 
 .sidebar {
   overflow-y: auto;
@@ -99,9 +105,7 @@ button {
   width: 280px;
   min-width: 120px;
   flex-shrink: 0;
-  transition: width 0.15s, min-width 0.15s;
 }
-.sidebar.sidebar-collapsed { width: 0!important; min-width: 0!important; overflow: hidden; }
 
 .panel {
   background: white;

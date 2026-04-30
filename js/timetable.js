@@ -19,7 +19,7 @@ const ttConfig  = () => ttDomain().config;
 const constraints = () => ttDomain().teacherConstraints;
 
 // ── Module state ──────────────────────────────────────────────────
-let currentView    = "all";
+let currentView    = "grade";
 let currentGrade   = "7학년";
 let currentTeacher = "";
 let currentRoom    = "";
@@ -150,12 +150,10 @@ function renderGradeGrid(wrap) {
 function renderTeacherGrid(wrap) {
   const days = ["월", "화", "수", "목", "금"];
   const periods = ttConfig().periodLabels;
-  buildGrid(periods, days, wrap, (day, period) => {
-    return entries().filter(e => {
-      const names = splitTeacherNames(e.teacherName);
-      return names.includes(currentTeacher) && e.day === day && e.period === period;
-    });
-  }, { showGrade: true, compact: true });
+  buildGrid(periods, days, wrap, (day, period) =>
+    entries().filter(e => splitTeacherNames(e.teacherName).includes(currentTeacher) && e.day === day && e.period === period),
+    { showGrade: true, compact: true }
+  );
 }
 
 function renderRoomGrid(wrap) {
@@ -167,87 +165,79 @@ function renderRoomGrid(wrap) {
 }
 
 function renderAllGradesGrid(wrap) {
-  const days       = ["월","화","수","목","금"];
-  const periods    = ttConfig().periodLabels;
+  // Layout: rows=periods, cols=5 days. Each cell = ALL grades stacked with grade chip.
+  const days = ["월","화","수","목","금"];
+  const periods = ttConfig().periodLabels;
   const lunchAfter = ttConfig().lunchAfterPeriod;
   const showLunch  = ttConfig().showLunch;
 
-  const outerWrap = document.createElement("div"); outerWrap.style.cssText = "width:100%;overflow:auto";
-  const table = document.createElement("table"); table.style.cssText = "border-collapse:collapse;width:100%;table-layout:fixed";
+  const table = document.createElement("table");
+  table.style.cssText = "border-collapse:collapse;width:100%;table-layout:fixed";
 
-  // Header: corner + 5 days
   const thead = document.createElement("thead"); const hr = document.createElement("tr");
   const corner = document.createElement("th");
-  corner.style.cssText = "width:76px;background:#1e3a5f;color:white;border:1px solid #2d4f7c;padding:4px;vertical-align:top;font-size:10px";
-  corner.innerHTML = `<div style="display:flex;flex-direction:column;gap:3px">
-    <div>교시: <input id="ttAllPcInp" type="number" min="1" max="12" value="${ttConfig().periodCount}"
-      style="width:32px;border:1px solid #6b7280;border-radius:3px;padding:1px 2px;background:#2d4f7c;color:white;font-size:10px">
-    <button id="ttAllApply" type="button"
-      style="padding:1px 5px;border:1px solid #93c5fd;border-radius:3px;background:rgba(255,255,255,.15);color:white;cursor:pointer;font-size:10px">적용</button></div>
-    <label style="display:flex;align-items:center;gap:3px;font-size:10px;cursor:pointer">
-      <input id="ttAllLunch" type="checkbox" ${ttConfig().showLunch ? "checked" : ""}>점심
-      <select id="ttAllLunchAfter" style="font-size:9px;border:1px solid #6b7280;border-radius:3px;background:#2d4f7c;color:white;padding:1px">
+  corner.style.cssText = "width:62px;background:#1e3a5f;color:white;border:1px solid #2d4f7c;padding:3px;vertical-align:top;font-size:10px";
+  corner.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px">
+    <div style="display:flex;align-items:center;gap:2px;white-space:nowrap">교시:<input id="ttAllPcInp" type="number" min="1" max="12" value="${ttConfig().periodCount}"
+      style="width:28px;border:1px solid #4b6fa5;border-radius:2px;padding:1px 2px;background:#2d4f7c;color:white;font-size:9px">
+    <button id="ttAllApply" type="button" style="padding:1px 3px;border:1px solid #93c5fd;border-radius:2px;background:rgba(255,255,255,.15);color:white;cursor:pointer;font-size:9px">적용</button></div>
+    <label style="display:flex;align-items:center;gap:2px;font-size:9px;cursor:pointer;white-space:nowrap">
+      <input id="ttAllLunch" type="checkbox" ${ttConfig().showLunch?"checked":""}>점심
+      <select id="ttAllLA" style="font-size:9px;border:1px solid #4b6fa5;border-radius:2px;background:#2d4f7c;color:white;padding:0 1px;max-width:40px">
         ${periods.map((l,i)=>`<option value="${i}" ${i===ttConfig().lunchAfterPeriod?"selected":""}>${l}</option>`).join("")}
       </select></label>
   </div>`;
   hr.appendChild(corner);
   days.forEach(d => {
     const th = document.createElement("th");
-    th.style.cssText = "background:#1e3a5f;color:white;text-align:center;padding:7px 4px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 76px)/5)";
+    th.style.cssText = "background:#1e3a5f;color:white;text-align:center;padding:5px 2px;font-size:12px;font-weight:700;border:1px solid #2d4f7c;width:calc((100%-62px)/5)";
     th.textContent = d; hr.appendChild(th);
   });
   thead.appendChild(hr); table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-
   periods.forEach((label, period) => {
-    // Lunch row
     if (showLunch && period === lunchAfter + 1) {
       const lr = document.createElement("tr");
       const lp = document.createElement("td"); lp.textContent = "🍱";
-      lp.style.cssText = "text-align:center;font-size:13px;background:#fef9c3;border:1px solid #fde68a;padding:2px";
+      lp.style.cssText = "text-align:center;font-size:12px;background:#fef9c3;border:1px solid #fde68a;padding:2px";
       lr.appendChild(lp);
-      days.forEach(() => {
+      for (let d = 0; d < 5; d++) {
         const td = document.createElement("td"); td.textContent = "점심시간";
-        td.style.cssText = "background:#fef9c3;color:#92400e;text-align:center;font-size:11px;font-weight:600;padding:3px;border:1px solid #fde68a";
+        td.style.cssText = "background:#fef9c3;color:#92400e;text-align:center;font-size:10px;font-weight:600;padding:2px;border:1px solid #fde68a";
         lr.appendChild(td);
-      });
+      }
       tbody.appendChild(lr);
     }
-
     const tr = document.createElement("tr");
     const pTd = document.createElement("td");
-    pTd.style.cssText = "background:#f8fafc;border:1px solid #e2e8f0;text-align:center;vertical-align:middle;font-size:10px;font-weight:700;color:#374151;padding:3px;white-space:nowrap";
+    pTd.style.cssText = "background:#f8fafc;border:1px solid #e2e8f0;text-align:center;font-size:10px;font-weight:700;color:#374151;padding:2px;white-space:nowrap;vertical-align:middle";
     pTd.textContent = label; tr.appendChild(pTd);
 
     days.forEach((_, day) => {
       const td = document.createElement("td");
-      td.style.cssText = "border:1px solid #e2e8f0;vertical-align:top;padding:2px;min-height:50px;display:flex;flex-direction:column;gap:2px";
-      td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.style.background = "#dbeafe"; td.style.outline = "2px dashed #2563eb"; });
-      td.addEventListener("dragleave", () => { td.style.background = ""; td.style.outline = ""; });
+      td.style.cssText = "border:1px solid #e2e8f0;vertical-align:top;padding:2px;min-height:50px;display:flex;flex-direction:column;gap:1px";
+      td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.style.background="#dbeafe"; td.style.outline="2px dashed #2563eb"; });
+      td.addEventListener("dragleave", () => { td.style.background=""; td.style.outline=""; });
       td.addEventListener("drop", e => {
-        e.preventDefault(); td.style.background = ""; td.style.outline = "";
-        if (!dragData || !canEdit()) return;
-        handleDrop(dragData, day, period);
+        e.preventDefault(); td.style.background=""; td.style.outline="";
+        if (!dragData || !canEdit()) return; handleDrop(dragData, day, period);
       });
-
       const slotEntries = entries().filter(e => e.day === day && e.period === period);
       if (!slotEntries.length) {
-        const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
+        const ph = document.createElement("div"); ph.style.cssText="flex:1;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:14px"; ph.textContent="+"; td.appendChild(ph);
       } else {
-        slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { showGrade: true, compact: true })));
+        slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, {showGrade:true,compact:true})));
       }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
-
-  table.appendChild(tbody); outerWrap.appendChild(table); wrap.appendChild(outerWrap);
-
+  table.appendChild(tbody); wrap.appendChild(table);
   setTimeout(() => {
-    document.getElementById("ttAllApply")?.addEventListener("click", () => { setPeriodCount(parseInt(document.getElementById("ttAllPcInp")?.value)||8); renderAll(); });
+    document.getElementById("ttAllApply")?.addEventListener("click",  () => { setPeriodCount(parseInt(document.getElementById("ttAllPcInp")?.value)||8); renderAll(); });
     document.getElementById("ttAllLunch")?.addEventListener("change", e => { setLunchConfig(undefined, e.target.checked); renderAll(); });
-    document.getElementById("ttAllLunchAfter")?.addEventListener("change", e => { setLunchConfig(parseInt(e.target.value), undefined); renderAll(); });
+    document.getElementById("ttAllLA")?.addEventListener("change",    e => { setLunchConfig(parseInt(e.target.value), undefined); renderAll(); });
   }, 0);
 }
 
@@ -331,27 +321,32 @@ function buildEntryCard(entry, opts = {}) {
   const hasConflict = conflicts.size > 0;
 
   const card = document.createElement("div");
-  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
+  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "");
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
-  // Color by category
   const cat = getCategoryForTemplate(entry.gradeKey || currentGrade, entry.templateId);
   const color = getCategoryColor(cat);
-  card.style.background = color.bg; card.style.color = color.text;
-  card.style.borderColor = color.text + "55"; card.style.borderLeft = `3px solid ${color.text}`;
+  card.style.background = color.bg;
+  card.style.color = color.text;
+  card.style.borderLeft = `3px solid ${color.text}`;
+  card.style.borderColor = color.text + "44";
+  if (compact) { card.style.padding = "2px 3px"; card.style.fontSize = "10px"; }
 
   // Grade chip
   if (showGrade && entry.gradeKey) {
-    const gc = document.createElement("span"); gc.className = "tt-entry-grade"; gc.textContent = entry.gradeKey;
+    const gc = document.createElement("div");
+    gc.style.cssText = "font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,.12);display:inline-block;margin-bottom:2px;white-space:nowrap";
+    gc.textContent = entry.gradeKey;
     card.appendChild(gc);
   }
 
-  // Title
-  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
+  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title";
+  titleEl.style.fontSize = compact ? "10px" : "11px";
+  titleEl.textContent = title;
 
-  // Teacher + (optionally) room selects
   const row = document.createElement("div"); row.className = "tt-entry-row";
   const teacherSel = document.createElement("select"); teacherSel.className = "tt-entry-select"; teacherSel.disabled = !canEdit();
+  if (compact) teacherSel.style.fontSize = "9px";
   const noT = document.createElement("option"); noT.value = ""; noT.textContent = "교사"; teacherSel.appendChild(noT);
   teachers.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === entry.teacherName) o.selected = true; teacherSel.appendChild(o); });
   if (entry.teacherName && !teachers.includes(entry.teacherName)) {
@@ -406,8 +401,12 @@ function renderSubjectPanel() {
   }
 
   if (currentView !== "grade") {
-    const info = document.createElement("div"); info.className = "tt-empty";
-    info.textContent = "학년별 보기에서 과목을 배치하세요."; panel.appendChild(info); return;
+    // In all/teacher/room views: show a mini grade selector + subjects for dragging
+    const gSel = document.createElement("select"); gSel.className = "tt-sc-grade-sel";
+    gSel.style.cssText = "width:100%;padding:3px 5px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;margin-bottom:6px;";
+    GRADE_KEYS.forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = g; if (g === currentGrade) o.selected = true; gSel.appendChild(o); });
+    gSel.addEventListener("change", e => { currentGrade = e.target.value; renderSubjectPanel(); });
+    panel.appendChild(gSel);
   }
 
   const subjects = getSubjectsForGrade(currentGrade);
@@ -552,12 +551,9 @@ function renderViewSelectors() {
   teacherEl?.classList.toggle("hidden", currentView !== "teacher");
   roomEl?.classList.toggle("hidden", currentView !== "room");
   // In all-grades view, hide the subject panel (it's grade-specific)
-  // Panel only shown in grade view
-  const panelEl = document.getElementById("ttPanelWrap");
-  if (panelEl && !panelEl.classList.contains("tt-panel-collapsed")) {
-    panelEl.style.visibility = currentView === "grade" ? "" : "hidden";
-    panelEl.style.minWidth   = currentView === "grade" ? "" : "0";
-  }
+  // Keep panel always visible, content varies by view
+  const panelEl = document.querySelector(".tt-panel");
+  if (panelEl) panelEl.style.display = "";
 }
 
 // ── Conflict summary bar ──────────────────────────────────────────
