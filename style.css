@@ -2617,58 +2617,75 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
    ================================================================ */
 .group-manager-layout {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
+  flex-direction: row;
+  gap: 0;
   height: 100%;
-  overflow-y: auto;
-  padding-right: 4px;
+  overflow: hidden;
 }
 
-.group-section {
+/* ── Left: unassigned pool ── */
+.group-left-col {
+  width: 200px;
+  min-width: 160px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  border-right: 1px solid #e2e8f0;
+  overflow: hidden;
 }
 
 .group-section-hdr {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 7px 10px 5px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
 }
 
 .group-pool-main-label {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
   color: #1e3a5f;
-  padding: 5px 10px;
-  background: #f1f5f9;
-  border-radius: 6px;
-  border: 1px solid #e2e8f0;
 }
 
-/* Unassigned pool: horizontal wrapping cards */
 .group-unassigned-pool {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
   padding: 6px;
-  border: 1.5px dashed #d1d5db;
-  border-radius: 8px;
-  background: #fafafa;
-  min-height: 60px;
+  overflow-y: auto;
+  background: white;
+  min-height: 0;
 }
-.group-unassigned-horiz {
-  flex-direction: row !important;
-  flex-wrap: wrap;
-  align-items: flex-start;
-}
-.group-unassigned-pool.dragover { border-color: #2563eb; background: #eff6ff; }
+.group-unassigned-pool.dragover { background: #eff6ff; outline: 2px dashed #2563eb; }
+.group-unassigned-horiz { flex-direction: column !important; }
 
-/* Group blocks: vertical list */
-.group-right-col {
+/* ── Right: group grid ── */
+.group-right-col-wrap {
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.group-right-col-hdr {
+  padding: 7px 10px 5px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.group-right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 10px;
+  overflow-y: auto;
+  align-items: flex-start;
+  align-content: flex-start;
 }
 
 /* Individual group block */
@@ -2680,6 +2697,10 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 280px;
+  min-width: 240px;
+  flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .group-block-hdr {

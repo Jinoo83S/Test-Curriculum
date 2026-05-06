@@ -477,15 +477,16 @@ export function renderGroupManager(board, onRender) {
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";
 
-  // ── Section 1: Unassigned pool (TOP) ──────────────────────────
-  const unSection = document.createElement("div"); unSection.className = "group-section";
-  const unHdr = document.createElement("div"); unHdr.className = "group-section-hdr";
-  const unTitle = document.createElement("span"); unTitle.className = "group-pool-main-label"; unTitle.textContent = "미배정 과목";
-  unHdr.appendChild(unTitle);
-  unSection.appendChild(unHdr);
+  // ── LEFT: Unassigned pool ──────────────────────────────────────
+  const leftCol = document.createElement("div"); leftCol.className = "group-left-col";
+
+  const leftHdr = document.createElement("div"); leftHdr.className = "group-section-hdr";
+  const leftTitle = document.createElement("span"); leftTitle.className = "group-pool-main-label"; leftTitle.textContent = "미배정 과목";
+  leftHdr.appendChild(leftTitle); leftCol.appendChild(leftHdr);
 
   const validIds = new Set(groups().map(g => g.id));
-  const unassigned = templates().filter(t => gmLevelFilter(t) && (!t.calcGroupId || !validIds.has(t.calcGroupId))).sort((a,b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
+  const unassigned = templates().filter(t => gmLevelFilter(t) && (!t.calcGroupId || !validIds.has(t.calcGroupId)))
+    .sort((a,b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
 
   const unPool = document.createElement("div"); unPool.className = "group-unassigned-pool group-unassigned-horiz";
   unPool.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); unPool.classList.add("dragover"); });
@@ -499,23 +500,23 @@ export function renderGroupManager(board, onRender) {
   });
   if (unassigned.length) unassigned.forEach(t => unPool.appendChild(createGroupManagerCard(t)));
   else { const ph = document.createElement("div"); ph.className = "group-col-placeholder"; ph.textContent = "모든 과목이 배정됨"; unPool.appendChild(ph); }
-  unSection.appendChild(unPool);
-  layout.appendChild(unSection);
+  leftCol.appendChild(unPool);
+  layout.appendChild(leftCol);
 
-  // ── Section 2: Group blocks (BELOW, vertical list) ────────────
-  const grpSection = document.createElement("div"); grpSection.className = "group-section";
-  const grpHdr = document.createElement("div"); grpHdr.className = "group-section-hdr";
-  const grpTitle = document.createElement("span"); grpTitle.className = "group-pool-main-label"; grpTitle.textContent = "그룹 목록";
-  grpHdr.appendChild(grpTitle);
-  grpSection.appendChild(grpHdr);
+  // ── RIGHT: Group cards (wrap grid) ────────────────────────────
+  const rightWrap = document.createElement("div"); rightWrap.className = "group-right-col-wrap";
 
-  const grpList = document.createElement("div"); grpList.className = "group-right-col";
-  groups().forEach(g => grpList.appendChild(createGroupBlock(g.id, onRender)));
+  const rightHdr = document.createElement("div"); rightHdr.className = "group-right-col-hdr";
+  const rightTitle = document.createElement("span"); rightTitle.className = "group-pool-main-label"; rightTitle.textContent = "그룹 목록";
+  rightHdr.appendChild(rightTitle); rightWrap.appendChild(rightHdr);
+
+  const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
+  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onRender)));
   if (!groups().length) {
-    const em = document.createElement("div"); em.className = "group-col-placeholder"; em.textContent = "'그룹 추가'를 눌러 시작하세요."; grpList.appendChild(em);
+    const em = document.createElement("div"); em.className = "group-col-placeholder"; em.style.padding = "20px"; em.textContent = "'그룹 추가'를 눌러 시작하세요."; rightCol.appendChild(em);
   }
-  grpSection.appendChild(grpList);
-  layout.appendChild(grpSection);
+  rightWrap.appendChild(rightCol);
+  layout.appendChild(rightWrap);
 
   board.appendChild(layout);
 }
