@@ -61,40 +61,18 @@ button {
 
 /* ── Page Layout ─────────────────────────────────────── */
 .page {
-  display: flex;
-  gap: 0;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 10px;
   padding: 10px;
   height: calc(100vh - 44px);
   overflow: hidden;
 }
 
-/* ── Curriculum sidebar resize ──────────────────────────────────── */
-.sidebar-resizer {
-  width: 6px; min-width: 6px; cursor: col-resize; background: transparent;
-  flex-shrink: 0; position: relative;
-}
-.sidebar-resizer::after { content: ""; position: absolute; left: 2px; top: 0; bottom: 0; width: 2px; background: #d1d5db; border-radius: 1px; transition: background .1s; }
-.sidebar-resizer:hover::after { background: #2563eb; }
-
-/* Sidebar toggle button — inline in header row (not fixed overlay) */
-.sidebar-toggle-inline {
-  padding: 2px 6px; border: 1px solid #d1d5db; border-radius: 4px;
-  background: #f8fafc; cursor: pointer; font-size: 10px; color: #374151;
-  flex-shrink: 0; font-weight: 600;
-}
-.sidebar-toggle-inline:hover { background: #eff6ff; color: #2563eb; border-color: #93c5fd; }
-
-.sidebar-collapsed { width: 0!important; min-width: 0!important; overflow: hidden; }
-
-/* ── Group link / Group type ─────────────────────────────────────── */
-.group-link-wrap { display: flex; align-items: center; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
-.group-link-label { font-size: 10px; color: #6b7280; white-space: nowrap; font-weight: 600; }
-.group-link-select { font-size: 10px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px; background: #f0fdf4; color: #166534; min-width: 80px; cursor: pointer; }
-.group-type-wrap { margin-top: 3px; }
-.group-type-select { width: 100%; font-size: 11px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; }
-
 .sidebar,
-.main-panel { min-width: 0; }
+.main-panel {
+  min-width: 0;
+}
 
 .sidebar {
   overflow-y: auto;
@@ -102,9 +80,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 280px;
-  min-width: 120px;
-  flex-shrink: 0;
 }
 
 .panel {
@@ -2636,3 +2611,224 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   background: #dbeafe; color: #1e40af;
   font-size: 10px; font-weight: 600; white-space: nowrap;
 }
+
+/* ================================================================
+   GROUP MANAGER — New vertical layout (2025 redesign)
+   ================================================================ */
+.group-manager-layout {
+  display: flex;
+  gap: 16px;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Left: unassigned pool */
+.group-left-col {
+  width: 220px;
+  min-width: 180px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.group-pool-main-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+  padding: 6px 8px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.group-unassigned-pool {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 8px;
+  overflow-y: auto;
+  background: #fafafa;
+  min-height: 100px;
+}
+.group-unassigned-pool.dragover { border-color: #2563eb; background: #eff6ff; }
+
+/* Right: group blocks */
+.group-right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Individual group block */
+.group-block {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: white;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.group-block-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.group-block-name {
+  flex: 1;
+  min-width: 160px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e3a5f;
+  border: 1px solid #d1d5db;
+  border-radius: 5px;
+  padding: 4px 8px;
+  background: #f8fafc;
+}
+.group-block-name:focus { border-color: #2563eb; outline: none; background: white; }
+
+.group-block-checks {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.group-block-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.group-block-check input[type="checkbox"] { accent-color: #2563eb; width: 14px; height: 14px; }
+
+/* Pool of templates assigned to group but not to any unit */
+.group-ungrouped-pool {
+  padding: 6px 8px;
+  background: #fef9c3;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+}
+
+.group-pool-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 4px;
+}
+
+.group-pool-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.group-pool-cards.dragover { background: #dbeafe; outline: 2px dashed #2563eb; border-radius: 4px; }
+
+/* Units wrapper */
+.group-units-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Individual unit block */
+.group-unit-block {
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  background: #f8fafc;
+  padding: 6px 8px;
+}
+
+.group-unit-hdr {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.group-unit-name {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 3px 6px;
+  background: white;
+}
+.group-unit-name:focus { border-color: #2563eb; outline: none; }
+.group-unit-name::placeholder { color: #9ca3af; font-weight: 400; }
+
+.group-unit-del-btn {
+  padding: 2px 7px;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  background: #fef2f2;
+  color: #dc2626;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+.group-unit-del-btn:hover { background: #fee2e2; }
+
+.group-unit-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 36px;
+  padding: 4px;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 5px;
+  background: white;
+}
+.group-unit-cards.dragover { border-color: #2563eb; background: #dbeafe; }
+
+.group-unit-placeholder {
+  font-size: 10px;
+  color: #9ca3af;
+  padding: 4px;
+  align-self: center;
+}
+
+/* Remove-from-unit button on mgr card */
+.group-unit-card-remove {
+  margin-top: 3px;
+  padding: 1px 5px;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: #f1f5f9;
+  color: #374151;
+  cursor: pointer;
+  font-size: 10px;
+  width: 100%;
+}
+.group-unit-card-remove:hover { background: #eff6ff; color: #2563eb; }
+
+/* Add unit button */
+.group-add-unit-btn {
+  padding: 3px 10px;
+  border: 1.5px dashed #2563eb;
+  border-radius: 5px;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  align-self: flex-start;
+}
+.group-add-unit-btn:hover { background: #eff6ff; }
+.group-add-unit-btn:disabled { opacity: .4; cursor: default; }

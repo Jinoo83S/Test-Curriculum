@@ -87,14 +87,27 @@ function normalizeCurriculumDomain(raw = {}) {
 }
 
 // ── Templates ─────────────────────────────────────────────────────
+function normalizeUnit(u = {}) {
+  return {
+    id: u.id || uid("unit"),
+    name: clean(u.name),
+    templateIds: Array.isArray(u.templateIds) ? u.templateIds.filter(Boolean) : []
+  };
+}
+
 export function normalizeTemplateGroup(item = {}) {
-  const validTypes = ["concurrent", "cross-grade"];
   return {
     id: item.id || uid("grp"),
     name: clean(item.name),
-    creditValue: clean(item.creditValue),
-    groupType: validTypes.includes(item.groupType) ? item.groupType : "concurrent",
-    linkedGroupId: clean(item.linkedGroupId) || null  // groups that must share time slots
+    // New: isConcurrent = same day/period required for all units
+    isConcurrent: item.isConcurrent !== false,
+    // New: isCrossGrade = units can contain templates from multiple grades
+    isCrossGrade: !!item.isCrossGrade,
+    // New: units array (each unit = one timetable card)
+    units: Array.isArray(item.units) ? item.units.map(normalizeUnit) : [],
+    // Legacy compat (kept so old data still works)
+    groupType: item.isConcurrent === false ? "off" : (item.isCrossGrade ? "cross-grade" : "concurrent"),
+    linkedGroupId: null
   };
 }
 
