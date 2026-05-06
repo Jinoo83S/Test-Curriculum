@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, fixChanCheCredits } from "./curriculum.js";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -372,6 +372,12 @@ onAuth(async (user) => {
 loginBtn?.addEventListener("click", login);
 logoutBtn?.addEventListener("click", logout);
 exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
+document.getElementById("fixChanCheBtn")?.addEventListener("click", () => {
+  if (!canEdit()) { alert("로그인이 필요합니다."); return; }
+  const count = fixChanCheCredits("창체");
+  if (count > 0) { invalidateTabs(); renderBoardTab(); alert(`✅ 창체 시수 ${count}개 항목을 1로 수정했습니다.`); }
+  else alert("이미 모든 창체 시수가 1입니다.");
+});
 
 resetBoardBtn?.addEventListener("click", async () => {
   if (!canEdit()) return;

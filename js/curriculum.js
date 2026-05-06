@@ -41,6 +41,22 @@ export function addRow(grade) {
   scheduleSave("curriculum");
 }
 
+/** 창체 카테고리 모든 행의 시수를 1로 일괄 수정 */
+export function fixChanCheCredits(targetCategory = "창체") {
+  if (!canEdit()) return 0;
+  let count = 0;
+  GRADE_KEYS.forEach(grade => {
+    (curriculum().gradeBoards[grade] || []).forEach(row => {
+      if (row.category === targetCategory && String(row.credits) !== "1") {
+        row.credits = "1";
+        count++;
+      }
+    });
+  });
+  if (count > 0) scheduleSave("curriculum");
+  return count;
+}
+
 export function addRowWithTemplate(grade, templateId) {
   if (!canEdit() || !templateId) return null;
   const rows = curriculum().gradeBoards[grade] || [];

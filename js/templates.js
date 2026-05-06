@@ -461,7 +461,23 @@ function createGroupBlock(groupId, onRender) {
 }
 
 export function renderGroupManager(board, onRender) {
+  // ── Save scroll position of the right col to restore after re-render ──
+  const rightScrollEl  = board.querySelector(".group-right-col");
+  const savedScrollTop = rightScrollEl ? rightScrollEl.scrollTop : 0;
+
   board.innerHTML = "";
+
+  // onRender wrapper that preserves scroll position
+  const onRenderStable = () => {
+    const rs = board.querySelector(".group-right-col");
+    const st = rs ? rs.scrollTop : 0;
+    onRender();
+    // Restore scroll after React-like re-render settles
+    requestAnimationFrame(() => {
+      const rsNew = board.querySelector(".group-right-col");
+      if (rsNew) rsNew.scrollTop = st;
+    });
+  };
 
   // Level filter bar
   const filterBar = document.createElement("div"); filterBar.className = "group-level-filter-bar";
@@ -496,7 +512,7 @@ export function renderGroupManager(board, onRender) {
     const drag = currentDrag; if (!drag || drag.kind !== "template") return;
     groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== drag.templateId); }));
     assignTemplateGroup(drag.templateId, null);
-    scheduleSave("templates"); onRender();
+    scheduleSave("templates"); onRenderStable();
   });
   if (unassigned.length) unassigned.forEach(t => unPool.appendChild(createGroupManagerCard(t)));
   else { const ph = document.createElement("div"); ph.className = "group-col-placeholder"; ph.textContent = "모든 과목이 배정됨"; unPool.appendChild(ph); }
@@ -511,7 +527,7 @@ export function renderGroupManager(board, onRender) {
   rightHdr.appendChild(rightTitle); rightWrap.appendChild(rightHdr);
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
-  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onRender)));
+  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onRenderStable)));
   if (!groups().length) {
     const em = document.createElement("div"); em.className = "group-col-placeholder"; em.style.padding = "20px"; em.textContent = "'그룹 추가'를 눌러 시작하세요."; rightCol.appendChild(em);
   }
@@ -519,6 +535,12 @@ export function renderGroupManager(board, onRender) {
   layout.appendChild(rightWrap);
 
   board.appendChild(layout);
+
+  // Restore right col scroll position
+  requestAnimationFrame(() => {
+    const newRight = board.querySelector(".group-right-col");
+    if (newRight && savedScrollTop) newRight.scrollTop = savedScrollTop;
+  });
 }
 
 // ── Teacher datalist (shared by table + sidebar form) ────────────
