@@ -68,15 +68,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── Grid ── */
 .tt-grid-wrap{flex:1;overflow:auto;padding:10px}
 .tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
-.tt-corner{width:68px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:top}
-.tt-corner-inner{display:flex;flex-direction:column;gap:3px}
-.tt-period-count-wrap{font-size:10px;color:white;display:flex;flex-direction:column;gap:2px}
-.tt-period-count-wrap input{width:34px;padding:1px 3px;border:1px solid #4b6fa5;border-radius:2px;background:#2d4f7c;color:white;font-size:10px}
-.tt-period-count-wrap button{padding:1px 5px;border:1px solid #93c5fd;background:rgba(255,255,255,.15);color:white;border-radius:2px;cursor:pointer;font-size:10px}
-.tt-lunch-wrap{display:flex;align-items:center;gap:3px;font-size:10px;color:white;flex-wrap:wrap}
-.tt-lunch-wrap label{display:flex;align-items:center;gap:2px;cursor:pointer;white-space:nowrap}
-.tt-lunch-wrap select{font-size:9px;border:1px solid #4b6fa5;border-radius:2px;background:#2d4f7c;color:white;padding:0 2px}
-.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:5px 2px;font-size:12px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 68px)/5)}
+.tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
+
+
+
+
+
+
+
+.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:5px 2px;font-size:12px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 46px)/5)}
 .tt-period-label{background:#f8fafc;border:1px solid #e2e8f0;text-align:center;vertical-align:middle;padding:2px;width:68px}
 .tt-period-label input{width:100%;border:none;background:transparent;text-align:center;font-size:10px;font-weight:700;color:#374151;padding:1px}
 .tt-lunch-row .tt-period-label{font-size:14px;text-align:center}
@@ -143,6 +143,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .primary-btn:hover{background:#1d4ed8}
 .primary-btn:disabled{opacity:.4;cursor:default}
 .compact-btn{padding:3px 8px;font-size:11px}
+/* ── Schedule toolbar controls ── */
+.tt-schedule-controls{display:flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;font-size:11px;white-space:nowrap}
+.tt-schedule-controls label{color:#374151;font-size:11px}
+.tt-check-label{display:flex;align-items:center;gap:3px;cursor:pointer}
+.tt-sc-sep{color:#d1d5db;font-size:12px}
+.tt-schedule-controls input[type="number"]{width:40px;height:24px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;text-align:center}
+.tt-schedule-controls select{height:24px;padding:2px 5px;font-size:11px;border:1px solid #d1d5db;border-radius:4px}
+.tt-schedule-controls button{height:24px;padding:2px 7px;border:1px solid #2563eb;border-radius:4px;background:#eff6ff;color:#2563eb;cursor:pointer;font-size:11px;font-weight:600}
+/* ── Corner label (simplified) ── */
+.tt-corner-label{font-size:10px;font-weight:700;color:white;text-align:center}
+/* ── Card grid ── */
+.tt-cell-card-grid{display:grid;grid-template-columns:repeat(var(--tt-card-cols,2),minmax(0,1fr));gap:2px;align-items:start}
+/* ── Entry card compact ── */
+.tt-compact{padding:2px 3px!important}
+.tt-compact .tt-entry-title{font-size:10px;line-height:1.2}
+.tt-compact .tt-entry-row{margin-top:1px}
+.tt-compact .tt-entry-select{height:18px;font-size:9px;padding:0 2px}
+.tt-compact .tt-entry-grade{font-size:8px;padding:0 4px;margin-bottom:1px}
+/* ── Panel section titles ── */
+.tt-panel-section-title{margin:6px 0 3px;padding:3px 5px;border-radius:4px;background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700}
+.tt-panel-section-done{background:#f1f5f9!important;color:#64748b!important;margin-top:10px!important}
+.tt-subject-done{opacity:.5;cursor:default}
+.tt-subject-done .tt-sc-badge{background:#dcfce7!important;color:#166534!important}
+/* ── Grade chip on entry card ── */
+.tt-entry-grade{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;margin-bottom:2px;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -169,6 +194,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="tt-view-btn"        data-view="teacher" type="button">👩‍🏫 교사별</button>
     <button class="tt-view-btn"        data-view="room"    type="button">🏫 교실별</button>
     <button class="tt-view-btn"        data-view="grade"   type="button">📋 학년별</button>
+  </div>
+  <!-- Schedule controls -->
+  <div class="tt-schedule-controls">
+    <label>교시</label>
+    <input id="ttPeriodCountInput" type="number" min="1" max="12" value="8">
+    <button id="ttPeriodApplyBtn" type="button">적용</button>
+    <span class="tt-sc-sep">│</span>
+    <label class="tt-check-label"><input id="ttShowLunchInput" type="checkbox" checked> 점심</label>
+    <select id="ttLunchAfterSelect"></select>
+    <span class="tt-sc-sep">│</span>
+    <label>열</label>
+    <select id="ttCardColumnSelect">
+      <option value="1">1열</option>
+      <option value="2" selected>2열</option>
+      <option value="3">3열</option>
+      <option value="4">4열</option>
+    </select>
   </div>
   <select id="ttGradeSelect"   class="hidden"></select>
   <select id="ttTeacherSelect" class="hidden"></select>
@@ -207,6 +249,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <script type="module" src="js/timetable.js"></script>
 <script>
+/* ── Schedule controls init ── */
+(function() {
+  const pcBtn   = document.getElementById("ttPeriodApplyBtn");
+  const lunchChk= document.getElementById("ttShowLunchInput");
+  const lunchSel= document.getElementById("ttLunchAfterSelect");
+  const colSel  = document.getElementById("ttCardColumnSelect");
+  // These just wire up; actual state is in timetable.js via renderScheduleControls()
+  // Listeners are set after module loads via renderScheduleControls() binding
+  pcBtn?.addEventListener("click", () => window._ttApplyPeriod?.());
+  lunchChk?.addEventListener("change", e => window._ttSetLunch?.(undefined, e.target.checked));
+  lunchSel?.addEventListener("change", e => window._ttSetLunchAfter?.(parseInt(e.target.value)));
+  colSel?.addEventListener("change", e => window._ttSetCardCols?.(parseInt(e.target.value)||2));
+})();
+
 /* ── Tab switching ── */
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {

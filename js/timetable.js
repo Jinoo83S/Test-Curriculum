@@ -26,6 +26,7 @@ let currentRoom    = "";
 let dragData       = null;
 let conflictMap    = new Map();
 let constraintMap  = new Map();
+let cardColumnCount = 2; // 카드 열 수 (1~4, 사용자 설정)
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -34,6 +35,20 @@ const ttPanel      = () => $("ttPanel");
 const ttAuthStatus = () => $("ttAuthStatus");
 const ttLoginBtn   = () => $("ttLoginBtn");
 const ttLogoutBtn  = () => $("ttLogoutBtn");
+
+
+// ── Grade colors ──────────────────────────────────────────────────
+const GRADE_COLORS = {
+  "7학년":  { bg:"#dbeafe", text:"#1d4ed8", border:"#3b82f6" },
+  "8학년":  { bg:"#dcfce7", text:"#166534", border:"#22c55e" },
+  "9학년":  { bg:"#fef3c7", text:"#92400e", border:"#f59e0b" },
+  "10학년": { bg:"#fce7f3", text:"#be185d", border:"#ec4899" },
+  "11학년": { bg:"#ede9fe", text:"#6d28d9", border:"#8b5cf6" },
+  "12학년": { bg:"#e0f2fe", text:"#0369a1", border:"#0ea5e9" }
+};
+function getGradeColor(gradeKey) {
+  return GRADE_COLORS[gradeKey] || { bg:"#f1f5f9", text:"#374151", border:"#94a3b8" };
+}
 
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
@@ -177,16 +192,7 @@ function renderAllGradesGrid(wrap) {
   /* Header */
   const thead = document.createElement("thead"); const hr = document.createElement("tr");
   const corner = document.createElement("th"); corner.className = "tt-corner";
-  corner.innerHTML = `<div class="tt-corner-inner">
-    <div class="tt-period-count-wrap">
-      교시:<input id="ttAllPcInp" type="number" min="1" max="12" value="${ttConfig().periodCount}">
-      <button id="ttAllApply" type="button">적용</button>
-    </div>
-    <div class="tt-lunch-wrap">
-      <label><input id="ttAllLunch" type="checkbox" ${ttConfig().showLunch?"checked":""}>점심</label>
-      <select id="ttAllLA">${periods.map((l,i)=>`<option value="${i}" ${i===ttConfig().lunchAfterPeriod?"selected":""}>${l}</option>`).join("")}</select>
-    </div>
-  </div>`;
+  corner.innerHTML = `<div class="tt-corner-label">교시</div>`;
   hr.appendChild(corner);
   days.forEach(d => { const th = document.createElement("th"); th.className = "tt-day-header"; th.textContent = d; hr.appendChild(th); });
   thead.appendChild(hr); table.appendChild(thead);
@@ -214,37 +220,28 @@ function renderAllGradesGrid(wrap) {
         if (!dragData || !canEdit()) return; handleDrop(dragData, day, period);
       });
       const slotEntries = entries().filter(e => e.day === day && e.period === period);
-      if (!slotEntries.length) { const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph); }
-      else slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { showGrade: true, compact: true })));
+      if (!slotEntries.length) {
+        const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
+      } else {
+        const cg = document.createElement("div"); cg.className = "tt-cell-card-grid";
+        cg.style.setProperty("--tt-card-cols", String(cardColumnCount));
+        slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { showGrade: true, compact: true })));
+        td.appendChild(cg);
+      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody); wrap.appendChild(table);
 
-  setTimeout(() => {
-    document.getElementById("ttAllApply")?.addEventListener("click",  () => { setPeriodCount(parseInt(document.getElementById("ttAllPcInp")?.value)||8); renderAll(); });
-    document.getElementById("ttAllLunch")?.addEventListener("change", e => { setLunchConfig(undefined, e.target.checked); renderAll(); });
-    document.getElementById("ttAllLA")?.addEventListener("change",    e => { setLunchConfig(parseInt(e.target.value), undefined); renderAll(); });
-  }, 0);
+
 }
 
 function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
   const table = document.createElement("table"); table.className = "tt-table";
   const thead = document.createElement("thead"); const hrow = document.createElement("tr");
   const corner = document.createElement("th"); corner.className = "tt-corner";
-  corner.innerHTML = `<div class="tt-corner-inner">
-    <div class="tt-period-count-wrap">
-      교시 수: <input type="number" id="ttPeriodCountInp" min="1" max="12" value="${ttConfig().periodCount}" style="width:44px">
-      <button id="ttApplyPeriods" type="button">적용</button>
-    </div>
-    <div class="tt-lunch-wrap">
-      <label><input type="checkbox" id="ttShowLunch" ${ttConfig().showLunch ? "checked" : ""}> 점심</label>
-      <select id="ttLunchAfter" style="font-size:10px;padding:1px 3px">
-        ${periods.map((l,i) => `<option value="${i}" ${i === ttConfig().lunchAfterPeriod ? "selected" : ""}>${l} 후</option>`).join("")}
-      </select>
-    </div>
-  </div>`;
+  corner.innerHTML = `<div class="tt-corner-label">교시</div>`;
   hrow.appendChild(corner);
   days.forEach(d => { const th = document.createElement("th"); th.className = "tt-day-header"; th.textContent = d; hrow.appendChild(th); });
   thead.appendChild(hrow); table.appendChild(thead);
@@ -280,22 +277,20 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
         if (!dragData || !canEdit()) return;
         handleDrop(dragData, day, period);
       });
-      slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, cardOpts)));
-      if (!slotEntries.length) { const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph); }
+      if (!slotEntries.length) {
+        const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
+      } else {
+        const cg = document.createElement("div"); cg.className = "tt-cell-card-grid";
+        cg.style.setProperty("--tt-card-cols", String(cardColumnCount));
+        slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { ...cardOpts, compact: true })));
+        td.appendChild(cg);
+      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody); wrap.appendChild(table);
 
-  // Wire controls
-  setTimeout(() => {
-    const inp = $("ttPeriodCountInp"); const btn = $("ttApplyPeriods");
-    btn?.addEventListener("click", () => { setPeriodCount(parseInt(inp?.value) || 8); renderAll(); });
-    const lunchChk = $("ttShowLunch"); const lunchSel = $("ttLunchAfter");
-    lunchChk?.addEventListener("change", e => { setLunchConfig(undefined, e.target.checked); renderAll(); });
-    lunchSel?.addEventListener("change", e => { setLunchConfig(parseInt(e.target.value), undefined); renderAll(); });
-  }, 0);
   return table;
 }
 
@@ -312,16 +307,15 @@ function buildEntryCard(entry, opts = {}) {
   card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
-  const cat = getCategoryForTemplate(entry.gradeKey || currentGrade, entry.templateId);
-  const color = getCategoryColor(cat);
-  card.style.background = color.bg;
-  card.style.color = color.text;
-  card.style.borderColor = color.text + "55";
-  card.style.borderLeft = `3px solid ${color.text}`;
+  const gradeColor = getGradeColor(entry.gradeKey || currentGrade);
+  card.style.background = gradeColor.bg;
+  card.style.color = gradeColor.text;
+  card.style.borderLeft = `4px solid ${gradeColor.border}`;
 
-  // Grade chip (전체·교사별 보기에서 학년 표시)
   if (showGrade && entry.gradeKey) {
-    const gc = document.createElement("span"); gc.className = "tt-entry-grade"; gc.textContent = entry.gradeKey;
+    const gc = document.createElement("span"); gc.className = "tt-entry-grade";
+    gc.textContent = entry.gradeKey;
+    gc.style.cssText = `background:${gradeColor.border};color:white`;
     card.appendChild(gc);
   }
 
@@ -370,13 +364,14 @@ function handleDrop(data, day, period) {
 
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
+// ── Subject panel ─────────────────────────────────────────────────
 function renderSubjectPanel() {
   const hdrEl = $("ttPanelHeader");
   const panel  = $("ttPanel");
   if (!panel) return;
   panel.innerHTML = "";
 
-  // Header: 제목 + 현재 학년
+  // Header
   if (hdrEl) {
     hdrEl.innerHTML = "";
     const row = document.createElement("div"); row.className = "tt-panel-header";
@@ -385,9 +380,10 @@ function renderSubjectPanel() {
     row.append(title, gradeLabel); hdrEl.appendChild(row);
   }
 
-  // 학년별 이외 보기: 학년 선택 드롭다운 표시 후 그대로 렌더링 계속
+  // 학년별 이외: 학년 선택 드롭다운
   if (currentView !== "grade") {
-    const guide = document.createElement("div"); guide.style.cssText = "font-size:10px;color:#6b7280;padding:4px 2px 2px;";
+    const guide = document.createElement("div");
+    guide.style.cssText = "font-size:10px;color:#6b7280;padding:4px 2px 2px";
     guide.textContent = "배치할 학년:"; panel.appendChild(guide);
     const gSel = document.createElement("select"); gSel.className = "tt-sc-grade-sel";
     GRADE_KEYS.forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = g; if (g === currentGrade) o.selected = true; gSel.appendChild(o); });
@@ -395,48 +391,64 @@ function renderSubjectPanel() {
     panel.appendChild(gSel);
   }
 
-  // 과목 카드 렌더링 (모든 보기에서 동일)
   const subjects = getSubjectsForGrade(currentGrade);
   if (!subjects.length) {
     const e = document.createElement("div"); e.className = "tt-empty"; e.textContent = "이 학년에 배치된 과목이 없습니다."; panel.appendChild(e); return;
   }
 
+  const gradeColor = getGradeColor(currentGrade);
+  const availableCards = [], doneCards = [];
+
   subjects.forEach(tpl => {
     const credits  = getCreditsForTemplate(currentGrade, tpl.id);
     const sections = getSectionCount(tpl.id);
-    const cat      = getCategoryForTemplate(currentGrade, tpl.id);
-    const color    = getCategoryColor(cat);
     const teachers = getTeachersForTemplate(tpl.id);
 
     for (let sec = 0; sec < Math.max(1, sections); sec++) {
-      const card = document.createElement("div");
-      card.className = "tt-subject-card";
-      card.style.borderLeftColor = color.text;
-      card.style.background = color.bg + "cc";
-      card.draggable = canEdit();
+      const secAssigned = entries().filter(e => e.templateId === tpl.id && e.gradeKey === currentGrade && e.sectionIdx === sec).length;
+      const isDone = credits > 0 && secAssigned >= credits;
+
+      const card = document.createElement("div"); card.className = "tt-subject-card";
+      card.style.borderLeftColor = gradeColor.border;
+      card.style.background = isDone ? gradeColor.bg + "88" : gradeColor.bg + "dd";
+      card.draggable = canEdit() && !isDone;
 
       const topRow = document.createElement("div"); topRow.className = "tt-sc-top";
       const name = document.createElement("div"); name.className = "tt-sc-name"; name.textContent = getTemplateCardTitle(tpl);
       const badge = document.createElement("span"); badge.className = "tt-sc-badge";
-      const secAssigned = entries().filter(e => e.templateId === tpl.id && e.gradeKey === currentGrade && e.sectionIdx === sec).length;
       badge.textContent = `${secAssigned}/${credits}`;
-      badge.style.background = secAssigned >= credits && credits > 0 ? "#dcfce7" : secAssigned > 0 ? "#fef9c3" : "#f1f5f9";
-      badge.style.color = secAssigned >= credits && credits > 0 ? "#166534" : "#374151";
+      badge.style.background = isDone ? "#dcfce7" : secAssigned > 0 ? "#fef9c3" : "#f1f5f9";
+      badge.style.color = isDone ? "#166534" : "#374151";
       topRow.append(name, badge);
 
       const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
       botRow.textContent = teachers.join(", ") || "-";
       if (sections > 1) {
-        const secBadge = document.createElement("span"); secBadge.className = "tt-sc-sec"; secBadge.textContent = `${sec + 1}분반`;
-        botRow.appendChild(secBadge);
+        const sb = document.createElement("span"); sb.className = "tt-sc-sec"; sb.textContent = `${sec + 1}분반`; botRow.appendChild(sb);
       }
       card.append(topRow, botRow);
 
-      card.addEventListener("dragstart", () => { dragData = { templateId: tpl.id, sectionIdx: sec, gradeKey: currentGrade }; card.classList.add("tt-dragging"); });
-      card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
-      panel.appendChild(card);
+      if (!isDone) {
+        card.addEventListener("dragstart", () => { dragData = { templateId: tpl.id, sectionIdx: sec, gradeKey: currentGrade }; card.classList.add("tt-dragging"); });
+        card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
+      }
+
+      if (isDone) { card.classList.add("tt-subject-done"); doneCards.push(card); }
+      else availableCards.push(card);
     }
   });
+
+  // 배치 필요
+  if (availableCards.length) {
+    const t = document.createElement("div"); t.className = "tt-panel-section-title"; t.textContent = `배치 필요 (${availableCards.length})`; panel.appendChild(t);
+    availableCards.forEach(c => panel.appendChild(c));
+  }
+
+  // 배치 완료
+  if (doneCards.length) {
+    const t = document.createElement("div"); t.className = "tt-panel-section-title tt-panel-section-done"; t.textContent = `배치 완료 (${doneCards.length})`; panel.appendChild(t);
+    doneCards.forEach(c => panel.appendChild(c));
+  }
 }
 
 // ── Constraints panel ─────────────────────────────────────────────
@@ -791,9 +803,30 @@ export function autoAssignAll() {
 }
 
 // ── Master render ─────────────────────────────────────────────────
+
+// ── Schedule controls (toolbar) ───────────────────────────────────
+function renderScheduleControls() {
+  const pcInp   = $("ttPeriodCountInput");
+  const lunchChk= $("ttShowLunchInput");
+  const lunchSel= $("ttLunchAfterSelect");
+  const colSel  = $("ttCardColumnSelect");
+  if (pcInp)    pcInp.value   = String(ttConfig().periodCount);
+  if (lunchChk) lunchChk.checked = !!ttConfig().showLunch;
+  if (lunchSel) {
+    lunchSel.innerHTML = "";
+    ttConfig().periodLabels.forEach((l, i) => {
+      const o = document.createElement("option"); o.value = i; o.textContent = `${l} 후`;
+      if (i === ttConfig().lunchAfterPeriod) o.selected = true;
+      lunchSel.appendChild(o);
+    });
+  }
+  if (colSel) colSel.value = String(cardColumnCount);
+}
+
 function renderAll() {
   recomputeConflicts();
   renderViewSelectors();
+  renderScheduleControls();
   renderSubjectPanel();
   renderGrid();
   renderConstraintsPanel();
@@ -893,5 +926,12 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
   scheduleSave("timetable"); recomputeConflicts(); renderAll();
 });
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
+
+
+// Expose schedule control callbacks to inline HTML script
+window._ttApplyPeriod    = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?.value)||8); renderAll(); };
+window._ttSetLunch       = (_, show) => { setLunchConfig(undefined, show); renderAll(); };
+window._ttSetLunchAfter  = (idx) => { setLunchConfig(idx, undefined); renderAll(); };
+window._ttSetCardCols    = (n) => { cardColumnCount = n; renderAll(); };
 
 renderAll();
