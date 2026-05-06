@@ -2617,55 +2617,58 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
    ================================================================ */
 .group-manager-layout {
   display: flex;
-  gap: 16px;
+  flex-direction: column;
+  gap: 14px;
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
-/* Left: unassigned pool */
-.group-left-col {
-  width: 220px;
-  min-width: 180px;
-  flex-shrink: 0;
+.group-section {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  overflow-y: auto;
-  padding-right: 4px;
+}
+
+.group-section-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .group-pool-main-label {
   font-size: 12px;
   font-weight: 700;
   color: #1e3a5f;
-  padding: 6px 8px;
+  padding: 5px 10px;
   background: #f1f5f9;
   border-radius: 6px;
   border: 1px solid #e2e8f0;
 }
 
+/* Unassigned pool: horizontal wrapping cards */
 .group-unassigned-pool {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 6px;
   border: 1.5px dashed #d1d5db;
   border-radius: 8px;
-  overflow-y: auto;
   background: #fafafa;
-  min-height: 100px;
+  min-height: 60px;
+}
+.group-unassigned-horiz {
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  align-items: flex-start;
 }
 .group-unassigned-pool.dragover { border-color: #2563eb; background: #eff6ff; }
 
-/* Right: group blocks */
+/* Group blocks: vertical list */
 .group-right-col {
-  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow-y: auto;
-  padding-right: 4px;
 }
 
 /* Individual group block */

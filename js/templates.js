@@ -310,37 +310,6 @@ function createGroupManagerCard(item) {
   const card = document.createElement("div"); card.className = `group-mgr-card ${languageClass(item.language)}`; card.draggable = canEdit();
   card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"template", templateId:item.id }); card.classList.add("dragging"); });
   card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
-
-  const tRow = document.createElement("div"); tRow.className = "group-mgr-card-top";
-  const t = document.createElement("div"); t.className = "group-mgr-card-title"; t.textContent = getTemplateCardTitle(item);
-  tRow.appendChild(t);
-  if (item.schoolLevel && item.schoolLevel !== "공통") {
-    const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot);
-  }
-
-  const s = document.createElement("div"); s.className = "group-mgr-card-teacher"; s.textContent = getTemplateTeacherSummary(item);
-
-  // Grade chips row
-  const gradesRow = document.createElement("div"); gradesRow.className = "group-mgr-card-grades";
-  const appliedGrades = getTemplateAppliedGrades(item.id);
-  if (appliedGrades.length) {
-    appliedGrades.forEach(g => {
-      const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm"; chip.textContent = g + "학년";
-      gradesRow.appendChild(chip);
-    });
-  } else {
-    const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm grade-chip-none"; chip.textContent = "미배정";
-    gradesRow.appendChild(chip);
-  }
-
-  card.append(tRow, s, gradesRow); return card;
-}
-
-// ── Group manager card (unchanged) ───────────────────────────────
-function createGroupManagerCard(item) {
-  const card = document.createElement("div"); card.className = `group-mgr-card ${languageClass(item.language)}`; card.draggable = canEdit();
-  card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"template", templateId:item.id }); card.classList.add("dragging"); });
-  card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
   const tRow = document.createElement("div"); tRow.className = "group-mgr-card-top";
   const t = document.createElement("div"); t.className = "group-mgr-card-title"; t.textContent = getTemplateCardTitle(item);
   tRow.appendChild(t);
@@ -497,46 +466,57 @@ export function renderGroupManager(board, onRender) {
   // Level filter bar
   const filterBar = document.createElement("div"); filterBar.className = "group-level-filter-bar";
   ["전체","중등","고등"].forEach(level => {
-    const btn = makeBtn(level === "전체" ? "전체" : level === "중등" ? "📘 중등" : "📗 고등",
+    const btn = makeBtn(
+      level === "전체" ? "전체" : level === "중등" ? "📘 중등" : "📗 고등",
       "group-level-btn" + (_groupManagerLevel === level ? " active" : ""),
-      () => { _groupManagerLevel = level; renderGroupManager(board, onRender); });
+      () => { _groupManagerLevel = level; renderGroupManager(board, onRender); }
+    );
     filterBar.appendChild(btn);
   });
   board.appendChild(filterBar);
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";
 
-  // ── Left: unassigned pool ──
-  const leftCol = document.createElement("div"); leftCol.className = "group-left-col";
-  const leftHdr = document.createElement("div"); leftHdr.className = "group-pool-label group-pool-main-label"; leftHdr.textContent = "미배정 과목";
-  leftCol.appendChild(leftHdr);
+  // ── Section 1: Unassigned pool (TOP) ──────────────────────────
+  const unSection = document.createElement("div"); unSection.className = "group-section";
+  const unHdr = document.createElement("div"); unHdr.className = "group-section-hdr";
+  const unTitle = document.createElement("span"); unTitle.className = "group-pool-main-label"; unTitle.textContent = "미배정 과목";
+  unHdr.appendChild(unTitle);
+  unSection.appendChild(unHdr);
 
   const validIds = new Set(groups().map(g => g.id));
   const unassigned = templates().filter(t => gmLevelFilter(t) && (!t.calcGroupId || !validIds.has(t.calcGroupId))).sort((a,b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
 
-  const unPool = document.createElement("div"); unPool.className = "group-unassigned-pool";
+  const unPool = document.createElement("div"); unPool.className = "group-unassigned-pool group-unassigned-horiz";
   unPool.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); unPool.classList.add("dragover"); });
   unPool.addEventListener("dragleave", () => unPool.classList.remove("dragover"));
   unPool.addEventListener("drop", e => {
     if (!canEdit()) return; e.preventDefault(); unPool.classList.remove("dragover");
     const drag = currentDrag; if (!drag || drag.kind !== "template") return;
-    // Remove from all units
     groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== drag.templateId); }));
     assignTemplateGroup(drag.templateId, null);
     scheduleSave("templates"); onRender();
   });
   if (unassigned.length) unassigned.forEach(t => unPool.appendChild(createGroupManagerCard(t)));
   else { const ph = document.createElement("div"); ph.className = "group-col-placeholder"; ph.textContent = "모든 과목이 배정됨"; unPool.appendChild(ph); }
-  leftCol.appendChild(unPool); layout.appendChild(leftCol);
+  unSection.appendChild(unPool);
+  layout.appendChild(unSection);
 
-  // ── Right: group blocks (vertical) ──
-  const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
-  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onRender)));
+  // ── Section 2: Group blocks (BELOW, vertical list) ────────────
+  const grpSection = document.createElement("div"); grpSection.className = "group-section";
+  const grpHdr = document.createElement("div"); grpHdr.className = "group-section-hdr";
+  const grpTitle = document.createElement("span"); grpTitle.className = "group-pool-main-label"; grpTitle.textContent = "그룹 목록";
+  grpHdr.appendChild(grpTitle);
+  grpSection.appendChild(grpHdr);
 
+  const grpList = document.createElement("div"); grpList.className = "group-right-col";
+  groups().forEach(g => grpList.appendChild(createGroupBlock(g.id, onRender)));
   if (!groups().length) {
-    const em = document.createElement("div"); em.className = "group-col-placeholder"; em.textContent = "'그룹 추가'를 눌러 시작하세요."; rightCol.appendChild(em);
+    const em = document.createElement("div"); em.className = "group-col-placeholder"; em.textContent = "'그룹 추가'를 눌러 시작하세요."; grpList.appendChild(em);
   }
-  layout.appendChild(rightCol);
+  grpSection.appendChild(grpList);
+  layout.appendChild(grpSection);
+
   board.appendChild(layout);
 }
 
