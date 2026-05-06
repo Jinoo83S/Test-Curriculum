@@ -176,7 +176,7 @@ function renderRoomGrid(wrap) {
   const periods = ttConfig().periodLabels;
   buildGrid(periods, days, wrap, (day, period) => {
     return entries().filter(e => e.roomId === currentRoom && e.day === day && e.period === period);
-  });
+  }, { showGrade: true, compact: true });
 }
 
 function renderAllGradesGrid(wrap) {
@@ -312,14 +312,21 @@ function buildEntryCard(entry, opts = {}) {
   card.style.color = gradeColor.text;
   card.style.borderLeft = `4px solid ${gradeColor.border}`;
 
+  // 과목명 (position:relative 컨테이너 안에서 absolute로 ×버튼, 학년칩 배치)
+  const titleRow = document.createElement("div"); titleRow.className = "tt-entry-title"; titleRow.textContent = title;
+
+  // × 버튼 (absolute right:2px)
+  const removeBtn = makeBtn("×", "tt-entry-remove", () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); });
+  removeBtn.disabled = !canEdit();
+
+  // 학년칩 (absolute, × 버튼 바로 왼쪽)
   if (showGrade && entry.gradeKey) {
+    card.classList.add("tt-entry-has-grade");
     const gc = document.createElement("span"); gc.className = "tt-entry-grade";
     gc.textContent = entry.gradeKey;
     gc.style.cssText = `background:${gradeColor.border};color:white`;
     card.appendChild(gc);
   }
-
-  const titleRow = document.createElement("div"); titleRow.className = "tt-entry-title"; titleRow.textContent = title;
 
   const teacherRow = document.createElement("div"); teacherRow.className = "tt-entry-row";
   const teacherSel = document.createElement("select"); teacherSel.className = "tt-entry-select"; teacherSel.disabled = !canEdit();
@@ -331,7 +338,6 @@ function buildEntryCard(entry, opts = {}) {
   teacherSel.addEventListener("change", e => { updateEntry(entry.id, "teacherName", e.target.value); recomputeConflicts(); renderAll(); });
   teacherRow.appendChild(teacherSel);
 
-  // compact 모드(전체·교사별): 교실 드롭다운 생략해서 카드 높이 최소화
   if (!compact) {
     const roomSel = document.createElement("select"); roomSel.className = "tt-entry-select"; roomSel.disabled = !canEdit();
     const noRoom = document.createElement("option"); noRoom.value = ""; noRoom.textContent = "교실"; roomSel.appendChild(noRoom);
@@ -340,25 +346,40 @@ function buildEntryCard(entry, opts = {}) {
     teacherRow.appendChild(roomSel);
   }
 
-  const removeBtn = makeBtn("×", "tt-entry-remove", () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); });
-  removeBtn.disabled = !canEdit();
+  // 시간표 카드 자체도 드래그 가능 (이동용)
+  card.draggable = canEdit();
+  card.addEventListener("dragstart", ev => {
+    if (!canEdit()) { ev.preventDefault(); return; }
+    if (ev.target.closest("select,button")) { ev.preventDefault(); return; }
+    dragData = { kind: "entry", entryId: entry.id };
+    card.classList.add("tt-dragging");
+  });
+  card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
 
   card.append(titleRow, teacherRow, removeBtn);
   return card;
 }
 
 // ── Drop handler ──────────────────────────────────────────────────
+function moveEntry(entryId, day, period) {
+  if (!canEdit()) return;
+  const e = entries().find(x => x.id === entryId); if (!e) return;
+  e.day = day; e.period = period;
+  scheduleSave("timetable");
+}
+
 function handleDrop(data, day, period) {
+  if (!data || !canEdit()) return;
+  // 이미 배정된 카드 이동
+  if (data.kind === "entry" && data.entryId) {
+    moveEntry(data.entryId, day, period);
+    recomputeConflicts(); renderAll(); return;
+  }
+  // 좌측 과목카드 → 새 배정 추가
   const { templateId, sectionIdx = 0, gradeKey } = data;
   const resolvedGrade = gradeKey || currentGrade;
   const teachers = getTeachersForTemplate(templateId);
-  addEntry({
-    day, period,
-    templateId, sectionIdx,
-    teacherName: teachers[0] || "",
-    roomId: null,
-    gradeKey: resolvedGrade
-  });
+  addEntry({ day, period, templateId, sectionIdx, teacherName: teachers[0] || "", roomId: null, gradeKey: resolvedGrade });
   recomputeConflicts(); renderAll();
 }
 
@@ -429,7 +450,7 @@ function renderSubjectPanel() {
       card.append(topRow, botRow);
 
       if (!isDone) {
-        card.addEventListener("dragstart", () => { dragData = { templateId: tpl.id, sectionIdx: sec, gradeKey: currentGrade }; card.classList.add("tt-dragging"); });
+        card.addEventListener("dragstart", () => { dragData = { kind: "subject", templateId: tpl.id, sectionIdx: sec, gradeKey: currentGrade }; card.classList.add("tt-dragging"); });
         card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
       }
 
@@ -920,9 +941,27 @@ $("ttExportBtn")?.addEventListener("click", exportXlsx);
 $("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); alert("저장되었습니다."); });
 $("ttClearGradeBtn")?.addEventListener("click", () => {
   if (!canEdit()) return;
-  if (currentView !== "grade") { alert("학년별 보기에서 실행하세요."); return; }
-  if (!confirm(`"${currentGrade}" 시간표를 초기화할까요?`)) return;
-  ttDomain().entries = entries().filter(e => e.gradeKey !== currentGrade);
+  let label, keepFn;
+  if (currentView === "all") {
+    label = "전체 시간표";
+    keepFn = () => false;
+  } else if (currentView === "grade") {
+    label = `${currentGrade} 시간표`;
+    keepFn = e => e.gradeKey !== currentGrade;
+  } else if (currentView === "teacher") {
+    if (!currentTeacher) { alert("교사를 선택하세요."); return; }
+    label = `${currentTeacher} 교사 배정`;
+    keepFn = e => !splitTeacherNames(e.teacherName).includes(currentTeacher);
+  } else if (currentView === "room") {
+    if (!currentRoom) { alert("교실을 선택하세요."); return; }
+    const roomName = getRooms().find(r => r.id === currentRoom)?.name || currentRoom;
+    label = `${roomName} 교실 배정`;
+    keepFn = e => e.roomId !== currentRoom;
+  }
+  if (!keepFn) return;
+  if (!confirm(`"${label}"을 초기화할까요?
+되돌릴 수 없습니다.`)) return;
+  ttDomain().entries = entries().filter(keepFn);
   scheduleSave("timetable"); recomputeConflicts(); renderAll();
 });
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
