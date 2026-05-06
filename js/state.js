@@ -96,17 +96,17 @@ function normalizeUnit(u = {}) {
 }
 
 export function normalizeTemplateGroup(item = {}) {
+  const isConcurrent = item.isConcurrent !== false;
+  const isCrossGrade = !!item.isCrossGrade;
   return {
     id: item.id || uid("grp"),
     name: clean(item.name),
-    // New: isConcurrent = same day/period required for all units
-    isConcurrent: item.isConcurrent !== false,
-    // New: isCrossGrade = units can contain templates from multiple grades
-    isCrossGrade: !!item.isCrossGrade,
-    // New: units array (each unit = one timetable card)
+    isConcurrent,
+    isCrossGrade,
     units: Array.isArray(item.units) ? item.units.map(normalizeUnit) : [],
-    // Legacy compat (kept so old data still works)
-    groupType: item.isConcurrent === false ? "off" : (item.isCrossGrade ? "cross-grade" : "concurrent"),
+    // groupType: concurrent if isConcurrent (regardless of isCrossGrade)
+    // cross-grade only if NOT concurrent (pure co-teaching, no time sync needed)
+    groupType: isConcurrent ? "concurrent" : (isCrossGrade ? "cross-grade" : "off"),
     linkedGroupId: null
   };
 }
@@ -197,15 +197,24 @@ function normalizeRoomsDomain(raw = {}) {
 
 // ── Timetable ──────────────────────────────────────────────────────
 export function normalizeTimetableEntry(e = {}) {
+  const templateId = clean(e.templateId) || (Array.isArray(e.templateIds) && e.templateIds[0]) || null;
+  const gradeKey   = clean(e.gradeKey)   || (Array.isArray(e.gradeKeys)   && e.gradeKeys[0])   || null;
   return {
-    id: e.id || uid("ent"),
-    day:    (Number.isInteger(e.day)    && e.day >= 0    && e.day <= 4)    ? e.day    : 0,
-    period: (Number.isInteger(e.period) && e.period >= 0 && e.period <= 11) ? e.period : 0,
-    templateId:  clean(e.templateId) || null,
+    id:          e.id || uid("ent"),
+    day:         (Number.isInteger(e.day)    && e.day >= 0    && e.day <= 4)    ? e.day    : 0,
+    period:      (Number.isInteger(e.period) && e.period >= 0 && e.period <= 11) ? e.period : 0,
+    // Legacy single-template fields (always populated for compat)
+    templateId,
+    gradeKey,
     sectionIdx:  Number.isInteger(e.sectionIdx) ? e.sectionIdx : 0,
+    // Unit fields (new - null for standalone entries)
+    unitId:      clean(e.unitId)  || null,
+    groupId:     clean(e.groupId) || null,
+    // Arrays: for units with multiple templates/grades (cross-grade co-teaching)
+    templateIds: Array.isArray(e.templateIds) ? e.templateIds.filter(Boolean) : (templateId ? [templateId] : []),
+    gradeKeys:   Array.isArray(e.gradeKeys)   ? e.gradeKeys.filter(Boolean)   : (gradeKey   ? [gradeKey]   : []),
     teacherName: clean(e.teacherName),
     roomId:      clean(e.roomId) || null,
-    gradeKey:    clean(e.gradeKey)
   };
 }
 export function normalizeTimetableConstraint(c = {}) {

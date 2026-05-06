@@ -10,21 +10,19 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
+  // Build lookup maps using new structure
   const tplGroupMap = new Map(templates.map(t => [t.id, t.calcGroupId || null]));
-  const groupTypeMap = new Map(templateGroups.map(g => [g.id, g.groupType]));
-  const groupLinkMap = new Map(templateGroups.map(g => [g.id, g.linkedGroupId || null]));
+  const groupMap    = new Map(templateGroups.map(g => [g.id, g]));
 
-  const getGroupId = tid => tplGroupMap.get(tid) || null;
-  const isConcurrent = tid => { const g = getGroupId(tid); return g ? groupTypeMap.get(g) === "concurrent" : false; };
-  const isCrossGrade = tid => { const g = getGroupId(tid); return g ? groupTypeMap.get(g) === "cross-grade" : false; };
-  const sameGroup = (tidA, tidB) => { const g = getGroupId(tidA); return g && g === getGroupId(tidB); };
-
-  // Check if two templates are in "linked" groups (must share time slots)
-  const linkedGroups = (tidA, tidB) => {
-    const gA = getGroupId(tidA), gB = getGroupId(tidB);
-    if (!gA || !gB || gA === gB) return false;
-    return groupLinkMap.get(gA) === gB || groupLinkMap.get(gB) === gA;
+  const getGroupForEntry = e => e.groupId ? groupMap.get(e.groupId) : (e.templateId ? groupMap.get(tplGroupMap.get(e.templateId)) : null);
+  const sameUnit  = (a, b) => a.unitId && b.unitId && a.unitId === b.unitId;
+  const sameGroup = (a, b) => {
+    const gA = a.groupId || tplGroupMap.get(a.templateId);
+    const gB = b.groupId || tplGroupMap.get(b.templateId);
+    return gA && gA === gB;
   };
+  const isConcurrent = e => { const g = getGroupForEntry(e); return g?.isConcurrent ?? (g?.groupType === "concurrent"); };
+  const isCrossGrade = e => { const g = getGroupForEntry(e); return g?.isCrossGrade ?? (g?.groupType === "cross-grade"); };
 
   const bySlot = new Map();
   entries.forEach(e => {
@@ -38,7 +36,10 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
       for (let j = i + 1; j < slotEntries.length; j++) {
         const a = slotEntries[i], b = slotEntries[j];
 
-        // Teacher conflict — always applies (even concurrent teachers conflict)
+        // Same unit → intentionally co-located, skip all conflict checks
+        if (sameUnit(a, b)) continue;
+
+        // Teacher conflict (always applies — teachers can't be in two places)
         if (a.teacherName && b.teacherName) {
           const ta = splitTeacherNames(a.teacherName);
           const tb = splitTeacherNames(b.teacherName);
@@ -48,24 +49,23 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
           }
         }
 
-        // Room conflict
+        // Room conflict (cross-grade same unit shares room intentionally)
         if (a.roomId && b.roomId && a.roomId === b.roomId) {
-          // cross-grade in same group share a room intentionally
-          if (!(isCrossGrade(a.templateId) && isCrossGrade(b.templateId) && sameGroup(a.templateId, b.templateId))) {
+          if (!sameUnit(a, b)) {
             result.get(a.id).add("room");
             result.get(b.id).add("room");
           }
         }
 
-        // Student conflict
-        // 1. cross-grade same group → intentional co-teaching
-        if (isCrossGrade(a.templateId) && isCrossGrade(b.templateId) && sameGroup(a.templateId, b.templateId)) continue;
-        // 2. concurrent same group (parallel classes same grade) → no student conflict
-        if (isConcurrent(a.templateId) && isConcurrent(b.templateId) && sameGroup(a.templateId, b.templateId)) continue;
-        // 3. linked groups (e.g. 선택8 + 선택9 run simultaneously) → no student conflict between grades
-        if (linkedGroups(a.templateId, b.templateId)) continue;
-        // 4. Same grade → student conflict
-        if (a.gradeKey && b.gradeKey && a.gradeKey === b.gradeKey) {
+        // Student conflict — skip if: same concurrent group, or cross-grade co-teaching
+        if (sameGroup(a, b) && isConcurrent(a) && isConcurrent(b)) continue; // parallel concurrent classes
+        if (sameGroup(a, b) && (isCrossGrade(a) || isCrossGrade(b))) continue; // cross-grade in same group
+
+        // Check grade overlap
+        const gradesA = a.gradeKeys?.length ? a.gradeKeys : (a.gradeKey ? [a.gradeKey] : []);
+        const gradesB = b.gradeKeys?.length ? b.gradeKeys : (b.gradeKey ? [b.gradeKey] : []);
+        const gradeOverlap = gradesA.some(g => gradesB.includes(g));
+        if (gradeOverlap) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }

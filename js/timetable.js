@@ -138,6 +138,91 @@ function getSectionCount(templateId) {
   return Math.max(1, parseInt(meta?.classCount) || 1);
 }
 
+// ── Unit helpers ──────────────────────────────────────────────────
+/** Find the group and unit that contains this templateId */
+function getUnitForTemplate(templateId) {
+  for (const grp of (appState.templates.templateGroups || [])) {
+    for (const unit of (grp.units || [])) {
+      if (unit.templateIds.includes(templateId)) return { group: grp, unit };
+    }
+  }
+  return null;
+}
+
+/** Get display title for a unit (comma-joined template names) */
+function getUnitDisplayTitle(unit) {
+  return unit.templateIds
+    .map(id => { const t = getTemplateById(id); return t ? getTemplateCardTitle(t) : "?"; })
+    .filter(Boolean).join(" / ") || unit.name || "?";
+}
+
+/** Get all grade keys covered by a unit's templates */
+function getUnitGradeKeys(unit) {
+  const grades = new Set();
+  unit.templateIds.forEach(id => {
+    GRADE_KEYS.forEach(g => {
+      const board = appState.curriculum.gradeBoards[g] || [];
+      if (board.some(r => r.sem1TemplateId === id || r.sem2TemplateId === id)) grades.add(g);
+    });
+  });
+  return [...grades];
+}
+
+/** Get teachers for a unit (union of all template teachers) */
+function getUnitTeachers(unit) {
+  return [...new Set(unit.templateIds.flatMap(id => getTeachersForTemplate(id)))];
+}
+
+/**
+ * Build schedulable items for auto-assign.
+ * Returns items where each item = one timetable card slot to fill.
+ * Groups with isConcurrent=true are returned as "blocks" (arrays that must share a slot).
+ */
+function buildSchedulableItems() {
+  // Collect all templates that are in units
+  const templateIdsInUnits = new Set(
+    (appState.templates.templateGroups || []).flatMap(g => g.units.flatMap(u => u.templateIds))
+  );
+
+  const standalone = []; // individual templates not in any unit
+  const groupBlocks = []; // [{group, units:[{unit, credits, gradeKeys}]}]
+
+  // Process groups
+  (appState.templates.templateGroups || []).forEach(grp => {
+    if (!grp.units.length) return;
+    const unitItems = [];
+    grp.units.forEach(unit => {
+      const gradeKeys = getUnitGradeKeys(unit);
+      // Credits = max credits across all templates in unit
+      const credits = Math.max(1, ...unit.templateIds.map(id => {
+        return Math.max(...gradeKeys.map(g => getCreditsForTemplate(g, id)).filter(c => c > 0), 0);
+      }).filter(c => c > 0));
+      const teachers = getUnitTeachers(unit);
+      if (gradeKeys.length && credits > 0) {
+        unitItems.push({ unit, gradeKeys, credits, teachers: teachers[0] || "" });
+      }
+    });
+    if (unitItems.length) groupBlocks.push({ group: grp, unitItems });
+  });
+
+  // Process standalone templates (in curriculum but not in any unit)
+  GRADE_KEYS.forEach(gradeKey => {
+    getSubjectsForGrade(gradeKey).forEach(tpl => {
+      if (templateIdsInUnits.has(tpl.id)) return; // handled by units
+      const credits  = getCreditsForTemplate(gradeKey, tpl.id);
+      const sections = getSectionCount(tpl.id);
+      const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
+      for (let sec = 0; sec < sections; sec++) {
+        for (let i = 0; i < credits; i++) {
+          standalone.push({ kind:"standalone", templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
+        }
+      }
+    });
+  });
+
+  return { standalone, groupBlocks };
+}
+
 // ── Conflict recompute ────────────────────────────────────────────
 function recomputeConflicts() {
   conflictMap   = detectConflicts(entries(), appState.templates.templateGroups, appState.templates.templates);
@@ -296,69 +381,28 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
 
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;
-  const tpl = getTemplateById(entry.templateId);
-  const title = tpl ? getTemplateCardTitle(tpl) : "?";
-  const teachers = getTeachersForTemplate(entry.templateId);
-  const rooms    = getRooms();
-  const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
-  const hasConflict = conflicts.size > 0;
 
-  const card = document.createElement("div");
-  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
-  if (hasConflict) card.title = getConflictLabel(conflicts);
-
-  const gradeColor = getGradeColor(entry.gradeKey || currentGrade);
-  card.style.background = gradeColor.bg;
-  card.style.color = gradeColor.text;
-  card.style.borderLeft = `4px solid ${gradeColor.border}`;
-
-  // 과목명 (position:relative 컨테이너 안에서 absolute로 ×버튼, 학년칩 배치)
-  const titleRow = document.createElement("div"); titleRow.className = "tt-entry-title"; titleRow.textContent = title;
-
-  // × 버튼 (absolute right:2px)
-  const removeBtn = makeBtn("×", "tt-entry-remove", () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); });
-  removeBtn.disabled = !canEdit();
-
-  // 학년칩 (absolute, × 버튼 바로 왼쪽)
-  if (showGrade && entry.gradeKey) {
-    card.classList.add("tt-entry-has-grade");
-    const gc = document.createElement("span"); gc.className = "tt-entry-grade";
-    gc.textContent = entry.gradeKey;
-    gc.style.cssText = `background:${gradeColor.border};color:white`;
-    card.appendChild(gc);
+  // Determine display title and grade info
+  let title, displayGrades;
+  if (entry.unitId) {
+    // Unit-based entry
+    const grpInfo = (appState.templates.templateGroups || []).find(g => g.id === entry.groupId);
+    const unit = grpInfo?.units.find(u => u.id === entry.unitId);
+    title = unit ? getUnitDisplayTitle(unit) : (getTemplateCardTitle(getTemplateById(entry.templateId)) || "?");
+    displayGrades = entry.gradeKeys?.length ? entry.gradeKeys : (entry.gradeKey ? [entry.gradeKey] : []);
+  } else {
+    title = getTemplateCardTitle(getTemplateById(entry.templateId)) || "?";
+    displayGrades = entry.gradeKey ? [entry.gradeKey] : [];
   }
 
-  const teacherRow = document.createElement("div"); teacherRow.className = "tt-entry-row";
-  const teacherSel = document.createElement("select"); teacherSel.className = "tt-entry-select"; teacherSel.disabled = !canEdit();
-  const noTeacher = document.createElement("option"); noTeacher.value = ""; noTeacher.textContent = "교사"; teacherSel.appendChild(noTeacher);
-  teachers.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === entry.teacherName) o.selected = true; teacherSel.appendChild(o); });
-  if (entry.teacherName && !teachers.includes(entry.teacherName)) {
-    const o = document.createElement("option"); o.value = entry.teacherName; o.textContent = entry.teacherName; o.selected = true; teacherSel.appendChild(o);
-  }
-  teacherSel.addEventListener("change", e => { updateEntry(entry.id, "teacherName", e.target.value); recomputeConflicts(); renderAll(); });
-  teacherRow.appendChild(teacherSel);
+  // Teachers
+  const teachers = entry.unitId
+    ? (appState.templates.templateGroups || [])
+        .find(g => g.id === entry.groupId)?.units.find(u => u.id === entry.unitId)
+        ? getUnitTeachers((appState.templates.templateGroups.find(g => g.id === entry.groupId)?.units.find(u => u.id === entry.unitId)) || { templateIds: [] })
+        : getTeachersForTemplate(entry.templateId)
+    : getTeachersForTemplate(entry.templateId);
 
-  if (!compact) {
-    const roomSel = document.createElement("select"); roomSel.className = "tt-entry-select"; roomSel.disabled = !canEdit();
-    const noRoom = document.createElement("option"); noRoom.value = ""; noRoom.textContent = "교실"; roomSel.appendChild(noRoom);
-    rooms.forEach(r => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.name; if (r.id === entry.roomId) o.selected = true; roomSel.appendChild(o); });
-    roomSel.addEventListener("change", e => { updateEntry(entry.id, "roomId", e.target.value || null); recomputeConflicts(); renderAll(); });
-    teacherRow.appendChild(roomSel);
-  }
-
-  // 시간표 카드 자체도 드래그 가능 (이동용)
-  card.draggable = canEdit();
-  card.addEventListener("dragstart", ev => {
-    if (!canEdit()) { ev.preventDefault(); return; }
-    if (ev.target.closest("select,button")) { ev.preventDefault(); return; }
-    dragData = { kind: "entry", entryId: entry.id };
-    card.classList.add("tt-dragging");
-  });
-  card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
-
-  card.append(titleRow, teacherRow, removeBtn);
-  return card;
-}
 
 // ── Drop handler ──────────────────────────────────────────────────
 function moveEntry(entryId, day, period) {
@@ -653,8 +697,129 @@ function checkPlacementValid(item, slot, placed) {
   return true;
 }
 
-// ── Auto-assign ALL grades simultaneously ─────────────────────────
+// ── Auto-assign ALL grades simultaneously (unit-aware) ────────────
 export function autoAssignAll() {
+  if (!canEdit()) return;
+
+  const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
+  if (!activeGrades.length) { alert("커리큘럼에 배치된 과목이 없습니다."); return; }
+
+  if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
+
+  ttDomain().entries = [];
+
+  const { standalone, groupBlocks } = buildSchedulableItems();
+
+  const pc = ttConfig().periodCount;
+  const baseSlots = [];
+  for (let day = 0; day < 5; day++)
+    for (let period = 0; period < pc; period++)
+      baseSlots.push({ day, period });
+
+  const MAX_ATTEMPTS = 8;
+  let bestPlaced = [], bestFailed = [], bestScore = -1;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const placed = [], failed = [];
+
+    // ── Place concurrent groups first (most constrained) ─────────
+    for (const { group, unitItems } of groupBlocks) {
+      if (!group.isConcurrent) continue; // non-concurrent groups: place units independently
+      // Find slots needed (max credits across units)
+      const maxCredits = Math.max(...unitItems.map(u => u.credits));
+
+      for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
+        // Find a slot valid for ALL units in this group simultaneously
+        let foundSlot = null;
+        for (const slot of shuffle([...baseSlots])) {
+          const hypo = [];
+          let valid = true;
+          for (const { unit, gradeKeys, teachers } of unitItems) {
+            const item = {
+              kind: "unit", unitId: unit.id, groupId: group.id,
+              templateIds: unit.templateIds, gradeKeys,
+              templateId: unit.templateIds[0], gradeKey: gradeKeys[0],
+              teacherName: teachers, sectionIdx: 0
+            };
+            if (!checkPlacementValid(item, slot, [...placed, ...hypo])) { valid = false; break; }
+            hypo.push({ ...item, ...slot });
+          }
+          if (valid) { foundSlot = slot; break; }
+        }
+        if (foundSlot) {
+          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
+            placed.push(normalizeTimetableEntry({
+              id: uid("ent"), ...foundSlot,
+              unitId: unit.id, groupId: group.id,
+              templateIds: unit.templateIds, gradeKeys,
+              templateId: unit.templateIds[0], gradeKey: gradeKeys[0],
+              teacherName: teachers, sectionIdx: 0
+            }));
+          });
+        } else {
+          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
+            failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
+          });
+        }
+      }
+    }
+
+    // ── Place non-concurrent units independently ─────────────────
+    for (const { group, unitItems } of groupBlocks) {
+      if (group.isConcurrent) continue;
+      for (const { unit, gradeKeys, teachers, credits } of unitItems) {
+        for (let i = 0; i < credits; i++) {
+          const item = {
+            kind: "unit", unitId: unit.id, groupId: group.id,
+            templateIds: unit.templateIds, gradeKeys,
+            templateId: unit.templateIds[0], gradeKey: gradeKeys[0],
+            teacherName: teachers, sectionIdx: 0
+          };
+          let found = false;
+          for (const slot of shuffle([...baseSlots])) {
+            if (checkPlacementValid(item, slot, placed)) {
+              placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+              found = true; break;
+            }
+          }
+          if (!found) failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
+        }
+      }
+    }
+
+    // ── Place standalone templates ────────────────────────────────
+    for (const item of shuffle([...standalone])) {
+      let found = false;
+      for (const slot of shuffle([...baseSlots])) {
+        if (checkPlacementValid(item, slot, placed)) {
+          placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+          found = true; break;
+        }
+      }
+      if (!found) failed.push({ name: getTemplateCardTitle(getTemplateById(item.templateId)) || "?" });
+    }
+
+    if (placed.length > bestScore) {
+      bestScore  = placed.length;
+      bestPlaced = placed;
+      bestFailed = failed;
+    }
+    if (!bestFailed.length) break;
+  }
+
+  // Commit
+  bestPlaced.forEach(e => entries().push(e));
+  scheduleSave("timetable");
+  recomputeConflicts(); renderAll();
+
+  if (!bestFailed.length) {
+    alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!`);
+  } else {
+    const names = [...new Set(bestFailed.map(f => f.name))];
+    alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${names.length}개:\n${names.slice(0,12).join("\n")}${names.length>12?"\n...":""}` +
+      `\n\n💡 교사 제약 완화 또는 직접 배치로 보완하세요.`);
+  }
+}
   if (!canEdit()) return;
 
   const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
