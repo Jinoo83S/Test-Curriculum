@@ -30,7 +30,10 @@ import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTempla
 export function updateRowField(grade, rowId, field, value) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
-  row[field] = value; scheduleSave("curriculum");
+  row[field] = value;
+  // 창체 카테고리는 항상 시수=1 강제
+  if (row.category === "창체") row.credits = "1";
+  scheduleSave("curriculum");
 }
 
 export function addRow(grade) {

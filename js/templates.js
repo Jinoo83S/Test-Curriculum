@@ -325,29 +325,34 @@ function createGroupManagerCard(item) {
   card.append(tRow, s, gradesRow); return card;
 }
 
+// ── Scroll snapshot helpers ──────────────────────────────────────
+function snapScroll(board) {
+  return [".main-panel","#groupManagerBoard",".group-right-col",".group-left-col"]
+    .map(sel => { const el = board?.closest("*")?.ownerDocument?.querySelector(sel) ?? document.querySelector(sel); return el ? { sel, top: el.scrollTop } : null; })
+    .filter(Boolean);
+}
+function restoreScroll(snap) {
+  requestAnimationFrame(() => snap.forEach(({ sel, top }) => { const el = document.querySelector(sel); if (el) el.scrollTop = top; }));
+}
+
 // ── Unit block within a group ─────────────────────────────────────
-function createUnitBlock(groupId, unit, onRender) {
-  const grpObj = groups().find(g => g.id === groupId);
+function createUnitBlock(groupId, unit, onStructureChange) {
   const wrap = document.createElement("div"); wrap.className = "group-unit-block";
 
-  // Unit name input
-  const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-unit-name"; nameInp.placeholder = "수업묶음 이름"; nameInp.value = unit.name; nameInp.disabled = !canEdit();
+  const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
+  const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-unit-name";
+  nameInp.placeholder = "수업묶음 이름"; nameInp.value = unit.name; nameInp.disabled = !canEdit();
+  // Name change: save only, no re-render
   nameInp.addEventListener("change", e => { unit.name = e.target.value; scheduleSave("templates"); });
 
-  // Remove unit button
   const delUnitBtn = makeBtn("×", "group-unit-del-btn", () => {
     if (!canEdit()) return;
     const g = groups().find(g => g.id === groupId); if (!g) return;
-    // Remove templateIds from this unit → they go back to "unassigned to any unit" but stay in group
     g.units = g.units.filter(u => u.id !== unit.id);
-    scheduleSave("templates"); onRender();
+    scheduleSave("templates"); onStructureChange();
   }); delUnitBtn.disabled = !canEdit();
+  hdr.append(nameInp, delUnitBtn); wrap.appendChild(hdr);
 
-  const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
-  hdr.append(nameInp, delUnitBtn);
-  wrap.appendChild(hdr);
-
-  // Template cards within this unit
   const cardArea = document.createElement("div"); cardArea.className = "group-unit-cards";
   cardArea.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); cardArea.classList.add("dragover"); });
   cardArea.addEventListener("dragleave", () => cardArea.classList.remove("dragover"));
@@ -355,24 +360,19 @@ function createUnitBlock(groupId, unit, onRender) {
     if (!canEdit()) return; e.preventDefault(); cardArea.classList.remove("dragover");
     const drag = currentDrag; if (!drag || drag.kind !== "template") return;
     const tplId = drag.templateId;
-    // Remove from any other unit in any group first
     groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== tplId); }));
-    // Assign to group (calcGroupId)
     assignTemplateGroup(tplId, groupId);
-    // Add to this unit if not already
     if (!unit.templateIds.includes(tplId)) unit.templateIds.push(tplId);
-    scheduleSave("templates"); onRender();
+    scheduleSave("templates"); onStructureChange();
   });
 
-  // Render template cards in unit
   const unitTpls = unit.templateIds.map(id => templates().find(t => t.id === id)).filter(Boolean);
   if (unitTpls.length) {
     unitTpls.forEach(tpl => {
       const c = createGroupManagerCard(tpl);
-      // Add remove-from-unit button
       const rx = makeBtn("↩", "group-unit-card-remove", () => {
         unit.templateIds = unit.templateIds.filter(id => id !== tpl.id);
-        scheduleSave("templates"); onRender();
+        scheduleSave("templates"); onStructureChange();
       }); rx.title = "수업묶음에서 제거"; rx.disabled = !canEdit(); c.appendChild(rx);
       cardArea.appendChild(c);
     });
@@ -383,21 +383,19 @@ function createUnitBlock(groupId, unit, onRender) {
   return wrap;
 }
 
-// ── Group block (new vertical card style) ─────────────────────────
-function createGroupBlock(groupId, onRender) {
+// ── Group block ───────────────────────────────────────────────────
+function createGroupBlock(groupId, onStructureChange) {
   const grpObj = groups().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   const block = document.createElement("div"); block.className = "group-block";
 
-  // ── Header ──
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
 
-  // Group name
-  const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name"; nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
+  // Group name: save only, no re-render
+  const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name";
+  nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
-  // Checkboxes
   const cbWrap = document.createElement("div"); cbWrap.className = "group-block-checks";
-
   const mkCheck = (label, checked, onChange) => {
     const lbl = document.createElement("label"); lbl.className = "group-block-check";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.disabled = !canEdit();
@@ -406,86 +404,75 @@ function createGroupBlock(groupId, onRender) {
     lbl.append(cb, span); return lbl;
   };
 
+  // 같은 시간 배정 — save only, no re-render
   cbWrap.appendChild(mkCheck("같은 시간 배정", grpObj.isConcurrent, v => {
-    grpObj.isConcurrent = v; grpObj.groupType = v ? (grpObj.isCrossGrade ? "cross-grade" : "concurrent") : "off";
-    scheduleSave("templates"); onRender();
+    grpObj.isConcurrent = v;
+    // groupType: concurrent when isConcurrent is true (regardless of isCrossGrade)
+    grpObj.groupType = v ? "concurrent" : "off";
+    scheduleSave("templates");
   }));
+  // 학년 통합 수업 — save only, no re-render
   cbWrap.appendChild(mkCheck("학년 통합 수업", grpObj.isCrossGrade, v => {
-    grpObj.isCrossGrade = v; grpObj.groupType = grpObj.isConcurrent ? (v ? "cross-grade" : "concurrent") : "off";
-    scheduleSave("templates"); onRender();
+    grpObj.isCrossGrade = v;
+    // groupType stays "concurrent" if isConcurrent, isCrossGrade is separate
+    scheduleSave("templates");
   }));
 
-  // Delete group
-  const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onRender(); }); delBtn.disabled = !canEdit();
+  const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
+  delBtn.disabled = !canEdit();
+  hdr.append(nameInp, cbWrap, delBtn); block.appendChild(hdr);
 
-  hdr.append(nameInp, cbWrap, delBtn);
-  block.appendChild(hdr);
-
-  // ── Ungrouped-in-group area (assigned to group but not to any unit) ──
+  // Templates in group but not in any unit
   const allUnitTplIds = new Set(grpObj.units.flatMap(u => u.templateIds));
-  const groupedButNoUnit = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
-  if (groupedButNoUnit.length) {
+  const groupedNoUnit = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
+  if (groupedNoUnit.length) {
     const poolDiv = document.createElement("div"); poolDiv.className = "group-ungrouped-pool";
     const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-label"; poolLbl.textContent = "수업묶음에 배정 전";
-    poolDiv.appendChild(poolLbl);
     const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
-    // Drop to assign to group (no unit)
     poolCards.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); poolCards.classList.add("dragover"); });
     poolCards.addEventListener("dragleave", () => poolCards.classList.remove("dragover"));
     poolCards.addEventListener("drop", e => {
       if (!canEdit()) return; e.preventDefault(); poolCards.classList.remove("dragover");
       const drag = currentDrag; if (!drag || drag.kind !== "template") return;
-      // Remove from units first
       grpObj.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== drag.templateId); });
       assignTemplateGroup(drag.templateId, groupId);
-      scheduleSave("templates"); onRender();
+      scheduleSave("templates"); onStructureChange();
     });
-    groupedButNoUnit.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
-    poolDiv.appendChild(poolCards); block.appendChild(poolDiv);
+    groupedNoUnit.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
+    poolDiv.append(poolLbl, poolCards); block.appendChild(poolDiv);
   }
 
-  // ── Unit blocks ──
   const unitsWrap = document.createElement("div"); unitsWrap.className = "group-units-wrap";
-  grpObj.units.forEach(unit => unitsWrap.appendChild(createUnitBlock(groupId, unit, onRender)));
+  grpObj.units.forEach(unit => unitsWrap.appendChild(createUnitBlock(groupId, unit, onStructureChange)));
   block.appendChild(unitsWrap);
 
-  // Add unit button
   const addUnitBtn = makeBtn("+ 수업묶음 추가", "group-add-unit-btn", () => {
     if (!canEdit()) return;
     grpObj.units.push({ id: uid("unit"), name: "", templateIds: [] });
-    scheduleSave("templates"); onRender();
+    scheduleSave("templates"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
   block.appendChild(addUnitBtn);
-
   return block;
 }
 
 export function renderGroupManager(board, onRender) {
-  // ── Save scroll position of the right col to restore after re-render ──
-  const rightScrollEl  = board.querySelector(".group-right-col");
-  const savedScrollTop = rightScrollEl ? rightScrollEl.scrollTop : 0;
+  // ── Full re-render helper that saves/restores scroll ─────────────
+  function fullRender() {
+    const snap = snapScroll(board);
+    board.innerHTML = "";
+    _buildGroupManagerDOM(board, fullRender, onRender);
+    restoreScroll(snap);
+  }
+  _buildGroupManagerDOM(board, fullRender, onRender);
+}
 
-  board.innerHTML = "";
-
-  // onRender wrapper that preserves scroll position
-  const onRenderStable = () => {
-    const rs = board.querySelector(".group-right-col");
-    const st = rs ? rs.scrollTop : 0;
-    onRender();
-    // Restore scroll after React-like re-render settles
-    requestAnimationFrame(() => {
-      const rsNew = board.querySelector(".group-right-col");
-      if (rsNew) rsNew.scrollTop = st;
-    });
-  };
-
-  // Level filter bar
+function _buildGroupManagerDOM(board, onStructureChange, onRender) {
   const filterBar = document.createElement("div"); filterBar.className = "group-level-filter-bar";
   ["전체","중등","고등"].forEach(level => {
     const btn = makeBtn(
       level === "전체" ? "전체" : level === "중등" ? "📘 중등" : "📗 고등",
       "group-level-btn" + (_groupManagerLevel === level ? " active" : ""),
-      () => { _groupManagerLevel = level; renderGroupManager(board, onRender); }
+      () => { _groupManagerLevel = level; const snap = snapScroll(board); board.innerHTML = ""; _buildGroupManagerDOM(board, onStructureChange, onRender); restoreScroll(snap); }
     );
     filterBar.appendChild(btn);
   });
@@ -493,12 +480,11 @@ export function renderGroupManager(board, onRender) {
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";
 
-  // ── LEFT: Unassigned pool ──────────────────────────────────────
+  // Left: unassigned
   const leftCol = document.createElement("div"); leftCol.className = "group-left-col";
-
   const leftHdr = document.createElement("div"); leftHdr.className = "group-section-hdr";
-  const leftTitle = document.createElement("span"); leftTitle.className = "group-pool-main-label"; leftTitle.textContent = "미배정 과목";
-  leftHdr.appendChild(leftTitle); leftCol.appendChild(leftHdr);
+  leftHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"미배정 과목" }));
+  leftCol.appendChild(leftHdr);
 
   const validIds = new Set(groups().map(g => g.id));
   const unassigned = templates().filter(t => gmLevelFilter(t) && (!t.calcGroupId || !validIds.has(t.calcGroupId)))
@@ -512,36 +498,30 @@ export function renderGroupManager(board, onRender) {
     const drag = currentDrag; if (!drag || drag.kind !== "template") return;
     groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== drag.templateId); }));
     assignTemplateGroup(drag.templateId, null);
-    scheduleSave("templates"); onRenderStable();
+    scheduleSave("templates"); onStructureChange();
   });
   if (unassigned.length) unassigned.forEach(t => unPool.appendChild(createGroupManagerCard(t)));
   else { const ph = document.createElement("div"); ph.className = "group-col-placeholder"; ph.textContent = "모든 과목이 배정됨"; unPool.appendChild(ph); }
-  leftCol.appendChild(unPool);
-  layout.appendChild(leftCol);
+  leftCol.appendChild(unPool); layout.appendChild(leftCol);
 
-  // ── RIGHT: Group cards (wrap grid) ────────────────────────────
+  // Right: group cards
   const rightWrap = document.createElement("div"); rightWrap.className = "group-right-col-wrap";
-
   const rightHdr = document.createElement("div"); rightHdr.className = "group-right-col-hdr";
-  const rightTitle = document.createElement("span"); rightTitle.className = "group-pool-main-label"; rightTitle.textContent = "그룹 목록";
-  rightHdr.appendChild(rightTitle); rightWrap.appendChild(rightHdr);
+  rightHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"그룹 목록" }));
+  rightWrap.appendChild(rightHdr);
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
-  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onRenderStable)));
+  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onStructureChange)));
   if (!groups().length) {
-    const em = document.createElement("div"); em.className = "group-col-placeholder"; em.style.padding = "20px"; em.textContent = "'그룹 추가'를 눌러 시작하세요."; rightCol.appendChild(em);
+    rightCol.appendChild(Object.assign(document.createElement("div"), { className:"group-col-placeholder", textContent:"'그룹 추가'를 눌러 시작하세요.", style:"padding:20px" }));
   }
-  rightWrap.appendChild(rightCol);
-  layout.appendChild(rightWrap);
-
+  rightWrap.appendChild(rightCol); layout.appendChild(rightWrap);
   board.appendChild(layout);
 
-  // Restore right col scroll position
-  requestAnimationFrame(() => {
-    const newRight = board.querySelector(".group-right-col");
-    if (newRight && savedScrollTop) newRight.scrollTop = savedScrollTop;
-  });
+  // Also trigger external onRender for sidebar sync (but don't re-render group manager)
+  // This is called only when structure actually changes, not for simple edits
 }
+
 
 // ── Teacher datalist (shared by table + sidebar form) ────────────
 export function updateTeacherDatalist() {
