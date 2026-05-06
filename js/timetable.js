@@ -299,7 +299,8 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
   return table;
 }
 
-function buildEntryCard(entry) {
+function buildEntryCard(entry, opts = {}) {
+  const { compact = false, showGrade = false } = opts;
   const tpl = getTemplateById(entry.templateId);
   const title = tpl ? getTemplateCardTitle(tpl) : "?";
   const teachers = getTeachersForTemplate(entry.templateId);
@@ -308,22 +309,27 @@ function buildEntryCard(entry) {
   const hasConflict = conflicts.size > 0;
 
   const card = document.createElement("div");
-  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "");
+  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
-  // Color by category
   const cat = getCategoryForTemplate(entry.gradeKey || currentGrade, entry.templateId);
   const color = getCategoryColor(cat);
-  card.style.background = color.bg; card.style.color = color.text; card.style.borderColor = color.text + "33";
+  card.style.background = color.bg;
+  card.style.color = color.text;
+  card.style.borderColor = color.text + "55";
+  card.style.borderLeft = `3px solid ${color.text}`;
 
-  // Title row
+  // Grade chip (전체·교사별 보기에서 학년 표시)
+  if (showGrade && entry.gradeKey) {
+    const gc = document.createElement("span"); gc.className = "tt-entry-grade"; gc.textContent = entry.gradeKey;
+    card.appendChild(gc);
+  }
+
   const titleRow = document.createElement("div"); titleRow.className = "tt-entry-title"; titleRow.textContent = title;
 
-  // Teacher select
   const teacherRow = document.createElement("div"); teacherRow.className = "tt-entry-row";
   const teacherSel = document.createElement("select"); teacherSel.className = "tt-entry-select"; teacherSel.disabled = !canEdit();
-  const noTeacher = document.createElement("option"); noTeacher.value = ""; noTeacher.textContent = "교사 선택";
-  teacherSel.appendChild(noTeacher);
+  const noTeacher = document.createElement("option"); noTeacher.value = ""; noTeacher.textContent = "교사"; teacherSel.appendChild(noTeacher);
   teachers.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === entry.teacherName) o.selected = true; teacherSel.appendChild(o); });
   if (entry.teacherName && !teachers.includes(entry.teacherName)) {
     const o = document.createElement("option"); o.value = entry.teacherName; o.textContent = entry.teacherName; o.selected = true; teacherSel.appendChild(o);
@@ -331,15 +337,15 @@ function buildEntryCard(entry) {
   teacherSel.addEventListener("change", e => { updateEntry(entry.id, "teacherName", e.target.value); recomputeConflicts(); renderAll(); });
   teacherRow.appendChild(teacherSel);
 
-  // Room select
-  const roomSel = document.createElement("select"); roomSel.className = "tt-entry-select"; roomSel.disabled = !canEdit();
-  const noRoom = document.createElement("option"); noRoom.value = ""; noRoom.textContent = "교실";
-  roomSel.appendChild(noRoom);
-  rooms.forEach(r => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.name; if (r.id === entry.roomId) o.selected = true; roomSel.appendChild(o); });
-  roomSel.addEventListener("change", e => { updateEntry(entry.id, "roomId", e.target.value || null); recomputeConflicts(); renderAll(); });
-  teacherRow.appendChild(roomSel);
+  // compact 모드(전체·교사별): 교실 드롭다운 생략해서 카드 높이 최소화
+  if (!compact) {
+    const roomSel = document.createElement("select"); roomSel.className = "tt-entry-select"; roomSel.disabled = !canEdit();
+    const noRoom = document.createElement("option"); noRoom.value = ""; noRoom.textContent = "교실"; roomSel.appendChild(noRoom);
+    rooms.forEach(r => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.name; if (r.id === entry.roomId) o.selected = true; roomSel.appendChild(o); });
+    roomSel.addEventListener("change", e => { updateEntry(entry.id, "roomId", e.target.value || null); recomputeConflicts(); renderAll(); });
+    teacherRow.appendChild(roomSel);
+  }
 
-  // Remove btn
   const removeBtn = makeBtn("×", "tt-entry-remove", () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); });
   removeBtn.disabled = !canEdit();
 
@@ -363,41 +369,46 @@ function handleDrop(data, day, period) {
 }
 
 // ── Subject panel ─────────────────────────────────────────────────
+// ── Subject panel ─────────────────────────────────────────────────
 function renderSubjectPanel() {
-  const hdrEl  = $("ttPanelHeader");
+  const hdrEl = $("ttPanelHeader");
   const panel  = $("ttPanel");
   if (!panel) return;
   panel.innerHTML = "";
+
+  // Header: 제목 + 현재 학년
   if (hdrEl) {
     hdrEl.innerHTML = "";
     const row = document.createElement("div"); row.className = "tt-panel-header";
     const title = document.createElement("div"); title.className = "tt-panel-title"; title.textContent = "과목 카드";
-    const gradeLabel = document.createElement("div"); gradeLabel.className = "tt-panel-grade";
-    gradeLabel.textContent = currentView === "grade" ? currentGrade : "";
+    const gradeLabel = document.createElement("div"); gradeLabel.className = "tt-panel-grade"; gradeLabel.textContent = currentGrade;
     row.append(title, gradeLabel); hdrEl.appendChild(row);
   }
 
+  // 학년별 이외 보기: 학년 선택 드롭다운 표시 후 그대로 렌더링 계속
   if (currentView !== "grade") {
-    const info = document.createElement("div"); info.className = "tt-empty";
-    info.textContent = "학년별 보기에서 과목을 배치하세요."; panel.appendChild(info); return;
+    const guide = document.createElement("div"); guide.style.cssText = "font-size:10px;color:#6b7280;padding:4px 2px 2px;";
+    guide.textContent = "배치할 학년:"; panel.appendChild(guide);
+    const gSel = document.createElement("select"); gSel.className = "tt-sc-grade-sel";
+    GRADE_KEYS.forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = g; if (g === currentGrade) o.selected = true; gSel.appendChild(o); });
+    gSel.addEventListener("change", e => { currentGrade = e.target.value; renderAll(); });
+    panel.appendChild(gSel);
   }
 
+  // 과목 카드 렌더링 (모든 보기에서 동일)
   const subjects = getSubjectsForGrade(currentGrade);
   if (!subjects.length) {
     const e = document.createElement("div"); e.className = "tt-empty"; e.textContent = "이 학년에 배치된 과목이 없습니다."; panel.appendChild(e); return;
   }
 
   subjects.forEach(tpl => {
-    const credits   = getCreditsForTemplate(currentGrade, tpl.id);
-    const assigned  = getAssignedCount(tpl.id, currentGrade);
-    const sections  = getSectionCount(tpl.id);
-    const cat       = getCategoryForTemplate(currentGrade, tpl.id);
-    const color     = getCategoryColor(cat);
-    const teachers  = getTeachersForTemplate(tpl.id);
+    const credits  = getCreditsForTemplate(currentGrade, tpl.id);
+    const sections = getSectionCount(tpl.id);
+    const cat      = getCategoryForTemplate(currentGrade, tpl.id);
+    const color    = getCategoryColor(cat);
+    const teachers = getTeachersForTemplate(tpl.id);
 
-    // Section tabs if multiple sections
-    const sectionCount = Math.max(1, sections);
-    for (let sec = 0; sec < sectionCount; sec++) {
+    for (let sec = 0; sec < Math.max(1, sections); sec++) {
       const card = document.createElement("div");
       card.className = "tt-subject-card";
       card.style.borderLeftColor = color.text;
@@ -415,14 +426,14 @@ function renderSubjectPanel() {
 
       const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
       botRow.textContent = teachers.join(", ") || "-";
-      if (sectionCount > 1) {
+      if (sections > 1) {
         const secBadge = document.createElement("span"); secBadge.className = "tt-sc-sec"; secBadge.textContent = `${sec + 1}분반`;
         botRow.appendChild(secBadge);
       }
       card.append(topRow, botRow);
 
       card.addEventListener("dragstart", () => { dragData = { templateId: tpl.id, sectionIdx: sec, gradeKey: currentGrade }; card.classList.add("tt-dragging"); });
-      card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
+      card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
       panel.appendChild(card);
     }
   });

@@ -81,13 +81,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-period-label input{width:100%;border:none;background:transparent;text-align:center;font-size:10px;font-weight:700;color:#374151;padding:1px}
 .tt-lunch-row .tt-period-label{font-size:14px;text-align:center}
 .tt-lunch-cell{background:#fef9c3;color:#92400e;text-align:center;font-size:10px;font-weight:600;padding:3px;border:1px solid #fde68a}
-.tt-cell{border:1px solid #e2e8f0;vertical-align:top;padding:2px;min-height:52px;display:flex;flex-direction:column;gap:2px;position:relative}
+.tt-cell{border:1px solid #e2e8f0;vertical-align:top;padding:2px;height:54px;position:relative}
 .tt-cell.tt-dragover{background:#dbeafe;outline:2px dashed #2563eb}
-.tt-cell-ph{flex:1;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:16px;pointer-events:none}
+.tt-cell-ph{min-height:40px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:16px;pointer-events:none}
 .tt-cell-ph::before{content:"+"}
 
 /* ── Entry card ── */
-.tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:3px 4px;position:relative;font-size:11px;border-left-width:3px}
+.tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:3px 4px;position:relative;font-size:11px;border-left-width:3px;margin-bottom:2px}
 .tt-entry-card.tt-entry-conflict{outline:2px solid #ef4444;animation:tt-pulse .8s ease-in-out infinite alternate}
 @keyframes tt-pulse{from{outline-color:#ef4444}to{outline-color:#fca5a5}}
 .tt-entry-grade{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;background:rgba(0,0,0,.12);margin-bottom:2px;white-space:nowrap}
