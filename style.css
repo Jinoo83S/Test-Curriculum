@@ -1285,8 +1285,8 @@ button {
 .template-applied-grades {
   display: flex;
   flex-wrap: wrap;
-  gap: 1px;
-  padding: 2px 4px 1px;
+  gap: 3px;
+  padding: 3px 6px 2px;
   min-height: 20px;
 }
 .grade-chip {
@@ -1304,7 +1304,10 @@ button {
   background: #f3f4f6;
   color: #9ca3af;
 }
-.grade-chip-sm { padding: 1px 3px; font-size: 9px; }
+.grade-chip-sm {
+  font-size: 9px;
+  padding: 1px 5px;
+}
 /* Auto-derived schoolLevel select indicator */
 .level-select-derived {
   background: #f0fdf4;
@@ -2926,4 +2929,41 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   border-radius: 4px;
   padding: 1px 6px;
   cursor: help;
+}
+
+/* ── Group block: new layout ──────────────────────────── */
+.group-cond-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 3px 0 4px;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 4px;
+}
+.group-direct-drop {
+  font-size: 10px;
+  color: #9ca3af;
+  padding: 4px 6px;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 5px;
+  text-align: center;
+  margin-bottom: 4px;
+}
+.group-direct-drop.dragover { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
+
+/* Remove isCrossGrade checkbox (now implied by unit) */
+.group-block-checks { display: none; }
+
+/* Unit block: ② same classroom label */
+.group-unit-block {
+  border: 1.5px solid #bfdbfe;
+  background: #f0f9ff;
+  border-radius: 6px;
+  padding: 5px 7px;
+  position: relative;
+}
+.group-unit-hdr {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
 }

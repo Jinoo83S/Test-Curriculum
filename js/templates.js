@@ -342,8 +342,8 @@ function restoreScroll(snap) {
 // ── Unit block within a group ─────────────────────────────────────
 function createUnitBlock(groupId, unit, onStructureChange) {
   const wrap = document.createElement("div"); wrap.className = "group-unit-block";
-  if (!unit.sections) unit.sections = {}; // {templateId: sectionIdx}
 
+  // ── Header: only × button (no name input per req #3) ──
   const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
   const delUnitBtn = makeBtn("×", "group-unit-del-btn", () => {
     if (!canEdit()) return;
@@ -360,52 +360,34 @@ function createUnitBlock(groupId, unit, onStructureChange) {
     if (!canEdit()) return; e.preventDefault(); cardArea.classList.remove("dragover");
     const drag = currentDrag; if (!drag || drag.kind !== "template") return;
     const tplId = drag.templateId;
-    groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== tplId); delete (u.sections||{})[tplId]; }));
+    groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== tplId); }));
     assignTemplateGroup(tplId, groupId);
     if (!unit.templateIds.includes(tplId)) unit.templateIds.push(tplId);
-    unit.sections[tplId] = 0; // default section 0
     scheduleSave("templates"); onStructureChange();
   });
 
   const unitTpls = unit.templateIds.map(id => templates().find(t => t.id === id)).filter(Boolean);
   if (unitTpls.length) {
     unitTpls.forEach(tpl => {
-      const cardWrap = document.createElement("div"); cardWrap.className = "group-unit-card-wrap";
-      const card = createGroupManagerCard(tpl);
-
-      // Section selector (if template has >1 section)
-      const sectionCount = (() => { const meta = appState.rosters?.rosterMeta?.[tpl.id]; return Math.max(1, parseInt(meta?.classCount)||1); })();
-      if (sectionCount > 1) {
-        const secSel = document.createElement("select"); secSel.className = "group-unit-sec-sel"; secSel.title = "이 수업묶음에서 사용할 분반";
-        secSel.disabled = !canEdit();
-        for (let i = 0; i < sectionCount; i++) {
-          const o = document.createElement("option"); o.value = i; o.textContent = `${i+1}분반`;
-          if ((unit.sections[tpl.id] ?? 0) === i) o.selected = true;
-          secSel.appendChild(o);
-        }
-        secSel.addEventListener("change", e => { unit.sections[tpl.id] = parseInt(e.target.value); scheduleSave("templates"); });
-        cardWrap.appendChild(secSel);
-      }
-
+      const c = createGroupManagerCard(tpl);
       const rx = makeBtn("↩", "group-unit-card-remove", () => {
         unit.templateIds = unit.templateIds.filter(id => id !== tpl.id);
-        delete unit.sections[tpl.id];
         scheduleSave("templates"); onStructureChange();
-      }); rx.title = "수업묶음에서 제거"; rx.disabled = !canEdit(); card.appendChild(rx);
-
-      cardWrap.appendChild(card); cardArea.appendChild(cardWrap);
+      }); rx.title = "수업묶음에서 제거"; rx.disabled = !canEdit(); c.appendChild(rx);
+      cardArea.appendChild(c);
     });
   } else {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
 
-  // Badge: same classroom if 2+ templates
+  // Visual badge: if this unit has 2+ templates it means "same classroom"
   if (unit.templateIds.length > 1) {
-    const b = document.createElement("div"); b.className = "group-unit-classroom-badge";
-    b.textContent = "🏫 같은 교실"; b.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
-    wrap.appendChild(b);
+    const sameBadge = document.createElement("div"); sameBadge.className = "group-unit-classroom-badge";
+    sameBadge.textContent = "🏫 같은 교실"; sameBadge.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
+    wrap.appendChild(sameBadge);
   }
+
   return wrap;
 }
 
@@ -413,50 +395,46 @@ function createUnitBlock(groupId, unit, onStructureChange) {
 function createGroupBlock(groupId, onStructureChange) {
   const grpObj = groups().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   const block = document.createElement("div"); block.className = "group-block";
-
-  // ── Collapse state (stored on grpObj at runtime, not persisted) ──
   if (grpObj._collapsed === undefined) grpObj._collapsed = false;
 
+  // ── Header: [drag] [▼/▶] [이름_____] [삭제] ──────────────────
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
 
-  // ① Collapse toggle button
-  const collapseBtn = document.createElement("button");
-  collapseBtn.type = "button"; collapseBtn.className = "group-collapse-btn";
-  collapseBtn.textContent = grpObj._collapsed ? "▶" : "▼";
-  collapseBtn.title = grpObj._collapsed ? "펼치기" : "접기";
-
-  // ② Group name
   const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name";
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
-  // ③ Checkboxes
-  const cbWrap = document.createElement("div"); cbWrap.className = "group-block-checks";
+  const collapseBtn = document.createElement("button"); collapseBtn.type = "button"; collapseBtn.className = "group-collapse-btn";
+  collapseBtn.textContent = grpObj._collapsed ? "▶" : "▼";
+  collapseBtn.title = grpObj._collapsed ? "펼치기" : "접기";
+
+  const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
+  delBtn.disabled = !canEdit();
+
+  hdr.append(collapseBtn, nameInp, delBtn);
+  block.appendChild(hdr);
+
+  // ── Conditions row ────────────────────────────────────────────
+  const condRow = document.createElement("div"); condRow.className = "group-cond-row";
   const mkCheck = (label, checked, onChange) => {
     const lbl = document.createElement("label"); lbl.className = "group-block-check";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.disabled = !canEdit();
     cb.addEventListener("change", e => onChange(e.target.checked));
     lbl.append(cb, Object.assign(document.createElement("span"), { textContent: label })); return lbl;
   };
-  cbWrap.appendChild(mkCheck("① 같은 시간 배정 (다른 교실)", grpObj.isConcurrent, v => {
+  condRow.appendChild(mkCheck("같은 시간 배정 (다른 교실)", grpObj.isConcurrent, v => {
     grpObj.isConcurrent = v; grpObj.groupType = v ? "concurrent" : "off"; scheduleSave("templates");
   }));
-  cbWrap.appendChild(mkCheck("② 같은 교실 수업 (같은 교사)", grpObj.isCrossGrade, v => {
-    grpObj.isCrossGrade = v; scheduleSave("templates");
-  }));
+  block.appendChild(condRow);
 
-  const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
-  delBtn.disabled = !canEdit();
-  hdr.append(collapseBtn, nameInp, cbWrap, delBtn); block.appendChild(hdr);
-
-  // ── Body (collapsible) ──
+  // ── Body (collapsible) ────────────────────────────────────────
   const body = document.createElement("div"); body.className = "group-block-body";
   if (grpObj._collapsed) body.style.display = "none";
 
-  // Templates in group but not in any unit
+  // Pool: templates assigned to group but not in any unit
   const allUnitTplIds = new Set(grpObj.units.flatMap(u => u.templateIds));
-  const groupedNoUnit = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
-  if (groupedNoUnit.length) {
+  const poolTpls = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
+  if (poolTpls.length) {
     const poolDiv = document.createElement("div"); poolDiv.className = "group-ungrouped-pool";
     const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-label"; poolLbl.textContent = "수업묶음에 배정 전";
     const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
@@ -469,23 +447,38 @@ function createGroupBlock(groupId, onStructureChange) {
       assignTemplateGroup(drag.templateId, groupId);
       scheduleSave("templates"); onStructureChange();
     });
-    groupedNoUnit.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
+    poolTpls.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
     poolDiv.append(poolLbl, poolCards); body.appendChild(poolDiv);
   }
 
+  // Drop zone for group (not unit) — accept cards directly into group pool
+  const dropZone = document.createElement("div"); dropZone.className = "group-direct-drop";
+  dropZone.textContent = "과목 드롭 → 같은 시간 배정";
+  dropZone.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); dropZone.classList.add("dragover"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+  dropZone.addEventListener("drop", e => {
+    if (!canEdit()) return; e.preventDefault(); dropZone.classList.remove("dragover");
+    const drag = currentDrag; if (!drag || drag.kind !== "template") return;
+    grpObj.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== drag.templateId); });
+    assignTemplateGroup(drag.templateId, groupId);
+    scheduleSave("templates"); onStructureChange();
+  });
+  if (!poolTpls.length) body.appendChild(dropZone);
+
+  // Units (same classroom)
   const unitsWrap = document.createElement("div"); unitsWrap.className = "group-units-wrap";
   grpObj.units.forEach(unit => unitsWrap.appendChild(createUnitBlock(groupId, unit, onStructureChange)));
   body.appendChild(unitsWrap);
 
-  const addUnitBtn = makeBtn("+ 수업묶음 추가", "group-add-unit-btn", () => {
+  const addUnitBtn = makeBtn("+ 수업묶음 추가 (같은 교실)", "group-add-unit-btn", () => {
     if (!canEdit()) return;
-    grpObj.units.push({ id: uid("unit"), name: "", templateIds: [] });
+    grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], sections: {} });
     scheduleSave("templates"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
   body.appendChild(addUnitBtn);
   block.appendChild(body);
 
-  // Collapse toggle wiring
+  // Collapse toggle
   collapseBtn.addEventListener("click", () => {
     grpObj._collapsed = !grpObj._collapsed;
     body.style.display = grpObj._collapsed ? "none" : "";

@@ -387,83 +387,67 @@ function entryTeachers(e) {
 // ── Entry card ────────────────────────────────────────────────────
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;
-  const title       = entryTitle(entry);
-  const teachers    = entryTeachers(entry);
+  const title        = entryTitle(entry);
+  const teacherText  = entry.teacherName || "";
   const displayGrades = entryGradeKeys(entry);
-  const rooms       = getRooms();
 
   const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
   const hasConflict = conflicts.size > 0;
 
   const card = document.createElement("div");
-  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
+  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (entry.pinned ? " tt-entry-pinned" : "");
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
   const firstGrade = displayGrades[0] || currentGrade;
   const gradeColor = getGradeColor(firstGrade);
-  card.style.background   = gradeColor.bg;
-  card.style.color        = gradeColor.text;
-  card.style.borderLeft   = `4px solid ${gradeColor.border}`;
+  card.style.background  = gradeColor.bg;
+  card.style.color       = gradeColor.text;
+  card.style.borderLeft  = `4px solid ${gradeColor.border}`;
 
-  // No × button — drag card to bottom bar to remove
-
-  // Pin button (📌/📍 toggle, always enabled)
+  // ── Row 1: title (left) + pin button (right) ──────────────────
+  const row1 = document.createElement("div"); row1.className = "tt-card-row1";
+  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
   const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
-  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정"; pinBtn.style.cssText="position:absolute;top:1px;right:2px;width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.4;transition:opacity .1s;z-index:1";
+  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
   pinBtn.disabled = !canEdit();
-  pinBtn.addEventListener("click", () => {
+  pinBtn.addEventListener("click", ev => {
+    ev.stopPropagation();
     if (!canEdit()) return;
     const e = entries().find(x => x.id === entry.id); if (!e) return;
     e.pinned = !e.pinned; scheduleSave("timetable"); renderAll();
   });
-  card.appendChild(pinBtn);
-  if (entry.pinned) card.classList.add("tt-entry-pinned");
+  row1.append(titleEl, pinBtn);
+  card.appendChild(row1);
 
-  // Grade chips (absolute, left of × button)
-  if (showGrade && displayGrades.length) {
-    card.classList.add("tt-entry-has-grade");
-    displayGrades.slice().reverse().forEach((g, ri) => {
-      const gc = document.createElement("span"); gc.className = "tt-entry-grade";
-      gc.textContent = g.replace("학년","");
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${16 + ri * 20}px;font-size:8px;padding:0 3px`;
-      card.appendChild(gc);
-    });
-  }
-
-  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
-  // Dynamic padding: pin(16) + per-grade-chip(16*n)
-  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
-
-  card.appendChild(titleEl);
-  // Teacher row always present (2-row height even without teacher)
+  // ── Row 2: teacher (left) + grade chips (right) ───────────────
+  const row2 = document.createElement("div"); row2.className = "tt-card-row2";
   const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
-  teacherEl.textContent = entry.teacherName || " "; // nbsp keeps height
-  card.appendChild(teacherEl);
+  teacherEl.textContent = teacherText || "\u00a0";
+  row2.appendChild(teacherEl);
 
-  // Grade chips: sorted 7→12, below teacher row
   if (showGrade && displayGrades.length) {
-    card.classList.add("tt-entry-has-grade");
-    const sortedGrades = [...displayGrades].sort((a, b) => parseInt(a) - parseInt(b));
-    const chipRow = document.createElement("div"); chipRow.className = "tt-entry-grade-row";
-    sortedGrades.forEach(g => {
-      const gc = document.createElement("span"); gc.className = "tt-entry-grade-chip";
-      gc.textContent = g.replace("학년","");
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white`;
-      chipRow.appendChild(gc);
+    const chipWrap = document.createElement("div"); chipWrap.className = "tt-entry-grade-row";
+    // Sort by grade number 7→12
+    [...displayGrades].sort((a, b) => parseInt(a) - parseInt(b)).forEach(g => {
+      const chip = document.createElement("span"); chip.className = "tt-entry-grade-chip";
+      chip.textContent = g.replace("학년","");
+      chip.style.cssText = `background:${getGradeColor(g).border};color:white`;
+      chipWrap.appendChild(chip);
     });
-    card.appendChild(chipRow);
+    row2.appendChild(chipWrap);
   }
+  card.appendChild(row2);
 
-  // Click to show detail popup (teacher/room edit)
+  // Click → detail modal
   card.addEventListener("click", ev => {
-    if (ev.target.closest("button") || ev.target.closest("select")) return;
+    if (ev.target.closest("button")) return;
     showEntryDetail(entry);
   });
 
-  // Drag to move (entry kind)
+  // Drag to move
   card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
-    if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
+    if (!canEdit() || entry.pinned || ev.target.closest("button")) { ev.preventDefault(); return; }
     dragData = { kind: "entry", entryId: entry.id };
     card.classList.add("tt-dragging");
   });
