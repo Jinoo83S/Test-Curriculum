@@ -27,12 +27,16 @@ export function getCategoryColor(category) {
 import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById } from "./templates.js";
 
 // ── Row Mutations ─────────────────────────────────────────────────
+/** 창체 카테고리는 항상 시수=1 강제 */
+function enforceChanCheCredit(row) {
+  if (row && clean(row.category) === "창체") row.credits = "1";
+}
+
 export function updateRowField(grade, rowId, field, value) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
   row[field] = value;
-  // 창체 카테고리는 항상 시수=1 강제
-  if (row.category === "창체") row.credits = "1";
+  enforceChanCheCredit(row);
   scheduleSave("curriculum");
 }
 
@@ -40,7 +44,9 @@ export function addRow(grade) {
   if (!canEdit()) return;
   const rows = curriculum().gradeBoards[grade] || [];
   const last = rows[rows.length - 1] || {};
-  rows.push(createRow(opts(), { category:last.category, track:last.track, group:last.group, credits:last.credits }));
+  const newRow = createRow(opts(), { category:last.category, track:last.track, group:last.group, credits:last.credits });
+  enforceChanCheCredit(newRow);
+  rows.push(newRow);
   scheduleSave("curriculum");
 }
 
@@ -81,6 +87,7 @@ export function addRowWithTemplate(grade, templateId) {
   const newRow = createRow(opts(), seed);
   newRow.sem1TemplateId = templateId;
   newRow.sem2TemplateId = templateId;
+  enforceChanCheCredit(newRow);
   rows.push(newRow);
   curriculum().gradeBoards[grade] = rows;
   scheduleSave("curriculum");
@@ -139,13 +146,16 @@ function autoFillRowFromTemplate(grade, rowId, templateId) {
   if (seed.track)    row.track    = seed.track;
   if (seed.group)    row.group    = seed.group;
   if (seed.credits)  row.credits  = seed.credits;
+  enforceChanCheCredit(row);
 }
 
 export function placeBothSems(templateId, grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
   autoFillRowFromTemplate(grade, rowId, templateId);
-  row.sem1TemplateId = templateId; row.sem2TemplateId = templateId; scheduleSave("curriculum");
+  row.sem1TemplateId = templateId; row.sem2TemplateId = templateId;
+  enforceChanCheCredit(row);
+  scheduleSave("curriculum");
   _onCurriculumChange();
 }
 

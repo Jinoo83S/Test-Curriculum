@@ -456,14 +456,19 @@ function createGroupBlock(groupId, onStructureChange) {
 }
 
 export function renderGroupManager(board, onRender) {
-  // ── Full re-render helper that saves/restores scroll ─────────────
+  // Always clear on external call (prevents DOM stacking on Firestore updates)
+  const snap = snapScroll(board);
+  board.innerHTML = "";
+
   function fullRender() {
-    const snap = snapScroll(board);
+    const snapInner = snapScroll(board);
     board.innerHTML = "";
     _buildGroupManagerDOM(board, fullRender, onRender);
-    restoreScroll(snap);
+    restoreScroll(snapInner);
   }
+
   _buildGroupManagerDOM(board, fullRender, onRender);
+  restoreScroll(snap);
 }
 
 function _buildGroupManagerDOM(board, onStructureChange, onRender) {
