@@ -215,12 +215,15 @@ function renderStudentTableView() {
 function render(domain) {
   setControlsDisabled(!canEdit());
   if (domain === "curriculum" || domain === "templates") {
-    syncSchoolLevels(); // keep schoolLevel in sync with board placement
+    syncSchoolLevels();
     invalidateTabs();
     if (activeMainView === "board") renderBoardTab();
-    if (activeMainView === "groups" || activeMainView === "manager" || !domain) renderSidebar();
   }
-  if (!domain || domain === "templates") renderSidebar();
+  // renderSidebar once — covers all relevant view/domain combos
+  if (!domain || domain === "curriculum" || domain === "templates" ||
+      activeMainView === "groups" || activeMainView === "manager") {
+    renderSidebar();
+  }
   if (activeMainView === "board") renderBoardTab();
   if (activeMainView === "groups") renderGroupManagerView();
   if (activeMainView === "manager") renderTemplateManagerView();
