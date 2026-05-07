@@ -425,7 +425,7 @@ function buildEntryCard(entry, opts = {}) {
     displayGrades.slice().reverse().forEach((g, ri) => {
       const gc = document.createElement("span"); gc.className = "tt-entry-grade";
       gc.textContent = g.replace("학년","");
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${17 + ri * 30}px`;
+      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${16 + ri * 20}px;font-size:8px;padding:0 3px`;
       card.appendChild(gc);
     });
   }

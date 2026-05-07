@@ -88,7 +88,7 @@ export function renderRosterView(container) {
       const lbl = document.createElement("div"); lbl.className = "roster-template-label"; lbl.textContent = buildLabel(tpl); lbl.title = lbl.textContent;
       const grades = document.createElement("div"); grades.className = "roster-template-grades";
       const ag = getTemplateAppliedGrades(tpl.id);
-      (ag.length ? ag.map(g => g + "학년") : ["미배정"]).forEach(g => { const c = document.createElement("span"); c.className = "grade-chip grade-chip-sm" + (ag.length ? "" : " grade-chip-none"); c.textContent = g; grades.appendChild(c); });
+      (ag.length ? ag.map(g => g.replace("학년","")) : ["-"]).forEach(g => { const c = document.createElement("span"); c.className = "grade-chip grade-chip-sm" + (ag.length ? "" : " grade-chip-none"); c.textContent = g; grades.appendChild(c); });
       const metaRow = document.createElement("div"); metaRow.className = "roster-template-meta-row";
       const cnt = document.createElement("div"); cnt.className = "roster-template-count"; cnt.textContent = `${getRoster(tpl.id).length}명`;
       metaRow.appendChild(cnt);

@@ -223,7 +223,7 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
   const appliedGrades = getTemplateAppliedGrades(item.id);
   if (appliedGrades.length) {
     appliedGrades.forEach(g => {
-      const chip = document.createElement("span"); chip.className = "grade-chip"; chip.textContent = g + "학년";
+      const chip = document.createElement("span"); chip.className = "grade-chip"; chip.textContent = g.replace("학년","");
       gradesEl.appendChild(chip);
     });
   } else {
@@ -314,15 +314,19 @@ function createGroupManagerCard(item) {
   const t = document.createElement("div"); t.className = "group-mgr-card-title"; t.textContent = getTemplateCardTitle(item);
   tRow.appendChild(t);
   if (item.schoolLevel && item.schoolLevel !== "공통") { const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot); }
-  const s = document.createElement("div"); s.className = "group-mgr-card-teacher"; s.textContent = getTemplateTeacherSummary(item);
-  const gradesRow = document.createElement("div"); gradesRow.className = "group-mgr-card-grades";
+  // Bottom row: teacher name (left) + grade chips (right)
+  const botRow = document.createElement("div"); botRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";
+  const s = document.createElement("div"); s.className = "group-mgr-card-teacher"; s.style.cssText="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:#6b7280";
+  s.textContent = getTemplateTeacherSummary(item);
+  const chipsWrap = document.createElement("div"); chipsWrap.style.cssText="display:flex;gap:1px;flex-wrap:nowrap;flex-shrink:0";
   const appliedGrades = getTemplateAppliedGrades(item.id);
   if (appliedGrades.length) {
-    appliedGrades.forEach(g => { const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm"; chip.textContent = g + "학년"; gradesRow.appendChild(chip); });
+    appliedGrades.forEach(g => { const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm"; chip.textContent = g.replace("학년",""); chipsWrap.appendChild(chip); });
   } else {
-    const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm grade-chip-none"; chip.textContent = "미배정"; gradesRow.appendChild(chip);
+    const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-sm grade-chip-none"; chip.textContent = "-"; chipsWrap.appendChild(chip);
   }
-  card.append(tRow, s, gradesRow); return card;
+  botRow.append(s, chipsWrap);
+  card.append(tRow, botRow); return card;
 }
 
 // ── Scroll snapshot helpers ──────────────────────────────────────

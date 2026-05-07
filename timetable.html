@@ -130,6 +130,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .primary-btn:hover{background:#1d4ed8}
 .primary-btn:disabled{opacity:.4;cursor:default}
 .compact-btn{padding:3px 8px;font-size:11px}
+/* ── Bottom toggle button ── */
+.tt-bottom-toggle-btn{display:flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;background:#f8fafc;color:#374151;cursor:pointer;font-size:12px;font-weight:600;transition:all .1s}
+.tt-bottom-toggle-btn:hover{background:#eff6ff;color:#2563eb;border-color:#93c5fd}
+.tt-bottom-toggle-btn.active{background:#eff6ff;color:#2563eb;border-color:#93c5fd}
+#ttToggleIcon{font-size:14px;line-height:1;transition:transform .2s}
+.tt-bottom-toggle-btn.active #ttToggleIcon{transform:rotate(180deg)}
 </style>
 </head>
 <body>
@@ -167,7 +173,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
   <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
   <div class="tt-toolbar-right">
-    <button id="ttToggleBottom" class="tt-panel-toggle" type="button">▼ 하단</button>
+    <button id="ttToggleBottom" class="tt-bottom-toggle-btn" type="button" title="하단 패널 숨기기/보이기">
+      <span id="ttToggleIcon">⌄</span> 과목·조건
+    </button>
   </div>
 </div>
 
@@ -236,17 +244,20 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   });
 })();
 
-/* ── Bottom bar toggle ── */
-(function() {
+/* ── Bottom bar toggle (synced with resizer h variable via shared ref) ── */
+window._ttBottomToggle = (function() {
   const bottom = document.getElementById("ttBottom");
   const btn    = document.getElementById("ttToggleBottom");
-  let h = parseInt(localStorage.getItem("tt_botH") || "260");
+  const icon   = document.getElementById("ttToggleIcon");
   let collapsed = false;
-  btn?.addEventListener("click", () => {
-    collapsed = !collapsed;
-    if (collapsed) { bottom.style.height = "0"; bottom.style.overflow = "hidden"; btn.textContent = "▲ 하단"; }
-    else           { bottom.style.height = h + "px"; bottom.style.overflow = ""; btn.textContent = "▼ 하단"; }
-  });
+
+  function getH() { return parseInt(localStorage.getItem("tt_botH") || "260"); }
+
+  function show() { collapsed = false; bottom.style.height = getH()+"px"; bottom.style.overflow=""; btn.classList.remove("active"); }
+  function hide() { collapsed = true;  bottom.style.height = "0";         bottom.style.overflow="hidden"; btn.classList.add("active"); }
+
+  btn?.addEventListener("click", () => { collapsed ? show() : hide(); });
+  return { show, hide, isCollapsed: () => collapsed };
 })();
 
 /* ── Schedule controls ── */
