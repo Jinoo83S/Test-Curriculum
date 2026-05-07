@@ -26,7 +26,6 @@ let currentRoom    = "";
 let dragData       = null;
 let conflictMap    = new Map();
 let constraintMap  = new Map();
-let cardColumnCount = 2; // 카드 열 수 (1~4, 사용자 설정)
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -268,9 +267,6 @@ function renderAllGradesGrid(wrap) {
   /* Rows = periods, Cols = 5 days, each cell = ALL grades stacked */
   const days = ["월","화","수","목","금"];
   const periods = ttConfig().periodLabels;
-  const lunchAfter = ttConfig().lunchAfterPeriod;
-  const showLunch  = ttConfig().showLunch;
-
   const table = document.createElement("table");
   table.className = "tt-table";
 
@@ -284,12 +280,6 @@ function renderAllGradesGrid(wrap) {
 
   const tbody = document.createElement("tbody");
   periods.forEach((label, period) => {
-    if (showLunch && period === lunchAfter + 1) {
-      const lr = document.createElement("tr"); lr.className = "tt-lunch-row";
-      const lp = document.createElement("td"); lp.className = "tt-period-label tt-lunch-label"; lp.textContent = "🍱"; lr.appendChild(lp);
-      days.forEach(() => { const td = document.createElement("td"); td.className = "tt-lunch-cell"; td.textContent = "점심시간"; lr.appendChild(td); });
-      tbody.appendChild(lr);
-    }
     const tr = document.createElement("tr");
     const pTd = document.createElement("td"); pTd.className = "tt-period-label";
     const pInp = document.createElement("input"); pInp.type = "text"; pInp.value = label; pInp.disabled = !canEdit();
@@ -309,7 +299,8 @@ function renderAllGradesGrid(wrap) {
         const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
       } else {
         const cg = document.createElement("div"); cg.className = "tt-cell-card-grid";
-        cg.style.setProperty("--tt-card-cols", String(cardColumnCount));
+        const autoCols = slotEntries.length <= 1 ? 1 : slotEntries.length <= 4 ? 2 : 3;
+        cg.style.setProperty("--tt-auto-cols", String(autoCols));
         slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { showGrade: true, compact: true })));
         td.appendChild(cg);
       }
@@ -366,7 +357,8 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
         const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
       } else {
         const cg = document.createElement("div"); cg.className = "tt-cell-card-grid";
-        cg.style.setProperty("--tt-card-cols", String(cardColumnCount));
+        const autoCols = slotEntries.length <= 1 ? 1 : slotEntries.length <= 4 ? 2 : 3;
+        cg.style.setProperty("--tt-auto-cols", String(autoCols));
         slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { ...cardOpts, compact: true })));
         td.appendChild(cg);
       }
@@ -435,7 +427,9 @@ function buildEntryCard(entry, opts = {}) {
   // Pin button (📌/📍 toggle, always enabled)
   const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
   pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
+  pinBtn.disabled = !canEdit();
   pinBtn.addEventListener("click", () => {
+    if (!canEdit()) return;
     const e = entries().find(x => x.id === entry.id); if (!e) return;
     e.pinned = !e.pinned; scheduleSave("timetable"); renderAll();
   });
@@ -455,25 +449,12 @@ function buildEntryCard(entry, opts = {}) {
 
   const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
 
-  const teacherRow = document.createElement("div"); teacherRow.className = "tt-entry-row";
-  const teacherSel = document.createElement("select"); teacherSel.className = "tt-entry-select"; teacherSel.disabled = !canEdit();
-  const noT = document.createElement("option"); noT.value = ""; noT.textContent = "교사"; teacherSel.appendChild(noT);
-  teachers.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === entry.teacherName) o.selected = true; teacherSel.appendChild(o); });
-  if (entry.teacherName && !teachers.includes(entry.teacherName)) {
-    const o = document.createElement("option"); o.value = entry.teacherName; o.textContent = entry.teacherName; o.selected = true; teacherSel.appendChild(o);
+  card.appendChild(titleEl);
+  if (entry.teacherName) {
+    const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
+    teacherEl.textContent = entry.teacherName;
+    card.appendChild(teacherEl);
   }
-  teacherSel.addEventListener("change", e => { updateEntry(entry.id, "teacherName", e.target.value); recomputeConflicts(); renderAll(); });
-  teacherRow.appendChild(teacherSel);
-
-  if (!compact) {
-    const roomSel = document.createElement("select"); roomSel.className = "tt-entry-select"; roomSel.disabled = !canEdit();
-    const noR = document.createElement("option"); noR.value = ""; noR.textContent = "교실"; roomSel.appendChild(noR);
-    rooms.forEach(r => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.name; if (r.id === entry.roomId) o.selected = true; roomSel.appendChild(o); });
-    roomSel.addEventListener("change", e => { updateEntry(entry.id, "roomId", e.target.value || null); recomputeConflicts(); renderAll(); });
-    teacherRow.appendChild(roomSel);
-  }
-
-  card.append(titleEl, teacherRow);
 
   // Drag to move (entry kind)
   card.draggable = canEdit() && !entry.pinned;
@@ -535,25 +516,21 @@ function handleDrop(data, day, period) {
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
 function renderSubjectPanel() {
-  const hdrEl = $("ttPanelHeader");
-  const panel  = $("ttPanel");
+  const hdrEl = null; // no separate header in bottom layout
+  const panel  = $("ttSubjectsContent");
   if (!panel) return;
   panel.innerHTML = "";
 
-  if (hdrEl) {
-    hdrEl.innerHTML = "";
-    const row = document.createElement("div"); row.className = "tt-panel-header";
-    const title = document.createElement("div"); title.className = "tt-panel-title"; title.textContent = "과목 카드";
-    const gradeLabel = document.createElement("div"); gradeLabel.className = "tt-panel-grade"; gradeLabel.textContent = currentGrade;
-    row.append(title, gradeLabel); hdrEl.appendChild(row);
-  }
-
-  // Grade selector for non-grade views
+  // Grade / view selector header
   if (currentView !== "grade") {
     const guide = document.createElement("div"); guide.style.cssText = "font-size:10px;color:#6b7280;padding:4px 2px 2px";
     guide.textContent = "배치할 학년:"; panel.appendChild(guide);
     const gSel = document.createElement("select"); gSel.className = "tt-sc-grade-sel";
-    GRADE_KEYS.forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = g; if (g === currentGrade) o.selected = true; gSel.appendChild(o); });
+    // Add "전체" option to show all grades' subjects
+    [["", "전체 학년"], ...GRADE_KEYS.map(g => [g, g])].forEach(([v, label]) => {
+      const o = document.createElement("option"); o.value = v; o.textContent = label;
+      if (v === currentGrade) o.selected = true; gSel.appendChild(o);
+    });
     gSel.addEventListener("change", e => { currentGrade = e.target.value; renderAll(); });
     panel.appendChild(gSel);
   }
@@ -664,12 +641,13 @@ function renderSubjectPanel() {
   // Render: available first, done last
   if (availableCards.length) {
     const t = document.createElement("div"); t.className = "tt-panel-section-title"; t.textContent = `배치 필요 (${availableCards.length})`; panel.appendChild(t);
-    availableCards.forEach(c => panel.appendChild(c));
-  }
+      const wrapper = document.createElement("div"); wrapper.className = "tt-sc-cards";
+  availableCards.forEach(c => wrapper.appendChild(c));
   if (doneCards.length) {
-    const t = document.createElement("div"); t.className = "tt-panel-section-title tt-panel-section-done"; t.textContent = `배치 완료 (${doneCards.length})`; panel.appendChild(t);
-    doneCards.forEach(c => panel.appendChild(c));
+    const sep = document.createElement("span"); sep.className = "tt-panel-section-title tt-panel-section-done"; sep.textContent = `배치 완료 (${doneCards.length})`; wrapper.appendChild(sep);
+    doneCards.forEach(c => wrapper.appendChild(c));
   }
+  panel.appendChild(wrapper);
 }
 
 // ── Constraints panel ─────────────────────────────────────────────
@@ -769,7 +747,6 @@ function renderViewSelectors() {
   roomEl?.classList.toggle("hidden", currentView !== "room");
   // In all-grades view, hide the subject panel (it's grade-specific)
   const panelEl = document.querySelector(".tt-panel");
-  // Panel always visible — grade selector shown for non-grade views
 }
 
 // ── Conflict summary bar ──────────────────────────────────────────
@@ -867,7 +844,9 @@ export function autoAssignAll() {
 
   if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
-  ttDomain().entries = [];
+  // Preserve pinned entries
+  const pinnedEntries = entries().filter(e => e.pinned);
+  ttDomain().entries = [...pinnedEntries];
 
   const { standalone, groupBlocks } = buildSchedulableItems();
 
@@ -983,21 +962,8 @@ export function autoAssignAll() {
 }
 // ── Schedule controls (toolbar) ───────────────────────────────────
 function renderScheduleControls() {
-  const pcInp   = $("ttPeriodCountInput");
-  const lunchChk= $("ttShowLunchInput");
-  const lunchSel= $("ttLunchAfterSelect");
-  const colSel  = $("ttCardColumnSelect");
-  if (pcInp)    pcInp.value   = String(ttConfig().periodCount);
-  if (lunchChk) lunchChk.checked = !!ttConfig().showLunch;
-  if (lunchSel) {
-    lunchSel.innerHTML = "";
-    ttConfig().periodLabels.forEach((l, i) => {
-      const o = document.createElement("option"); o.value = i; o.textContent = `${l} 후`;
-      if (i === ttConfig().lunchAfterPeriod) o.selected = true;
-      lunchSel.appendChild(o);
-    });
-  }
-  if (colSel) colSel.value = String(cardColumnCount);
+  const pcInp = $("ttPeriodCountInput");
+  if (pcInp) pcInp.value = String(ttConfig().periodCount);
 }
 
 function renderAll() {
@@ -1100,19 +1066,19 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
   let label, keepFn;
   if (currentView === "all") {
     label = "전체 시간표";
-    keepFn = () => false;
+    keepFn = e => !!e.pinned; // preserve pinned even in full clear
   } else if (currentView === "grade") {
     label = `${currentGrade} 시간표`;
-    keepFn = e => e.gradeKey !== currentGrade;
+    keepFn = e => e.pinned || !entryHasGrade(e, currentGrade);
   } else if (currentView === "teacher") {
     if (!currentTeacher) { alert("교사를 선택하세요."); return; }
     label = `${currentTeacher} 교사 배정`;
-    keepFn = e => !splitTeacherNames(e.teacherName).includes(currentTeacher);
+    keepFn = e => e.pinned || !splitTeacherNames(e.teacherName).includes(currentTeacher);
   } else if (currentView === "room") {
     if (!currentRoom) { alert("교실을 선택하세요."); return; }
     const roomName = getRooms().find(r => r.id === currentRoom)?.name || currentRoom;
     label = `${roomName} 교실 배정`;
-    keepFn = e => e.roomId !== currentRoom;
+    keepFn = e => e.pinned || e.roomId !== currentRoom;
   }
   if (!keepFn) return;
   if (!confirm(`"${label}"을 초기화할까요?
@@ -1124,9 +1090,6 @@ $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 
 
 // Expose schedule control callbacks to inline HTML script
-window._ttApplyPeriod    = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?.value)||8); renderAll(); };
-window._ttSetLunch       = (_, show) => { setLunchConfig(undefined, show); renderAll(); };
-window._ttSetLunchAfter  = (idx) => { setLunchConfig(idx, undefined); renderAll(); };
-window._ttSetCardCols    = (n) => { cardColumnCount = n; renderAll(); };
+window._ttApplyPeriod = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?.value)||8); renderAll(); };
 
 renderAll();
