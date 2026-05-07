@@ -72,6 +72,28 @@ export function detectConflicts(entries, templateGroups = [], templates = []) {
       }
     }
   });
+  // ── syncRequired: concurrent group units must share same day/period ──
+  const concurrentGroups = new Map(); // groupId → [{entry, slotKey}]
+  entries.forEach(e => {
+    const grp = e.groupId ? groupMap.get(e.groupId) : null;
+    if (!grp?.isConcurrent) return;
+    if (!concurrentGroups.has(e.groupId)) concurrentGroups.set(e.groupId, []);
+    concurrentGroups.get(e.groupId).push({ e, slot: `${e.day}:${e.period}` });
+  });
+
+  concurrentGroups.forEach((items, groupId) => {
+    // Group items by their slot
+    const slotMap = new Map();
+    items.forEach(({ e, slot }) => {
+      if (!slotMap.has(slot)) slotMap.set(slot, []);
+      slotMap.get(slot).push(e);
+    });
+    if (slotMap.size <= 1) return; // all in same slot or only one slot → OK
+
+    // Units are spread across different slots: mark all as syncRequired
+    items.forEach(({ e }) => result.get(e.id).add("syncRequired"));
+  });
+
   return result;
 }
 
@@ -135,6 +157,7 @@ export function getConflictLabel(set) {
   if (set.has("student")) labels.push("학생 중복");
   if (set.has("maxPerDay")) labels.push("일일 최대 초과");
   if (set.has("maxConsecutive")) labels.push("연속수업 초과");
-  if (set.has("unavailable")) labels.push("불가 시간대");
+  if (set.has("unavailable"))   labels.push("불가 시간대");
+  if (set.has("syncRequired"))   labels.push("동시배정 불일치");
   return labels.join(", ");
 }

@@ -197,7 +197,7 @@ function buildSchedulableItems() {
       }).filter(c => c > 0));
       const teachers = getUnitTeachers(unit);
       if (gradeKeys.length && credits > 0) {
-        unitItems.push({ unit, gradeKeys, credits, teachers: teachers[0] || "" });
+        unitItems.push({ unit, gradeKeys, credits, teachers: teachers.join(",") || "" });
       }
     });
     if (unitItems.length) groupBlocks.push({ group: grp, unitItems });
@@ -209,7 +209,7 @@ function buildSchedulableItems() {
       if (templateIdsInUnits.has(tpl.id)) return; // handled by units
       const credits  = getCreditsForTemplate(gradeKey, tpl.id);
       const sections = getSectionCount(tpl.id);
-      const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
+      const teacher  = getTeachersForTemplate(tpl.id).join(",") || "";
       for (let sec = 0; sec < sections; sec++) {
         for (let i = 0; i < credits; i++) {
           standalone.push({ kind:"standalone", templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
@@ -425,14 +425,14 @@ function buildEntryCard(entry, opts = {}) {
     displayGrades.slice().reverse().forEach((g, ri) => {
       const gc = document.createElement("span"); gc.className = "tt-entry-grade";
       gc.textContent = g.replace("학년","");
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${15 + ri * 14}px;font-size:8px;padding:0 2px`;
+      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${16 + ri * 20}px;font-size:8px;padding:0 3px`;
       card.appendChild(gc);
     });
   }
 
   const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
   // Dynamic padding: pin(16) + per-grade-chip(16*n)
-  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 14}px`;
+  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
 
   card.appendChild(titleEl);
   if (entry.teacherName) {
@@ -933,12 +933,15 @@ export function autoAssignAll() {
       const maxCredits = Math.max(...unitItems.map(u => u.credits));
 
       for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
-        // Find a slot valid for ALL units in this group simultaneously
+        // Only place units whose credits > slot_i (prevents over-assignment)
+        const activeUnitItems = unitItems.filter(u => slot_i < u.credits);
+        if (!activeUnitItems.length) continue;
+
         let foundSlot = null;
         for (const slot of shuffle([...baseSlots])) {
           const hypo = [];
           let valid = true;
-          for (const { unit, gradeKeys, teachers } of unitItems) {
+          for (const { unit, gradeKeys, teachers } of activeUnitItems) {
             const item = {
               kind: "unit", unitId: unit.id, groupId: group.id,
               templateIds: unit.templateIds, gradeKeys,
@@ -951,7 +954,7 @@ export function autoAssignAll() {
           if (valid) { foundSlot = slot; break; }
         }
         if (foundSlot) {
-          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
+          activeUnitItems.forEach(({ unit, gradeKeys, teachers }) => {
             placed.push(normalizeTimetableEntry({
               id: uid("ent"), ...foundSlot,
               unitId: unit.id, groupId: group.id,
@@ -961,7 +964,7 @@ export function autoAssignAll() {
             }));
           });
         } else {
-          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
+          activeUnitItems.forEach(({ unit }) => {
             failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
           });
         }

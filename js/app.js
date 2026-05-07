@@ -193,7 +193,7 @@ function renderGroupManagerView() {
 }
 
 function renderStudentView() {
-  renderClassList(classListEl, selectedClassId, (classId) => {
+  function handleClassSelect(classId) {
     selectedClassId = classId;
     const cls = getClassById(classId);
     if (cls) {
@@ -202,8 +202,9 @@ function renderStudentView() {
       if (classGradeSelect) classGradeSelect.value = cls.grade;
     }
     renderStudentTableView();
-    renderClassList(classListEl, selectedClassId, arguments.callee);
-  });
+    renderClassList(classListEl, selectedClassId, handleClassSelect);
+  }
+  renderClassList(classListEl, selectedClassId, handleClassSelect);
 }
 
 function renderStudentTableView() {
