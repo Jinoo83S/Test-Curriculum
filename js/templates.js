@@ -342,8 +342,8 @@ function restoreScroll(snap) {
 // ── Unit block within a group ─────────────────────────────────────
 function createUnitBlock(groupId, unit, onStructureChange) {
   const wrap = document.createElement("div"); wrap.className = "group-unit-block";
+  if (!unit.sections) unit.sections = {}; // {templateId: sectionIdx}
 
-  // ── Header: only × button (no name input per req #3) ──
   const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
   const delUnitBtn = makeBtn("×", "group-unit-del-btn", () => {
     if (!canEdit()) return;
@@ -360,34 +360,52 @@ function createUnitBlock(groupId, unit, onStructureChange) {
     if (!canEdit()) return; e.preventDefault(); cardArea.classList.remove("dragover");
     const drag = currentDrag; if (!drag || drag.kind !== "template") return;
     const tplId = drag.templateId;
-    groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== tplId); }));
+    groups().forEach(g => g.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== tplId); delete (u.sections||{})[tplId]; }));
     assignTemplateGroup(tplId, groupId);
     if (!unit.templateIds.includes(tplId)) unit.templateIds.push(tplId);
+    unit.sections[tplId] = 0; // default section 0
     scheduleSave("templates"); onStructureChange();
   });
 
   const unitTpls = unit.templateIds.map(id => templates().find(t => t.id === id)).filter(Boolean);
   if (unitTpls.length) {
     unitTpls.forEach(tpl => {
-      const c = createGroupManagerCard(tpl);
+      const cardWrap = document.createElement("div"); cardWrap.className = "group-unit-card-wrap";
+      const card = createGroupManagerCard(tpl);
+
+      // Section selector (if template has >1 section)
+      const sectionCount = (() => { const meta = appState.rosters?.rosterMeta?.[tpl.id]; return Math.max(1, parseInt(meta?.classCount)||1); })();
+      if (sectionCount > 1) {
+        const secSel = document.createElement("select"); secSel.className = "group-unit-sec-sel"; secSel.title = "이 수업묶음에서 사용할 분반";
+        secSel.disabled = !canEdit();
+        for (let i = 0; i < sectionCount; i++) {
+          const o = document.createElement("option"); o.value = i; o.textContent = `${i+1}분반`;
+          if ((unit.sections[tpl.id] ?? 0) === i) o.selected = true;
+          secSel.appendChild(o);
+        }
+        secSel.addEventListener("change", e => { unit.sections[tpl.id] = parseInt(e.target.value); scheduleSave("templates"); });
+        cardWrap.appendChild(secSel);
+      }
+
       const rx = makeBtn("↩", "group-unit-card-remove", () => {
         unit.templateIds = unit.templateIds.filter(id => id !== tpl.id);
+        delete unit.sections[tpl.id];
         scheduleSave("templates"); onStructureChange();
-      }); rx.title = "수업묶음에서 제거"; rx.disabled = !canEdit(); c.appendChild(rx);
-      cardArea.appendChild(c);
+      }); rx.title = "수업묶음에서 제거"; rx.disabled = !canEdit(); card.appendChild(rx);
+
+      cardWrap.appendChild(card); cardArea.appendChild(cardWrap);
     });
   } else {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
 
-  // Visual badge: if this unit has 2+ templates it means "same classroom"
+  // Badge: same classroom if 2+ templates
   if (unit.templateIds.length > 1) {
-    const sameBadge = document.createElement("div"); sameBadge.className = "group-unit-classroom-badge";
-    sameBadge.textContent = "🏫 같은 교실"; sameBadge.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
-    wrap.appendChild(sameBadge);
+    const b = document.createElement("div"); b.className = "group-unit-classroom-badge";
+    b.textContent = "🏫 같은 교실"; b.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
+    wrap.appendChild(b);
   }
-
   return wrap;
 }
 
@@ -420,10 +438,10 @@ function createGroupBlock(groupId, onStructureChange) {
     cb.addEventListener("change", e => onChange(e.target.checked));
     lbl.append(cb, Object.assign(document.createElement("span"), { textContent: label })); return lbl;
   };
-  cbWrap.appendChild(mkCheck("같은 시간 배정", grpObj.isConcurrent, v => {
+  cbWrap.appendChild(mkCheck("① 같은 시간 배정 (다른 교실)", grpObj.isConcurrent, v => {
     grpObj.isConcurrent = v; grpObj.groupType = v ? "concurrent" : "off"; scheduleSave("templates");
   }));
-  cbWrap.appendChild(mkCheck("같은 교실 수업", grpObj.isCrossGrade, v => {
+  cbWrap.appendChild(mkCheck("② 같은 교실 수업 (같은 교사)", grpObj.isCrossGrade, v => {
     grpObj.isCrossGrade = v; scheduleSave("templates");
   }));
 

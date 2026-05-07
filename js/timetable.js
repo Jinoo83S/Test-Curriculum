@@ -197,7 +197,7 @@ function buildSchedulableItems() {
       }).filter(c => c > 0));
       const teachers = getUnitTeachers(unit);
       if (gradeKeys.length && credits > 0) {
-        unitItems.push({ unit, gradeKeys, credits, teachers: teachers.join(",") || "" });
+        unitItems.push({ unit, gradeKeys, credits, teachers: teachers[0] || "" });
       }
     });
     if (unitItems.length) groupBlocks.push({ group: grp, unitItems });
@@ -209,7 +209,7 @@ function buildSchedulableItems() {
       if (templateIdsInUnits.has(tpl.id)) return; // handled by units
       const credits  = getCreditsForTemplate(gradeKey, tpl.id);
       const sections = getSectionCount(tpl.id);
-      const teacher  = getTeachersForTemplate(tpl.id).join(",") || "";
+      const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
       for (let sec = 0; sec < sections; sec++) {
         for (let i = 0; i < credits; i++) {
           standalone.push({ kind:"standalone", templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
@@ -435,10 +435,23 @@ function buildEntryCard(entry, opts = {}) {
   if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
 
   card.appendChild(titleEl);
-  if (entry.teacherName) {
-    const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
-    teacherEl.textContent = entry.teacherName;
-    card.appendChild(teacherEl);
+  // Teacher row always present (2-row height even without teacher)
+  const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
+  teacherEl.textContent = entry.teacherName || " "; // nbsp keeps height
+  card.appendChild(teacherEl);
+
+  // Grade chips: sorted 7→12, below teacher row
+  if (showGrade && displayGrades.length) {
+    card.classList.add("tt-entry-has-grade");
+    const sortedGrades = [...displayGrades].sort((a, b) => parseInt(a) - parseInt(b));
+    const chipRow = document.createElement("div"); chipRow.className = "tt-entry-grade-row";
+    sortedGrades.forEach(g => {
+      const gc = document.createElement("span"); gc.className = "tt-entry-grade-chip";
+      gc.textContent = g.replace("학년","");
+      gc.style.cssText = `background:${getGradeColor(g).border};color:white`;
+      chipRow.appendChild(gc);
+    });
+    card.appendChild(chipRow);
   }
 
   // Click to show detail popup (teacher/room edit)
@@ -933,15 +946,12 @@ export function autoAssignAll() {
       const maxCredits = Math.max(...unitItems.map(u => u.credits));
 
       for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
-        // Only place units whose credits > slot_i (prevents over-assignment)
-        const activeUnitItems = unitItems.filter(u => slot_i < u.credits);
-        if (!activeUnitItems.length) continue;
-
+        // Find a slot valid for ALL units in this group simultaneously
         let foundSlot = null;
         for (const slot of shuffle([...baseSlots])) {
           const hypo = [];
           let valid = true;
-          for (const { unit, gradeKeys, teachers } of activeUnitItems) {
+          for (const { unit, gradeKeys, teachers } of unitItems) {
             const item = {
               kind: "unit", unitId: unit.id, groupId: group.id,
               templateIds: unit.templateIds, gradeKeys,
@@ -954,7 +964,7 @@ export function autoAssignAll() {
           if (valid) { foundSlot = slot; break; }
         }
         if (foundSlot) {
-          activeUnitItems.forEach(({ unit, gradeKeys, teachers }) => {
+          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
             placed.push(normalizeTimetableEntry({
               id: uid("ent"), ...foundSlot,
               unitId: unit.id, groupId: group.id,
@@ -964,7 +974,7 @@ export function autoAssignAll() {
             }));
           });
         } else {
-          activeUnitItems.forEach(({ unit }) => {
+          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
             failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
           });
         }
