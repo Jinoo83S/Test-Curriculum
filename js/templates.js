@@ -456,7 +456,6 @@ function createGroupBlock(groupId, onStructureChange) {
 }
 
 export function renderGroupManager(board, onRender) {
-  // Always clear on external call (prevents DOM stacking on Firestore updates)
   const snap = snapScroll(board);
   board.innerHTML = "";
 
@@ -465,6 +464,8 @@ export function renderGroupManager(board, onRender) {
     board.innerHTML = "";
     _buildGroupManagerDOM(board, fullRender, onRender);
     restoreScroll(snapInner);
+    // Sync sidebar immediately after structural change
+    onRender?.();
   }
 
   _buildGroupManagerDOM(board, fullRender, onRender);

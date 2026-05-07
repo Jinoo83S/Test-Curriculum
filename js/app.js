@@ -188,7 +188,8 @@ function renderTemplateManagerView() {
 }
 
 function renderGroupManagerView() {
-  renderGroupManager(groupMgrBoard, () => { renderGroupManagerView(); renderSidebar(); });
+  // onRender = sidebar sync only. Group manager re-renders itself internally on structure change.
+  renderGroupManager(groupMgrBoard, () => { renderSidebar(); });
 }
 
 function renderStudentView() {
