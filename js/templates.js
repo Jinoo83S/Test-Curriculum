@@ -525,10 +525,61 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
   const rightWrap = document.createElement("div"); rightWrap.className = "group-right-col-wrap";
   const rightHdr = document.createElement("div"); rightHdr.className = "group-right-col-hdr";
   rightHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"그룹 목록" }));
+
+  // ── 전체 펼치기 / 접기 ──
+  const expandAll  = makeBtn("▼ 전체 펼치기", "group-expand-btn", () => { groups().forEach(g => { g._collapsed = false; }); onStructureChange(); });
+  const collapseAll= makeBtn("▶ 전체 접기",   "group-expand-btn", () => { groups().forEach(g => { g._collapsed = true;  }); onStructureChange(); });
+  const togWrap = document.createElement("div"); togWrap.style.cssText="display:flex;gap:4px;margin-left:auto";
+  togWrap.append(expandAll, collapseAll); rightHdr.appendChild(togWrap);
+  rightHdr.style.display = "flex"; rightHdr.style.alignItems = "center";
   rightWrap.appendChild(rightHdr);
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
-  groups().forEach(g => rightCol.appendChild(createGroupBlock(g.id, onStructureChange)));
+  let _dragGroupId = null;
+
+  groups().forEach(g => {
+    const block = createGroupBlock(g.id, onStructureChange);
+    block.setAttribute("data-group-id", g.id);
+
+    // Drag handle for reordering
+    const dragHandle = document.createElement("div"); dragHandle.className = "group-drag-handle";
+    dragHandle.title = "드래그해서 순서 변경"; dragHandle.textContent = "⠿";
+    dragHandle.style.cssText = "cursor:grab;font-size:14px;color:#9ca3af;padding:0 4px;flex-shrink:0;align-self:center;user-select:none";
+    dragHandle.setAttribute("draggable", "true");
+
+    dragHandle.addEventListener("dragstart", e => {
+      e.stopPropagation();
+      _dragGroupId = g.id;
+      block.style.opacity = "0.5";
+      e.dataTransfer.effectAllowed = "move";
+    });
+    dragHandle.addEventListener("dragend", () => { block.style.opacity = ""; _dragGroupId = null; });
+
+    block.addEventListener("dragover", e => {
+      if (!_dragGroupId || _dragGroupId === g.id) return;
+      e.preventDefault(); e.stopPropagation();
+      block.style.outline = "2px dashed #2563eb";
+    });
+    block.addEventListener("dragleave", () => { block.style.outline = ""; });
+    block.addEventListener("drop", e => {
+      if (!_dragGroupId || _dragGroupId === g.id) return;
+      e.preventDefault(); e.stopPropagation(); block.style.outline = "";
+      const grps = groups();
+      const fromIdx = grps.findIndex(x => x.id === _dragGroupId);
+      const toIdx   = grps.findIndex(x => x.id === g.id);
+      if (fromIdx >= 0 && toIdx >= 0) {
+        const [moved] = grps.splice(fromIdx, 1);
+        grps.splice(toIdx, 0, moved);
+        scheduleSave("templates"); onStructureChange();
+      }
+    });
+
+    // Prepend drag handle to block header
+    const hdr = block.querySelector(".group-block-hdr");
+    if (hdr) hdr.insertBefore(dragHandle, hdr.firstChild);
+
+    rightCol.appendChild(block);
+  });
   if (!groups().length) {
     rightCol.appendChild(Object.assign(document.createElement("div"), { className:"group-col-placeholder", textContent:"'그룹 추가'를 눌러 시작하세요.", style:"padding:20px" }));
   }

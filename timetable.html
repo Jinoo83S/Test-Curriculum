@@ -55,22 +55,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-cell-ph{min-height:40px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:16px;pointer-events:none}
 .tt-cell-ph::before{content:"+"}
 
-/* ── Auto-sizing card grid ── */
-.tt-cell-card-grid{display:grid;gap:2px}
-/* 1 card → 1 col; 2→2; 3-4→2; 5+→3; set via JS --tt-auto-cols */
-.tt-cell-card-grid{grid-template-columns:repeat(var(--tt-auto-cols,1),minmax(0,1fr))}
+/* ── Single-row card grid: all cards in one row, auto-shrink ── */
+.tt-cell-card-grid{display:flex;flex-direction:row;flex-wrap:nowrap;gap:2px;width:100%;overflow:hidden}
+.tt-cell-card-grid .tt-entry-card{flex:1;min-width:0;overflow:hidden}
 
 /* ── Entry card ── */
-.tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:2px 4px;position:relative;font-size:10px;border-left-width:4px;margin-bottom:0;min-width:0;overflow:hidden}
+.tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:2px 4px;position:relative;font-size:10px;border-left-width:4px;min-width:0;overflow:hidden;cursor:pointer}
 .tt-entry-card.tt-entry-conflict{outline:2px solid #ef4444;animation:tt-pulse .8s ease-in-out infinite alternate}
 @keyframes tt-pulse{from{outline-color:#ef4444}to{outline-color:#fca5a5}}
 .tt-entry-grade{position:absolute;top:2px;right:17px;display:inline-block;font-size:8px;font-weight:700;padding:0 4px;border-radius:999px;white-space:nowrap;line-height:14px}
 .tt-entry-has-grade .tt-entry-title{padding-right:52px}
 .tt-entry-title{font-weight:700;font-size:10px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}
 .tt-entry-teacher{font-size:9px;color:rgba(0,0,0,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-.tt-entry-remove{position:absolute;top:2px;right:2px;width:13px;height:13px;border:none;background:rgba(0,0,0,.1);border-radius:3px;cursor:pointer;font-size:10px;line-height:1;color:#374151;padding:0;z-index:1}
-.tt-entry-remove:hover{background:rgba(220,38,38,.2);color:#dc2626}
-.tt-entry-pin{position:absolute;bottom:2px;right:2px;width:14px;height:14px;border:none;background:transparent;cursor:pointer;font-size:10px;line-height:1;padding:0;opacity:.35;transition:opacity .1s}
+
+.tt-entry-pin{width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.35;transition:opacity .1s}
 .tt-entry-pin:hover{opacity:1}
 .tt-entry-pinned .tt-entry-pin{opacity:1}
 .tt-entry-pinned{outline:2px solid #f59e0b!important;outline-offset:-1px}
@@ -168,6 +166,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 
   <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
+  <div class="tt-toolbar-right">
+    <button id="ttToggleBottom" class="tt-panel-toggle" type="button">▼ 하단</button>
+  </div>
 </div>
 
 <!-- Grid only - no sidebar -->
@@ -232,6 +233,19 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
     };
     document.addEventListener("mousemove", mv);
     document.addEventListener("mouseup", up);
+  });
+})();
+
+/* ── Bottom bar toggle ── */
+(function() {
+  const bottom = document.getElementById("ttBottom");
+  const btn    = document.getElementById("ttToggleBottom");
+  let h = parseInt(localStorage.getItem("tt_botH") || "260");
+  let collapsed = false;
+  btn?.addEventListener("click", () => {
+    collapsed = !collapsed;
+    if (collapsed) { bottom.style.height = "0"; bottom.style.overflow = "hidden"; btn.textContent = "▲ 하단"; }
+    else           { bottom.style.height = h + "px"; bottom.style.overflow = ""; btn.textContent = "▼ 하단"; }
   });
 })();
 

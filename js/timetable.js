@@ -298,8 +298,8 @@ function renderAllGradesGrid(wrap) {
         const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
       } else {
         const cg = document.createElement("div"); cg.className = "tt-cell-card-grid";
-        const autoCols = slotEntries.length <= 1 ? 1 : slotEntries.length <= 4 ? 2 : 3;
-        cg.style.setProperty("--tt-auto-cols", String(autoCols));
+        // Single row: all cards fit in one row, auto-shrink
+        cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
         slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { showGrade: true, compact: true })));
         td.appendChild(cg);
       }
@@ -343,8 +343,8 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
         const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
       } else {
         const cg = document.createElement("div"); cg.className = "tt-cell-card-grid";
-        const autoCols = slotEntries.length <= 1 ? 1 : slotEntries.length <= 4 ? 2 : 3;
-        cg.style.setProperty("--tt-auto-cols", String(autoCols));
+        // Single row: all cards fit in one row, auto-shrink
+        cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
         slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { ...cardOpts, compact: true })));
         td.appendChild(cg);
       }
@@ -405,14 +405,11 @@ function buildEntryCard(entry, opts = {}) {
   card.style.color        = gradeColor.text;
   card.style.borderLeft   = `4px solid ${gradeColor.border}`;
 
-  // × button (absolute top-right)
-  const removeBtn = makeBtn("×", "tt-entry-remove", () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); });
-  removeBtn.disabled = !canEdit();
-  card.appendChild(removeBtn);
+  // No × button — drag card to bottom bar to remove
 
   // Pin button (📌/📍 toggle, always enabled)
   const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
-  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
+  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정"; pinBtn.style.cssText="position:absolute;top:1px;right:2px;width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.4;transition:opacity .1s;z-index:1";
   pinBtn.disabled = !canEdit();
   pinBtn.addEventListener("click", () => {
     if (!canEdit()) return;
@@ -427,7 +424,7 @@ function buildEntryCard(entry, opts = {}) {
     card.classList.add("tt-entry-has-grade");
     displayGrades.slice().reverse().forEach((g, ri) => {
       const gc = document.createElement("span"); gc.className = "tt-entry-grade";
-      gc.textContent = g;
+      gc.textContent = g.replace("학년","");
       gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${17 + ri * 30}px`;
       card.appendChild(gc);
     });
@@ -441,6 +438,12 @@ function buildEntryCard(entry, opts = {}) {
     teacherEl.textContent = entry.teacherName;
     card.appendChild(teacherEl);
   }
+
+  // Click to show detail popup (teacher/room edit)
+  card.addEventListener("click", ev => {
+    if (ev.target.closest("button") || ev.target.closest("select")) return;
+    showEntryDetail(entry);
+  });
 
   // Drag to move (entry kind)
   card.draggable = canEdit() && !entry.pinned;
@@ -501,6 +504,70 @@ function handleDrop(data, day, period) {
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
+// ── Entry detail popup ──────────────────────────────────────────
+function showEntryDetail(entry) {
+  const existing = document.getElementById("tt-entry-detail-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div"); modal.id = "tt-entry-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
+
+  const box = document.createElement("div");
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:280px;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+
+  const gradeKeys = entryGradeKeys(entry);
+  const firstGrade = gradeKeys[0] || currentGrade;
+  const gc = getGradeColor(firstGrade);
+  box.style.borderTop = `4px solid ${gc.border}`;
+
+  const titleEl = document.createElement("div");
+  titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:12px;color:#1e3a5f";
+  titleEl.textContent = entryTitle(entry);
+  box.appendChild(titleEl);
+
+  // Grade chips
+  if (gradeKeys.length) {
+    const row = document.createElement("div"); row.style.cssText="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px";
+    gradeKeys.forEach(g => { const chip = document.createElement("span"); chip.style.cssText=`font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:${getGradeColor(g).border};color:white`; chip.textContent=g.replace("학년",""); row.appendChild(chip); });
+    box.appendChild(row);
+  }
+
+  // Teacher selector
+  const teachers = entryTeachers(entry);
+  const tLabel = document.createElement("label"); tLabel.style.cssText="display:block;margin-bottom:6px;font-size:11px;color:#6b7280;font-weight:600"; tLabel.textContent = "교사";
+  const tSel = document.createElement("select"); tSel.style.cssText="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:10px"; tSel.disabled = !canEdit();
+  const noT = document.createElement("option"); noT.value=""; noT.textContent="교사 선택 (없음)"; tSel.appendChild(noT);
+  const allTeachers = [...new Set([...teachers, ...(entry.teacherName ? [entry.teacherName] : [])])];
+  allTeachers.forEach(t => { const o = document.createElement("option"); o.value=t; o.textContent=t; if(t===entry.teacherName) o.selected=true; tSel.appendChild(o); });
+  tSel.addEventListener("change", e => { updateEntry(entry.id, "teacherName", e.target.value); recomputeConflicts(); renderAll(); });
+  box.append(tLabel, tSel);
+
+  // Room selector
+  const rooms = getRooms();
+  if (rooms.length) {
+    const rLabel = document.createElement("label"); rLabel.style.cssText="display:block;margin-bottom:6px;font-size:11px;color:#6b7280;font-weight:600"; rLabel.textContent = "교실";
+    const rSel = document.createElement("select"); rSel.style.cssText="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:12px"; rSel.disabled = !canEdit();
+    const noR = document.createElement("option"); noR.value=""; noR.textContent="교실 선택 (없음)"; rSel.appendChild(noR);
+    rooms.forEach(r => { const o = document.createElement("option"); o.value=r.id; o.textContent=r.name; if(r.id===entry.roomId) o.selected=true; rSel.appendChild(o); });
+    rSel.addEventListener("change", e => { updateEntry(entry.id, "roomId", e.target.value||null); recomputeConflicts(); renderAll(); });
+    box.append(rLabel, rSel);
+  }
+
+  // Delete button
+  if (canEdit()) {
+    const delBtn = document.createElement("button"); delBtn.style.cssText="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:5px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:12px;font-weight:600";
+    delBtn.textContent = "🗑 이 수업 삭제"; delBtn.onclick = () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); modal.remove(); };
+    box.appendChild(delBtn);
+  }
+
+  // Close
+  const closeBtn = document.createElement("button"); closeBtn.style.cssText="position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1"; closeBtn.textContent="×"; closeBtn.onclick = () => modal.remove();
+  box.appendChild(closeBtn);
+  modal.appendChild(box);
+  modal.addEventListener("click", e => { if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
 function renderSubjectPanel() {
   const panel = $("ttSubjectsContent");
   if (!panel) return;
@@ -1087,4 +1154,18 @@ $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 // Expose schedule control callbacks to inline HTML script
 window._ttApplyPeriod = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?.value)||8); renderAll(); };
 
+  // Drop on bottom bar = delete entry
+  const bottomBar = $("ttBottom");
+  if (bottomBar) {
+    bottomBar.addEventListener("dragover", e => {
+      if (dragData?.kind === "entry") { e.preventDefault(); bottomBar.style.outline = "3px dashed #ef4444"; }
+    });
+    bottomBar.addEventListener("dragleave", () => { bottomBar.style.outline = ""; });
+    bottomBar.addEventListener("drop", e => {
+      e.preventDefault(); bottomBar.style.outline = "";
+      if (dragData?.kind === "entry" && canEdit()) {
+        removeEntry(dragData.entryId); dragData = null; recomputeConflicts(); renderAll();
+      }
+    });
+  }
 renderAll();
