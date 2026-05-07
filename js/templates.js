@@ -339,19 +339,15 @@ function restoreScroll(snap) {
 function createUnitBlock(groupId, unit, onStructureChange) {
   const wrap = document.createElement("div"); wrap.className = "group-unit-block";
 
+  // ── Header: only × button (no name input per req #3) ──
   const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
-  const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-unit-name";
-  nameInp.placeholder = "수업묶음 이름"; nameInp.value = unit.name; nameInp.disabled = !canEdit();
-  // Name change: save only, no re-render
-  nameInp.addEventListener("change", e => { unit.name = e.target.value; scheduleSave("templates"); });
-
   const delUnitBtn = makeBtn("×", "group-unit-del-btn", () => {
     if (!canEdit()) return;
     const g = groups().find(g => g.id === groupId); if (!g) return;
     g.units = g.units.filter(u => u.id !== unit.id);
     scheduleSave("templates"); onStructureChange();
   }); delUnitBtn.disabled = !canEdit();
-  hdr.append(nameInp, delUnitBtn); wrap.appendChild(hdr);
+  hdr.appendChild(delUnitBtn); wrap.appendChild(hdr);
 
   const cardArea = document.createElement("div"); cardArea.className = "group-unit-cards";
   cardArea.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); cardArea.classList.add("dragover"); });
@@ -377,7 +373,7 @@ function createUnitBlock(groupId, unit, onStructureChange) {
       cardArea.appendChild(c);
     });
   } else {
-    const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "과목카드를 여기로 드래그"; cardArea.appendChild(ph);
+    const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
   return wrap;
@@ -388,39 +384,44 @@ function createGroupBlock(groupId, onStructureChange) {
   const grpObj = groups().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   const block = document.createElement("div"); block.className = "group-block";
 
+  // ── Collapse state (stored on grpObj at runtime, not persisted) ──
+  if (grpObj._collapsed === undefined) grpObj._collapsed = false;
+
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
 
-  // Group name: save only, no re-render
+  // ① Collapse toggle button
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button"; collapseBtn.className = "group-collapse-btn";
+  collapseBtn.textContent = grpObj._collapsed ? "▶" : "▼";
+  collapseBtn.title = grpObj._collapsed ? "펼치기" : "접기";
+
+  // ② Group name
   const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name";
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
+  // ③ Checkboxes
   const cbWrap = document.createElement("div"); cbWrap.className = "group-block-checks";
   const mkCheck = (label, checked, onChange) => {
     const lbl = document.createElement("label"); lbl.className = "group-block-check";
     const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.disabled = !canEdit();
     cb.addEventListener("change", e => onChange(e.target.checked));
-    const span = document.createElement("span"); span.textContent = label;
-    lbl.append(cb, span); return lbl;
+    lbl.append(cb, Object.assign(document.createElement("span"), { textContent: label })); return lbl;
   };
-
-  // 같은 시간 배정 — save only, no re-render
   cbWrap.appendChild(mkCheck("같은 시간 배정", grpObj.isConcurrent, v => {
-    grpObj.isConcurrent = v;
-    // groupType: concurrent when isConcurrent is true (regardless of isCrossGrade)
-    grpObj.groupType = v ? "concurrent" : "off";
-    scheduleSave("templates");
+    grpObj.isConcurrent = v; grpObj.groupType = v ? "concurrent" : "off"; scheduleSave("templates");
   }));
-  // 학년 통합 수업 — save only, no re-render
   cbWrap.appendChild(mkCheck("학년 통합 수업", grpObj.isCrossGrade, v => {
-    grpObj.isCrossGrade = v;
-    // groupType stays "concurrent" if isConcurrent, isCrossGrade is separate
-    scheduleSave("templates");
+    grpObj.isCrossGrade = v; scheduleSave("templates");
   }));
 
   const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit();
-  hdr.append(nameInp, cbWrap, delBtn); block.appendChild(hdr);
+  hdr.append(collapseBtn, nameInp, cbWrap, delBtn); block.appendChild(hdr);
+
+  // ── Body (collapsible) ──
+  const body = document.createElement("div"); body.className = "group-block-body";
+  if (grpObj._collapsed) body.style.display = "none";
 
   // Templates in group but not in any unit
   const allUnitTplIds = new Set(grpObj.units.flatMap(u => u.templateIds));
@@ -439,19 +440,29 @@ function createGroupBlock(groupId, onStructureChange) {
       scheduleSave("templates"); onStructureChange();
     });
     groupedNoUnit.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
-    poolDiv.append(poolLbl, poolCards); block.appendChild(poolDiv);
+    poolDiv.append(poolLbl, poolCards); body.appendChild(poolDiv);
   }
 
   const unitsWrap = document.createElement("div"); unitsWrap.className = "group-units-wrap";
   grpObj.units.forEach(unit => unitsWrap.appendChild(createUnitBlock(groupId, unit, onStructureChange)));
-  block.appendChild(unitsWrap);
+  body.appendChild(unitsWrap);
 
   const addUnitBtn = makeBtn("+ 수업묶음 추가", "group-add-unit-btn", () => {
     if (!canEdit()) return;
     grpObj.units.push({ id: uid("unit"), name: "", templateIds: [] });
     scheduleSave("templates"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
-  block.appendChild(addUnitBtn);
+  body.appendChild(addUnitBtn);
+  block.appendChild(body);
+
+  // Collapse toggle wiring
+  collapseBtn.addEventListener("click", () => {
+    grpObj._collapsed = !grpObj._collapsed;
+    body.style.display = grpObj._collapsed ? "none" : "";
+    collapseBtn.textContent = grpObj._collapsed ? "▶" : "▼";
+    collapseBtn.title = grpObj._collapsed ? "펼치기" : "접기";
+  });
+
   return block;
 }
 

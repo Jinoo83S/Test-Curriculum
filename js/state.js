@@ -215,6 +215,7 @@ export function normalizeTimetableEntry(e = {}) {
     gradeKeys:   Array.isArray(e.gradeKeys)   ? e.gradeKeys.filter(Boolean)   : (gradeKey   ? [gradeKey]   : []),
     teacherName: clean(e.teacherName),
     roomId:      clean(e.roomId) || null,
+    pinned:      !!e.pinned,
   };
 }
 export function normalizeTimetableConstraint(c = {}) {

@@ -432,6 +432,16 @@ function buildEntryCard(entry, opts = {}) {
   removeBtn.disabled = !canEdit();
   card.appendChild(removeBtn);
 
+  // Pin button (📌/📍 toggle, always enabled)
+  const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
+  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
+  pinBtn.addEventListener("click", () => {
+    const e = entries().find(x => x.id === entry.id); if (!e) return;
+    e.pinned = !e.pinned; scheduleSave("timetable"); renderAll();
+  });
+  card.appendChild(pinBtn);
+  if (entry.pinned) card.classList.add("tt-entry-pinned");
+
   // Grade chips (absolute, left of × button)
   if (showGrade && displayGrades.length) {
     card.classList.add("tt-entry-has-grade");
@@ -466,9 +476,9 @@ function buildEntryCard(entry, opts = {}) {
   card.append(titleEl, teacherRow);
 
   // Drag to move (entry kind)
-  card.draggable = canEdit();
+  card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
-    if (!canEdit() || ev.target.closest("select,button")) { ev.preventDefault(); return; }
+    if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
     dragData = { kind: "entry", entryId: entry.id };
     card.classList.add("tt-dragging");
   });
@@ -480,7 +490,7 @@ function buildEntryCard(entry, opts = {}) {
 // ── Drop handler ──────────────────────────────────────────────────
 function moveEntry(entryId, day, period) {
   if (!canEdit()) return;
-  const e = entries().find(x => x.id === entryId); if (!e) return;
+  const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return; // pinned = cannot move
   e.day = day; e.period = period;
   scheduleSave("timetable");
 }

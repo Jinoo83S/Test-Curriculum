@@ -2856,3 +2856,46 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 .group-add-unit-btn:hover { background: #eff6ff; }
 .group-add-unit-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Group block collapse toggle ─────────────────────────────────── */
+.group-collapse-btn {
+  width: 22px; height: 22px; flex-shrink: 0;
+  border: 1px solid #d1d5db; border-radius: 4px;
+  background: #f8fafc; color: #374151;
+  cursor: pointer; font-size: 10px; line-height: 1;
+  padding: 0; display: flex; align-items: center; justify-content: center;
+}
+.group-collapse-btn:hover { background: #eff6ff; color: #2563eb; border-color: #93c5fd; }
+
+.group-block-body { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Unit block: no name row, horizontal card wrap ───────────────── */
+.group-unit-hdr { display: flex; justify-content: flex-end; margin-bottom: 3px; }
+.group-unit-cards {
+  display: flex; flex-direction: row; flex-wrap: wrap;
+  gap: 4px; min-height: 36px; padding: 4px;
+  border: 1.5px dashed #d1d5db; border-radius: 5px; background: white;
+}
+.group-unit-cards.dragover { border-color: #2563eb; background: #dbeafe; }
+
+/* ── Group manager card: compact size ───────────────────────────── */
+.group-mgr-card {
+  width: auto; min-width: 80px; max-width: 140px;
+  flex-shrink: 1;
+}
+
+/* ── Timetable pin button ────────────────────────────────────────── */
+.tt-entry-pin {
+  position: absolute; bottom: 2px; right: 2px;
+  width: 14px; height: 14px;
+  border: none; background: transparent;
+  cursor: pointer; font-size: 10px; line-height: 1; padding: 0;
+  opacity: 0.4; transition: opacity .1s;
+}
+.tt-entry-pin:hover { opacity: 1; }
+.tt-entry-pinned .tt-entry-pin { opacity: 1; }
+.tt-entry-pinned {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: -1px;
+}
+.tt-entry-pinned.tt-entry-card { cursor: default; }
