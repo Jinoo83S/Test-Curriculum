@@ -242,8 +242,7 @@ function normalizeTimetableDomain(raw = {}) {
     config: {
       periodCount: pc,
       periodLabels: pl,
-      lunchAfterPeriod: Number.isInteger(raw.config?.lunchAfterPeriod) ? raw.config.lunchAfterPeriod : 4,
-      showLunch: raw.config?.showLunch !== false
+      showLunch: false
     },
     entries: Array.isArray(raw.entries)
       ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
