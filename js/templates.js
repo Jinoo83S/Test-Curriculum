@@ -380,14 +380,6 @@ function createUnitBlock(groupId, unit, onStructureChange) {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
-
-  // Visual badge: if this unit has 2+ templates it means "same classroom"
-  if (unit.templateIds.length > 1) {
-    const sameBadge = document.createElement("div"); sameBadge.className = "group-unit-classroom-badge";
-    sameBadge.textContent = "🏫 같은 교실"; sameBadge.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
-    wrap.appendChild(sameBadge);
-  }
-
   return wrap;
 }
 
@@ -397,44 +389,32 @@ function createGroupBlock(groupId, onStructureChange) {
   const block = document.createElement("div"); block.className = "group-block";
   if (grpObj._collapsed === undefined) grpObj._collapsed = false;
 
-  // ── Header: [drag] [▼/▶] [이름_____] [삭제] ──────────────────
+  // Always concurrent (group = same-time block)
+  grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
+
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
+
+  const collapseBtn = document.createElement("button");
+  collapseBtn.type = "button"; collapseBtn.className = "group-collapse-btn";
+  collapseBtn.textContent = grpObj._collapsed ? "▶" : "▼";
+  collapseBtn.title = grpObj._collapsed ? "펼치기" : "접기";
 
   const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name";
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
-  const collapseBtn = document.createElement("button"); collapseBtn.type = "button"; collapseBtn.className = "group-collapse-btn";
-  collapseBtn.textContent = grpObj._collapsed ? "▶" : "▼";
-  collapseBtn.title = grpObj._collapsed ? "펼치기" : "접기";
-
   const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit();
+  hdr.append(collapseBtn, nameInp, delBtn); block.appendChild(hdr);
 
-  hdr.append(collapseBtn, nameInp, delBtn);
-  block.appendChild(hdr);
-
-  // ── Conditions row ────────────────────────────────────────────
-  const condRow = document.createElement("div"); condRow.className = "group-cond-row";
-  const mkCheck = (label, checked, onChange) => {
-    const lbl = document.createElement("label"); lbl.className = "group-block-check";
-    const cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = checked; cb.disabled = !canEdit();
-    cb.addEventListener("change", e => onChange(e.target.checked));
-    lbl.append(cb, Object.assign(document.createElement("span"), { textContent: label })); return lbl;
-  };
-  condRow.appendChild(mkCheck("같은 시간 배정 (다른 교실)", grpObj.isConcurrent, v => {
-    grpObj.isConcurrent = v; grpObj.groupType = v ? "concurrent" : "off"; scheduleSave("templates");
-  }));
-  block.appendChild(condRow);
-
-  // ── Body (collapsible) ────────────────────────────────────────
+  // ── Body (collapsible) ──
   const body = document.createElement("div"); body.className = "group-block-body";
   if (grpObj._collapsed) body.style.display = "none";
 
-  // Pool: templates assigned to group but not in any unit
+  // Templates in group but not in any unit
   const allUnitTplIds = new Set(grpObj.units.flatMap(u => u.templateIds));
-  const poolTpls = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
-  if (poolTpls.length) {
+  const groupedNoUnit = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
+  if (groupedNoUnit.length) {
     const poolDiv = document.createElement("div"); poolDiv.className = "group-ungrouped-pool";
     const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-label"; poolLbl.textContent = "수업묶음에 배정 전";
     const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
@@ -447,38 +427,23 @@ function createGroupBlock(groupId, onStructureChange) {
       assignTemplateGroup(drag.templateId, groupId);
       scheduleSave("templates"); onStructureChange();
     });
-    poolTpls.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
+    groupedNoUnit.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
     poolDiv.append(poolLbl, poolCards); body.appendChild(poolDiv);
   }
 
-  // Drop zone for group (not unit) — accept cards directly into group pool
-  const dropZone = document.createElement("div"); dropZone.className = "group-direct-drop";
-  dropZone.textContent = "과목 드롭 → 같은 시간 배정";
-  dropZone.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); dropZone.classList.add("dragover"); });
-  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
-  dropZone.addEventListener("drop", e => {
-    if (!canEdit()) return; e.preventDefault(); dropZone.classList.remove("dragover");
-    const drag = currentDrag; if (!drag || drag.kind !== "template") return;
-    grpObj.units.forEach(u => { u.templateIds = u.templateIds.filter(id => id !== drag.templateId); });
-    assignTemplateGroup(drag.templateId, groupId);
-    scheduleSave("templates"); onStructureChange();
-  });
-  if (!poolTpls.length) body.appendChild(dropZone);
-
-  // Units (same classroom)
   const unitsWrap = document.createElement("div"); unitsWrap.className = "group-units-wrap";
   grpObj.units.forEach(unit => unitsWrap.appendChild(createUnitBlock(groupId, unit, onStructureChange)));
   body.appendChild(unitsWrap);
 
-  const addUnitBtn = makeBtn("+ 수업묶음 추가 (같은 교실)", "group-add-unit-btn", () => {
+  const addUnitBtn = makeBtn("+ 수업묶음 추가", "group-add-unit-btn", () => {
     if (!canEdit()) return;
-    grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], sections: {} });
+    grpObj.units.push({ id: uid("unit"), name: "", templateIds: [] });
     scheduleSave("templates"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
   body.appendChild(addUnitBtn);
   block.appendChild(body);
 
-  // Collapse toggle
+  // Collapse toggle wiring
   collapseBtn.addEventListener("click", () => {
     grpObj._collapsed = !grpObj._collapsed;
     body.style.display = grpObj._collapsed ? "none" : "";
