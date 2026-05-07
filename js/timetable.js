@@ -30,7 +30,6 @@ let constraintMap  = new Map();
 // ── DOM refs ──────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
 const ttGrid       = () => $("ttGrid");
-const ttPanel      = () => $("ttPanel");
 const ttAuthStatus = () => $("ttAuthStatus");
 const ttLoginBtn   = () => $("ttLoginBtn");
 const ttLogoutBtn  = () => $("ttLogoutBtn");
@@ -323,20 +322,7 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
   thead.appendChild(hrow); table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  const lunchAfter = ttConfig().lunchAfterPeriod;
-  const showLunch  = ttConfig().showLunch;
-
   periods.forEach((label, period) => {
-    // Insert lunch row AFTER lunchAfterPeriod
-    if (showLunch && period === lunchAfter + 1) {
-      const lunchTr = document.createElement("tr"); lunchTr.className = "tt-lunch-row";
-      const lunchTd = document.createElement("td"); lunchTd.className = "tt-period-label tt-lunch-label"; lunchTd.textContent = "🍱"; lunchTr.appendChild(lunchTd);
-      days.forEach(() => {
-        const td = document.createElement("td"); td.className = "tt-lunch-cell"; td.textContent = "점심시간"; lunchTr.appendChild(td);
-      });
-      tbody.appendChild(lunchTr);
-    }
-
     const tr = document.createElement("tr");
     const pTd = document.createElement("td"); pTd.className = "tt-period-label";
     const pInp = document.createElement("input"); pInp.type = "text"; pInp.value = label; pInp.disabled = !canEdit();
@@ -521,8 +507,8 @@ function renderSubjectPanel() {
   if (!panel) return;
   panel.innerHTML = "";
 
-  // Grade / view selector header
-  if (currentView !== "grade") {
+  // Grade selector always shown (no sidebar panel anymore)
+  if (true) {
     const guide = document.createElement("div"); guide.style.cssText = "font-size:10px;color:#6b7280;padding:4px 2px 2px";
     guide.textContent = "배치할 학년:"; panel.appendChild(guide);
     const gSel = document.createElement("select"); gSel.className = "tt-sc-grade-sel";
@@ -535,10 +521,10 @@ function renderSubjectPanel() {
     panel.appendChild(gSel);
   }
 
-  const gradeColor = getGradeColor(currentGrade);
-
-  // Collect templates in this grade
-  const subjectsForGrade = getSubjectsForGrade(currentGrade);
+  // currentGrade="" means all grades
+  const targetGrades = currentGrade ? [currentGrade] : GRADE_KEYS;
+  const _seen = new Set();
+  const subjectsForGrade = targetGrades.flatMap(g => getSubjectsForGrade(g).filter(t => t && !_seen.has(t.id) && _seen.add(t.id)));
   if (!subjectsForGrade.length) {
     panel.appendChild(Object.assign(document.createElement("div"), { className:"tt-empty", textContent:"이 학년에 배치된 과목이 없습니다." })); return;
   }
@@ -587,6 +573,16 @@ function renderSubjectPanel() {
       if (gradeKeys.length > 1) {
         const gc = document.createElement("span"); gc.className = "tt-sc-sec"; gc.textContent = gradeKeys.join("·"); botRow.appendChild(gc);
       }
+      // Grade chips on unit card
+      if (gradeKeys.length) {
+        const gradeRow = document.createElement("div"); gradeRow.style.cssText = "display:flex;gap:2px;margin-top:2px;flex-wrap:wrap";
+        gradeKeys.forEach(g => {
+          const chip = document.createElement("span");
+          chip.style.cssText = `font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;background:${getGradeColor(g).border};color:white;white-space:nowrap`;
+          chip.textContent = g; gradeRow.appendChild(chip);
+        });
+        card.appendChild(gradeRow);
+      }
       card.append(topRow, botRow);
 
       if (!isDone) {
@@ -627,6 +623,12 @@ function renderSubjectPanel() {
         const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
         botRow.textContent = teachers.join(", ") || "-";
         if (sections > 1) { const sb = document.createElement("span"); sb.className = "tt-sc-sec"; sb.textContent = `${sec+1}분반`; botRow.appendChild(sb); }
+        // Grade chip on standalone card
+        {
+          const chip = document.createElement("span");
+          chip.style.cssText = `font-size:9px;font-weight:700;padding:1px 5px;border-radius:999px;background:${getGradeColor(currentGrade).border};color:white;display:inline-block;margin-top:2px;white-space:nowrap`;
+          chip.textContent = currentGrade; card.appendChild(chip);
+        }
         card.append(topRow, botRow);
 
         if (!isDone) {
