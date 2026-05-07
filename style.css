@@ -1285,8 +1285,8 @@ button {
 .template-applied-grades {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  padding: 3px 6px 2px;
+  gap: 1px;
+  padding: 2px 4px 1px;
   min-height: 20px;
 }
 .grade-chip {
@@ -1304,10 +1304,7 @@ button {
   background: #f3f4f6;
   color: #9ca3af;
 }
-.grade-chip-sm {
-  font-size: 9px;
-  padding: 1px 5px;
-}
+.grade-chip-sm { padding: 1px 3px; font-size: 9px; }
 /* Auto-derived schoolLevel select indicator */
 .level-select-derived {
   background: #f0fdf4;

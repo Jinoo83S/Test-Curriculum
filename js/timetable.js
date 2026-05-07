@@ -425,14 +425,14 @@ function buildEntryCard(entry, opts = {}) {
     displayGrades.slice().reverse().forEach((g, ri) => {
       const gc = document.createElement("span"); gc.className = "tt-entry-grade";
       gc.textContent = g.replace("학년","");
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${16 + ri * 20}px;font-size:8px;padding:0 3px`;
+      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${15 + ri * 14}px;font-size:8px;padding:0 2px`;
       card.appendChild(gc);
     });
   }
 
   const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
   // Dynamic padding: pin(16) + per-grade-chip(16*n)
-  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
+  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 14}px`;
 
   card.appendChild(titleEl);
   if (entry.teacherName) {
