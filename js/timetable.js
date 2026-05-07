@@ -286,7 +286,7 @@ function renderAllGradesGrid(wrap) {
     pTd.appendChild(pInp); tr.appendChild(pTd);
 
     days.forEach((_, day) => {
-      const td = document.createElement("td"); td.className = "tt-cell";
+      const td = document.createElement("td"); td.className = "tt-cell"; td.setAttribute("data-day", day);
       td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
       td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
       td.addEventListener("drop", e => {
@@ -431,6 +431,8 @@ function buildEntryCard(entry, opts = {}) {
   }
 
   const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
+  // Dynamic padding: pin(16) + per-grade-chip(16*n)
+  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
 
   card.appendChild(titleEl);
   if (entry.teacherName) {

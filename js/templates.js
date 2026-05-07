@@ -380,6 +380,14 @@ function createUnitBlock(groupId, unit, onStructureChange) {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
+
+  // Visual badge: if this unit has 2+ templates it means "same classroom"
+  if (unit.templateIds.length > 1) {
+    const sameBadge = document.createElement("div"); sameBadge.className = "group-unit-classroom-badge";
+    sameBadge.textContent = "🏫 같은 교실"; sameBadge.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
+    wrap.appendChild(sameBadge);
+  }
+
   return wrap;
 }
 
@@ -415,7 +423,7 @@ function createGroupBlock(groupId, onStructureChange) {
   cbWrap.appendChild(mkCheck("같은 시간 배정", grpObj.isConcurrent, v => {
     grpObj.isConcurrent = v; grpObj.groupType = v ? "concurrent" : "off"; scheduleSave("templates");
   }));
-  cbWrap.appendChild(mkCheck("학년 통합 수업", grpObj.isCrossGrade, v => {
+  cbWrap.appendChild(mkCheck("같은 교실 수업", grpObj.isCrossGrade, v => {
     grpObj.isCrossGrade = v; scheduleSave("templates");
   }));
 

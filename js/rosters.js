@@ -82,7 +82,25 @@ export function renderRosterView(container) {
   if (!ftpl.length) {
     const e = document.createElement("div"); e.className = "roster-template-empty"; e.textContent = "해당 학년에 배치된 과목이 없습니다."; tplList.appendChild(e);
   } else {
+    // Group templates by templateGroup
+    const groups = appState.templates.templateGroups || [];
+    const groupedTplIds = new Set(groups.flatMap(g => g.units.flatMap(u => u.templateIds)));
+
+    // Map tpl.id → group name
+    const tplGroupMap = new Map();
+    groups.forEach(grp => grp.units.forEach(unit => unit.templateIds.forEach(tid => tplGroupMap.set(tid, grp.name || "그룹"))));
+
+    // Sort: group items first (sorted by group name), then standalone
+    const grouped = {}, standalone = [];
     ftpl.forEach(tpl => {
+      if (tplGroupMap.has(tpl.id)) {
+        const gn = tplGroupMap.get(tpl.id);
+        if (!grouped[gn]) grouped[gn] = [];
+        grouped[gn].push(tpl);
+      } else { standalone.push(tpl); }
+    });
+
+    const renderItem = tpl => {
       const item = document.createElement("div");
       item.className = "roster-template-item" + (tpl.id === selectedRosterTemplateId ? " active" : "");
       const lbl = document.createElement("div"); lbl.className = "roster-template-label"; lbl.textContent = buildLabel(tpl); lbl.title = lbl.textContent;
@@ -96,8 +114,26 @@ export function renderRosterView(container) {
       if (cc > 0) { const b = document.createElement("span"); b.className = "roster-section-badge"; b.textContent = `${cc}반`; metaRow.appendChild(b); }
       item.append(lbl, grades, metaRow);
       item.addEventListener("click", () => { selectedRosterTemplateId = tpl.id; selectedSection = 0; renderRosterView(container); });
-      tplList.appendChild(item);
+      return item;
+    };
+
+    // Render grouped
+    Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b,"ko")).forEach(([groupName, tpls]) => {
+      const grpHdr = document.createElement("div"); grpHdr.className = "roster-group-hdr";
+      grpHdr.textContent = groupName;
+      tplList.appendChild(grpHdr);
+      tpls.forEach(tpl => tplList.appendChild(renderItem(tpl)));
     });
+
+    // Render standalone (no group)
+    if (standalone.length) {
+      if (Object.keys(grouped).length) {
+        const grpHdr = document.createElement("div"); grpHdr.className = "roster-group-hdr roster-group-hdr-standalone";
+        grpHdr.textContent = "개별 과목";
+        tplList.appendChild(grpHdr);
+      }
+      standalone.forEach(tpl => tplList.appendChild(renderItem(tpl)));
+    }
   }
   leftPanel.appendChild(tplList);
 

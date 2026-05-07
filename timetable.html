@@ -47,10 +47,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
 .tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
 .tt-corner-label{font-size:10px;font-weight:700;color:white}
-.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:5px 2px;font-size:12px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 46px)/5)}
+.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:6px 2px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 46px)/5)}
+/* Day column alternating tint — applied via JS data-day attribute */
+.tt-cell[data-day="0"]{background:#ffffff}
+.tt-cell[data-day="1"]{background:#f8faff}
+.tt-cell[data-day="2"]{background:#ffffff}
+.tt-cell[data-day="3"]{background:#f8faff}
+.tt-cell[data-day="4"]{background:#ffffff}
+.tt-cell[data-day="0"].tt-dragover,.tt-cell[data-day="1"].tt-dragover,.tt-cell[data-day="2"].tt-dragover,.tt-cell[data-day="3"].tt-dragover,.tt-cell[data-day="4"].tt-dragover{background:#dbeafe}
+/* Period label row height */
+.tt-period-label{background:#f8fafc;border:1px solid #e2e8f0;text-align:center;vertical-align:middle;padding:3px;width:46px}
+
 .tt-period-label{background:#f8fafc;border:1px solid #e2e8f0;text-align:center;vertical-align:middle;padding:2px;width:46px}
 .tt-period-label input{width:100%;border:none;background:transparent;text-align:center;font-size:9px;font-weight:700;color:#374151;padding:1px}
-.tt-cell{border:1px solid #e2e8f0;vertical-align:top;padding:2px;position:relative}
+.tt-cell{border:1px solid #e2e8f0;vertical-align:top;padding:3px;position:relative;min-height:52px}
 .tt-cell.tt-dragover{background:#dbeafe;outline:2px dashed #2563eb}
 .tt-cell-ph{min-height:40px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:16px;pointer-events:none}
 .tt-cell-ph::before{content:"+"}
@@ -60,13 +70,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-cell-card-grid .tt-entry-card{flex:1;min-width:0;overflow:hidden}
 
 /* ── Entry card ── */
-.tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:2px 4px;position:relative;font-size:10px;border-left-width:4px;min-width:0;overflow:hidden;cursor:pointer}
+.tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:3px 5px;position:relative;font-size:10px;border-left-width:4px;min-width:0;overflow:hidden;cursor:pointer}
 .tt-entry-card.tt-entry-conflict{outline:2px solid #ef4444;animation:tt-pulse .8s ease-in-out infinite alternate}
 @keyframes tt-pulse{from{outline-color:#ef4444}to{outline-color:#fca5a5}}
 .tt-entry-grade{position:absolute;top:2px;right:17px;display:inline-block;font-size:8px;font-weight:700;padding:0 4px;border-radius:999px;white-space:nowrap;line-height:14px}
-.tt-entry-has-grade .tt-entry-title{padding-right:52px}
-.tt-entry-title{font-weight:700;font-size:10px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px}
-.tt-entry-teacher{font-size:9px;color:rgba(0,0,0,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.tt-entry-has-grade .tt-entry-title{padding-right:36px}
+.tt-entry-title{font-weight:700;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:18px}
+.tt-entry-teacher{font-size:10px;color:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 
 .tt-entry-pin{width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.35;transition:opacity .1s}
 .tt-entry-pin:hover{opacity:1}
