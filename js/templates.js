@@ -498,7 +498,7 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
     GRADE_KEYS_LOCAL.forEach(gradeKey => {
       const rows = appState.curriculum?.gradeBoards?.[gradeKey] || [];
       rows.forEach(row => {
-        if (row.category === "교과") return;
+        if (row.category !== "교과") return;   // 창체 등 비교과 제외
         if (!row.track || row.track === "공통") return;
         const groupKey = `${row.track}::${row.group||"기타"}`;
         if (!trackMap[groupKey]) trackMap[groupKey] = { name: `${row.track} / ${row.group||"기타"}`, tplIds: new Set() };
