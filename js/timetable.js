@@ -693,6 +693,25 @@ function handleDrop(data, day, period) {
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Entry detail popup ──────────────────────────────────────────
+function showEntryDetailByUnit(unit, group, gradeKeys) {
+  // Show unit info in a simple popup (no entry edit - just info)
+  const existing = document.getElementById("tt-entry-detail-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div"); modal.id = "tt-entry-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
+  const box = document.createElement("div");
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:260px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+  box.innerHTML = `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${getUnitDisplayTitle(unit)}</div>
+    <div style="font-size:11px;color:#6b7280;margin-bottom:4px">그룹: ${group?.name || "-"}</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap">${gradeKeys.map(g => `<span style="background:${getGradeColor(g).border};color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">${gradeDisplay(g)}</span>`).join("")}</div>`;
+  const closeBtn = document.createElement("button");
+  closeBtn.style.cssText = "position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af";
+  closeBtn.textContent = "×"; closeBtn.onclick = () => modal.remove();
+  box.appendChild(closeBtn); modal.appendChild(box);
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
 function showEntryDetail(entry) {
   const existing = document.getElementById("tt-entry-detail-modal");
   if (existing) existing.remove();
@@ -880,7 +899,7 @@ function renderSubjectPanelLegacy(panel) {
         const card = buildSidebarCard({
           title: getUnitDisplayTitle(unit), teachers, gradeKeys, credits, assigned, isDone, gradeColor: getGradeColor(gradeKeys[0] || gradeKey)
         });
-        card.addEventListener("click", () => showUnitDetail(unit, group, gradeKeys));
+        card.addEventListener("click", () => showEntryDetailByUnit(unit, group, gradeKeys));
         if (!isDone) {
           card.addEventListener("dragstart", () => { dragData = { kind:"subject", templateId:unit.templateIds[0], unitId:unit.id, groupId:group.id, sectionIdx:0, gradeKey: gradeKeys[0] || gradeKey }; card.classList.add("tt-dragging"); });
           card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
