@@ -9,32 +9,18 @@ import {
 
 export const canEdit = () => !!auth.currentUser;
 
-// Popup on localhost, redirect on deployed sites (GitHub Pages etc.)
-const isLocalhost = ["localhost", "127.0.0.1"].includes(location.hostname);
-
 export async function login() {
-  if (isLocalhost) {
-    try {
-      await signInWithPopup(auth, provider);
-      return;
-    } catch (e) {
-      if (e.code !== "auth/popup-blocked" && e.code !== "auth/popup-closed-by-user" && e.code !== "auth/cancelled-popup-request") {
-        if (e.code === "auth/unauthorized-domain") {
-          alert("이 도메인은 Firebase에서 허용되지 않습니다.\nFirebase Console → Authentication → Authorized domains 에서 도메인을 추가하세요.");
-          return;
-        }
-        console.error(e); alert("로그인 실패: " + e.message); return;
-      }
-    }
-  }
-  // Deployed: use redirect
   try {
-    await signInWithRedirect(auth, provider);
+    // Try popup first; fall back to redirect (e.g. GitHub Pages blocks popups)
+    await signInWithPopup(auth, provider);
   } catch (e) {
-    if (e.code === "auth/unauthorized-domain") {
-      alert("이 도메인은 Firebase에서 허용되지 않습니다.\nFirebase Console → Authentication → Settings → Authorized domains 에서\n현재 도메인(" + location.hostname + ")을 추가해주세요.");
+    if (e.code === "auth/popup-blocked" || e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") {
+      try { await signInWithRedirect(auth, provider); }
+      catch (e2) { console.error(e2); alert("로그인에 실패했습니다: " + e2.message); }
+    } else if (e.code === "auth/unauthorized-domain") {
+      alert("이 도메인은 Firebase에서 허용되지 않습니다.\n\nFirebase Console → Authentication → Settings → Authorized domains 에서\n현재 도메인을 추가해주세요.");
     } else {
-      console.error(e); alert("로그인 실패: " + e.message);
+      console.error(e); alert("로그인에 실패했습니다: " + e.message);
     }
   }
 }
@@ -46,13 +32,7 @@ export async function logout() {
 
 export function onAuth(cb) { return onAuthStateChanged(auth, cb); }
 
-// Handle redirect result on page load
+// Handle redirect result on page load (for signInWithRedirect flow)
 getRedirectResult(auth)
   .then(result => { if (result?.user) console.log("Redirect login:", result.user.email); })
-  .catch(e => {
-    if (e.code === "auth/unauthorized-domain") {
-      alert("Firebase 도메인 오류: " + location.hostname + "\nFirebase Console → Authentication → Authorized domains 에서 추가하세요.");
-    } else if (e.code !== "auth/no-current-user" && e.code !== "auth/null-user") {
-      console.error("Redirect error:", e.code, e.message);
-    }
-  });
+  .catch(e => { if (e.code !== "auth/no-current-user") console.error("Redirect result error:", e); });
