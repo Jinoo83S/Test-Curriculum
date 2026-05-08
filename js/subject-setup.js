@@ -70,6 +70,12 @@ export function renderSubjectSetupView(container) {
   GRADE_KEYS.forEach(gradeKey => {
     const tracks = byGrade[gradeKey]; if (!tracks) return;
     const gradeRows = Object.values(tracks).flat();
+    // Calculate TOTAL rendered rows (including subtotal rows) for this grade's grade-cell rowspan
+    const totalGradeSpan = Object.keys(tracks).reduce((sum, t) => {
+      const isChoice = t !== "공통" && tracks[t].length > 1;
+      return sum + tracks[t].filter(r => !!getTemplateById(r.tplId)).length + (isChoice ? 1 : 0);
+    }, 0);
+
     let gradeRendered = false;
 
     Object.keys(tracks).sort((a, b) => {
@@ -87,10 +93,10 @@ export function renderSubjectSetupView(container) {
         const isChoice = track !== "공통" && trackRows.length > 1;
         if (isChoice) tr.className = "ss-row-choice";
 
-        // Grade cell (rowspan = all rows in this grade)
+        // Grade cell (rowspan = all rendered rows in this grade including subtotals)
         if (!gradeRendered) {
           const td = document.createElement("td"); td.className = "ss-td-grade";
-          td.rowSpan = gradeRows.length; td.textContent = `${gradeDisplay(gradeKey)}`;
+          td.rowSpan = totalGradeSpan; td.textContent = `${gradeDisplay(gradeKey)}`;
           tr.appendChild(td); gradeRendered = true;
         }
 

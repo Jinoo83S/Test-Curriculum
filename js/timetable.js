@@ -509,11 +509,25 @@ function entryTitle(e) {
   return getTemplateCardTitle(getTemplateById(e.templateId)) || "?";
 }
 function entryTeachers(e) {
+  // Always prefer stored teacherName (most accurate)
+  if (e.teacherName) return splitTeacherNames(e.teacherName).filter(Boolean);
+  // Unit entry → derive from ttcardIds (new) or templateIds (legacy)
   if (e.unitId) {
-    const grp = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
+    const grp  = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
     const unit = grp?.units.find(u => u.id === e.unitId);
-    if (unit) return getUnitTeachers(unit);
+    if (unit) {
+      if (unit.ttcardIds?.length) {
+        const ttcards = getTtCards();
+        return [...new Set(unit.ttcardIds.flatMap(id => {
+          const card = ttcards.find(c => c.id === id);
+          return card ? getTeachersForTemplate(card.templateId) : [];
+        }))];
+      }
+      if (unit.templateIds?.length) return getUnitTeachers(unit);
+    }
   }
+  // ttcard standalone
+  if (e.ttcardId) { const card = getTtCardById(e.ttcardId); if (card) return getTeachersForTemplate(card.templateId); }
   return getTeachersForTemplate(e.templateId);
 }
 
@@ -1326,8 +1340,9 @@ function exportXlsx() {
     entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher))
       .sort((a, b) => a.day !== b.day ? a.day - b.day : a.period - b.period)
       .forEach(e => {
-        const tpl = getTemplateById(e.templateId); const room = getRooms().find(r => r.id === e.roomId);
-        teacherRows.push([teacher, dayLabels[e.day], ttConfig().periodLabels[e.period] || e.period + 1, tpl ? getTemplateCardTitle(tpl) : "?", e.gradeKey, room?.name || ""]);
+        const room = getRooms().find(r => r.id === e.roomId);
+        teacherRows.push([teacher, dayLabels[e.day], ttConfig().periodLabels[e.period] || e.period + 1,
+          entryTitle(e), entryGradeKeys(e).map(gradeDisplay).join(", "), room?.name || ""]);
       });
   });
   const wsT = XLSX.utils.aoa_to_sheet(teacherRows);

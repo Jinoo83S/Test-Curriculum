@@ -120,7 +120,10 @@ export function renderTtCardsView(container) {
       const tpl     = getTemplateById(card.templateId);
       const cc      = getClassCount(card.templateId);
       const credits  = getTtCardCredits(card);
-      const grp     = grps().find(g => (g.units||[]).some(u => (u.ttcardIds||[]).includes(card.id)));
+      const grp = grps().find(g =>
+        (g.units||[]).some(u => (u.ttcardIds||[]).includes(card.id)) ||
+        (g.poolCardIds||[]).includes(card.id)
+      );
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)"}</td>
@@ -206,8 +209,11 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
   setupDropZone(cardArea, (dragData) => {
     if (dragData.kind !== "ttcard") return;
     const cardId = dragData.ttcardId;
-    // Remove from other units
-    grps().forEach(g => g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== cardId); }));
+    // Remove from ALL units AND poolCardIds across all groups
+    grps().forEach(g => {
+      g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== cardId); });
+      g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== cardId);
+    });
     if (!unit.ttcardIds) unit.ttcardIds = [];
     if (!unit.ttcardIds.includes(cardId)) unit.ttcardIds.push(cardId);
     scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();

@@ -69,19 +69,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-cell-card-grid{display:flex;flex-direction:row;flex-wrap:nowrap;gap:2px;width:100%;overflow:hidden}
 .tt-cell-card-grid .tt-entry-card{flex:1;min-width:0;overflow:hidden}
 
-/* ── Entry card ── */
+/* ── Entry card — 2-row layout ── */
 .tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:3px 5px;position:relative;font-size:10px;border-left-width:4px;min-width:0;overflow:hidden;cursor:pointer}
 .tt-entry-card.tt-entry-conflict{outline:2px solid #ef4444;animation:tt-pulse .8s ease-in-out infinite alternate}
 @keyframes tt-pulse{from{outline-color:#ef4444}to{outline-color:#fca5a5}}
-.tt-entry-grade{position:absolute;top:2px;right:17px;display:inline-block;font-size:8px;font-weight:700;padding:0 4px;border-radius:999px;white-space:nowrap;line-height:14px}
-.tt-entry-has-grade .tt-entry-title{padding-right:36px}
-.tt-entry-title{font-weight:700;font-size:11px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:18px}
-.tt-entry-teacher{font-size:10px;color:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-
-.tt-entry-pin{width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.35;transition:opacity .1s}
+.tt-entry-row1{display:flex;align-items:flex-start;gap:2px;min-height:16px}
+.tt-entry-title{flex:1;min-width:0;font-weight:700;font-size:11px;line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tt-entry-pin{flex-shrink:0;width:14px;height:14px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.35;transition:opacity .1s;line-height:1}
 .tt-entry-pin:hover{opacity:1}
 .tt-entry-pinned .tt-entry-pin{opacity:1}
 .tt-entry-pinned{outline:2px solid #f59e0b!important;outline-offset:-1px}
+.tt-entry-row2{display:flex;align-items:center;justify-content:space-between;gap:3px;min-height:13px;margin-top:2px}
+.tt-entry-teacher{flex:1;min-width:0;font-size:9px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tt-entry-grade-chips{display:flex;gap:2px;flex-shrink:0}
+.tt-entry-grade{display:inline-block;font-size:8px;font-weight:700;padding:0 4px;border-radius:3px;white-space:nowrap;line-height:14px}
 .tt-entry-card.tt-dragging{opacity:.45;outline:2px dashed #2563eb}
 
 /* ── Bottom panel (resizable, tabs: 과목카드 / 교사조건 / 교실관리) ── */

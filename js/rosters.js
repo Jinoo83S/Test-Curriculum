@@ -56,11 +56,29 @@ let selectedSection = 0; // 0-based; -1 = "전체" view
 // ── Helpers ───────────────────────────────────────────────────────
 const buildLabel = tpl => { const t = getTemplateTeacherSummary(tpl); return t ? `${getTemplateCardTitle(tpl)} - ${t}` : getTemplateCardTitle(tpl); };
 
+function getTrackForTemplate(tplId) {
+  for (const grade of GRADE_KEYS) {
+    const row = (appState.curriculum.gradeBoards[grade] || []).find(r => r.sem1TemplateId === tplId || r.sem2TemplateId === tplId);
+    if (row) return row.track || "공통";
+  }
+  return "공통";
+}
+
 function getPlacedTemplates(gf) {
-  return appState.templates.templates.filter(tpl => {
-    const grades = GRADE_KEYS.filter(g => (appState.curriculum.gradeBoards[g] || []).some(r => r.sem1TemplateId === tpl.id || r.sem2TemplateId === tpl.id));
-    return gf !== "전체" ? grades.includes(gf) : grades.length > 0;
-  }).sort((a, b) => getTemplateCardTitle(a).localeCompare(getTemplateCardTitle(b), "ko"));
+  // Build in curriculum row order: grade → track → position in board
+  const seen = new Set();
+  const ordered = [];
+  GRADE_KEYS.forEach(grade => {
+    if (gf !== "전체" && grade !== gf) return;
+    (appState.curriculum.gradeBoards[grade] || []).forEach(row => {
+      [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tid => {
+        if (seen.has(tid)) return; seen.add(tid);
+        const tpl = appState.templates.templates.find(t => t.id === tid);
+        if (tpl) ordered.push({ tpl, track: row.track || "공통", gradeKey: grade });
+      });
+    });
+  });
+  return ordered;
 }
 
 // ── Main Render ───────────────────────────────────────────────────
@@ -82,58 +100,41 @@ export function renderRosterView(container) {
   if (!ftpl.length) {
     const e = document.createElement("div"); e.className = "roster-template-empty"; e.textContent = "해당 학년에 배치된 과목이 없습니다."; tplList.appendChild(e);
   } else {
-    // Group templates by templateGroup
-    const groups = appState.templates.templateGroups || [];
-    const groupedTplIds = new Set(groups.flatMap(g => g.units.flatMap(u => u.templateIds)));
-
-    // Map tpl.id → group name
-    const tplGroupMap = new Map();
-    groups.forEach(grp => grp.units.forEach(unit => unit.templateIds.forEach(tid => tplGroupMap.set(tid, grp.name || "그룹"))));
-
-    // Sort: group items first (sorted by group name), then standalone
-    const grouped = {}, standalone = [];
-    ftpl.forEach(tpl => {
-      if (tplGroupMap.has(tpl.id)) {
-        const gn = tplGroupMap.get(tpl.id);
-        if (!grouped[gn]) grouped[gn] = [];
-        grouped[gn].push(tpl);
-      } else { standalone.push(tpl); }
+    // Group by track (curriculum order preserved within each track)
+    const trackGroups = {}; // track → [{ tpl, gradeKey }]
+    ftpl.forEach(({ tpl, track, gradeKey }) => {
+      if (!trackGroups[track]) trackGroups[track] = [];
+      trackGroups[track].push({ tpl, gradeKey });
     });
 
-    const renderItem = tpl => {
+    const renderItem = (tpl, gradeKey) => {
       const item = document.createElement("div");
       item.className = "roster-template-item" + (tpl.id === selectedRosterTemplateId ? " active" : "");
       const lbl = document.createElement("div"); lbl.className = "roster-template-label"; lbl.textContent = buildLabel(tpl); lbl.title = lbl.textContent;
-      const grades = document.createElement("div"); grades.className = "roster-template-grades";
-      const ag = getTemplateAppliedGrades(tpl.id);
-      (ag.length ? ag.map(g => g.replace("학년","")) : ["-"]).forEach(g => { const c = document.createElement("span"); c.className = "grade-chip grade-chip-sm" + (ag.length ? "" : " grade-chip-none"); c.textContent = g; grades.appendChild(c); });
       const metaRow = document.createElement("div"); metaRow.className = "roster-template-meta-row";
+      // Grade chip
+      const gradeChip = document.createElement("span"); gradeChip.className = "grade-chip grade-chip-sm";
+      gradeChip.textContent = gradeDisplay(gradeKey);
+      metaRow.appendChild(gradeChip);
+      // Student count
       const cnt = document.createElement("div"); cnt.className = "roster-template-count"; cnt.textContent = `${getRoster(tpl.id).length}명`;
       metaRow.appendChild(cnt);
+      // Section badge
       const cc = getClassCount(tpl.id);
       if (cc > 0) { const b = document.createElement("span"); b.className = "roster-section-badge"; b.textContent = `${cc}반`; metaRow.appendChild(b); }
-      item.append(lbl, grades, metaRow);
+      item.append(lbl, metaRow);
       item.addEventListener("click", () => { selectedRosterTemplateId = tpl.id; selectedSection = 0; renderRosterView(container); });
       return item;
     };
 
-    // Render grouped
-    Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b,"ko")).forEach(([groupName, tpls]) => {
+    // Render grouped by track
+    Object.entries(trackGroups).forEach(([track, items]) => {
       const grpHdr = document.createElement("div"); grpHdr.className = "roster-group-hdr";
-      grpHdr.textContent = groupName;
+      const badge = document.createElement("span"); badge.className = "roster-track-badge";
+      badge.textContent = track; grpHdr.appendChild(badge);
       tplList.appendChild(grpHdr);
-      tpls.forEach(tpl => tplList.appendChild(renderItem(tpl)));
+      items.forEach(({ tpl, gradeKey }) => tplList.appendChild(renderItem(tpl, gradeKey)));
     });
-
-    // Render standalone (no group)
-    if (standalone.length) {
-      if (Object.keys(grouped).length) {
-        const grpHdr = document.createElement("div"); grpHdr.className = "roster-group-hdr roster-group-hdr-standalone";
-        grpHdr.textContent = "개별 과목";
-        tplList.appendChild(grpHdr);
-      }
-      standalone.forEach(tpl => tplList.appendChild(renderItem(tpl)));
-    }
   }
   leftPanel.appendChild(tplList);
 
@@ -163,11 +164,12 @@ function renderRosterDetail(panel, container) {
   const rcnt  = document.createElement("span"); rcnt.className = "student-count-badge"; rcnt.textContent = `${roster.length}명 수강`;
   rtitle.append(rname, rcnt);
   const ccWrap = document.createElement("div"); ccWrap.className = "roster-class-count-wrap";
-  const ccLbl  = document.createElement("label"); ccLbl.className = "roster-class-count-label"; ccLbl.textContent = "반 수:";
-  const ccInp  = document.createElement("input"); ccInp.type = "number"; ccInp.min = "0"; ccInp.step = "1"; ccInp.className = "roster-class-count-input";
-  ccInp.value = getRosterMeta(selectedRosterTemplateId).classCount || ""; ccInp.placeholder = "0"; ccInp.disabled = !canEdit();
-  ccInp.addEventListener("change", e => { setRosterClassCount(selectedRosterTemplateId, e.target.value); selectedSection = 0; renderRosterView(container); });
-  ccWrap.append(ccLbl, ccInp);
+  const cc = getClassCount(selectedRosterTemplateId);
+  if (cc > 0) {
+    const ccBadge = document.createElement("span"); ccBadge.className = "roster-class-count-badge";
+    ccBadge.textContent = `${cc}개 반`; ccBadge.title = "과목 설정에서 변경하세요";
+    ccWrap.appendChild(ccBadge);
+  }
   const clearAll = makeBtn("명단 초기화", "danger-btn compact-btn", () => { clearRoster(selectedRosterTemplateId, null); renderRosterView(container); });
   clearAll.disabled = !canEdit();
   const expBtn = makeBtn("📥 내보내기", "secondary-btn compact-btn", () => exportRosterXlsx(selectedRosterTemplateId));
