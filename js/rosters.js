@@ -2,7 +2,7 @@
 // rosters.js · Subject-Student Roster Mutations + View Rendering
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { makeBtn, languageClass } from "./utils.js";
+import { makeBtn, languageClass, sectionLabel, gradeDisplay } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave } from "./state.js";
 import { getClasses, getClassById } from "./students.js";
@@ -40,7 +40,7 @@ export function removeFromRoster(templateId, classId, studentId) {
 }
 export function clearRoster(templateId, sectionIdx = null) {
   if (!canEdit()) return;
-  const label = sectionIdx !== null ? `${sectionIdx + 1}반` : "전체";
+  const label = sectionIdx !== null ? sectionLabel(sectionIdx) : "전체";
   if (!confirm(`이 과목의 ${label} 수강 명단을 모두 지울까요?`)) return;
   if (sectionIdx !== null) rosters()[templateId] = (rosters()[templateId] || []).filter(e => (e.sectionIdx ?? 0) !== sectionIdx);
   else rosters()[templateId] = [];
@@ -186,13 +186,13 @@ function renderRosterDetail(panel, container) {
       const sc = getRosterSection(selectedRosterTemplateId, i).length;
       const tab = document.createElement("button"); tab.type = "button";
       tab.className = "roster-section-tab" + (selectedSection === i ? " active" : "");
-      tab.textContent = `${i + 1}반 (${sc}명)`;
+      tab.textContent = `${sectionLabel(i)} (${sc}명)`;
       const idx = i;
       tab.addEventListener("click", () => { selectedSection = idx; renderRosterView(container); });
       tabsWrap.appendChild(tab);
     }
     if (selectedSection >= 0) {
-      const clrSec = makeBtn(`${selectedSection + 1}반 초기화`, "danger-btn compact-btn", () => { clearRoster(selectedRosterTemplateId, selectedSection); renderRosterView(container); });
+      const clrSec = makeBtn(`${sectionLabel(selectedSection)} 초기화`, "danger-btn compact-btn", () => { clearRoster(selectedRosterTemplateId, selectedSection); renderRosterView(container); });
       clrSec.disabled = !canEdit(); clrSec.style.marginLeft = "auto"; tabsWrap.appendChild(clrSec);
     }
     panel.appendChild(tabsWrap);
@@ -200,7 +200,7 @@ function renderRosterDetail(panel, container) {
 
   // Enrolled table
   const secTitle = document.createElement("div"); secTitle.className = "roster-section-title";
-  secTitle.textContent = multi && selectedSection === -1 ? "전체 수강 학생" : multi ? `${selectedSection + 1}반 수강 학생` : "수강 학생";
+  secTitle.textContent = multi && selectedSection === -1 ? "전체 수강 학생" : multi ? `${sectionLabel(selectedSection)} 수강 학생` : "수강 학생";
   panel.appendChild(secTitle);
   const displayRoster = multi && selectedSection >= 0 ? getRosterSection(selectedRosterTemplateId, selectedSection) : roster;
 
@@ -215,7 +215,7 @@ function renderRosterDetail(panel, container) {
     displayRoster.forEach((entry, idx) => {
       const cls = getClassById(entry.classId); const stu = cls?.students.find(s => s.id === entry.studentId); if (!stu) return;
       const tr = document.createElement("tr");
-      const sc = showSec ? `<td class="roster-class-name">${(entry.sectionIdx ?? 0) + 1}반</td>` : "";
+      const sc = showSec ? `<td class="roster-class-name">${(entry.sectionIdx ?? 0)}// check</td>` : "";
       tr.innerHTML = `<td class="col-num">${idx + 1}</td>${sc}<td class="roster-class-name">${cls.grade}</td><td class="roster-class-name">${cls.name}</td><td>${stu.name}</td><td>${stu.gender}</td>`;
       const delTd = document.createElement("td"); const delBtn = makeBtn("×", "stu-del-btn", () => { removeFromRoster(selectedRosterTemplateId, entry.classId, entry.studentId); renderRosterView(container); });
       delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd); tbody.appendChild(tr);
@@ -228,7 +228,7 @@ function renderRosterDetail(panel, container) {
 
   // Add area
   const addTitle = document.createElement("div"); addTitle.className = "roster-section-title";
-  addTitle.textContent = multi ? `학생 배정 → ${selectedSection + 1}반 (반에서 선택)` : "학생 추가 (반에서 선택)";
+  addTitle.textContent = multi ? `학생 배정 → ${sectionLabel(selectedSection)} (반에서 선택)` : "학생 추가 (반에서 선택)";
   panel.appendChild(addTitle);
 
   const filterBar = document.createElement("div"); filterBar.className = "roster-filter-bar";
@@ -272,7 +272,7 @@ function renderRosterDetail(panel, container) {
         const stuBtn = document.createElement("button"); stuBtn.type = "button";
         stuBtn.className = "roster-stu-chip" + (inThis ? " enrolled" : "") + (inOther ? " in-other-section" : "");
         stuBtn.textContent = s.name || "(이름없음)";
-        if (inOther) stuBtn.title = `현재 ${curSec + 1}반 → 클릭시 ${selectedSection + 1}반으로 이동`;
+        if (inOther) stuBtn.title = `현재 ${sectionLabel(curSec)} → 클릭시 ${sectionLabel(selectedSection)}으로 이동`;
         stuBtn.disabled = !canEdit();
         stuBtn.addEventListener("click", () => {
           if (inThis) removeFromRoster(selectedRosterTemplateId, cls.id, s.id);
@@ -314,7 +314,7 @@ export function exportRosterXlsx(templateId) {
       const rows = [["번호","학년","반","이름","성별","생년월일"]]; let num = 1;
       roster.filter(e => (e.sectionIdx ?? 0) === i).forEach(entry => { const cls = getClassById(entry.classId); const stu = cls?.students.find(s => s.id === entry.studentId); if (!stu) return; rows.push([num++, cls.grade, cls.name, stu.name, stu.gender, stu.birth]); });
       const ws = XLSX.utils.aoa_to_sheet(rows); ws["!cols"] = [{ wch:6 },{ wch:8 },{ wch:10 },{ wch:12 },{ wch:6 },{ wch:14 }];
-      XLSX.utils.book_append_sheet(wb, ws, `${i + 1}반`);
+      XLSX.utils.book_append_sheet(wb, ws, `${sectionLabel(i)}`);
     }
   } else {
     const rows = [["번호","학년","반","이름","성별","생년월일"]];

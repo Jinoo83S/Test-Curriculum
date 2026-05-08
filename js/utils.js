@@ -6,6 +6,12 @@ export const uid  = (p="id") => `${p}-${Date.now()}-${Math.random().toString(36)
 export const clean= (v) => String(v??"").trim();
 export const cloneJson = (v) => JSON.parse(JSON.stringify(v));
 
+/** sectionIdx → "A", "B", "C", … */
+export const sectionLabel = i => String.fromCharCode(65 + Math.max(0, i));
+
+/** "7학년" → "7", "10학년" → "10" */
+export const gradeDisplay = g => String(g ?? "").replace("학년", "");
+
 export function uniqueOrdered(arr) {
   const out = [];
   arr.forEach(v => { if (v != null && v !== "" && !out.includes(v)) out.push(v); });

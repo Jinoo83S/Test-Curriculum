@@ -2,13 +2,13 @@
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { uid, clean, makeBtn, languageClass } from "./utils.js";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary,
   addLiveTemplateGroup, deleteLiveTemplateGroup, renameLiveTemplateGroup,
-  assignTemplateGroup, getTemplateAppliedGrades, getTemplateCredits,
+  getTemplateCredits,
 } from "./templates.js";
 import { getClassCount } from "./rosters.js";
 
@@ -23,8 +23,12 @@ export function getTtCardLabel(card) {
   const tpl = getTemplateById(card.templateId);
   const base = tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)";
   const cc = getClassCount(card.templateId);
-  return cc > 1 ? `${base} ${card.sectionIdx + 1}반` : base;
+  return cc > 1 ? `${base} ${sectionLabel(card.sectionIdx)}` : base;
 }
+
+/** Stable deterministic ID so group references survive regeneration */
+export const makeTtcId = (templateId, gradeKey, sectionIdx) =>
+  `ttc_${templateId}_${gradeKey}_${sectionIdx}`;
 
 function getTtCardCredits(card) {
   const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
@@ -35,20 +39,23 @@ function getTtCardCredits(card) {
 // ── Generation ────────────────────────────────────────────────────
 export function generateTtCards() {
   if (!canEdit()) return 0;
+  const existing = new Map(getTtCards().map(c => [c.id, c]));
   const cards = [];
   const seen  = new Set();
   GRADE_KEYS.forEach(gradeKey => {
-    const board    = appState.curriculum.gradeBoards[gradeKey] || [];
-    const seenTpl  = new Set();
+    const board   = appState.curriculum.gradeBoards[gradeKey] || [];
+    const seenTpl = new Set();
     board.forEach(row => {
       [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
         if (seenTpl.has(tplId)) return; seenTpl.add(tplId);
         const cc = Math.max(1, getClassCount(tplId));
         for (let i = 0; i < cc; i++) {
-          const key = `${tplId}:${gradeKey}:${i}`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            cards.push(normalizeTtCard({ id: uid("ttc"), templateId: tplId, gradeKey, sectionIdx: i }));
+          const stableId = makeTtcId(tplId, gradeKey, i);
+          if (!seen.has(stableId)) {
+            seen.add(stableId);
+            // Reuse existing card if present (preserves label overrides)
+            cards.push(existing.get(stableId) ||
+              normalizeTtCard({ id: stableId, templateId: tplId, gradeKey, sectionIdx: i }));
           }
         }
       });
@@ -103,7 +110,7 @@ export function renderTtCardsView(container) {
     if (!gc.length) return;
     const section = document.createElement("div"); section.className = "ttc-grade-section";
     const ghdr = document.createElement("div"); ghdr.className = "ttc-grade-hdr";
-    ghdr.textContent = `${gradeKey}  (${gc.length}개)`;
+    ghdr.textContent = `${gradeDisplay(gradeKey)}학년  (${gc.length}개)`;
     section.appendChild(ghdr);
 
     const table = document.createElement("table"); table.className = "ttc-table";
@@ -117,7 +124,7 @@ export function renderTtCardsView(container) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>${tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)"}</td>
-        <td>${cc > 1 ? `${card.sectionIdx + 1}반` : "-"}</td>
+        <td>${cc > 1 ? sectionLabel(card.sectionIdx) : "-"}</td>
         <td>${tpl ? getTemplateTeacherSummary(tpl) : ""}</td>
         <td>${credits ?? "-"}</td>
         <td>${grp ? `<span class="ttc-group-chip">${grp.name}</span>` : '<span class="ttc-unassigned-chip">미배정</span>'}</td>`;
@@ -158,7 +165,7 @@ function createTtCardChip(card) {
   nameEl.textContent = getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
   tRow.appendChild(nameEl);
   if (credits != null) { const cb = document.createElement("span"); cb.className = "group-mgr-card-credits"; cb.textContent = credits; tRow.appendChild(cb); }
-  if (cc > 1) { const sb = document.createElement("span"); sb.className = "group-mgr-card-classcount"; sb.textContent = `${card.sectionIdx+1}반`; tRow.appendChild(sb); }
+  if (cc > 1) { const sb = document.createElement("span"); sb.className = "group-mgr-card-classcount"; sb.textContent = sectionLabel(card.sectionIdx); tRow.appendChild(sb); }
 
   // Bottom row: teacher + grade
   const bRow = document.createElement("div"); bRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";
@@ -331,15 +338,18 @@ function buildGroupManagerDOM(board) {
     const cards = getTtCards().filter(c => gmLevelFilter(c));
     if (!cards.length) { alert("시간표 카드가 없습니다.\n먼저 '시간표 카드' 탭에서 카드를 생성하세요."); return; }
 
-    // Group by: curriculum track::gradeKey
+    // Group by: curriculum track + 교과군 + gradeKey  (more precise than track+grade only)
     const trackMap = {};
     GRADE_KEYS.forEach(gradeKey => {
       const rows = appState.curriculum?.gradeBoards?.[gradeKey] || [];
       rows.forEach(row => {
         if (row.category !== "교과") return;
         if (!row.track || row.track === "공통") return;
-        const groupKey = `${row.track}::${gradeKey}`;
-        if (!trackMap[groupKey]) trackMap[groupKey] = { name: `${row.track} / ${gradeKey}`, cardIds: new Set() };
+        const subGroup = row.group || "기타";
+        const groupKey = `${row.track}::${subGroup}::${gradeKey}`;
+        if (!trackMap[groupKey]) trackMap[groupKey] = {
+          name: `${row.track} / ${subGroup} / ${gradeDisplay(gradeKey)}`, cardIds: new Set()
+        };
         [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
           cards.filter(c => c.templateId === tplId && c.gradeKey === gradeKey)
             .forEach(c => trackMap[groupKey].cardIds.add(c.id));
