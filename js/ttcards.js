@@ -246,9 +246,18 @@ function createGroupBlockGM(groupId, onStructureChange) {
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
   const sp = document.createElement("span"); sp.style.flex = "1";
+  const resetBtn = makeBtn("초기화", "group-reset-btn", () => {
+    if (!canEdit()) return;
+    if (!confirm(`"${grpObj.name}" 그룹의 모든 묶음수업을 해제하고 카드를 그룹 풀로 되돌릴까요?`)) return;
+    // Move all ttcardIds from all units back to poolCardIds
+    const allIds = (grpObj.units||[]).flatMap(u => u.ttcardIds||[]);
+    grpObj.units = [];
+    grpObj.poolCardIds = [...new Set([...(grpObj.poolCardIds||[]), ...allIds])];
+    scheduleSave("templates"); onStructureChange();
+  }); resetBtn.disabled = !canEdit();
   const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit();
-  hdr.append(colBtn, nameInp, sp, delBtn); block.appendChild(hdr);
+  hdr.append(colBtn, nameInp, sp, resetBtn, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
   hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
@@ -282,7 +291,37 @@ function createGroupBlockGM(groupId, onStructureChange) {
   (grpObj.units||[]).forEach(unit => unitsWrap.appendChild(createUnitBlockGM(groupId, unit, onStructureChange)));
   body.appendChild(unitsWrap);
 
-  const addUnitBtn = makeBtn("+ 수업묶음 추가", "group-add-unit-btn", () => {
+  // ── Pool area: cards in group but not in any unit ──────────────
+  const unitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
+  const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id));
+  if (poolIds.length > 0) {
+    const poolArea = document.createElement("div"); poolArea.className = "group-pool-area";
+    const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-area-label";
+    poolLbl.textContent = "그룹 카드 (묶음수업 미배정)";
+    poolArea.appendChild(poolLbl);
+    const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
+    setupDropZone(poolCards, drag => {
+      if (drag.kind !== "ttcard") return;
+      // Remove from other group's units/pools
+      grps().forEach(g => {
+        g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
+        if (g.id !== groupId) g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
+      });
+      if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
+      if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
+      scheduleSave("templates"); onStructureChange();
+    });
+    poolIds.forEach(id => {
+      const card = getTtCardById(id); if (!card) return;
+      const chip = createTtCardChip(card);
+      chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: id }); chip.classList.add("dragging"); });
+      chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
+      poolCards.appendChild(chip);
+    });
+    poolArea.appendChild(poolCards); body.appendChild(poolArea);
+  }
+
+  const addUnitBtn = makeBtn("+ 묶음수업 추가", "group-add-unit-btn", () => {
     if (!canEdit()) return;
     if (!grpObj.units) grpObj.units = [];
     grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [] });
@@ -369,9 +408,11 @@ function buildGroupManagerDOM(board) {
 
     newGroups.forEach(({ name, cardIds }) => {
       const grpId = uid("grp");
-      // Each card gets its own unit (같은 시간대, not 묶음수업)
-      const units = [...cardIds].map(cid => ({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [cid] }));
-      appState.templates.templateGroups.push(normalizeTemplateGroup({ id: grpId, name, isConcurrent: true, groupType: "concurrent", units }));
+      // Cards go into the group pool (unassigned to units) — user creates 묶음수업 manually
+      appState.templates.templateGroups.push(normalizeTemplateGroup({
+        id: grpId, name, isConcurrent: true, groupType: "concurrent",
+        units: [], poolCardIds: [...cardIds]  // pool: cards in group but not yet in any unit
+      }));
     });
     scheduleSave("templates"); onStructureChange();
     alert(`${newGroups.length}개 그룹이 생성되었습니다.`);
@@ -388,15 +429,21 @@ function buildGroupManagerDOM(board) {
   leftHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"미배정 카드" }));
   leftCol.appendChild(leftHdr);
 
-  const allAssignedIds = new Set(grps().flatMap(g => (g.units||[]).flatMap(u => u.ttcardIds||[])));
+  const allAssignedIds = new Set([
+    ...grps().flatMap(g => (g.units||[]).flatMap(u => u.ttcardIds||[])),
+    ...grps().flatMap(g => g.poolCardIds||[])
+  ]);
   const unassigned = getTtCards().filter(c => gmLevelFilter(c) && !allAssignedIds.has(c.id))
     .sort((a, b) => getTtCardLabel(a).localeCompare(getTtCardLabel(b), "ko"));
 
   const unPool = document.createElement("div"); unPool.className = "group-unassigned-pool group-unassigned-horiz";
   setupDropZone(unPool, drag => {
     if (drag.kind !== "ttcard") return;
-    // Remove from all units
-    grps().forEach(g => g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); }));
+    // Remove from all units AND poolCardIds
+    grps().forEach(g => {
+      g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
+      g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
+    });
     scheduleSave("templates"); onStructureChange();
   });
 

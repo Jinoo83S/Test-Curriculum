@@ -215,7 +215,7 @@ function renderRosterDetail(panel, container) {
     displayRoster.forEach((entry, idx) => {
       const cls = getClassById(entry.classId); const stu = cls?.students.find(s => s.id === entry.studentId); if (!stu) return;
       const tr = document.createElement("tr");
-      const sc = showSec ? `<td class="roster-class-name">${(entry.sectionIdx ?? 0)}// check</td>` : "";
+      const sc = showSec ? `<td class="roster-class-name">${sectionLabel(entry.sectionIdx ?? 0)}</td>` : "";
       tr.innerHTML = `<td class="col-num">${idx + 1}</td>${sc}<td class="roster-class-name">${cls.grade}</td><td class="roster-class-name">${cls.name}</td><td>${stu.name}</td><td>${stu.gender}</td>`;
       const delTd = document.createElement("td"); const delBtn = makeBtn("×", "stu-del-btn", () => { removeFromRoster(selectedRosterTemplateId, entry.classId, entry.studentId); renderRosterView(container); });
       delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd); tbody.appendChild(tr);

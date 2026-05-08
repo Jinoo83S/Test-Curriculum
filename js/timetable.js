@@ -185,6 +185,11 @@ function buildSchedulableItems() {
   const ttcardIdsInUnits = new Set(
     (appState.templates.templateGroups || []).flatMap(g => g.units.flatMap(u => u.ttcardIds || []))
   );
+  // Cards in poolCardIds (in group but not in unit) are treated as standalone with a groupId for concurrent check
+  const poolCardGroupMap = new Map(); // ttcardId → groupId
+  (appState.templates.templateGroups || []).forEach(g => {
+    (g.poolCardIds || []).forEach(id => { if (!ttcardIdsInUnits.has(id)) poolCardGroupMap.set(id, g.id); });
+  });
   // Set of templateIds covered by units (for legacy standalone exclusion)
   const templateIdsInUnits = new Set(
     (appState.templates.templateGroups || []).flatMap(g => g.units.flatMap(u => u.templateIds || []))
@@ -209,7 +214,7 @@ function buildSchedulableItems() {
       }).filter(v => v > 0));
       const teachers = [...new Set(unitTtcards.flatMap(c => getTeachersForTemplate(c.templateId)))];
 
-      if (credits > 0) unitItems.push({ unit, gradeKeys, credits, teachers: teachers[0] || "",
+      if (credits > 0) unitItems.push({ unit, gradeKeys, credits, teachers: teachers.join(","),
         ttcards: unitTtcards });
     });
     if (unitItems.length) groupBlocks.push({ group: grp, unitItems });
@@ -222,11 +227,14 @@ function buildSchedulableItems() {
       .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
     const credits = parseFloat(row?.credits) || 0;
     if (!credits) return;
-    const teacher = getTeachersForTemplate(card.templateId)[0] || "";
+    const teacher = getTeachersForTemplate(card.templateId).filter(Boolean).join(",");
+    const groupId = poolCardGroupMap.get(card.id) || null;
     for (let i = 0; i < credits; i++) {
       standalone.push({ kind:"standalone", ttcardId: card.id,
         templateId: card.templateId, sectionIdx: card.sectionIdx,
-        gradeKey: card.gradeKey, teacherName: teacher });
+        gradeKey: card.gradeKey, teacherName: teacher,
+        groupId // carry groupId for concurrent check
+      });
     }
   });
 
@@ -432,7 +440,7 @@ function buildGrid(periods, days, wrap, getEntries, cardOpts = {}) {
     pTd.appendChild(pInp); tr.appendChild(pTd);
 
     days.forEach((_, day) => {
-      const td = document.createElement("td"); td.className = "tt-cell";
+      const td = document.createElement("td"); td.className = "tt-cell"; td.setAttribute("data-day", day);
       const slotEntries = getEntries(day, period);
       td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
       td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
@@ -825,7 +833,7 @@ function renderSubjectPanelTtCards(panel, ttcards) {
     });
     if (!isDone) {
       card.addEventListener("dragstart", () => {
-        dragData = { kind:"subject", templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey };
+        dragData = { kind:"subject", ttcardId: c.id, templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey };
         card.classList.add("tt-dragging");
       });
       card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
@@ -1043,6 +1051,14 @@ function isConcurrentTpl(templateId) {
   const grp = appState.templates.templateGroups?.find(g => g.id === gid);
   return grp?.groupType === "concurrent";
 }
+/** Check if a placement item/entry belongs to a concurrent group */
+function isConcurrentItem(x) {
+  if (x.groupId) {
+    const grp = appState.templates.templateGroups?.find(g => g.id === x.groupId);
+    if (grp) return grp.groupType === "concurrent" || !!grp.isConcurrent;
+  }
+  return isConcurrentTpl(x.templateId);
+}
 function sameGroupTpl(tidA, tidB) {
   const tA = appState.templates.templates?.find(t => t.id === tidA);
   const tB = appState.templates.templates?.find(t => t.id === tidB);
@@ -1083,7 +1099,7 @@ function checkPlacementValid(item, slot, placed) {
     // Same concurrent group → parallel classes
     const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
                     (sameGroupTpl(item.templateId, e.templateId));
-    const conc = sameGrp && isConcurrentTpl(item.templateId) && isConcurrentTpl(e.templateId);
+    const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
     if (!conc) return false;
   }
 

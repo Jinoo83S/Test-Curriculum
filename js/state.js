@@ -105,8 +105,7 @@ export function normalizeTemplateGroup(item = {}) {
     isConcurrent,
     isCrossGrade,
     units: Array.isArray(item.units) ? item.units.map(normalizeUnit) : [],
-    // groupType: concurrent if isConcurrent (regardless of isCrossGrade)
-    // cross-grade only if NOT concurrent (pure co-teaching, no time sync needed)
+    poolCardIds: Array.isArray(item.poolCardIds) ? item.poolCardIds.filter(Boolean) : [],
     groupType: isConcurrent ? "concurrent" : (isCrossGrade ? "cross-grade" : "off"),
     linkedGroupId: null
   };
@@ -211,6 +210,9 @@ export function normalizeTimetableEntry(e = {}) {
     // Unit fields (new - null for standalone entries)
     unitId:      clean(e.unitId)  || null,
     groupId:     clean(e.groupId) || null,
+    // ttcard fields
+    ttcardId:    clean(e.ttcardId)  || null,
+    ttcardIds:   Array.isArray(e.ttcardIds) ? e.ttcardIds.filter(Boolean) : [],
     // Arrays: for units with multiple templates/grades (cross-grade co-teaching)
     templateIds: Array.isArray(e.templateIds) ? e.templateIds.filter(Boolean) : (templateId ? [templateId] : []),
     gradeKeys:   Array.isArray(e.gradeKeys)   ? e.gradeKeys.filter(Boolean)   : (gradeKey   ? [gradeKey]   : []),

@@ -3036,3 +3036,30 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   border-bottom: 1px solid #e2e8f0; text-align: center; white-space: nowrap;
 }
 .tt-class-table .tt-day-header { text-align: center; }
+
+/* ── Group: reset button ─────────────────────────────────────── */
+.group-reset-btn {
+  font-size: 10px; padding: 2px 8px; margin-right: 2px;
+  border: 1px solid #f59e0b; border-radius: 4px;
+  background: #fef3c7; color: #92400e; cursor: pointer; font-weight: 600;
+  flex-shrink: 0; white-space: nowrap;
+}
+.group-reset-btn:hover { background: #fde68a; }
+.group-reset-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Group: pool area (cards in group, not yet in unit) ──────── */
+.group-pool-area {
+  margin: 4px 0 6px;
+  border: 1px dashed #d1d5db; border-radius: 5px;
+  background: #f8fafc; padding: 4px 6px;
+}
+.group-pool-area-label {
+  font-size: 9px; font-weight: 700; color: #6b7280;
+  margin-bottom: 4px; text-transform: uppercase; letter-spacing: .4px;
+}
+.group-pool-cards {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  min-height: 32px; padding: 2px;
+  border-radius: 4px; transition: background .1s;
+}
+.group-pool-cards.dragover { background: #dbeafe; border: 1px dashed #2563eb; }
