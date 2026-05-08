@@ -2707,12 +2707,12 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .group-block-name {
   flex: 1;
-  min-width: 160px;
+  min-width: 0;
   font-size: 13px;
   font-weight: 700;
   color: #1e3a5f;
@@ -2969,3 +2969,37 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 .group-auto-gen-btn:hover { background: #ddd6fe; }
 .group-auto-gen-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Group manager: unassigned card wrap + split btn ─────────── */
+.group-unassigned-card-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+}
+.group-split-btn {
+  font-size: 9px;
+  padding: 2px 5px;
+  border: 1px solid #f59e0b;
+  border-radius: 3px;
+  background: #fef3c7;
+  color: #92400e;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background .1s;
+}
+.group-split-btn:hover { background: #fde68a; }
+
+/* Class count badge on group manager card */
+.group-mgr-card-classcount {
+  flex-shrink: 0;
+  font-size: 9px;
+  font-weight: 700;
+  color: #065f46;
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  border-radius: 3px;
+  padding: 0 4px;
+  line-height: 16px;
+}

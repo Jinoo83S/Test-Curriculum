@@ -5,6 +5,7 @@ import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js";
 import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, currentDrag, setCurrentDrag } from "./state.js";
+import { getClassCount } from "./rosters.js";
 
 const tDomain   = () => appState.templates;
 const templates = () => tDomain().templates;
@@ -323,6 +324,8 @@ function createGroupManagerCard(item) {
   tRow.appendChild(t);
   const credits = getTemplateCredits(item.id);
   if (credits != null) { const cb = document.createElement("span"); cb.className = "group-mgr-card-credits"; cb.textContent = credits; tRow.appendChild(cb); }
+  const cc = getClassCount(item.id);
+  if (cc > 0) { const ccb = document.createElement("span"); ccb.className = "group-mgr-card-classcount"; ccb.textContent = `${cc}반`; ccb.title = `${cc}개 반`; tRow.appendChild(ccb); }
   if (item.schoolLevel && item.schoolLevel !== "공통") { const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot); }
   // Bottom row: teacher name (left) + grade chips (right)
   const botRow = document.createElement("div"); botRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";
@@ -539,9 +542,10 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
 
     newGroups.forEach(({ name, tplIds }) => {
       const grpId = uid("grp");
-      const unit = { id: uid("unit"), name: "", templateIds: [...tplIds], sections: {} };
+      // Each template gets its own unit (같은 시간대 배정, not 묶음수업)
+      const units = [...tplIds].map(tid => ({ id: uid("unit"), name: "", templateIds: [tid], sections: {} }));
       tplIds.forEach(tid => assignTemplateGroup(tid, grpId));
-      groups().push(normalizeTemplateGroup({ id: grpId, name, isConcurrent: true, groupType: "concurrent", units: [unit] }));
+      groups().push(normalizeTemplateGroup({ id: grpId, name, isConcurrent: true, groupType: "concurrent", units }));
     });
     scheduleSave("templates"); onStructureChange();
     alert(`${newGroups.length}개 그룹이 생성되었습니다.`);
@@ -573,7 +577,32 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
     assignTemplateGroup(drag.templateId, null);
     scheduleSave("templates"); onStructureChange();
   });
-  if (unassigned.length) unassigned.forEach(t => unPool.appendChild(createGroupManagerCard(t)));
+  if (unassigned.length) unassigned.forEach(t => {
+    const wrap = document.createElement("div"); wrap.className = "group-unassigned-card-wrap";
+    wrap.appendChild(createGroupManagerCard(t));
+    if (canEdit()) {
+      const splitBtn = makeBtn("반 분리", "group-split-btn", () => {
+        const label = prompt(`"${getTemplateCardTitle(t)}" 과목을 몇 개 반으로 분리할까요? (예: 2 → A,B / 3 → A,B,C)`, "2");
+        const n = parseInt(label); if (!n || n < 2 || n > 8) { alert("2~8 사이의 숫자를 입력하세요."); return; }
+        const suffixes = ["A","B","C","D","E","F","G","H"].slice(0, n);
+        // Rename original to A
+        t.nameKo    = (t.nameKo    || "") ? `${t.nameKo} ${suffixes[0]}`    : "";
+        t.nameEn    = (t.nameEn    || "") ? `${t.nameEn} ${suffixes[0]}`    : "";
+        // Clone for B, C, ...
+        suffixes.slice(1).forEach(sfx => {
+          const clone = normalizeTemplate({ ...cloneJson(t), id: uid("tpl"),
+            nameKo: t.nameKo.replace(/ [A-H]$/, ` ${sfx}`),
+            nameEn: t.nameEn.replace(/ [A-H]$/, ` ${sfx}`),
+            calcGroupId: null
+          });
+          templates().push(clone);
+        });
+        scheduleSave("templates"); onStructureChange();
+      });
+      wrap.appendChild(splitBtn);
+    }
+    unPool.appendChild(wrap);
+  });
   else { const ph = document.createElement("div"); ph.className = "group-col-placeholder"; ph.textContent = "모든 과목이 배정됨"; unPool.appendChild(ph); }
   leftCol.appendChild(unPool); layout.appendChild(leftCol);
 
