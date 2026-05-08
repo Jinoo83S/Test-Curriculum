@@ -396,10 +396,8 @@ function createGroupBlock(groupId, onStructureChange) {
   const grpObj = groups().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   const block = document.createElement("div"); block.className = "group-block";
 
-  // ── Collapse state (stored on grpObj at runtime, not persisted) ──
   if (grpObj._collapsed === undefined) grpObj._collapsed = false;
-
-  // Groups are always concurrent (same-time block by definition)
+  // Groups are always same-time (concurrent) — no checkbox needed
   grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
 
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
@@ -426,6 +424,7 @@ function createGroupBlock(groupId, onStructureChange) {
   const groupedNoUnit = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
   if (groupedNoUnit.length) {
     const poolDiv = document.createElement("div"); poolDiv.className = "group-ungrouped-pool";
+    const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-label"; poolLbl.textContent = "수업묶음에 배정 전";
     const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
     poolCards.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); poolCards.classList.add("dragover"); });
     poolCards.addEventListener("dragleave", () => poolCards.classList.remove("dragover"));
@@ -437,7 +436,7 @@ function createGroupBlock(groupId, onStructureChange) {
       scheduleSave("templates"); onStructureChange();
     });
     groupedNoUnit.forEach(tpl => poolCards.appendChild(createGroupManagerCard(tpl)));
-    poolDiv.appendChild(poolCards); body.appendChild(poolDiv);
+    poolDiv.append(poolLbl, poolCards); body.appendChild(poolDiv);
   }
 
   const unitsWrap = document.createElement("div"); unitsWrap.className = "group-units-wrap";
@@ -491,7 +490,7 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
     filterBar.appendChild(btn);
   });
 
-  // ── 자동 생성 버튼 ──
+  // ── 자동 생성 버튼 ──────────────────────────────────────────────
   const autoGenBtn = makeBtn("✨ 자동 생성", "group-auto-gen-btn", () => {
     if (!canEdit()) return;
     const GRADE_KEYS_LOCAL = ["7학년","8학년","9학년","10학년","11학년","12학년"];
@@ -499,8 +498,8 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
     GRADE_KEYS_LOCAL.forEach(gradeKey => {
       const rows = appState.curriculum?.gradeBoards?.[gradeKey] || [];
       rows.forEach(row => {
-        if (row.category === "교과") return;           // 교과 제외
-        if (!row.track || row.track === "공통") return;// 공통 제외
+        if (row.category === "교과") return;
+        if (!row.track || row.track === "공통") return;
         const groupKey = `${row.track}::${row.group||"기타"}`;
         if (!trackMap[groupKey]) trackMap[groupKey] = { name: `${row.track} / ${row.group||"기타"}`, tplIds: new Set() };
         [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tid => trackMap[groupKey].tplIds.add(tid));
@@ -508,18 +507,32 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
     });
     const validGroups = Object.values(trackMap).filter(v => v.tplIds.size >= 2);
     if (!validGroups.length) { alert("자동 생성할 그룹이 없습니다.\n커리큘럼에 배정/선택 과목이 있는지 확인하세요."); return; }
-    if (!confirm(`${validGroups.length}개 그룹을 자동 생성합니다. 기존 그룹은 유지됩니다. 계속할까요?`)) return;
-    validGroups.forEach(({ name, tplIds }) => {
+
+    // Dedup: skip groups where same name already exists OR same tplIds
+    const existing = groups();
+    const existingNames = new Set(existing.map(g => g.name));
+    const existingTplSets = existing.map(g => new Set(g.units.flatMap(u => u.templateIds)));
+    const newGroups = validGroups.filter(({ name, tplIds }) => {
+      if (existingNames.has(name)) return false;
+      const tplArr = [...tplIds].sort().join(",");
+      return !existingTplSets.some(s => [...s].sort().join(",") === tplArr);
+    });
+
+    if (!newGroups.length) { alert("이미 동일한 그룹이 모두 존재합니다."); return; }
+    if (!confirm(`${newGroups.length}개 그룹을 자동 생성합니다. 계속할까요?`)) return;
+
+    newGroups.forEach(({ name, tplIds }) => {
       const grpId = uid("grp");
       const unit = { id: uid("unit"), name: "", templateIds: [...tplIds], sections: {} };
       tplIds.forEach(tid => assignTemplateGroup(tid, grpId));
       groups().push(normalizeTemplateGroup({ id: grpId, name, isConcurrent: true, groupType: "concurrent", units: [unit] }));
     });
     scheduleSave("templates"); onStructureChange();
-    alert(`${validGroups.length}개 그룹이 생성되었습니다.`);
+    alert(`${newGroups.length}개 그룹이 생성되었습니다.`);
   });
   autoGenBtn.disabled = !canEdit();
   filterBar.appendChild(autoGenBtn);
+
   board.appendChild(filterBar);
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";
