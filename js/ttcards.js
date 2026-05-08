@@ -208,9 +208,6 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     const cardId = dragData.ttcardId;
     // Remove from other units
     grps().forEach(g => g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== cardId); }));
-    // Assign to this group
-    const gObj = grps().find(g => g.id === groupId);
-    if (gObj) { const t = getTtCardById(cardId); if (t) { t.calcGroupId = groupId; } }
     if (!unit.ttcardIds) unit.ttcardIds = [];
     if (!unit.ttcardIds.includes(cardId)) unit.ttcardIds.push(cardId);
     scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
@@ -265,27 +262,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
   const body = document.createElement("div"); body.className = "group-block-body";
   if (grpObj._collapsed) body.style.display = "none";
 
-  // Cards in group but not in any unit → pool
   const allUnitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
-  const poolCards = getTtCards().filter(c => gmLevelFilter(c) && !allUnitCardIds.has(c.id) &&
-    (grps().some(g => g.id === groupId && (g.units||[]).flatMap(u => u.ttcardIds||[]).includes(c.id)) ||
-     c.calcGroupId === groupId)
-  );
-  // Also cards that belong to this group via ttcardIds but not in a unit
-  const orphanCards = getTtCards().filter(c => {
-    if (allUnitCardIds.has(c.id)) return false;
-    // Check if any unit in this group claims this card
-    return (grpObj.units||[]).some(u => false); // handled above
-  });
-
-  // Pool = cards assigned to group but not to any unit
-  const poolCardsV2 = getTtCards().filter(c => {
-    if (!gmLevelFilter(c)) return false;
-    if (allUnitCardIds.has(c.id)) return false;
-    // assigned to this group if: any unit in this group had it (and it was removed to pool)
-    // We track group assignment via a separate lookup
-    return false; // pool concept is removed — all cards go into units directly
-  });
 
   const unitsWrap = document.createElement("div"); unitsWrap.className = "group-units-wrap";
   (grpObj.units||[]).forEach(unit => unitsWrap.appendChild(createUnitBlockGM(groupId, unit, onStructureChange)));
@@ -469,9 +446,12 @@ function buildGroupManagerDOM(board) {
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
   const filteredGroups = grps().filter(g => {
-    const cards = (g.units||[]).flatMap(u => (u.ttcardIds||[]).map(id => getTtCardById(id)).filter(Boolean));
-    if (!cards.length) return true; // show empty groups
-    return cards.some(c => gmLevelFilter(c));
+    // Include if any unit card OR pool card passes the level filter
+    const unitCards = (g.units||[]).flatMap(u => (u.ttcardIds||[]).map(id => getTtCardById(id)).filter(Boolean));
+    const poolCards = (g.poolCardIds||[]).map(id => getTtCardById(id)).filter(Boolean);
+    const allCards  = [...unitCards, ...poolCards];
+    if (!allCards.length) return true; // empty groups always shown
+    return allCards.some(c => gmLevelFilter(c));
   });
   if (filteredGroups.length) {
     filteredGroups.forEach(g => rightCol.appendChild(createGroupBlockGM(g.id, onStructureChange)));

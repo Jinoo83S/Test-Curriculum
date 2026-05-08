@@ -520,67 +520,68 @@ function entryTeachers(e) {
 // ── Entry card ────────────────────────────────────────────────────
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;
-  const title       = entryTitle(entry);
-  const teachers    = entryTeachers(entry);
+  const title        = entryTitle(entry);
+  const teachers     = entryTeachers(entry);
   const displayGrades = entryGradeKeys(entry);
-  const rooms       = getRooms();
 
-  const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
+  const conflicts  = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
   const hasConflict = conflicts.size > 0;
 
   const card = document.createElement("div");
   card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
+  card.style.position = "relative";
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
   const firstGrade = displayGrades[0] || currentGrade;
   const gradeColor = getGradeColor(firstGrade);
-  card.style.background   = gradeColor.bg;
-  card.style.color        = gradeColor.text;
-  card.style.borderLeft   = `4px solid ${gradeColor.border}`;
+  card.style.background = gradeColor.bg;
+  card.style.color      = gradeColor.text;
+  card.style.borderLeft = `4px solid ${gradeColor.border}`;
 
-  // No × button — drag card to bottom bar to remove
+  // ── Row 1: title + pin ──────────────────────────────────────────
+  const row1 = document.createElement("div"); row1.className = "tt-entry-row1";
 
-  // Pin button (📌/📍 toggle, always enabled)
+  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
+  row1.appendChild(titleEl);
+
   const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
-  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정"; pinBtn.style.cssText="position:absolute;top:1px;right:2px;width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.4;transition:opacity .1s;z-index:1";
+  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
   pinBtn.disabled = !canEdit();
   pinBtn.addEventListener("click", () => {
     if (!canEdit()) return;
     const e = entries().find(x => x.id === entry.id); if (!e) return;
     e.pinned = !e.pinned; scheduleSave("timetable"); renderAll();
   });
-  card.appendChild(pinBtn);
+  row1.appendChild(pinBtn);
+  card.appendChild(row1);
   if (entry.pinned) card.classList.add("tt-entry-pinned");
 
-  // Grade chips (absolute, left of × button)
+  // ── Row 2: teacher + grade chips ───────────────────────────────
+  const row2 = document.createElement("div"); row2.className = "tt-entry-row2";
+
+  const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
+  teacherEl.textContent = teachers.join(", ") || "";
+  row2.appendChild(teacherEl);
+
   if (showGrade && displayGrades.length) {
-    card.classList.add("tt-entry-has-grade");
-    displayGrades.slice().reverse().forEach((g, ri) => {
-      const gc = document.createElement("span"); gc.className = "tt-entry-grade";
-      gc.textContent = gradeDisplay(g);
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${16 + ri * 20}px;font-size:8px;padding:0 3px`;
-      card.appendChild(gc);
+    const chipWrap = document.createElement("div"); chipWrap.className = "tt-entry-grade-chips";
+    displayGrades.forEach(g => {
+      const chip = document.createElement("span"); chip.className = "tt-entry-grade";
+      chip.textContent = gradeDisplay(g);
+      chip.style.cssText = `background:${getGradeColor(g).border};color:white;font-size:8px;padding:0 4px;border-radius:3px;font-weight:700`;
+      chipWrap.appendChild(chip);
     });
+    row2.appendChild(chipWrap);
   }
+  card.appendChild(row2);
 
-  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
-  // Dynamic padding: pin(16) + per-grade-chip(16*n)
-  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
-
-  card.appendChild(titleEl);
-  if (entry.teacherName) {
-    const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
-    teacherEl.textContent = entry.teacherName;
-    card.appendChild(teacherEl);
-  }
-
-  // Click to show detail popup (teacher/room edit)
+  // Click to show detail popup
   card.addEventListener("click", ev => {
     if (ev.target.closest("button") || ev.target.closest("select")) return;
     showEntryDetail(entry);
   });
 
-  // Drag to move (entry kind)
+  // Drag to move
   card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
     if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
