@@ -235,6 +235,81 @@ function renderGrid() {
   else if (currentView === "all")     renderAllGradesGrid(wrap);
   else if (currentView === "teacher") renderTeacherGrid(wrap);
   else if (currentView === "room")    renderRoomGrid(wrap);
+  else if (currentView === "class")   renderClassGrid(wrap);
+}
+
+/** 학년-반별 뷰: 선택 학년의 반(sectionIdx)별 시간표 */
+function renderClassGrid(wrap) {
+  const days    = ["월","화","수","목","금"];
+  const periods = ttConfig().periodLabels;
+
+  // Collect sections for currentGrade
+  const gradeSections = [...new Set(
+    entries().filter(e => entryHasGrade(e, currentGrade)).map(e => e.sectionIdx ?? 0)
+  )].sort((a, b) => a - b);
+  if (!gradeSections.length) gradeSections.push(0);
+
+  const table = document.createElement("table"); table.className = "tt-table tt-class-table";
+  const thead  = document.createElement("thead"); const hr = document.createElement("tr");
+  const corner = document.createElement("th"); corner.className = "tt-corner";
+  corner.innerHTML = `<div class="tt-corner-label">교시</div>`;
+  hr.appendChild(corner);
+
+  // Header: one column per (day × section) → grouped by day
+  days.forEach(d => {
+    const th = document.createElement("th");
+    th.className = "tt-day-header";
+    th.colSpan = gradeSections.length;
+    th.textContent = d;
+    hr.appendChild(th);
+  });
+  thead.appendChild(hr);
+
+  // Sub-header: section labels
+  const hr2 = document.createElement("tr");
+  hr2.appendChild(document.createElement("th")); // spacer
+  days.forEach(() => {
+    gradeSections.forEach(sec => {
+      const th = document.createElement("th"); th.className = "tt-section-sub-hdr";
+      th.textContent = `${sec + 1}반`; hr2.appendChild(th);
+    });
+  });
+  thead.appendChild(hr2);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  periods.forEach((label, period) => {
+    const tr = document.createElement("tr");
+    const pTd = document.createElement("td"); pTd.className = "tt-period-label";
+    const pInp = document.createElement("input"); pInp.type = "text"; pInp.value = label; pInp.disabled = !canEdit();
+    pInp.addEventListener("change", e => updatePeriodLabel(period, e.target.value));
+    pTd.appendChild(pInp); tr.appendChild(pTd);
+
+    days.forEach((_, day) => {
+      gradeSections.forEach(sec => {
+        const td = document.createElement("td"); td.className = "tt-cell";
+        td.setAttribute("data-day", day);
+        td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
+        td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
+        td.addEventListener("drop", e => {
+          e.preventDefault(); td.classList.remove("tt-dragover");
+          if (!dragData || !canEdit()) return;
+          handleDrop({ ...dragData, sectionIdx: sec }, day, period);
+        });
+        const slotEntries = entries().filter(e =>
+          entryHasGrade(e, currentGrade) && (e.sectionIdx ?? 0) === sec && e.day === day && e.period === period
+        );
+        if (slotEntries.length) {
+          slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { compact: true })));
+        } else {
+          const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
+        }
+        tr.appendChild(td);
+      });
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); wrap.appendChild(table);
 }
 
 function renderGradeGrid(wrap) {
@@ -571,120 +646,146 @@ function showEntryDetail(entry) {
 }
 
 function renderSubjectPanel() {
-  const panel = $("ttSubjectsContent");
-  if (!panel) return;
+  const panel = $("ttSubjectsContent"); if (!panel) return;
   panel.innerHTML = "";
 
-  const availableCards = [], doneCards = [];
-  const seenUnitIds     = new Set();
-  const seenStandalone  = new Set(); // "templateId:grade:sec"
+  const ttcards = appState.timetable?.ttcards || [];
 
-  // Iterate ALL grades (no filter dropdown)
+  // ── TtCard-based panel (new flow) ─────────────────────────────
+  if (ttcards.length > 0) {
+    renderSubjectPanelTtCards(panel, ttcards); return;
+  }
+
+  // ── Legacy template-based panel (fallback) ────────────────────
+  renderSubjectPanelLegacy(panel);
+}
+
+function renderSubjectPanelTtCards(panel, ttcards) {
+  const availableCards = [], doneCards = [];
+  const seenUnitIds = new Set();
+
+  // Build unit→ttcards map from groups
+  const unitCardMap = new Map(); // unitId → {group, unit, ttcards}
+  const cardToUnit  = new Map(); // ttcardId → unitId
+  (appState.templates.templateGroups || []).forEach(grp => {
+    (grp.units || []).forEach(unit => {
+      const uCards = (unit.ttcardIds || []).map(id => ttcards.find(c => c.id === id)).filter(Boolean);
+      if (uCards.length) {
+        unitCardMap.set(unit.id, { group: grp, unit, uCards });
+        uCards.forEach(c => cardToUnit.set(c.id, unit.id));
+      }
+    });
+  });
+
+  // Render unit cards first
+  unitCardMap.forEach(({ group, unit, uCards }) => {
+    if (seenUnitIds.has(unit.id)) return; seenUnitIds.add(unit.id);
+    const gradeKeys = [...new Set(uCards.map(c => c.gradeKey))];
+    const gradeColor = getGradeColor(gradeKeys[0] || "7학년");
+    const teachers = [...new Set(uCards.flatMap(c => {
+      const tpl = getTemplateById(c.templateId); return tpl ? getTeachersForTemplate(c.templateId) : [];
+    }))];
+    const credits = Math.max(1, ...uCards.map(c => {
+      const row = (appState.curriculum.gradeBoards[c.gradeKey] || [])
+        .find(r => r.sem1TemplateId === c.templateId || r.sem2TemplateId === c.templateId);
+      return parseFloat(row?.credits) || 0;
+    }).filter(v => v > 0));
+    const assigned = entries().filter(e => e.unitId === unit.id).length;
+    const isDone = credits > 0 && assigned >= credits;
+
+    const card = buildSidebarCard({
+      title: uCards.map(c => {
+        const tpl = getTemplateById(c.templateId);
+        const base = tpl ? getTemplateCardTitle(tpl) : "?";
+        const cc = appState.rosters?.rosterMeta?.[c.templateId];
+        const sectCount = Math.max(1, parseInt(cc?.classCount) || 1);
+        return sectCount > 1 ? `${base} ${c.sectionIdx + 1}반` : base;
+      }).join(" / "),
+      teachers, gradeKeys, credits, assigned, isDone, gradeColor,
+    });
+    if (!isDone) {
+      card.addEventListener("dragstart", () => {
+        dragData = { kind:"subject", templateId: uCards[0].templateId, unitId: unit.id, groupId: group.id,
+          sectionIdx: uCards[0].sectionIdx, gradeKey: gradeKeys[0] || "7학년" };
+        card.classList.add("tt-dragging");
+      });
+      card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
+    }
+    (isDone ? doneCards : availableCards).push(card);
+  });
+
+  // Standalone ttcards (not in any unit)
+  ttcards.forEach(c => {
+    if (cardToUnit.has(c.id)) return;
+    const tpl = getTemplateById(c.templateId); if (!tpl) return;
+    const gradeColor = getGradeColor(c.gradeKey);
+    const credits = (() => {
+      const row = (appState.curriculum.gradeBoards[c.gradeKey] || [])
+        .find(r => r.sem1TemplateId === c.templateId || r.sem2TemplateId === c.templateId);
+      return parseFloat(row?.credits) || 0;
+    })();
+    const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[c.templateId]?.classCount) || 1);
+    const assigned = entries().filter(e =>
+      entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e, c.gradeKey) && (e.sectionIdx ?? 0) === c.sectionIdx
+    ).length;
+    const isDone = credits > 0 && assigned >= credits;
+    const base   = getTemplateCardTitle(tpl);
+    const label  = cc > 1 ? `${base} ${c.sectionIdx + 1}반` : base;
+    const card   = buildSidebarCard({
+      title: label, teachers: getTeachersForTemplate(c.templateId),
+      gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor,
+    });
+    if (!isDone) {
+      card.addEventListener("dragstart", () => {
+        dragData = { kind:"subject", templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey };
+        card.classList.add("tt-dragging");
+      });
+      card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
+    }
+    (isDone ? doneCards : availableCards).push(card);
+  });
+
+  finalizeSidebarPanel(panel, availableCards, doneCards, "시간표 카드가 없습니다.");
+}
+
+function renderSubjectPanelLegacy(panel) {
+  const availableCards = [], doneCards = [];
+  const seenUnitIds = new Set(), seenStandalone = new Set();
+
   GRADE_KEYS.forEach(gradeKey => {
     getSubjectsForGrade(gradeKey).forEach(tpl => {
       const unitInfo = getUnitForTemplate(tpl.id);
-
       if (unitInfo) {
-        // ── Unit card (one per unit, across all grades) ──
         const { group, unit } = unitInfo;
-        if (seenUnitIds.has(unit.id)) return;
-        seenUnitIds.add(unit.id);
-        unit.templateIds.forEach(id => seenUnitIds.add("tpl:" + id)); // also mark templates
-
+        if (seenUnitIds.has(unit.id)) return; seenUnitIds.add(unit.id);
+        unit.templateIds.forEach(id => seenUnitIds.add("tpl:" + id));
         const gradeKeys  = getUnitGradeKeys(unit);
-        const gradeColor = getGradeColor(gradeKeys[0] || gradeKey);
         const teachers   = getUnitTeachers(unit);
         const credits    = Math.max(1, ...unit.templateIds.map(id =>
           Math.max(...gradeKeys.map(g => getCreditsForTemplate(g, id)).filter(c => c > 0), 0)
         ).filter(c => c > 0));
         const assigned = entries().filter(e => e.unitId === unit.id).length;
         const isDone   = credits > 0 && assigned >= credits;
-
-        const card = document.createElement("div");
-        card.className = "tt-subject-card" + (isDone ? " tt-subject-done" : "");
-        card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
-        card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
-        card.draggable = canEdit() && !isDone;
-
-        const topRow = document.createElement("div"); topRow.className = "tt-sc-top";
-        const name = document.createElement("div"); name.className = "tt-sc-name";
-        name.textContent = getUnitDisplayTitle(unit);
-        const badge = document.createElement("span"); badge.className = "tt-sc-badge";
-        badge.textContent = `${assigned}/${credits}`;
-        badge.style.background = isDone ? "#dcfce7" : assigned > 0 ? "#fef9c3" : "#f1f5f9";
-        badge.style.color = isDone ? "#166534" : "#374151";
-        topRow.append(name, badge);
-
-        const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
-        botRow.textContent = teachers.join(", ") || "-";
-
-        // Grade chips: number only (e.g. "7", "8")
-        const gradeChipRow = document.createElement("div");
-        gradeChipRow.style.cssText = "display:flex;gap:2px;flex-wrap:wrap;margin-top:2px";
-        gradeKeys.forEach(g => {
-          const chip = document.createElement("span");
-          chip.style.cssText = `font-size:9px;font-weight:700;padding:1px 4px;border-radius:999px;background:${getGradeColor(g).border};color:white;white-space:nowrap`;
-          chip.textContent = g.replace("학년", ""); // numbers only
-          gradeChipRow.appendChild(chip);
+        const card = buildSidebarCard({
+          title: getUnitDisplayTitle(unit), teachers, gradeKeys, credits, assigned, isDone, gradeColor: getGradeColor(gradeKeys[0] || gradeKey)
         });
-
-        card.append(topRow, botRow, gradeChipRow);
-
-        // Click → unit detail popup
         card.addEventListener("click", () => showUnitDetail(unit, group, gradeKeys));
-
         if (!isDone) {
-          card.addEventListener("dragstart", () => {
-            dragData = { kind:"subject", templateId:unit.templateIds[0], unitId:unit.id, groupId:group.id, sectionIdx:0, gradeKey: gradeKeys[0] || gradeKey };
-            card.classList.add("tt-dragging");
-          });
-          card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
+          card.addEventListener("dragstart", () => { dragData = { kind:"subject", templateId:unit.templateIds[0], unitId:unit.id, groupId:group.id, sectionIdx:0, gradeKey: gradeKeys[0] || gradeKey }; card.classList.add("tt-dragging"); });
+          card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
         }
         (isDone ? doneCards : availableCards).push(card);
-
       } else {
-        // ── Standalone template card (per grade, per section) ──
-        if (seenUnitIds.has("tpl:" + tpl.id)) return; // skip if part of a unit shown elsewhere
-        const credits  = getCreditsForTemplate(gradeKey, tpl.id);
-        const sections = getSectionCount(tpl.id);
-        const teachers = getTeachersForTemplate(tpl.id);
-        const gradeColor = getGradeColor(gradeKey);
-
+        if (seenUnitIds.has("tpl:" + tpl.id)) return;
+        const credits = getCreditsForTemplate(gradeKey, tpl.id);
+        const sections = getSectionCount(tpl.id), teachers = getTeachersForTemplate(tpl.id);
         for (let sec = 0; sec < Math.max(1, sections); sec++) {
-          const key = `${tpl.id}:${gradeKey}:${sec}`;
-          if (seenStandalone.has(key)) continue;
-          seenStandalone.add(key);
-
-          const assigned = entries().filter(e =>
-            entryTemplateIds(e).includes(tpl.id) && entryHasGrade(e, gradeKey) && e.sectionIdx === sec
-          ).length;
+          const key = `${tpl.id}:${gradeKey}:${sec}`; if (seenStandalone.has(key)) continue; seenStandalone.add(key);
+          const assigned = entries().filter(e => entryTemplateIds(e).includes(tpl.id) && entryHasGrade(e, gradeKey) && e.sectionIdx === sec).length;
           const isDone = credits > 0 && assigned >= credits;
-
-          const card = document.createElement("div");
-          card.className = "tt-subject-card" + (isDone ? " tt-subject-done" : "");
-          card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
-          card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
-          card.draggable = canEdit() && !isDone;
-
-          const topRow = document.createElement("div"); topRow.className = "tt-sc-top";
-          const name = document.createElement("div"); name.className = "tt-sc-name"; name.textContent = getTemplateCardTitle(tpl);
-          const badge = document.createElement("span"); badge.className = "tt-sc-badge";
-          badge.textContent = `${assigned}/${credits}`;
-          badge.style.background = isDone ? "#dcfce7" : assigned > 0 ? "#fef9c3" : "#f1f5f9";
-          badge.style.color = isDone ? "#166534" : "#374151";
-          topRow.append(name, badge);
-
-          const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
-          botRow.textContent = teachers.join(", ") || "-";
-          if (sections > 1) { const sb = document.createElement("span"); sb.className = "tt-sc-sec"; sb.textContent = `${sec+1}분반`; botRow.appendChild(sb); }
-
-          // Grade chip: number only
-          const chip = document.createElement("span");
-          chip.style.cssText = `font-size:9px;font-weight:700;padding:1px 4px;border-radius:999px;background:${gradeColor.border};color:white;display:inline-block;margin-top:2px;white-space:nowrap`;
-          chip.textContent = gradeKey.replace("학년", "");
-
-          card.append(topRow, botRow, chip);
-
+          const gradeColor = getGradeColor(gradeKey);
+          const title = sections > 1 ? `${getTemplateCardTitle(tpl)} ${sec+1}분반` : getTemplateCardTitle(tpl);
+          const card = buildSidebarCard({ title, teachers, gradeKeys:[gradeKey], credits, assigned, isDone, gradeColor });
           if (!isDone) {
             card.addEventListener("dragstart", () => { dragData = { kind:"subject", templateId:tpl.id, sectionIdx:sec, gradeKey }; card.classList.add("tt-dragging"); });
             card.addEventListener("dragend",   () => { dragData = null; card.classList.remove("tt-dragging"); });
@@ -694,26 +795,47 @@ function renderSubjectPanel() {
       }
     });
   });
+  finalizeSidebarPanel(panel, availableCards, doneCards, "커리큘럼에 배치된 과목이 없습니다.");
+}
 
+function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor }) {
+  const card = document.createElement("div");
+  card.className = "tt-subject-card" + (isDone ? " tt-subject-done" : "");
+  card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
+  card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
+  card.draggable = canEdit() && !isDone;
+  const topRow = document.createElement("div"); topRow.className = "tt-sc-top";
+  const nameEl = document.createElement("div"); nameEl.className = "tt-sc-name"; nameEl.textContent = title;
+  const badge  = document.createElement("span"); badge.className = "tt-sc-badge";
+  badge.textContent = `${assigned}/${credits}`;
+  badge.style.background = isDone ? "#dcfce7" : assigned > 0 ? "#fef9c3" : "#f1f5f9";
+  badge.style.color = isDone ? "#166534" : "#374151";
+  topRow.append(nameEl, badge);
+  const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
+  botRow.textContent = teachers.join(", ") || "-";
+  const chipRow = document.createElement("div"); chipRow.style.cssText = "display:flex;gap:2px;flex-wrap:wrap;margin-top:2px";
+  gradeKeys.forEach(g => {
+    const chip = document.createElement("span");
+    chip.style.cssText = `font-size:9px;font-weight:700;padding:1px 4px;border-radius:999px;background:${getGradeColor(g).border};color:white;white-space:nowrap`;
+    chip.textContent = g.replace("학년",""); chipRow.appendChild(chip);
+  });
+  card.append(topRow, botRow, chipRow);
+  return card;
+}
+
+function finalizeSidebarPanel(panel, available, done, emptyMsg) {
+  if (!available.length && !done.length) {
+    panel.appendChild(Object.assign(document.createElement("div"), { className:"tt-empty", textContent: emptyMsg })); return;
+  }
   const wrapper = document.createElement("div"); wrapper.className = "tt-sc-cards";
-
-  if (availableCards.length) {
-    const t = document.createElement("div"); t.className = "tt-panel-section-title"; t.textContent = `배치 필요 (${availableCards.length})`;
-    panel.appendChild(t);
-    availableCards.forEach(c => wrapper.appendChild(c));
+  if (available.length) {
+    panel.appendChild(Object.assign(document.createElement("div"), { className:"tt-panel-section-title", textContent:`배치 필요 (${available.length})` }));
+    available.forEach(c => wrapper.appendChild(c));
   }
-
-  if (doneCards.length) {
-    const t = document.createElement("div"); t.className = "tt-panel-section-title tt-panel-section-done"; t.textContent = `배치 완료 (${doneCards.length})`;
-    wrapper.appendChild(t);
-    doneCards.forEach(c => wrapper.appendChild(c));
+  if (done.length) {
+    wrapper.appendChild(Object.assign(document.createElement("div"), { className:"tt-panel-section-title tt-panel-section-done", textContent:`배치 완료 (${done.length})` }));
+    done.forEach(c => wrapper.appendChild(c));
   }
-
-  if (!availableCards.length && !doneCards.length) {
-    panel.appendChild(Object.assign(document.createElement("div"), { className:"tt-empty", textContent:"커리큘럼에 배치된 과목이 없습니다." }));
-    return;
-  }
-
   panel.appendChild(wrapper);
 }
 
@@ -809,7 +931,7 @@ function renderViewSelectors() {
     roomEl.onchange = e => { currentRoom = e.target.value; renderAll(); };
   }
   // Show/hide
-  gradeEl?.classList.toggle("hidden", currentView !== "grade");
+  gradeEl?.classList.toggle("hidden", currentView !== "grade" && currentView !== "class");
   teacherEl?.classList.toggle("hidden", currentView !== "teacher");
   roomEl?.classList.toggle("hidden", currentView !== "room");
   // In all-grades view, hide the subject panel (it's grade-specific)

@@ -10,14 +10,14 @@ import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, 
 
 // ── Template imports ──────────────────────────────────────────────
 import {
-  renderTemplates, renderGroupManager, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
+  renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
   addTemplateManagerRow, getOrCreateDraft, resetDraft, commitDraft,
   deleteTemplate, addLiveTemplateGroup,
   templateEditId, templateFormSchoolLevel,
   setTemplateEditId, setTemplateFormSchoolLevel,
   getTemplateById, getSemesterTemplateData,
   getTemplateCardTitle, managerUi,
-  setSidebarLevel, setGroupManagerLevel,
+  setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
 } from "./templates.js";
@@ -35,6 +35,9 @@ import { renderRosterView } from "./rosters.js";
 // ── Results imports ───────────────────────────────────────────────
 import { renderResultsView } from "./results.js";
 
+// ── TtCards + Group Manager imports ──────────────────────────────
+import { renderTtCardsView, renderGroupManagerView as renderGroupMgrFromTtCards, generateTtCards } from "./ttcards.js";
+
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");
 const loginBtn         = document.getElementById("loginBtn");
@@ -45,8 +48,7 @@ const exportXlsxBtn    = document.getElementById("exportXlsxBtn");
 // ── DOM: Sidebar ──────────────────────────────────────────────────
 const templateListEl        = document.getElementById("templateList");
 const sidebarLevelFilter    = document.getElementById("sidebarSchoolLevelFilter");
-const openGroupManagerBtn   = document.getElementById("openGroupManagerBtn");
-const openTemplateManagerBtn= document.getElementById("openTemplateManagerBtn");
+const openTemplateManagerBtn = document.getElementById("openTemplateManagerBtn");
 const categoryOptionList    = document.getElementById("categoryOptionList");
 const trackOptionList       = document.getElementById("trackOptionList");
 const groupOptionList       = document.getElementById("groupOptionList");
@@ -81,7 +83,6 @@ const boardView     = document.getElementById("boardView");
 const groupMgrView  = document.getElementById("groupManagerView");
 const groupMgrBoard = document.getElementById("groupManagerBoard");
 const groupMgrAddBtn= document.getElementById("groupManagerAddGroupBtn");
-const groupMgrBackBtn=document.getElementById("groupManagerBackBtn");
 const tplMgrView    = document.getElementById("templateManagerView");
 const tplMgrBackBtn = document.getElementById("templateManagerBackBtn");
 const tplMgrAddBtn  = document.getElementById("templateManagerAddRowBtn");
@@ -102,6 +103,8 @@ const teacherContent= document.getElementById("teacherContent");
 const rosterContent = document.getElementById("rosterContent");
 const resultsMgrView = document.getElementById("resultsMgmtView");
 const resultsContent = document.getElementById("resultsContent");
+const ttCardsMgrView  = document.getElementById("ttCardsMgmtView");
+const ttCardsContent  = document.getElementById("ttCardsContent");
 
 // ── DOM: Student management sub-elements ──────────────────────────
 const classListEl       = document.getElementById("classList");
@@ -122,10 +125,12 @@ const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
 const navButtons = {
-  board: navBoardBtn,
+  board:    navBoardBtn,
   students: document.getElementById("navStudentsBtn"),
   teachers: document.getElementById("navTeachersBtn"),
   rosters:  document.getElementById("navRostersBtn"),
+  ttcards:  document.getElementById("navTtCardsBtn"),
+  groups:   document.getElementById("navGroupsBtn"),
   results:  document.getElementById("navResultsBtn"),
 };
 
@@ -144,16 +149,16 @@ export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("t
 // ── View switching ─────────────────────────────────────────────────
 function setView(view) {
   activeMainView = view;
-  const allViews = { board:boardView, groups:groupMgrView, manager:tplMgrView, students:studentMgrView, teachers:teacherMgrView, rosters:rosterMgrView, results:resultsMgrView };
+  const allViews = {
+    board:   boardView,   groups:   groupMgrView,  manager: tplMgrView,
+    students:studentMgrView, teachers:teacherMgrView, rosters: rosterMgrView,
+    results: resultsMgrView, ttcards: ttCardsMgrView,
+  };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
-  // Update nav button states
   Object.values(navButtons).forEach(btn => btn?.classList.remove("active"));
-  if (view === "board") {
-    navBoardBtn?.classList.add("active");
-  } else {
-    navButtons[view]?.classList.add("active");
-  }
-  openGroupManagerBtn.textContent    = view === "groups"  ? "보드 보기" : "그룹 관리";
+  if (view === "board") navBoardBtn?.classList.add("active");
+  else if (view === "manager") { /* sub-view of board */ }
+  else navButtons[view]?.classList.add("active");
   openTemplateManagerBtn.textContent = view === "manager" ? "보드 보기" : "표 편집";
 }
 
@@ -188,8 +193,7 @@ function renderTemplateManagerView() {
 }
 
 function renderGroupManagerView() {
-  // onRender = sidebar sync only. Group manager re-renders itself internally on structure change.
-  renderGroupManager(groupMgrBoard, () => { renderSidebar(); });
+  if (groupMgrBoard) renderGroupMgrFromTtCards(groupMgrBoard);
 }
 
 function renderStudentView() {
@@ -250,8 +254,8 @@ function setControlsDisabled(disabled) {
    sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher,
    categoryOptionInput, trackOptionInput, groupOptionInput,
    addCategoryOptionBtn, addTrackOptionBtn, addGroupOptionBtn,
-   resetBoardBtn, exportXlsxBtn, openGroupManagerBtn, openTemplateManagerBtn,
-   groupMgrBackBtn, groupMgrAddBtn,
+   resetBoardBtn, exportXlsxBtn, openTemplateManagerBtn,
+   groupMgrAddBtn,
    tplMgrBackBtn, tplMgrAddBtn, tplMgrSaveBtn, tplMgrDiscBtn,
    tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrSortBtn, tplMgrLevel,
    addClassBtn, deleteClassBtn, classNameInput, classGradeSelect,
@@ -419,13 +423,17 @@ navButtons.rosters?.addEventListener("click", () => {
 navButtons.results?.addEventListener("click", () => {
   setView("results"); if (resultsContent) renderResultsView(resultsContent);
 });
+navButtons.ttcards?.addEventListener("click", () => {
+  setView("ttcards"); if (ttCardsContent) renderTtCardsView(ttCardsContent);
+});
+navButtons.groups?.addEventListener("click", () => {
+  setView("groups"); renderGroupManagerView();
+});
 
 // ── Sidebar view toggles ──────────────────────────────────────────
-openGroupManagerBtn?.addEventListener("click", () => { activeMainView === "groups" ? closeToBoard() : (setView("groups"), renderGroupManagerView()); });
 openTemplateManagerBtn?.addEventListener("click", () => { activeMainView === "manager" ? closeToBoard() : (clearStableOrder(), setView("manager"), renderTemplateManagerView()); });
-groupMgrBackBtn?.addEventListener("click", closeToBoard);
 tplMgrBackBtn?.addEventListener("click", closeToBoard);
-groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); renderSidebar(); });
+groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); });
 
 // ── Sidebar level filter ──────────────────────────────────────────
 sidebarLevelFilter?.addEventListener("change", e => { setSidebarLevel(e.target.value); renderSidebar(); });

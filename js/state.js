@@ -91,7 +91,8 @@ function normalizeUnit(u = {}) {
   return {
     id: u.id || uid("unit"),
     name: clean(u.name),
-    templateIds: Array.isArray(u.templateIds) ? u.templateIds.filter(Boolean) : []
+    templateIds: Array.isArray(u.templateIds) ? u.templateIds.filter(Boolean) : [],
+    ttcardIds:   Array.isArray(u.ttcardIds)   ? u.ttcardIds.filter(Boolean)   : [],
   };
 }
 
@@ -218,6 +219,15 @@ export function normalizeTimetableEntry(e = {}) {
     pinned:      !!e.pinned,
   };
 }
+export function normalizeTtCard(item = {}) {
+  return {
+    id:         item.id || uid("ttc"),
+    templateId: clean(item.templateId),
+    gradeKey:   clean(item.gradeKey),
+    sectionIdx: parseInt(item.sectionIdx) || 0,
+    label:      clean(item.label),
+  };
+}
 export function normalizeTimetableConstraint(c = {}) {
   return {
     maxPerDay:      (Number.isInteger(c.maxPerDay)      && c.maxPerDay > 0)      ? c.maxPerDay      : 6,
@@ -247,6 +257,7 @@ function normalizeTimetableDomain(raw = {}) {
     entries: Array.isArray(raw.entries)
       ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
       : [],
+    ttcards: Array.isArray(raw.ttcards) ? raw.ttcards.map(normalizeTtCard) : [],
     teacherConstraints: constraints
   };
 }

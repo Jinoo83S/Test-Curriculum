@@ -21,6 +21,8 @@
     <button id="navStudentsBtn" class="topbar-nav-btn"           type="button">👨‍🎓 학생 명단</button>
     <button id="navTeachersBtn" class="topbar-nav-btn"           type="button">👩‍🏫 선생님 명단</button>
     <button id="navRostersBtn"  class="topbar-nav-btn"           type="button">📚 수강 명단</button>
+    <button id="navTtCardsBtn"  class="topbar-nav-btn"           type="button">🃏 시간표 카드</button>
+    <button id="navGroupsBtn"   class="topbar-nav-btn"           type="button">🔗 그룹 관리</button>
     <button id="navResultsBtn"  class="topbar-nav-btn"           type="button">📊 결과표</button>
     <a href="timetable.html" class="topbar-nav-btn topbar-nav-link" type="button">⏰ 시간표</a>
   </nav>
@@ -49,7 +51,6 @@
         <h2>과목 카드</h2>
         <div class="sidebar-btn-group">
           <button id="appSidebarToggle" class="sidebar-toggle-inline" type="button" title="사이드바 접기">◀</button>
-          <button id="openGroupManagerBtn"    class="secondary-btn compact-btn" type="button">그룹 관리</button>
           <button id="openTemplateManagerBtn" class="secondary-btn compact-btn" type="button">표 편집</button>
         </div>
       </div>
@@ -169,19 +170,23 @@
       </div>
     </div>
 
-    <!-- ② 그룹 관리 -->
+    <!-- ② 그룹 관리 (standalone nav tab) -->
     <div id="groupManagerView" class="main-view hidden">
       <div class="manager-header">
         <div>
-          <h2>과목카드 그룹 관리</h2>
-          <p class="manager-subtitle">사이드바에서 카드를 드래그하여 그룹에 배정하세요. 변경 즉시 저장됩니다.</p>
+          <h2>그룹 관리</h2>
+          <p class="manager-subtitle">시간표 카드를 드래그하여 그룹에 배정하세요. 같은 그룹의 카드는 동일 시간대에 배정됩니다.</p>
         </div>
         <div class="manager-actions">
-          <button id="groupManagerBackBtn"    class="secondary-btn" type="button">커리큘럼으로</button>
-          <button id="groupManagerAddGroupBtn" class="primary-btn"  type="button">그룹 추가</button>
+          <button id="groupManagerAddGroupBtn" class="primary-btn" type="button">그룹 추가</button>
         </div>
       </div>
       <div id="groupManagerBoard" class="group-manager-board"></div>
+    </div>
+
+    <!-- ③ 시간표 카드 -->
+    <div id="ttCardsMgmtView" class="main-view hidden">
+      <div id="ttCardsContent" class="manager-scroll"></div>
     </div>
 
     <!-- ③ 표 편집 -->
