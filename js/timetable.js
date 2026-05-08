@@ -693,6 +693,55 @@ function handleDrop(data, day, period) {
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Entry detail popup ──────────────────────────────────────────
+/** Popup showing card detail: 시수/분반/배정현황 */
+function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName }) {
+  const existing = document.getElementById("tt-entry-detail-modal");
+  if (existing) existing.remove();
+  const modal = document.createElement("div"); modal.id = "tt-entry-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
+  const box = document.createElement("div");
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:280px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+
+  const firstGrade = gradeKeys[0] || currentGrade;
+  const gc = getGradeColor(firstGrade);
+  box.style.borderTop = `4px solid ${gc.border}`;
+
+  const titleEl = document.createElement("div");
+  titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:10px;color:#1e3a5f;padding-right:20px";
+  titleEl.textContent = title; box.appendChild(titleEl);
+
+  const rows = [
+    ["학년",   gradeKeys.map(g => `${gradeDisplay(g)}학년`).join(", ") || "-"],
+    ["반",     sectionIdx != null ? sectionLabel(sectionIdx) : "-"],
+    ["담당 교사", teachers.join(", ") || "-"],
+    ["시수",   String(credits || "-")],
+    ["배정 현황", `${assigned} / ${credits} 차시${isDone ? "  ✅ 완료" : ""}`],
+    ["그룹",   groupName || "미배정"],
+  ];
+
+  rows.forEach(([lbl, val]) => {
+    const row = document.createElement("div"); row.style.cssText = "display:flex;gap:8px;margin-bottom:5px;font-size:12px;align-items:baseline";
+    const l = document.createElement("span"); l.style.cssText = "color:#6b7280;font-weight:600;width:72px;flex-shrink:0"; l.textContent = lbl;
+    const v = document.createElement("span"); v.style.cssText = "color:#1e293b;flex:1"; v.textContent = val;
+    row.append(l, v); box.appendChild(row);
+  });
+
+  // Progress bar
+  if (credits > 0) {
+    const pct = Math.min(100, Math.round((assigned / credits) * 100));
+    const bar = document.createElement("div"); bar.style.cssText = "margin-top:8px;background:#f1f5f9;border-radius:999px;height:6px;overflow:hidden";
+    const fill = document.createElement("div"); fill.style.cssText = `height:100%;border-radius:999px;width:${pct}%;background:${isDone ? "#22c55e" : "#3b82f6"};transition:width .3s`;
+    bar.appendChild(fill); box.appendChild(bar);
+  }
+
+  const closeBtn = document.createElement("button");
+  closeBtn.style.cssText = "position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1";
+  closeBtn.textContent = "×"; closeBtn.onclick = () => modal.remove();
+  box.appendChild(closeBtn); modal.appendChild(box);
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
 function showEntryDetailByUnit(unit, group, gradeKeys) {
   // Show unit info in a simple popup (no entry edit - just info)
   const existing = document.getElementById("tt-entry-detail-modal");
@@ -832,6 +881,7 @@ function renderSubjectPanelTtCards(panel, ttcards) {
         return sectCount > 1 ? `${base} ${sectionLabel(c.sectionIdx)}` : base;
       }).join(" / "),
       teachers, gradeKeys, credits, assigned, isDone, gradeColor,
+      sectionIdx: uCards[0]?.sectionIdx, groupName: group.name,
     });
     if (!isDone) {
       card.addEventListener("dragstart", () => {
@@ -864,6 +914,8 @@ function renderSubjectPanelTtCards(panel, ttcards) {
     const card   = buildSidebarCard({
       title: label, teachers: getTeachersForTemplate(c.templateId),
       gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor,
+      sectionIdx: c.sectionIdx,
+      groupName: (() => { const grp = (appState.templates.templateGroups||[]).find(g => (g.poolCardIds||[]).includes(c.id)); return grp?.name || null; })(),
     });
     if (!isDone) {
       card.addEventListener("dragstart", () => {
@@ -928,7 +980,7 @@ function renderSubjectPanelLegacy(panel) {
   finalizeSidebarPanel(panel, availableCards, doneCards, "커리큘럼에 배치된 과목이 없습니다.");
 }
 
-function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor }) {
+function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, sectionIdx, groupName }) {
   const card = document.createElement("div");
   card.className = "tt-subject-card" + (isDone ? " tt-subject-done" : "");
   card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
@@ -950,6 +1002,13 @@ function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDon
     chip.textContent = gradeDisplay(g); chipRow.appendChild(chip);
   });
   card.append(topRow, botRow, chipRow);
+
+  // Click → show detail popup (시수/분반/배정현황)
+  card.addEventListener("click", ev => {
+    if (ev.defaultPrevented) return;
+    showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName });
+  });
+
   return card;
 }
 
