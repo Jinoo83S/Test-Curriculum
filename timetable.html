@@ -47,7 +47,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
 .tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
 .tt-corner-label{font-size:10px;font-weight:700;color:white}
-.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:6px 2px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;width:calc((100% - 46px)/5)}
+.tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:6px 2px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;border-right:3px solid #1e3a5f;width:calc((100% - 46px)/5)}
 /* Day column alternating tint — applied via JS data-day attribute */
 .tt-cell[data-day="0"]{background:#ffffff}
 .tt-cell[data-day="1"]{background:#f8faff}
@@ -146,20 +146,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-toggle-btn.active{background:#eff6ff;color:#2563eb;border-color:#93c5fd}
 #ttToggleIcon{font-size:14px;line-height:1;transition:transform .2s}
 .tt-bottom-toggle-btn.active #ttToggleIcon{transform:rotate(180deg)}
-/* == Entry card: 2-row layout == */
 .tt-entry-card{border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:3px 5px;font-size:10px;border-left-width:4px;min-width:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;min-height:36px}
 .tt-card-row1{display:flex;align-items:center;justify-content:space-between;gap:2px}
 .tt-card-row2{display:flex;align-items:center;justify-content:space-between;gap:2px;margin-top:2px}
 .tt-entry-title{font-weight:700;font-size:11px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .tt-entry-teacher{font-size:10px;color:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
 .tt-entry-pin{width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.4;transition:opacity .1s;flex-shrink:0;line-height:1}
-.tt-entry-pin:hover{opacity:1}
-.tt-entry-pinned .tt-entry-pin{opacity:1}
+.tt-entry-pin:hover,.tt-entry-pinned .tt-entry-pin{opacity:1}
 .tt-entry-pinned{outline:2px solid #f59e0b!important;outline-offset:-1px}
 .tt-entry-grade-row{display:flex;gap:1px;flex-wrap:nowrap;flex-shrink:0}
-.tt-entry-grade-chip{font-size:8px;font-weight:700;padding:0 3px;border-radius:3px;line-height:13px;flex-shrink:0;white-space:nowrap}
+.tt-entry-grade-chip{font-size:8px;font-weight:700;padding:0 3px;border-radius:3px;line-height:13px;white-space:nowrap}
 .tt-entry-conflict{outline:2px solid #ef4444}
 .tt-entry-card.tt-dragging{opacity:.45;outline:2px dashed #2563eb}
+/* Day column right border separators */
+.tt-cell[data-day="0"]{border-right:2px solid #c7d2e0}
+.tt-cell[data-day="1"]{border-right:2px solid #c7d2e0}
+.tt-cell[data-day="2"]{border-right:2px solid #c7d2e0}
+.tt-cell[data-day="3"]{border-right:2px solid #c7d2e0}
+.tt-cell[data-day="4"]{border-right:1px solid #e2e8f0}
 </style>
 </head>
 <body>

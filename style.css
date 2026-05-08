@@ -2931,39 +2931,18 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   cursor: help;
 }
 
-/* ── Group block: new layout ──────────────────────────── */
-.group-cond-row {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 3px 0 4px;
-  border-bottom: 1px solid #e2e8f0;
-  margin-bottom: 4px;
-}
-.group-direct-drop {
-  font-size: 10px;
-  color: #9ca3af;
-  padding: 4px 6px;
-  border: 1.5px dashed #d1d5db;
-  border-radius: 5px;
-  text-align: center;
-  margin-bottom: 4px;
-}
-.group-direct-drop.dragover { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
-
-/* Remove isCrossGrade checkbox (now implied by unit) */
-.group-block-checks { display: none; }
-
-/* Unit block: ② same classroom label */
-.group-unit-block {
-  border: 1.5px solid #bfdbfe;
-  background: #f0f9ff;
+/* Auto-generate group button */
+.group-auto-gen-btn {
+  padding: 4px 10px;
+  border: 1px solid #a78bfa;
   border-radius: 6px;
-  padding: 5px 7px;
-  position: relative;
+  background: #ede9fe;
+  color: #6d28d9;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 8px;
+  transition: all .1s;
 }
-.group-unit-hdr {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 4px;
-}
+.group-auto-gen-btn:hover { background: #ddd6fe; }
+.group-auto-gen-btn:disabled { opacity: .4; cursor: default; }

@@ -197,7 +197,7 @@ function buildSchedulableItems() {
       }).filter(c => c > 0));
       const teachers = getUnitTeachers(unit);
       if (gradeKeys.length && credits > 0) {
-        unitItems.push({ unit, gradeKeys, credits, teachers: teachers.join(",") || "" });
+        unitItems.push({ unit, gradeKeys, credits, teachers: teachers[0] || "" });
       }
     });
     if (unitItems.length) groupBlocks.push({ group: grp, unitItems });
@@ -209,7 +209,7 @@ function buildSchedulableItems() {
       if (templateIdsInUnits.has(tpl.id)) return; // handled by units
       const credits  = getCreditsForTemplate(gradeKey, tpl.id);
       const sections = getSectionCount(tpl.id);
-      const teacher  = getTeachersForTemplate(tpl.id).join(",") || "";
+      const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
       for (let sec = 0; sec < sections; sec++) {
         for (let i = 0; i < credits; i++) {
           standalone.push({ kind:"standalone", templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
@@ -386,71 +386,66 @@ function entryTeachers(e) {
 
 // ── Entry card ────────────────────────────────────────────────────
 function buildEntryCard(entry, opts = {}) {
-  const { compact = false, showGrade = false } = opts;
-  const title       = entryTitle(entry);
-  const teachers    = entryTeachers(entry);
+  const { showGrade = false } = opts;
+  const title        = entryTitle(entry);
+  const teacherText  = entry.teacherName || "";
   const displayGrades = entryGradeKeys(entry);
-  const rooms       = getRooms();
-
   const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
   const hasConflict = conflicts.size > 0;
 
   const card = document.createElement("div");
-  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
+  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (entry.pinned ? " tt-entry-pinned" : "");
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
   const firstGrade = displayGrades[0] || currentGrade;
   const gradeColor = getGradeColor(firstGrade);
-  card.style.background   = gradeColor.bg;
-  card.style.color        = gradeColor.text;
-  card.style.borderLeft   = `4px solid ${gradeColor.border}`;
+  card.style.background = gradeColor.bg;
+  card.style.color      = gradeColor.text;
+  card.style.borderLeft = `4px solid ${gradeColor.border}`;
 
-  // No × button — drag card to bottom bar to remove
-
-  // Pin button (📌/📍 toggle, always enabled)
+  // ── Row 1: 과목명 (left) + 핀 버튼 (right) ──
+  const row1 = document.createElement("div"); row1.className = "tt-card-row1";
+  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
   const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
-  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정"; pinBtn.style.cssText="position:absolute;top:1px;right:2px;width:13px;height:13px;border:none;background:transparent;cursor:pointer;font-size:10px;padding:0;opacity:.4;transition:opacity .1s;z-index:1";
+  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
   pinBtn.disabled = !canEdit();
-  pinBtn.addEventListener("click", () => {
+  pinBtn.addEventListener("click", ev => {
+    ev.stopPropagation();
     if (!canEdit()) return;
     const e = entries().find(x => x.id === entry.id); if (!e) return;
     e.pinned = !e.pinned; scheduleSave("timetable"); renderAll();
   });
-  card.appendChild(pinBtn);
-  if (entry.pinned) card.classList.add("tt-entry-pinned");
+  row1.append(titleEl, pinBtn);
+  card.appendChild(row1);
 
-  // Grade chips (absolute, left of × button)
+  // ── Row 2: 교사명 (left) + 학년칩 (right, 7→12 정렬) ──
+  const row2 = document.createElement("div"); row2.className = "tt-card-row2";
+  const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
+  teacherEl.textContent = teacherText || "\u00a0"; // non-breaking space keeps height
+  row2.appendChild(teacherEl);
+
   if (showGrade && displayGrades.length) {
-    card.classList.add("tt-entry-has-grade");
-    displayGrades.slice().reverse().forEach((g, ri) => {
-      const gc = document.createElement("span"); gc.className = "tt-entry-grade";
-      gc.textContent = g.replace("학년","");
-      gc.style.cssText = `background:${getGradeColor(g).border};color:white;right:${16 + ri * 20}px;font-size:8px;padding:0 3px`;
-      card.appendChild(gc);
+    const chipWrap = document.createElement("div"); chipWrap.className = "tt-entry-grade-row";
+    [...displayGrades].sort((a, b) => parseInt(a) - parseInt(b)).forEach(g => {
+      const chip = document.createElement("span"); chip.className = "tt-entry-grade-chip";
+      chip.textContent = g.replace("학년","");
+      chip.style.cssText = `background:${getGradeColor(g).border};color:white`;
+      chipWrap.appendChild(chip);
     });
+    row2.appendChild(chipWrap);
   }
+  card.appendChild(row2);
 
-  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
-  // Dynamic padding: pin(16) + per-grade-chip(16*n)
-  if (showGrade && displayGrades.length) titleEl.style.paddingRight = `${16 + displayGrades.length * 16}px`;
-
-  card.appendChild(titleEl);
-  if (entry.teacherName) {
-    const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
-    teacherEl.textContent = entry.teacherName;
-    card.appendChild(teacherEl);
-  }
-
-  // Click to show detail popup (teacher/room edit)
+  // Click → detail modal (from entry)
   card.addEventListener("click", ev => {
-    if (ev.target.closest("button") || ev.target.closest("select")) return;
+    if (ev.target.closest("button")) return;
     showEntryDetail(entry);
   });
 
-  // Drag to move (entry kind)
+  // Drag to move
   card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
-    if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
+    if (!canEdit() || entry.pinned || ev.target.closest("button")) { ev.preventDefault(); return; }
     dragData = { kind: "entry", entryId: entry.id };
     card.classList.add("tt-dragging");
   });
@@ -496,7 +491,7 @@ function handleDrop(data, day, period) {
       teacherName: teachers, roomId: null
     });
   } else {
-    const teacherName = getTeachersForTemplate(templateId)[0] || "";
+    const teacherName = getTeachersForTemplate(templateId).join(",") || "";
     addEntry({ day, period, templateId, sectionIdx, teacherName, roomId: null, gradeKey: resolvedGrade });
   }
   recomputeConflicts(); renderAll();
@@ -564,6 +559,68 @@ function showEntryDetail(entry) {
 
   // Close
   const closeBtn = document.createElement("button"); closeBtn.style.cssText="position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1"; closeBtn.textContent="×"; closeBtn.onclick = () => modal.remove();
+  box.appendChild(closeBtn);
+  modal.appendChild(box);
+  modal.addEventListener("click", e => { if(e.target===modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+// ── Subject card detail popup ──────────────────────────────────────
+function showSubjectDetail(tpl, gradeKey, credits, sectionIdx, assigned) {
+  const existing = document.getElementById("tt-subject-detail-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div"); modal.id = "tt-subject-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
+
+  const box = document.createElement("div");
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:270px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+
+  const gc = getGradeColor(gradeKey);
+  box.style.borderTop = `4px solid ${gc.border}`;
+
+  const titleEl = document.createElement("div");
+  titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:12px;color:#1e3a5f";
+  titleEl.textContent = getTemplateCardTitle(tpl);
+  box.appendChild(titleEl);
+
+  const infoGrid = document.createElement("div"); infoGrid.style.cssText = "display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px;font-size:12px";
+  const mkInfo = (label, value, color) => {
+    const cell = document.createElement("div"); cell.style.cssText = `padding:6px 8px;background:#f8fafc;border-radius:5px;border-left:3px solid ${color||"#e2e8f0"}`;
+    cell.innerHTML = `<div style="font-size:10px;color:#6b7280;margin-bottom:2px">${label}</div><div style="font-weight:700;color:#1e3a5f">${value}</div>`;
+    return cell;
+  };
+  infoGrid.appendChild(mkInfo("학년", gradeKey.replace("학년","") + "학년", gc.border));
+  const totalSections = getSectionCount(tpl.id);
+  if (totalSections > 1) infoGrid.appendChild(mkInfo("분반", `${sectionIdx+1}/${totalSections}분반`, "#8b5cf6"));
+  infoGrid.appendChild(mkInfo("배정 시수", `${assigned} / ${credits}`, assigned >= credits && credits > 0 ? "#22c55e" : "#f59e0b"));
+  infoGrid.appendChild(mkInfo("교사", getTeachersForTemplate(tpl.id).join(", ") || "-", "#2563eb"));
+  box.appendChild(infoGrid);
+
+  const assignedEntries = entries().filter(e => entryTemplateIds(e).includes(tpl.id) && entryHasGrade(e, gradeKey) && e.sectionIdx === sectionIdx);
+  if (assignedEntries.length) {
+    const listTitle = document.createElement("div"); listTitle.style.cssText = "font-size:11px;font-weight:600;color:#6b7280;margin-bottom:5px";
+    listTitle.textContent = `배정된 수업 (${assignedEntries.length}개)`;
+    box.appendChild(listTitle);
+    const list = document.createElement("div"); list.style.cssText = "display:flex;flex-direction:column;gap:3px;max-height:150px;overflow-y:auto";
+    const DAYS = ["월","화","수","목","금"];
+    const periodLabels = ttConfig().periodLabels;
+    assignedEntries.forEach(e => {
+      const row = document.createElement("div"); row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:4px 8px;background:#f8fafc;border-radius:4px;font-size:11px;gap:6px";
+      const slot = document.createElement("span"); slot.style.fontWeight = "600"; slot.textContent = `${DAYS[e.day]} ${periodLabels[e.period]||`${e.period+1}교시`}`;
+      const teacher = document.createElement("span"); teacher.style.cssText = "color:#6b7280;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"; teacher.textContent = e.teacherName || "-";
+      row.append(slot, teacher);
+      if (canEdit()) {
+        const delBtn = makeBtn("×", "", () => { removeEntry(e.id); recomputeConflicts(); renderAll(); row.remove(); });
+        delBtn.style.cssText = "border:none;background:transparent;color:#dc2626;cursor:pointer;font-size:13px;padding:0;line-height:1";
+        row.appendChild(delBtn);
+      }
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+  }
+
+  const closeBtn = document.createElement("button"); closeBtn.style.cssText = "position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1"; closeBtn.textContent = "×"; closeBtn.onclick = () => modal.remove();
   box.appendChild(closeBtn);
   modal.appendChild(box);
   modal.addEventListener("click", e => { if(e.target===modal) modal.remove(); });
@@ -933,15 +990,12 @@ export function autoAssignAll() {
       const maxCredits = Math.max(...unitItems.map(u => u.credits));
 
       for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
-        // Only place units whose credits > slot_i (prevents over-assignment)
-        const activeUnitItems = unitItems.filter(u => slot_i < u.credits);
-        if (!activeUnitItems.length) continue;
-
+        // Find a slot valid for ALL units in this group simultaneously
         let foundSlot = null;
         for (const slot of shuffle([...baseSlots])) {
           const hypo = [];
           let valid = true;
-          for (const { unit, gradeKeys, teachers } of activeUnitItems) {
+          for (const { unit, gradeKeys, teachers } of unitItems) {
             const item = {
               kind: "unit", unitId: unit.id, groupId: group.id,
               templateIds: unit.templateIds, gradeKeys,
@@ -954,7 +1008,7 @@ export function autoAssignAll() {
           if (valid) { foundSlot = slot; break; }
         }
         if (foundSlot) {
-          activeUnitItems.forEach(({ unit, gradeKeys, teachers }) => {
+          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
             placed.push(normalizeTimetableEntry({
               id: uid("ent"), ...foundSlot,
               unitId: unit.id, groupId: group.id,
@@ -964,7 +1018,7 @@ export function autoAssignAll() {
             }));
           });
         } else {
-          activeUnitItems.forEach(({ unit }) => {
+          unitItems.forEach(({ unit, gradeKeys, teachers }) => {
             failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
           });
         }
@@ -1094,7 +1148,7 @@ function exportXlsx() {
       .sort((a, b) => a.day !== b.day ? a.day - b.day : a.period - b.period)
       .forEach(e => {
         const tpl = getTemplateById(e.templateId); const room = getRooms().find(r => r.id === e.roomId);
-        teacherRows.push([teacher, dayLabels[e.day], ttConfig().periodLabels[e.period] || e.period + 1, entryTitle(e), entryGradeKeys(e).join(", "), room?.name || ""]);
+        teacherRows.push([teacher, dayLabels[e.day], ttConfig().periodLabels[e.period] || e.period + 1, tpl ? getTemplateCardTitle(tpl) : "?", e.gradeKey, room?.name || ""]);
       });
   });
   const wsT = XLSX.utils.aoa_to_sheet(teacherRows);
