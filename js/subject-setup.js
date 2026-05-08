@@ -8,9 +8,8 @@ import { appState } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js";
 import { getRosterMeta, setRosterClassCount, getClassCount } from "./rosters.js";
 
-// ── Build rows from curriculum ─────────────────────────────────────
+// ── Build rows from curriculum IN BOARD ORDER ─────────────────────
 function buildRows() {
-  // Returns flat array of { gradeKey, track, group, tplId, credits }
   const rows = [];
   GRADE_KEYS.forEach(gradeKey => {
     const board = appState.curriculum.gradeBoards[gradeKey] || [];
@@ -18,11 +17,35 @@ function buildRows() {
     board.forEach(row => {
       [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
         if (seenTpl.has(tplId)) return; seenTpl.add(tplId);
-        rows.push({ gradeKey, track: row.track || "공통", group: row.group || "기타", tplId, credits: row.credits });
+        rows.push({
+          gradeKey,
+          category: row.category || "교과",
+          track:    row.track    || "공통",
+          tplId,
+          credits:  row.credits,
+        });
       });
     });
   });
   return rows;
+}
+
+// ── Group preserving curriculum order ────────────────────────────
+// Returns: { gradeKey → [ { track, category, rows[], order } ] }
+function groupByGradeTrack(rows) {
+  const result = {};
+  rows.forEach(r => {
+    if (!result[r.gradeKey]) result[r.gradeKey] = [];
+    const gradeGroups = result[r.gradeKey];
+    // Find existing group with same track — only if it's the LAST group (preserve order)
+    const last = gradeGroups[gradeGroups.length - 1];
+    if (last && last.track === r.track && last.category === r.category) {
+      last.rows.push(r);
+    } else {
+      gradeGroups.push({ track: r.track, category: r.category, rows: [r] });
+    }
+  });
+  return result;
 }
 
 // ── Render ────────────────────────────────────────────────────────
@@ -43,11 +66,12 @@ export function renderSubjectSetupView(container) {
   }
 
   const tableWrap = document.createElement("div"); tableWrap.className = "ss-table-wrap";
-  const table     = document.createElement("table"); table.className = "ss-table";
+  const table = document.createElement("table"); table.className = "ss-table";
 
-  // ── Header ───────────────────────────────────────────────────────
+  // ── Header: 학년 | 범주 | 구분 | 과목명 | 교사 | 시수 | 반 수 | 반 ─────
   table.innerHTML = `<thead><tr>
     <th class="ss-th-grade">학년</th>
+    <th class="ss-th-cat">범주</th>
     <th class="ss-th-track">구분</th>
     <th class="ss-th-subject">과목명</th>
     <th class="ss-th-teacher">교사</th>
@@ -57,83 +81,80 @@ export function renderSubjectSetupView(container) {
   </tr></thead>`;
 
   const tbody = document.createElement("tbody");
-
-  // Group rows by grade, then track+group — for rowspan calculation
-  const byGrade = {};
-  rows.forEach(r => {
-    const key = `${r.track}::${r.group || "기타"}`;
-    if (!byGrade[r.gradeKey]) byGrade[r.gradeKey] = {};
-    if (!byGrade[r.gradeKey][key]) byGrade[r.gradeKey][key] = [];
-    byGrade[r.gradeKey][key].push(r);
-  });
+  const COL_COUNT = 8;
+  const grouped = groupByGradeTrack(rows);
 
   GRADE_KEYS.forEach(gradeKey => {
-    const tracks = byGrade[gradeKey]; if (!tracks) return;
-    // Calculate TOTAL rendered rows (including subtotal rows) for grade-cell rowspan
-    const totalGradeSpan = Object.keys(tracks).reduce((sum, key) => {
-      const tRows = tracks[key];
-      const isChoice = tRows[0]?.track !== "공통" && tRows.length > 1;
-      return sum + tRows.filter(r => !!getTemplateById(r.tplId)).length + (isChoice ? 1 : 0);
+    const gradeGroups = grouped[gradeKey]; if (!gradeGroups) return;
+
+    // Calculate total rowspan for grade cell (valid rows + subtotal rows)
+    const totalGradeSpan = gradeGroups.reduce((sum, grp) => {
+      const valid = grp.rows.filter(r => !!getTemplateById(r.tplId)).length;
+      const isChoice = grp.track !== "공통" && valid > 1;
+      return sum + valid + (isChoice ? 1 : 0);
     }, 0);
+    if (!totalGradeSpan) return;
 
     let gradeRendered = false;
 
-    Object.keys(tracks).sort((a, b) => {
-      const trackA = tracks[a][0]?.track || "", trackB = tracks[b][0]?.track || "";
-      const order = t => t === "공통" ? 0 : 1;
-      return order(trackA) - order(trackB) || a.localeCompare(b, "ko");
-    }).forEach(key => {
-      const trackRows = tracks[key];
-      const trackLabel = `${trackRows[0]?.track || "공통"}`;
-      const groupLabel = trackRows[0]?.group || "기타";
-      let trackRendered = false;
+    gradeGroups.forEach(grp => {
+      const validRows = grp.rows.filter(r => !!getTemplateById(r.tplId));
+      if (!validRows.length) return;
 
-      trackRows.forEach((r, ri) => {
-        const tpl = getTemplateById(r.tplId); if (!tpl) return;
-        const cc  = getClassCount(r.tplId);
+      const isChoice = grp.track !== "공통" && validRows.length > 1;
+      let trackRendered = false, catRendered = false;
+
+      validRows.forEach(r => {
+        const tpl = getTemplateById(r.tplId);
         const tr  = document.createElement("tr");
-        const isChoice = trackRows[0]?.track !== "공통" && trackRows.length > 1;
         if (isChoice) tr.className = "ss-row-choice";
 
-        // Grade cell (rowspan = all rendered rows in this grade including subtotals)
+        // Grade cell
         if (!gradeRendered) {
           const td = document.createElement("td"); td.className = "ss-td-grade";
-          td.rowSpan = totalGradeSpan; td.textContent = `${gradeDisplay(gradeKey)}`;
+          td.rowSpan = totalGradeSpan; td.textContent = gradeDisplay(gradeKey);
           tr.appendChild(td); gradeRendered = true;
         }
 
-        // Track cell (rowspan = rows with same track+group)
-        if (!trackRendered) {
-          const td = document.createElement("td"); td.className = "ss-td-track";
-          td.rowSpan = trackRows.length;
+        // 범주 cell
+        if (!catRendered) {
+          const td = document.createElement("td"); td.className = "ss-td-cat";
+          td.rowSpan = validRows.length;
           const badge = document.createElement("span");
-          badge.className = "ss-track-badge " + (isChoice ? "ss-badge-choice" : "ss-badge-common");
-          badge.textContent = `${trackLabel} / ${groupLabel}`;
-          if (isChoice) { const hint = document.createElement("div"); hint.className = "ss-choice-hint"; hint.textContent = "택1"; td.appendChild(hint); }
-          td.appendChild(badge);
-          tr.appendChild(td); trackRendered = true;
+          badge.className = "ss-cat-badge " + (grp.category === "창체" ? "ss-cat-changjae" : "ss-cat-gwa");
+          badge.textContent = grp.category || "교과";
+          td.appendChild(badge); tr.appendChild(td); catRendered = true;
         }
 
-        // Subject
+        // 구분 cell (track only, no 교과군)
+        if (!trackRendered) {
+          const td = document.createElement("td"); td.className = "ss-td-track";
+          td.rowSpan = validRows.length;
+          const badge = document.createElement("span");
+          badge.className = "ss-track-badge " + (isChoice ? "ss-badge-choice" : "ss-badge-common");
+          badge.textContent = grp.track;
+          if (isChoice) { const hint = document.createElement("div"); hint.className = "ss-choice-hint"; hint.textContent = "택1"; td.appendChild(hint); }
+          td.appendChild(badge); tr.appendChild(td); trackRendered = true;
+        }
+
+        // 과목명
         const tdName = document.createElement("td"); tdName.className = "ss-td-name";
         tdName.textContent = getTemplateCardTitle(tpl); tr.appendChild(tdName);
 
-        // Teacher
+        // 교사
         const tdTch = document.createElement("td"); tdTch.className = "ss-td-teacher";
         tdTch.textContent = getTemplateTeacherSummary(tpl) || "-"; tr.appendChild(tdTch);
 
-        // Credits
+        // 시수
         const tdCr = document.createElement("td"); tdCr.className = "ss-td-credits";
         tdCr.textContent = r.credits != null && r.credits !== "" ? r.credits : "-"; tr.appendChild(tdCr);
 
-        // Section count input
+        // 반 수 input
         const tdCnt = document.createElement("td"); tdCnt.className = "ss-td-count";
         const inp = document.createElement("input"); inp.type = "number"; inp.min = "0"; inp.max = "20";
         inp.className = "ss-count-input"; inp.disabled = !canEdit();
-        inp.value = getRosterMeta(r.tplId).classCount || "";
-        inp.placeholder = "0";
+        inp.value = getRosterMeta(r.tplId).classCount || ""; inp.placeholder = "0";
         const preview = document.createElement("td"); preview.className = "ss-td-preview";
-
         inp.addEventListener("change", e => {
           const v = parseInt(e.target.value) || 0;
           setRosterClassCount(r.tplId, v || "");
@@ -141,26 +162,26 @@ export function renderSubjectSetupView(container) {
         });
         tdCnt.appendChild(inp); tr.appendChild(tdCnt);
 
-        // Section preview chips
+        // 반 preview
         renderPreview(preview, r.tplId);
         tr.appendChild(preview);
 
         tbody.appendChild(tr);
       });
 
-      // Track subtotal row (choice groups only)
-      if (trackRows.length > 1 && trackRows[0]?.track !== "공통") {
+      // 선택군 합계 row
+      if (isChoice) {
         const totalRow = document.createElement("tr"); totalRow.className = "ss-track-total";
-        const totalTd = document.createElement("td"); totalTd.colSpan = 7;
-        const total = trackRows.reduce((s, r) => s + getClassCount(r.tplId), 0);
-        totalTd.innerHTML = `<span class="ss-total-label">↑ ${trackLabel} / ${groupLabel} 선택군 합계</span><span class="ss-total-val">${total}반</span>`;
+        const totalTd = document.createElement("td"); totalTd.colSpan = COL_COUNT;
+        const total = validRows.reduce((s, r) => s + getClassCount(r.tplId), 0);
+        totalTd.innerHTML = `<span class="ss-total-label">↑ ${grp.track} 선택군 합계</span><span class="ss-total-val">${total}반</span>`;
         totalRow.appendChild(totalTd); tbody.appendChild(totalRow);
       }
     });
 
     // Grade separator
     const sepRow = document.createElement("tr"); sepRow.className = "ss-grade-sep";
-    const sepTd = document.createElement("td"); sepTd.colSpan = 7; sepRow.appendChild(sepTd);
+    const sepTd = document.createElement("td"); sepTd.colSpan = COL_COUNT; sepRow.appendChild(sepTd);
     tbody.appendChild(sepRow);
   });
 
