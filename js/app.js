@@ -38,6 +38,9 @@ import { renderResultsView } from "./results.js";
 // ── TtCards + Group Manager imports ──────────────────────────────
 import { renderTtCardsView, renderGroupManagerView as renderGroupMgrFromTtCards, generateTtCards } from "./ttcards.js";
 
+// ── Subject Setup import ──────────────────────────────────────────
+import { renderSubjectSetupView } from "./subject-setup.js";
+
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");
 const loginBtn         = document.getElementById("loginBtn");
@@ -105,6 +108,8 @@ const resultsMgrView = document.getElementById("resultsMgmtView");
 const resultsContent = document.getElementById("resultsContent");
 const ttCardsMgrView  = document.getElementById("ttCardsMgmtView");
 const ttCardsContent  = document.getElementById("ttCardsContent");
+const subjectSetupMgrView = document.getElementById("subjectSetupView");
+const subjectSetupContent = document.getElementById("subjectSetupContent");
 
 // ── DOM: Student management sub-elements ──────────────────────────
 const classListEl       = document.getElementById("classList");
@@ -125,13 +130,14 @@ const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
 const navButtons = {
-  board:    navBoardBtn,
-  students: document.getElementById("navStudentsBtn"),
-  teachers: document.getElementById("navTeachersBtn"),
-  rosters:  document.getElementById("navRostersBtn"),
-  ttcards:  document.getElementById("navTtCardsBtn"),
-  groups:   document.getElementById("navGroupsBtn"),
-  results:  document.getElementById("navResultsBtn"),
+  board:        navBoardBtn,
+  students:     document.getElementById("navStudentsBtn"),
+  teachers:     document.getElementById("navTeachersBtn"),
+  subjectsetup: document.getElementById("navSubjectSetupBtn"),
+  rosters:      document.getElementById("navRostersBtn"),
+  ttcards:      document.getElementById("navTtCardsBtn"),
+  groups:       document.getElementById("navGroupsBtn"),
+  results:      document.getElementById("navResultsBtn"),
 };
 
 // ================================================================
@@ -150,9 +156,9 @@ export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("t
 function setView(view) {
   activeMainView = view;
   const allViews = {
-    board:   boardView,   groups:   groupMgrView,  manager: tplMgrView,
-    students:studentMgrView, teachers:teacherMgrView, rosters: rosterMgrView,
-    results: resultsMgrView, ttcards: ttCardsMgrView,
+    board:        boardView,        groups:  groupMgrView,      manager: tplMgrView,
+    students:     studentMgrView,   teachers:teacherMgrView,    rosters: rosterMgrView,
+    results:      resultsMgrView,   ttcards: ttCardsMgrView,    subjectsetup: subjectSetupMgrView,
   };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
   Object.values(navButtons).forEach(btn => btn?.classList.remove("active"));
@@ -420,6 +426,9 @@ navButtons.rosters?.addEventListener("click", () => {
   setView("rosters"); if (rosterContent) renderRosterView(rosterContent);
 });
 
+navButtons.subjectsetup?.addEventListener("click", () => {
+  setView("subjectsetup"); if (subjectSetupContent) renderSubjectSetupView(subjectSetupContent);
+});
 navButtons.results?.addEventListener("click", () => {
   setView("results"); if (resultsContent) renderResultsView(resultsContent);
 });
