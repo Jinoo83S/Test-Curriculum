@@ -164,7 +164,6 @@ function renderRosterDetail(panel, container) {
   const rcnt  = document.createElement("span"); rcnt.className = "student-count-badge"; rcnt.textContent = `${roster.length}명 수강`;
   rtitle.append(rname, rcnt);
   const ccWrap = document.createElement("div"); ccWrap.className = "roster-class-count-wrap";
-  const cc = getClassCount(selectedRosterTemplateId);
   if (cc > 0) {
     const ccBadge = document.createElement("span"); ccBadge.className = "roster-class-count-badge";
     ccBadge.textContent = `${cc}개 반`; ccBadge.title = "과목 설정에서 변경하세요";
