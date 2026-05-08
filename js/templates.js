@@ -67,6 +67,14 @@ export function getTemplateAppliedGrades(templateId) {
   return GRADE_KEYS.filter(grade => (appState.curriculum.gradeBoards[grade] || []).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId)).map(g => g.replace("학년",""));
 }
 
+export function getTemplateCredits(templateId) {
+  for (const grade of GRADE_KEYS) {
+    const row = (appState.curriculum.gradeBoards[grade] || []).find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId);
+    if (row && row.credits != null && row.credits !== "") return row.credits;
+  }
+  return null;
+}
+
 const MIDDLE_GRADES = ["7학년","8학년","9학년"];
 const HIGH_GRADES   = ["10학년","11학년","12학년"];
 
@@ -313,6 +321,8 @@ function createGroupManagerCard(item) {
   const tRow = document.createElement("div"); tRow.className = "group-mgr-card-top";
   const t = document.createElement("div"); t.className = "group-mgr-card-title"; t.textContent = getTemplateCardTitle(item);
   tRow.appendChild(t);
+  const credits = getTemplateCredits(item.id);
+  if (credits != null) { const cb = document.createElement("span"); cb.className = "group-mgr-card-credits"; cb.textContent = credits; tRow.appendChild(cb); }
   if (item.schoolLevel && item.schoolLevel !== "공통") { const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot); }
   // Bottom row: teacher name (left) + grade chips (right)
   const botRow = document.createElement("div"); botRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";
@@ -343,8 +353,16 @@ function restoreScroll(snap) {
 function createUnitBlock(groupId, unit, onStructureChange) {
   const wrap = document.createElement("div"); wrap.className = "group-unit-block";
 
-  // ── Header: only × button (no name input per req #3) ──
+  // ── Header: "묶음수업" label + (동일수업 badge) + × button ──
   const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
+  const unitLabel = document.createElement("span"); unitLabel.className = "group-unit-label"; unitLabel.textContent = "묶음수업";
+  hdr.appendChild(unitLabel);
+  if (unit.templateIds.length > 1) {
+    const sameBadge = document.createElement("span"); sameBadge.className = "group-unit-same-badge";
+    sameBadge.textContent = "🔗 동일 수업"; sameBadge.title = "이름·학년이 달라도 실제 같은 수업으로 처리됩니다.";
+    hdr.appendChild(sameBadge);
+  }
+  const spacer = document.createElement("span"); spacer.style.flex = "1"; hdr.appendChild(spacer);
   const delUnitBtn = makeBtn("×", "group-unit-del-btn", () => {
     if (!canEdit()) return;
     const g = groups().find(g => g.id === groupId); if (!g) return;
@@ -380,14 +398,6 @@ function createUnitBlock(groupId, unit, onStructureChange) {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
-
-  // Visual badge: if this unit has 2+ templates it means "same classroom"
-  if (unit.templateIds.length > 1) {
-    const sameBadge = document.createElement("div"); sameBadge.className = "group-unit-classroom-badge";
-    sameBadge.textContent = "🏫 같은 교실"; sameBadge.title = "이 수업묶음 안의 과목들은 같은 교실에서 진행됩니다.";
-    wrap.appendChild(sameBadge);
-  }
-
   return wrap;
 }
 
@@ -413,7 +423,13 @@ function createGroupBlock(groupId, onStructureChange) {
 
   const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit();
-  hdr.append(collapseBtn, nameInp, delBtn); block.appendChild(hdr);
+  const hdrSpacer = document.createElement("span"); hdrSpacer.style.flex = "1";
+  hdr.append(collapseBtn, nameInp, hdrSpacer, delBtn); block.appendChild(hdr);
+
+  // Concurrent hint
+  const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
+  hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다.";
+  block.appendChild(hint);
 
   // ── Body (collapsible) ──
   const body = document.createElement("div"); body.className = "group-block-body";
@@ -424,7 +440,7 @@ function createGroupBlock(groupId, onStructureChange) {
   const groupedNoUnit = templates().filter(t => gmLevelFilter(t) && t.calcGroupId === groupId && !allUnitTplIds.has(t.id));
   if (groupedNoUnit.length) {
     const poolDiv = document.createElement("div"); poolDiv.className = "group-ungrouped-pool";
-    const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-label"; poolLbl.textContent = "수업묶음에 배정 전";
+    const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-label"; poolLbl.textContent = "같은 시간에 배정되는 과목들";
     const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
     poolCards.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); poolCards.classList.add("dragover"); });
     poolCards.addEventListener("dragleave", () => poolCards.classList.remove("dragover"));
@@ -500,8 +516,8 @@ function _buildGroupManagerDOM(board, onStructureChange, onRender) {
       rows.forEach(row => {
         if (row.category !== "교과") return;   // 창체 등 비교과 제외
         if (!row.track || row.track === "공통") return;
-        const groupKey = `${row.track}::${row.group||"기타"}`;
-        if (!trackMap[groupKey]) trackMap[groupKey] = { name: `${row.track} / ${row.group||"기타"}`, tplIds: new Set() };
+        const groupKey = `${row.track}::${gradeKey}`;
+        if (!trackMap[groupKey]) trackMap[groupKey] = { name: `${row.track} / ${gradeKey}`, tplIds: new Set() };
         [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tid => trackMap[groupKey].tplIds.add(tid));
       });
     });

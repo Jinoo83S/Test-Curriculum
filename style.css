@@ -2870,13 +2870,36 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .group-block-body { display: flex; flex-direction: column; gap: 6px; }
 
 /* ── Unit block: no name row, horizontal card wrap ───────────────── */
-.group-unit-hdr { display: flex; justify-content: flex-end; margin-bottom: 3px; }
+.group-unit-hdr { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; }
+.group-unit-label { font-size: 11px; font-weight: 700; color: #374151; flex-shrink: 0; }
+.group-unit-same-badge {
+  display: inline-flex; align-items: center;
+  font-size: 9px; font-weight: 600;
+  color: #0369a1; background: #e0f2fe;
+  border: 1px solid #7dd3fc; border-radius: 4px;
+  padding: 1px 6px; cursor: help; flex-shrink: 0;
+}
 .group-unit-cards {
   display: flex; flex-direction: row; flex-wrap: wrap;
   gap: 4px; min-height: 36px; padding: 4px;
   border: 1.5px dashed #d1d5db; border-radius: 5px; background: white;
 }
 .group-unit-cards.dragover { border-color: #2563eb; background: #dbeafe; }
+
+/* Credits badge on group manager card */
+.group-mgr-card-credits {
+  flex-shrink: 0; font-size: 9px; font-weight: 700;
+  color: #1d4ed8; background: #dbeafe;
+  border: 1px solid #93c5fd; border-radius: 3px;
+  padding: 0 4px; line-height: 16px;
+}
+
+/* Concurrent hint under group header */
+.group-concurrent-hint {
+  font-size: 10px; color: #6b7280;
+  padding: 2px 6px 4px;
+  font-style: italic;
+}
 
 /* ── Group manager card: compact size ───────────────────────────── */
 .group-mgr-card {

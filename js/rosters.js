@@ -248,6 +248,10 @@ function renderRosterDetail(panel, container) {
     if (filterGrade !== "전체" && c.grade !== filterGrade) return false;
     if (filterClass !== "전체" && c.name  !== filterClass) return false;
     return c.students.length > 0;
+  }).sort((a, b) => {
+    const gi = GRADE_KEYS.indexOf(a.grade) - GRADE_KEYS.indexOf(b.grade);
+    if (gi !== 0) return gi;
+    return a.name.localeCompare(b.name, "ko");
   });
   if (!filteredClasses.length) {
     const nc = document.createElement("div"); nc.className = "manager-empty"; nc.textContent = "조건에 맞는 반이 없습니다."; classesArea.appendChild(nc);
