@@ -2,11 +2,11 @@
 // rosters.js · Subject-Student Roster Mutations + View Rendering
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { makeBtn, languageClass, sectionLabel, gradeDisplay } from "./utils.js";
+import { makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave } from "./state.js";
 import { getClasses, getClassById } from "./students.js";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, getTemplateAppliedGrades } from "./templates.js";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js";
 
 const rDomain    = () => appState.rosters;
 const rosters    = () => rDomain().rosters;
