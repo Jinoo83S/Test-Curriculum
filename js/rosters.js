@@ -95,7 +95,7 @@ export function renderRosterView(container) {
   gfSel.addEventListener("change", e => { rosterGradeFilter = e.target.value; renderRosterView(container); });
   leftHdr.append(leftTitle, gfSel); leftPanel.appendChild(leftHdr);
 
-  const tplList = document.createElement("div"); tplList.className = "roster-template-list";
+  const tplList = document.createElement("div"); tplList.className = "roster-template-list"; tplList.id = "rosterTplList";
   const ftpl = getPlacedTemplates(rosterGradeFilter);
   if (!ftpl.length) {
     const e = document.createElement("div"); e.className = "roster-template-empty"; e.textContent = "해당 학년에 배치된 과목이 없습니다."; tplList.appendChild(e);
@@ -123,7 +123,18 @@ export function renderRosterView(container) {
       const cc = getClassCount(tpl.id);
       if (cc > 0) { const b = document.createElement("span"); b.className = "roster-section-badge"; b.textContent = `${cc}반`; metaRow.appendChild(b); }
       item.append(lbl, metaRow);
-      item.addEventListener("click", () => { selectedRosterTemplateId = tpl.id; selectedSection = 0; renderRosterView(container); });
+      item.addEventListener("click", () => {
+        const existingList = document.getElementById("rosterTplList");
+        const scrollPos = existingList ? existingList.scrollTop : 0;
+        selectedRosterTemplateId = tpl.id;
+        selectedSection = 0;
+        filterGrade = gradeKey; filterClass = "전체";
+        renderRosterView(container);
+        requestAnimationFrame(() => {
+          const newList = document.getElementById("rosterTplList");
+          if (newList) newList.scrollTop = scrollPos;
+        });
+      });
       return item;
     };
 
@@ -227,6 +238,32 @@ function renderRosterDetail(panel, container) {
   // No add area in "전체" tab
   if (multi && selectedSection === -1) return;
 
+  // Build competing template IDs (same track+grade, not this template)
+  const competingTplIds = new Set();
+  for (const grade of GRADE_KEYS) {
+    const board = appState.curriculum.gradeBoards[grade] || [];
+    const selectedRow = board.find(r => r.sem1TemplateId === selectedRosterTemplateId || r.sem2TemplateId === selectedRosterTemplateId);
+    if (!selectedRow || selectedRow.track === "공통") continue;
+    board.forEach(row => {
+      if (row.track !== selectedRow.track) return;
+      [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tid => {
+        if (tid !== selectedRosterTemplateId) competingTplIds.add(tid);
+      });
+    });
+  }
+  // Map: studentId → competing template name (for tooltip)
+  const competingMap = new Map(); // studentId → tplName
+  if (competingTplIds.size > 0) {
+    competingTplIds.forEach(tid => {
+      const tpl = getTemplateById(tid); if (!tpl) return;
+      const competingRoster = getRoster(tid);
+      competingRoster.forEach(entry => {
+        if (!competingMap.has(entry.studentId))
+          competingMap.set(entry.studentId, getTemplateCardTitle(tpl));
+      });
+    });
+  }
+
   // Add area
   const addTitle = document.createElement("div"); addTitle.className = "roster-section-title";
   addTitle.textContent = multi ? `학생 배정 → ${sectionLabel(selectedSection)} (반에서 선택)` : "학생 추가 (반에서 선택)";
@@ -271,9 +308,11 @@ function renderRosterDetail(panel, container) {
         const inThis = entry !== undefined && (!multi || curSec === selectedSection);
         const inOther = entry !== undefined && multi && curSec !== selectedSection;
         const stuBtn = document.createElement("button"); stuBtn.type = "button";
-        stuBtn.className = "roster-stu-chip" + (inThis ? " enrolled" : "") + (inOther ? " in-other-section" : "");
+        const inCompeting = competingMap.has(s.id);
+        stuBtn.className = "roster-stu-chip" + (inThis ? " enrolled" : "") + (inOther ? " in-other-section" : "") + (inCompeting && !inThis ? " in-competing" : "");
         stuBtn.textContent = s.name || "(이름없음)";
         if (inOther) stuBtn.title = `현재 ${sectionLabel(curSec)} → 클릭시 ${sectionLabel(selectedSection)}으로 이동`;
+        else if (inCompeting && !inThis) stuBtn.title = `${competingMap.get(s.id)} 수강 중`;
         stuBtn.disabled = !canEdit();
         stuBtn.addEventListener("click", () => {
           if (inThis) removeFromRoster(selectedRosterTemplateId, cls.id, s.id);

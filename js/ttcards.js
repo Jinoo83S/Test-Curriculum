@@ -274,26 +274,28 @@ function createGroupBlockGM(groupId, onStructureChange) {
   (grpObj.units||[]).forEach(unit => unitsWrap.appendChild(createUnitBlockGM(groupId, unit, onStructureChange)));
   body.appendChild(unitsWrap);
 
-  // ── Pool area: cards in group but not in any unit ──────────────
+  // ── Pool area: cards in group but not in any unit (always visible for drop) ──
+  const poolArea = document.createElement("div"); poolArea.className = "group-pool-area";
+  const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-area-label";
+  poolLbl.textContent = "그룹 카드 (묶음수업 미배정)";
+  poolArea.appendChild(poolLbl);
+  const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
+  setupDropZone(poolCards, drag => {
+    if (drag.kind !== "ttcard") return;
+    grps().forEach(g => {
+      g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
+      if (g.id !== groupId) g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
+    });
+    if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
+    if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
+    scheduleSave("templates"); onStructureChange();
+  });
   const unitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
   const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id));
-  if (poolIds.length > 0) {
-    const poolArea = document.createElement("div"); poolArea.className = "group-pool-area";
-    const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-area-label";
-    poolLbl.textContent = "그룹 카드 (묶음수업 미배정)";
-    poolArea.appendChild(poolLbl);
-    const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
-    setupDropZone(poolCards, drag => {
-      if (drag.kind !== "ttcard") return;
-      // Remove from other group's units/pools
-      grps().forEach(g => {
-        g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
-        if (g.id !== groupId) g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
-      });
-      if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
-      if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
-      scheduleSave("templates"); onStructureChange();
-    });
+  if (poolIds.length === 0) {
+    const ph = document.createElement("div"); ph.className = "group-pool-empty-hint";
+    ph.textContent = "미배정 카드를 여기로 드래그"; poolCards.appendChild(ph);
+  } else {
     poolIds.forEach(id => {
       const card = getTtCardById(id); if (!card) return;
       const chip = createTtCardChip(card);
@@ -301,8 +303,8 @@ function createGroupBlockGM(groupId, onStructureChange) {
       chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
       poolCards.appendChild(chip);
     });
-    poolArea.appendChild(poolCards); body.appendChild(poolArea);
   }
+  poolArea.appendChild(poolCards); body.appendChild(poolArea);
 
   const addUnitBtn = makeBtn("+ 묶음수업 추가", "group-add-unit-btn", () => {
     if (!canEdit()) return;
