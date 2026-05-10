@@ -249,18 +249,9 @@ function createGroupBlockGM(groupId, onStructureChange) {
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
   const sp = document.createElement("span"); sp.style.flex = "1";
-  const resetBtn = makeBtn("초기화", "group-reset-btn", () => {
-    if (!canEdit()) return;
-    if (!confirm(`"${grpObj.name}" 그룹의 모든 묶음수업을 해제하고 카드를 그룹 풀로 되돌릴까요?`)) return;
-    // Move all ttcardIds from all units back to poolCardIds
-    const allIds = (grpObj.units||[]).flatMap(u => u.ttcardIds||[]);
-    grpObj.units = [];
-    grpObj.poolCardIds = [...new Set([...(grpObj.poolCardIds||[]), ...allIds])];
-    scheduleSave("templates"); onStructureChange();
-  }); resetBtn.disabled = !canEdit();
   const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit();
-  hdr.append(colBtn, nameInp, sp, resetBtn, delBtn); block.appendChild(hdr);
+  hdr.append(colBtn, nameInp, sp, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
   hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
@@ -356,7 +347,7 @@ function buildGroupManagerDOM(board) {
     filterBar.appendChild(btn);
   });
 
-  // Auto-gen button (creates groups from ttcards)
+  // Auto-gen button
   const autoGenBtn = makeBtn("✨ 자동 생성", "group-auto-gen-btn", () => {
     if (!canEdit()) return;
     const cards = getTtCards().filter(c => gmLevelFilter(c));
@@ -404,6 +395,18 @@ function buildGroupManagerDOM(board) {
   });
   autoGenBtn.disabled = !canEdit();
   filterBar.appendChild(autoGenBtn);
+
+  const resetAllBtn = makeBtn("🔄 전체 초기화", "group-reset-all-btn", () => {
+    if (!canEdit()) return;
+    if (!confirm("모든 그룹의 묶음수업을 해제하고 카드를 그룹 풀로 되돌릴까요?\n(그룹 자체는 삭제되지 않습니다)")) return;
+    grps().forEach(grp => {
+      const allIds = (grp.units||[]).flatMap(u => u.ttcardIds||[]);
+      grp.units = [];
+      grp.poolCardIds = [...new Set([...(grp.poolCardIds||[]), ...allIds])];
+    });
+    scheduleSave("templates"); onStructureChange();
+  }); resetAllBtn.disabled = !canEdit();
+  filterBar.appendChild(resetAllBtn);
   board.appendChild(filterBar);
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";

@@ -3290,12 +3290,12 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 
 /* ── Roster: competing course student chip ───────────────────── */
 .roster-stu-chip.in-competing {
-  background: #fef9c3;
-  border-color: #f59e0b;
-  color: #92400e;
-  opacity: .85;
+  background: #fee2e2;
+  border-color: #f87171;
+  color: #991b1b;
+  opacity: .9;
 }
-.roster-stu-chip.in-competing:hover { background: #fef3c7; }
+.roster-stu-chip.in-competing:hover { background: #fecaca; }
 
 /* ── Group pool empty drop hint ─────────────────────────────── */
 .group-pool-empty-hint {
@@ -3303,3 +3303,14 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   text-align: center; padding: 6px 0;
   pointer-events: none;
 }
+
+/* ── Group manager: reset-all button ────────────────────────── */
+.group-reset-all-btn {
+  font-size: 11px; padding: 4px 10px;
+  border: 1px solid #f87171; border-radius: 6px;
+  background: #fef2f2; color: #b91c1c;
+  cursor: pointer; font-weight: 600;
+  transition: background .1s;
+}
+.group-reset-all-btn:hover { background: #fee2e2; }
+.group-reset-all-btn:disabled { opacity: .4; cursor: default; }

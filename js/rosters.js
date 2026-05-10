@@ -83,6 +83,9 @@ function getPlacedTemplates(gf) {
 
 // ── Main Render ───────────────────────────────────────────────────
 export function renderRosterView(container) {
+  // Preserve both panel scroll positions across re-renders
+  const prevRightScroll = document.getElementById("rosterRightPanel")?.scrollTop ?? 0;
+  const prevLeftScroll  = document.getElementById("rosterTplList")?.scrollTop ?? 0;
   container.innerHTML = "";
   const layout = document.createElement("div"); layout.className = "roster-layout";
 
@@ -124,16 +127,10 @@ export function renderRosterView(container) {
       if (cc > 0) { const b = document.createElement("span"); b.className = "roster-section-badge"; b.textContent = `${cc}반`; metaRow.appendChild(b); }
       item.append(lbl, metaRow);
       item.addEventListener("click", () => {
-        const existingList = document.getElementById("rosterTplList");
-        const scrollPos = existingList ? existingList.scrollTop : 0;
         selectedRosterTemplateId = tpl.id;
         selectedSection = 0;
         filterGrade = gradeKey; filterClass = "전체";
         renderRosterView(container);
-        requestAnimationFrame(() => {
-          const newList = document.getElementById("rosterTplList");
-          if (newList) newList.scrollTop = scrollPos;
-        });
       });
       return item;
     };
@@ -149,13 +146,18 @@ export function renderRosterView(container) {
   }
   leftPanel.appendChild(tplList);
 
-  const rightPanel = document.createElement("div"); rightPanel.className = "roster-right";
+  const rightPanel = document.createElement("div"); rightPanel.className = "roster-right"; rightPanel.id = "rosterRightPanel";
   if (!selectedRosterTemplateId) {
     const e = document.createElement("div"); e.className = "roster-right-empty"; e.textContent = "왼쪽에서 과목을 선택하세요"; rightPanel.appendChild(e);
   } else { renderRosterDetail(rightPanel, container); }
 
   layout.append(leftPanel, rightPanel);
   container.appendChild(layout);
+  // Restore scroll positions
+  requestAnimationFrame(() => {
+    const rp = document.getElementById("rosterRightPanel"); if (rp) rp.scrollTop = prevRightScroll;
+    const lp = document.getElementById("rosterTplList");   if (lp) lp.scrollTop = prevLeftScroll;
+  });
 }
 
 // ── Detail ────────────────────────────────────────────────────────
