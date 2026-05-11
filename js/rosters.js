@@ -125,10 +125,8 @@ export function renderRosterView(container) {
       // Section badge
       const cc = getClassCount(tpl.id);
       if (cc > 0) {
-        const secLabel = cc === 1 ? sectionLabel(0) : "M";
         const b = document.createElement("span"); b.className = "roster-section-badge";
-        b.textContent = secLabel; b.title = cc > 1 ? `${cc}개 반 (Mixed)` : sectionLabel(0) + "반";
-        metaRow.appendChild(b);
+        b.textContent = `${cc}반`; metaRow.appendChild(b);
       }
       item.append(lbl, metaRow);
       item.addEventListener("click", () => {

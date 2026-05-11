@@ -12,7 +12,17 @@ import {
 } from "./templates.js";
 import { getClassCount } from "./rosters.js";
 
-// ── Accessors ──────────────────────────────────────────────────────
+function getSectionLabelFromRoster(card) {
+  // Derive section label from enrolled students in the roster
+  const entries = (appState.rosters?.rosters?.[card.templateId] || []);
+  if (!entries.length) return getClassCount(card.templateId) > 1 ? sectionLabel(card.sectionIdx) : null;
+  const sections = [...new Set(entries.map(e => e.sectionIdx ?? 0))];
+  if (sections.length === 1) return sectionLabel(sections[0]);
+  // Multiple sections → show per-card section if ttcards are split, else M
+  const cardEntries = entries.filter(e => (e.sectionIdx ?? 0) === card.sectionIdx);
+  if (cardEntries.length > 0) return sectionLabel(card.sectionIdx);
+  return sectionLabel(card.sectionIdx);
+}
 export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
 const grps = () => appState.templates.templateGroups || [];
@@ -168,7 +178,8 @@ function createTtCardChip(card) {
   nameEl.textContent = getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
   tRow.appendChild(nameEl);
   if (credits != null) { const cb = document.createElement("span"); cb.className = "group-mgr-card-credits"; cb.textContent = credits; tRow.appendChild(cb); }
-  if (cc > 1) { const sb = document.createElement("span"); sb.className = "group-mgr-card-classcount"; sb.textContent = sectionLabel(card.sectionIdx); tRow.appendChild(sb); }
+  const secLbl = getSectionLabelFromRoster(card);
+  if (secLbl) { const sb = document.createElement("span"); sb.className = "group-mgr-card-classcount"; sb.textContent = secLbl; tRow.appendChild(sb); }
 
   // Bottom row: teacher + grade
   const bRow = document.createElement("div"); bRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";

@@ -22,8 +22,12 @@ export const initialLoad = {
 // ── Per-domain save timers ────────────────────────────────────────
 const saveTimers = {};
 
+let _onSaveStatus = null;
+export const setOnSaveStatus = (cb) => { _onSaveStatus = cb; };
+
 export function scheduleSave(domain) {
   if (!canEdit() || !initialLoad[domain]) return;
+  _onSaveStatus?.("saving");
   clearTimeout(saveTimers[domain]);
   saveTimers[domain] = setTimeout(() => saveNow(domain), 300);
 }
@@ -32,8 +36,10 @@ export async function saveNow(domain) {
   if (!canEdit() || !initialLoad[domain]) return;
   try {
     await setDoc(refs[domain], { ...appState[domain], updatedAt: serverTimestamp() });
+    _onSaveStatus?.("saved");
   } catch (e) {
     console.error(`Save failed [${domain}]:`, e);
+    _onSaveStatus?.("error", e);
   }
 }
 

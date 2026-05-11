@@ -3,7 +3,7 @@
 // ================================================================
 import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
-import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
+import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus } from "./state.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, fixChanCheCredits } from "./curriculum.js";
@@ -235,13 +235,15 @@ function render(domain) {
       activeMainView === "groups" || activeMainView === "manager") {
     renderSidebar();
   }
-  if (activeMainView === "board") renderBoardTab();
+  if (activeMainView === "board\") renderBoardTab();
   if (activeMainView === "groups") renderGroupManagerView();
   if (activeMainView === "manager") renderTemplateManagerView();
   if (activeMainView === "students") renderStudentView();
   if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
   if (activeMainView === "rosters"  && rosterContent)  renderRosterView(rosterContent);
   if (activeMainView === "results"  && resultsContent) renderResultsView(resultsContent);
+  if (activeMainView === "subjectsetup" && subjectSetupContent) renderSubjectSetupView(subjectSetupContent);
+  if (activeMainView === "ttcards"      && ttCardsContent)      renderTtCardsView(ttCardsContent);
   renderTabBtns();
 }
 
@@ -352,6 +354,22 @@ function updateAuthUI(user) {
 // BOOTSTRAP
 // ================================================================
 setOnUpdate(domain => render(domain));
+
+// ── Save status indicator ─────────────────────────────────────────
+const saveStatusEl = document.getElementById("saveStatusEl");
+let saveStatusTimer = null;
+setOnSaveStatus((status, err) => {
+  if (!saveStatusEl) return;
+  clearTimeout(saveStatusTimer);
+  if (status === "saving") {
+    saveStatusEl.textContent = "💾 저장 중…"; saveStatusEl.className = "save-status saving";
+  } else if (status === "saved") {
+    saveStatusEl.textContent = "✅ 저장됨"; saveStatusEl.className = "save-status saved";
+    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; }, 2500);
+  } else {
+    saveStatusEl.textContent = "⚠️ 저장 실패 (네트워크 또는 권한 확인)"; saveStatusEl.className = "save-status error";
+  }
+});
 
 // Req 2: when table edits happen, sync sidebar + board immediately
 setOnTemplateChange(() => {

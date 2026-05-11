@@ -2706,13 +2706,15 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .group-block-hdr {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: nowrap;
+  width: 100%;
 }
 
 .group-block-name {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
+  width: 0;       /* force flex to ignore intrinsic size */
   font-size: 13px;
   font-weight: 700;
   color: #1e3a5f;
@@ -2720,6 +2722,7 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   border-radius: 5px;
   padding: 4px 8px;
   background: #f8fafc;
+  box-sizing: border-box;
 }
 .group-block-name:focus { border-color: #2563eb; outline: none; background: white; }
 
@@ -3325,3 +3328,13 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 .roster-nocompete-btn:hover { background: #fde68a; }
 .roster-nocompete-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Save status indicator ──────────────────────────────────── */
+.save-status {
+  font-size: 11px; font-weight: 600; padding: 2px 8px;
+  border-radius: 4px; white-space: nowrap; transition: all .2s;
+  min-width: 0;
+}
+.save-status.saving { color: #1d4ed8; background: rgba(219,234,254,.5); }
+.save-status.saved  { color: #166534; background: rgba(220,252,231,.5); }
+.save-status.error  { color: #991b1b; background: rgba(254,226,226,.8); font-size: 10px; }
