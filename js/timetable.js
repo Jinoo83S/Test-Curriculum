@@ -470,9 +470,11 @@ function renderAllClassesGrid(wrap) {
           if (e.day !== day || e.period !== period) return false;
           const eGrades = e.gradeKeys?.length ? e.gradeKeys : [e.gradeKey].filter(Boolean);
           if (!eGrades.includes(cls.gradeKey)) return false;
+          // Multi-grade entry (chapel, MS group) → show in every row of matching grade
+          if (eGrades.length > 1 || e.groupId) return true;
           const eSec = e.sectionIdx ?? 0;
           if (eSec === cls.sectionIdx) return true;
-          // M-card: show in all rows where roster has students from this class
+          // Check roster membership for M-cards
           const tplId = e.templateId || e.templateIds?.[0];
           if (!tplId) return false;
           const allRosterEntries = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx??0) === eSec);
@@ -600,24 +602,10 @@ function entryHasGrade(e, grade) {
   return entryGradeKeys(e).includes(grade);
 }
 function entryTitle(e) {
-  // ttcard-based unit
-  if (e.unitId) {
-    const grp  = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
-    const unit = grp?.units.find(u => u.id === e.unitId);
-    if (unit) {
-      const ttcards = getTtCards();
-      const cards   = (unit.ttcardIds || []).map(id => ttcards.find(c => c.id === id)).filter(Boolean);
-      if (cards.length) {
-        const names = cards.map(c => {
-          const tpl = getTemplateById(c.templateId);
-          const base = tpl ? getTemplateCardTitle(tpl) : "?";
-          const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[c.templateId]?.classCount) || 1);
-          return cc > 1 ? `${base} ${sectionLabel(c.sectionIdx)}` : base;
-        });
-        return [...new Set(names)].join(" / ");
-      }
-      return getUnitDisplayTitle(unit);
-    }
+  // Group entry → show group name
+  if (e.groupId) {
+    const grp = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
+    if (grp?.name) return grp.name;
   }
   // ttcard standalone
   if (e.ttcardId) {
@@ -775,12 +763,29 @@ function handleDrop(data, day, period) {
     }
   }
 
-  // 3. Single ttcard drop
+  // 3. Single ttcard drop (or pool card with groupId)
   if (data.ttcardId) {
     const card = getTtCardById(data.ttcardId);
     if (card) {
       const tpl = getTemplateById(card.templateId);
       const teacherName = tpl ? splitTeacherNames([tpl.teacher, tpl.sem1Teacher, tpl.sem2Teacher].join(",")).filter(Boolean).join(",") : "";
+      // If card belongs to a group pool, find all sibling cards in the pool for the same template
+      const grpId = data.groupId;
+      if (grpId) {
+        const grp = (appState.templates.templateGroups||[]).find(g=>g.id===grpId);
+        if (grp) {
+          const poolCards = (grp.poolCardIds||[]).map(id=>getTtCardById(id)).filter(Boolean);
+          const templateCards = poolCards.filter(c=>c.templateId===card.templateId);
+          const allCards = templateCards.length > 1 ? templateCards : [card];
+          const gradeKeys = [...new Set(allCards.map(c=>c.gradeKey))];
+          const ttcardIds = allCards.map(c=>c.id);
+          addEntry({ day, period, sectionIdx: card.sectionIdx,
+            groupId: grpId, ttcardIds, gradeKeys,
+            templateId: card.templateId, gradeKey: gradeKeys[0],
+            teacherName, roomId: null, ttcardId: card.id });
+          recomputeConflicts(); renderAll(); return;
+        }
+      }
       addEntry({ day, period, templateId: card.templateId, sectionIdx: card.sectionIdx,
         gradeKey: card.gradeKey, teacherName, roomId: null, ttcardId: card.id });
       recomputeConflicts(); renderAll(); return;
