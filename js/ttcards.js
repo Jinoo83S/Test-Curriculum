@@ -181,7 +181,7 @@ function createTtCardChip(card) {
   const nameEl = document.createElement("div"); nameEl.className = "group-mgr-card-title";
   nameEl.textContent = getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
   tRow.appendChild(nameEl);
-  if (credits != null) { const cb = document.createElement("span"); cb.className = "group-mgr-card-credits"; cb.textContent = credits; tRow.appendChild(cb); }
+  if (credits != null) { /* credits hidden in group manager */ }
   const secLbl = getSectionLabelFromRoster(card);
   if (secLbl) { const sb = document.createElement("span"); sb.className = "group-mgr-card-classcount"; sb.textContent = secLbl; tRow.appendChild(sb); }
 
@@ -512,7 +512,24 @@ function buildGroupManagerDOM(board) {
   if (unassigned.length) {
     unassigned.forEach(c => {
       const wrap = document.createElement("div"); wrap.className = "group-unassigned-card-wrap";
-      wrap.appendChild(createTtCardChip(c)); unPool.appendChild(wrap);
+      const chip = createTtCardChip(c);
+      if (canEdit()) {
+        const delBtn = document.createElement("button"); delBtn.type = "button";
+        delBtn.className = "group-card-del-btn"; delBtn.textContent = "×"; delBtn.title = "카드 삭제";
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (!confirm(`"${getTtCardLabel(c)}" 카드를 삭제할까요?`)) return;
+          grps().forEach(g => {
+            g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== c.id);
+            (g.units||[]).forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== c.id); });
+          });
+          appState.timetable.ttcards = (appState.timetable.ttcards||[]).filter(x => x.id !== c.id);
+          appState.timetable.entries = (appState.timetable.entries||[]).filter(e => e.ttcardId !== c.id && !(e.ttcardIds||[]).includes(c.id));
+          scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
+        };
+        chip.style.position = "relative"; chip.appendChild(delBtn);
+      }
+      wrap.appendChild(chip); unPool.appendChild(wrap);
     });
   } else {
     const ph = document.createElement("div"); ph.className = "group-col-placeholder"; ph.textContent = "모든 카드가 배정됨"; unPool.appendChild(ph);

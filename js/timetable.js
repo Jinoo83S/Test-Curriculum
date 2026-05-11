@@ -472,13 +472,15 @@ function renderAllClassesGrid(wrap) {
           if (!eGrades.includes(cls.gradeKey)) return false;
           const eSec = e.sectionIdx ?? 0;
           if (eSec === cls.sectionIdx) return true;
-          // "M" card: check if this entry's template has students from this class enrolled
+          // M-card: show in all rows where roster has students from this class
           const tplId = e.templateId || e.templateIds?.[0];
           if (!tplId) return false;
-          const rosterEnt = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx??0) === eSec);
+          const allRosterEntries = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx??0) === eSec);
           const allCls = appState.classes?.classes || [];
-          const classNames = rosterEnt.map(re => allCls.find(c => c.id === re.classId && c.grade === cls.gradeKey)?.name).filter(Boolean);
-          return classNames.includes(cls.section);
+          return allRosterEntries.some(re => {
+            const clsObj = allCls.find(c => c.id === re.classId);
+            return clsObj && clsObj.grade === cls.gradeKey && clsObj.name === cls.section;
+          });
         });
 
         if (slotEntries.length) slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { compact: true })));
@@ -606,12 +608,13 @@ function entryTitle(e) {
       const ttcards = getTtCards();
       const cards   = (unit.ttcardIds || []).map(id => ttcards.find(c => c.id === id)).filter(Boolean);
       if (cards.length) {
-        return cards.map(c => {
+        const names = cards.map(c => {
           const tpl = getTemplateById(c.templateId);
           const base = tpl ? getTemplateCardTitle(tpl) : "?";
           const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[c.templateId]?.classCount) || 1);
           return cc > 1 ? `${base} ${sectionLabel(c.sectionIdx)}` : base;
-        }).join(" / ");
+        });
+        return [...new Set(names)].join(" / ");
       }
       return getUnitDisplayTitle(unit);
     }
@@ -694,7 +697,7 @@ function buildEntryCard(entry, opts = {}) {
   const row2 = document.createElement("div"); row2.className = "tt-entry-row2";
 
   const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
-  teacherEl.textContent = teachers.join(", ") || "";
+  teacherEl.textContent = [...new Set(teachers)].join(", ") || "";
   row2.appendChild(teacherEl);
 
   if (showGrade && displayGrades.length) {
@@ -1091,28 +1094,33 @@ function renderSubjectPanelLegacy(panel) {
 
 function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, sectionIdx, groupName }) {
   const card = document.createElement("div");
-  card.className = "tt-subject-card" + (isDone ? " tt-subject-done" : "");
+  card.className = "tt-subject-card tt-sc-compact" + (isDone ? " tt-subject-done" : "");
   card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
   card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
   card.draggable = canEdit() && !isDone;
-  const topRow = document.createElement("div"); topRow.className = "tt-sc-top";
+
+  // Row 1: title + 시수 badge
+  const row1 = document.createElement("div"); row1.className = "tt-sc-row1";
   const nameEl = document.createElement("div"); nameEl.className = "tt-sc-name"; nameEl.textContent = title;
   const badge  = document.createElement("span"); badge.className = "tt-sc-badge";
   badge.textContent = `${assigned}/${credits}`;
   badge.style.background = isDone ? "#dcfce7" : assigned > 0 ? "#fef9c3" : "#f1f5f9";
   badge.style.color = isDone ? "#166534" : "#374151";
-  topRow.append(nameEl, badge);
-  const botRow = document.createElement("div"); botRow.className = "tt-sc-bot";
-  botRow.textContent = teachers.join(", ") || "-";
-  const chipRow = document.createElement("div"); chipRow.style.cssText = "display:flex;gap:2px;flex-wrap:wrap;margin-top:2px";
+  row1.append(nameEl, badge);
+
+  // Row 2: teacher + grade chips (right)
+  const row2 = document.createElement("div"); row2.className = "tt-sc-row2";
+  const tchEl = document.createElement("div"); tchEl.className = "tt-sc-teacher";
+  tchEl.textContent = [...new Set(teachers)].join(", ") || "-";
+  const chipWrap = document.createElement("div"); chipWrap.className = "tt-sc-grade-chips";
   gradeKeys.forEach(g => {
     const chip = document.createElement("span");
-    chip.style.cssText = `font-size:9px;font-weight:700;padding:1px 4px;border-radius:999px;background:${getGradeColor(g).border};color:white;white-space:nowrap`;
-    chip.textContent = gradeDisplay(g); chipRow.appendChild(chip);
+    chip.style.cssText = `font-size:8px;font-weight:700;padding:0 4px;line-height:14px;border-radius:999px;background:${getGradeColor(g).border};color:white;white-space:nowrap`;
+    chip.textContent = gradeDisplay(g); chipWrap.appendChild(chip);
   });
-  card.append(topRow, botRow, chipRow);
+  row2.append(tchEl, chipWrap);
+  card.append(row1, row2);
 
-  // Click → show detail popup (시수/분반/배정현황)
   card.addEventListener("click", ev => {
     if (ev.defaultPrevented) return;
     showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName });
