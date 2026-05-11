@@ -469,7 +469,16 @@ function renderAllClassesGrid(wrap) {
         const slotEntries = entries().filter(e => {
           if (e.day !== day || e.period !== period) return false;
           const eGrades = e.gradeKeys?.length ? e.gradeKeys : [e.gradeKey].filter(Boolean);
-          return eGrades.includes(cls.gradeKey) && (e.sectionIdx ?? 0) === cls.sectionIdx;
+          if (!eGrades.includes(cls.gradeKey)) return false;
+          const eSec = e.sectionIdx ?? 0;
+          if (eSec === cls.sectionIdx) return true;
+          // "M" card: check if this entry's template has students from this class enrolled
+          const tplId = e.templateId || e.templateIds?.[0];
+          if (!tplId) return false;
+          const rosterEnt = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx??0) === eSec);
+          const allCls = appState.classes?.classes || [];
+          const classNames = rosterEnt.map(re => allCls.find(c => c.id === re.classId && c.grade === cls.gradeKey)?.name).filter(Boolean);
+          return classNames.includes(cls.section);
         });
 
         if (slotEntries.length) slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { compact: true })));

@@ -13,15 +13,19 @@ import {
 import { getClassCount } from "./rosters.js";
 
 function getSectionLabelFromRoster(card) {
-  // Derive section label from enrolled students in the roster
-  const entries = (appState.rosters?.rosters?.[card.templateId] || []);
-  if (!entries.length) return getClassCount(card.templateId) > 1 ? sectionLabel(card.sectionIdx) : null;
-  const sections = [...new Set(entries.map(e => e.sectionIdx ?? 0))];
-  if (sections.length === 1) return sectionLabel(sections[0]);
-  // Multiple sections → show per-card section if ttcards are split, else M
-  const cardEntries = entries.filter(e => (e.sectionIdx ?? 0) === card.sectionIdx);
-  if (cardEntries.length > 0) return sectionLabel(card.sectionIdx);
-  return sectionLabel(card.sectionIdx);
+  const rosterEntries = (appState.rosters?.rosters?.[card.templateId] || [])
+    .filter(e => (e.sectionIdx ?? 0) === card.sectionIdx);
+  if (!rosterEntries.length) {
+    return getClassCount(card.templateId) > 1 ? sectionLabel(card.sectionIdx) : null;
+  }
+  const allClasses = appState.classes?.classes || [];
+  const classNames = [...new Set(rosterEntries.map(e => {
+    const cls = allClasses.find(c => c.id === e.classId);
+    return cls?.name || null;
+  }).filter(Boolean))];
+  if (classNames.length === 0) return sectionLabel(card.sectionIdx);
+  if (classNames.length === 1) return classNames[0]; // "A" or "B"
+  return "M"; // students from multiple class names in same section
 }
 export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
@@ -249,7 +253,40 @@ function createGroupBlockGM(groupId, onStructureChange) {
   const grpObj = grps().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
   const block = document.createElement("div"); block.className = "group-block";
+  block.draggable = canEdit();
+  block.dataset.groupId = groupId;
   if (grpObj._collapsed === undefined) grpObj._collapsed = false;
+
+  // Drag-to-reorder group blocks
+  block.addEventListener("dragstart", e => {
+    if (e.target.closest(".group-pool-cards, .group-unit-cards")) { e.stopPropagation(); return; }
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", groupId);
+    block.classList.add("group-block-dragging");
+  });
+  block.addEventListener("dragend", () => block.classList.remove("group-block-dragging"));
+  block.addEventListener("dragover", e => {
+    const over = e.target.closest(".group-block[data-group-id]");
+    if (!over || over === block) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = "move";
+    over.classList.add("group-block-drop-target");
+  });
+  block.addEventListener("dragleave", () => block.classList.remove("group-block-drop-target"));
+  block.addEventListener("drop", e => {
+    const over = e.target.closest(".group-block[data-group-id]");
+    if (!over || over === block) return;
+    e.preventDefault(); over.classList.remove("group-block-drop-target");
+    const srcId  = e.dataTransfer.getData("text/plain");
+    const destId = over.dataset.groupId;
+    if (srcId === destId) return;
+    const arr = appState.templates.templateGroups;
+    const si = arr.findIndex(g => g.id === srcId);
+    const di = arr.findIndex(g => g.id === destId);
+    if (si < 0 || di < 0) return;
+    const [item] = arr.splice(si, 1);
+    arr.splice(di, 0, item);
+    scheduleSave("templates"); onStructureChange();
+  });
 
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
   const colBtn = document.createElement("button"); colBtn.type = "button"; colBtn.className = "group-collapse-btn";
@@ -300,6 +337,29 @@ function createGroupBlockGM(groupId, onStructureChange) {
     poolIds.forEach(id => {
       const card = getTtCardById(id); if (!card) return;
       const chip = createTtCardChip(card);
+      // Delete button: removes from pool AND from ttcards array
+      if (canEdit()) {
+        const delBtn = document.createElement("button"); delBtn.type = "button";
+        delBtn.className = "group-card-del-btn"; delBtn.textContent = "×"; delBtn.title = "카드 삭제 (시간표에서 제거)";
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (!confirm(`"${getTtCardLabel(card)}" 카드를 삭제할까요?\n(시간표에 배치된 항목도 삭제됩니다)`)) return;
+          // Remove from all groups
+          grps().forEach(g => {
+            g.poolCardIds = (g.poolCardIds||[]).filter(cid => cid !== id);
+            (g.units||[]).forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(cid => cid !== id); });
+          });
+          // Remove from ttcards
+          appState.timetable.ttcards = (appState.timetable.ttcards||[]).filter(c => c.id !== id);
+          // Remove related entries
+          appState.timetable.entries = (appState.timetable.entries||[]).filter(e =>
+            e.ttcardId !== id && !(e.ttcardIds||[]).includes(id)
+          );
+          scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
+        };
+        chip.style.position = "relative";
+        chip.appendChild(delBtn);
+      }
       chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: id }); chip.classList.add("dragging"); });
       chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
       poolCards.appendChild(chip);
@@ -334,13 +394,21 @@ function setupDropZone(el, onDrop) {
 }
 
 export function renderGroupManagerView(container) {
-  const snap = [".main-panel","#groupManagerBoard",".group-right-col",".group-left-col"]
-    .map(sel => { const el = document.querySelector(sel); return el ? { sel, top: el.scrollTop } : null; }).filter(Boolean);
+  // Preserve scroll of right-col and left-col
+  const rightEl = container.querySelector(".group-right-col");
+  const leftEl  = container.querySelector(".group-unassigned-pool");
+  const rightScroll = rightEl?.scrollTop || 0;
+  const leftScroll  = leftEl?.scrollTop  || 0;
 
   container.innerHTML = "";
   buildGroupManagerDOM(container);
 
-  requestAnimationFrame(() => snap.forEach(({ sel, top }) => { const el = document.querySelector(sel); if (el) el.scrollTop = top; }));
+  requestAnimationFrame(() => {
+    const rc = container.querySelector(".group-right-col");
+    const lc = container.querySelector(".group-unassigned-pool");
+    if (rc) rc.scrollTop = rightScroll;
+    if (lc) lc.scrollTop = leftScroll;
+  });
 }
 
 function buildGroupManagerDOM(board) {

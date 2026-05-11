@@ -2815,14 +2815,16 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 
 .group-unit-cards {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 3px;
   min-height: 36px;
   padding: 4px;
   border: 1.5px dashed #d1d5db;
   border-radius: 5px;
   background: white;
+  overflow-x: auto;
 }
+.group-unit-cards .group-mgr-card { min-width: 70px; max-width: 120px; flex-shrink: 1; }
 .group-unit-cards.dragover { border-color: #2563eb; background: #dbeafe; }
 
 .group-unit-placeholder {
@@ -2884,10 +2886,12 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   padding: 1px 6px; cursor: help; flex-shrink: 0;
 }
 .group-unit-cards {
-  display: flex; flex-direction: row; flex-wrap: wrap;
-  gap: 4px; min-height: 36px; padding: 4px;
+  display: flex; flex-direction: row; flex-wrap: nowrap;
+  gap: 3px; min-height: 36px; padding: 4px;
   border: 1.5px dashed #d1d5db; border-radius: 5px; background: white;
+  overflow-x: auto;
 }
+.group-unit-cards .group-mgr-card { min-width: 70px; max-width: 120px; flex-shrink: 1; }
 .group-unit-cards.dragover { border-color: #2563eb; background: #dbeafe; }
 
 /* Credits badge on group manager card */
@@ -3339,3 +3343,22 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .save-status.saving { color: #1d4ed8; background: rgba(219,234,254,.5); }
 .save-status.saved  { color: #166534; background: rgba(220,252,231,.5); }
 .save-status.error  { color: #991b1b; background: rgba(254,226,226,.8); font-size: 10px; }
+
+/* ── Pool card delete button ────────────────────────────────── */
+.group-card-del-btn {
+  position: absolute; top: -4px; right: -4px;
+  width: 14px; height: 14px; border-radius: 50%;
+  border: none; background: #ef4444; color: white;
+  font-size: 9px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 1; z-index: 5;
+  opacity: 0; transition: opacity .1s;
+}
+.group-unassigned-card-wrap:hover .group-card-del-btn,
+.group-mgr-card:hover .group-card-del-btn { opacity: 1; }
+
+/* ── Group block drag-to-reorder ────────────────────────────── */
+.group-block-dragging { opacity: .45; outline: 2px dashed #2563eb; }
+.group-block-drop-target { outline: 2px solid #2563eb; background: #eff6ff; border-radius: 8px; }
+.group-block { cursor: grab; }
+.group-block:active { cursor: grabbing; }
