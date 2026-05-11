@@ -398,12 +398,8 @@ function buildGroupManagerDOM(board) {
 
   const resetAllBtn = makeBtn("🔄 전체 초기화", "group-reset-all-btn", () => {
     if (!canEdit()) return;
-    if (!confirm("모든 그룹의 묶음수업을 해제하고 카드를 그룹 풀로 되돌릴까요?\n(그룹 자체는 삭제되지 않습니다)")) return;
-    grps().forEach(grp => {
-      const allIds = (grp.units||[]).flatMap(u => u.ttcardIds||[]);
-      grp.units = [];
-      grp.poolCardIds = [...new Set([...(grp.poolCardIds||[]), ...allIds])];
-    });
+    if (!confirm("그룹을 전체 초기화합니다.\n모든 그룹과 묶음수업이 삭제되고 카드는 미배정 상태로 돌아갑니다.\n계속할까요?")) return;
+    appState.templates.templateGroups = [];
     scheduleSave("templates"); onStructureChange();
   }); resetAllBtn.disabled = !canEdit();
   filterBar.appendChild(resetAllBtn);

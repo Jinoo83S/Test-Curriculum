@@ -3245,7 +3245,7 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .tt-entry-title {
   flex: 1; min-width: 0; font-weight: 700; font-size: 11px;
   line-height: 1.3; overflow: hidden;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical;
 }
 .tt-entry-pin {
   flex-shrink: 0; width: 14px; height: 14px; border: none;
