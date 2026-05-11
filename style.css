@@ -2712,9 +2712,8 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 
 .group-block-name {
-  flex: 1 1 0;
+  flex: 1 1 0%;
   min-width: 0;
-  width: 0;       /* force flex to ignore intrinsic size */
   font-size: 13px;
   font-weight: 700;
   color: #1e3a5f;
@@ -2723,6 +2722,8 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   padding: 4px 8px;
   background: #f8fafc;
   box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .group-block-name:focus { border-color: #2563eb; outline: none; background: white; }
 

@@ -259,10 +259,9 @@ function createGroupBlockGM(groupId, onStructureChange) {
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
-  const sp = document.createElement("span"); sp.style.flex = "1";
   const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit();
-  hdr.append(colBtn, nameInp, sp, delBtn); block.appendChild(hdr);
+  hdr.append(colBtn, nameInp, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
   hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
@@ -372,9 +371,9 @@ function buildGroupManagerDOM(board) {
         if (row.category !== "교과") return;
         if (!row.track || row.track === "공통") return;
         const subGroup = row.group || "기타";
-        const groupKey = `${row.track}::${subGroup}::${gradeKey}`;
+        const groupKey = `${row.track}::${gradeKey}`;
         if (!trackMap[groupKey]) trackMap[groupKey] = {
-          name: `${row.track} / ${subGroup} / ${gradeDisplay(gradeKey)}`, cardIds: new Set()
+          name: `${gradeDisplay(gradeKey)}-${row.track}`, cardIds: new Set()
         };
         [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
           cards.filter(c => c.templateId === tplId && c.gradeKey === gradeKey)
