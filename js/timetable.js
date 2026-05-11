@@ -645,68 +645,65 @@ function entryTeachers(e) {
 // ── Entry card ────────────────────────────────────────────────────
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;
-  const title        = entryTitle(entry);
-  const teachers     = entryTeachers(entry);
+  const title     = entryTitle(entry);
+  const teachers  = entryTeachers(entry);
   const displayGrades = entryGradeKeys(entry);
 
-  const conflicts  = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
+  const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
   const hasConflict = conflicts.size > 0;
 
   const card = document.createElement("div");
-  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (compact ? " tt-compact" : "");
-  card.style.position = "relative";
+  card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (entry.pinned ? " tt-entry-pinned" : "");
   if (hasConflict) card.title = getConflictLabel(conflicts);
 
   const firstGrade = displayGrades[0] || currentGrade;
   const gradeColor = getGradeColor(firstGrade);
   card.style.background = gradeColor.bg;
   card.style.color      = gradeColor.text;
-  card.style.borderLeft = `4px solid ${gradeColor.border}`;
+  card.style.borderLeft = `3px solid ${gradeColor.border}`;
 
-  // ── Row 1: title + pin ──────────────────────────────────────────
-  const row1 = document.createElement("div"); row1.className = "tt-entry-row1";
+  // Check if multi-entry (group with multiple cards)
+  const grpId = entry.groupId;
+  const grpEntries = grpId ? entries().filter(e => e.groupId === grpId && e.day === entry.day && e.period === entry.period) : [];
+  const isMulti = grpEntries.length > 1;
 
-  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
-  row1.appendChild(titleEl);
-
-  const pinBtn = document.createElement("button"); pinBtn.type = "button"; pinBtn.className = "tt-entry-pin";
-  pinBtn.textContent = entry.pinned ? "📌" : "📍"; pinBtn.title = entry.pinned ? "고정 해제" : "고정";
-  pinBtn.disabled = !canEdit();
-  pinBtn.addEventListener("click", () => {
-    if (!canEdit()) return;
-    const e = entries().find(x => x.id === entry.id); if (!e) return;
-    e.pinned = !e.pinned; scheduleSave("timetable"); renderAll();
-  });
-  row1.appendChild(pinBtn);
-  card.appendChild(row1);
-  if (entry.pinned) card.classList.add("tt-entry-pinned");
-
-  // ── Row 2: teacher + grade chips ───────────────────────────────
-  const row2 = document.createElement("div"); row2.className = "tt-entry-row2";
-
-  const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher";
-  teacherEl.textContent = [...new Set(teachers)].join(", ") || "";
-  row2.appendChild(teacherEl);
-
-  if (showGrade && displayGrades.length) {
-    const chipWrap = document.createElement("div"); chipWrap.className = "tt-entry-grade-chips";
-    displayGrades.forEach(g => {
-      const chip = document.createElement("span"); chip.className = "tt-entry-grade";
-      chip.textContent = gradeDisplay(g);
-      chip.style.cssText = `background:${getGradeColor(g).border};color:white;font-size:8px;padding:0 4px;border-radius:3px;font-weight:700`;
-      chipWrap.appendChild(chip);
-    });
-    row2.appendChild(chipWrap);
+  if (isMulti) {
+    card.style.borderRight = `3px solid ${gradeColor.border}`;
+    card.dataset.multi = grpEntries.length;
   }
-  card.appendChild(row2);
 
-  // Click to show detail popup
+  // Compact single-line layout: title only (click for details)
+  const row = document.createElement("div"); row.className = "tt-entry-row1";
+  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
+  titleEl.style.cssText = "flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;font-weight:700;line-height:1.2";
+  row.appendChild(titleEl);
+
+  if (isMulti) {
+    const cnt = document.createElement("span");
+    cnt.style.cssText = "font-size:8px;font-weight:700;background:rgba(0,0,0,.15);border-radius:3px;padding:0 3px;flex-shrink:0;line-height:14px";
+    cnt.textContent = `×${grpEntries.length}`; row.appendChild(cnt);
+  }
+
+  if (entry.pinned) {
+    const pin = document.createElement("span"); pin.textContent = "📌";
+    pin.style.cssText = "font-size:8px;flex-shrink:0"; row.appendChild(pin);
+  }
+
+  card.appendChild(row);
+
+  // Click → detail modal (all info)
   card.addEventListener("click", ev => {
-    if (ev.target.closest("button") || ev.target.closest("select")) return;
+    if (ev.target.closest("button")) return;
     showEntryDetail(entry);
   });
 
-  // Drag to move
+  // Right-click → context menu
+  card.addEventListener("contextmenu", ev => {
+    ev.preventDefault();
+    showEntryContextMenu(entry, ev.clientX, ev.clientY);
+  });
+
+  // Drag
   card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
     if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
@@ -721,7 +718,16 @@ function buildEntryCard(entry, opts = {}) {
 // ── Drop handler ──────────────────────────────────────────────────
 function moveEntry(entryId, day, period) {
   if (!canEdit()) return;
-  const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return; // pinned = cannot move
+  const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return;
+  // If entry has groupId or unitId, move ALL sibling entries to same slot
+  if (e.groupId || e.unitId) {
+    const siblings = entries().filter(x =>
+      x.id !== entryId && !x.pinned &&
+      ((e.groupId && x.groupId === e.groupId) || (e.unitId && x.unitId === e.unitId)) &&
+      x.day === e.day && x.period === e.period
+    );
+    siblings.forEach(s => { s.day = day; s.period = period; });
+  }
   e.day = day; e.period = period;
   scheduleSave("timetable");
 }
@@ -889,6 +895,49 @@ function showEntryDetailByUnit(unit, group, gradeKeys) {
   document.body.appendChild(modal);
 }
 
+function showEntryContextMenu(entry, x, y) {
+  document.getElementById("tt-context-menu")?.remove();
+  const menu = document.createElement("div"); menu.id = "tt-context-menu";
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:9998;min-width:160px;overflow:hidden;font-size:12px`;
+
+  const items = [
+    { label: "📋 수업 정보", action: () => showEntryDetail(entry) },
+    { label: entry.pinned ? "📌 고정 해제" : "📍 고정", action: () => {
+      const e = entries().find(x=>x.id===entry.id); if(e){ e.pinned=!e.pinned; scheduleSave("timetable"); renderAll(); }
+    }},
+    { separator: true },
+    { label: "🔁 그룹 함께 이동 모드", action: null, disabled: true, info: "드래그 시 자동 적용" },
+    { separator: true },
+    { label: "🗑 이 수업 삭제", danger: true, action: () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); } },
+  ];
+
+  items.forEach(item => {
+    if (item.separator) { const hr = document.createElement("div"); hr.style.cssText="height:1px;background:#f1f5f9;margin:2px 0"; menu.appendChild(hr); return; }
+    const btn = document.createElement("div");
+    btn.style.cssText = `padding:8px 12px;cursor:${item.disabled?'default':'pointer'};color:${item.danger?'#dc2626':item.disabled?'#9ca3af':'#1e293b'};display:flex;gap:6px;align-items:center`;
+    btn.textContent = item.label;
+    if (item.info) { const inf = document.createElement("span"); inf.style.cssText="font-size:9px;color:#9ca3af"; inf.textContent=item.info; btn.appendChild(inf); }
+    if (!item.disabled) {
+      btn.addEventListener("mouseenter", () => { btn.style.background = "#f8fafc"; });
+      btn.addEventListener("mouseleave", () => { btn.style.background = ""; });
+      btn.addEventListener("click", () => { menu.remove(); item.action?.(); });
+    }
+    menu.appendChild(btn);
+  });
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener("click", () => menu.remove(), { once: true });
+    document.addEventListener("contextmenu", () => menu.remove(), { once: true });
+  }, 10);
+
+  // Keep in viewport
+  document.body.appendChild(menu);
+  const rect = menu.getBoundingClientRect();
+  if (rect.right > window.innerWidth) menu.style.left = `${x - rect.width}px`;
+  if (rect.bottom > window.innerHeight) menu.style.top = `${y - rect.height}px`;
+}
+
 function showEntryDetail(entry) {
   const existing = document.getElementById("tt-entry-detail-modal");
   if (existing) existing.remove();
@@ -897,58 +946,106 @@ function showEntryDetail(entry) {
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
 
   const box = document.createElement("div");
-  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:280px;max-width:360px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:300px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative;max-height:90vh;overflow-y:auto";
 
   const gradeKeys = entryGradeKeys(entry);
-  const firstGrade = gradeKeys[0] || currentGrade;
-  const gc = getGradeColor(firstGrade);
+  const gc = getGradeColor(gradeKeys[0] || currentGrade);
   box.style.borderTop = `4px solid ${gc.border}`;
 
+  // Header: title
   const titleEl = document.createElement("div");
-  titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:12px;color:#1e3a5f";
-  titleEl.textContent = entryTitle(entry);
-  box.appendChild(titleEl);
+  titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:8px;color:#1e3a5f;padding-right:24px";
+  titleEl.textContent = entryTitle(entry); box.appendChild(titleEl);
 
-  // Grade chips
-  if (gradeKeys.length) {
-    const row = document.createElement("div"); row.style.cssText="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px";
-    gradeKeys.forEach(g => { const chip = document.createElement("span"); chip.style.cssText=`font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:${getGradeColor(g).border};color:white`; chip.textContent=gradeDisplay(g); row.appendChild(chip); });
-    box.appendChild(row);
+  function makeRow(label, value) {
+    const r = document.createElement("div"); r.style.cssText = "display:flex;align-items:baseline;gap:8px;margin-bottom:6px;font-size:12px";
+    const l = document.createElement("span"); l.style.cssText = "color:#6b7280;font-weight:600;width:70px;flex-shrink:0"; l.textContent = label;
+    const v = document.createElement("span"); v.style.cssText = "color:#1e293b;flex:1"; v.textContent = value;
+    r.append(l, v); box.appendChild(r); return r;
   }
 
-  // Teacher selector
+  // 2. 학년/반
+  const sectionStr = entry.sectionIdx !== undefined ? sectionLabel(entry.sectionIdx) : "-";
+  makeRow("학년/반", gradeKeys.map(g => `${gradeDisplay(g)}학년 ${sectionStr}`).join(", ") || "-");
+
+  // 3. 담당 교사
   const teachers = entryTeachers(entry);
-  const tLabel = document.createElement("label"); tLabel.style.cssText="display:block;margin-bottom:6px;font-size:11px;color:#6b7280;font-weight:600"; tLabel.textContent = "교사";
-  const tSel = document.createElement("select"); tSel.style.cssText="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:10px"; tSel.disabled = !canEdit();
-  const noT = document.createElement("option"); noT.value=""; noT.textContent="교사 선택 (없음)"; tSel.appendChild(noT);
-  const allTeachers = [...new Set([...teachers, ...(entry.teacherName ? [entry.teacherName] : [])])];
-  allTeachers.forEach(t => { const o = document.createElement("option"); o.value=t; o.textContent=t; if(t===entry.teacherName) o.selected=true; tSel.appendChild(o); });
-  tSel.addEventListener("change", e => { updateEntry(entry.id, "teacherName", e.target.value); recomputeConflicts(); renderAll(); });
+  const tLabel = document.createElement("label"); tLabel.style.cssText="display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:600"; tLabel.textContent="담당 교사";
+  const tSel = document.createElement("select"); tSel.style.cssText="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:8px"; tSel.disabled=!canEdit();
+  [{ v:"", l:"교사 없음" }, ...teachers.map(t=>({v:t,l:t}))].forEach(({ v, l }) => {
+    const o = document.createElement("option"); o.value=v; o.textContent=l; if(v===entry.teacherName) o.selected=true; tSel.appendChild(o);
+  });
+  tSel.addEventListener("change", e => { updateEntry(entry.id,"teacherName",e.target.value||null); recomputeConflicts(); renderAll(); });
   box.append(tLabel, tSel);
 
-  // Room selector
-  const rooms = getRooms();
-  if (rooms.length) {
-    const rLabel = document.createElement("label"); rLabel.style.cssText="display:block;margin-bottom:6px;font-size:11px;color:#6b7280;font-weight:600"; rLabel.textContent = "교실";
-    const rSel = document.createElement("select"); rSel.style.cssText="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:12px"; rSel.disabled = !canEdit();
-    const noR = document.createElement("option"); noR.value=""; noR.textContent="교실 선택 (없음)"; rSel.appendChild(noR);
-    rooms.forEach(r => { const o = document.createElement("option"); o.value=r.id; o.textContent=r.name; if(r.id===entry.roomId) o.selected=true; rSel.appendChild(o); });
-    rSel.addEventListener("change", e => { updateEntry(entry.id, "roomId", e.target.value||null); recomputeConflicts(); renderAll(); });
-    box.append(rLabel, rSel);
+  // 4. 시수/배정 현황
+  const tplId = entry.templateId || entry.templateIds?.[0];
+  if (tplId) {
+    const credits = (() => {
+      const row = (appState.curriculum.gradeBoards[gradeKeys[0] || currentGrade]||[]).find(r=>r.sem1TemplateId===tplId||r.sem2TemplateId===tplId);
+      return row?.credits ?? "-";
+    })();
+    const assigned = entries().filter(e => (e.templateId===tplId||e.templateIds?.includes(tplId)) && e.gradeKey===(gradeKeys[0]||currentGrade)).length;
+    makeRow("시수/배정", `${assigned} / ${credits} 차시`);
   }
 
-  // Delete button
+  // 5. 그룹
+  if (entry.groupId) {
+    const grp = (appState.templates.templateGroups||[]).find(g=>g.id===entry.groupId);
+    makeRow("그룹", grp?.name || entry.groupId);
+  }
+
+  // 6. 교실 (editable)
+  const rooms = getRooms();
+  const rLabel = document.createElement("label"); rLabel.style.cssText="display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:600"; rLabel.textContent="교실";
+  const rSel = document.createElement("select"); rSel.style.cssText="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:8px"; rSel.disabled=!canEdit();
+  const noR = document.createElement("option"); noR.value=""; noR.textContent="교실 없음"; rSel.appendChild(noR);
+  rooms.forEach(r=>{const o=document.createElement("option");o.value=r.id;o.textContent=r.name;if(r.id===entry.roomId)o.selected=true;rSel.appendChild(o);});
+  rSel.addEventListener("change", e=>{updateEntry(entry.id,"roomId",e.target.value||null);recomputeConflicts();renderAll();});
+  box.append(rLabel, rSel);
+
+  // 7. 요일/교시 (editable) + 고정
+  const dayLabels = ["월","화","수","목","금"];
+  const periods = ttConfig().periodLabels;
+  const dtRow = document.createElement("div"); dtRow.style.cssText="display:flex;gap:6px;margin-bottom:8px";
+  const dayLabel = document.createElement("label"); dayLabel.style.cssText="font-size:11px;color:#6b7280;font-weight:600;display:block;margin-bottom:3px"; dayLabel.textContent="요일";
+  const daySel = document.createElement("select"); daySel.style.cssText="padding:5px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;flex:1"; daySel.disabled=!canEdit();
+  dayLabels.forEach((l,i)=>{const o=document.createElement("option");o.value=i;o.textContent=l;if(i===entry.day)o.selected=true;daySel.appendChild(o);});
+  const perLabel = document.createElement("label"); perLabel.style.cssText="font-size:11px;color:#6b7280;font-weight:600;display:block;margin-bottom:3px"; perLabel.textContent="교시";
+  const perSel = document.createElement("select"); perSel.style.cssText="padding:5px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;flex:1"; perSel.disabled=!canEdit();
+  periods.forEach((l,i)=>{const o=document.createElement("option");o.value=i;o.textContent=`${i+1}교시`;if(i===entry.period)o.selected=true;perSel.appendChild(o);});
+  const dayWrap = document.createElement("div"); dayWrap.style.flex="1"; dayWrap.append(dayLabel, daySel);
+  const perWrap = document.createElement("div"); perWrap.style.flex="1"; perWrap.append(perLabel, perSel);
+
+  const applySlot = () => {
+    const d=parseInt(daySel.value), p=parseInt(perSel.value);
+    moveEntry(entry.id, d, p); recomputeConflicts(); renderAll();
+  };
+  daySel.addEventListener("change", applySlot); perSel.addEventListener("change", applySlot);
+  dtRow.append(dayWrap, perWrap); box.appendChild(dtRow);
+
+  // Pin toggle
+  if (canEdit()) {
+    const pinBtn = document.createElement("button");
+    pinBtn.style.cssText="width:100%;padding:5px;border:1px solid #d1d5db;border-radius:5px;background:#f8fafc;font-size:12px;cursor:pointer;margin-bottom:8px;font-weight:600";
+    pinBtn.textContent = entry.pinned ? "📌 고정 해제" : "📍 이 시간에 고정";
+    pinBtn.onclick = () => {
+      const e = entries().find(x=>x.id===entry.id); if(!e) return;
+      e.pinned = !e.pinned; scheduleSave("timetable"); renderAll(); modal.remove();
+    };
+    box.appendChild(pinBtn);
+  }
+
+  // Delete
   if (canEdit()) {
     const delBtn = document.createElement("button"); delBtn.style.cssText="width:100%;padding:6px;border:1px solid #fca5a5;border-radius:5px;background:#fef2f2;color:#dc2626;cursor:pointer;font-size:12px;font-weight:600";
-    delBtn.textContent = "🗑 이 수업 삭제"; delBtn.onclick = () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); modal.remove(); };
+    delBtn.textContent="🗑 이 수업 삭제"; delBtn.onclick=()=>{removeEntry(entry.id);recomputeConflicts();renderAll();modal.remove();};
     box.appendChild(delBtn);
   }
 
-  // Close
-  const closeBtn = document.createElement("button"); closeBtn.style.cssText="position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1"; closeBtn.textContent="×"; closeBtn.onclick = () => modal.remove();
-  box.appendChild(closeBtn);
-  modal.appendChild(box);
-  modal.addEventListener("click", e => { if(e.target===modal) modal.remove(); });
+  const closeBtn = document.createElement("button"); closeBtn.style.cssText="position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1"; closeBtn.textContent="×"; closeBtn.onclick=()=>modal.remove();
+  box.appendChild(closeBtn); modal.appendChild(box);
+  modal.addEventListener("click", e=>{if(e.target===modal)modal.remove();});
   document.body.appendChild(modal);
 }
 
@@ -1300,10 +1397,14 @@ function checkPlacementValid(item, slot, placed) {
   const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
   const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
 
-  // 1. Teacher conflict (always applies)
+  // 1. Teacher conflict (always applies — teacher cannot be in two places)
   for (const e of slotEnts) {
     const et = splitTeacherNames(e.teacherName).filter(Boolean);
-    if (teachers.some(t => et.includes(t))) return false;
+    if (teachers.some(t => et.includes(t))) {
+      // Exception: same unit (co-teaching) — but NOT just same group
+      if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
+      return false;
+    }
   }
 
   // 2. Exact duplicate (same template+grade+section in same slot)

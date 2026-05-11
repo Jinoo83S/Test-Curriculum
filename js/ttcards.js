@@ -402,7 +402,14 @@ export function renderGroupManagerView(container) {
 }
 
 function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) {
+  // Save collapsed state before re-render
+  const collapsedMap = new Map(grps().map(g => [g.id, g._collapsed ?? false]));
+
   const onStructureChange = () => {
+    // Restore collapsed state to prevent auto-expand
+    collapsedMap.forEach((collapsed, id) => {
+      const g = grps().find(x => x.id === id); if (g) g._collapsed = collapsed;
+    });
     const rightEl2 = board.querySelector(".group-right-col");
     const leftEl2  = board.querySelector(".group-unassigned-pool");
     const rS = rightEl2?.scrollTop || 0;
