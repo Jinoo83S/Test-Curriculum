@@ -235,7 +235,7 @@ function render(domain) {
       activeMainView === "groups" || activeMainView === "manager") {
     renderSidebar();
   }
-  if (activeMainView === "board\") renderBoardTab();
+  if (activeMainView === "board") renderBoardTab();
   if (activeMainView === "groups") renderGroupManagerView();
   if (activeMainView === "manager") renderTemplateManagerView();
   if (activeMainView === "students") renderStudentView();
