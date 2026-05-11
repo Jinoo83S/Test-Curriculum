@@ -124,7 +124,12 @@ export function renderRosterView(container) {
       metaRow.appendChild(cnt);
       // Section badge
       const cc = getClassCount(tpl.id);
-      if (cc > 0) { const b = document.createElement("span"); b.className = "roster-section-badge"; b.textContent = `${cc}반`; metaRow.appendChild(b); }
+      if (cc > 0) {
+        const secLabel = cc === 1 ? sectionLabel(0) : "M";
+        const b = document.createElement("span"); b.className = "roster-section-badge";
+        b.textContent = secLabel; b.title = cc > 1 ? `${cc}개 반 (Mixed)` : sectionLabel(0) + "반";
+        metaRow.appendChild(b);
+      }
       item.append(lbl, metaRow);
       item.addEventListener("click", () => {
         selectedRosterTemplateId = tpl.id;
@@ -298,11 +303,19 @@ function renderRosterDetail(panel, container) {
   } else {
     filteredClasses.forEach(cls => {
       const fstu = cls.students.filter(s => filterGender === "전체" || s.gender === filterGender); if (!fstu.length) return;
+      const fstu_noCompeting = fstu.filter(s => !competingMap.has(s.id));
       const clsCard = document.createElement("div"); clsCard.className = "roster-class-card";
       const clsHdr  = document.createElement("div"); clsHdr.className  = "roster-class-header";
-      const label   = document.createElement("span"); label.className = "roster-class-label"; label.textContent = `${cls.grade} ${cls.name}`;
+      const label   = document.createElement("span"); label.className = "roster-class-label"; label.textContent = `${gradeDisplay(cls.grade)} ${cls.name}`;
       const allBtn  = makeBtn("전체 추가", "secondary-btn compact-btn", () => { fstu.forEach(s => addToRoster(selectedRosterTemplateId, cls.id, s.id, multi ? selectedSection : 0)); renderRosterView(container); });
-      allBtn.disabled = !canEdit(); clsHdr.append(label, allBtn); clsCard.appendChild(clsHdr);
+      allBtn.disabled = !canEdit();
+      const noCompBtn = makeBtn("경쟁 제외 추가", "roster-nocompete-btn compact-btn", () => {
+        fstu_noCompeting.forEach(s => addToRoster(selectedRosterTemplateId, cls.id, s.id, multi ? selectedSection : 0));
+        renderRosterView(container);
+      });
+      noCompBtn.disabled = !canEdit() || competingTplIds.size === 0;
+      noCompBtn.title = competingTplIds.size > 0 ? "경쟁 과목 수강 중인 학생 제외하고 추가" : "경쟁 과목 없음";
+      clsHdr.append(label, noCompBtn, allBtn); clsCard.appendChild(clsHdr);
       const stuList = document.createElement("div"); stuList.className = "roster-stu-list";
       fstu.forEach(s => {
         const entry = roster.find(e => e.classId === cls.id && e.studentId === s.id);

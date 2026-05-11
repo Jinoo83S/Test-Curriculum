@@ -325,7 +325,7 @@ function createGroupManagerCard(item) {
   const credits = getTemplateCredits(item.id);
   if (credits != null) { const cb = document.createElement("span"); cb.className = "group-mgr-card-credits"; cb.textContent = credits; tRow.appendChild(cb); }
   const cc = getClassCount(item.id);
-  if (cc > 0) { const ccb = document.createElement("span"); ccb.className = "group-mgr-card-classcount"; ccb.textContent = `${cc}반`; ccb.title = `${cc}개 반`; tRow.appendChild(ccb); }
+  if (cc > 0) { const ccb = document.createElement("span"); ccb.className = "group-mgr-card-classcount"; ccb.textContent = cc === 1 ? sectionLabel(0) : "M"; ccb.title = `${cc}개 반`; tRow.appendChild(ccb); }
   if (item.schoolLevel && item.schoolLevel !== "공통") { const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel==="중등"?"middle":"high"}`; dot.title = item.schoolLevel; tRow.appendChild(dot); }
   // Bottom row: teacher name (left) + grade chips (right)
   const botRow = document.createElement("div"); botRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";

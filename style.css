@@ -3314,3 +3314,14 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 .group-reset-all-btn:hover { background: #fee2e2; }
 .group-reset-all-btn:disabled { opacity: .4; cursor: default; }
+
+/* ── Roster: 경쟁 제외 추가 button ──────────────────────────── */
+.roster-nocompete-btn {
+  font-size: 10px; padding: 3px 8px;
+  border: 1px solid #f59e0b; border-radius: 4px;
+  background: #fef3c7; color: #92400e;
+  cursor: pointer; font-weight: 600;
+  white-space: nowrap; transition: background .1s;
+}
+.roster-nocompete-btn:hover { background: #fde68a; }
+.roster-nocompete-btn:disabled { opacity: .4; cursor: default; }
