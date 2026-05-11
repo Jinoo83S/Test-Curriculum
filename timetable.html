@@ -43,7 +43,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-toolbar-right{display:flex;gap:6px;margin-left:auto;align-items:center}
 
 /* ── Layout: grid only ── */
-.tt-body{flex:1;overflow:auto;padding:10px}
+.tt-body{flex:1;overflow:auto;padding:4px;display:flex;flex-direction:column;min-height:0}
+#ttGrid{flex:1;overflow:auto;min-height:0}
 .tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
 .tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
 .tt-corner-label{font-size:10px;font-weight:700;color:white}
@@ -327,3 +328,9 @@ window._ttBottomToggle = (function() {
 </script>
 </body>
 </html>
+<style>
+/* Drag highlight */
+.tt-drag-teacher-busy { outline: 1.5px solid #f59e0b !important; }
+.tt-drag-grade-highlight td { background: rgba(219,234,254,.3) !important; }
+.tt-all-row-hdr.tt-drag-grade-hl { background: #dbeafe !important; }
+</style>

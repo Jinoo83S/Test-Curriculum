@@ -531,10 +531,14 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   const rightWrap = document.createElement("div"); rightWrap.className = "group-right-col-wrap";
   const rightHdr  = document.createElement("div"); rightHdr.className = "group-right-col-hdr";
   rightHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"그룹 목록" }));
-  const expandAll   = makeBtn("▼ 전체 펼치기", "group-expand-btn", () => { grps().forEach(g => { g._collapsed = false; }); onStructureChange(); });
-  const collapseAll = makeBtn("▶ 전체 접기",   "group-expand-btn", () => { grps().forEach(g => { g._collapsed = true;  }); onStructureChange(); });
   const togWrap = document.createElement("div"); togWrap.style.cssText = "display:flex;gap:4px;margin-left:auto";
-  togWrap.append(expandAll, collapseAll); rightHdr.style.display = "flex"; rightHdr.style.alignItems = "center";
+  const allCollapsed = filteredGroups.length > 0 && filteredGroups.every(g => g._collapsed);
+  const togBtn = makeBtn(allCollapsed ? "▼ 전체 펼치기" : "▶ 전체 접기", "group-expand-btn", () => {
+    const collapse = !allCollapsed;
+    grps().forEach(g => { g._collapsed = collapse; });
+    onStructureChange();
+  });
+  togWrap.append(togBtn); rightHdr.style.display = "flex"; rightHdr.style.alignItems = "center";
   rightHdr.appendChild(togWrap);
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";

@@ -335,7 +335,11 @@ function renderClassGrid(wrap) {
           entryHasGrade(e, currentGrade) && (e.sectionIdx ?? 0) === sec && e.day === day && e.period === period
         );
         if (slotEntries.length) {
-          slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { compact: true })));
+          slotEntries.forEach(entry => {
+            const c = buildEntryCard(entry, { compact: true });
+            c.style.cssText += ";flex-shrink:0;width:100%";
+            td.appendChild(c);
+          });
         } else {
           const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph);
         }
@@ -703,14 +707,15 @@ function buildEntryCard(entry, opts = {}) {
     showEntryContextMenu(entry, ev.clientX, ev.clientY);
   });
 
-  // Drag
+  card.dataset.entryId = entry.id;
   card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
     if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
-    dragData = { kind: "entry", entryId: entry.id };
+    dragData = { kind: "entry", entryId: entry.id, teacherName: entry.teacherName, gradeKey: entry.gradeKey, sectionIdx: entry.sectionIdx ?? 0 };
+    applyDragHighlight(dragData);
     card.classList.add("tt-dragging");
   });
-  card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
+  card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); clearDragHighlight(); });
 
   return card;
 }
@@ -1276,14 +1281,14 @@ function renderConstraintsPanel() {
   table.innerHTML = `<thead><tr>
     <th>교사</th>
     <th>하루 최대 수업 <span class="tt-con-default">(기본: 6)</span></th>
-    <th>최대 연속 수업 <span class="tt-con-default">(기본: 3)</span></th>
+    <th>최대 연속 수업 <span class="tt-con-default">(기본: 4)</span></th>
     <th>현재 배치</th>
     <th>충돌</th>
   </tr></thead>`;
   const tbody = document.createElement("tbody");
 
   allTeachers.forEach(teacher => {
-    const c = constraints()[teacher] || { maxPerDay: 6, maxConsecutive: 3 };
+    const c = constraints()[teacher] || { maxPerDay: 6, maxConsecutive: 4 };
     const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher));
     const total = placed.length;
     const hasViolation = [...constraintMap.entries()].some(([id, s]) => {
@@ -1296,7 +1301,7 @@ function renderConstraintsPanel() {
 
     [
       { key: "maxPerDay",      default: 6,  min: 1, max: 12 },
-      { key: "maxConsecutive", default: 3,  min: 1, max: 12 }
+      { key: "maxConsecutive", default: 4,  min: 1, max: 12 }
     ].forEach(f => {
       const td = document.createElement("td");
       const inp = document.createElement("input"); inp.type = "number"; inp.min = f.min; inp.max = f.max;
@@ -1443,7 +1448,7 @@ function checkPlacementValid(item, slot, placed) {
       cur = all[i] === all[i-1]+1 ? cur+1 : 1;
       maxC = Math.max(maxC, cur);
     }
-    if (maxC > (constraints()[teacher]?.maxConsecutive || 3)) return false;
+    if (maxC > (constraints()[teacher]?.maxConsecutive || 4)) return false;
   }
   return true;
 }
@@ -1457,11 +1462,20 @@ export function autoAssignAll() {
 
   if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
-  // Preserve pinned entries
+  // Preserve ALL pinned entries AND entries that are already satisfactorily placed
   const pinnedEntries = entries().filter(e => e.pinned);
   ttDomain().entries = [...pinnedEntries];
 
   const { standalone, groupBlocks } = buildSchedulableItems();
+
+  // Count already-pinned credits per template+grade+section
+  function pinnedCount(templateId, gradeKey, sectionIdx) {
+    return pinnedEntries.filter(e =>
+      (e.templateId===templateId || e.templateIds?.includes(templateId)) &&
+      (e.gradeKey===gradeKey || e.gradeKeys?.includes(gradeKey)) &&
+      (e.sectionIdx??0)===(sectionIdx??0)
+    ).length;
+  }
 
   const pc = ttConfig().periodCount;
   const baseSlots = [];
@@ -1483,6 +1497,11 @@ export function autoAssignAll() {
       for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
         const activeUnitItems = unitItems.filter(u => slot_i < u.credits);
         if (!activeUnitItems.length) continue;
+        // Skip if already pinned for this slot index
+        const anyPinned = activeUnitItems.some(({ unit }) =>
+          pinnedEntries.some(e => e.unitId === unit.id)
+        );
+        if (anyPinned) continue;
         let foundSlot = null;
         for (const slot of shuffle([...baseSlots])) {
           const hypo = [];
@@ -1548,6 +1567,10 @@ export function autoAssignAll() {
 
     // ── Place standalone templates ────────────────────────────────
     for (const item of shuffle([...standalone])) {
+      // Skip credits already covered by pinned entries
+      const alreadyPinned = pinnedCount(item.templateId, item.gradeKey, item.sectionIdx);
+      const needCredits = Math.max(0, 1 - alreadyPinned); // standalone = 1 per item
+      if (needCredits <= 0) continue;
       let found = false;
       for (const slot of shuffle([...baseSlots])) {
         if (checkPlacementValid(item, slot, placed)) {
@@ -1595,6 +1618,35 @@ function renderAll() {
   renderConflictBar();
   const el = $("ttRoomsContent");
   if (el) renderRoomsView(el, renderAll);
+}
+
+/** Called on dragstart: highlight relevant cells / sidebar cards */
+function applyDragHighlight(data) {
+  if (!data || data.kind !== "subject") return;
+  const teacherNames = splitTeacherNames(data.teacherName || "").filter(Boolean);
+  const gradeKey = data.gradeKey;
+  const sectionIdx = data.sectionIdx ?? 0;
+
+  // Highlight existing entries that share teacher (teacher busy indicator)
+  document.querySelectorAll(".tt-entry-card").forEach(c => c.classList.remove("tt-drag-teacher-busy"));
+  if (teacherNames.length) {
+    entries().forEach(e => {
+      if (teacherNames.some(t => splitTeacherNames(e.teacherName||"").includes(t))) {
+        document.querySelectorAll(`.tt-entry-card[data-entry-id="${e.id}"]`).forEach(c => c.classList.add("tt-drag-teacher-busy"));
+      }
+    });
+  }
+  // Highlight grade rows in all-classes view
+  document.querySelectorAll(".tt-all-row-hdr").forEach(hdr => {
+    const match = gradeKey && hdr.closest("tr")?.dataset.gradeKey === gradeKey;
+    hdr.closest("tr")?.classList.toggle("tt-drag-grade-highlight", !!match);
+  });
+}
+
+function clearDragHighlight() {
+  document.querySelectorAll(".tt-drag-teacher-busy,.tt-drag-grade-highlight").forEach(el => {
+    el.classList.remove("tt-drag-teacher-busy","tt-drag-grade-highlight");
+  });
 }
 
 // ── Auth UI ───────────────────────────────────────────────────────
