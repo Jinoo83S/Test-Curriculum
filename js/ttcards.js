@@ -167,36 +167,50 @@ function gmLevelFilter(card) {
   return true;
 }
 
-function createTtCardChip(card) {
-  const tpl     = getTemplateById(card.templateId);
-  const cc      = getClassCount(card.templateId);
-  const credits = getTtCardCredits(card);
-  const lang    = tpl?.language || "Both";
-  const chip    = document.createElement("div"); chip.className = `group-mgr-card ${languageClass(lang)}`;
+function createTtCardChip(card, opts = {}) {
+  const { onDelete, showDelete = false } = opts;
+  const tpl  = getTemplateById(card.templateId);
+  const lang = tpl?.language || "Both";
+  const chip = document.createElement("div"); chip.className = `gm-card ${languageClass(lang)}`;
   chip.draggable = canEdit();
-  chip.style.cssText = "position:relative";
+  chip.dataset.ttcardId = card.id;
 
-  // Top row: name + credits + school level dot
-  const tRow = document.createElement("div"); tRow.className = "group-mgr-card-top";
-  const nameEl = document.createElement("div"); nameEl.className = "group-mgr-card-title";
-  nameEl.textContent = getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
-  tRow.appendChild(nameEl);
-  if (credits != null) { /* credits hidden in group manager */ }
+  // Row 1: subject | grade chip | section badge
+  const r1 = document.createElement("div"); r1.className = "gm-card-r1";
+  const subjectEl = document.createElement("div"); subjectEl.className = "gm-card-subject";
+  subjectEl.textContent = getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
+  const gradeChip = document.createElement("span"); gradeChip.className = "gm-card-grade";
+  gradeChip.textContent = gradeDisplay(card.gradeKey);
   const secLbl = getSectionLabelFromRoster(card);
-  if (secLbl) { const sb = document.createElement("span"); sb.className = "group-mgr-card-classcount"; sb.textContent = secLbl; tRow.appendChild(sb); }
+  if (secLbl) { const sb = document.createElement("span"); sb.className = "gm-card-sec"; sb.textContent = secLbl; r1.append(subjectEl, gradeChip, sb); }
+  else { r1.append(subjectEl, gradeChip); }
 
-  // Bottom row: teacher + grade
-  const bRow = document.createElement("div"); bRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-top:2px;gap:3px";
-  const tch = document.createElement("div"); tch.className = "group-mgr-card-teacher";
-  tch.textContent = tpl ? getTemplateTeacherSummary(tpl) : "";
-  const gradeChip = document.createElement("span"); gradeChip.className = "grade-chip grade-chip-sm";
-  gradeChip.textContent = card.gradeKey.replace("학년","");
-  bRow.append(tch, gradeChip);
-  chip.append(tRow, bRow);
+  // Row 2: teacher | delete button
+  const r2 = document.createElement("div"); r2.className = "gm-card-r2";
+  const tchEl = document.createElement("div"); tchEl.className = "gm-card-teacher";
+  tchEl.textContent = tpl ? getTemplateTeacherSummary(tpl) : "-";
+  r2.appendChild(tchEl);
+  if (showDelete && canEdit() && onDelete) {
+    const del = document.createElement("button"); del.type = "button"; del.className = "gm-card-del"; del.textContent = "×";
+    del.title = "카드 삭제"; del.onclick = (e) => { e.stopPropagation(); onDelete(card); };
+    r2.appendChild(del);
+  }
+  chip.append(r1, r2);
 
   chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: card.id }); chip.classList.add("dragging"); });
   chip.addEventListener("dragend",   () => { setDrag(null); chip.classList.remove("dragging"); });
   return chip;
+}
+
+function deleteCard(card) {
+  if (!confirm(`"${getTtCardLabel(card)}" 카드를 삭제할까요?`)) return;
+  grps().forEach(g => {
+    g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== card.id);
+    (g.units||[]).forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== card.id); });
+  });
+  appState.timetable.ttcards = (appState.timetable.ttcards||[]).filter(c => c.id !== card.id);
+  appState.timetable.entries = (appState.timetable.entries||[]).filter(e => e.ttcardId !== card.id && !(e.ttcardIds||[]).includes(card.id));
+  scheduleSave("templates"); scheduleSave("timetable");
 }
 
 function createUnitBlockGM(groupId, unit, onStructureChange) {
@@ -235,11 +249,15 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
   });
 
   ttcards.forEach(card => {
-    const c = createTtCardChip(card);
-    const rx = makeBtn("↩", "group-unit-card-remove", () => {
+    const c = createTtCardChip(card, {
+      showDelete: false,
+      onDelete: () => {}
+    });
+    const rx = makeBtn("↩", "gm-card-remove", () => {
       unit.ttcardIds = unit.ttcardIds.filter(id => id !== card.id);
       scheduleSave("templates"); onStructureChange();
-    }); rx.title = "묶음에서 제거"; rx.disabled = !canEdit(); c.appendChild(rx);
+    }); rx.title = "묶음에서 제거"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
+    c.appendChild(rx);
     cardArea.appendChild(c);
   });
   if (!ttcards.length) {
@@ -296,8 +314,8 @@ function createGroupBlockGM(groupId, onStructureChange) {
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
 
-  const delBtn = makeBtn("삭제", "group-col-del-btn", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
-  delBtn.disabled = !canEdit();
+  const delBtn = makeBtn("×", "group-col-del-btn group-col-del-x", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
+  delBtn.disabled = !canEdit(); delBtn.title = "그룹 삭제";
   hdr.append(colBtn, nameInp, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
@@ -336,30 +354,10 @@ function createGroupBlockGM(groupId, onStructureChange) {
   } else {
     poolIds.forEach(id => {
       const card = getTtCardById(id); if (!card) return;
-      const chip = createTtCardChip(card);
-      // Delete button: removes from pool AND from ttcards array
-      if (canEdit()) {
-        const delBtn = document.createElement("button"); delBtn.type = "button";
-        delBtn.className = "group-card-del-btn"; delBtn.textContent = "×"; delBtn.title = "카드 삭제 (시간표에서 제거)";
-        delBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (!confirm(`"${getTtCardLabel(card)}" 카드를 삭제할까요?\n(시간표에 배치된 항목도 삭제됩니다)`)) return;
-          // Remove from all groups
-          grps().forEach(g => {
-            g.poolCardIds = (g.poolCardIds||[]).filter(cid => cid !== id);
-            (g.units||[]).forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(cid => cid !== id); });
-          });
-          // Remove from ttcards
-          appState.timetable.ttcards = (appState.timetable.ttcards||[]).filter(c => c.id !== id);
-          // Remove related entries
-          appState.timetable.entries = (appState.timetable.entries||[]).filter(e =>
-            e.ttcardId !== id && !(e.ttcardIds||[]).includes(id)
-          );
-          scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
-        };
-        chip.style.position = "relative";
-        chip.appendChild(delBtn);
-      }
+      const chip = createTtCardChip(card, {
+        showDelete: true,
+        onDelete: (c) => { deleteCard(c); onStructureChange(); }
+      });
       chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: id }); chip.classList.add("dragging"); });
       chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
       poolCards.appendChild(chip);
@@ -394,25 +392,24 @@ function setupDropZone(el, onDrop) {
 }
 
 export function renderGroupManagerView(container) {
-  // Preserve scroll of right-col and left-col
   const rightEl = container.querySelector(".group-right-col");
   const leftEl  = container.querySelector(".group-unassigned-pool");
   const rightScroll = rightEl?.scrollTop || 0;
   const leftScroll  = leftEl?.scrollTop  || 0;
 
   container.innerHTML = "";
-  buildGroupManagerDOM(container);
-
-  requestAnimationFrame(() => {
-    const rc = container.querySelector(".group-right-col");
-    const lc = container.querySelector(".group-unassigned-pool");
-    if (rc) rc.scrollTop = rightScroll;
-    if (lc) lc.scrollTop = leftScroll;
-  });
+  buildGroupManagerDOM(container, rightScroll, leftScroll);
 }
 
-function buildGroupManagerDOM(board) {
-  const onStructureChange = () => renderGroupManagerView(board);
+function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) {
+  const onStructureChange = () => {
+    const rightEl2 = board.querySelector(".group-right-col");
+    const leftEl2  = board.querySelector(".group-unassigned-pool");
+    const rS = rightEl2?.scrollTop || 0;
+    const lS = leftEl2?.scrollTop  || 0;
+    board.innerHTML = "";
+    buildGroupManagerDOM(board, rS, lS);
+  };
 
   // Filter bar
   const filterBar = document.createElement("div"); filterBar.className = "group-level-filter-bar";
@@ -512,23 +509,10 @@ function buildGroupManagerDOM(board) {
   if (unassigned.length) {
     unassigned.forEach(c => {
       const wrap = document.createElement("div"); wrap.className = "group-unassigned-card-wrap";
-      const chip = createTtCardChip(c);
-      if (canEdit()) {
-        const delBtn = document.createElement("button"); delBtn.type = "button";
-        delBtn.className = "group-card-del-btn"; delBtn.textContent = "×"; delBtn.title = "카드 삭제";
-        delBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (!confirm(`"${getTtCardLabel(c)}" 카드를 삭제할까요?`)) return;
-          grps().forEach(g => {
-            g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== c.id);
-            (g.units||[]).forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== c.id); });
-          });
-          appState.timetable.ttcards = (appState.timetable.ttcards||[]).filter(x => x.id !== c.id);
-          appState.timetable.entries = (appState.timetable.entries||[]).filter(e => e.ttcardId !== c.id && !(e.ttcardIds||[]).includes(c.id));
-          scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
-        };
-        chip.style.position = "relative"; chip.appendChild(delBtn);
-      }
+      const chip = createTtCardChip(c, {
+        showDelete: true,
+        onDelete: (card) => { deleteCard(card); onStructureChange(); }
+      });
       wrap.appendChild(chip); unPool.appendChild(wrap);
     });
   } else {
@@ -563,4 +547,11 @@ function buildGroupManagerDOM(board) {
 
   rightWrap.append(rightHdr, rightCol); layout.appendChild(rightWrap);
   board.appendChild(layout);
+  // Restore scroll positions
+  requestAnimationFrame(() => {
+    const rc = board.querySelector(".group-right-col");
+    const lc = board.querySelector(".group-unassigned-pool");
+    if (rc) rc.scrollTop = savedRightScroll;
+    if (lc) lc.scrollTop = savedLeftScroll;
+  });
 }

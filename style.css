@@ -3380,3 +3380,69 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 }
 .tt-sc-teacher { flex: 1; font-size: 9px; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .tt-sc-grade-chips { display: flex; gap: 2px; flex-shrink: 0; flex-wrap: nowrap; }
+
+/* ================================================================
+   New group manager card (gm-card)
+   ================================================================ */
+.gm-card {
+  position: relative;
+  border: 1.5px solid #d1d5db; border-radius: 6px;
+  padding: 5px 8px; cursor: grab; background: white;
+  min-width: 80px; max-width: 160px; flex-shrink: 1;
+  transition: box-shadow .1s;
+}
+.gm-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,.12); }
+.gm-card.lang-korean { border-left: 3px solid #2563eb; }
+.gm-card.lang-english { border-left: 3px solid #dc2626; }
+.gm-card.lang-both { border-left: 3px solid #7c3aed; }
+.gm-card.dragging { opacity: .4; }
+
+.gm-card-r1 {
+  display: flex; align-items: center; gap: 3px;
+  min-height: 16px;
+}
+.gm-card-subject {
+  flex: 1; min-width: 0; font-size: 11px; font-weight: 700;
+  color: #1e293b; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.gm-card-grade {
+  flex-shrink: 0; font-size: 9px; font-weight: 800;
+  background: #e2e8f0; color: #475569;
+  padding: 0 4px; border-radius: 999px; line-height: 14px;
+}
+.gm-card-sec {
+  flex-shrink: 0; font-size: 9px; font-weight: 700;
+  background: #dbeafe; color: #1d4ed8;
+  padding: 0 4px; border-radius: 999px; line-height: 14px;
+}
+.gm-card-r2 {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 2px; gap: 3px; min-height: 13px;
+}
+.gm-card-teacher {
+  flex: 1; min-width: 0; font-size: 9px; color: #6b7280;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.gm-card-del {
+  flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%;
+  border: none; background: #f87171; color: white;
+  font-size: 9px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; line-height: 1; opacity: 0; transition: opacity .1s;
+}
+.gm-card:hover .gm-card-del,
+.group-unassigned-card-wrap:hover .gm-card-del { opacity: 1; }
+.gm-card-remove {
+  position: absolute; top: 2px; right: 2px;
+  width: 13px; height: 13px; border-radius: 50%;
+  border: none; background: #e2e8f0; color: #64748b;
+  font-size: 8px; cursor: pointer; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .1s;
+}
+.gm-card:hover .gm-card-remove { opacity: 1; }
+
+/* Group header × button */
+.group-col-del-x {
+  padding: 0 6px; font-size: 14px; font-weight: 700; line-height: 22px;
+}

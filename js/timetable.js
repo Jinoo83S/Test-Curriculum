@@ -1099,19 +1099,23 @@ function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDon
   card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
   card.draggable = canEdit() && !isDone;
 
-  // Row 1: title + 시수 badge
+  // Row 1: group name (for groups) or subject title | assigned/credits
   const row1 = document.createElement("div"); row1.className = "tt-sc-row1";
-  const nameEl = document.createElement("div"); nameEl.className = "tt-sc-name"; nameEl.textContent = title;
+  const displayTitle = groupName || title;
+  const nameEl = document.createElement("div"); nameEl.className = "tt-sc-name"; nameEl.textContent = displayTitle;
+  nameEl.title = displayTitle;
   const badge  = document.createElement("span"); badge.className = "tt-sc-badge";
   badge.textContent = `${assigned}/${credits}`;
   badge.style.background = isDone ? "#dcfce7" : assigned > 0 ? "#fef9c3" : "#f1f5f9";
   badge.style.color = isDone ? "#166534" : "#374151";
   row1.append(nameEl, badge);
 
-  // Row 2: teacher + grade chips (right)
+  // Row 2: unique teachers | grade chips (right)
   const row2 = document.createElement("div"); row2.className = "tt-sc-row2";
+  const uniqueTeachers = [...new Set(teachers)];
   const tchEl = document.createElement("div"); tchEl.className = "tt-sc-teacher";
-  tchEl.textContent = [...new Set(teachers)].join(", ") || "-";
+  tchEl.textContent = uniqueTeachers.join(", ") || "-";
+  tchEl.title = uniqueTeachers.join(", ");
   const chipWrap = document.createElement("div"); chipWrap.className = "tt-sc-grade-chips";
   gradeKeys.forEach(g => {
     const chip = document.createElement("span");
@@ -1123,7 +1127,7 @@ function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDon
 
   card.addEventListener("click", ev => {
     if (ev.defaultPrevented) return;
-    showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName });
+    showSidebarCardDetail({ title, teachers: uniqueTeachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName });
   });
 
   return card;
