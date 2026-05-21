@@ -228,6 +228,10 @@ function getTtCardClassInfos(card) {
   const labelInfos = getClassInfosByCardLabel(card);
   if (labelInfos.length) return labelInfos;
 
+  // No roster, no label → use sectionIdx to find matching class row
+  const matched = classRows.filter(c => c.gradeKey === card.gradeKey && (c.sectionIdx ?? 0) === (card.sectionIdx ?? 0));
+  if (matched.length) return matched;
+
   const fallback = getClassInfoByGradeSection(card.gradeKey, card.sectionIdx ?? 0);
   return [fallback || { gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0, section: sectionLabel(card.sectionIdx ?? 0) }];
 }
@@ -300,18 +304,31 @@ function makePlacementFromGroupItem(group, groupItem) {
 
 function entryMatchesClass(entry, cls) {
   if (!entry || !cls) return false;
-  const cardIds = [
-    ...(entry.ttcardIds || []),
-    entry.ttcardId
-  ].filter(Boolean);
+  const cardIds = [...(entry.ttcardIds || []), entry.ttcardId].filter(Boolean);
 
   if (cardIds.length) {
-    return cardIds.some(id => ttCardCoversClass(getTtCardById(id), cls));
+    // Check if ANY of the ttcards covers this class
+    return cardIds.some(id => {
+      const card = getTtCardById(id);
+      if (!card) return false;
+      // Grade must match
+      if (card.gradeKey !== cls.gradeKey) return false;
+      // Try roster-based class infos
+      const infos = getTtCardClassInfos(card);
+      if (infos.length) {
+        return infos.some(info => {
+          if (cls.section && info.section) return info.section === cls.section;
+          return (info.sectionIdx ?? 0) === (cls.sectionIdx ?? 0);
+        });
+      }
+      // Fallback: same sectionIdx
+      return (card.sectionIdx ?? 0) === (cls.sectionIdx ?? 0);
+    });
   }
 
+  // No ttcardIds — gradeKeys + sectionIdx based
   const eGrades = entry.gradeKeys?.length ? entry.gradeKeys : [entry.gradeKey].filter(Boolean);
   if (!eGrades.includes(cls.gradeKey)) return false;
-
   const eSec = entry.sectionIdx ?? 0;
   if (eSec === cls.sectionIdx) return true;
 
