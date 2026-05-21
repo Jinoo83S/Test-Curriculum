@@ -370,8 +370,21 @@ function withoutFirestoreMeta(obj = {}) {
 }
 
 function sameDomainData(a, b) {
-  try { return JSON.stringify(a) === JSON.stringify(b); }
-  catch (_) { return false; }
+  // 빠른 참조 동일성 먼저
+  if (a === b) return true;
+  if (!a || !b) return false;
+  // 타입별 빠른 비교 (깊은 JSON.stringify 대신)
+  try {
+    const ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    // 배열 포함 도메인은 길이만 비교 (세부값 변경은 실시간 업데이트에서 처리)
+    for (const k of ka) {
+      const va = a[k], vb = b[k];
+      if (Array.isArray(va) && Array.isArray(vb)) { if (va.length !== vb.length) return false; }
+      else if (va !== vb) return false;
+    }
+    return true;
+  } catch (_) { return false; }
 }
 
 function applyNormalizedDomain(domain, normalized) {
@@ -497,9 +510,21 @@ function handleSnap(domain, normalizeFn) {
 }
 
 const unsubs = {};
+
+// ── Split confirmed flags (localStorage) ─────────────────────────
+// _split 컬렉션에 데이터가 확인되면 플래그 저장 → 이후 fallback 시도 생략
+const SPLIT_CONFIRMED_KEY = "his_split_confirmed_v1";
+function getSplitConfirmed() {
+  try { return new Set(JSON.parse(localStorage.getItem(SPLIT_CONFIRMED_KEY) || "[]")); }
+  catch (_) { return new Set(); }
+}
+function markSplitConfirmed(domain) {
+  const s = getSplitConfirmed(); s.add(domain);
+  try { localStorage.setItem(SPLIT_CONFIRMED_KEY, JSON.stringify([...s])); } catch (_) {}
+}
+const splitConfirmed = getSplitConfirmed();
+
 const splitFallbackAttempted = { classes: false, rosters: false, timetable: false };
-// If subcollection access is denied or unavailable, fall back to the old one-document storage.
-// This keeps the app usable while Firestore rules are being updated for Phase 3.
 const splitUnavailableDomains = new Set();
 
 function domainHasData(domain) {
@@ -554,14 +579,16 @@ export function isDomainSubscribed(domain) {
 
 function subscribeClassesSplit() {
   unsubs.classes = onSnapshot(splitRefs.classes, async snap => {
-    if (snap.empty && !splitFallbackAttempted.classes) {
+    if (!snap.empty) markSplitConfirmed("classes");
+
+    // _split 컬렉션 확인됨 → fallback 불필요
+    if (snap.empty && !splitConfirmed.has("classes") && !splitFallbackAttempted.classes) {
       splitFallbackAttempted.classes = true;
       const migrated = await loadLegacyDomainFallback("classes", normalizeClassesDomain, {
         hasData: d => (d.classes || []).length > 0
       });
       if (migrated) return;
     }
-    // Do not let an empty split snapshot wipe data that was just loaded from legacy storage.
     if (snap.empty && splitFallbackAttempted.classes && domainHasData("classes")) return;
 
     const classes = snap.docs.map(d => normalizeClass({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
@@ -571,14 +598,15 @@ function subscribeClassesSplit() {
 
 function subscribeRostersSplit() {
   unsubs.rosters = onSnapshot(splitRefs.rosters, async snap => {
-    if (snap.empty && !splitFallbackAttempted.rosters) {
+    if (!snap.empty) markSplitConfirmed("rosters");
+
+    if (snap.empty && !splitConfirmed.has("rosters") && !splitFallbackAttempted.rosters) {
       splitFallbackAttempted.rosters = true;
       const migrated = await loadLegacyDomainFallback("rosters", normalizeRostersDomain, {
         hasData: d => Object.keys(d.rosters || {}).length > 0 || Object.keys(d.rosterMeta || {}).length > 0
       });
       if (migrated) return;
     }
-    // Do not let an empty split snapshot wipe data that was just loaded from legacy storage.
     if (snap.empty && splitFallbackAttempted.rosters && domainHasData("rosters")) return;
 
     const raw = { rosters: {}, rosterMeta: {} };
@@ -607,7 +635,9 @@ async function applyTimetableSplitIfReady() {
     timetableSplitCache.ttcards.length > 0 ||
     timetableSplitCache.metaExists;
 
-  if (!hasSplitData && !splitFallbackAttempted.timetable) {
+  if (hasSplitData) markSplitConfirmed("timetable");
+
+  if (!hasSplitData && !splitConfirmed.has("timetable") && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
       hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
@@ -615,9 +645,7 @@ async function applyTimetableSplitIfReady() {
     if (migrated) return;
   }
 
-  // When split collections are still empty, do not overwrite a timetable that was
-  // just restored from the old boards/timetable document.
-  if (!hasSplitData && splitFallbackAttempted.timetable && domainHasData("timetable")) return;
+  if (!hasSplitData && (splitFallbackAttempted.timetable || splitConfirmed.has("timetable")) && domainHasData("timetable")) return;
 
   const raw = {
     config: timetableSplitCache.meta?.config || {},
