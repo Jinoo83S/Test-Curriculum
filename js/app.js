@@ -353,6 +353,15 @@ function updateAuthUI(user) {
 // ================================================================
 // BOOTSTRAP
 // ================================================================
+// ── Sidebar toggle ────────────────────────────────────────────────
+const sidebarToggleBtn = document.getElementById("appSidebarToggle");
+const pageEl = document.querySelector(".page");
+sidebarToggleBtn?.addEventListener("click", () => {
+  const hidden = pageEl?.classList.toggle("sidebar-hidden");
+  if (sidebarToggleBtn) sidebarToggleBtn.textContent = hidden ? "▶" : "◀";
+  if (sidebarToggleBtn) sidebarToggleBtn.title = hidden ? "사이드바 펼치기" : "사이드바 접기";
+});
+
 setOnUpdate(domain => render(domain));
 
 // ── Save status indicator ─────────────────────────────────────────

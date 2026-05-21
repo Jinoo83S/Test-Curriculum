@@ -67,6 +67,16 @@ button {
   padding: 10px;
   height: calc(100vh - 44px);
   overflow: hidden;
+  transition: grid-template-columns .2s ease;
+}
+.page.sidebar-hidden {
+  grid-template-columns: 0px 1fr;
+  gap: 0;
+}
+.page.sidebar-hidden .sidebar {
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .sidebar,
