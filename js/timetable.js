@@ -228,7 +228,14 @@ function getTtCardClassInfos(card) {
   const labelInfos = getClassInfosByCardLabel(card);
   if (labelInfos.length) return labelInfos;
 
-  // No roster, no label → use sectionIdx to find matching class row
+  // classCount=1 → 반이 나뉘지 않은 전체 학년 수업 (채플 등) → 해당 학년 모든 반에 표시
+  const cc = Math.max(0, parseInt(appState.rosters?.rosterMeta?.[card.templateId]?.classCount) || 0);
+  if (cc <= 1) {
+    const allGradeClasses = classRows.filter(c => c.gradeKey === card.gradeKey);
+    if (allGradeClasses.length) return allGradeClasses;
+  }
+
+  // classCount > 1 → sectionIdx로 해당 반만 매칭
   const matched = classRows.filter(c => c.gradeKey === card.gradeKey && (c.sectionIdx ?? 0) === (card.sectionIdx ?? 0));
   if (matched.length) return matched;
 
