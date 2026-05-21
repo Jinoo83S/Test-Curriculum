@@ -362,7 +362,17 @@ sidebarToggleBtn?.addEventListener("click", () => {
   if (sidebarToggleBtn) sidebarToggleBtn.title = hidden ? "사이드바 펼치기" : "사이드바 접기";
 });
 
-setOnUpdate(domain => render(domain));
+let _renderTimer = null;
+let _pendingRenderDomain = null;
+setOnUpdate(domain => {
+  _pendingRenderDomain = domain || _pendingRenderDomain;
+  clearTimeout(_renderTimer);
+  _renderTimer = setTimeout(() => {
+    const d = _pendingRenderDomain;
+    _pendingRenderDomain = null;
+    render(d);
+  }, 50);
+});
 
 // ── Save status indicator ─────────────────────────────────────────
 const saveStatusEl = document.getElementById("saveStatusEl");

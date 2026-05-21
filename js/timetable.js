@@ -164,6 +164,29 @@ function getClassInfoByGradeSection(gradeKey, sectionIdx) {
   return getAllClasses().find(c => c.gradeKey === gradeKey && (c.sectionIdx ?? 0) === (sectionIdx ?? 0)) || null;
 }
 
+function getClassInfosByCardLabel(card) {
+  const label = clean(card?.label || "");
+  if (!label || !card?.gradeKey) return [];
+  const gradeClasses = getAllClasses().filter(c => c.gradeKey === card.gradeKey);
+  if (gradeClasses.length <= 1) return [];
+  const compactLabel = label.replace(/\s+/g, "").toUpperCase();
+  const classNames = gradeClasses.map(c => String(c.section || sectionLabel(c.sectionIdx ?? 0)).trim()).filter(Boolean);
+  const compactNames = classNames.join("").toUpperCase();
+
+  // 사용자가 카드 라벨을 "8AB", "7A/B", "A,B"처럼 직접 붙인 경우 보완 인식
+  // 단일 문자 반명(A/B/C...)은 단어 경계로만 검사하면 "8AB"를 놓치므로 compact 조합도 확인합니다.
+  const matchesCompactGroup = compactNames.length >= 2 && compactLabel.includes(compactNames);
+  const matched = gradeClasses.filter(c => {
+    const name = String(c.section || sectionLabel(c.sectionIdx ?? 0)).trim();
+    if (!name) return false;
+    const n = name.toUpperCase();
+    if (matchesCompactGroup && compactNames.includes(n)) return true;
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^A-Z0-9가-힣])${escaped}([^A-Z0-9가-힣]|$)`, "i").test(label);
+  });
+  return matched;
+}
+
 function classKey(info) {
   if (!info) return "";
   return `${info.gradeKey || info.grade}:${info.section || sectionLabel(info.sectionIdx ?? 0)}`;
@@ -193,6 +216,9 @@ function getTtCardClassInfos(card) {
   });
 
   if (infos.length) return infos;
+
+  const labelInfos = getClassInfosByCardLabel(card);
+  if (labelInfos.length) return labelInfos;
 
   const fallback = getClassInfoByGradeSection(card.gradeKey, card.sectionIdx ?? 0);
   return [fallback || { gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0, section: sectionLabel(card.sectionIdx ?? 0) }];
@@ -295,25 +321,14 @@ function placeGroupAt(groupId, day, period) {
   const grp = (appState.templates.templateGroups || []).find(g => g.id === groupId);
   if (!grp) return false;
 
-  let added = 0;
-  const unitCardIds = new Set((grp.units || []).flatMap(u => u.ttcardIds || []));
-
-  (grp.units || []).forEach(unit => {
-    const unitCards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
-    const data = buildEntryDataFromTtCards(unitCards, { day, period, groupId: grp.id, unitId: unit.id });
-    if (data) { addEntry(data); added++; }
-  });
-
-  (grp.poolCardIds || [])
-    .filter(id => !unitCardIds.has(id))
-    .map(id => getTtCardById(id))
-    .filter(Boolean)
-    .forEach(card => {
-      const data = buildEntryDataFromTtCards([card], { day, period, groupId: grp.id });
-      if (data) { addEntry(data); added++; }
-    });
-
-  return added > 0;
+  // 그룹카드는 화면에서 하나의 카드로 보이므로, 배치도 하나의 aggregate entry로 저장합니다.
+  // 이렇게 해야 7AB/8AB/9AB 같은 그룹에서 특정 반(예: 8B)이 누락되지 않고
+  // 상세정보·전체반 시간표·자동배치가 같은 기준(ttcardIds 전체)을 보게 됩니다.
+  const cards = getGroupCards(grp);
+  const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id });
+  if (!data) return false;
+  addEntry(data);
+  return true;
 }
 
 // ── Unit helpers ──────────────────────────────────────────────────
@@ -364,34 +379,25 @@ function buildSchedulableItems() {
   const groupBlocks = [];
   const groupedCardIds = new Set();
 
-  // ── Group blocks: pool cards + unit cards must share the same slot ──
+  // ── Group blocks: one visible group card = one schedulable aggregate item ──
   (appState.templates.templateGroups || []).forEach(group => {
-    const unitCardIds = new Set((group.units || []).flatMap(u => u.ttcardIds || []));
-    const groupItems = [];
+    const groupCards = getGroupCards(group);
+    if (!groupCards.length) return;
+    groupCards.forEach(c => groupedCardIds.add(c.id));
 
-    (group.units || []).forEach(unit => {
-      const unitCards = (unit.ttcardIds || []).map(id => ttcardMap.get(id)).filter(Boolean);
-      if (!unitCards.length) return;
-      unitCards.forEach(c => groupedCardIds.add(c.id));
-      const credits = Math.max(1, ...unitCards.map(getCreditsForTtCard).filter(v => v > 0));
-      const teachers = [...new Set(unitCards.flatMap(getTeachersForTtCard).filter(Boolean))].join(",");
-      groupItems.push({ kind: "unit", unit, ttcards: unitCards, credits, teachers, name: getUnitDisplayTitle(unit) });
+    const credits = Math.max(1, ...groupCards.map(getCreditsForTtCard).filter(v => v > 0));
+    const teachers = [...new Set(groupCards.flatMap(getTeachersForTtCard).filter(Boolean))].join(",");
+    groupBlocks.push({
+      group,
+      unitItems: [{
+        kind: "group",
+        unit: null,
+        ttcards: groupCards,
+        credits,
+        teachers,
+        name: group.name || "그룹 카드"
+      }]
     });
-
-    (group.poolCardIds || [])
-      .filter(id => !unitCardIds.has(id))
-      .map(id => ttcardMap.get(id))
-      .filter(Boolean)
-      .forEach(card => {
-        groupedCardIds.add(card.id);
-        const desc = describeTtCard(card);
-        const credits = getCreditsForTtCard(card);
-        if (credits > 0) {
-          groupItems.push({ kind: "pool", unit: null, ttcards: [card], credits, teachers: desc.teachers.join(","), name: desc.title });
-        }
-      });
-
-    if (groupItems.length) groupBlocks.push({ group, unitItems: groupItems });
   });
 
   // Set of templateIds covered by legacy template-based units
@@ -2091,8 +2097,13 @@ function exportXlsx() {
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────
+let _renderAllTimer = null;
+function requestRenderAll() {
+  clearTimeout(_renderAllTimer);
+  _renderAllTimer = setTimeout(() => renderAll(), 50);
+}
 setOnUpdate(domain => {
-  if (["curriculum","templates","classes","teachers","rosters","rooms","timetable"].includes(domain)) renderAll();
+  if (["curriculum","templates","classes","teachers","rosters","rooms","timetable"].includes(domain)) requestRenderAll();
 });
 
 onAuth(async (user) => {
