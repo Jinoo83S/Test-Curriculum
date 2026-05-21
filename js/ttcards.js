@@ -531,6 +531,15 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   const rightWrap = document.createElement("div"); rightWrap.className = "group-right-col-wrap";
   const rightHdr  = document.createElement("div"); rightHdr.className = "group-right-col-hdr";
   rightHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"그룹 목록" }));
+
+  const filteredGroups = grps().filter(g => {
+    const unitCards = (g.units||[]).flatMap(u => (u.ttcardIds||[]).map(id => getTtCardById(id)).filter(Boolean));
+    const poolCards = (g.poolCardIds||[]).map(id => getTtCardById(id)).filter(Boolean);
+    const allCards  = [...unitCards, ...poolCards];
+    if (!allCards.length) return true;
+    return allCards.some(c => gmLevelFilter(c));
+  });
+
   const togWrap = document.createElement("div"); togWrap.style.cssText = "display:flex;gap:4px;margin-left:auto";
   const allCollapsed = filteredGroups.length > 0 && filteredGroups.every(g => g._collapsed);
   const togBtn = makeBtn(allCollapsed ? "▼ 전체 펼치기" : "▶ 전체 접기", "group-expand-btn", () => {
@@ -542,14 +551,6 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   rightHdr.appendChild(togWrap);
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";
-  const filteredGroups = grps().filter(g => {
-    // Include if any unit card OR pool card passes the level filter
-    const unitCards = (g.units||[]).flatMap(u => (u.ttcardIds||[]).map(id => getTtCardById(id)).filter(Boolean));
-    const poolCards = (g.poolCardIds||[]).map(id => getTtCardById(id)).filter(Boolean);
-    const allCards  = [...unitCards, ...poolCards];
-    if (!allCards.length) return true; // empty groups always shown
-    return allCards.some(c => gmLevelFilter(c));
-  });
   if (filteredGroups.length) {
     filteredGroups.forEach(g => rightCol.appendChild(createGroupBlockGM(g.id, onStructureChange)));
   } else {
