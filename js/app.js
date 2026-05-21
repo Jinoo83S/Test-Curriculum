@@ -227,9 +227,6 @@ function setView(view) {
     results:      resultsMgrView,   ttcards: ttCardsMgrView,    subjectsetup: subjectSetupMgrView,
   };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
-  const isManagerView = view === "manager";
-  if (document.getElementById("openTemplateManagerBtn"))
-    document.getElementById("openTemplateManagerBtn").textContent = isManagerView ? "보드 보기" : "표 편집";
 }
 
 function closeToBoard() {
@@ -301,7 +298,7 @@ function render(domain) {
     : Array.isArray(domain)
       ? new Set(domain)
       : new Set(domain ? [domain] : []);
-  const fullRender = !domain || changedDomains.has("__all__");
+  const fullRender = !domain || changedDomains.has("__all__") || changedDomains.has("all");
   const changed = d => fullRender || changedDomains.has(d);
   const boardDataChanged = fullRender || changed("curriculum") || changed("templates");
 
