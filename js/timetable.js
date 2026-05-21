@@ -652,9 +652,10 @@ function renderAllClassesGrid(wrap) {
 
   const table = document.createElement("table");
   table.className = "tt-table tt-all-class-table";
-  table.style.cssText = "table-layout:fixed;width:100%;min-width:0;border-collapse:separate;border-spacing:0";
-  // Set --num-rows so CSS can calculate per-row height
+  table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
+  // 본문 행 높이는 열 너비와 같은 방식으로 % 기반 계산
   wrap.style.setProperty("--num-rows", String(classes.length));
+  const rowHeight = `calc((100% - var(--tt-all-header-height, 30px)) / ${classes.length})`;
 
   // Inject colgroup for fixed compact class header + equal timetable cells
   const colgroup = document.createElement("colgroup");
@@ -706,6 +707,7 @@ function renderAllClassesGrid(wrap) {
   let prevGrade = null;
   classes.forEach(cls => {
     const tr = document.createElement("tr");
+    tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
     tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) { tr.className = "tt-all-grade-boundary"; prevGrade = cls.gradeKey; }
@@ -724,7 +726,7 @@ function renderAllClassesGrid(wrap) {
         const isDayEnd   = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.setAttribute("data-day", day);
-        td.style.cssText = "padding:0 1px;vertical-align:top;overflow:hidden;height:26px;max-height:26px";
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};max-height:none`;
         td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
         td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
         td.addEventListener("drop", e => {

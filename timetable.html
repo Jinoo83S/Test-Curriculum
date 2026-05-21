@@ -233,16 +233,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <style>
 /* ── 2026-05 compact timetable design override ──
-   1) 첫 열(반) 축소  2) 요일 구분 강화  3) 본문 행 높이 1/2 축소 */
+   1) 첫 열(반) 축소  2) 요일 구분 강화  3) 본문 행 높이 % 기반 자동 계산 */
 :root{
   --tt-row-header-width:28px;
-  --tt-all-row-height:26px;
+  --tt-all-header-height:30px;
+  --tt-all-row-height:calc((100% - var(--tt-all-header-height)) / var(--num-rows, 12));
   --tt-day-start-border:3px solid #64748b;
   --tt-day-end-border:4px solid #334155;
 }
 .tt-all-class-table{
   table-layout:fixed!important;
   width:100%!important;
+  height:100%!important;
   min-width:0!important;
   border-collapse:separate!important;
   border-spacing:0!important;
@@ -266,15 +268,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 }
 .tt-all-row-hdr b{font-size:9px!important;line-height:1.05!important}
 .tt-all-row-hdr span{font-size:8px!important;line-height:1.05!important}
+.tt-all-class-table thead{height:var(--tt-all-header-height)!important}
 .tt-all-class-table tbody tr{
   height:var(--tt-all-row-height)!important;
-  min-height:var(--tt-all-row-height)!important;
-  max-height:var(--tt-all-row-height)!important;
+  min-height:0!important;
+  max-height:none!important;
 }
 .tt-all-cell{
   height:var(--tt-all-row-height)!important;
-  min-height:var(--tt-all-row-height)!important;
-  max-height:var(--tt-all-row-height)!important;
+  min-height:0!important;
+  max-height:none!important;
   min-width:0!important;
   max-width:none!important;
   padding:0 1px!important;
@@ -304,6 +307,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-all-class-table .tt-entry-title{font-size:clamp(7px,0.58vw,8.5px)!important;line-height:1.08!important;white-space:nowrap!important;display:block!important;text-overflow:ellipsis!important}
 .tt-all-class-table .tt-entry-teacher2{font-size:clamp(5.5px,0.48vw,7px)!important;line-height:1.05!important}
 .tt-all-class-table .tt-cell-ph{min-height:100%!important;font-size:9px!important}
+.tt-all-class-table .tt-cell-ph::before{content:"+"!important}
+.tt-all-class-table .tt-cell-ph::after{content:""!important}
 </style>
 
 </head>
