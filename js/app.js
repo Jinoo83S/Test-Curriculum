@@ -129,7 +129,6 @@ const addStudentRowBtn  = document.getElementById("addStudentRowBtn");
 const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
-const navBoardBtn = document.getElementById("navBoardBtn");
 const navManagerBtn = document.getElementById("navManagerBtn");
 const navButtons = {
   board:        navBoardBtn,
