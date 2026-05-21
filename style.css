@@ -3443,3 +3443,11 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .merged-drop-cell {
   border-right: 1px solid #e5e7eb;
 }
+
+/* ── Group drag handle ──────────────────────────────────────── */
+.group-drag-handle {
+  cursor: grab; color: #9ca3af; font-size: 14px;
+  padding: 0 4px; line-height: 1; flex-shrink: 0; user-select: none;
+}
+.group-drag-handle:hover { color: #6b7280; }
+.group-drag-handle:active { cursor: grabbing; }

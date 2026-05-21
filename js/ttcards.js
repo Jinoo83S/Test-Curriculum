@@ -272,42 +272,49 @@ function createGroupBlockGM(groupId, onStructureChange) {
   grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
   if (!Object.prototype.hasOwnProperty.call(grpObj, "_collapsed")) grpObj._collapsed = false;
   const block = document.createElement("div"); block.className = "group-block";
-  block.draggable = canEdit();
   block.dataset.groupId = groupId;
-  if (grpObj._collapsed === undefined) grpObj._collapsed = false;
 
-  // Drag-to-reorder group blocks
-  block.addEventListener("dragstart", e => {
-    if (e.target.closest(".group-pool-cards, .group-unit-cards")) { e.stopPropagation(); return; }
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", groupId);
-    block.classList.add("group-block-dragging");
-  });
-  block.addEventListener("dragend", () => block.classList.remove("group-block-dragging"));
+  // Drop target for group reorder (receives drop from other blocks' handle)
   block.addEventListener("dragover", e => {
-    const over = e.target.closest(".group-block[data-group-id]");
-    if (!over || over === block) return;
-    e.preventDefault(); e.dataTransfer.dropEffect = "move";
-    over.classList.add("group-block-drop-target");
+    if (e.dataTransfer.types.includes("application/group-id")) {
+      e.preventDefault(); e.dataTransfer.dropEffect = "move";
+      block.classList.add("group-block-drop-target");
+    }
   });
-  block.addEventListener("dragleave", () => block.classList.remove("group-block-drop-target"));
+  block.addEventListener("dragleave", e => {
+    if (!block.contains(e.relatedTarget)) block.classList.remove("group-block-drop-target");
+  });
   block.addEventListener("drop", e => {
-    const over = e.target.closest(".group-block[data-group-id]");
-    if (!over || over === block) return;
-    e.preventDefault(); over.classList.remove("group-block-drop-target");
-    const srcId  = e.dataTransfer.getData("text/plain");
-    const destId = over.dataset.groupId;
-    if (srcId === destId) return;
+    if (!e.dataTransfer.types.includes("application/group-id")) return;
+    e.preventDefault(); block.classList.remove("group-block-drop-target");
+    const srcId = e.dataTransfer.getData("application/group-id");
+    const destId = groupId;
+    if (!srcId || srcId === destId) return;
     const arr = appState.templates.templateGroups;
     const si = arr.findIndex(g => g.id === srcId);
     const di = arr.findIndex(g => g.id === destId);
     if (si < 0 || di < 0) return;
-    const [item] = arr.splice(si, 1);
-    arr.splice(di, 0, item);
+    const [moved] = arr.splice(si, 1);
+    arr.splice(di, 0, moved);
     scheduleSave("templates"); onStructureChange();
   });
 
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
+
+  // Drag handle — only this triggers group reorder drag
+  const dragHandle = document.createElement("span"); dragHandle.className = "group-drag-handle";
+  dragHandle.textContent = "⠿"; dragHandle.title = "드래그하여 순서 변경";
+  if (canEdit()) {
+    dragHandle.draggable = true;
+    dragHandle.addEventListener("dragstart", e => {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("application/group-id", groupId);
+      block.classList.add("group-block-dragging");
+      e.stopPropagation();
+    });
+    dragHandle.addEventListener("dragend", () => block.classList.remove("group-block-dragging"));
+  }
+
   const colBtn = document.createElement("button"); colBtn.type = "button"; colBtn.className = "group-collapse-btn";
   colBtn.textContent = grpObj._collapsed ? "▶" : "▼";
 
@@ -317,7 +324,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
 
   const delBtn = makeBtn("×", "group-col-del-btn group-col-del-x", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit(); delBtn.title = "그룹 삭제";
-  hdr.append(colBtn, nameInp, delBtn); block.appendChild(hdr);
+  hdr.append(dragHandle, colBtn, nameInp, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
   hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
