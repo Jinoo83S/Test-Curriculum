@@ -135,6 +135,132 @@ function getSectionCount(templateId) {
   return Math.max(1, parseInt(meta?.classCount) || 1);
 }
 
+function getCreditsForTtCard(card) {
+  if (!card) return 0;
+  const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
+    .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
+  return parseFloat(row?.credits) || 0;
+}
+
+function getTeachersForTtCard(card) {
+  return card ? getTeachersForTemplate(card.templateId) : [];
+}
+
+function getGroupCards(group) {
+  if (!group) return [];
+  const unitIds = new Set((group.units || []).flatMap(u => u.ttcardIds || []));
+  const ids = [
+    ...(group.poolCardIds || []).filter(id => !unitIds.has(id)),
+    ...(group.units || []).flatMap(u => u.ttcardIds || [])
+  ];
+  const seen = new Set();
+  return ids
+    .filter(id => id && !seen.has(id) && seen.add(id))
+    .map(id => getTtCardById(id))
+    .filter(Boolean);
+}
+
+function describeTtCard(card) {
+  const tpl = getTemplateById(card?.templateId);
+  const base = tpl ? getTemplateCardTitle(tpl) : "?";
+  const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card?.templateId]?.classCount) || 1);
+  const sec = cc > 1 ? sectionLabel(card.sectionIdx) : sectionLabel(card.sectionIdx ?? 0);
+  return {
+    title: cc > 1 ? `${base} ${sec}` : base,
+    subject: base,
+    gradeKey: card?.gradeKey || "",
+    sectionIdx: card?.sectionIdx ?? 0,
+    sectionLabel: sec,
+    teachers: getTeachersForTtCard(card),
+    credits: getCreditsForTtCard(card),
+  };
+}
+
+function buildEntryDataFromTtCards(cards, { day, period, groupId = null, unitId = null } = {}) {
+  const validCards = (cards || []).filter(Boolean);
+  if (!validCards.length) return null;
+  const first = validCards[0];
+  const templateIds = [...new Set(validCards.map(c => c.templateId).filter(Boolean))];
+  const gradeKeys = [...new Set(validCards.map(c => c.gradeKey).filter(Boolean))];
+  const teacherName = [...new Set(validCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))].join(",");
+  return {
+    day, period,
+    sectionIdx: first.sectionIdx ?? 0,
+    unitId,
+    groupId,
+    ttcardId: validCards.length === 1 ? first.id : null,
+    ttcardIds: validCards.map(c => c.id),
+    templateIds,
+    gradeKeys,
+    templateId: templateIds[0] || first.templateId,
+    gradeKey: gradeKeys[0] || first.gradeKey,
+    teacherName,
+    roomId: null
+  };
+}
+
+function makePlacementFromGroupItem(group, groupItem) {
+  return buildEntryDataFromTtCards(groupItem.ttcards || [], {
+    groupId: group.id,
+    unitId: groupItem.unit?.id || null
+  });
+}
+
+function entryMatchesClass(entry, cls) {
+  if (!entry || !cls) return false;
+  const cardIds = [
+    ...(entry.ttcardIds || []),
+    entry.ttcardId
+  ].filter(Boolean);
+
+  if (cardIds.length) {
+    return cardIds.some(id => {
+      const card = getTtCardById(id);
+      return card && card.gradeKey === cls.gradeKey && (card.sectionIdx ?? 0) === cls.sectionIdx;
+    });
+  }
+
+  const eGrades = entry.gradeKeys?.length ? entry.gradeKeys : [entry.gradeKey].filter(Boolean);
+  if (!eGrades.includes(cls.gradeKey)) return false;
+
+  const eSec = entry.sectionIdx ?? 0;
+  if (eSec === cls.sectionIdx) return true;
+
+  const tplId = entry.templateId || entry.templateIds?.[0];
+  if (!tplId) return false;
+  const allRosterEntries = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx ?? 0) === eSec);
+  const allCls = appState.classes?.classes || [];
+  return allRosterEntries.some(re => {
+    const clsObj = allCls.find(c => c.id === re.classId);
+    return clsObj && clsObj.grade === cls.gradeKey && clsObj.name === cls.section;
+  });
+}
+
+function placeGroupAt(groupId, day, period) {
+  const grp = (appState.templates.templateGroups || []).find(g => g.id === groupId);
+  if (!grp) return false;
+
+  let added = 0;
+  const unitCardIds = new Set((grp.units || []).flatMap(u => u.ttcardIds || []));
+
+  (grp.units || []).forEach(unit => {
+    const unitCards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
+    const data = buildEntryDataFromTtCards(unitCards, { day, period, groupId: grp.id, unitId: unit.id });
+    if (data) { addEntry(data); added++; }
+  });
+
+  (grp.poolCardIds || [])
+    .filter(id => !unitCardIds.has(id))
+    .map(id => getTtCardById(id))
+    .filter(Boolean)
+    .forEach(card => {
+      const data = buildEntryDataFromTtCards([card], { day, period, groupId: grp.id });
+      if (data) { addEntry(data); added++; }
+    });
+
+  return added > 0;
+}
+
 // ── Unit helpers ──────────────────────────────────────────────────
 /** Find the group and unit that contains this templateId */
 function getUnitForTemplate(templateId) {
@@ -179,59 +305,56 @@ function buildSchedulableItems() {
   const ttcards = getTtCards();
   const ttcardMap = new Map(ttcards.map(c => [c.id, c]));
 
-  // Set of ttcard IDs that are in units
-  const ttcardIdsInUnits = new Set(
-    (appState.templates.templateGroups || []).flatMap(g => g.units.flatMap(u => u.ttcardIds || []))
-  );
-  // Cards in poolCardIds (in group but not in unit) are treated as standalone with a groupId for concurrent check
-  const poolCardGroupMap = new Map(); // ttcardId → groupId
-  (appState.templates.templateGroups || []).forEach(g => {
-    (g.poolCardIds || []).forEach(id => { if (!ttcardIdsInUnits.has(id)) poolCardGroupMap.set(id, g.id); });
-  });
-  // Set of templateIds covered by units (for legacy standalone exclusion)
-  const templateIdsInUnits = new Set(
-    (appState.templates.templateGroups || []).flatMap(g => g.units.flatMap(u => u.templateIds || []))
-  );
-
   const standalone = [];
   const groupBlocks = [];
+  const groupedCardIds = new Set();
 
-  // ── Group units (ttcard-based) ────────────────────────────────────
-  (appState.templates.templateGroups || []).forEach(grp => {
-    if (!grp.units.length) return;
-    const unitItems = [];
-    grp.units.forEach(unit => {
-      const unitTtcards = (unit.ttcardIds || []).map(id => ttcardMap.get(id)).filter(Boolean);
-      if (!unitTtcards.length) return;
+  // ── Group blocks: pool cards + unit cards must share the same slot ──
+  (appState.templates.templateGroups || []).forEach(group => {
+    const unitCardIds = new Set((group.units || []).flatMap(u => u.ttcardIds || []));
+    const groupItems = [];
 
-      const gradeKeys = [...new Set(unitTtcards.map(c => c.gradeKey))];
-      const credits = Math.max(1, ...unitTtcards.map(c => {
-        const row = (appState.curriculum.gradeBoards[c.gradeKey] || [])
-          .find(r => r.sem1TemplateId === c.templateId || r.sem2TemplateId === c.templateId);
-        return parseFloat(row?.credits) || 0;
-      }).filter(v => v > 0));
-      const teachers = [...new Set(unitTtcards.flatMap(c => getTeachersForTemplate(c.templateId)))];
-
-      if (credits > 0) unitItems.push({ unit, gradeKeys, credits, teachers: teachers.join(","),
-        ttcards: unitTtcards });
+    (group.units || []).forEach(unit => {
+      const unitCards = (unit.ttcardIds || []).map(id => ttcardMap.get(id)).filter(Boolean);
+      if (!unitCards.length) return;
+      unitCards.forEach(c => groupedCardIds.add(c.id));
+      const credits = Math.max(1, ...unitCards.map(getCreditsForTtCard).filter(v => v > 0));
+      const teachers = [...new Set(unitCards.flatMap(getTeachersForTtCard).filter(Boolean))].join(",");
+      groupItems.push({ kind: "unit", unit, ttcards: unitCards, credits, teachers, name: getUnitDisplayTitle(unit) });
     });
-    if (unitItems.length) groupBlocks.push({ group: grp, unitItems });
+
+    (group.poolCardIds || [])
+      .filter(id => !unitCardIds.has(id))
+      .map(id => ttcardMap.get(id))
+      .filter(Boolean)
+      .forEach(card => {
+        groupedCardIds.add(card.id);
+        const desc = describeTtCard(card);
+        const credits = getCreditsForTtCard(card);
+        if (credits > 0) {
+          groupItems.push({ kind: "pool", unit: null, ttcards: [card], credits, teachers: desc.teachers.join(","), name: desc.title });
+        }
+      });
+
+    if (groupItems.length) groupBlocks.push({ group, unitItems: groupItems });
   });
 
-  // ── Standalone ttcards (not in any unit) ──────────────────────────
+  // Set of templateIds covered by legacy template-based units
+  const templateIdsInUnits = new Set(
+    (appState.templates.templateGroups || []).flatMap(g => (g.units || []).flatMap(u => u.templateIds || []))
+  );
+
+  // ── Standalone ttcards (not in any group pool/unit) ──────────────
   ttcards.forEach(card => {
-    if (ttcardIdsInUnits.has(card.id)) return;
-    const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
-      .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
-    const credits = parseFloat(row?.credits) || 0;
+    if (groupedCardIds.has(card.id)) return;
+    const credits = getCreditsForTtCard(card);
     if (!credits) return;
-    const teacher = getTeachersForTemplate(card.templateId).filter(Boolean).join(",");
-    const groupId = poolCardGroupMap.get(card.id) || null;
+    const teacher = getTeachersForTtCard(card).filter(Boolean).join(",");
     for (let i = 0; i < credits; i++) {
-      standalone.push({ kind:"standalone", ttcardId: card.id,
-        templateId: card.templateId, sectionIdx: card.sectionIdx,
-        gradeKey: card.gradeKey, teacherName: teacher,
-        groupId // carry groupId for concurrent check
+      standalone.push({ kind: "standalone", ttcardId: card.id, ttcardIds: [card.id],
+        templateId: card.templateId, templateIds: [card.templateId], sectionIdx: card.sectionIdx,
+        gradeKey: card.gradeKey, gradeKeys: [card.gradeKey], teacherName: teacher,
+        groupId: null
       });
     }
   });
@@ -276,10 +399,21 @@ function renderClassGrid(wrap) {
   const days    = ["월","화","수","목","금"];
   const periods = ttConfig().periodLabels;
 
-  // Collect sections for currentGrade
-  const gradeSections = [...new Set(
-    entries().filter(e => entryHasGrade(e, currentGrade)).map(e => e.sectionIdx ?? 0)
-  )].sort((a, b) => a - b);
+  // Collect sections for currentGrade. For group/unit entries, use ttcard section data rather than the entry's first section only.
+  const sectionSet = new Set();
+  entries().forEach(e => {
+    if (!entryHasGrade(e, currentGrade)) return;
+    const cardIds = [...(e.ttcardIds || []), e.ttcardId].filter(Boolean);
+    if (cardIds.length) {
+      cardIds.forEach(id => {
+        const card = getTtCardById(id);
+        if (card?.gradeKey === currentGrade) sectionSet.add(card.sectionIdx ?? 0);
+      });
+    } else {
+      sectionSet.add(e.sectionIdx ?? 0);
+    }
+  });
+  const gradeSections = [...sectionSet].sort((a, b) => a - b);
   if (!gradeSections.length) gradeSections.push(0);
 
   const table = document.createElement("table"); table.className = "tt-table tt-class-table";
@@ -330,7 +464,7 @@ function renderClassGrid(wrap) {
           handleDrop({ ...dragData, sectionIdx: sec }, day, period);
         });
         const slotEntries = entries().filter(e =>
-          entryHasGrade(e, currentGrade) && (e.sectionIdx ?? 0) === sec && e.day === day && e.period === period
+          e.day === day && e.period === period && entryMatchesClass(e, { gradeKey: currentGrade, sectionIdx: sec })
         );
         if (slotEntries.length) {
           slotEntries.forEach(entry => {
@@ -448,6 +582,8 @@ function renderAllClassesGrid(wrap) {
   let prevGrade = null;
   classes.forEach(cls => {
     const tr = document.createElement("tr");
+    tr.dataset.gradeKey = cls.gradeKey;
+    tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) { tr.className = "tt-all-grade-boundary"; prevGrade = cls.gradeKey; }
 
     // Row header: "7A", "8B" etc.
@@ -468,24 +604,9 @@ function renderAllClassesGrid(wrap) {
           handleDrop({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }, day, period);
         });
 
-        const slotEntries = entries().filter(e => {
-          if (e.day !== day || e.period !== period) return false;
-          const eGrades = e.gradeKeys?.length ? e.gradeKeys : [e.gradeKey].filter(Boolean);
-          if (!eGrades.includes(cls.gradeKey)) return false;
-          // Multi-grade entry (chapel, MS group) → show in every row of matching grade
-          if (eGrades.length > 1 || e.groupId) return true;
-          const eSec = e.sectionIdx ?? 0;
-          if (eSec === cls.sectionIdx) return true;
-          // Check roster membership for M-cards
-          const tplId = e.templateId || e.templateIds?.[0];
-          if (!tplId) return false;
-          const allRosterEntries = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx??0) === eSec);
-          const allCls = appState.classes?.classes || [];
-          return allRosterEntries.some(re => {
-            const clsObj = allCls.find(c => c.id === re.classId);
-            return clsObj && clsObj.grade === cls.gradeKey && clsObj.name === cls.section;
-          });
-        });
+        const slotEntries = entries().filter(e =>
+          e.day === day && e.period === period && entryMatchesClass(e, cls)
+        );
 
         if (slotEntries.length) slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { compact: true })));
         else { const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph); }
@@ -746,62 +867,41 @@ function handleDrop(data, day, period) {
 
   const sectionIdx = data.sectionIdx ?? 0;
 
-  // 2. Unit drop (group-based: place ALL ttcards in the unit together)
+  // 2. Whole group drop: place all 구성 카드 in the same slot while preserving each card's grade/section.
+  if (data.kind === "group" && data.groupId) {
+    if (placeGroupAt(data.groupId, day, period)) {
+      recomputeConflicts(); renderAll();
+    }
+    return;
+  }
+
+  // 3. Unit drop (묶음수업): place all ttcards in the unit together.
   if (data.unitId) {
     const grp  = (appState.templates.templateGroups || []).find(g => g.id === data.groupId);
     const unit = grp?.units?.find(u => u.id === data.unitId);
     if (grp && unit) {
-      const ttcardIds = unit.ttcardIds || [];
-      const ttcards   = ttcardIds.map(id => getTtCardById(id)).filter(Boolean);
-      if (ttcards.length) {
-        const gradeKeys    = [...new Set(ttcards.map(c => c.gradeKey))];
-        const templateIds  = [...new Set(ttcards.map(c => c.templateId))];
-        const teacherName  = ttcards.flatMap(c => {
-          const tpl = getTemplateById(c.templateId);
-          return tpl ? splitTeacherNames([tpl.teacher, tpl.sem1Teacher, tpl.sem2Teacher].join(",")) : [];
-        }).filter(Boolean).join(",");
-        addEntry({
-          day, period, sectionIdx,
-          unitId: unit.id, groupId: grp.id,
-          ttcardIds, templateIds, gradeKeys,
-          templateId: templateIds[0], gradeKey: gradeKeys[0],
-          teacherName, roomId: null
-        });
+      const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
+      const entryData = buildEntryDataFromTtCards(ttcards, { day, period, groupId: grp.id, unitId: unit.id });
+      if (entryData) {
+        addEntry(entryData);
         recomputeConflicts(); renderAll(); return;
       }
     }
   }
 
-  // 3. Single ttcard drop (or pool card with groupId)
+  // 4. Single ttcard drop.
   if (data.ttcardId) {
     const card = getTtCardById(data.ttcardId);
     if (card) {
-      const tpl = getTemplateById(card.templateId);
-      const teacherName = tpl ? splitTeacherNames([tpl.teacher, tpl.sem1Teacher, tpl.sem2Teacher].join(",")).filter(Boolean).join(",") : "";
-      // If card belongs to a group pool, find all sibling cards in the pool for the same template
-      const grpId = data.groupId;
-      if (grpId) {
-        const grp = (appState.templates.templateGroups||[]).find(g=>g.id===grpId);
-        if (grp) {
-          const poolCards = (grp.poolCardIds||[]).map(id=>getTtCardById(id)).filter(Boolean);
-          const templateCards = poolCards.filter(c=>c.templateId===card.templateId);
-          const allCards = templateCards.length > 1 ? templateCards : [card];
-          const gradeKeys = [...new Set(allCards.map(c=>c.gradeKey))];
-          const ttcardIds = allCards.map(c=>c.id);
-          addEntry({ day, period, sectionIdx: card.sectionIdx,
-            groupId: grpId, ttcardIds, gradeKeys,
-            templateId: card.templateId, gradeKey: gradeKeys[0],
-            teacherName, roomId: null, ttcardId: card.id });
-          recomputeConflicts(); renderAll(); return;
-        }
+      const entryData = buildEntryDataFromTtCards([card], { day, period, groupId: data.groupId || null });
+      if (entryData) {
+        addEntry(entryData);
+        recomputeConflicts(); renderAll(); return;
       }
-      addEntry({ day, period, templateId: card.templateId, sectionIdx: card.sectionIdx,
-        gradeKey: card.gradeKey, teacherName, roomId: null, ttcardId: card.id });
-      recomputeConflicts(); renderAll(); return;
     }
   }
 
-  // 4. Legacy templateId fallback
+  // 5. Legacy templateId fallback
   const templateId    = data.templateId;
   const resolvedGrade = data.gradeKey || currentGrade;
   if (!templateId) return;
@@ -826,18 +926,19 @@ function handleDrop(data, day, period) {
 }
 
 
+
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Subject panel ─────────────────────────────────────────────────
 // ── Entry detail popup ──────────────────────────────────────────
 /** Popup showing card detail: 시수/분반/배정현황 */
-function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName }) {
+function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, detailItems = [] }) {
   const existing = document.getElementById("tt-entry-detail-modal");
   if (existing) existing.remove();
   const modal = document.createElement("div"); modal.id = "tt-entry-detail-modal";
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
   const box = document.createElement("div");
-  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:280px;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:300px;max-width:460px;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
 
   const firstGrade = gradeKeys[0] || currentGrade;
   const gc = getGradeColor(firstGrade);
@@ -849,7 +950,7 @@ function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, 
 
   const rows = [
     ["학년",   gradeKeys.map(g => `${gradeDisplay(g)}학년`).join(", ") || "-"],
-    ["반",     sectionIdx != null ? sectionLabel(sectionIdx) : "-"],
+    ["반",     detailItems.length ? `${detailItems.length}개 구성 카드` : (sectionIdx != null ? sectionLabel(sectionIdx) : "-")],
     ["담당 교사", teachers.join(", ") || "-"],
     ["시수",   String(credits || "-")],
     ["배정 현황", `${assigned} / ${credits} 차시${isDone ? "  ✅ 완료" : ""}`],
@@ -863,10 +964,38 @@ function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, 
     row.append(l, v); box.appendChild(row);
   });
 
-  // Progress bar
+  if (detailItems.length) {
+    const listTitle = document.createElement("div");
+    listTitle.style.cssText = "margin-top:12px;margin-bottom:6px;font-size:12px;font-weight:700;color:#475569";
+    listTitle.textContent = "구성 카드";
+    box.appendChild(listTitle);
+
+    const list = document.createElement("div");
+    list.style.cssText = "display:flex;flex-direction:column;gap:5px";
+    detailItems.forEach(item => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:grid;grid-template-columns:1fr auto;gap:6px;padding:7px 9px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc";
+      const main = document.createElement("div");
+      main.style.cssText = "min-width:0";
+      const nm = document.createElement("div");
+      nm.style.cssText = "font-weight:700;color:#1e293b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      nm.textContent = item.title;
+      const sub = document.createElement("div");
+      sub.style.cssText = "font-size:10px;color:#64748b;margin-top:2px";
+      sub.textContent = `${gradeDisplay(item.gradeKey)}학년 · ${item.sectionLabel || sectionLabel(item.sectionIdx ?? 0)} · ${(item.teachers || []).join(", ") || "교사 없음"}`;
+      main.append(nm, sub);
+      const cr = document.createElement("div");
+      cr.style.cssText = "font-size:10px;font-weight:700;color:#334155;align-self:center;background:#e2e8f0;border-radius:999px;padding:2px 7px";
+      cr.textContent = `${item.credits || "-"}시수`;
+      row.append(main, cr);
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+  }
+
   if (credits > 0) {
     const pct = Math.min(100, Math.round((assigned / credits) * 100));
-    const bar = document.createElement("div"); bar.style.cssText = "margin-top:8px;background:#f1f5f9;border-radius:999px;height:6px;overflow:hidden";
+    const bar = document.createElement("div"); bar.style.cssText = "margin-top:10px;background:#f1f5f9;border-radius:999px;height:6px;overflow:hidden";
     const fill = document.createElement("div"); fill.style.cssText = `height:100%;border-radius:999px;width:${pct}%;background:${isDone ? "#22c55e" : "#3b82f6"};transition:width .3s`;
     bar.appendChild(fill); box.appendChild(bar);
   }
@@ -878,6 +1007,7 @@ function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, 
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
   document.body.appendChild(modal);
 }
+
 
 function showEntryDetailByUnit(unit, group, gradeKeys) {
   // Show unit info in a simple popup (no entry edit - just info)
@@ -979,7 +1109,7 @@ function showSubjectAssignmentHistory(entry) {
       const row = document.createElement("div");
       row.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;background:${e.id===entry.id?gc.bg+'99':'#f8fafc'};border:1px solid ${e.id===entry.id?gc.border:'#e2e8f0'};cursor:pointer`;
       const idxEl = document.createElement("span"); idxEl.style.cssText="font-size:10px;color:#6b7280;width:18px;text-align:center;font-weight:700"; idxEl.textContent=i+1;
-      const slotEl = document.createElement("span"); slotEl.style.cssText="font-weight:700;color:#1e293b"; slotEl.textContent=`${dayLabels[e.day]} ${i+1}교시`;
+      const slotEl = document.createElement("span"); slotEl.style.cssText="font-weight:700;color:#1e293b"; slotEl.textContent=`${dayLabels[e.day]} ${periods[e.period] || `${e.period + 1}교시`}`;
       const secEl = document.createElement("span"); secEl.style.cssText="font-size:10px;color:#6b7280;flex:1"; secEl.textContent=gradeKeys.length?gradeKeys.map(g=>`${gradeDisplay(g)}`).join(","):"";
       const pinEl = document.createElement("span"); if(e.pinned) { pinEl.textContent="📌"; pinEl.style.fontSize="10px"; }
       row.append(idxEl, slotEl, secEl, pinEl);
@@ -1158,40 +1288,27 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
 
   // ── Groups: one card per group ──────────────────────────────
   grpList.forEach(grp => {
-    const allIds = [...(grp.poolCardIds||[]), ...(grp.units||[]).flatMap(u => u.ttcardIds||[])];
-    const grpCards = allIds.map(id => ttcardMap.get(id)).filter(Boolean);
+    const grpCards = getGroupCards(grp);
     grpCards.forEach(c => seenIds.add(c.id));
     if (!grpCards.length) return;
 
     const gradeKeys = [...new Set(grpCards.map(c => c.gradeKey))];
-    const credits = Math.max(1, ...grpCards.map(c => {
-      const row = (appState.curriculum.gradeBoards[c.gradeKey]||[])
-        .find(r => r.sem1TemplateId===c.templateId||r.sem2TemplateId===c.templateId);
-      return parseFloat(row?.credits)||0;
-    }).filter(v=>v>0));
-    const teachers = [...new Set(grpCards.flatMap(c => getTeachersForTemplate(c.templateId)))];
-    const assigned = entries().filter(e => e.groupId === grp.id || grpCards.some(c => e.ttcardId===c.id)).length;
+    const credits = Math.max(1, ...grpCards.map(getCreditsForTtCard).filter(v => v > 0));
+    const teachers = [...new Set(grpCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))];
+    const relatedEntries = entries().filter(e =>
+      e.groupId === grp.id || grpCards.some(c => e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id))
+    );
+    const assigned = new Set(relatedEntries.map(e => `${e.day}:${e.period}`)).size;
     const isDone = credits > 0 && assigned >= credits;
-    const gradeColor = getGradeColor(gradeKeys[0]||"7학년");
-    const cardNames = grpCards.map(c => {
-      const tpl = getTemplateById(c.templateId);
-      const base = tpl ? getTemplateCardTitle(tpl) : "?";
-      const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[c.templateId]?.classCount)||1);
-      return cc > 1 ? `${base} ${sectionLabel(c.sectionIdx)}` : base;
-    });
-    const title = `[${grp.name}] ${cardNames.join(" · ")}`;
-    const card = buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, groupName: grp.name });
+    const gradeColor = getGradeColor(gradeKeys[0] || "7학년");
+    const detailItems = grpCards.map(describeTtCard);
+    const title = `[${grp.name}] ${detailItems.map(i => i.title).join(" · ")}`;
+    const card = buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, groupName: grp.name, detailItems });
     card.dataset.groupId = grp.id;
     card.style.outline = "1.5px solid " + gradeColor.border;
     if (!isDone) {
       card.addEventListener("dragstart", () => {
-        const firstUnit = (grp.units||[])[0];
-        const firstCard = grpCards[0];
-        dragData = firstUnit
-          ? { kind:"subject", unitId: firstUnit.id, groupId: grp.id,
-              ttcardIds: grpCards.map(c=>c.id), templateId: firstCard?.templateId, gradeKey: gradeKeys[0] }
-          : { kind:"subject", ttcardId: firstCard?.id, groupId: grp.id,
-              templateId: firstCard?.templateId, gradeKey: gradeKeys[0] };
+        dragData = { kind: "group", groupId: grp.id, ttcardIds: grpCards.map(c => c.id), gradeKey: gradeKeys[0] };
         card.classList.add("tt-dragging");
       });
       card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); });
@@ -1204,20 +1321,18 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
     if (seenIds.has(c.id)) return;
     const tpl = getTemplateById(c.templateId); if (!tpl) return;
     const gradeColor = getGradeColor(c.gradeKey);
-    const credits = (() => {
-      const row = (appState.curriculum.gradeBoards[c.gradeKey]||[])
-        .find(r => r.sem1TemplateId===c.templateId||r.sem2TemplateId===c.templateId);
-      return parseFloat(row?.credits)||0;
-    })();
+    const credits = getCreditsForTtCard(c);
     const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[c.templateId]?.classCount)||1);
     const assigned = entries().filter(e =>
-      entryTemplateIds(e).includes(c.templateId)&&entryHasGrade(e,c.gradeKey)&&(e.sectionIdx??0)===c.sectionIdx
+      (e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)) ||
+      (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e,c.gradeKey) && (e.sectionIdx??0)===c.sectionIdx)
     ).length;
     const isDone = credits > 0 && assigned >= credits;
     const label = cc > 1 ? `${getTemplateCardTitle(tpl)} ${sectionLabel(c.sectionIdx)}` : getTemplateCardTitle(tpl);
-    const card = buildSidebarCard({ title: label, teachers: getTeachersForTemplate(c.templateId),
+    const card = buildSidebarCard({ title: label, teachers: getTeachersForTtCard(c),
       gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor, sectionIdx: c.sectionIdx });
     card.dataset.templateId = c.templateId;
+    card.dataset.ttcardId = c.id;
     if (!isDone) {
       card.addEventListener("dragstart", () => {
         dragData = { kind:"subject", ttcardId: c.id, templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey };
@@ -1230,6 +1345,7 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
 
   finalizeSidebarPanel(panel, availableCards, doneCards, "시간표 카드가 없습니다. '시간표 카드' 탭에서 카드를 생성하세요.");
 }
+
 
 
 function renderSubjectPanelLegacy(panel) {
@@ -1282,7 +1398,7 @@ function renderSubjectPanelLegacy(panel) {
   finalizeSidebarPanel(panel, availableCards, doneCards, "커리큘럼에 배치된 과목이 없습니다.");
 }
 
-function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, sectionIdx, groupName }) {
+function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, sectionIdx, groupName, detailItems = [] }) {
   const card = document.createElement("div");
   card.className = "tt-subject-card tt-sc-compact" + (isDone ? " tt-subject-done" : "");
   card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
@@ -1317,7 +1433,7 @@ function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDon
 
   card.addEventListener("click", ev => {
     if (ev.defaultPrevented) return;
-    showSidebarCardDetail({ title, teachers: uniqueTeachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName });
+    showSidebarCardDetail({ title, teachers: uniqueTeachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, detailItems });
   });
 
   return card;
@@ -1618,19 +1734,28 @@ export function autoAssignAll() {
 
   if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
-  // Preserve ALL pinned entries AND entries that are already satisfactorily placed
+  // Preserve pinned entries only
   const pinnedEntries = entries().filter(e => e.pinned);
   ttDomain().entries = [...pinnedEntries];
 
   const { standalone, groupBlocks } = buildSchedulableItems();
 
-  // Count already-pinned credits per template+grade+section
-  function pinnedCount(templateId, gradeKey, sectionIdx) {
-    return pinnedEntries.filter(e =>
-      (e.templateId===templateId || e.templateIds?.includes(templateId)) &&
-      (e.gradeKey===gradeKey || e.gradeKeys?.includes(gradeKey)) &&
-      (e.sectionIdx??0)===(sectionIdx??0)
-    ).length;
+  function pinnedCount(item) {
+    return pinnedEntries.filter(e => {
+      if (item.ttcardId && (e.ttcardId === item.ttcardId || (e.ttcardIds || []).includes(item.ttcardId))) return true;
+      return (e.templateId===item.templateId || e.templateIds?.includes(item.templateId)) &&
+        (e.gradeKey===item.gradeKey || e.gradeKeys?.includes(item.gradeKey)) &&
+        (e.sectionIdx??0)===(item.sectionIdx??0);
+    }).length;
+  }
+
+  function groupItemHasPinned(groupItem) {
+    const ids = new Set((groupItem.ttcards || []).map(c => c.id));
+    return pinnedEntries.some(e =>
+      (e.ttcardId && ids.has(e.ttcardId)) ||
+      (e.ttcardIds || []).some(id => ids.has(id)) ||
+      (groupItem.unit?.id && e.unitId === groupItem.unit.id)
+    );
   }
 
   const pc = ttConfig().periodCount;
@@ -1645,86 +1770,60 @@ export function autoAssignAll() {
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const placed = [], failed = [];
 
-    // ── Place concurrent groups first (most constrained) ─────────
+    // ── Place concurrent groups first: all configured cards in a group share the same slot ──
     for (const { group, unitItems } of groupBlocks) {
       if (!group.isConcurrent) continue;
       const maxCredits = Math.max(...unitItems.map(u => u.credits));
 
       for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
-        const activeUnitItems = unitItems.filter(u => slot_i < u.credits);
-        if (!activeUnitItems.length) continue;
-        // Skip if already pinned for this slot index
-        const anyPinned = activeUnitItems.some(({ unit }) =>
-          pinnedEntries.some(e => e.unitId === unit.id)
-        );
-        if (anyPinned) continue;
+        const activeItems = unitItems.filter(u => slot_i < u.credits);
+        if (!activeItems.length) continue;
+        if (activeItems.some(groupItemHasPinned)) continue;
+
         let foundSlot = null;
         for (const slot of shuffle([...baseSlots])) {
           const hypo = [];
           let valid = true;
-          for (const { unit, gradeKeys, teachers, ttcards: unitCards } of activeUnitItems) {
-            const templateIds = [...new Set((unitCards||[]).map(c => c.templateId))];
-            const item = {
-              kind: "unit", unitId: unit.id, groupId: group.id,
-              ttcardIds: (unitCards||[]).map(c => c.id),
-              templateIds, gradeKeys,
-              templateId: templateIds[0] || null, gradeKey: gradeKeys[0],
-              teacherName: teachers, sectionIdx: 0
-            };
-            if (!checkPlacementValid(item, slot, [...placed, ...hypo])) { valid = false; break; }
+          for (const groupItem of activeItems) {
+            const item = makePlacementFromGroupItem(group, groupItem);
+            if (!item || !checkPlacementValid(item, slot, [...placed, ...hypo])) { valid = false; break; }
             hypo.push({ ...item, ...slot });
           }
           if (valid) { foundSlot = slot; break; }
         }
+
         if (foundSlot) {
-          activeUnitItems.forEach(({ unit, gradeKeys, teachers, ttcards: unitCards }) => {
-            const templateIds = [...new Set((unitCards||[]).map(c => c.templateId))];
-            placed.push(normalizeTimetableEntry({
-              id: uid("ent"), ...foundSlot,
-              unitId: unit.id, groupId: group.id,
-              ttcardIds: (unitCards||[]).map(c => c.id),
-              templateIds, gradeKeys,
-              templateId: templateIds[0] || null, gradeKey: gradeKeys[0],
-              teacherName: teachers, sectionIdx: 0
-            }));
+          activeItems.forEach(groupItem => {
+            const item = makePlacementFromGroupItem(group, groupItem);
+            if (item) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...foundSlot }));
           });
         } else {
-          activeUnitItems.forEach(({ unit }) => {
-            failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
-          });
+          activeItems.forEach(groupItem => failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` }));
         }
       }
     }
 
-    // ── Place non-concurrent units independently ─────────────────
+    // ── Place non-concurrent groups independently ─────────────────
     for (const { group, unitItems } of groupBlocks) {
       if (group.isConcurrent) continue;
-      for (const { unit, gradeKeys, teachers, credits, ttcards: unitCards } of unitItems) {
-        const templateIds = [...new Set((unitCards||[]).map(c => c.templateId))];
-        for (let i = 0; i < credits; i++) {
-          const item = {
-            kind: "unit", unitId: unit.id, groupId: group.id,
-            ttcardIds: (unitCards||[]).map(c => c.id),
-            templateIds, gradeKeys,
-            templateId: templateIds[0] || null, gradeKey: gradeKeys[0],
-            teacherName: teachers, sectionIdx: 0
-          };
+      for (const groupItem of unitItems) {
+        for (let i = 0; i < groupItem.credits; i++) {
+          const item = makePlacementFromGroupItem(group, groupItem);
           let found = false;
           for (const slot of shuffle([...baseSlots])) {
-            if (checkPlacementValid(item, slot, placed)) {
+            if (item && checkPlacementValid(item, slot, placed)) {
               placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
               found = true; break;
             }
           }
-          if (!found) failed.push({ unitId: unit.id, name: getUnitDisplayTitle(unit) });
+          if (!found) failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` });
         }
       }
     }
 
-    // ── Place standalone templates ────────────────────────────────
+    // ── Place standalone cards ────────────────────────────────────
     for (const item of shuffle([...standalone])) {
-      // Skip credits already covered by pinned entries
-      const alreadyPinned = pinnedCount(item.templateId, item.gradeKey, item.sectionIdx);
+      const alreadyPinned = pinnedCount(item);
       const needCredits = Math.max(0, 1 - alreadyPinned); // standalone = 1 per item
       if (needCredits <= 0) continue;
       let found = false;
@@ -1745,7 +1844,6 @@ export function autoAssignAll() {
     if (!bestFailed.length) break;
   }
 
-  // Commit
   bestPlaced.forEach(e => entries().push(e));
   scheduleSave("timetable");
   recomputeConflicts(); renderAll();
@@ -1758,6 +1856,7 @@ export function autoAssignAll() {
       `\n\n💡 교사 제약 완화 또는 직접 배치로 보완하세요.`);
   }
 }
+
 // ── Schedule controls (toolbar) ───────────────────────────────────
 function renderScheduleControls() {
   const pcInp = $("ttPeriodCountInput");
