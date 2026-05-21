@@ -976,24 +976,26 @@ function buildEntryCard(entry, opts = {}) {
     card.dataset.multi = grpEntries.length;
   }
 
-  // Compact single-line layout: title only (click for details)
-  const row = document.createElement("div"); row.className = "tt-entry-row1";
+  // Row1: 과목명 + 멀티카드 카운터
+  const row1 = document.createElement("div"); row1.className = "tt-entry-row1";
   const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
-  titleEl.style.cssText = "flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:10px;font-weight:700;line-height:1.2";
-  row.appendChild(titleEl);
-
+  row1.appendChild(titleEl);
   if (isMulti) {
-    const cnt = document.createElement("span");
-    cnt.style.cssText = "font-size:8px;font-weight:700;background:rgba(0,0,0,.15);border-radius:3px;padding:0 3px;flex-shrink:0;line-height:14px";
-    cnt.textContent = `×${grpEntries.length}`; row.appendChild(cnt);
+    const cnt = document.createElement("span"); cnt.className = "tt-entry-multi-cnt";
+    cnt.textContent = `×${grpEntries.length}`; row1.appendChild(cnt);
   }
 
+  // Row2: 교사명 + 고정 핀
+  const row2 = document.createElement("div"); row2.className = "tt-entry-row2";
+  const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher2";
+  teacherEl.textContent = [...new Set(teachers)].slice(0, 2).join(", ") || "";
+  row2.appendChild(teacherEl);
   if (entry.pinned) {
-    const pin = document.createElement("span"); pin.textContent = "📌";
-    pin.style.cssText = "font-size:8px;flex-shrink:0"; row.appendChild(pin);
+    const pin = document.createElement("span"); pin.className = "tt-entry-pin2"; pin.textContent = "📌";
+    row2.appendChild(pin);
   }
 
-  card.appendChild(row);
+  card.append(row1, row2);
 
   // Click → detail modal (all info)
   card.addEventListener("click", ev => {
