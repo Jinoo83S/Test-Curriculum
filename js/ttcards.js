@@ -270,6 +270,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
 function createGroupBlockGM(groupId, onStructureChange) {
   const grpObj = grps().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
+  if (!Object.prototype.hasOwnProperty.call(grpObj, "_collapsed")) grpObj._collapsed = false;
   const block = document.createElement("div"); block.className = "group-block";
   block.draggable = canEdit();
   block.dataset.groupId = groupId;
@@ -402,14 +403,8 @@ export function renderGroupManagerView(container) {
 }
 
 function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) {
-  // Save collapsed state before re-render
-  const collapsedMap = new Map(grps().map(g => [g.id, g._collapsed ?? false]));
-
   const onStructureChange = () => {
-    // Restore collapsed state to prevent auto-expand
-    collapsedMap.forEach((collapsed, id) => {
-      const g = grps().find(x => x.id === id); if (g) g._collapsed = collapsed;
-    });
+    // Read current scroll positions
     const rightEl2 = board.querySelector(".group-right-col");
     const leftEl2  = board.querySelector(".group-unassigned-pool");
     const rS = rightEl2?.scrollTop || 0;
