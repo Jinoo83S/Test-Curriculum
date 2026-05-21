@@ -46,35 +46,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-body{flex:1;overflow:hidden;padding:0;display:flex;flex-direction:column;min-height:0}
 #ttGrid{flex:1;overflow:auto;min-height:0;width:100%}
 
+
 /* ── Entry card: 2행 레이아웃 ── */
-.tt-entry-card{border-radius:2px;padding:1px 3px;border-left-width:3px;min-width:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;justify-content:space-between;width:100%;height:100%;box-sizing:border-box}
+.tt-entry-card{border-radius:2px;padding:0 2px;border-left-width:3px;min-width:0;overflow:hidden;cursor:pointer;display:flex;flex-direction:column;justify-content:center;width:100%;height:100%;box-sizing:border-box;gap:0}
 .tt-entry-card[data-multi]{border-right-width:3px!important}
-/* Row1: 과목명 */
-.tt-entry-row1{display:flex;align-items:center;gap:1px;min-height:0;overflow:hidden}
-.tt-entry-title{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;font-size:clamp(7px,0.65vw,9px)}
+.tt-entry-row1{display:flex;align-items:center;gap:1px;overflow:hidden;line-height:1.15}
+.tt-entry-title{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:clamp(7px,0.65vw,9px)}
 .tt-entry-multi-cnt{flex-shrink:0;font-size:7px;font-weight:700;background:rgba(0,0,0,.15);border-radius:2px;padding:0 2px;line-height:1.3}
-/* Row2: 교사 + 핀 */
-.tt-entry-row2{display:flex;align-items:center;justify-content:space-between;gap:2px;overflow:hidden}
-.tt-entry-teacher2{flex:1;min-width:0;font-size:clamp(6px,0.55vw,8px);opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.tt-entry-row2{display:flex;align-items:center;justify-content:space-between;gap:1px;overflow:hidden;line-height:1.1}
+.tt-entry-teacher2{flex:1;min-width:0;font-size:clamp(6px,0.52vw,7px);opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tt-entry-pin2{flex-shrink:0;font-size:7px;line-height:1}
 .tt-entry-pinned{outline:1.5px solid #f59e0b!important}
 .tt-entry-conflict{outline:1.5px solid #ef4444}
 .tt-entry-card.tt-dragging{opacity:.4;outline:2px dashed #2563eb}
 
 /* ── All-classes table ── */
-.tt-all-class-table{border-collapse:collapse;width:100%;height:100%;table-layout:fixed}
-.tt-all-corner{background:#1e3a5f;color:white;text-align:center;padding:2px;position:sticky;left:0;z-index:3;font-size:clamp(7px,0.7vw,10px)}
-.tt-day-header{font-weight:700;color:white;background:#1e3a5f;text-align:center;font-size:clamp(8px,0.75vw,11px)}
-.tt-all-row-hdr{text-align:center;border-right:2px solid #cbd5e1;white-space:nowrap;position:sticky;left:0;z-index:2;padding:1px}
-.tt-all-grade-boundary>td{border-top:2px solid #93c5fd}
-.tt-period-sub-hdr{background:#f8fafc;text-align:center;border-bottom:1px solid #e2e8f0;font-size:clamp(7px,0.6vw,9px);padding:1px;white-space:nowrap;overflow:hidden}
-
-/* ── Cell: height fills remaining space equally ── */
-.tt-cell,.tt-all-cell{border:1px solid #e2e8f0;vertical-align:top;padding:1px;overflow:hidden}
-.tt-all-class-table tbody tr{height:calc((100vh - 44px - 34px - 260px - 56px) / var(--num-rows, 12));min-height:28px}
-.tt-cell-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:clamp(8px,0.7vw,11px);pointer-events:none}
+.tt-all-class-table{border-collapse:collapse;width:100%;table-layout:fixed}
+/* 반 헤더 열 */
+.tt-all-corner{background:#1e3a5f;color:white;text-align:center;padding:1px;position:sticky;left:0;z-index:3;font-size:8px;width:26px!important;min-width:26px!important}
+.tt-all-row-hdr{text-align:center;border-right:2px solid #94a3b8;white-space:nowrap;position:sticky;left:0;z-index:2;padding:0;width:26px!important;min-width:26px!important;overflow:hidden}
+.tt-all-row-hdr b{display:block;font-size:clamp(8px,0.75vw,10px);font-weight:800;line-height:1.2}
+.tt-all-row-hdr span{font-size:clamp(6px,0.6vw,8px);font-weight:600;line-height:1}
+/* 행 높이 */
+.tt-all-class-table tbody tr{height:calc((100vh - 44px - 34px - 220px - 48px) / var(--num-rows, 12));min-height:22px}
+.tt-all-grade-boundary>td{border-top:2px solid #3b82f6}
+/* 요일 헤더 */
+.tt-day-header{font-weight:700;color:white;background:#1e3a5f;text-align:center;font-size:clamp(8px,0.75vw,11px);padding:2px;border-right:2px solid #475569!important}
+/* 교시 서브헤더 */
+.tt-period-sub-hdr{background:#f1f5f9;text-align:center;border-bottom:1px solid #e2e8f0;font-size:clamp(6px,0.55vw,8px);padding:1px 0;white-space:nowrap;overflow:hidden}
+.tt-period-sub-hdr.day-start{border-left:2px solid #94a3b8!important}
+/* 셀 */
+.tt-cell,.tt-all-cell{border:1px solid #e8edf3;vertical-align:top;padding:0 1px;overflow:hidden}
+.tt-all-cell.day-start{border-left:2px solid #94a3b8!important}
+.tt-cell.tt-dragover,.tt-all-cell.tt-dragover{background:#dbeafe;outline:1.5px dashed #2563eb}
+.tt-cell-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:clamp(8px,0.7vw,10px);pointer-events:none}
 .tt-cell-ph::before{content:"+"}
-.tt-cell.tt-dragover,.tt-all-cell.tt-dragover{background:#dbeafe;outline:1.5px dashed #2563eb}.tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
+
 .tt-corner-label{font-size:10px;font-weight:700;color:white}
 .tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:6px 2px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;border-right:3px solid #1e3a5f;width:calc((100% - 46px)/5)}
 /* Day column alternating tint — applied via JS data-day attribute */

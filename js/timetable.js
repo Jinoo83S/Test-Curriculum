@@ -681,6 +681,7 @@ function renderAllClassesGrid(wrap) {
   DAYS.forEach(d => {
     const th = document.createElement("th"); th.className = "tt-day-header"; th.colSpan = numPer;
     th.textContent = dayLabels[d];
+    th.style.borderRight = "2px solid #475569";
     th.style.cssText = `font-size:clamp(8px,0.8vw,12px);padding:2px`;
     hr1.appendChild(th);
   });
@@ -690,7 +691,7 @@ function renderAllClassesGrid(wrap) {
   const hr2 = document.createElement("tr");
   DAYS.forEach(() => {
     periods.forEach((lbl, p) => {
-      const th = document.createElement("th"); th.className = "tt-period-sub-hdr";
+      const th = document.createElement("th"); th.className = "tt-period-sub-hdr" + (p === 0 ? " day-start" : "");
       th.textContent = lbl;
       th.style.cssText = `font-size:clamp(7px,0.65vw,9px);padding:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
       hr2.appendChild(th);
@@ -717,7 +718,7 @@ function renderAllClassesGrid(wrap) {
     DAYS.forEach(day => {
       periods.forEach((_, period) => {
         const td = document.createElement("td");
-        td.className = "tt-cell tt-all-cell";
+        td.className = "tt-cell tt-all-cell" + (period === 0 ? " day-start" : "");
         td.setAttribute("data-day", day);
         td.style.cssText = "padding:1px;vertical-align:top;overflow:hidden";
         td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
