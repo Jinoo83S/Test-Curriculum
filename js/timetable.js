@@ -1,15 +1,13 @@
 // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
-import { auth, GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
+import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy } from "./state.js";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData,
-         splitTeacherNames, getTemplateAppliedGrades } from "./templates.js";
-import { uid, clean, makeBtn, escapeHtml, sectionLabel, gradeDisplay } from "./utils.js";
-import { getTtCards, getTtCardById, makeTtcId } from "./ttcards.js";
-import { getTeachers } from "./teachers.js";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
+import { uid, makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
+import { getTtCards, getTtCardById } from "./ttcards.js";
 import { getRooms, renderRoomsView } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
 

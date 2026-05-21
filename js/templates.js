@@ -123,6 +123,14 @@ export function deleteTemplate(templateId) {
   const item = getTemplateById(templateId); if (!item) return;
   if (!confirm(`"${getTemplateCardTitle(item)}" 카드를 삭제할까요?\n\n커리큘럼, 수강명단, 시간표 카드, 시간표 배치에서도 제거됩니다.`)) return;
 
+  // 삭제 전에 연결된 시간표 카드 ID를 먼저 확보해야 합니다.
+  // ttcards를 먼저 지운 뒤 find()로 찾으면 그룹의 poolCardIds/unit.ttcardIds에 죽은 ID가 남습니다.
+  const deletedTtcardIds = new Set(
+    (appState.timetable?.ttcards || [])
+      .filter(c => c.templateId === templateId)
+      .map(c => c.id)
+  );
+
   // 1. templates
   tDomain().templates = templates().filter(t => t.id !== templateId);
 
@@ -140,28 +148,36 @@ export function deleteTemplate(templateId) {
     delete appState.rosters.rosterMeta?.[templateId];
   }
 
-  // 4. timetable ttcards
+  // 4. timetable cards + entries
   if (appState.timetable) {
-    appState.timetable.ttcards = (appState.timetable.ttcards || []).filter(c => c.templateId !== templateId);
-    // 5. timetable entries
+    appState.timetable.ttcards = (appState.timetable.ttcards || [])
+      .filter(c => c.templateId !== templateId);
+
     appState.timetable.entries = (appState.timetable.entries || []).filter(e =>
-      e.templateId !== templateId && !(e.templateIds || []).includes(templateId)
+      e.templateId !== templateId &&
+      !(e.templateIds || []).includes(templateId) &&
+      !deletedTtcardIds.has(e.ttcardId) &&
+      !(e.ttcardIds || []).some(id => deletedTtcardIds.has(id))
     );
   }
 
-  // 6. templateGroups pool + units
+  // 5. templateGroups pool + units
   (appState.templates.templateGroups || []).forEach(g => {
-    g.poolCardIds = (g.poolCardIds || []).filter(id => {
-      const c = appState.timetable?.ttcards?.find(c => c.id === id);
-      return c ? c.templateId !== templateId : true;
-    });
+    g.poolCardIds = (g.poolCardIds || [])
+      .filter(id => !deletedTtcardIds.has(id));
+
     (g.units || []).forEach(u => {
-      u.templateIds = (u.templateIds || []).filter(id => id !== templateId);
-      u.ttcardIds = (u.ttcardIds || []).filter(id => {
-        const c = appState.timetable?.ttcards?.find(c => c.id === id);
-        return c ? c.templateId !== templateId : true;
-      });
+      u.templateIds = (u.templateIds || [])
+        .filter(id => id !== templateId);
+
+      u.ttcardIds = (u.ttcardIds || [])
+        .filter(id => !deletedTtcardIds.has(id));
     });
+
+    // 빈 unit은 남겨두면 화면에서 빈 묶음수업으로 보일 수 있어 정리합니다.
+    g.units = (g.units || []).filter(u =>
+      (u.templateIds || []).length > 0 || (u.ttcardIds || []).length > 0
+    );
   });
 
   scheduleSave("templates"); scheduleSave("curriculum");

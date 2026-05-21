@@ -113,7 +113,7 @@ export function normalizeTemplateGroup(item = {}) {
     units: Array.isArray(item.units) ? item.units.map(normalizeUnit) : [],
     poolCardIds: Array.isArray(item.poolCardIds) ? item.poolCardIds.filter(Boolean) : [],
     groupType: isConcurrent ? "concurrent" : (isCrossGrade ? "cross-grade" : "off"),
-    linkedGroupId: null
+    linkedGroupId: clean(item.linkedGroupId) || null
   };
 }
 
@@ -242,7 +242,8 @@ export function normalizeTimetableConstraint(c = {}) {
     maxConsecutive: (Number.isInteger(c.maxConsecutive) && c.maxConsecutive > 0) ? c.maxConsecutive : 3,
     unavailableSlots: Array.isArray(c.unavailableSlots)
       ? c.unavailableSlots.filter(s => Number.isInteger(s.day) && Number.isInteger(s.period))
-      : []
+      : [],
+    assignedRoomId: clean(c.assignedRoomId) || null
   };
 }
 function normalizeTimetableDomain(raw = {}) {
@@ -260,7 +261,10 @@ function normalizeTimetableDomain(raw = {}) {
     config: {
       periodCount: pc,
       periodLabels: pl,
-      showLunch: false
+      showLunch: !!raw.config?.showLunch,
+      lunchAfterPeriod: Number.isInteger(raw.config?.lunchAfterPeriod)
+        ? raw.config.lunchAfterPeriod
+        : null
     },
     entries: Array.isArray(raw.entries)
       ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
@@ -351,28 +355,36 @@ export function unsubscribeAll() {
 // DATA MIGRATION: old boards/main → new separate docs
 // ================================================================
 export async function migrateFromLegacy() {
-  // Check if curriculum already exists in new format
-  const currSnap = await getDoc(refs.curriculum);
-  if (currSnap.exists()) return;  // Already migrated
-
   // Try to load from legacy boards/main
   const legacySnap = await getDoc(refs.legacy);
   if (!legacySnap.exists()) return;  // No legacy data
 
-  console.log("Migrating legacy data to separate collections...");
   const legacy = legacySnap.data().state || {};
 
-  // Migrate all domains in parallel
-  await Promise.all([
-    setDoc(refs.curriculum, { ...normalizeCurriculumDomain(legacy),  updatedAt: serverTimestamp() }),
-    setDoc(refs.templates,  { ...normalizeTemplatesDomain(legacy),   updatedAt: serverTimestamp() }),
-    setDoc(refs.classes,    { ...normalizeClassesDomain(legacy),     updatedAt: serverTimestamp() }),
-    setDoc(refs.teachers,   { ...normalizeTeachersDomain(legacy),    updatedAt: serverTimestamp() }),
-    setDoc(refs.rosters,    { ...normalizeRostersDomain(legacy),     updatedAt: serverTimestamp() }),
-    setDoc(refs.rooms,      { ...normalizeRoomsDomain(legacy),       updatedAt: serverTimestamp() }),
-    setDoc(refs.timetable,  { ...normalizeTimetableDomain(legacy),   updatedAt: serverTimestamp() }),
-  ]);
-  console.log("Migration complete (all domains).");
+  const migrationTargets = [
+    ["curriculum", normalizeCurriculumDomain],
+    ["templates",  normalizeTemplatesDomain],
+    ["classes",    normalizeClassesDomain],
+    ["teachers",   normalizeTeachersDomain],
+    ["rosters",    normalizeRostersDomain],
+    ["rooms",      normalizeRoomsDomain],
+    ["timetable",  normalizeTimetableDomain],
+  ];
+
+  const snaps = await Promise.all(
+    migrationTargets.map(([domain]) => getDoc(refs[domain]))
+  );
+
+  const missingTargets = migrationTargets.filter((_, idx) => !snaps[idx].exists());
+  if (!missingTargets.length) return;  // Already migrated
+
+  console.log(`Migrating legacy data to separate documents: ${missingTargets.map(([d]) => d).join(", ")}`);
+
+  await Promise.all(missingTargets.map(([domain, normalizeFn]) =>
+    setDoc(refs[domain], { ...normalizeFn(legacy), updatedAt: serverTimestamp() })
+  ));
+
+  console.log("Migration complete.");
 }
 
 // ================================================================
