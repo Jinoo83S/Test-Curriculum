@@ -29,7 +29,7 @@ export function scheduleSave(domain) {
   if (!canEdit() || !initialLoad[domain]) return;
   _onSaveStatus?.("saving");
   clearTimeout(saveTimers[domain]);
-  saveTimers[domain] = setTimeout(() => saveNow(domain), 300);
+  saveTimers[domain] = setTimeout(() => saveNow(domain), 1500);
 }
 
 export async function saveNow(domain) {
