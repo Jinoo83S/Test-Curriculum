@@ -129,6 +129,8 @@ const addStudentRowBtn  = document.getElementById("addStudentRowBtn");
 const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
+const navBoardBtn = document.getElementById("navBoardBtn");
+const navManagerBtn = document.getElementById("navManagerBtn");
 const navButtons = {
   board:        navBoardBtn,
   students:     document.getElementById("navStudentsBtn"),
@@ -139,6 +141,54 @@ const navButtons = {
   groups:       document.getElementById("navGroupsBtn"),
   results:      document.getElementById("navResultsBtn"),
 };
+
+// ── 2단 네비게이션 ──────────────────────────────────────────────
+const SECTION_DEFAULT_VIEW = {
+  curriculum: "board",
+  roster:     "teachers",
+  setup:      "subjectsetup",
+  prework:    "ttcards",
+  results:    "results",
+};
+const VIEW_TO_SECTION = {
+  board:"curriculum", manager:"curriculum",
+  teachers:"roster",  students:"roster",
+  subjectsetup:"setup", rosters:"setup",
+  ttcards:"prework",  groups:"prework",
+  results:"results",
+};
+let activeSection = "curriculum";
+
+function activateSection(section) {
+  activeSection = section;
+  document.querySelectorAll("#topbarMainNav [data-section]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.section === section);
+  });
+  document.querySelectorAll(".sub-nav-group").forEach(g => {
+    g.classList.toggle("hidden", g.dataset.section !== section);
+  });
+}
+
+function activateSubBtn(view) {
+  const idMap = {
+    board:"navBoardBtn", manager:"navManagerBtn", teachers:"navTeachersBtn",
+    students:"navStudentsBtn", subjectsetup:"navSubjectSetupBtn", rosters:"navRostersBtn",
+    ttcards:"navTtCardsBtn", groups:"navGroupsBtn", results:"navResultsBtn",
+  };
+  document.querySelectorAll(".sub-nav-btn").forEach(btn => {
+    btn.classList.toggle("active", btn.id === idMap[view]);
+  });
+}
+
+// 1단 메인 섹션 클릭
+document.querySelectorAll("#topbarMainNav [data-section]").forEach(mainBtn => {
+  if (mainBtn.tagName === "A") return;
+  mainBtn.addEventListener("click", () => {
+    const section = mainBtn.dataset.section;
+    activateSection(section);
+    navigateTo(SECTION_DEFAULT_VIEW[section]);
+  });
+});
 
 // ================================================================
 // NAVIGATION STATE
@@ -153,6 +203,23 @@ const dirtyTabs     = new Set(["tab7to9","tab10to12"]);
 export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("tab10to12"); };
 
 // ── View switching ─────────────────────────────────────────────────
+function navigateTo(view) {
+  setView(view);
+  const section = VIEW_TO_SECTION[view] || activeSection;
+  activateSection(section);
+  activateSubBtn(view);
+  // Render
+  if (view === "board") { renderBoardTab(); renderSidebar(); }
+  else if (view === "manager") { clearStableOrder(); renderTemplateManagerView(); renderSidebar(); }
+  else if (view === "students") { selectedClassId = null; renderStudentView(); }
+  else if (view === "teachers" && teacherContent) renderTeacherView(teacherContent);
+  else if (view === "rosters"  && rosterContent)  renderRosterView(rosterContent);
+  else if (view === "subjectsetup" && subjectSetupContent) renderSubjectSetupView(subjectSetupContent);
+  else if (view === "ttcards"  && ttCardsContent)  renderTtCardsView(ttCardsContent);
+  else if (view === "groups")  renderGroupManagerView(document.getElementById("groupManagerBoard"));
+  else if (view === "results"  && resultsContent)  renderResultsView(resultsContent);
+}
+
 function setView(view) {
   activeMainView = view;
   const allViews = {
@@ -161,11 +228,9 @@ function setView(view) {
     results:      resultsMgrView,   ttcards: ttCardsMgrView,    subjectsetup: subjectSetupMgrView,
   };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
-  Object.values(navButtons).forEach(btn => btn?.classList.remove("active"));
-  if (view === "board") navBoardBtn?.classList.add("active");
-  else if (view === "manager") { /* sub-view of board */ }
-  else navButtons[view]?.classList.add("active");
-  openTemplateManagerBtn.textContent = view === "manager" ? "보드 보기" : "표 편집";
+  const isManagerView = view === "manager";
+  if (document.getElementById("openTemplateManagerBtn"))
+    document.getElementById("openTemplateManagerBtn").textContent = isManagerView ? "보드 보기" : "표 편집";
 }
 
 function closeToBoard() {
@@ -271,7 +336,8 @@ function render(domain) {
 function renderTabBtns() {
   tab7to9Btn?.classList.toggle("active", activeTab === "tab7to9");
   tab10to12Btn?.classList.toggle("active", activeTab === "tab10to12");
-  navBoardBtn?.classList.toggle("active", activeMainView === "board");
+  activateSection(VIEW_TO_SECTION[activeMainView] || activeSection);
+  activateSubBtn(activeMainView);
 }
 
 // ================================================================
@@ -517,38 +583,20 @@ tab7to9Btn?.addEventListener("click",   () => { if (activeTab === "tab7to9")   r
 tab10to12Btn?.addEventListener("click", () => { if (activeTab === "tab10to12") return; activeTab = "tab10to12"; renderTabBtns(); renderBoardTab(); });
 
 // ── Nav buttons ───────────────────────────────────────────────────
-navButtons.board?.addEventListener("click", () => { resetDraft(); setView("board"); renderBoardTab(); renderSidebar(); });
-
-navButtons.students?.addEventListener("click", () => {
-  setView("students"); selectedClassId = null;
-  studentMainEmpty?.classList.remove("hidden"); studentMainContent?.classList.add("hidden");
-  renderStudentView();
-});
-
-navButtons.teachers?.addEventListener("click", () => {
-  setView("teachers"); if (teacherContent) renderTeacherView(teacherContent);
-});
-
-navButtons.rosters?.addEventListener("click", () => {
-  setView("rosters"); if (rosterContent) renderRosterView(rosterContent);
-});
-
-navButtons.subjectsetup?.addEventListener("click", () => {
-  setView("subjectsetup"); if (subjectSetupContent) renderSubjectSetupView(subjectSetupContent);
-});
-navButtons.results?.addEventListener("click", () => {
-  setView("results"); if (resultsContent) renderResultsView(resultsContent);
-});
-navButtons.ttcards?.addEventListener("click", () => {
-  setView("ttcards"); if (ttCardsContent) renderTtCardsView(ttCardsContent);
-});
-navButtons.groups?.addEventListener("click", () => {
-  setView("groups"); renderGroupManagerView();
-});
+// ── Sub-nav 버튼 클릭 ──────────────────────────────────────────────
+navBoardBtn?.addEventListener("click",   () => { resetDraft(); navigateTo("board"); });
+navManagerBtn?.addEventListener("click", () => navigateTo(activeMainView === "manager" ? "board" : "manager"));
+navButtons.students?.addEventListener("click",     () => navigateTo("students"));
+navButtons.teachers?.addEventListener("click",     () => navigateTo("teachers"));
+navButtons.rosters?.addEventListener("click",      () => navigateTo("rosters"));
+navButtons.subjectsetup?.addEventListener("click", () => navigateTo("subjectsetup"));
+navButtons.results?.addEventListener("click",      () => navigateTo("results"));
+navButtons.ttcards?.addEventListener("click",      () => navigateTo("ttcards"));
+navButtons.groups?.addEventListener("click",       () => navigateTo("groups"));
 
 // ── Sidebar view toggles ──────────────────────────────────────────
-openTemplateManagerBtn?.addEventListener("click", () => { activeMainView === "manager" ? closeToBoard() : (clearStableOrder(), setView("manager"), renderTemplateManagerView()); });
-tplMgrBackBtn?.addEventListener("click", closeToBoard);
+openTemplateManagerBtn?.addEventListener("click", () => navigateTo(activeMainView === "manager" ? "board" : "manager"));
+tplMgrBackBtn?.addEventListener("click", () => navigateTo("board"));
 groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); });
 
 // ── Sidebar level filter ──────────────────────────────────────────

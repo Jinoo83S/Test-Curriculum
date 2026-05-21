@@ -15,17 +15,14 @@
     <p class="subtitle">한동글로벌학교</p>
   </div>
 
-  <!-- ── 5-section navigation ── -->
-  <nav class="topbar-nav">
-    <button id="navBoardBtn"    class="topbar-nav-btn active"    type="button">📋 커리큘럼</button>
-    <button id="navStudentsBtn" class="topbar-nav-btn"           type="button">👨‍🎓 학생 명단</button>
-    <button id="navTeachersBtn" class="topbar-nav-btn"           type="button">👩‍🏫 선생님 명단</button>
-    <button id="navSubjectSetupBtn" class="topbar-nav-btn"       type="button">📐 과목 설정</button>
-    <button id="navRostersBtn"  class="topbar-nav-btn"           type="button">📚 수강 명단</button>
-    <button id="navTtCardsBtn"  class="topbar-nav-btn"           type="button">🃏 시간표 카드</button>
-    <button id="navGroupsBtn"   class="topbar-nav-btn"           type="button">🔗 그룹 관리</button>
-    <button id="navResultsBtn"  class="topbar-nav-btn"           type="button">📊 결과표</button>
-    <a href="timetable.html" class="topbar-nav-btn topbar-nav-link" type="button">⏰ 시간표</a>
+  <!-- ── Main sections (1단) ── -->
+  <nav class="topbar-nav" id="topbarMainNav">
+    <button data-section="curriculum"  class="topbar-nav-btn active" type="button">📋 커리큘럼</button>
+    <button data-section="roster"      class="topbar-nav-btn"        type="button">👥 명단</button>
+    <button data-section="setup"       class="topbar-nav-btn"        type="button">⚙️ 세부 구성</button>
+    <button data-section="prework"     class="topbar-nav-btn"        type="button">🗂 시간표 사전작업</button>
+    <button data-section="results"     class="topbar-nav-btn"        type="button">📊 결과표</button>
+    <a href="timetable.html"           class="topbar-nav-btn topbar-nav-link">⏰ 시간표</a>
   </nav>
 
   <div class="topbar-right">
@@ -39,8 +36,35 @@
   </div>
 </header>
 
+<!-- ── Sub-navigation bar (2단) ── -->
+<div id="subNavBar" class="sub-nav-bar">
+  <!-- 커리큘럼 -->
+  <div class="sub-nav-group" data-section="curriculum">
+    <button id="navBoardBtn"   class="sub-nav-btn active" type="button">📋 보드 편집</button>
+    <button id="navManagerBtn" class="sub-nav-btn"        type="button">📝 표 편집</button>
+  </div>
+  <!-- 명단 -->
+  <div class="sub-nav-group hidden" data-section="roster">
+    <button id="navTeachersBtn" class="sub-nav-btn" type="button">👩‍🏫 교사</button>
+    <button id="navStudentsBtn" class="sub-nav-btn" type="button">👨‍🎓 학생</button>
+  </div>
+  <!-- 세부 구성 -->
+  <div class="sub-nav-group hidden" data-section="setup">
+    <button id="navSubjectSetupBtn" class="sub-nav-btn" type="button">📐 과목 설정</button>
+    <button id="navRostersBtn"      class="sub-nav-btn" type="button">📚 수강 명단</button>
+  </div>
+  <!-- 시간표 사전작업 -->
+  <div class="sub-nav-group hidden" data-section="prework">
+    <button id="navTtCardsBtn" class="sub-nav-btn" type="button">🃏 시간표 카드</button>
+    <button id="navGroupsBtn"  class="sub-nav-btn" type="button">🔗 그룹 관리</button>
+  </div>
+  <!-- 결과표: 서브메뉴 없음 -->
+  <div class="sub-nav-group hidden" data-section="results">
+    <button id="navResultsBtn" class="sub-nav-btn active" type="button">📊 결과표</button>
+  </div>
+</div>
+
 <main class="page">
-  <button id="appSidebarFloatingToggle" class="sidebar-floating-toggle hidden" type="button" title="사이드바 펼치기">▶</button>
 
   <!-- ════════════════════════════════════════════════════════════
        SIDEBAR — shown only in curriculum view
@@ -342,6 +366,35 @@
 </main>
 
 <script type="module" src="js/app.js"></script>
+<script>
+(function() {
+  const sb  = document.getElementById("appSidebar");
+  const rz  = document.getElementById("appSidebarResizer");
+  const btn = document.getElementById("appSidebarToggle");
+  if (!sb) return;
+  let w = parseInt(localStorage.getItem("cur_sbW") || "280");
+  let collapsed = false;
+  sb.style.position = "relative";
 
+  function apply(newW, col) {
+    collapsed = col;
+    if (col) { sb.classList.add("sidebar-collapsed"); if (btn) btn.textContent = "▶"; }
+    else { sb.classList.remove("sidebar-collapsed"); sb.style.width = newW + "px"; if (btn) btn.textContent = "◀"; }
+  }
+  apply(w, false);
+
+  rz.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const x0 = e.clientX, w0 = sb.offsetWidth;
+    const mv = ev => { w = Math.max(120, Math.min(480, w0 + ev.clientX - x0)); apply(w, false); };
+    const up = () => { localStorage.setItem("cur_sbW", w); document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up); };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
+  });
+  btn?.addEventListener("click", () => {
+    if (collapsed) apply(w, false);
+    else { w = sb.offsetWidth; localStorage.setItem("cur_sbW", w); apply(w, true); }
+  });
+})();
+</script>
 </body>
 </html>
