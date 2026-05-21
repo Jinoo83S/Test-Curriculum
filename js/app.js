@@ -168,7 +168,13 @@ function setView(view) {
   openTemplateManagerBtn.textContent = view === "manager" ? "보드 보기" : "표 편집";
 }
 
-function closeToBoard() { resetDraft(); setView("board"); renderSidebar(); }
+function closeToBoard() {
+  resetDraft();
+  setView("board");
+  invalidateTabs();
+  renderSidebar();
+  renderBoardTab();
+}
 
 // ================================================================
 // RENDER
@@ -225,16 +231,31 @@ function renderStudentTableView() {
 // Master render — called on every Firestore update
 function render(domain) {
   setControlsDisabled(!canEdit());
-  if (domain === "curriculum" || domain === "templates") {
+
+  const changedDomains = domain instanceof Set
+    ? domain
+    : Array.isArray(domain)
+      ? new Set(domain)
+      : new Set(domain ? [domain] : []);
+  const fullRender = !domain || changedDomains.has("__all__");
+  const changed = d => fullRender || changedDomains.has(d);
+  const boardDataChanged = fullRender || changed("curriculum") || changed("templates");
+
+  // Curriculum board uses a DOM cache. If curriculum/templates arrive together with
+  // other Firestore snapshots, the old single-domain debounce could keep the initial
+  // empty board cache. Always invalidate when either board source changed.
+  if (boardDataChanged) {
     syncSchoolLevels();
     invalidateTabs();
-    if (activeMainView === "board") renderBoardTab();
   }
-  // renderSidebar once — covers all relevant view/domain combos
-  if (!domain || domain === "curriculum" || domain === "templates" ||
+
+  // Sidebar cards depend on templates and also on curriculum placement chips.
+  // Render it whenever those domains changed, or when the current view needs it.
+  if (fullRender || changed("curriculum") || changed("templates") ||
       activeMainView === "groups" || activeMainView === "manager") {
     renderSidebar();
   }
+
   if (activeMainView === "board") renderBoardTab();
   if (activeMainView === "groups") renderGroupManagerView();
   if (activeMainView === "manager") renderTemplateManagerView();
@@ -405,14 +426,14 @@ sidebarResizer?.addEventListener("mousedown", e => {
 applySidebarState(false);
 
 let _renderTimer = null;
-let _pendingRenderDomain = null;
+const _pendingRenderDomains = new Set();
 setOnUpdate(domain => {
-  _pendingRenderDomain = domain || _pendingRenderDomain;
+  _pendingRenderDomains.add(domain || "__all__");
   clearTimeout(_renderTimer);
   _renderTimer = setTimeout(() => {
-    const d = _pendingRenderDomain;
-    _pendingRenderDomain = null;
-    render(d);
+    const domains = new Set(_pendingRenderDomains);
+    _pendingRenderDomains.clear();
+    render(domains);
   }, 50);
 });
 
@@ -459,6 +480,7 @@ onAuth(async (user) => {
     }
   } else {
     unsubscribeAll();
+    invalidateTabs();
     render();
   }
 });
