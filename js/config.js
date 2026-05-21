@@ -3,7 +3,7 @@
 // ================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
@@ -16,9 +16,9 @@ const firebaseConfig = {
 
 export const fbApp    = initializeApp(firebaseConfig);
 export const auth     = getAuth(fbApp);
-// persistentLocalCache = IndexedDB 캐시 (구 enableIndexedDbPersistence 대체)
+// IndexedDB 오프라인 캐시 — 단일탭 모드 (redirect 흐름과 충돌 없음)
 export const db = initializeFirestore(fbApp, {
-  cache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+  cache: persistentLocalCache()
 });
 export const provider = new GoogleAuthProvider();
 
