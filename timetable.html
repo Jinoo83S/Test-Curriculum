@@ -43,10 +43,31 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-toolbar-right{display:flex;gap:6px;margin-left:auto;align-items:center}
 
 /* ── Layout: grid only ── */
-.tt-body{flex:1;overflow:auto;padding:4px;display:flex;flex-direction:column;min-height:0}
-#ttGrid{flex:1;overflow:auto;min-height:0}
-.tt-table{border-collapse:collapse;width:100%;table-layout:fixed}
-.tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
+.tt-body{flex:1;overflow:hidden;padding:0;display:flex;flex-direction:column;min-height:0}
+#ttGrid{flex:1;overflow:auto;min-height:0;width:100%}
+
+/* ── Entry card — single line, fluid ── */
+.tt-entry-card{border-radius:2px;padding:1px 2px;border-left-width:3px;min-width:0;overflow:hidden;cursor:pointer;display:flex;align-items:center;gap:1px;width:100%;height:100%;min-height:16px;box-sizing:border-box;font-size:clamp(7px,0.6vw,9px)}
+.tt-entry-card[data-multi]{border-right-width:3px!important}
+.tt-entry-title{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;font-size:clamp(7px,0.6vw,9px)}
+.tt-entry-card.tt-entry-conflict{outline:1.5px solid #ef4444}
+.tt-entry-pinned{outline:1.5px solid #f59e0b!important}
+.tt-entry-card.tt-dragging{opacity:.4;outline:2px dashed #2563eb}
+
+/* ── All-classes table ── */
+.tt-all-class-table{border-collapse:collapse;width:100%;height:100%;table-layout:fixed}
+.tt-all-corner{background:#1e3a5f;color:white;text-align:center;padding:2px;position:sticky;left:0;z-index:3;font-size:clamp(7px,0.7vw,10px)}
+.tt-day-header{font-weight:700;color:white;background:#1e3a5f;text-align:center;font-size:clamp(8px,0.75vw,11px)}
+.tt-all-row-hdr{text-align:center;border-right:2px solid #cbd5e1;white-space:nowrap;position:sticky;left:0;z-index:2;padding:1px}
+.tt-all-grade-boundary>td{border-top:2px solid #93c5fd}
+.tt-period-sub-hdr{background:#f8fafc;text-align:center;border-bottom:1px solid #e2e8f0;font-size:clamp(7px,0.6vw,9px);padding:1px;white-space:nowrap;overflow:hidden}
+
+/* ── Cell: height fills remaining space equally ── */
+.tt-cell,.tt-all-cell{border:1px solid #e2e8f0;vertical-align:top;padding:1px;overflow:hidden}
+.tt-all-class-table tbody tr{height:calc((100vh - 44px - 260px - 60px) / var(--num-rows, 12))}
+.tt-cell-ph{width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:clamp(8px,0.7vw,11px);pointer-events:none}
+.tt-cell-ph::before{content:"+"}
+.tt-cell.tt-dragover,.tt-all-cell.tt-dragover{background:#dbeafe;outline:1.5px dashed #2563eb}.tt-corner{width:46px;background:#1e3a5f;border:1px solid #2d4f7c;padding:4px;vertical-align:middle;text-align:center}
 .tt-corner-label{font-size:10px;font-weight:700;color:white}
 .tt-day-header{background:#1e3a5f;color:white;text-align:center;padding:6px 2px;font-size:13px;font-weight:700;border:1px solid #2d4f7c;border-right:3px solid #1e3a5f;width:calc((100% - 46px)/5)}
 /* Day column alternating tint — applied via JS data-day attribute */
@@ -333,4 +354,29 @@ window._ttBottomToggle = (function() {
 .tt-drag-teacher-busy { outline: 1.5px solid #f59e0b !important; }
 .tt-drag-grade-highlight td { background: rgba(219,234,254,.3) !important; }
 .tt-all-row-hdr.tt-drag-grade-hl { background: #dbeafe !important; }
+</style>
+<style>
+/* ── Teacher constraint panel redesign ── */
+.tt-con-teacher-block{border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;overflow:hidden}
+.tt-con-teacher-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8fafc;cursor:default}
+.tt-con-name{font-weight:700;font-size:12px;flex:1}
+.tt-con-stat{font-size:10px;color:#6b7280}
+.tt-con-tog{border:none;background:transparent;cursor:pointer;font-size:11px;padding:2px 6px;border-radius:4px;color:#6b7280}
+.tt-con-tog:hover{background:#e2e8f0}
+.tt-con-body{padding:10px 12px;background:white;display:flex;flex-direction:column;gap:8px}
+.tt-con-num-row{display:flex;gap:16px;align-items:center}
+.tt-con-num-wrap{font-size:11px;color:#6b7280;display:flex;align-items:center;gap:4px}
+.tt-con-num-wrap input{width:44px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;text-align:center}
+.tt-con-room-row{display:flex;align-items:center}
+/* Unavailable grid */
+.tt-con-grid{display:inline-grid;grid-template-columns:24px repeat(5,28px);gap:2px;font-size:9px}
+.tt-con-grid-row{display:contents}
+.tt-con-grid-corner,.tt-con-grid-day,.tt-con-grid-per{display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#6b7280}
+.tt-con-grid-cell{width:28px;height:22px;border-radius:3px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;transition:background .1s}
+.tt-con-grid-cell:hover{background:#e2e8f0}
+.tt-con-grid-cell.tt-con-unavail{background:#fecaca;color:#dc2626}
+.tt-con-grid-cell.tt-con-unavail::after{content:"✕";font-size:8px;font-weight:700}
+/* Sidebar card highlight */
+.tt-sc-highlighted{outline:2.5px solid #f59e0b!important;box-shadow:0 0 8px rgba(245,158,11,.4)!important;animation:tt-hl-pulse 0.6s ease-in-out 3}
+@keyframes tt-hl-pulse{0%,100%{outline-color:#f59e0b}50%{outline-color:#d97706}}
 </style>

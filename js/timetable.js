@@ -640,19 +640,42 @@ function renderAllClassesGrid(wrap) {
 
   const numDays = dayLabels.length;
   const numPer  = periods.length;
+  const totalCols = numDays * numPer + 1; // +1 for row header
   const DAYS    = Array.from({length: numDays}, (_, i) => i);
 
-  const table = document.createElement("table"); table.className = "tt-table tt-all-class-table";
+  const table = document.createElement("table");
+  table.className = "tt-table tt-all-class-table";
+  table.style.cssText = "table-layout:fixed;width:100%;border-collapse:collapse";
+  // Set --num-rows so CSS can calculate per-row height
+  wrap.style.setProperty("--num-rows", String(classes.length));
+
+  // Inject colgroup for proportional widths
+  const colgroup = document.createElement("colgroup");
+  // Row header: 4% of total, min 32px
+  const hdrCol = document.createElement("col");
+  hdrCol.style.width = "4%";
+  colgroup.appendChild(hdrCol);
+  // Each cell: equal share of remaining 96%
+  const cellPct = (96 / (numDays * numPer)).toFixed(3) + "%";
+  for (let i = 0; i < numDays * numPer; i++) {
+    const col = document.createElement("col");
+    col.style.width = cellPct;
+    colgroup.appendChild(col);
+  }
+  table.appendChild(colgroup);
+
   const thead = document.createElement("thead");
 
   // Row 1: day headers
   const hr1 = document.createElement("tr");
   const corner = document.createElement("th"); corner.className = "tt-all-corner"; corner.rowSpan = 2;
-  corner.innerHTML = `<span class="tt-corner-label">반</span>`;
+  corner.innerHTML = `<span style="font-size:clamp(7px,0.7vw,10px)">반</span>`;
   hr1.appendChild(corner);
   DAYS.forEach(d => {
     const th = document.createElement("th"); th.className = "tt-day-header"; th.colSpan = numPer;
-    th.textContent = dayLabels[d]; hr1.appendChild(th);
+    th.textContent = dayLabels[d];
+    th.style.cssText = `font-size:clamp(8px,0.8vw,12px);padding:2px`;
+    hr1.appendChild(th);
   });
   thead.appendChild(hr1);
 
@@ -661,10 +684,9 @@ function renderAllClassesGrid(wrap) {
   DAYS.forEach(() => {
     periods.forEach((lbl, p) => {
       const th = document.createElement("th"); th.className = "tt-period-sub-hdr";
-      const inp = document.createElement("input"); inp.type = "text"; inp.value = lbl;
-      inp.style.cssText = "width:24px;font-size:9px;border:none;background:transparent;text-align:center;padding:0";
-      inp.disabled = true; // period labels edited in grade view
-      th.appendChild(inp); hr2.appendChild(th);
+      th.textContent = lbl;
+      th.style.cssText = `font-size:clamp(7px,0.65vw,9px);padding:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
+      hr2.appendChild(th);
     });
   });
   thead.appendChild(hr2);
@@ -678,16 +700,19 @@ function renderAllClassesGrid(wrap) {
     tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) { tr.className = "tt-all-grade-boundary"; prevGrade = cls.gradeKey; }
 
-    // Row header: "7A", "8B" etc.
+    // Row header
     const rowHdr = document.createElement("td"); rowHdr.className = "tt-all-row-hdr";
     const gc = getGradeColor(cls.gradeKey);
-    rowHdr.style.cssText = `background:${gc.bg};color:${gc.text};border-left:3px solid ${gc.border}`;
-    rowHdr.innerHTML = `<b>${gradeDisplay(cls.gradeKey)}</b><span>${cls.section}</span>`;
+    rowHdr.style.cssText = `background:${gc.bg};color:${gc.text};border-left:3px solid ${gc.border};overflow:hidden;font-size:clamp(7px,0.7vw,10px)`;
+    rowHdr.innerHTML = `<b style="display:block;font-size:clamp(8px,0.8vw,11px)">${gradeDisplay(cls.gradeKey)}</b><span style="font-size:clamp(6px,0.65vw,9px)">${cls.section}</span>`;
     tr.appendChild(rowHdr);
 
     DAYS.forEach(day => {
       periods.forEach((_, period) => {
-        const td = document.createElement("td"); td.className = "tt-cell tt-all-cell"; td.setAttribute("data-day", day);
+        const td = document.createElement("td");
+        td.className = "tt-cell tt-all-cell";
+        td.setAttribute("data-day", day);
+        td.style.cssText = "padding:1px;vertical-align:top;overflow:hidden";
         td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
         td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
         td.addEventListener("drop", e => {
