@@ -61,8 +61,9 @@ button {
 
 /* ── Page Layout ─────────────────────────────────────── */
 .page {
+  --sidebar-width: 320px;
   display: grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: var(--sidebar-width) 1fr;
   gap: 10px;
   padding: 10px;
   height: calc(100vh - 44px);
@@ -78,6 +79,20 @@ button {
   opacity: 0;
   pointer-events: none;
 }
+
+.sidebar-floating-toggle {
+  position: fixed;
+  left: 10px;
+  top: 54px;
+  z-index: 999;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,.18);
+}
+.sidebar-floating-toggle:hover { background: #1d4ed8; }
 
 .sidebar,
 .main-panel {

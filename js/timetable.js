@@ -2127,8 +2127,13 @@ setOnUpdate(domain => {
 onAuth(async (user) => {
   updateAuthUI(user);
   if (user) {
-    await migrateFromLegacy();  // 마이그레이션 먼저 — 빈 문서 생성 방지
-    subscribeDomains(TIMETABLE_CORE_DOMAINS); // 시간표 첫 화면에 필요한 문서만 우선 구독
+    try {
+      await migrateFromLegacy();  // 마이그레이션 먼저 — 빈 문서 생성 방지
+    } catch (e) {
+      console.warn("Migration skipped; continuing timetable load.", e);
+    } finally {
+      subscribeDomains(TIMETABLE_CORE_DOMAINS); // 시간표 첫 화면에 필요한 문서만 우선 구독
+    }
   } else {
     unsubscribeAll(); renderAll();
   }

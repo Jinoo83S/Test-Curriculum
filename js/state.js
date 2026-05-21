@@ -410,8 +410,16 @@ export function unsubscribeAll() {
 // DATA MIGRATION: old boards/main → new separate docs
 // ================================================================
 export async function migrateFromLegacy() {
-  // Try to load from legacy boards/main
-  const legacySnap = await getDoc(refs.legacy);
+  // Migration must never block normal app loading. In production, Firestore
+  // rules may intentionally deny reads to the old boards/main document.
+  let legacySnap = null;
+  try {
+    legacySnap = await getDoc(refs.legacy);
+  } catch (e) {
+    console.warn("Legacy migration skipped; legacy document could not be read.", e);
+    return;
+  }
+
   if (!legacySnap.exists()) return;  // No legacy data
 
   const legacy = legacySnap.data().state || {};
@@ -427,19 +435,29 @@ export async function migrateFromLegacy() {
   ];
 
   const snaps = await Promise.all(
-    migrationTargets.map(([domain]) => getDoc(refs[domain]))
+    migrationTargets.map(async ([domain]) => {
+      try {
+        return await getDoc(refs[domain]);
+      } catch (e) {
+        console.warn(`Legacy migration check skipped for ${domain}.`, e);
+        return null;
+      }
+    })
   );
 
-  const missingTargets = migrationTargets.filter((_, idx) => !snaps[idx].exists());
-  if (!missingTargets.length) return;  // Already migrated
+  const missingTargets = migrationTargets.filter((_, idx) => snaps[idx] && !snaps[idx].exists());
+  if (!missingTargets.length) return;
 
   console.log(`Migrating legacy data to separate documents: ${missingTargets.map(([d]) => d).join(", ")}`);
 
-  await Promise.all(missingTargets.map(([domain, normalizeFn]) =>
-    setDoc(refs[domain], { ...normalizeFn(legacy), updatedAt: serverTimestamp() })
-  ));
-
-  console.log("Migration complete.");
+  try {
+    await Promise.all(missingTargets.map(([domain, normalizeFn]) =>
+      setDoc(refs[domain], { ...normalizeFn(legacy), updatedAt: serverTimestamp() })
+    ));
+    console.log("Migration complete.");
+  } catch (e) {
+    console.warn("Legacy migration partially failed; continuing with live documents.", e);
+  }
 }
 
 // ================================================================

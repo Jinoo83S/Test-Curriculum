@@ -353,14 +353,56 @@ function updateAuthUI(user) {
 // ================================================================
 // BOOTSTRAP
 // ================================================================
-// ── Sidebar toggle ────────────────────────────────────────────────
+// ── Sidebar toggle / resize ──────────────────────────────────────
 const sidebarToggleBtn = document.getElementById("appSidebarToggle");
+const sidebarFloatingToggleBtn = document.getElementById("appSidebarFloatingToggle");
+const sidebarResizer = document.getElementById("appSidebarResizer");
 const pageEl = document.querySelector(".page");
-sidebarToggleBtn?.addEventListener("click", () => {
-  const hidden = pageEl?.classList.toggle("sidebar-hidden");
-  if (sidebarToggleBtn) sidebarToggleBtn.textContent = hidden ? "▶" : "◀";
-  if (sidebarToggleBtn) sidebarToggleBtn.title = hidden ? "사이드바 펼치기" : "사이드바 접기";
+const sidebarEl = document.getElementById("appSidebar");
+let sidebarWidth = parseInt(localStorage.getItem("cur_sbW") || "320", 10);
+if (!Number.isFinite(sidebarWidth)) sidebarWidth = 320;
+sidebarWidth = Math.max(220, Math.min(520, sidebarWidth));
+
+function applySidebarState(hidden = pageEl?.classList.contains("sidebar-hidden")) {
+  if (!pageEl) return;
+  pageEl.style.setProperty("--sidebar-width", hidden ? "0px" : `${sidebarWidth}px`);
+  pageEl.classList.toggle("sidebar-hidden", !!hidden);
+  if (sidebarToggleBtn) {
+    sidebarToggleBtn.textContent = hidden ? "▶" : "◀";
+    sidebarToggleBtn.title = hidden ? "사이드바 펼치기" : "사이드바 접기";
+  }
+  if (sidebarFloatingToggleBtn) {
+    sidebarFloatingToggleBtn.classList.toggle("hidden", !hidden);
+    sidebarFloatingToggleBtn.textContent = "▶";
+    sidebarFloatingToggleBtn.title = "사이드바 펼치기";
+  }
+}
+
+function toggleSidebar() {
+  applySidebarState(!pageEl?.classList.contains("sidebar-hidden"));
+}
+
+sidebarToggleBtn?.addEventListener("click", toggleSidebar);
+sidebarFloatingToggleBtn?.addEventListener("click", toggleSidebar);
+
+sidebarResizer?.addEventListener("mousedown", e => {
+  if (!pageEl || pageEl.classList.contains("sidebar-hidden")) return;
+  e.preventDefault();
+  const x0 = e.clientX;
+  const w0 = sidebarEl?.getBoundingClientRect().width || sidebarWidth;
+  const onMove = ev => {
+    sidebarWidth = Math.max(220, Math.min(520, Math.round(w0 + ev.clientX - x0)));
+    pageEl.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
+  };
+  const onUp = () => {
+    localStorage.setItem("cur_sbW", String(sidebarWidth));
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+  };
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
 });
+applySidebarState(false);
 
 let _renderTimer = null;
 let _pendingRenderDomain = null;
@@ -408,8 +450,13 @@ setOnCurriculumChange(() => {
 onAuth(async (user) => {
   updateAuthUI(user);
   if (user) {
-    await migrateFromLegacy();   // one-time migration from boards/main
-    subscribeAll();
+    try {
+      await migrateFromLegacy();   // one-time migration from boards/main
+    } catch (e) {
+      console.warn("Migration skipped; continuing normal load.", e);
+    } finally {
+      subscribeAll();
+    }
   } else {
     unsubscribeAll();
     render();
