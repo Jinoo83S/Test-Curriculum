@@ -54,9 +54,10 @@ export async function saveNow(domain) {
   clearTimeout(saveTimers[domain]);
   delete saveTimers[domain];
   try {
-    if (SPLIT_COLLECTION_DOMAINS.has(domain)) {
+    if (SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
       await saveSplitDomain(domain);
     } else {
+      // Ordinary domains, or split domains temporarily running in legacy fallback mode.
       await setDoc(refs[domain], { ...appState[domain], updatedAt: serverTimestamp() });
     }
     dirtyDomains.delete(domain);
@@ -442,7 +443,10 @@ async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
     if (!hasData) return false;
     applyNormalizedDomain(domain, normalized);
     // One-time forward migration from old one-document storage to split collections.
-    if (canEdit()) await saveSplitDomain(domain);
+    // Skip if this domain is already in legacy fallback mode because subcollection access failed.
+    if (canEdit() && SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
+      await saveSplitDomain(domain);
+    }
     return true;
   } catch (e) {
     console.warn(`Legacy ${domain} fallback skipped.`, e);
@@ -465,6 +469,41 @@ function handleSnap(domain, normalizeFn) {
 
 const unsubs = {};
 const splitFallbackAttempted = { classes: false, rosters: false, timetable: false };
+// If subcollection access is denied or unavailable, fall back to the old one-document storage.
+// This keeps the app usable while Firestore rules are being updated for Phase 3.
+const splitUnavailableDomains = new Set();
+
+function domainHasData(domain) {
+  if (domain === "classes") return (appState.classes?.classes || []).length > 0;
+  if (domain === "rosters") {
+    return Object.keys(appState.rosters?.rosters || {}).length > 0 ||
+      Object.keys(appState.rosters?.rosterMeta || {}).length > 0;
+  }
+  if (domain === "timetable") {
+    return (appState.timetable?.entries || []).length > 0 ||
+      (appState.timetable?.ttcards || []).length > 0 ||
+      Object.keys(appState.timetable?.teacherConstraints || {}).length > 0;
+  }
+  return false;
+}
+
+function fallbackToLegacyDocument(domain, normalizeFn, err) {
+  if (splitUnavailableDomains.has(domain)) return;
+  splitUnavailableDomains.add(domain);
+  console.warn(`Split Firestore path unavailable for ${domain}; falling back to boards/${domain}.`, err);
+
+  // Stop split listeners if they were registered.
+  if (unsubs[domain]) {
+    try { unsubs[domain](); } catch (_) {}
+    delete unsubs[domain];
+  }
+
+  unsubs[domain] = onSnapshot(
+    refs[domain],
+    handleSnap(domain, normalizeFn),
+    legacyErr => console.error(`${domain} legacy fallback`, legacyErr)
+  );
+}
 
 export const DOMAIN_NORMALIZERS = {
   curriculum: normalizeCurriculumDomain,
@@ -493,9 +532,12 @@ function subscribeClassesSplit() {
       });
       if (migrated) return;
     }
+    // Do not let an empty split snapshot wipe data that was just loaded from legacy storage.
+    if (snap.empty && splitFallbackAttempted.classes && domainHasData("classes")) return;
+
     const classes = snap.docs.map(d => normalizeClass({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyNormalizedDomain("classes", normalizeClassesDomain({ classes }));
-  }, err => console.error("classes", err));
+  }, err => fallbackToLegacyDocument("classes", normalizeClassesDomain, err));
 }
 
 function subscribeRostersSplit() {
@@ -507,6 +549,9 @@ function subscribeRostersSplit() {
       });
       if (migrated) return;
     }
+    // Do not let an empty split snapshot wipe data that was just loaded from legacy storage.
+    if (snap.empty && splitFallbackAttempted.rosters && domainHasData("rosters")) return;
+
     const raw = { rosters: {}, rosterMeta: {} };
     snap.docs.forEach(d => {
       const data = withoutFirestoreMeta(d.data());
@@ -515,7 +560,7 @@ function subscribeRostersSplit() {
       raw.rosterMeta[templateId] = data.meta || { classCount: "" };
     });
     applyNormalizedDomain("rosters", normalizeRostersDomain(raw));
-  }, err => console.error("rosters", err));
+  }, err => fallbackToLegacyDocument("rosters", normalizeRostersDomain, err));
 }
 
 const timetableSplitCache = {
@@ -541,6 +586,10 @@ async function applyTimetableSplitIfReady() {
     if (migrated) return;
   }
 
+  // When split collections are still empty, do not overwrite a timetable that was
+  // just restored from the old boards/timetable document.
+  if (!hasSplitData && splitFallbackAttempted.timetable && domainHasData("timetable")) return;
+
   const raw = {
     config: timetableSplitCache.meta?.config || {},
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
@@ -551,21 +600,23 @@ async function applyTimetableSplitIfReady() {
 }
 
 function subscribeTimetableSplit() {
+  const onSplitError = err => fallbackToLegacyDocument("timetable", normalizeTimetableDomain, err);
+
   const unsubEntries = onSnapshot(splitRefs.timetableEntries, snap => {
     timetableSplitCache.entries = snap.docs.map(d => normalizeTimetableEntry({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyTimetableSplitIfReady();
-  }, err => console.error("timetableEntries", err));
+  }, onSplitError);
 
   const unsubCards = onSnapshot(splitRefs.ttcards, snap => {
     timetableSplitCache.ttcards = snap.docs.map(d => normalizeTtCard({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyTimetableSplitIfReady();
-  }, err => console.error("ttcards", err));
+  }, onSplitError);
 
   const unsubMeta = onSnapshot(splitRefs.timetableMeta, snap => {
     timetableSplitCache.metaExists = snap.exists();
     timetableSplitCache.meta = snap.exists() ? withoutFirestoreMeta(snap.data()) : {};
     applyTimetableSplitIfReady();
-  }, err => console.error("timetableMeta", err));
+  }, onSplitError);
 
   unsubs.timetable = () => { unsubEntries(); unsubCards(); unsubMeta(); };
 }
@@ -581,6 +632,15 @@ export function subscribeDomains(domainList = ALL_DOMAINS) {
       return;
     }
     if (unsubs[domain]) return;
+
+    if (splitUnavailableDomains.has(domain)) {
+      unsubs[domain] = onSnapshot(
+        refs[domain],
+        handleSnap(domain, DOMAIN_NORMALIZERS[domain]),
+        err => console.error(`${domain} legacy fallback`, err)
+      );
+      return;
+    }
 
     if (domain === "classes") { subscribeClassesSplit(); return; }
     if (domain === "rosters") { subscribeRostersSplit(); return; }
