@@ -362,19 +362,17 @@ export async function migrateFromLegacy() {
   console.log("Migrating legacy data to separate collections...");
   const legacy = legacySnap.data().state || {};
 
-  // Migrate curriculum
-  const curriculum = normalizeCurriculumDomain(legacy);
-  await setDoc(refs.curriculum, { ...curriculum, updatedAt: serverTimestamp() });
-
-  // Migrate templates
-  const templates = normalizeTemplatesDomain(legacy);
-  await setDoc(refs.templates, { ...templates, updatedAt: serverTimestamp() });
-
-  // Migrate classes
-  const classes = normalizeClassesDomain(legacy);
-  await setDoc(refs.classes, { ...classes, updatedAt: serverTimestamp() });
-
-  console.log("Migration complete.");
+  // Migrate all domains in parallel
+  await Promise.all([
+    setDoc(refs.curriculum, { ...normalizeCurriculumDomain(legacy),  updatedAt: serverTimestamp() }),
+    setDoc(refs.templates,  { ...normalizeTemplatesDomain(legacy),   updatedAt: serverTimestamp() }),
+    setDoc(refs.classes,    { ...normalizeClassesDomain(legacy),     updatedAt: serverTimestamp() }),
+    setDoc(refs.teachers,   { ...normalizeTeachersDomain(legacy),    updatedAt: serverTimestamp() }),
+    setDoc(refs.rosters,    { ...normalizeRostersDomain(legacy),     updatedAt: serverTimestamp() }),
+    setDoc(refs.rooms,      { ...normalizeRoomsDomain(legacy),       updatedAt: serverTimestamp() }),
+    setDoc(refs.timetable,  { ...normalizeTimetableDomain(legacy),   updatedAt: serverTimestamp() }),
+  ]);
+  console.log("Migration complete (all domains).");
 }
 
 // ================================================================

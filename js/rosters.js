@@ -12,8 +12,19 @@ const rDomain    = () => appState.rosters;
 const rosters    = () => rDomain().rosters;
 const rosterMeta = () => rDomain().rosterMeta || (rDomain().rosterMeta = {});
 
-export function getRoster(templateId) { return rosters()[templateId] || []; }
-export function getRosterSection(templateId, sIdx) { return getRoster(templateId).filter(e => (e.sectionIdx ?? 0) === sIdx); }
+export function getRoster(templateId, gradeKey = null) {
+  const all = rosters()[templateId] || [];
+  if (!gradeKey) return all;
+  // Filter by grade if gradeKey provided (student's class grade)
+  const allCls = (appState.classes?.classes || []);
+  return all.filter(e => {
+    const cls = allCls.find(c => c.id === e.classId);
+    return cls ? cls.grade === gradeKey : true;
+  });
+}
+export function getRosterSection(templateId, sIdx, gradeKey = null) {
+  return getRoster(templateId, gradeKey).filter(e => (e.sectionIdx ?? 0) === sIdx);
+}
 export function getRosterMeta(templateId) { return rosterMeta()[templateId] || { classCount: "" }; }
 export function getClassCount(templateId) { return Math.max(0, parseInt(getRosterMeta(templateId).classCount, 10) || 0); }
 export function setRosterClassCount(templateId, value) {

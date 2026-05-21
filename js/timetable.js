@@ -4,7 +4,7 @@
 import { auth, GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
-         normalizeTimetableEntry, normalizeTimetableConstraint } from "./state.js";
+         normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData,
          splitTeacherNames, getTemplateAppliedGrades } from "./templates.js";
 import { uid, clean, makeBtn, escapeHtml, sectionLabel, gradeDisplay } from "./utils.js";
@@ -903,44 +903,127 @@ function showEntryDetailByUnit(unit, group, gradeKeys) {
 function showEntryContextMenu(entry, x, y) {
   document.getElementById("tt-context-menu")?.remove();
   const menu = document.createElement("div"); menu.id = "tt-context-menu";
-  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.15);z-index:9998;min-width:160px;overflow:hidden;font-size:12px`;
+  menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);z-index:9998;min-width:180px;overflow:hidden;font-size:12px`;
 
-  const items = [
-    { label: "📋 수업 정보", action: () => showEntryDetail(entry) },
-    { label: entry.pinned ? "📌 고정 해제" : "📍 고정", action: () => {
-      const e = entries().find(x=>x.id===entry.id); if(e){ e.pinned=!e.pinned; scheduleSave("timetable"); renderAll(); }
-    }},
-    { separator: true },
-    { label: "🔁 그룹 함께 이동 모드", action: null, disabled: true, info: "드래그 시 자동 적용" },
-    { separator: true },
-    { label: "🗑 이 수업 삭제", danger: true, action: () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); } },
-  ];
-
-  items.forEach(item => {
-    if (item.separator) { const hr = document.createElement("div"); hr.style.cssText="height:1px;background:#f1f5f9;margin:2px 0"; menu.appendChild(hr); return; }
+  function menuItem(label, action, opts = {}) {
     const btn = document.createElement("div");
-    btn.style.cssText = `padding:8px 12px;cursor:${item.disabled?'default':'pointer'};color:${item.danger?'#dc2626':item.disabled?'#9ca3af':'#1e293b'};display:flex;gap:6px;align-items:center`;
-    btn.textContent = item.label;
-    if (item.info) { const inf = document.createElement("span"); inf.style.cssText="font-size:9px;color:#9ca3af"; inf.textContent=item.info; btn.appendChild(inf); }
-    if (!item.disabled) {
-      btn.addEventListener("mouseenter", () => { btn.style.background = "#f8fafc"; });
-      btn.addEventListener("mouseleave", () => { btn.style.background = ""; });
-      btn.addEventListener("click", () => { menu.remove(); item.action?.(); });
+    btn.style.cssText = `padding:8px 14px;cursor:${opts.disabled?'default':'pointer'};color:${opts.danger?'#dc2626':opts.disabled?'#9ca3af':'#1e293b'};display:flex;align-items:center;gap:8px`;
+    btn.innerHTML = label;
+    if (!opts.disabled) {
+      btn.onmouseenter = () => { btn.style.background = "#f8fafc"; };
+      btn.onmouseleave = () => { btn.style.background = ""; };
+      btn.onclick = () => { menu.remove(); action?.(); };
     }
-    menu.appendChild(btn);
-  });
+    return btn;
+  }
+  function sep() { const hr=document.createElement("div"); hr.style.cssText="height:1px;background:#f1f5f9;margin:2px 0"; return hr; }
 
-  // Close on outside click
+  // ① 수업 정보
+  menu.appendChild(menuItem("📋 수업 정보 편집", () => showEntryDetail(entry)));
+  // ② 과목 배정 현황 (시수별 요일/교시)
+  menu.appendChild(menuItem("📅 배정 현황 보기", () => showSubjectAssignmentHistory(entry)));
+  // ③ 하단 카드 하이라이트
+  menu.appendChild(menuItem("🔍 하단 카드에서 찾기", () => highlightSidebarCard(entry)));
+  menu.appendChild(sep());
+  // ④ 고정
+  menu.appendChild(menuItem(entry.pinned ? "📌 고정 해제" : "📍 이 시간에 고정", () => {
+    const e = entries().find(x=>x.id===entry.id); if(e){ e.pinned=!e.pinned; scheduleSave("timetable"); renderAll(); }
+  }));
+  menu.appendChild(sep());
+  // ⑤ 삭제
+  menu.appendChild(menuItem("🗑 이 수업 삭제", () => { removeEntry(entry.id); recomputeConflicts(); renderAll(); }, { danger: true }));
+
   setTimeout(() => {
     document.addEventListener("click", () => menu.remove(), { once: true });
     document.addEventListener("contextmenu", () => menu.remove(), { once: true });
   }, 10);
 
-  // Keep in viewport
   document.body.appendChild(menu);
   const rect = menu.getBoundingClientRect();
   if (rect.right > window.innerWidth) menu.style.left = `${x - rect.width}px`;
   if (rect.bottom > window.innerHeight) menu.style.top = `${y - rect.height}px`;
+}
+
+/** Show assignment history: each placed slot for this subject */
+function showSubjectAssignmentHistory(entry) {
+  const existing = document.getElementById("tt-entry-detail-modal"); if (existing) existing.remove();
+  const modal = document.createElement("div"); modal.id = "tt-entry-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
+
+  const box = document.createElement("div");
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:300px;max-width:440px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative";
+
+  const gradeKeys = entryGradeKeys(entry);
+  const gc = getGradeColor(gradeKeys[0]||currentGrade);
+  box.style.borderTop = `4px solid ${gc.border}`;
+
+  const titleEl = document.createElement("div");
+  titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:12px;color:#1e3a5f;padding-right:24px";
+  titleEl.textContent = `${entryTitle(entry)} — 배정 현황`; box.appendChild(titleEl);
+
+  // Find all entries for same template / group
+  const tplId = entry.templateId || entry.templateIds?.[0];
+  const grpId = entry.groupId;
+  const related = entries().filter(e => {
+    if (grpId && e.groupId === grpId) return true;
+    if (tplId && (e.templateId===tplId || e.templateIds?.includes(tplId))) return true;
+    return false;
+  }).sort((a,b) => a.day-b.day || a.period-b.period);
+
+  const dayLabels = ["월","화","수","목","금"];
+  const periods = ttConfig().periodLabels;
+
+  if (!related.length) {
+    box.appendChild(Object.assign(document.createElement("div"), { textContent:"배정된 시수가 없습니다.", style:"color:#9ca3af;font-size:12px" }));
+  } else {
+    const list = document.createElement("div"); list.style.cssText = "display:flex;flex-direction:column;gap:4px";
+    related.forEach((e, i) => {
+      const row = document.createElement("div");
+      row.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;background:${e.id===entry.id?gc.bg+'99':'#f8fafc'};border:1px solid ${e.id===entry.id?gc.border:'#e2e8f0'};cursor:pointer`;
+      const idxEl = document.createElement("span"); idxEl.style.cssText="font-size:10px;color:#6b7280;width:18px;text-align:center;font-weight:700"; idxEl.textContent=i+1;
+      const slotEl = document.createElement("span"); slotEl.style.cssText="font-weight:700;color:#1e293b"; slotEl.textContent=`${dayLabels[e.day]} ${i+1}교시`;
+      const secEl = document.createElement("span"); secEl.style.cssText="font-size:10px;color:#6b7280;flex:1"; secEl.textContent=gradeKeys.length?gradeKeys.map(g=>`${gradeDisplay(g)}`).join(","):"";
+      const pinEl = document.createElement("span"); if(e.pinned) { pinEl.textContent="📌"; pinEl.style.fontSize="10px"; }
+      row.append(idxEl, slotEl, secEl, pinEl);
+      row.onclick = () => { modal.remove(); showEntryDetail(e); };
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    // Credits summary
+    const tplCredits = (() => {
+      const g = gradeKeys[0]||currentGrade;
+      const row = (appState.curriculum.gradeBoards[g]||[]).find(r=>r.sem1TemplateId===tplId||r.sem2TemplateId===tplId);
+      return row?.credits ?? "?";
+    })();
+    const sumEl = document.createElement("div"); sumEl.style.cssText="margin-top:10px;font-size:11px;color:#6b7280;text-align:right";
+    sumEl.textContent = `${related.length} / ${tplCredits} 시수 배정됨`; box.appendChild(sumEl);
+  }
+
+  const closeBtn = document.createElement("button"); closeBtn.style.cssText="position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af"; closeBtn.textContent="×"; closeBtn.onclick=()=>modal.remove();
+  box.appendChild(closeBtn); modal.appendChild(box);
+  modal.addEventListener("click", e=>{if(e.target===modal)modal.remove();});
+  document.body.appendChild(modal);
+}
+
+/** Highlight the matching sidebar card */
+function highlightSidebarCard(entry) {
+  const tplId = entry.templateId || entry.templateIds?.[0];
+  const grpId = entry.groupId;
+  // Remove existing highlights
+  document.querySelectorAll(".tt-sc-highlighted").forEach(el => el.classList.remove("tt-sc-highlighted"));
+  // Find and highlight
+  document.querySelectorAll(".tt-subject-card").forEach(card => {
+    const cardTitle = card.querySelector(".tt-sc-name")?.textContent || "";
+    const grpMatch = grpId && card.dataset.groupId === grpId;
+    const tplMatch = tplId && card.dataset.templateId === tplId;
+    if (grpMatch || tplMatch) {
+      card.classList.add("tt-sc-highlighted");
+      card.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    }
+  });
+  // Clear after 3 seconds
+  setTimeout(() => document.querySelectorAll(".tt-sc-highlighted").forEach(el => el.classList.remove("tt-sc-highlighted")), 3000);
 }
 
 function showEntryDetail(entry) {
@@ -1100,6 +1183,7 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
     });
     const title = `[${grp.name}] ${cardNames.join(" · ")}`;
     const card = buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, groupName: grp.name });
+    card.dataset.groupId = grp.id;
     card.style.outline = "1.5px solid " + gradeColor.border;
     if (!isDone) {
       card.addEventListener("dragstart", () => {
@@ -1135,6 +1219,7 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
     const label = cc > 1 ? `${getTemplateCardTitle(tpl)} ${sectionLabel(c.sectionIdx)}` : getTemplateCardTitle(tpl);
     const card = buildSidebarCard({ title: label, teachers: getTeachersForTemplate(c.templateId),
       gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor, sectionIdx: c.sectionIdx });
+    card.dataset.templateId = c.templateId;
     if (!isDone) {
       card.addEventListener("dragstart", () => {
         dragData = { kind:"subject", ttcardId: c.id, templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey };
@@ -1261,7 +1346,6 @@ function renderConstraintsPanel() {
   const el = $("ttConstraintsContent"); if (!el) return;
   el.innerHTML = "";
 
-  // Show ALL teachers from templates (so constraints can be set before auto-assign)
   const fromTemplates = [...new Set(
     (appState.templates.templates || []).flatMap(t =>
       splitTeacherNames([t.teacher, t.sem1Teacher, t.sem2Teacher].join(","))
@@ -1274,52 +1358,119 @@ function renderConstraintsPanel() {
     el.innerHTML = '<div class="tt-empty">과목카드에 등록된 교사가 없습니다.</div>'; return;
   }
 
-  const hdrRow = document.createElement("div"); hdrRow.className = "tt-con-hint";
-  hdrRow.textContent = "자동 배치 전 교사 조건을 설정하세요."; el.appendChild(hdrRow);
+  const hint = document.createElement("div"); hint.className = "tt-con-hint";
+  hint.textContent = "자동 배치 전 교사 조건을 설정하세요."; el.appendChild(hint);
 
-  const table = document.createElement("table"); table.className = "tt-constraint-table";
-  table.innerHTML = `<thead><tr>
-    <th>교사</th>
-    <th>하루 최대 수업 <span class="tt-con-default">(기본: 6)</span></th>
-    <th>최대 연속 수업 <span class="tt-con-default">(기본: 4)</span></th>
-    <th>현재 배치</th>
-    <th>충돌</th>
-  </tr></thead>`;
-  const tbody = document.createElement("tbody");
+  const dayLabels = ["월","화","수","목","금"];
+  const periods = ttConfig().periodLabels;
+  const rooms = getRooms();
 
   allTeachers.forEach(teacher => {
-    const c = constraints()[teacher] || { maxPerDay: 6, maxConsecutive: 4 };
-    const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher));
-    const total = placed.length;
+    if (!constraints()[teacher]) constraints()[teacher] = {};
+    const c = constraints()[teacher];
+
+    const block = document.createElement("div"); block.className = "tt-con-teacher-block";
+
+    // ── Header row: teacher name + expand toggle ──────────────────
+    const hdr = document.createElement("div"); hdr.className = "tt-con-teacher-hdr";
+    const nameEl = document.createElement("span"); nameEl.className = "tt-con-name"; nameEl.textContent = teacher;
+    const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
     const hasViolation = [...constraintMap.entries()].some(([id, s]) => {
-      const e = entries().find(e => e.id === id);
-      return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size > 0;
+      const e = entries().find(x=>x.id===id);
+      return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size>0;
     });
-    const tr = document.createElement("tr");
+    const statEl = document.createElement("span"); statEl.className = "tt-con-stat";
+    statEl.textContent = placed ? `${placed}시수 ${hasViolation?"⚠️":"✅"}` : "-";
+    const togBtn = document.createElement("button"); togBtn.type = "button"; togBtn.className = "tt-con-tog";
+    togBtn.textContent = c._expanded ? "▲" : "▼";
+    togBtn.onclick = () => { c._expanded = !c._expanded; renderConstraintsPanel(); };
+    hdr.append(nameEl, statEl, togBtn); block.appendChild(hdr);
 
-    const nameTd = document.createElement("td"); nameTd.className = "tt-con-name"; nameTd.textContent = teacher; tr.appendChild(nameTd);
+    if (!c._expanded) { el.appendChild(block); return; }
 
+    // ── Body ──────────────────────────────────────────────────────
+    const body = document.createElement("div"); body.className = "tt-con-body";
+
+    // Row: 하루 최대 + 최대 연속
+    const numRow = document.createElement("div"); numRow.className = "tt-con-num-row";
     [
-      { key: "maxPerDay",      default: 6,  min: 1, max: 12 },
-      { key: "maxConsecutive", default: 4,  min: 1, max: 12 }
+      { key: "maxPerDay",      label: "하루 최대", def: 6,  min:1, max:12 },
+      { key: "maxConsecutive", label: "최대 연속", def: 4,  min:1, max:12 },
     ].forEach(f => {
-      const td = document.createElement("td");
-      const inp = document.createElement("input"); inp.type = "number"; inp.min = f.min; inp.max = f.max;
-      inp.value = c[f.key] ?? f.default; inp.disabled = !canEdit();
-      inp.addEventListener("change", e => updateConstraint(teacher, f.key, parseInt(e.target.value) || f.default));
-      td.appendChild(inp); tr.appendChild(td);
+      const wrap = document.createElement("label"); wrap.className = "tt-con-num-wrap";
+      wrap.textContent = f.label + " ";
+      const inp = document.createElement("input"); inp.type="number"; inp.min=f.min; inp.max=f.max;
+      inp.value = c[f.key] ?? f.def; inp.disabled = !canEdit(); inp.style.width="44px";
+      inp.addEventListener("change", e => updateConstraint(teacher, f.key, parseInt(e.target.value)||f.def));
+      wrap.appendChild(inp); numRow.appendChild(wrap);
     });
+    body.appendChild(numRow);
 
-    const totalTd = document.createElement("td"); totalTd.className = "tt-con-total";
-    totalTd.textContent = total ? `${total}시수` : "-"; tr.appendChild(totalTd);
+    // ── Assigned room ─────────────────────────────────────────────
+    if (rooms.length) {
+      const rRow = document.createElement("div"); rRow.className = "tt-con-room-row";
+      const rLabel = document.createElement("label"); rLabel.textContent = "배정 교실"; rLabel.style.cssText="font-size:11px;font-weight:600;color:#6b7280;margin-right:6px";
+      const rSel = document.createElement("select"); rSel.style.cssText="padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px"; rSel.disabled = !canEdit();
+      const noR = document.createElement("option"); noR.value=""; noR.textContent="없음"; rSel.appendChild(noR);
+      rooms.forEach(r => {
+        const o = document.createElement("option"); o.value=r.id; o.textContent=r.name;
+        if(r.id===c.assignedRoomId) o.selected=true; rSel.appendChild(o);
+      });
+      rSel.addEventListener("change", e => {
+        updateConstraint(teacher, "assignedRoomId", e.target.value||null);
+        // Apply room to all entries of this teacher
+        if (canEdit()) {
+          entries().forEach(en => {
+            if (splitTeacherNames(en.teacherName).includes(teacher)) {
+              updateEntry(en.id, "roomId", e.target.value||null);
+            }
+          });
+          scheduleSave("timetable"); renderAll();
+        }
+      });
+      rRow.append(rLabel, rSel); body.appendChild(rRow);
+    }
 
-    const conflTd = document.createElement("td"); conflTd.className = "tt-con-total";
-    conflTd.textContent = hasViolation ? "⚠️" : total ? "✅" : "";
-    conflTd.title = hasViolation ? "제약 위반 있음" : ""; tr.appendChild(conflTd);
+    // ── Unavailable slots grid ────────────────────────────────────
+    const unavLabel = document.createElement("div"); unavLabel.style.cssText="font-size:11px;font-weight:600;color:#6b7280;margin-top:8px;margin-bottom:4px"; unavLabel.textContent="수업 불가 시간 (클릭하여 토글)";
+    body.appendChild(unavLabel);
 
-    tbody.appendChild(tr);
+    const grid = document.createElement("div"); grid.className = "tt-con-grid";
+    // Header row
+    const hdrRowEl = document.createElement("div"); hdrRowEl.className = "tt-con-grid-row";
+    hdrRowEl.appendChild(Object.assign(document.createElement("div"), { className:"tt-con-grid-corner" }));
+    dayLabels.forEach(d => {
+      const th = document.createElement("div"); th.className = "tt-con-grid-day"; th.textContent = d; hdrRowEl.appendChild(th);
+    });
+    grid.appendChild(hdrRowEl);
+
+    const unavSlots = c.unavailableSlots || [];
+    periods.forEach((label, p) => {
+      const rowEl = document.createElement("div"); rowEl.className = "tt-con-grid-row";
+      const perLabel = document.createElement("div"); perLabel.className = "tt-con-grid-per"; perLabel.textContent = `${p+1}`; rowEl.appendChild(perLabel);
+      dayLabels.forEach((_, d) => {
+        const cell = document.createElement("div");
+        const isUnavail = unavSlots.some(s => s.day===d && s.period===p);
+        cell.className = "tt-con-grid-cell" + (isUnavail ? " tt-con-unavail" : "");
+        cell.title = isUnavail ? "불가" : "가능";
+        if (canEdit()) {
+          cell.style.cursor = "pointer";
+          cell.onclick = () => {
+            const existing = c.unavailableSlots || [];
+            const idx = existing.findIndex(s=>s.day===d&&s.period===p);
+            if (idx>=0) existing.splice(idx,1);
+            else existing.push({ day:d, period:p });
+            updateConstraint(teacher, "unavailableSlots", existing);
+          };
+        }
+        rowEl.appendChild(cell);
+      });
+      grid.appendChild(rowEl);
+    });
+    body.appendChild(grid);
+
+    block.appendChild(body); el.appendChild(block);
   });
-  table.appendChild(tbody); el.appendChild(table);
 }
 
 // ── View selectors ────────────────────────────────────────────────
@@ -1450,10 +1601,17 @@ function checkPlacementValid(item, slot, placed) {
     }
     if (maxC > (constraints()[teacher]?.maxConsecutive || 4)) return false;
   }
+  // 6. Room conflict: if teacher has assigned room, apply; if room already occupied, skip
+  for (const teacher of teachers) {
+    const c = constraints()[teacher];
+    if (c?.assignedRoomId) {
+      // Check if assigned room is already occupied at this slot
+      const roomBusy = existing.some(e => e.day===slot.day && e.period===slot.period && e.roomId===c.assignedRoomId);
+      if (roomBusy) return false;
+    }
+  }
   return true;
 }
-
-// ── Auto-assign ALL grades simultaneously (unit-aware) ────────────
 export function autoAssignAll() {
   if (!canEdit()) return;
 
@@ -1716,8 +1874,12 @@ setOnUpdate(domain => {
 
 onAuth(async (user) => {
   updateAuthUI(user);
-  if (user) { subscribeAll(); }
-  else       { unsubscribeAll(); renderAll(); }
+  if (user) {
+    await migrateFromLegacy();  // 마이그레이션 먼저 — 빈 문서 생성 방지
+    subscribeAll();
+  } else {
+    unsubscribeAll(); renderAll();
+  }
 });
 
 // View buttons

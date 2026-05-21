@@ -4,7 +4,7 @@
 import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js";
 import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, currentDrag, setCurrentDrag } from "./state.js";
+import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, currentDrag, setCurrentDrag } from "./state.js";
 import { getClassCount } from "./rosters.js";
 
 const tDomain   = () => appState.templates;
@@ -121,11 +121,51 @@ export function getSubjectsForTeacher(teacherName) {
 export function deleteTemplate(templateId) {
   if (!canEdit()) return;
   const item = getTemplateById(templateId); if (!item) return;
-  if (!confirm(`"${getTemplateCardTitle(item)}" 카드를 삭제할까요?`)) return;
+  if (!confirm(`"${getTemplateCardTitle(item)}" 카드를 삭제할까요?\n\n커리큘럼, 수강명단, 시간표 카드, 시간표 배치에서도 제거됩니다.`)) return;
+
+  // 1. templates
   tDomain().templates = templates().filter(t => t.id !== templateId);
-  // Clear from curriculum
-  GRADE_KEYS.forEach(grade => { (appState.curriculum.gradeBoards[grade] || []).forEach(row => { if (row.sem1TemplateId === templateId) row.sem1TemplateId = null; if (row.sem2TemplateId === templateId) row.sem2TemplateId = null; }); });
+
+  // 2. curriculum boards
+  GRADE_KEYS.forEach(grade => {
+    (appState.curriculum.gradeBoards[grade] || []).forEach(row => {
+      if (row.sem1TemplateId === templateId) row.sem1TemplateId = null;
+      if (row.sem2TemplateId === templateId) row.sem2TemplateId = null;
+    });
+  });
+
+  // 3. rosters
+  if (appState.rosters) {
+    delete appState.rosters.rosters?.[templateId];
+    delete appState.rosters.rosterMeta?.[templateId];
+  }
+
+  // 4. timetable ttcards
+  if (appState.timetable) {
+    appState.timetable.ttcards = (appState.timetable.ttcards || []).filter(c => c.templateId !== templateId);
+    // 5. timetable entries
+    appState.timetable.entries = (appState.timetable.entries || []).filter(e =>
+      e.templateId !== templateId && !(e.templateIds || []).includes(templateId)
+    );
+  }
+
+  // 6. templateGroups pool + units
+  (appState.templates.templateGroups || []).forEach(g => {
+    g.poolCardIds = (g.poolCardIds || []).filter(id => {
+      const c = appState.timetable?.ttcards?.find(c => c.id === id);
+      return c ? c.templateId !== templateId : true;
+    });
+    (g.units || []).forEach(u => {
+      u.templateIds = (u.templateIds || []).filter(id => id !== templateId);
+      u.ttcardIds = (u.ttcardIds || []).filter(id => {
+        const c = appState.timetable?.ttcards?.find(c => c.id === id);
+        return c ? c.templateId !== templateId : true;
+      });
+    });
+  });
+
   scheduleSave("templates"); scheduleSave("curriculum");
+  scheduleSave("rosters"); scheduleSave("timetable");
 }
 
 export function copyTemplate(templateId) {
@@ -185,7 +225,7 @@ export function resetDraft() { /* no-op: live-state editing, nothing to discard 
 
 export async function commitDraft() {
   if (!canEdit()) return;
-  scheduleSave("templates"); // force immediate save
+  await saveNow("templates");  // 즉시 저장 (창 닫아도 누락 없음)
 }
 
 // ── Sidebar: Template Cards ───────────────────────────────────────
@@ -865,9 +905,8 @@ export function handleTableDeleteClick(e, rerender) {
   if (!canEdit()) return;
   const row = btn.closest("tr[data-template-id]"); if (!row) return;
   const tgt = tDomain().templates.find(t => t.id === row.dataset.templateId); if (!tgt) return;
-  if (!confirm(`"${getTemplateCardTitle(tgt)}" 카드를 삭제할까요?`)) return;
-  tDomain().templates = tDomain().templates.filter(t => t.id !== tgt.id);
-  scheduleSave("templates");
+  // Use common deleteTemplate (cleans curriculum, rosters, ttcards, entries, groups)
+  deleteTemplate(tgt.id);
   _onTemplateChange();
   rerender && rerender();
 }
