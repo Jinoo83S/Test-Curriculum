@@ -652,21 +652,20 @@ function renderAllClassesGrid(wrap) {
 
   const table = document.createElement("table");
   table.className = "tt-table tt-all-class-table";
-  table.style.cssText = "table-layout:fixed;width:100%;border-collapse:collapse";
+  table.style.cssText = "table-layout:fixed;width:100%;min-width:0;border-collapse:separate;border-spacing:0";
   // Set --num-rows so CSS can calculate per-row height
   wrap.style.setProperty("--num-rows", String(classes.length));
 
-  // Inject colgroup for proportional widths
+  // Inject colgroup for fixed compact class header + equal timetable cells
   const colgroup = document.createElement("colgroup");
-  // Row header: 4% of total, min 32px
+  const rowHeaderWidth = 28;
   const hdrCol = document.createElement("col");
-  hdrCol.style.width = "4%";
+  hdrCol.style.width = `${rowHeaderWidth}px`;
   colgroup.appendChild(hdrCol);
-  // Each cell: equal share of remaining 96%
-  const cellPct = (96 / (numDays * numPer)).toFixed(3) + "%";
+  const cellWidth = `calc((100% - ${rowHeaderWidth}px) / ${numDays * numPer})`;
   for (let i = 0; i < numDays * numPer; i++) {
     const col = document.createElement("col");
-    col.style.width = cellPct;
+    col.style.width = cellWidth;
     colgroup.appendChild(col);
   }
   table.appendChild(colgroup);
@@ -681,17 +680,20 @@ function renderAllClassesGrid(wrap) {
   DAYS.forEach(d => {
     const th = document.createElement("th"); th.className = "tt-day-header"; th.colSpan = numPer;
     th.textContent = dayLabels[d];
-    th.style.borderRight = "2px solid #475569";
-    th.style.cssText = `font-size:clamp(8px,0.8vw,12px);padding:2px`;
+    th.style.cssText = `font-size:clamp(8px,0.8vw,12px);padding:2px;border-left:3px solid #64748b;border-right:4px solid #334155`;
     hr1.appendChild(th);
   });
   thead.appendChild(hr1);
 
   // Row 2: period sub-headers
   const hr2 = document.createElement("tr");
-  DAYS.forEach(() => {
+  DAYS.forEach(day => {
     periods.forEach((lbl, p) => {
-      const th = document.createElement("th"); th.className = "tt-period-sub-hdr" + (p === 0 ? " day-start" : "");
+      const isDayStart = p === 0;
+      const isDayEnd   = p === periods.length - 1;
+      const th = document.createElement("th");
+      th.className = "tt-period-sub-hdr" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+      th.dataset.day = String(day);
       th.textContent = lbl;
       th.style.cssText = `font-size:clamp(7px,0.65vw,9px);padding:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap`;
       hr2.appendChild(th);
@@ -711,16 +713,18 @@ function renderAllClassesGrid(wrap) {
     // Row header
     const rowHdr = document.createElement("td"); rowHdr.className = "tt-all-row-hdr";
     const gc = getGradeColor(cls.gradeKey);
-    rowHdr.style.cssText = `background:${gc.bg};color:${gc.text};border-left:3px solid ${gc.border};overflow:hidden;font-size:clamp(7px,0.7vw,10px)`;
-    rowHdr.innerHTML = `<b style="display:block;font-size:clamp(8px,0.8vw,11px)">${gradeDisplay(cls.gradeKey)}</b><span style="font-size:clamp(6px,0.65vw,9px)">${cls.section}</span>`;
+    rowHdr.style.cssText = `background:${gc.bg};color:${gc.text};border-left:2px solid ${gc.border};overflow:hidden;font-size:clamp(6px,0.6vw,8px);width:28px;min-width:28px;max-width:28px`;
+    rowHdr.innerHTML = `<b style="display:block;font-size:clamp(7px,0.7vw,9px);line-height:1.05">${gradeDisplay(cls.gradeKey)}</b><span style="font-size:clamp(6px,0.6vw,8px);line-height:1.05">${cls.section}</span>`;
     tr.appendChild(rowHdr);
 
     DAYS.forEach(day => {
       periods.forEach((_, period) => {
         const td = document.createElement("td");
-        td.className = "tt-cell tt-all-cell" + (period === 0 ? " day-start" : "");
+        const isDayStart = period === 0;
+        const isDayEnd   = period === periods.length - 1;
+        td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.setAttribute("data-day", day);
-        td.style.cssText = "padding:1px;vertical-align:top;overflow:hidden";
+        td.style.cssText = "padding:0 1px;vertical-align:top;overflow:hidden;height:26px;max-height:26px";
         td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
         td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
         td.addEventListener("drop", e => {
