@@ -160,17 +160,75 @@ function getGroupCards(group) {
     .filter(Boolean);
 }
 
+function getClassInfoByGradeSection(gradeKey, sectionIdx) {
+  return getAllClasses().find(c => c.gradeKey === gradeKey && (c.sectionIdx ?? 0) === (sectionIdx ?? 0)) || null;
+}
+
+function classKey(info) {
+  if (!info) return "";
+  return `${info.gradeKey || info.grade}:${info.section || sectionLabel(info.sectionIdx ?? 0)}`;
+}
+
+function getRosterEntriesForTtCard(card) {
+  if (!card?.templateId) return [];
+  return (appState.rosters?.rosters?.[card.templateId] || [])
+    .filter(e => (e.sectionIdx ?? 0) === (card.sectionIdx ?? 0));
+}
+
+function getTtCardClassInfos(card) {
+  if (!card) return [];
+  const rosterEntries = getRosterEntriesForTtCard(card);
+  const allClasses = appState.classes?.classes || [];
+  const classRows = getAllClasses();
+  const seen = new Set();
+  const infos = [];
+
+  rosterEntries.forEach(re => {
+    const clsObj = allClasses.find(c => c.id === re.classId);
+    if (!clsObj || clsObj.grade !== card.gradeKey) return;
+    const rowInfo = classRows.find(c => c.gradeKey === clsObj.grade && c.section === clsObj.name);
+    const info = rowInfo || { gradeKey: clsObj.grade, section: clsObj.name, sectionIdx: card.sectionIdx ?? 0 };
+    const key = classKey(info);
+    if (key && !seen.has(key)) { seen.add(key); infos.push(info); }
+  });
+
+  if (infos.length) return infos;
+
+  const fallback = getClassInfoByGradeSection(card.gradeKey, card.sectionIdx ?? 0);
+  return [fallback || { gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0, section: sectionLabel(card.sectionIdx ?? 0) }];
+}
+
+function getTtCardClassLabels(card) {
+  return uniqueStrings(getTtCardClassInfos(card).map(info => info.section || sectionLabel(info.sectionIdx ?? 0)));
+}
+
+function ttCardCoversClass(card, cls) {
+  if (!card || !cls || card.gradeKey !== cls.gradeKey) return false;
+  const infos = getTtCardClassInfos(card);
+  return infos.some(info => {
+    if (cls.section && info.section) return info.section === cls.section;
+    return (info.sectionIdx ?? 0) === (cls.sectionIdx ?? 0);
+  });
+}
+
+function uniqueStrings(list) {
+  return [...new Set((list || []).filter(Boolean))];
+}
+
 function describeTtCard(card) {
   const tpl = getTemplateById(card?.templateId);
   const base = tpl ? getTemplateCardTitle(tpl) : "?";
   const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card?.templateId]?.classCount) || 1);
-  const sec = cc > 1 ? sectionLabel(card.sectionIdx) : sectionLabel(card.sectionIdx ?? 0);
+  const classLabels = getTtCardClassLabels(card);
+  const sec = classLabels.length ? classLabels.join(", ") : sectionLabel(card?.sectionIdx ?? 0);
+  const shouldShowSection = cc > 1 || classLabels.length > 1;
   return {
-    title: cc > 1 ? `${base} ${sec}` : base,
+    title: shouldShowSection ? `${base} ${sec}` : base,
     subject: base,
     gradeKey: card?.gradeKey || "",
     sectionIdx: card?.sectionIdx ?? 0,
     sectionLabel: sec,
+    classLabels,
     teachers: getTeachersForTtCard(card),
     credits: getCreditsForTtCard(card),
   };
@@ -214,10 +272,7 @@ function entryMatchesClass(entry, cls) {
   ].filter(Boolean);
 
   if (cardIds.length) {
-    return cardIds.some(id => {
-      const card = getTtCardById(id);
-      return card && card.gradeKey === cls.gradeKey && (card.sectionIdx ?? 0) === cls.sectionIdx;
-    });
+    return cardIds.some(id => ttCardCoversClass(getTtCardById(id), cls));
   }
 
   const eGrades = entry.gradeKeys?.length ? entry.gradeKeys : [entry.gradeKey].filter(Boolean);
@@ -399,20 +454,25 @@ function renderClassGrid(wrap) {
   const days    = ["월","화","수","목","금"];
   const periods = ttConfig().periodLabels;
 
-  // Collect sections for currentGrade. For group/unit entries, use ttcard section data rather than the entry's first section only.
-  const sectionSet = new Set();
-  entries().forEach(e => {
-    if (!entryHasGrade(e, currentGrade)) return;
-    const cardIds = [...(e.ttcardIds || []), e.ttcardId].filter(Boolean);
-    if (cardIds.length) {
-      cardIds.forEach(id => {
-        const card = getTtCardById(id);
-        if (card?.gradeKey === currentGrade) sectionSet.add(card.sectionIdx ?? 0);
-      });
-    } else {
-      sectionSet.add(e.sectionIdx ?? 0);
-    }
-  });
+  // Collect sections for currentGrade from the student class list first.
+  // A timetable card section can contain students from multiple homerooms (예: A,B 함께 수강),
+  // so the class view must show every actual homeroom row, not only card.sectionIdx.
+  const gradeClassInfos = getAllClasses().filter(c => c.gradeKey === currentGrade);
+  const sectionSet = new Set(gradeClassInfos.map(c => c.sectionIdx ?? 0));
+  if (!sectionSet.size) {
+    entries().forEach(e => {
+      if (!entryHasGrade(e, currentGrade)) return;
+      const cardIds = [...(e.ttcardIds || []), e.ttcardId].filter(Boolean);
+      if (cardIds.length) {
+        cardIds.forEach(id => {
+          const card = getTtCardById(id);
+          if (card?.gradeKey === currentGrade) getTtCardClassInfos(card).forEach(info => sectionSet.add(info.sectionIdx ?? 0));
+        });
+      } else {
+        sectionSet.add(e.sectionIdx ?? 0);
+      }
+    });
+  }
   const gradeSections = [...sectionSet].sort((a, b) => a - b);
   if (!gradeSections.length) gradeSections.push(0);
 
@@ -463,8 +523,9 @@ function renderClassGrid(wrap) {
           if (!dragData || !canEdit()) return;
           handleDrop({ ...dragData, sectionIdx: sec }, day, period);
         });
+        const clsInfo = gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || { gradeKey: currentGrade, sectionIdx: sec, section: sectionLabel(sec) };
         const slotEntries = entries().filter(e =>
-          e.day === day && e.period === period && entryMatchesClass(e, { gradeKey: currentGrade, sectionIdx: sec })
+          e.day === day && e.period === period && entryMatchesClass(e, clsInfo)
         );
         if (slotEntries.length) {
           slotEntries.forEach(entry => {
@@ -724,6 +785,63 @@ function entryTemplateIds(e) {
 function entryHasGrade(e, grade) {
   return entryGradeKeys(e).includes(grade);
 }
+
+function ttCardIdsFromPlacement(x = {}) {
+  return uniqueStrings([...(x.ttcardIds || []), x.ttcardId]);
+}
+
+function audienceForPlacement(x = {}) {
+  const studentKeys = new Set();
+  const classKeys = new Set();
+  const cardIds = ttCardIdsFromPlacement(x);
+
+  const addCardAudience = (card) => {
+    if (!card) return;
+    getRosterEntriesForTtCard(card).forEach(re => studentKeys.add(`${re.classId}:${re.studentId}`));
+    getTtCardClassInfos(card).forEach(info => {
+      const key = classKey(info);
+      if (key) classKeys.add(key);
+    });
+  };
+
+  if (cardIds.length) {
+    cardIds.forEach(id => addCardAudience(getTtCardById(id)));
+  } else if (x.templateId && x.gradeKey) {
+    addCardAudience({ templateId: x.templateId, gradeKey: x.gradeKey, sectionIdx: x.sectionIdx ?? 0 });
+  }
+
+  return { studentKeys, classKeys };
+}
+
+function setsIntersect(a, b) {
+  for (const v of a) if (b.has(v)) return true;
+  return false;
+}
+
+function audiencesConflict(a, b) {
+  // If both sides have actual roster data, compare students, not homeroom labels.
+  // This allows elective groups from the same homeroom to run concurrently when students differ.
+  if (a.studentKeys.size && b.studentKeys.size) return setsIntersect(a.studentKeys, b.studentKeys);
+  return setsIntersect(a.classKeys, b.classKeys);
+}
+
+function getEntryClassSummary(entry) {
+  const cardIds = ttCardIdsFromPlacement(entry);
+  const parts = [];
+  const seen = new Set();
+  if (cardIds.length) {
+    cardIds.forEach(id => {
+      const card = getTtCardById(id);
+      if (!card) return;
+      const labels = getTtCardClassLabels(card);
+      const txt = `${gradeDisplay(card.gradeKey)}학년 ${labels.join(", ") || sectionLabel(card.sectionIdx ?? 0)}`;
+      if (!seen.has(txt)) { seen.add(txt); parts.push(txt); }
+    });
+  }
+  if (parts.length) return parts.join(" / ");
+  return entryGradeKeys(entry).map(g => `${gradeDisplay(g)}학년 ${sectionLabel(entry.sectionIdx ?? 0)}`).join(", ") || "-";
+}
+
 function entryTitle(e) {
   // Group entry → show group name
   if (e.groupId) {
@@ -1110,7 +1228,7 @@ function showSubjectAssignmentHistory(entry) {
       row.style.cssText = `display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;background:${e.id===entry.id?gc.bg+'99':'#f8fafc'};border:1px solid ${e.id===entry.id?gc.border:'#e2e8f0'};cursor:pointer`;
       const idxEl = document.createElement("span"); idxEl.style.cssText="font-size:10px;color:#6b7280;width:18px;text-align:center;font-weight:700"; idxEl.textContent=i+1;
       const slotEl = document.createElement("span"); slotEl.style.cssText="font-weight:700;color:#1e293b"; slotEl.textContent=`${dayLabels[e.day]} ${periods[e.period] || `${e.period + 1}교시`}`;
-      const secEl = document.createElement("span"); secEl.style.cssText="font-size:10px;color:#6b7280;flex:1"; secEl.textContent=gradeKeys.length?gradeKeys.map(g=>`${gradeDisplay(g)}`).join(","):"";
+      const secEl = document.createElement("span"); secEl.style.cssText="font-size:10px;color:#6b7280;flex:1"; secEl.textContent = getEntryClassSummary(e);
       const pinEl = document.createElement("span"); if(e.pinned) { pinEl.textContent="📌"; pinEl.style.fontSize="10px"; }
       row.append(idxEl, slotEl, secEl, pinEl);
       row.onclick = () => { modal.remove(); showEntryDetail(e); };
@@ -1180,9 +1298,8 @@ function showEntryDetail(entry) {
     r.append(l, v); box.appendChild(r); return r;
   }
 
-  // 2. 학년/반
-  const sectionStr = entry.sectionIdx !== undefined ? sectionLabel(entry.sectionIdx) : "-";
-  makeRow("학년/반", gradeKeys.map(g => `${gradeDisplay(g)}학년 ${sectionStr}`).join(", ") || "-");
+  // 2. 학년/반 — for grouped ttcard entries, show every actual homeroom covered by the roster.
+  makeRow("학년/반", getEntryClassSummary(entry));
 
   // 3. 담당 교사
   const teachers = entryTeachers(entry);
@@ -1322,15 +1439,15 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
     const tpl = getTemplateById(c.templateId); if (!tpl) return;
     const gradeColor = getGradeColor(c.gradeKey);
     const credits = getCreditsForTtCard(c);
-    const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[c.templateId]?.classCount)||1);
+    const desc = describeTtCard(c);
     const assigned = entries().filter(e =>
       (e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)) ||
       (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e,c.gradeKey) && (e.sectionIdx??0)===c.sectionIdx)
     ).length;
     const isDone = credits > 0 && assigned >= credits;
-    const label = cc > 1 ? `${getTemplateCardTitle(tpl)} ${sectionLabel(c.sectionIdx)}` : getTemplateCardTitle(tpl);
+    const label = desc.title;
     const card = buildSidebarCard({ title: label, teachers: getTeachersForTtCard(c),
-      gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor, sectionIdx: c.sectionIdx });
+      gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor, sectionIdx: c.sectionIdx, detailItems: [desc] });
     card.dataset.templateId = c.templateId;
     card.dataset.ttcardId = c.id;
     if (!isDone) {
@@ -1677,20 +1794,29 @@ function checkPlacementValid(item, slot, placed) {
     }
   }
 
-  // 2. Exact duplicate (same template+grade+section in same slot)
-  if (slotEnts.some(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && e.sectionIdx === item.sectionIdx)) return false;
+  // 2. Exact duplicate: same timetable card already exists in the slot.
+  const itemCardIds = new Set(ttCardIdsFromPlacement(item));
+  if (itemCardIds.size && slotEnts.some(e => ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)))) return false;
+  if (!itemCardIds.size && slotEnts.some(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && e.sectionIdx === item.sectionIdx)) return false;
 
-  // 3. Student conflict (grade overlap, same slot)
-  const itemGrades = item.gradeKeys?.length ? item.gradeKeys : (item.gradeKey ? [item.gradeKey] : []);
-  const sameGrade = slotEnts.filter(e => entryGradeKeys(e).some(g => itemGrades.includes(g)));
-  for (const e of sameGrade) {
+  // 3. Student conflict. Prefer roster-level student comparison; fall back to homeroom coverage.
+  const itemAudience = audienceForPlacement(item);
+  for (const e of slotEnts) {
     // Same unit → co-located intentionally
     if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
-    // Same concurrent group → parallel classes
+
     const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
                     (sameGroupTpl(item.templateId, e.templateId));
     const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
-    if (!conc) return false;
+    const eAudience = audienceForPlacement(e);
+    const conflict = audiencesConflict(itemAudience, eAudience);
+
+    // Concurrent groups may share the same homeroom only when rosters prove students differ.
+    if (conc) {
+      if (itemAudience.studentKeys.size && eAudience.studentKeys.size && conflict) return false;
+      continue;
+    }
+    if (conflict) return false;
   }
 
   // 4. Teacher max per day + unavailable slots

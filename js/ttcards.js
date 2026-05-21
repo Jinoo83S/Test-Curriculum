@@ -25,7 +25,7 @@ function getSectionLabelFromRoster(card) {
   }).filter(Boolean))];
   if (classNames.length === 0) return sectionLabel(card.sectionIdx);
   if (classNames.length === 1) return classNames[0]; // "A" or "B"
-  return "M"; // students from multiple class names in same section
+  return classNames.join(", "); // one course section can contain students from A,B together
 }
 export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
@@ -37,7 +37,8 @@ export function getTtCardLabel(card) {
   const tpl = getTemplateById(card.templateId);
   const base = tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)";
   const cc = getClassCount(card.templateId);
-  return cc > 1 ? `${base} ${sectionLabel(card.sectionIdx)}` : base;
+  const secLabel = getSectionLabelFromRoster(card);
+  return (cc > 1 || (secLabel && secLabel.includes(","))) ? `${base} ${secLabel || sectionLabel(card.sectionIdx)}` : base;
 }
 
 /** Stable deterministic ID so group references survive regeneration */

@@ -21,26 +21,37 @@ export const initialLoad = {
 
 // ── Per-domain save timers ────────────────────────────────────────
 const saveTimers = {};
+const dirtyDomains = new Set();
+const SAVE_DELAY_MS = 3000;
 
 let _onSaveStatus = null;
 export const setOnSaveStatus = (cb) => { _onSaveStatus = cb; };
 
 export function scheduleSave(domain) {
   if (!canEdit() || !initialLoad[domain]) return;
+  dirtyDomains.add(domain);
   _onSaveStatus?.("saving");
   clearTimeout(saveTimers[domain]);
-  saveTimers[domain] = setTimeout(() => saveNow(domain), 1500);
+  saveTimers[domain] = setTimeout(() => saveNow(domain), SAVE_DELAY_MS);
 }
 
 export async function saveNow(domain) {
   if (!canEdit() || !initialLoad[domain]) return;
+  clearTimeout(saveTimers[domain]);
+  delete saveTimers[domain];
   try {
     await setDoc(refs[domain], { ...appState[domain], updatedAt: serverTimestamp() });
+    dirtyDomains.delete(domain);
     _onSaveStatus?.("saved");
   } catch (e) {
     console.error(`Save failed [${domain}]:`, e);
     _onSaveStatus?.("error", e);
   }
+}
+
+export async function flushPendingSaves() {
+  const domains = [...dirtyDomains];
+  await Promise.all(domains.map(d => saveNow(d)));
 }
 
 // ================================================================
@@ -306,6 +317,11 @@ let _onUpdate = () => {};
 export function setOnUpdate(fn) { _onUpdate = fn; }
 
 // Snapshot handlers per domain
+function sameDomainData(a, b) {
+  try { return JSON.stringify(a) === JSON.stringify(b); }
+  catch (_) { return false; }
+}
+
 function handleSnap(domain, normalizeFn) {
   return async (snap) => {
     if (!snap.exists()) {
@@ -316,14 +332,22 @@ function handleSnap(domain, normalizeFn) {
       return;
     }
     const data = snap.data();
+    let normalized = normalizeFn(data);
+
     // Preserve in-memory classes if Firestore returns empty (race condition guard)
     if (domain === "classes") {
       const prev = appState.classes.classes || [];
-      appState.classes = normalizeFn(data);
-      if (appState.classes.classes.length === 0 && prev.length > 0) appState.classes.classes = prev;
-    } else {
-      appState[domain] = normalizeFn(data);
+      if (normalized.classes.length === 0 && prev.length > 0) normalized.classes = prev;
     }
+
+    // Firestore echoes our own setDoc through onSnapshot. If the normalized data is
+    // identical to the local state, skip the expensive full re-render.
+    if (initialLoad[domain] && sameDomainData(appState[domain], normalized)) {
+      initialLoad[domain] = true;
+      return;
+    }
+
+    appState[domain] = normalized;
     initialLoad[domain] = true;
     _onUpdate(domain);
   };
