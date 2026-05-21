@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
-import { uid, makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
 import { getRooms, renderRoomsView } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
