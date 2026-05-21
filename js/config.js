@@ -3,7 +3,7 @@
 // ================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, enableIndexedDbPersistence } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
@@ -16,18 +16,11 @@ const firebaseConfig = {
 
 export const fbApp    = initializeApp(firebaseConfig);
 export const auth     = getAuth(fbApp);
-export const db       = getFirestore(fbApp);
-export const provider = new GoogleAuthProvider();
-
-// ── Firestore 오프라인 캐시 (IndexedDB) ──────────────────────────
-// 쓰기는 즉시 로컬 IndexedDB에 반영, 백그라운드로 Firebase 동기화
-enableIndexedDbPersistence(db).catch(err => {
-  if (err.code === "failed-precondition") {
-    console.warn("Firestore offline cache: 탭 여러 개 열림 (첫 번째 탭만 캐시 활성)");
-  } else if (err.code === "unimplemented") {
-    console.warn("Firestore offline cache: 이 브라우저에서 지원되지 않음");
-  }
+// persistentLocalCache = IndexedDB 캐시 (구 enableIndexedDbPersistence 대체)
+export const db = initializeFirestore(fbApp, {
+  cache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
 });
+export const provider = new GoogleAuthProvider();
 
 // ── Firestore refs — one document per domain ──────────────────────
 // Keeps curriculum separate from student/teacher data.
