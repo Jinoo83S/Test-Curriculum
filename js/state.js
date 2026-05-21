@@ -335,6 +335,35 @@ export function ensureConsistency(domain) {
 let _onUpdate = () => {};
 export function setOnUpdate(fn) { _onUpdate = fn; }
 
+// ── Batched initial render ────────────────────────────────────────
+// 구독 중인 도메인이 모두 로드되면 한 번만 render 호출
+let _subscribedDomains = new Set();
+let _pendingInitialRender = false;
+
+function _checkAllLoaded() {
+  if (!_pendingInitialRender) return;
+  const allLoaded = [..._subscribedDomains].every(d => initialLoad[d]);
+  if (allLoaded) {
+    _pendingInitialRender = false;
+    _onUpdate("all"); // 전체 로드 완료 — 1회 render
+  }
+}
+
+function fireUpdate(domain) {
+  if (_pendingInitialRender) {
+    // 아직 초기 로딩 중 — 배치 처리
+    _checkAllLoaded();
+  } else {
+    // 초기 로딩 완료 후 실시간 업데이트
+    _onUpdate(domain);
+  }
+}
+
+export function setSubscribedDomains(domains) {
+  _subscribedDomains = new Set(domains);
+  _pendingInitialRender = true;
+}
+
 function withoutFirestoreMeta(obj = {}) {
   const { updatedAt, createdAt, ...rest } = obj || {};
   return rest;
@@ -357,7 +386,7 @@ function applyNormalizedDomain(domain, normalized) {
   }
   appState[domain] = normalized;
   initialLoad[domain] = true;
-  _onUpdate(domain);
+  fireUpdate(domain);
 }
 
 async function commitWriteOps(ops) {
@@ -460,7 +489,7 @@ function handleSnap(domain, normalizeFn) {
     if (!snap.exists()) {
       initialLoad[domain] = true;
       await saveNow(domain);
-      _onUpdate(domain);
+      fireUpdate(domain);
       return;
     }
     applyNormalizedDomain(domain, normalizeFn(snap.data()));
@@ -626,6 +655,7 @@ function subscribeTimetableSplit() {
  * Split domains use collection listeners; other domains keep one-document listeners.
  */
 export function subscribeDomains(domainList = ALL_DOMAINS) {
+  setSubscribedDomains(domainList); // 배치 렌더링 준비
   domainList.forEach(domain => {
     if (!DOMAIN_NORMALIZERS[domain]) {
       console.warn(`Unknown Firestore domain: ${domain}`);
@@ -675,20 +705,25 @@ export function unsubscribeAll() {
 // DATA MIGRATION: old boards/main → new separate docs
 // ================================================================
 export async function migrateFromLegacy() {
-  // Migration must never block normal app loading. In production, Firestore
-  // rules may intentionally deny reads to the old boards/main document.
+  // ① localStorage 캐시 — 이미 완료된 경우 Firestore 왕복 없이 즉시 반환
+  const MIGRATE_KEY = "his_migrated_v2";
+  if (localStorage.getItem(MIGRATE_KEY) === "done") return;
+
   let legacySnap = null;
   try {
     legacySnap = await getDoc(refs.legacy);
   } catch (e) {
     console.warn("Legacy migration skipped; legacy document could not be read.", e);
+    localStorage.setItem(MIGRATE_KEY, "done"); // 읽기 실패도 더 이상 시도 안 함
     return;
   }
 
-  if (!legacySnap.exists()) return;  // No legacy data
+  if (!legacySnap.exists()) {
+    localStorage.setItem(MIGRATE_KEY, "done");
+    return;
+  }
 
   const legacy = legacySnap.data().state || {};
-
   const migrationTargets = [
     ["curriculum", normalizeCurriculumDomain],
     ["templates",  normalizeTemplatesDomain],
@@ -701,27 +736,27 @@ export async function migrateFromLegacy() {
 
   const snaps = await Promise.all(
     migrationTargets.map(async ([domain]) => {
-      try {
-        return await getDoc(refs[domain]);
-      } catch (e) {
-        console.warn(`Legacy migration check skipped for ${domain}.`, e);
-        return null;
-      }
+      try { return await getDoc(refs[domain]); }
+      catch (e) { console.warn(`Migration check skipped for ${domain}.`, e); return null; }
     })
   );
 
   const missingTargets = migrationTargets.filter((_, idx) => snaps[idx] && !snaps[idx].exists());
-  if (!missingTargets.length) return;
+  if (!missingTargets.length) {
+    localStorage.setItem(MIGRATE_KEY, "done");
+    return;
+  }
 
-  console.log(`Migrating legacy data to separate documents: ${missingTargets.map(([d]) => d).join(", ")}`);
-
+  console.log(`Migrating: ${missingTargets.map(([d]) => d).join(", ")}`);
   try {
     await Promise.all(missingTargets.map(([domain, normalizeFn]) =>
       setDoc(refs[domain], { ...normalizeFn(legacy), updatedAt: serverTimestamp() })
     ));
+    localStorage.setItem(MIGRATE_KEY, "done");
     console.log("Migration complete.");
   } catch (e) {
-    console.warn("Legacy migration partially failed; continuing with live documents.", e);
+    console.warn("Migration partially failed; will retry next session.", e);
+    // localStorage 플래그 설정 안 함 → 다음 로그인 시 재시도
   }
 }
 

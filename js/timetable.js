@@ -2163,7 +2163,8 @@ function requestRenderAll() {
   _renderAllTimer = setTimeout(() => renderAll(), 50);
 }
 setOnUpdate(domain => {
-  if (["curriculum","templates","classes","teachers","rosters","rooms","timetable"].includes(domain)) requestRenderAll();
+  const knownDomains = ["curriculum","templates","classes","teachers","rosters","rooms","timetable","all"];
+  if (knownDomains.includes(domain)) requestRenderAll();
 });
 
 onAuth(async (user) => {

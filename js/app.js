@@ -3,7 +3,7 @@
 // ================================================================
 import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
-import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus } from "./state.js";
+import { appState, subscribeAll, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus } from "./state.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, fixChanCheCredits } from "./curriculum.js";
@@ -472,11 +472,12 @@ onAuth(async (user) => {
   updateAuthUI(user);
   if (user) {
     try {
-      await migrateFromLegacy();   // one-time migration from boards/main
+      await migrateFromLegacy();
     } catch (e) {
       console.warn("Migration skipped; continuing normal load.", e);
     } finally {
-      subscribeAll();
+      // index.html: timetable 구독 제외 (시간표 편집은 timetable.html)
+      subscribeDomains(["curriculum","templates","classes","teachers","rosters","rooms"]);
     }
   } else {
     unsubscribeAll();
