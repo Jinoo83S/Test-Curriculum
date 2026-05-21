@@ -355,24 +355,55 @@ function handleSnap(domain, normalizeFn) {
 
 const unsubs = {};
 
-export function subscribeAll() {
-  const domains = {
-    curriculum: normalizeCurriculumDomain,
-    templates:  normalizeTemplatesDomain,
-    classes:    normalizeClassesDomain,
-    teachers:   normalizeTeachersDomain,
-    rosters:    normalizeRostersDomain,
-    rooms:      normalizeRoomsDomain,
-    timetable:  normalizeTimetableDomain,
-  };
-  Object.entries(domains).forEach(([domain, fn]) => {
-    if (unsubs[domain]) unsubs[domain]();
+export const DOMAIN_NORMALIZERS = {
+  curriculum: normalizeCurriculumDomain,
+  templates:  normalizeTemplatesDomain,
+  classes:    normalizeClassesDomain,
+  teachers:   normalizeTeachersDomain,
+  rosters:    normalizeRostersDomain,
+  rooms:      normalizeRoomsDomain,
+  timetable:  normalizeTimetableDomain,
+};
+
+export const ALL_DOMAINS = Object.keys(DOMAIN_NORMALIZERS);
+export const TIMETABLE_CORE_DOMAINS = ["curriculum", "templates", "classes", "rosters", "timetable"];
+export const TIMETABLE_OPTIONAL_DOMAINS = ["rooms"];
+
+export function isDomainSubscribed(domain) {
+  return !!unsubs[domain];
+}
+
+/**
+ * Subscribe only to the domains needed by the current page.
+ * This keeps the timetable page from loading every Firestore document at startup.
+ */
+export function subscribeDomains(domainList = ALL_DOMAINS) {
+  domainList.forEach(domain => {
+    const fn = DOMAIN_NORMALIZERS[domain];
+    if (!fn) {
+      console.warn(`Unknown Firestore domain: ${domain}`);
+      return;
+    }
+    if (unsubs[domain]) return; // already subscribed; avoid duplicate listeners
     unsubs[domain] = onSnapshot(refs[domain], handleSnap(domain, fn), err => console.error(domain, err));
   });
 }
 
+export function subscribeAll() {
+  subscribeDomains(ALL_DOMAINS);
+}
+
+export function unsubscribeDomains(domainList = Object.keys(unsubs)) {
+  domainList.forEach(domain => {
+    if (unsubs[domain]) {
+      unsubs[domain]();
+      delete unsubs[domain];
+    }
+  });
+}
+
 export function unsubscribeAll() {
-  Object.values(unsubs).forEach(u => u && u());
+  unsubscribeDomains(Object.keys(unsubs));
 }
 
 // ================================================================

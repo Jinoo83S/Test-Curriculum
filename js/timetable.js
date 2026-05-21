@@ -3,8 +3,8 @@
 // ================================================================
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
-import { appState, subscribeAll, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
-         normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy } from "./state.js";
+import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
+         normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
@@ -25,6 +25,14 @@ let currentRoom    = "";
 let dragData       = null;
 let conflictMap    = new Map();
 let constraintMap  = new Map();
+
+function subscribeOptionalTimetableDomains() {
+  subscribeDomains(TIMETABLE_OPTIONAL_DOMAINS);
+}
+
+function isVisible(el) {
+  return !!el && !el.classList.contains("hidden");
+}
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -2001,10 +2009,20 @@ function renderAll() {
   renderScheduleControls();
   renderSubjectPanel();
   renderGrid();
-  renderConstraintsPanel();
+
+  const constraintsEl = $("ttConstraintsContent");
+  if (isVisible(constraintsEl)) {
+    subscribeOptionalTimetableDomains();
+    renderConstraintsPanel();
+  }
+
   renderConflictBar();
-  const el = $("ttRoomsContent");
-  if (el) renderRoomsView(el, renderAll);
+
+  const roomsEl = $("ttRoomsContent");
+  if (isVisible(roomsEl)) {
+    subscribeOptionalTimetableDomains();
+    renderRoomsView(roomsEl, renderAll);
+  }
 }
 
 /** Called on dragstart: highlight relevant cells / sidebar cards */
@@ -2110,7 +2128,7 @@ onAuth(async (user) => {
   updateAuthUI(user);
   if (user) {
     await migrateFromLegacy();  // 마이그레이션 먼저 — 빈 문서 생성 방지
-    subscribeAll();
+    subscribeDomains(TIMETABLE_CORE_DOMAINS); // 시간표 첫 화면에 필요한 문서만 우선 구독
   } else {
     unsubscribeAll(); renderAll();
   }
@@ -2121,7 +2139,18 @@ document.querySelectorAll(".tt-view-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tt-view-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    currentView = btn.dataset.view; renderAll();
+    currentView = btn.dataset.view;
+    if (currentView === "room") subscribeOptionalTimetableDomains();
+    renderAll();
+  });
+});
+
+// Lazy-load optional data only when the related bottom tab is opened.
+document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const tab = btn.dataset.tab;
+    if (tab === "constraints" || tab === "rooms") subscribeOptionalTimetableDomains();
+    requestRenderAll();
   });
 });
 
