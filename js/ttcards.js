@@ -230,7 +230,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     if (!canEdit()) return;
     const g = grps().find(g => g.id === groupId); if (!g) return;
     g.units = g.units.filter(u => u.id !== unit.id);
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
   }); delBtn.disabled = !canEdit();
   hdr.appendChild(delBtn); wrap.appendChild(hdr);
 
@@ -245,7 +245,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     });
     if (!unit.ttcardIds) unit.ttcardIds = [];
     if (!unit.ttcardIds.includes(cardId)) unit.ttcardIds.push(cardId);
-    scheduleSave("templates"); scheduleSave("timetable"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
   });
 
   ttcards.forEach(card => {
@@ -255,7 +255,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     });
     const rx = makeBtn("↩", "gm-card-remove", () => {
       unit.ttcardIds = unit.ttcardIds.filter(id => id !== card.id);
-      scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+      scheduleSave("templates"); onStructureChange();
     }); rx.title = "묶음에서 제거"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
     c.appendChild(rx);
     cardArea.appendChild(c);
@@ -270,7 +270,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
 function createGroupBlockGM(groupId, onStructureChange) {
   const grpObj = grps().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
-  if (!Object.prototype.hasOwnProperty.call(grpObj, "_collapsed")) grpObj._collapsed = false;
+  if (!Object.prototype.hasOwnProperty.call(grpObj, "_collapsed")) { /* collapsed state managed by _collapsedMap */ }
   const block = document.createElement("div"); block.className = "group-block";
   block.dataset.groupId = groupId;
 
@@ -296,7 +296,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     if (si < 0 || di < 0) return;
     const [moved] = arr.splice(si, 1);
     arr.splice(di, 0, moved);
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
   });
 
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
@@ -316,7 +316,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
   }
 
   const colBtn = document.createElement("button"); colBtn.type = "button"; colBtn.className = "group-collapse-btn";
-  colBtn.textContent = grpObj._collapsed ? "▶" : "▼";
+  colBtn.textContent = isGroupCollapsed(groupId) ? "▶" : "▼";
 
   const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name";
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
@@ -330,7 +330,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
   hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
 
   const body = document.createElement("div"); body.className = "group-block-body";
-  if (grpObj._collapsed) body.style.display = "none";
+  if (isGroupCollapsed(groupId)) body.style.display = "none";
 
   const allUnitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
 
@@ -352,7 +352,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     });
     if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
     if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
   });
   const unitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
   const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id));
@@ -377,15 +377,16 @@ function createGroupBlockGM(groupId, onStructureChange) {
     if (!canEdit()) return;
     if (!grpObj.units) grpObj.units = [];
     grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [] });
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
   body.appendChild(addUnitBtn);
   block.appendChild(body);
 
   colBtn.addEventListener("click", () => {
-    grpObj._collapsed = !grpObj._collapsed;
-    body.style.display = grpObj._collapsed ? "none" : "";
-    colBtn.textContent = grpObj._collapsed ? "▶" : "▼";
+    const next = !isGroupCollapsed(groupId);
+    setGroupCollapsed(groupId, next);
+    body.style.display = next ? "none" : "";
+    colBtn.textContent = next ? "▶" : "▼";
   });
   return block;
 }
@@ -399,23 +400,23 @@ function setupDropZone(el, onDrop) {
   });
 }
 
-export function renderGroupManagerView(container) {
-  const rightEl = container.querySelector(".group-right-col");
-  const leftEl  = container.querySelector(".group-unassigned-pool");
-  const rightScroll = rightEl?.scrollTop || 0;
-  const leftScroll  = leftEl?.scrollTop  || 0;
+// ── Group collapsed state (UI-only, not saved to Firebase) ────────
+const _collapsedMap = new Map(); // groupId → boolean
 
+function isGroupCollapsed(id) { return _collapsedMap.get(id) ?? false; }
+function setGroupCollapsed(id, val) { _collapsedMap.set(id, val); }
+
+export function renderGroupManagerView(container) {
+  const rightScroll = container.querySelector(".group-right-col")?.scrollTop || 0;
+  const leftScroll  = container.querySelector(".group-unassigned-pool")?.scrollTop || 0;
   container.innerHTML = "";
   buildGroupManagerDOM(container, rightScroll, leftScroll);
 }
 
 function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) {
   const onStructureChange = () => {
-    // Read scroll before clearing DOM
-    const rightEl2 = board.querySelector(".group-right-col");
-    const leftEl2  = board.querySelector(".group-unassigned-pool");
-    const rS = rightEl2 ? rightEl2.scrollTop : 0;
-    const lS = leftEl2  ? leftEl2.scrollTop  : 0;
+    const rS = board.querySelector(".group-right-col")?.scrollTop || 0;
+    const lS = board.querySelector(".group-unassigned-pool")?.scrollTop || 0;
     board.innerHTML = "";
     buildGroupManagerDOM(board, rS, lS);
   };
@@ -474,7 +475,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
         units: [], poolCardIds: [...cardIds]  // pool: cards in group but not yet in any unit
       }));
     });
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
     alert(`${newGroups.length}개 그룹이 생성되었습니다.`);
   });
   autoGenBtn.disabled = !canEdit();
@@ -484,7 +485,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     if (!canEdit()) return;
     if (!confirm("그룹을 전체 초기화합니다.\n모든 그룹과 묶음수업이 삭제되고 카드는 미배정 상태로 돌아갑니다.\n계속할까요?")) return;
     appState.templates.templateGroups = [];
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
   }); resetAllBtn.disabled = !canEdit();
   filterBar.appendChild(resetAllBtn);
   board.appendChild(filterBar);
@@ -512,7 +513,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
       g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
       g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
     });
-    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
+    scheduleSave("templates"); onStructureChange();
   });
 
   if (unassigned.length) {
@@ -543,10 +544,10 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   });
 
   const togWrap = document.createElement("div"); togWrap.style.cssText = "display:flex;gap:4px;margin-left:auto";
-  const allCollapsed = filteredGroups.length > 0 && filteredGroups.every(g => g._collapsed);
+  const allCollapsed = filteredGroups.length > 0 && filteredGroups.every(g => isGroupCollapsed(g.id));
   const togBtn = makeBtn(allCollapsed ? "▼ 전체 펼치기" : "▶ 전체 접기", "group-expand-btn", () => {
     const collapse = !allCollapsed;
-    grps().forEach(g => { g._collapsed = collapse; });
+    grps().forEach(g => setGroupCollapsed(g.id, collapse));
     onStructureChange();
   });
   togWrap.append(togBtn); rightHdr.style.display = "flex"; rightHdr.style.alignItems = "center";
@@ -561,11 +562,10 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
 
   rightWrap.append(rightHdr, rightCol); layout.appendChild(rightWrap);
   board.appendChild(layout);
-  // Double rAF: first frame lets browser paint, second ensures scroll is applied after layout
-  requestAnimationFrame(() => requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
     const rc = board.querySelector(".group-right-col");
     const lc = board.querySelector(".group-unassigned-pool");
-    if (rc) rc.scrollTop = savedRightScroll;
-    if (lc) lc.scrollTop = savedLeftScroll;
-  }));
+    if (rc && savedRightScroll) rc.scrollTop = savedRightScroll;
+    if (lc && savedLeftScroll)  lc.scrollTop = savedLeftScroll;
+  });
 }
