@@ -1,12 +1,26 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS } from "./config.js";
+import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS } from "./config.js";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
 import { canEdit } from "./auth.js";
 import {
-  setDoc, onSnapshot, serverTimestamp, getDoc
+  setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+// ── Phase 3 split Firestore paths ────────────────────────────────
+// Large, frequently changing domains are stored as collections instead of
+// one huge document. Public appState shape stays the same for the UI modules.
+export const SPLIT_COLLECTION_DOMAINS = new Set(["classes", "rosters", "timetable"]);
+
+const splitRefs = {
+  classes: collection(db, "boards", "_split", "classes"),
+  rosters: collection(db, "boards", "_split", "rosters"),
+  timetableEntries: collection(db, "boards", "_split", "timetableEntries"),
+  ttcards: collection(db, "boards", "_split", "ttcards"),
+  timetableMeta: doc(db, "boards", "_split", "timetableMeta", "main"),
+};
+
 
 // ── Drag state (shared between board & group manager) ─────────────
 export let currentDrag = null;
@@ -40,7 +54,11 @@ export async function saveNow(domain) {
   clearTimeout(saveTimers[domain]);
   delete saveTimers[domain];
   try {
-    await setDoc(refs[domain], { ...appState[domain], updatedAt: serverTimestamp() });
+    if (SPLIT_COLLECTION_DOMAINS.has(domain)) {
+      await saveSplitDomain(domain);
+    } else {
+      await setDoc(refs[domain], { ...appState[domain], updatedAt: serverTimestamp() });
+    }
     dirtyDomains.delete(domain);
     _onSaveStatus?.("saved");
   } catch (e) {
@@ -312,48 +330,141 @@ export function ensureConsistency(domain) {
 // ================================================================
 // FIRESTORE SUBSCRIPTIONS
 // ================================================================
-// Render callback — set by app.js
+// Render callback — set by app.js / timetable.js
 let _onUpdate = () => {};
 export function setOnUpdate(fn) { _onUpdate = fn; }
 
-// Snapshot handlers per domain
+function withoutFirestoreMeta(obj = {}) {
+  const { updatedAt, createdAt, ...rest } = obj || {};
+  return rest;
+}
+
 function sameDomainData(a, b) {
   try { return JSON.stringify(a) === JSON.stringify(b); }
   catch (_) { return false; }
 }
 
+function applyNormalizedDomain(domain, normalized) {
+  if (domain === "classes") {
+    const prev = appState.classes.classes || [];
+    if (normalized.classes.length === 0 && prev.length > 0) normalized.classes = prev;
+  }
+
+  if (initialLoad[domain] && sameDomainData(appState[domain], normalized)) {
+    initialLoad[domain] = true;
+    return;
+  }
+  appState[domain] = normalized;
+  initialLoad[domain] = true;
+  _onUpdate(domain);
+}
+
+async function commitWriteOps(ops) {
+  const CHUNK_SIZE = 450; // Firestore batch limit is 500 writes
+  for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + CHUNK_SIZE).forEach(op => {
+      if (op.type === "set") batch.set(op.ref, op.data, op.options || undefined);
+      if (op.type === "delete") batch.delete(op.ref);
+    });
+    await batch.commit();
+  }
+}
+
+async function syncCollection(collRef, items, toDocData) {
+  const snap = await getDocs(collRef);
+  const existingIds = new Set(snap.docs.map(d => d.id));
+  const nextIds = new Set(items.map(item => item.id).filter(Boolean));
+  const ops = [];
+
+  items.forEach(item => {
+    if (!item.id) return;
+    ops.push({
+      type: "set",
+      ref: doc(collRef, item.id),
+      data: { ...toDocData(item), updatedAt: serverTimestamp() },
+      options: { merge: false }
+    });
+  });
+
+  existingIds.forEach(id => {
+    if (!nextIds.has(id)) ops.push({ type: "delete", ref: doc(collRef, id) });
+  });
+
+  if (ops.length) await commitWriteOps(ops);
+}
+
+async function saveSplitDomain(domain) {
+  if (domain === "classes") {
+    const classes = normalizeClassesDomain(appState.classes).classes;
+    await syncCollection(splitRefs.classes, classes, item => item);
+    return;
+  }
+
+  if (domain === "rosters") {
+    const normalized = normalizeRostersDomain(appState.rosters);
+    const ids = uniqueOrdered([
+      ...Object.keys(normalized.rosters || {}),
+      ...Object.keys(normalized.rosterMeta || {})
+    ].filter(Boolean));
+    const docs = ids.map(id => ({
+      id,
+      templateId: id,
+      entries: normalized.rosters[id] || [],
+      meta: normalized.rosterMeta[id] || { classCount: "" }
+    }));
+    await syncCollection(splitRefs.rosters, docs, item => ({
+      templateId: item.templateId,
+      entries: item.entries || [],
+      meta: item.meta || { classCount: "" }
+    }));
+    return;
+  }
+
+  if (domain === "timetable") {
+    const normalized = normalizeTimetableDomain(appState.timetable);
+    await syncCollection(splitRefs.timetableEntries, normalized.entries, item => item);
+    await syncCollection(splitRefs.ttcards, normalized.ttcards, item => item);
+    await setDoc(splitRefs.timetableMeta, {
+      config: normalized.config,
+      teacherConstraints: normalized.teacherConstraints,
+      updatedAt: serverTimestamp()
+    }, { merge: false });
+  }
+}
+
+async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
+  try {
+    const snap = await getDoc(refs[domain]);
+    if (!snap.exists()) return false;
+    const normalized = normalizeFn(snap.data());
+    const hasData = options.hasData ? options.hasData(normalized) : true;
+    if (!hasData) return false;
+    applyNormalizedDomain(domain, normalized);
+    // One-time forward migration from old one-document storage to split collections.
+    if (canEdit()) await saveSplitDomain(domain);
+    return true;
+  } catch (e) {
+    console.warn(`Legacy ${domain} fallback skipped.`, e);
+    return false;
+  }
+}
+
+// Snapshot handlers per ordinary one-document domain
 function handleSnap(domain, normalizeFn) {
   return async (snap) => {
     if (!snap.exists()) {
-      // New doc — save default state
       initialLoad[domain] = true;
       await saveNow(domain);
       _onUpdate(domain);
       return;
     }
-    const data = snap.data();
-    let normalized = normalizeFn(data);
-
-    // Preserve in-memory classes if Firestore returns empty (race condition guard)
-    if (domain === "classes") {
-      const prev = appState.classes.classes || [];
-      if (normalized.classes.length === 0 && prev.length > 0) normalized.classes = prev;
-    }
-
-    // Firestore echoes our own setDoc through onSnapshot. If the normalized data is
-    // identical to the local state, skip the expensive full re-render.
-    if (initialLoad[domain] && sameDomainData(appState[domain], normalized)) {
-      initialLoad[domain] = true;
-      return;
-    }
-
-    appState[domain] = normalized;
-    initialLoad[domain] = true;
-    _onUpdate(domain);
+    applyNormalizedDomain(domain, normalizeFn(snap.data()));
   };
 }
 
 const unsubs = {};
+const splitFallbackAttempted = { classes: false, rosters: false, timetable: false };
 
 export const DOMAIN_NORMALIZERS = {
   curriculum: normalizeCurriculumDomain,
@@ -373,19 +484,113 @@ export function isDomainSubscribed(domain) {
   return !!unsubs[domain];
 }
 
+function subscribeClassesSplit() {
+  unsubs.classes = onSnapshot(splitRefs.classes, async snap => {
+    if (snap.empty && !splitFallbackAttempted.classes) {
+      splitFallbackAttempted.classes = true;
+      const migrated = await loadLegacyDomainFallback("classes", normalizeClassesDomain, {
+        hasData: d => (d.classes || []).length > 0
+      });
+      if (migrated) return;
+    }
+    const classes = snap.docs.map(d => normalizeClass({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
+    applyNormalizedDomain("classes", normalizeClassesDomain({ classes }));
+  }, err => console.error("classes", err));
+}
+
+function subscribeRostersSplit() {
+  unsubs.rosters = onSnapshot(splitRefs.rosters, async snap => {
+    if (snap.empty && !splitFallbackAttempted.rosters) {
+      splitFallbackAttempted.rosters = true;
+      const migrated = await loadLegacyDomainFallback("rosters", normalizeRostersDomain, {
+        hasData: d => Object.keys(d.rosters || {}).length > 0 || Object.keys(d.rosterMeta || {}).length > 0
+      });
+      if (migrated) return;
+    }
+    const raw = { rosters: {}, rosterMeta: {} };
+    snap.docs.forEach(d => {
+      const data = withoutFirestoreMeta(d.data());
+      const templateId = clean(data.templateId) || d.id;
+      raw.rosters[templateId] = Array.isArray(data.entries) ? data.entries : [];
+      raw.rosterMeta[templateId] = data.meta || { classCount: "" };
+    });
+    applyNormalizedDomain("rosters", normalizeRostersDomain(raw));
+  }, err => console.error("rosters", err));
+}
+
+const timetableSplitCache = {
+  entries: null,
+  ttcards: null,
+  meta: null,
+  metaExists: false,
+};
+
+async function applyTimetableSplitIfReady() {
+  if (!timetableSplitCache.entries || !timetableSplitCache.ttcards || timetableSplitCache.meta === null) return;
+
+  const hasSplitData =
+    timetableSplitCache.entries.length > 0 ||
+    timetableSplitCache.ttcards.length > 0 ||
+    timetableSplitCache.metaExists;
+
+  if (!hasSplitData && !splitFallbackAttempted.timetable) {
+    splitFallbackAttempted.timetable = true;
+    const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
+      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
+    });
+    if (migrated) return;
+  }
+
+  const raw = {
+    config: timetableSplitCache.meta?.config || {},
+    teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
+    entries: timetableSplitCache.entries,
+    ttcards: timetableSplitCache.ttcards,
+  };
+  applyNormalizedDomain("timetable", normalizeTimetableDomain(raw));
+}
+
+function subscribeTimetableSplit() {
+  const unsubEntries = onSnapshot(splitRefs.timetableEntries, snap => {
+    timetableSplitCache.entries = snap.docs.map(d => normalizeTimetableEntry({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
+    applyTimetableSplitIfReady();
+  }, err => console.error("timetableEntries", err));
+
+  const unsubCards = onSnapshot(splitRefs.ttcards, snap => {
+    timetableSplitCache.ttcards = snap.docs.map(d => normalizeTtCard({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
+    applyTimetableSplitIfReady();
+  }, err => console.error("ttcards", err));
+
+  const unsubMeta = onSnapshot(splitRefs.timetableMeta, snap => {
+    timetableSplitCache.metaExists = snap.exists();
+    timetableSplitCache.meta = snap.exists() ? withoutFirestoreMeta(snap.data()) : {};
+    applyTimetableSplitIfReady();
+  }, err => console.error("timetableMeta", err));
+
+  unsubs.timetable = () => { unsubEntries(); unsubCards(); unsubMeta(); };
+}
+
 /**
  * Subscribe only to the domains needed by the current page.
- * This keeps the timetable page from loading every Firestore document at startup.
+ * Split domains use collection listeners; other domains keep one-document listeners.
  */
 export function subscribeDomains(domainList = ALL_DOMAINS) {
   domainList.forEach(domain => {
-    const fn = DOMAIN_NORMALIZERS[domain];
-    if (!fn) {
+    if (!DOMAIN_NORMALIZERS[domain]) {
       console.warn(`Unknown Firestore domain: ${domain}`);
       return;
     }
-    if (unsubs[domain]) return; // already subscribed; avoid duplicate listeners
-    unsubs[domain] = onSnapshot(refs[domain], handleSnap(domain, fn), err => console.error(domain, err));
+    if (unsubs[domain]) return;
+
+    if (domain === "classes") { subscribeClassesSplit(); return; }
+    if (domain === "rosters") { subscribeRostersSplit(); return; }
+    if (domain === "timetable") { subscribeTimetableSplit(); return; }
+
+    unsubs[domain] = onSnapshot(
+      refs[domain],
+      handleSnap(domain, DOMAIN_NORMALIZERS[domain]),
+      err => console.error(domain, err)
+    );
   });
 }
 
