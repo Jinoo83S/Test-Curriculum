@@ -309,6 +309,106 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-all-class-table .tt-cell-ph{min-height:100%!important;font-size:9px!important}
 .tt-all-class-table .tt-cell-ph::before{content:"+"!important}
 .tt-all-class-table .tt-cell-ph::after{content:""!important}
+
+/* ── Equal row height + typed conflict indicators ── */
+:root{
+  --tt-conflict-teacher:#dc2626;
+  --tt-conflict-room:#ea580c;
+  --tt-conflict-student:#7c3aed;
+  --tt-conflict-sync:#2563eb;
+  --tt-conflict-unavailable:#475569;
+  --tt-conflict-max:#ca8a04;
+}
+.tt-all-class-table tbody{
+  height:calc(100% - var(--tt-all-header-height, 30px))!important;
+}
+.tt-all-class-table tbody tr{
+  height:var(--tt-all-row-height)!important;
+  min-height:var(--tt-all-row-height)!important;
+  max-height:var(--tt-all-row-height)!important;
+  overflow:hidden!important;
+}
+.tt-all-grade-boundary>td{
+  border-top:0!important;
+  box-shadow:inset 0 2px 0 #3b82f6!important;
+}
+.tt-all-class-table .tt-all-cell{
+  position:relative!important;
+  height:var(--tt-all-row-height)!important;
+  min-height:var(--tt-all-row-height)!important;
+  max-height:var(--tt-all-row-height)!important;
+  overflow:hidden!important;
+}
+.tt-all-class-table .tt-cell-card-grid{
+  height:100%!important;
+  min-height:0!important;
+  display:flex!important;
+  flex-direction:row!important;
+  flex-wrap:nowrap!important;
+  gap:1px!important;
+  align-items:stretch!important;
+  overflow:hidden!important;
+}
+.tt-all-class-table .tt-cell-card-grid .tt-entry-card{
+  flex:1 1 0!important;
+  width:0!important;
+  min-width:0!important;
+  max-width:100%!important;
+}
+.tt-entry-card.tt-entry-conflict{
+  outline:2px solid var(--tt-conflict-color, var(--tt-conflict-teacher))!important;
+  outline-offset:-1px!important;
+  box-shadow:inset 0 0 0 1px var(--tt-conflict-color, var(--tt-conflict-teacher)), 0 0 0 1px rgba(15,23,42,.08)!important;
+  animation:none!important;
+}
+.tt-entry-card.tt-conflict-teacher{--tt-conflict-color:var(--tt-conflict-teacher)}
+.tt-entry-card.tt-conflict-room{--tt-conflict-color:var(--tt-conflict-room)}
+.tt-entry-card.tt-conflict-student{--tt-conflict-color:var(--tt-conflict-student)}
+.tt-entry-card.tt-conflict-syncRequired{--tt-conflict-color:var(--tt-conflict-sync)}
+.tt-entry-card.tt-conflict-unavailable{--tt-conflict-color:var(--tt-conflict-unavailable)}
+.tt-entry-card.tt-conflict-maxConsecutive,
+.tt-entry-card.tt-conflict-maxPerDay{--tt-conflict-color:var(--tt-conflict-max)}
+.tt-conflict-markers{
+  position:absolute;
+  top:1px;
+  right:1px;
+  z-index:2;
+  display:flex;
+  gap:1px;
+  max-width:calc(100% - 4px);
+  pointer-events:none;
+}
+.tt-conflict-dot{
+  min-width:10px;
+  height:10px;
+  padding:0 2px;
+  border-radius:2px;
+  color:#fff;
+  font-size:7px;
+  font-weight:900;
+  line-height:10px;
+  text-align:center;
+  box-shadow:0 0 0 1px rgba(255,255,255,.75);
+}
+.tt-conflict-dot[data-type="teacher"]{background:var(--tt-conflict-teacher)}
+.tt-conflict-dot[data-type="room"]{background:var(--tt-conflict-room)}
+.tt-conflict-dot[data-type="student"]{background:var(--tt-conflict-student)}
+.tt-conflict-dot[data-type="syncRequired"]{background:var(--tt-conflict-sync)}
+.tt-conflict-dot[data-type="unavailable"]{background:var(--tt-conflict-unavailable)}
+.tt-conflict-dot[data-type="maxConsecutive"],
+.tt-conflict-dot[data-type="maxPerDay"]{background:var(--tt-conflict-max)}
+.tt-entry-card.tt-entry-conflict .tt-entry-title{padding-right:14px}
+.tt-conflict-bar{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.tt-conflict-summary-label{font-weight:800;margin-right:2px}
+.tt-conflict-chip{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:999px;color:white;font-size:10px;font-weight:800;line-height:16px;white-space:nowrap}
+.tt-conflict-chip[data-type="teacher"]{background:var(--tt-conflict-teacher)}
+.tt-conflict-chip[data-type="room"]{background:var(--tt-conflict-room)}
+.tt-conflict-chip[data-type="student"]{background:var(--tt-conflict-student)}
+.tt-conflict-chip[data-type="syncRequired"]{background:var(--tt-conflict-sync)}
+.tt-conflict-chip[data-type="unavailable"]{background:var(--tt-conflict-unavailable)}
+.tt-conflict-chip[data-type="maxConsecutive"],
+.tt-conflict-chip[data-type="maxPerDay"]{background:var(--tt-conflict-max)}
+
 </style>
 
 </head>

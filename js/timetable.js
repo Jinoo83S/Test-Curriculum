@@ -55,6 +55,44 @@ function getGradeColor(gradeKey) {
   return GRADE_COLORS[gradeKey] || { bg:"#f1f5f9", text:"#374151", border:"#94a3b8" };
 }
 
+
+// ── Conflict display colors / labels ─────────────────────────────
+const CONFLICT_DISPLAY = {
+  teacher:        { label:"교사", short:"교", color:"#dc2626" },
+  room:           { label:"교실", short:"실", color:"#ea580c" },
+  student:        { label:"학생", short:"학", color:"#7c3aed" },
+  syncRequired:   { label:"동시배정", short:"동", color:"#2563eb" },
+  unavailable:    { label:"불가시간", short:"불", color:"#475569" },
+  maxConsecutive: { label:"연속초과", short:"연", color:"#ca8a04" },
+  maxPerDay:      { label:"일일초과", short:"일", color:"#ca8a04" },
+};
+const CONFLICT_PRIORITY = ["teacher", "room", "student", "syncRequired", "unavailable", "maxConsecutive", "maxPerDay"];
+function getOrderedConflictTypes(conflicts) {
+  return CONFLICT_PRIORITY.filter(type => conflicts.has(type));
+}
+function applyConflictVisuals(card, conflictTypes, conflicts) {
+  if (!conflictTypes.length) return;
+  const primary = conflictTypes[0];
+  card.style.setProperty("--tt-conflict-color", CONFLICT_DISPLAY[primary]?.color || "#dc2626");
+  conflictTypes.forEach(type => card.classList.add(`tt-conflict-${type}`));
+  card.dataset.conflictTypes = conflictTypes.join(",");
+  card.title = getConflictLabel(conflicts);
+
+  const markers = document.createElement("div");
+  markers.className = "tt-conflict-markers";
+  conflictTypes.forEach(type => {
+    const meta = CONFLICT_DISPLAY[type];
+    if (!meta) return;
+    const dot = document.createElement("span");
+    dot.className = "tt-conflict-dot";
+    dot.dataset.type = type;
+    dot.textContent = meta.short;
+    dot.title = meta.label;
+    markers.appendChild(dot);
+  });
+  card.appendChild(markers);
+}
+
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
   if (!canEdit()) return null;
@@ -653,9 +691,11 @@ function renderAllClassesGrid(wrap) {
   const table = document.createElement("table");
   table.className = "tt-table tt-all-class-table";
   table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
-  // 본문 행 높이는 열 너비와 같은 방식으로 % 기반 계산
-  wrap.style.setProperty("--num-rows", String(classes.length));
-  const rowHeight = `calc((100% - var(--tt-all-header-height, 30px)) / ${classes.length})`;
+  // 본문 행 높이는 열 너비와 같은 방식으로 % 기반 계산하고 모든 행에 동일 적용
+  const rowCount = Math.max(1, classes.length);
+  wrap.style.setProperty("--num-rows", String(rowCount));
+  const rowHeight = `calc((100% - var(--tt-all-header-height, 30px)) / ${rowCount})`;
+  wrap.style.setProperty("--tt-all-row-height", rowHeight);
 
   // Inject colgroup for fixed compact class header + equal timetable cells
   const colgroup = document.createElement("colgroup");
@@ -704,10 +744,13 @@ function renderAllClassesGrid(wrap) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
   classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
+    tr.style.minHeight = rowHeight;
+    tr.style.maxHeight = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
     tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) { tr.className = "tt-all-grade-boundary"; prevGrade = cls.gradeKey; }
@@ -726,7 +769,7 @@ function renderAllClassesGrid(wrap) {
         const isDayEnd   = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};max-height:none`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};position:relative`;
         td.addEventListener("dragover", e => { if (!canEdit()) return; e.preventDefault(); td.classList.add("tt-dragover"); });
         td.addEventListener("dragleave", () => td.classList.remove("tt-dragover"));
         td.addEventListener("drop", e => {
@@ -739,8 +782,18 @@ function renderAllClassesGrid(wrap) {
           e.day === day && e.period === period && entryMatchesClass(e, cls)
         );
 
-        if (slotEntries.length) slotEntries.forEach(entry => td.appendChild(buildEntryCard(entry, { compact: true })));
-        else { const ph = document.createElement("div"); ph.className = "tt-cell-ph"; td.appendChild(ph); }
+        if (slotEntries.length) {
+          const cg = document.createElement("div");
+          cg.className = "tt-cell-card-grid";
+          cg.style.height = "100%";
+          cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
+          slotEntries.forEach(entry => cg.appendChild(buildEntryCard(entry, { compact: true })));
+          td.appendChild(cg);
+        } else {
+          const ph = document.createElement("div");
+          ph.className = "tt-cell-ph";
+          td.appendChild(ph);
+        }
         tr.appendChild(td);
       });
     });
@@ -961,11 +1014,11 @@ function buildEntryCard(entry, opts = {}) {
   const displayGrades = entryGradeKeys(entry);
 
   const conflicts = new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
-  const hasConflict = conflicts.size > 0;
+  const conflictTypes = getOrderedConflictTypes(conflicts);
+  const hasConflict = conflictTypes.length > 0;
 
   const card = document.createElement("div");
   card.className = "tt-entry-card" + (hasConflict ? " tt-entry-conflict" : "") + (entry.pinned ? " tt-entry-pinned" : "");
-  if (hasConflict) card.title = getConflictLabel(conflicts);
 
   const firstGrade = displayGrades[0] || currentGrade;
   const gradeColor = getGradeColor(firstGrade);
@@ -1003,6 +1056,7 @@ function buildEntryCard(entry, opts = {}) {
   }
 
   card.append(row1, row2);
+  if (hasConflict) applyConflictVisuals(card, conflictTypes, conflicts);
 
   // Click → detail modal (all info)
   card.addEventListener("click", ev => {
@@ -1812,9 +1866,24 @@ function renderViewSelectors() {
 // ── Conflict summary bar ──────────────────────────────────────────
 function renderConflictBar() {
   const bar = $("ttConflictBar"); if (!bar) return;
-  const totalConflicts = [...conflictMap.values(), ...constraintMap.values()].filter(s => s.size > 0).length;
-  bar.textContent = totalConflicts > 0 ? `⚠️ 충돌 ${totalConflicts}건 발견` : "✅ 충돌 없음";
+  const allSets = [...conflictMap.values(), ...constraintMap.values()];
+  const totalConflicts = allSets.filter(s => s.size > 0).length;
   bar.className = "tt-conflict-bar " + (totalConflicts > 0 ? "tt-conflict-bar-warn" : "tt-conflict-bar-ok");
+
+  if (totalConflicts <= 0) {
+    bar.textContent = "✅ 충돌 없음";
+    return;
+  }
+
+  const counts = Object.fromEntries(CONFLICT_PRIORITY.map(type => [type, 0]));
+  allSets.forEach(set => {
+    getOrderedConflictTypes(set).forEach(type => counts[type]++);
+  });
+  const chips = CONFLICT_PRIORITY
+    .filter(type => counts[type] > 0)
+    .map(type => `<span class="tt-conflict-chip" data-type="${type}">${CONFLICT_DISPLAY[type].label} ${counts[type]}</span>`)
+    .join("");
+  bar.innerHTML = `<span class="tt-conflict-summary-label">⚠️ 충돌 ${totalConflicts}건</span>${chips}`;
 }
 
 // ── Auto-assign ───────────────────────────────────────────────────
