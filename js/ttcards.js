@@ -230,7 +230,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     if (!canEdit()) return;
     const g = grps().find(g => g.id === groupId); if (!g) return;
     g.units = g.units.filter(u => u.id !== unit.id);
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
   }); delBtn.disabled = !canEdit();
   hdr.appendChild(delBtn); wrap.appendChild(hdr);
 
@@ -245,7 +245,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     });
     if (!unit.ttcardIds) unit.ttcardIds = [];
     if (!unit.ttcardIds.includes(cardId)) unit.ttcardIds.push(cardId);
-    scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
+    scheduleSave("templates"); scheduleSave("timetable"); setTimeout(() => onStructureChange(), 0);
   });
 
   ttcards.forEach(card => {
@@ -255,7 +255,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     });
     const rx = makeBtn("↩", "gm-card-remove", () => {
       unit.ttcardIds = unit.ttcardIds.filter(id => id !== card.id);
-      scheduleSave("templates"); onStructureChange();
+      scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
     }); rx.title = "묶음에서 제거"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
     c.appendChild(rx);
     cardArea.appendChild(c);
@@ -296,7 +296,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     if (si < 0 || di < 0) return;
     const [moved] = arr.splice(si, 1);
     arr.splice(di, 0, moved);
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
   });
 
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
@@ -352,7 +352,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     });
     if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
     if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
   });
   const unitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
   const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id));
@@ -377,7 +377,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     if (!canEdit()) return;
     if (!grpObj.units) grpObj.units = [];
     grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [] });
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
   }); addUnitBtn.disabled = !canEdit();
   body.appendChild(addUnitBtn);
   block.appendChild(body);
@@ -411,11 +411,11 @@ export function renderGroupManagerView(container) {
 
 function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) {
   const onStructureChange = () => {
-    // Read current scroll positions
+    // Read scroll before clearing DOM
     const rightEl2 = board.querySelector(".group-right-col");
     const leftEl2  = board.querySelector(".group-unassigned-pool");
-    const rS = rightEl2?.scrollTop || 0;
-    const lS = leftEl2?.scrollTop  || 0;
+    const rS = rightEl2 ? rightEl2.scrollTop : 0;
+    const lS = leftEl2  ? leftEl2.scrollTop  : 0;
     board.innerHTML = "";
     buildGroupManagerDOM(board, rS, lS);
   };
@@ -474,7 +474,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
         units: [], poolCardIds: [...cardIds]  // pool: cards in group but not yet in any unit
       }));
     });
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
     alert(`${newGroups.length}개 그룹이 생성되었습니다.`);
   });
   autoGenBtn.disabled = !canEdit();
@@ -484,7 +484,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     if (!canEdit()) return;
     if (!confirm("그룹을 전체 초기화합니다.\n모든 그룹과 묶음수업이 삭제되고 카드는 미배정 상태로 돌아갑니다.\n계속할까요?")) return;
     appState.templates.templateGroups = [];
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
   }); resetAllBtn.disabled = !canEdit();
   filterBar.appendChild(resetAllBtn);
   board.appendChild(filterBar);
@@ -512,7 +512,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
       g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
       g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
     });
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("templates"); setTimeout(() => onStructureChange(), 0);
   });
 
   if (unassigned.length) {
@@ -561,11 +561,11 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
 
   rightWrap.append(rightHdr, rightCol); layout.appendChild(rightWrap);
   board.appendChild(layout);
-  // Restore scroll positions
-  requestAnimationFrame(() => {
+  // Double rAF: first frame lets browser paint, second ensures scroll is applied after layout
+  requestAnimationFrame(() => requestAnimationFrame(() => {
     const rc = board.querySelector(".group-right-col");
     const lc = board.querySelector(".group-unassigned-pool");
     if (rc) rc.scrollTop = savedRightScroll;
     if (lc) lc.scrollTop = savedLeftScroll;
-  });
+  }));
 }
