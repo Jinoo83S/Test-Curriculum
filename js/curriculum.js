@@ -451,7 +451,7 @@ function createMergedPlacedCard(templateId, grade, rowData) {
     const cb = makeBtn("×", "clear-cell-btn", e => { e.stopPropagation(); clearRowBoth(grade, rowData.id); });
     cb.addEventListener("mousedown", e => e.stopPropagation()); top.appendChild(cb);
   }
-  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta, templateId, grade, rowData, semKey); return card;
+  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta, templateId, grade, rowData, "sem1"); return card;
 }
 
 function createDropCell(grade, rowData, semKey, templateId) {

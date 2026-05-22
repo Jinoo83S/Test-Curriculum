@@ -4405,3 +4405,19 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   .tpl-popup-grid,
   .tpl-popup-sem-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Fix: keep curriculum manager tab visible on compact/wide screens ── */
+.sub-nav-group[data-section="curriculum"] {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+}
+.sub-nav-group[data-section="curriculum"] .nav-manager-right,
+#navManagerBtn.nav-manager-right {
+  margin-left: 8px !important;
+  display: inline-flex !important;
+  align-items: center;
+  visibility: visible !important;
+  opacity: 1 !important;
+}
