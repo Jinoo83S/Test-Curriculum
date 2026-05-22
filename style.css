@@ -3502,3 +3502,16 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .page {
   height: calc(100vh - 44px - 34px);
 }
+
+/* ── Phase 3: split HTML pages ───────────────────────────────── */
+.page.page-no-sidebar {
+  grid-template-columns: 1fr;
+}
+.page.page-no-sidebar .main-panel {
+  min-width: 0;
+}
+.topbar-nav-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}

@@ -152,7 +152,7 @@ const VIEW_TO_SECTION = {
   ttcards:"prework",  groups:"prework",
   results:"results",
 };
-let activeSection = "curriculum";
+let activeSection = document.body?.dataset.section || VIEW_TO_SECTION[activeMainView] || "curriculum";
 
 function activateSection(section) {
   activeSection = section;
@@ -188,7 +188,8 @@ document.querySelectorAll("#topbarMainNav [data-section]").forEach(mainBtn => {
 // ================================================================
 // NAVIGATION STATE
 // ================================================================
-let activeMainView = "board";
+const INITIAL_VIEW = document.body?.dataset.initialView || "board";
+let activeMainView = INITIAL_VIEW;
 let activeTab = "tab7to9";
 let selectedClassId = null;
 
@@ -304,6 +305,7 @@ function closeToBoard() {
 // RENDER
 // ================================================================
 function renderBoardTab() {
+  if (!gradeBoard) return;
   const tab = activeTab;
   if (!dirtyTabs.has(tab) && tabBoardCache[tab]) { gradeBoard.innerHTML = ""; tabBoardCache[tab].forEach(el => gradeBoard.appendChild(el)); return; }
   const els = buildTabBoard(GRADE_GROUPS[tab], () => { invalidateTabs(); renderBoardTab(); renderSidebar(); });
@@ -311,6 +313,7 @@ function renderBoardTab() {
 }
 
 function renderSidebar() {
+  if (!templateListEl) return;
   // Keep sidebar teacher inputs linked to datalist
   [templateTeacher, sem1Teacher, sem2Teacher].forEach(el => { if (el) el.setAttribute("list", "tpl-teacher-list"); });
   updateTeacherDatalist();
@@ -831,5 +834,7 @@ exportStudentBtn?.addEventListener("click", async () => {
 });
 
 // ── Initial render ────────────────────────────────────────────────
-setView("board");
+setView(activeMainView);
+activateSection(VIEW_TO_SECTION[activeMainView] || activeSection);
+activateSubBtn(activeMainView);
 render();

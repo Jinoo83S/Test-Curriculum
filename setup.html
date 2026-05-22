@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIS 세부 구성</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+</head>
+<body data-section="setup" data-initial-view="subjectsetup">
+
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>HIS Curriculum</h1>
+    <p class="subtitle">한동글로벌학교</p>
+  </div>
+  <nav class="topbar-nav" id="topbarMainNav">
+    <a href="index.html" data-section="curriculum" class="topbar-nav-btn topbar-nav-link">📋 커리큘럼</a>
+<a href="roster.html" data-section="roster" class="topbar-nav-btn topbar-nav-link">👥 명단</a>
+<a href="setup.html" data-section="setup" class="topbar-nav-btn topbar-nav-link active">⚙️ 세부 구성</a>
+<a href="prework.html" data-section="prework" class="topbar-nav-btn topbar-nav-link">🗂 시간표 사전작업</a>
+<a href="results.html" data-section="results" class="topbar-nav-btn topbar-nav-link">📊 결과표</a>
+    <a href="timetable.html" class="topbar-nav-btn topbar-nav-link">⏰ 시간표</a>
+  </nav>
+  <div class="topbar-right">
+    <span id="saveStatusEl" class="save-status"></span>
+    <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
+    <button id="loginBtn" class="primary-btn" type="button">Google 로그인</button>
+    <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
+  </div>
+</header>
+<div id="subNavBar" class="sub-nav-bar">
+  <div class="sub-nav-group" data-section="setup">
+    <button id="navSubjectSetupBtn" class="sub-nav-btn active" type="button">📐 과목 설정</button>
+    <button id="navRostersBtn" class="sub-nav-btn" type="button">📚 수강 명단</button>
+  </div>
+</div>
+<main class="page page-no-sidebar">
+  <section class="main-panel">
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-overlay-box">
+        <h2>로그인이 필요합니다</h2>
+        <p>Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.</p>
+      </div>
+    </div>
+
+    <div class="main-view" id="subjectSetupView">
+<div class="manager-scroll" id="subjectSetupContent"></div>
+</div>
+
+    <div class="main-view hidden" id="rosterMgmtView">
+<div class="full-page-content" id="rosterContent"></div>
+</div>
+  </section>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

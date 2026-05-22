@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIS 시간표 사전작업</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+</head>
+<body data-section="prework" data-initial-view="ttcards">
+
+<header class="topbar">
+  <div class="topbar-left">
+    <h1>HIS Curriculum</h1>
+    <p class="subtitle">한동글로벌학교</p>
+  </div>
+  <nav class="topbar-nav" id="topbarMainNav">
+    <a href="index.html" data-section="curriculum" class="topbar-nav-btn topbar-nav-link">📋 커리큘럼</a>
+<a href="roster.html" data-section="roster" class="topbar-nav-btn topbar-nav-link">👥 명단</a>
+<a href="setup.html" data-section="setup" class="topbar-nav-btn topbar-nav-link">⚙️ 세부 구성</a>
+<a href="prework.html" data-section="prework" class="topbar-nav-btn topbar-nav-link active">🗂 시간표 사전작업</a>
+<a href="results.html" data-section="results" class="topbar-nav-btn topbar-nav-link">📊 결과표</a>
+    <a href="timetable.html" class="topbar-nav-btn topbar-nav-link">⏰ 시간표</a>
+  </nav>
+  <div class="topbar-right">
+    <span id="saveStatusEl" class="save-status"></span>
+    <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
+    <button id="loginBtn" class="primary-btn" type="button">Google 로그인</button>
+    <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
+  </div>
+</header>
+<div id="subNavBar" class="sub-nav-bar">
+  <div class="sub-nav-group" data-section="prework">
+    <button id="navTtCardsBtn" class="sub-nav-btn active" type="button">🃏 시간표 카드</button>
+    <button id="navGroupsBtn" class="sub-nav-btn" type="button">🔗 그룹 관리</button>
+  </div>
+</div>
+<main class="page page-no-sidebar">
+  <section class="main-panel">
+    <div id="loginOverlay" class="login-overlay">
+      <div class="login-overlay-box">
+        <h2>로그인이 필요합니다</h2>
+        <p>Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.</p>
+      </div>
+    </div>
+
+    <div class="main-view" id="ttCardsMgmtView">
+<div class="manager-scroll" id="ttCardsContent"></div>
+</div>
+
+    <div class="main-view hidden" id="groupManagerView">
+<div class="manager-header">
+<div>
+<h2>그룹 관리</h2>
+<p class="manager-subtitle">시간표 카드를 드래그하여 그룹에 배정하세요. 같은 그룹의 카드는 동일 시간대에 배정됩니다.</p>
+</div>
+<div class="manager-actions">
+<button class="primary-btn" id="groupManagerAddGroupBtn" type="button">그룹 추가</button>
+</div>
+</div>
+<div class="group-manager-board" id="groupManagerBoard"></div>
+</div>
+  </section>
+</main>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
