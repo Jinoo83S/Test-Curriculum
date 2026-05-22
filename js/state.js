@@ -262,31 +262,65 @@ export function normalizeTimetableEntry(e = {}) {
   };
 }
 export function normalizeTtCard(item = {}) {
-  const arr = v => Array.isArray(v) ? v.map(clean).filter(Boolean) : [];
+  const arr = v => {
+    if (Array.isArray(v)) return uniqueOrdered(v.map(clean).filter(Boolean));
+    if (typeof v === "string") return uniqueOrdered(v.split(/[,，·\n]+/).map(clean).filter(Boolean));
+    return [];
+  };
   const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+
+  // ── Canonical persisted timetable-card schema v2 ───────────────
+  // 시간표 편집/그룹관리/충돌검사는 커리큘럼·수강명단을 매번 다시 추론하지 않고
+  // 아래 스냅샷 필드(classKeys, studentKeys, teacherNames 등)를 우선 사용합니다.
+  const titleKo = clean(item.titleKo) || clean(item.title) || clean(item.subject) || clean(item.label);
+  const titleEn = clean(item.titleEn) || clean(item.subjectEn);
+  const title   = clean(item.title) || titleKo || clean(item.label) || clean(item.subject);
+  const teacherNames = arr(item.teacherNames).length
+    ? arr(item.teacherNames)
+    : (arr(item.teachers).length ? arr(item.teachers) : arr(item.teacherName));
+  const teacherName = clean(item.teacherName) || teacherNames.join(", ");
+  const manual = !!(item.isManualEdited || item.manualEdited);
+
   return {
+    schemaVersion: 2,
     id:         item.id || uid("ttc"),
     templateId: clean(item.templateId),
     gradeKey:   clean(item.gradeKey),
     sectionIdx: parseInt(item.sectionIdx, 10) || 0,
-    label:      clean(item.label),
 
-    // Generated snapshot data.
-    // 시간표 화면은 이 값을 우선 사용하고, 매번 수강명단/반 정보를 재추론하지 않습니다.
-    subject:     clean(item.subject),
-    subjectEn:   clean(item.subjectEn),
-    teacherName: clean(item.teacherName),
-    teachers:    arr(item.teachers),
+    // Display/title fields. label/subject are kept for backward compatibility.
+    title,
+    titleKo,
+    titleEn,
+    label:      clean(item.label),
+    subject:    title,
+    subjectEn:  titleEn,
+
+    // Persisted scheduling snapshot.
+    teacherName,
+    teacherNames,
+    teachers:    teacherNames,
     credits:     num(item.credits),
     category:    clean(item.category),
     track:       clean(item.track),
     group:       clean(item.group),
+    language:    clean(item.language),
+    schoolLevel: clean(item.schoolLevel),
     classKeys:   arr(item.classKeys),     // internal: "9:A"
     classLabels: arr(item.classLabels),   // display: "9A"
     studentKeys: arr(item.studentKeys),   // internal: "classId:studentId"
     isWholeGrade: !!item.isWholeGrade,
+
+    // Source tracking. Used to detect whether card data was regenerated from the latest source.
+    sourceType:      clean(item.sourceType) || "curriculum",
+    sourceHash:      clean(item.sourceHash),
+    sourceUpdatedAt: clean(item.sourceUpdatedAt),
+    sourceSnapshot:  (item.sourceSnapshot && typeof item.sourceSnapshot === "object") ? item.sourceSnapshot : null,
+
     generatedAt: clean(item.generatedAt),
-    manualEdited: !!item.manualEdited,
+    updatedAt:   clean(item.updatedAt),
+    isManualEdited: manual,
+    manualEdited:   manual,
   };
 }
 export function normalizeTimetableConstraint(c = {}) {

@@ -582,6 +582,7 @@ function getCreditsForTtCard(card) {
 
 function getTeachersForTtCard(card) {
   if (!card) return [];
+  if (Array.isArray(card.teacherNames) && card.teacherNames.length) return card.teacherNames;
   if (Array.isArray(card.teachers) && card.teachers.length) return card.teachers;
   if (card.teacherName) return splitTeacherNames(card.teacherName);
   return getTeachersForTemplate(card.templateId);
@@ -748,7 +749,7 @@ function uniqueStrings(list) {
 
 function describeTtCard(card) {
   const tpl = getTemplateById(card?.templateId);
-  const base = card?.subject || (tpl ? getTemplateCardTitle(tpl) : "?");
+  const base = card?.title || card?.titleKo || card?.subject || (tpl ? getTemplateCardTitle(tpl) : "?");
   const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card?.templateId]?.classCount) || 1);
   const classLabels = getTtCardClassLabels(card);
   const sec = classLabels.length ? classLabels.join(", ") : sectionLabel(card?.sectionIdx ?? 0);
@@ -1471,10 +1472,9 @@ function entryTitle(e) {
   if (e.ttcardId) {
     const card = getTtCardById(e.ttcardId);
     if (card) {
-      const tpl = getTemplateById(card.templateId);
-      const base = tpl ? getTemplateCardTitle(tpl) : "?";
-      const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card.templateId]?.classCount) || 1);
-      return cc > 1 ? `${base} ${sectionLabel(card.sectionIdx)}` : base;
+      const base = card.title || card.titleKo || card.subject || getTemplateCardTitle(getTemplateById(card.templateId)) || "?";
+      const labels = Array.isArray(card.classLabels) && card.classLabels.length ? card.classLabels.join(", ") : "";
+      return labels ? `${base} ${labels}` : base;
     }
   }
   return getTemplateCardTitle(getTemplateById(e.templateId)) || "?";
