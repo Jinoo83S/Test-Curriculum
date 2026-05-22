@@ -447,9 +447,11 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
         if (row.category !== "교과") return;
         if (!row.track || row.track === "공통") return;
         const subGroup = row.group || "기타";
-        const groupKey = `${row.track}::${gradeKey}`;
+        // 같은 학년·같은 구분 안에서도 교과군이 다르면 별도 동시배정 그룹이어야 합니다.
+        // 기존에는 row.track + gradeKey만 사용해 국어/수학/사회 카드가 한 그룹으로 섞일 수 있었습니다.
+        const groupKey = `${row.track}::${subGroup}::${gradeKey}`;
         if (!trackMap[groupKey]) trackMap[groupKey] = {
-          name: `${gradeDisplay(gradeKey)}-${row.track}`, cardIds: new Set()
+          name: `${gradeDisplay(gradeKey)}-${subGroup !== "기타" ? subGroup : row.track}`, cardIds: new Set()
         };
         [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
           cards.filter(c => c.templateId === tplId && c.gradeKey === gradeKey)

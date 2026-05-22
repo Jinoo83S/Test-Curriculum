@@ -460,10 +460,34 @@ function getCreditsForTemplate(gradeKey, templateId) {
     .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId);
   return row ? (parseFloat(row.credits) || 0) : 0;
 }
+function getCurriculumRowForTemplate(gradeKey, templateId) {
+  return (appState.curriculum.gradeBoards[gradeKey] || [])
+    .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId) || null;
+}
 function getCategoryForTemplate(gradeKey, templateId) {
-  const row = (appState.curriculum.gradeBoards[gradeKey] || [])
-    .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId);
-  return row?.category || "";
+  return getCurriculumRowForTemplate(gradeKey, templateId)?.category || "";
+}
+function getTrackForTemplate(gradeKey, templateId) {
+  return getCurriculumRowForTemplate(gradeKey, templateId)?.track || "";
+}
+function getGroupNameForTemplate(gradeKey, templateId) {
+  return getCurriculumRowForTemplate(gradeKey, templateId)?.group || "";
+}
+function isWholeGradeTtCard(card) {
+  if (!card?.templateId || !card?.gradeKey) return false;
+  const tpl = getTemplateById(card.templateId);
+  const title = getTemplateCardTitle(tpl) || clean(card.label);
+  const category = clean(getCategoryForTemplate(card.gradeKey, card.templateId));
+  const groupName = clean(getGroupNameForTemplate(card.gradeKey, card.templateId));
+  const track = clean(getTrackForTemplate(card.gradeKey, card.templateId));
+  const label = [title, category, groupName, track, card.label].join(" ");
+
+  // 창체/채플/CA/SA/MS채플처럼 실제로 해당 학년 전체가 동시에 듣는 수업만
+  // 모든 반을 점유하도록 봅니다.
+  if (category === "창체") return true;
+  if (/(채플|chapel|CA|SA|자율|동아리)/i.test(label)) return true;
+  if (/(전체|전학년|whole|all)/i.test(label)) return true;
+  return false;
 }
 function getCategoryColor(category) {
   const idx = (appState.curriculum.options?.category || []).indexOf(category);
@@ -570,14 +594,19 @@ function getTtCardClassInfos(card) {
   const labelInfos = getClassInfosByCardLabel(card);
   if (labelInfos.length) return labelInfos;
 
-  // classCount=1 → 반이 나뉘지 않은 전체 학년 수업 (채플 등) → 해당 학년 모든 반에 표시
   const cc = Math.max(0, parseInt(appState.rosters?.rosterMeta?.[card.templateId]?.classCount) || 0);
-  if (cc <= 1) {
+
+  // classCount=1이라고 해서 항상 학년 전체 수업은 아닙니다.
+  // 선택/분반 그룹 카드(예: 9A 국어 + 9A 한국어)는 수강명단이 비어 있으면
+  // 기존 로직에서 9A·9B 전체로 확장되어 잘못 표시/충돌되었습니다.
+  // 따라서 창체·채플 등 명확한 전체 학년 수업만 모든 반으로 확장합니다.
+  if (cc <= 1 && isWholeGradeTtCard(card)) {
     const allGradeClasses = classRows.filter(c => c.gradeKey === card.gradeKey);
     if (allGradeClasses.length) return allGradeClasses;
   }
 
-  // classCount > 1 → sectionIdx로 해당 반만 매칭
+  // 그 외에는 sectionIdx 기준의 실제 반 하나만 점유하도록 봅니다.
+  // 예: 9A 국어/한국어 그룹은 9A만, 9B는 별도 카드가 있을 때만 표시됩니다.
   const matched = classRows.filter(c => c.gradeKey === card.gradeKey && (c.sectionIdx ?? 0) === (card.sectionIdx ?? 0));
   if (matched.length) return matched;
 
