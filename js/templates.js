@@ -333,14 +333,11 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
 
   const preview = document.createElement("div");
   preview.className = "template-semester-preview template-semester-detail";
-  if (isSemesterDataSame(item)) {
-    preview.appendChild(createSemesterPreviewItem(item, "sem1", "1·2학기"));
-  } else {
-    preview.append(
-      createSemesterPreviewItem(item, "sem1"),
-      createSemesterPreviewItem(item, "sem2")
-    );
-  }
+  // 상세보기는 항상 헤더 1행 + 학기 세부 2행 구조로 고정합니다.
+  preview.append(
+    createSemesterPreviewItem(item, "sem1"),
+    createSemesterPreviewItem(item, "sem2")
+  );
 
   card.append(main, preview);
   card.addEventListener("click", e => {

@@ -4225,3 +4225,183 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .tpl-manager-level-tab.active span {
   color: #bfdbfe;
 }
+
+/* ── Curriculum refinements: manager tab + sidebar card detail + board popup ── */
+.sub-nav-group[data-section="curriculum"] .nav-manager-right,
+#navManagerBtn.nav-manager-right {
+  margin-left: auto;
+}
+
+.template-card.compact-card.expanded .template-main {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  min-height: 30px;
+  padding: 5px 7px 4px;
+  border-bottom: 1px solid #cbdaf0;
+}
+.template-card.compact-card.expanded .template-name-ko {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 800;
+}
+.template-card.compact-card.expanded .template-semester-preview {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 3px;
+  padding: 5px 7px 7px;
+}
+.template-card.compact-card.expanded .semester-preview-item {
+  padding: 4px 6px;
+  border-radius: 5px;
+}
+.template-card.compact-card.expanded .semester-preview-row {
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 6px;
+}
+.template-card.compact-card.expanded .semester-preview-line {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.05fr) minmax(54px, .8fr);
+  gap: 6px;
+}
+.template-card.compact-card.expanded .semester-preview-label {
+  font-size: 10px;
+}
+.template-card.compact-card.expanded .semester-preview-name {
+  font-size: 12px;
+}
+.template-card.compact-card.expanded .semester-preview-en,
+.template-card.compact-card.expanded .semester-preview-teacher {
+  font-size: 11px;
+}
+
+.tpl-popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, .42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+}
+.tpl-popup-modal {
+  width: min(760px, 96vw);
+  max-height: min(720px, 92vh);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 18px 55px rgba(15, 23, 42, .28);
+  border: 1px solid #cbd5e1;
+}
+.tpl-popup-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px 11px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fbff;
+}
+.tpl-popup-title-wrap h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+  color: #1e3a5f;
+}
+.tpl-popup-title-wrap p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+.tpl-popup-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 18px;
+  line-height: 30px;
+  padding: 0;
+}
+.tpl-popup-body {
+  padding: 14px 16px;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+}
+.tpl-popup-section {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 12px;
+}
+.tpl-popup-section-title {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1e3a5f;
+}
+.tpl-popup-check-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tpl-popup-check-title input {
+  width: 16px;
+  height: 16px;
+}
+.tpl-popup-grid,
+.tpl-popup-sem-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.tpl-popup-sem-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.tpl-popup-sem-grid.is-disabled {
+  opacity: .62;
+}
+.tpl-popup-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.tpl-popup-field-wide {
+  grid-column: 1 / -1;
+}
+.tpl-popup-field span {
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+}
+.tpl-popup-field input,
+.tpl-popup-field select {
+  width: 100%;
+  min-width: 0;
+  height: 32px;
+  padding: 5px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  font-size: 13px;
+  color: #111827;
+  background: #fff;
+}
+.tpl-popup-field input:focus,
+.tpl-popup-field select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, .12);
+}
+.tpl-popup-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+@media (max-width: 720px) {
+  .tpl-popup-grid,
+  .tpl-popup-sem-grid { grid-template-columns: 1fr; }
+}

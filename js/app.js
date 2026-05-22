@@ -752,6 +752,16 @@ setOnSaveStatus((status, err) => {
   }
 });
 
+
+// Board popup template edits: refresh sidebar and current board immediately.
+document.addEventListener("his:template-updated", () => {
+  updateTeacherDatalist();
+  invalidateTabs();
+  renderSidebar();
+  if (activeMainView === "board") renderBoardTab();
+  if (activeMainView === "manager") renderTemplateManagerView();
+});
+
 // Req 2: when table edits happen, sync sidebar + board immediately
 setOnTemplateChange(() => {
   updateTeacherDatalist();
