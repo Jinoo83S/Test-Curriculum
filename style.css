@@ -4438,3 +4438,127 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
     justify-content: flex-start;
   }
 }
+
+/* ── 2026-05-22 Compact setup/roster headers ───────────────────── */
+.ss-header.ss-compact-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 18px;
+  padding: 10px 20px 6px !important;
+  min-height: 0;
+}
+.ss-header.ss-compact-header .ss-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.ss-header.ss-compact-header h2,
+.roster-top-compact h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.15;
+  color: #0f2d52;
+}
+.ss-header.ss-compact-header .setup-level-tabs,
+.roster-top-compact .setup-level-tabs {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.roster-top-compact {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 20px 8px;
+  background: #fff;
+}
+.setup-level-tabs {
+  gap: 6px !important;
+}
+.setup-level-tab {
+  padding: 6px 12px !important;
+  min-height: 34px;
+}
+.setup-level-tab strong { font-size: 12px !important; }
+.setup-level-tab span { font-size: 10px !important; }
+.ss-table-wrap { padding-top: 0 !important; }
+.roster-layout { padding-top: 0 !important; }
+
+/* ── 2026-05-22 Timetable card source/details collapsed view ───── */
+.ttc-info-box,
+.ttc-info-details {
+  --ttc-info-bg: #f8fafc;
+  border: 1px solid #dbe2ef;
+  border-radius: 8px;
+  background: var(--ttc-info-bg);
+  min-width: 220px;
+  overflow: hidden;
+}
+.ttc-info-title {
+  font-size: 11px;
+  font-weight: 900;
+  color: #1e3a5f;
+  padding: 7px 8px 3px;
+}
+.ttc-info-details summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.ttc-info-details summary::-webkit-details-marker { display: none; }
+.ttc-info-details summary::before {
+  content: '▶';
+  font-size: 9px;
+  color: #64748b;
+  transition: transform .12s ease;
+}
+.ttc-info-details[open] summary::before { transform: rotate(90deg); }
+.ttc-info-summary-title {
+  font-size: 11px;
+  font-weight: 900;
+  color: #1e3a5f;
+  white-space: nowrap;
+}
+.ttc-info-summary-text {
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 650;
+  color: #334155;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttc-info-detail-body {
+  padding: 2px 8px 7px;
+  border-top: 1px solid #e2e8f0;
+}
+.ttc-info-warning { border-color: #fed7aa; }
+.ttc-table td { vertical-align: top; }
+
+/* ── 2026-05-22 Template manager level filter: one-line buttons ── */
+.tpl-manager-level-tabs {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 3px !important;
+  margin: 0 8px 0 auto !important;
+  white-space: nowrap;
+}
+.tpl-manager-level-tab {
+  min-width: 62px !important;
+  padding: 6px 12px !important;
+  flex-direction: row !important;
+  gap: 0 !important;
+}
+.tpl-manager-level-tab strong {
+  font-size: 12px !important;
+  line-height: 1 !important;
+}
+.tpl-manager-level-tab span { display: none !important; }

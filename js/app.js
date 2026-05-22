@@ -378,14 +378,14 @@ function renderTemplateManagerLevelTabs() {
   }
 
   const items = [
-    { value: "전체", title: "전체", sub: "중등+고등" },
-    { value: "중등", title: "중등", sub: "7–9학년" },
-    { value: "고등", title: "고등", sub: "10–12학년" },
+    { value: "전체", title: "전체" },
+    { value: "중등", title: "중등" },
+    { value: "고등", title: "고등" },
   ];
 
   tabs.innerHTML = items.map(item => `
     <button type="button" class="tpl-manager-level-tab ${managerUi.level === item.value ? "active" : ""}" data-level="${item.value}">
-      <strong>${item.title}</strong><span>${item.sub}</span>
+      <strong>${item.title}</strong>
     </button>
   `).join("");
 

@@ -80,12 +80,12 @@ function groupByGradeTrack(rows) {
 export function renderSubjectSetupView(container) {
   container.innerHTML = "";
 
-  const hdr = document.createElement("div"); hdr.className = "ss-header";
+  const hdr = document.createElement("div"); hdr.className = "ss-header ss-compact-header";
+  const titleWrap = document.createElement("div"); titleWrap.className = "ss-title-wrap";
   const title = document.createElement("h2"); title.textContent = "과목 설정";
-  const sub = document.createElement("p"); sub.className = "manager-subtitle";
-  sub.textContent = "수강명단 작성 전, 각 과목의 반 수를 설정하세요. 설정된 반 수는 수강명단에 자동 반영됩니다.";
-  hdr.append(title, sub); container.appendChild(hdr);
-  container.appendChild(renderSetupLevelTabs(() => renderSubjectSetupView(container)));
+  titleWrap.appendChild(title);
+  const tabs = renderSetupLevelTabs(() => renderSubjectSetupView(container));
+  hdr.append(titleWrap, tabs); container.appendChild(hdr);
 
   const activeGrades = getActiveSetupGrades();
   const rows = buildRows(activeGrades);

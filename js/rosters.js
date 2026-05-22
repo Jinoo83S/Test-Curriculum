@@ -146,7 +146,10 @@ export function renderRosterView(container) {
     selectedRosterTemplateId = null;
     selectedSection = 0;
   }
-  container.appendChild(renderRosterLevelTabs(container));
+  const hdr = document.createElement("div"); hdr.className = "roster-top-compact";
+  const title = document.createElement("h2"); title.textContent = "수강 명단";
+  hdr.append(title, renderRosterLevelTabs(container));
+  container.appendChild(hdr);
   const layout = document.createElement("div"); layout.className = "roster-layout";
 
   // Left panel

@@ -212,24 +212,40 @@ function makeInfoLine(label, value, opts = {}) {
 
 function makeInfoBox(title, lines, options = {}) {
   const box = document.createElement("div");
-  box.style.cssText = [
-    "border:1px solid #dbe2ef",
-    "border-radius:8px",
-    `background:${options.bg || "#f8fafc"}`,
-    "padding:7px 8px",
-    "min-width:220px"
-  ].join(";");
+  box.className = "ttc-info-box";
+  if (options.bg) box.style.setProperty("--ttc-info-bg", options.bg);
   const h = document.createElement("div");
+  h.className = "ttc-info-title";
   h.textContent = title;
-  h.style.cssText = "font-size:11px;font-weight:900;color:#1e3a5f;margin-bottom:5px";
   box.appendChild(h);
   lines.forEach(line => box.appendChild(makeInfoLine(line[0], line[1], line[2] || {})));
   return box;
 }
 
+function makeCollapsibleInfoBox(title, summaryText, lines, options = {}) {
+  const details = document.createElement("details");
+  details.className = "ttc-info-details" + (options.warning ? " ttc-info-warning" : "");
+  if (options.bg) details.style.setProperty("--ttc-info-bg", options.bg);
+  const summary = document.createElement("summary");
+  const main = document.createElement("span");
+  main.className = "ttc-info-summary-title";
+  main.textContent = title;
+  const sub = document.createElement("span");
+  sub.className = "ttc-info-summary-text";
+  sub.textContent = summaryText || "클릭해서 상세 보기";
+  summary.append(main, sub);
+  details.appendChild(summary);
+  const body = document.createElement("div");
+  body.className = "ttc-info-detail-body";
+  lines.forEach(line => body.appendChild(makeInfoLine(line[0], line[1], line[2] || {})));
+  details.appendChild(body);
+  return details;
+}
+
 function createSourceCardBox(card) {
   const src = getTtCardSourceSnapshot(card);
-  return makeInfoBox("커리큘럼 과목카드 원본", [
+  const summary = [src.title, src.gradeSection, src.teacher].filter(Boolean).join(" · ");
+  return makeCollapsibleInfoBox("원본", summary, [
     ["과목", src.title],
     ["영문", src.nameEn],
     ["교사", src.teacher],
@@ -244,9 +260,11 @@ function createSourceCardBox(card) {
 }
 
 function createGeneratedCardBox(card) {
-  return makeInfoBox("저장된 시간표 카드 데이터", [
+  const target = arrText(card.classLabels);
+  const summary = [card.subject || card.label || "-", target || "대상 없음", card.teacherName || arrText(card.teachers)].filter(Boolean).join(" · ");
+  return makeCollapsibleInfoBox("카드 데이터", summary, [
     ["제목", card.subject || card.label || ""],
-    ["대상", arrText(card.classLabels)],
+    ["대상", target],
     ["반Key", arrText(card.classKeys), { mono:true }],
     ["학생Key", `${Array.isArray(card.studentKeys) ? card.studentKeys.length : 0}개`],
     ["교사", card.teacherName || arrText(card.teachers)],
@@ -254,7 +272,7 @@ function createGeneratedCardBox(card) {
     ["전체", card.isWholeGrade ? "전체 학년 점유" : "지정 반만 점유"],
     ["상태", card.manualEdited ? "수동 수정됨" : "원본 기준"],
     ["생성", card.generatedAt ? card.generatedAt.replace("T", " ").slice(0, 16) : ""],
-  ], { bg: card.manualEdited ? "#fff7ed" : "#f8fafc" });
+  ], { bg: card.manualEdited ? "#fff7ed" : "#f8fafc", warning: card.manualEdited });
 }
 
 // ── TtCard helpers ────────────────────────────────────────────────
