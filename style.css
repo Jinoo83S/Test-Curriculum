@@ -3515,3 +3515,83 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   display: inline-flex;
   align-items: center;
 }
+
+
+/* ── Rooms management view ─────────────────────────────────────── */
+.room-page-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px;
+}
+.rooms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.rooms-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #1e3a5f;
+}
+.rooms-table-wrap {
+  overflow: auto;
+  background: white;
+  border: 1px solid #dbe2ef;
+  border-radius: 10px;
+}
+.rooms-table {
+  width: 100%;
+  min-width: 860px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.rooms-table th,
+.rooms-table td {
+  border-bottom: 1px solid #e5edf7;
+  border-right: 1px solid #eef2f7;
+  padding: 6px;
+  vertical-align: middle;
+  background: white;
+}
+.rooms-table th:last-child,
+.rooms-table td:last-child { border-right: none; }
+.rooms-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #dce8f8;
+  color: #1e3a5f;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.rooms-table tbody tr:nth-child(even) td { background: #fcfdff; }
+.rooms-table input,
+.rooms-table select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 12px;
+  color: #1f2937;
+}
+.rooms-table input:focus,
+.rooms-table select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37,99,235,0.1);
+}
+.rooms-table .col-del { width: 44px; text-align: center; }
+.rooms-table .stu-del-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 999px;
+  background: #fee2e2;
+  color: #991b1b;
+}
+.rooms-table .stu-del-btn:hover:not(:disabled) { background: #fecaca; }

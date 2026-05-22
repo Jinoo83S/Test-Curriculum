@@ -36,6 +36,7 @@ const loadRosters      = () => lazyImport("rosters", "./rosters.js");
 const loadResults      = () => lazyImport("results", "./results.js");
 const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
 const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
+const loadRooms        = () => lazyImport("rooms", "./rooms.js");
 
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");
@@ -97,8 +98,10 @@ const tplMgrLevel   = document.getElementById("templateManagerLevelFilter");
 const tplMgrSortBtn = document.getElementById("templateManagerSortBtn");
 const studentMgrView= document.getElementById("studentMgmtView");
 const teacherMgrView= document.getElementById("teacherMgmtView");
+const roomMgrView   = document.getElementById("roomMgmtView");
 const rosterMgrView = document.getElementById("rosterMgmtView");
 const teacherContent= document.getElementById("teacherContent");
+const roomContent   = document.getElementById("roomContent");
 const rosterContent = document.getElementById("rosterContent");
 const resultsMgrView = document.getElementById("resultsMgmtView");
 const resultsContent = document.getElementById("resultsContent");
@@ -137,6 +140,7 @@ const navButtons = {
   board:        navBoardBtn,
   students:     document.getElementById("navStudentsBtn"),
   teachers:     document.getElementById("navTeachersBtn"),
+  rooms:        document.getElementById("navRoomsBtn"),
   subjectsetup: document.getElementById("navSubjectSetupBtn"),
   rosters:      document.getElementById("navRostersBtn"),
   ttcards:      document.getElementById("navTtCardsBtn"),
@@ -154,7 +158,7 @@ const SECTION_DEFAULT_VIEW = {
 };
 const VIEW_TO_SECTION = {
   board:"curriculum", manager:"curriculum",
-  teachers:"roster",  students:"roster",
+  teachers:"roster",  students:"roster", rooms:"roster",
   subjectsetup:"setup", rosters:"setup",
   ttcards:"prework",  groups:"prework",
   results:"results",
@@ -175,7 +179,7 @@ function activateSection(section) {
 function activateSubBtn(view) {
   const idMap = {
     board:"navBoardBtn", manager:"navManagerBtn", teachers:"navTeachersBtn",
-    students:"navStudentsBtn", subjectsetup:"navSubjectSetupBtn", rosters:"navRostersBtn",
+    students:"navStudentsBtn", rooms:"navRoomsBtn", subjectsetup:"navSubjectSetupBtn", rosters:"navRostersBtn",
     ttcards:"navTtCardsBtn", groups:"navGroupsBtn", results:"navResultsBtn",
   };
   document.querySelectorAll(".sub-nav-btn").forEach(btn => {
@@ -209,6 +213,7 @@ const VIEW_DOMAIN_SETS = {
   manager:      ["curriculum", "templates", "teachers"],
   teachers:     ["templates", "teachers"],
   students:     ["classes", "rosters"],
+  rooms:        ["rooms", "teachers"],
   subjectsetup: ["curriculum", "templates", "rosters"],
   rosters:      ["curriculum", "templates", "classes", "rosters"],
   ttcards:      ["curriculum", "templates", "classes", "rosters", "timetable"],
@@ -288,6 +293,7 @@ async function navigateTo(view) {
   else if (view === "manager") { clearStableOrder(); renderTemplateManagerView(); renderSidebar(); }
   else if (view === "students") { selectedClassId = null; await renderStudentView(); }
   else if (view === "teachers")     await renderTeacherPanel();
+  else if (view === "rooms")        await renderRoomsPanel();
   else if (view === "rosters")      await renderRosterPanel();
   else if (view === "subjectsetup") await renderSubjectSetupPanel();
   else if (view === "ttcards")      await renderTtCardsPanel();
@@ -299,7 +305,8 @@ function setView(view) {
   activeMainView = view;
   const allViews = {
     board:        boardView,        groups:  groupMgrView,      manager: tplMgrView,
-    students:     studentMgrView,   teachers:teacherMgrView,    rosters: rosterMgrView,
+    students:     studentMgrView,   teachers:teacherMgrView,    rooms: roomMgrView,
+    rosters: rosterMgrView,
     results:      resultsMgrView,   ttcards: ttCardsMgrView,    subjectsetup: subjectSetupMgrView,
   };
   Object.entries(allViews).forEach(([k, el]) => el?.classList.toggle("hidden", k !== view));
@@ -359,6 +366,17 @@ async function renderRosterPanel() {
   if (activeMainView !== "rosters" || !rosterContent) return;
   const { renderRosterView } = await loadRosters();
   if (activeMainView === "rosters") renderRosterView(rosterContent);
+}
+
+async function renderRoomsPanel() {
+  if (activeMainView !== "rooms" || !roomContent) return;
+  const { renderRoomsView } = await loadRooms();
+  const teacherNames = [...new Set((appState.teachers?.teachers || [])
+    .map(t => String(t.name || "").trim())
+    .filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+  if (activeMainView === "rooms") {
+    renderRoomsView(roomContent, () => void renderRoomsPanel(), { teacherNames });
+  }
 }
 
 async function renderResultsPanel() {
@@ -444,6 +462,7 @@ function render(domain) {
   if (activeMainView === "manager")      renderTemplateManagerView();
   if (activeMainView === "students")     void renderStudentView();
   if (activeMainView === "teachers")     void renderTeacherPanel();
+  if (activeMainView === "rooms")        void renderRoomsPanel();
   if (activeMainView === "rosters")      void renderRosterPanel();
   if (activeMainView === "results")      void renderResultsPanel();
   if (activeMainView === "subjectsetup") void renderSubjectSetupPanel();
@@ -708,6 +727,7 @@ navBoardBtn?.addEventListener("click",   () => { resetDraft(); void navigateTo("
 navManagerBtn?.addEventListener("click", () => void navigateTo(activeMainView === "manager" ? "board" : "manager"));
 navButtons.students?.addEventListener("click",     () => void navigateTo("students"));
 navButtons.teachers?.addEventListener("click",     () => void navigateTo("teachers"));
+navButtons.rooms?.addEventListener("click",        () => void navigateTo("rooms"));
 navButtons.rosters?.addEventListener("click",      () => void navigateTo("rosters"));
 navButtons.subjectsetup?.addEventListener("click", () => void navigateTo("subjectsetup"));
 navButtons.results?.addEventListener("click",      () => void navigateTo("results"));
