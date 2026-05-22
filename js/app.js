@@ -3,7 +3,7 @@
 // ================================================================
 import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
-import { appState, subscribeAll, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus } from "./state.js";
+import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus } from "./state.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, fixChanCheCredits } from "./curriculum.js";
@@ -192,6 +192,72 @@ let activeMainView = "board";
 let activeTab = "tab7to9";
 let selectedClassId = null;
 
+
+// ── Phase 2: view-scoped Firestore subscriptions ─────────────────
+// 화면별로 필요한 Firestore 도메인만 실시간 구독합니다.
+// appState에는 마지막으로 읽은 값이 남아 있으므로, 화면 전환 시 필요한 도메인만 다시 붙입니다.
+const VIEW_DOMAIN_SETS = {
+  board:        ["curriculum", "templates", "teachers"],
+  manager:      ["curriculum", "templates", "teachers"],
+  teachers:     ["templates", "teachers"],
+  students:     ["classes", "rosters"],
+  subjectsetup: ["curriculum", "templates", "rosters"],
+  rosters:      ["curriculum", "templates", "classes", "rosters"],
+  ttcards:      ["curriculum", "templates", "classes", "rosters", "timetable"],
+  groups:       ["curriculum", "templates", "classes", "rosters", "timetable"],
+  results:      ["curriculum", "templates", "rosters"],
+};
+
+let activeDomainSubscriptions = new Set();
+
+function domainsForView(view) {
+  return VIEW_DOMAIN_SETS[view] || VIEW_DOMAIN_SETS.board;
+}
+
+function waitForDomainsLoaded(domains, timeoutMs = 7000) {
+  const list = [...new Set(domains || [])];
+  if (!list.length || list.every(d => initialLoad[d])) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const started = Date.now();
+    const timer = setInterval(() => {
+      const done = list.every(d => initialLoad[d]);
+      const timedOut = Date.now() - started > timeoutMs;
+      if (done || timedOut) {
+        clearInterval(timer);
+        resolve(done);
+      }
+    }, 50);
+  });
+}
+
+function syncDomainSubscriptionsForView(view) {
+  if (!auth.currentUser) return;
+  const desired = new Set(domainsForView(view));
+  const toRemove = [...activeDomainSubscriptions].filter(d => !desired.has(d));
+  const toAdd = [...desired].filter(d => !activeDomainSubscriptions.has(d));
+
+  if (toRemove.length) {
+    unsubscribeDomains(toRemove);
+    toRemove.forEach(d => activeDomainSubscriptions.delete(d));
+  }
+  if (toAdd.length) {
+    // subscribeDomains는 이미 구독 중인 도메인은 건너뛰므로 전체 desired를 넘겨도 안전합니다.
+    subscribeDomains([...desired]);
+    toAdd.forEach(d => activeDomainSubscriptions.add(d));
+  }
+}
+
+async function ensureDomains(domains) {
+  if (!auth.currentUser) return false;
+  const desired = new Set([...activeDomainSubscriptions, ...(domains || [])]);
+  const toAdd = [...desired].filter(d => !activeDomainSubscriptions.has(d));
+  if (toAdd.length) {
+    subscribeDomains([...desired]);
+    toAdd.forEach(d => activeDomainSubscriptions.add(d));
+  }
+  return waitForDomainsLoaded(domains);
+}
+
 // Board tab cache
 const tabBoardCache = { tab7to9: null, tab10to12: null };
 const dirtyTabs     = new Set(["tab7to9","tab10to12"]);
@@ -200,6 +266,7 @@ export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("t
 // ── View switching ─────────────────────────────────────────────────
 function navigateTo(view) {
   setView(view);
+  syncDomainSubscriptionsForView(view);
   const section = VIEW_TO_SECTION[view] || activeSection;
   activateSection(section);
   activateSubBtn(view);
@@ -249,7 +316,13 @@ function renderSidebar() {
   updateTeacherDatalist();
   renderTemplates(templateListEl, {
     onEdit: (id) => fillTemplateForm(id),
-    onDelete: (id) => { deleteTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); },
+    // 과목 삭제는 수강명단/시간표 카드/시간표 배치까지 정리해야 하므로
+    // 삭제 직전에 관련 도메인을 확실히 불러온 뒤 실행합니다.
+    onDelete: async (id) => {
+      await ensureDomains(["rosters", "timetable"]);
+      deleteTemplate(id);
+      invalidateTabs(); renderSidebar(); renderBoardTab();
+    },
     onCopy: (id) => { copyTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); }
   });
   renderOptionChips(categoryOptionList, "category");
@@ -346,7 +419,7 @@ function render(domain) {
 
   // Sidebar cards depend on templates and also on curriculum placement chips.
   // Render it whenever those domains changed, or when the current view needs it.
-  if (fullRender || changed("curriculum") || changed("templates") ||
+  if (fullRender || changed("curriculum") || changed("templates") || changed("teachers") ||
       activeMainView === "groups" || activeMainView === "manager") {
     renderSidebar();
   }
@@ -572,11 +645,13 @@ onAuth(async (user) => {
     } catch (e) {
       console.warn("Migration skipped; continuing normal load.", e);
     } finally {
-      // index.html: 기본 데이터 + 시간표 사전작업(ttcards) 표시용 timetable 도메인 구독
-      subscribeDomains(["curriculum","templates","classes","teachers","rosters","rooms","timetable"]);
+      // Phase 2: 첫 화면에는 현재 메뉴에 필요한 도메인만 구독합니다.
+      activeDomainSubscriptions.clear();
+      syncDomainSubscriptionsForView(activeMainView || "board");
     }
   } else {
     unsubscribeAll();
+    activeDomainSubscriptions.clear();
     invalidateTabs();
     render();
   }
@@ -665,7 +740,12 @@ tplMgrLevel?.addEventListener("change", e => { managerUi.level = e.target.value;
 tplMgrSortBtn?.addEventListener("click", () => { clearStableOrder(); renderTemplateManagerView(); });
 tplMgrTableWrap?.addEventListener("input",  e => handleTableInput(e));
 tplMgrTableWrap?.addEventListener("change", e => handleTableChange(e, renderTemplateManagerView));
-tplMgrTableWrap?.addEventListener("click",  e => handleTableDeleteClick(e, renderTemplateManagerView));
+tplMgrTableWrap?.addEventListener("click", async e => {
+  if (e.target.closest("button[data-action='delete-template']")) {
+    await ensureDomains(["rosters", "timetable"]);
+  }
+  handleTableDeleteClick(e, renderTemplateManagerView);
+});
 
 // ── Template manager paste ────────────────────────────────────────
 const tplPasteArea    = document.getElementById("tplPasteArea");

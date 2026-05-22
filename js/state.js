@@ -657,6 +657,13 @@ async function applyTimetableSplitIfReady() {
 }
 
 function subscribeTimetableSplit() {
+  // Menu-scoped subscriptions may detach and reattach this domain.
+  // Reset the three split snapshots so stale partial cache is not applied as a fresh timetable.
+  timetableSplitCache.entries = null;
+  timetableSplitCache.ttcards = null;
+  timetableSplitCache.meta = null;
+  timetableSplitCache.metaExists = false;
+
   const onSplitError = err => fallbackToLegacyDocument("timetable", normalizeTimetableDomain, err);
 
   const unsubEntries = onSnapshot(splitRefs.timetableEntries, snap => {
@@ -710,6 +717,10 @@ export function subscribeDomains(domainList = ALL_DOMAINS) {
       err => console.error(domain, err)
     );
   });
+
+  // If every requested domain is already subscribed and loaded, no new snapshot may fire.
+  // Clear the batched-render gate immediately in that case.
+  _checkAllLoaded();
 }
 
 export function subscribeAll() {
@@ -722,6 +733,7 @@ export function unsubscribeDomains(domainList = Object.keys(unsubs)) {
       unsubs[domain]();
       delete unsubs[domain];
     }
+    _subscribedDomains.delete(domain);
   });
 }
 
