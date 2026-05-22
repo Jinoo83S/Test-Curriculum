@@ -4,7 +4,7 @@
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
-         normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
+         normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
@@ -33,6 +33,82 @@ function subscribeOptionalTimetableDomains() {
 function isVisible(el) {
   return !!el && !el.classList.contains("hidden");
 }
+
+// ── Undo stack: Ctrl+Z restores the previous timetable edit ──────
+const UNDO_LIMIT = 50;
+let undoStack = [];
+let undoCaptureLocked = false;
+let undoApplying = false;
+
+function cloneForUndo(v) {
+  try { return structuredClone(v); }
+  catch (_) { return JSON.parse(JSON.stringify(v ?? null)); }
+}
+
+function getUndoSnapshot() {
+  return cloneForUndo({
+    entries: ttDomain().entries || [],
+    config: ttDomain().config || {},
+    teacherConstraints: ttDomain().teacherConstraints || {},
+  });
+}
+
+function sameUndoSnapshot(a, b) {
+  try { return JSON.stringify(a) === JSON.stringify(b); }
+  catch (_) { return false; }
+}
+
+function captureTimetableUndo(label = "시간표 편집") {
+  if (!canEdit() || undoApplying || undoCaptureLocked) return;
+  const snapshot = getUndoSnapshot();
+  const last = undoStack[undoStack.length - 1];
+  if (!last || !sameUndoSnapshot(last.data, snapshot)) {
+    undoStack.push({ label, data: snapshot });
+    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
+  }
+  undoCaptureLocked = true;
+  queueMicrotask(() => { undoCaptureLocked = false; });
+}
+
+function restoreTimetableSnapshot(snapshot) {
+  const restored = cloneForUndo(snapshot);
+  ttDomain().entries = restored.entries || [];
+  ttDomain().config = restored.config || ttDomain().config || {};
+  ttDomain().teacherConstraints = restored.teacherConstraints || {};
+}
+
+function undoLastTimetableEdit() {
+  if (!canEdit()) return;
+  const snapshot = undoStack.pop();
+  if (!snapshot) {
+    const bar = $("ttConflictBar");
+    if (bar) {
+      const prev = bar.textContent;
+      bar.textContent = "되돌릴 작업이 없습니다.";
+      setTimeout(() => { if (bar.textContent === "되돌릴 작업이 없습니다.") bar.textContent = prev; }, 1200);
+    }
+    return;
+  }
+  undoApplying = true;
+  restoreTimetableSnapshot(snapshot.data);
+  undoApplying = false;
+  scheduleSave("timetable");
+  recomputeConflicts();
+  renderAll();
+}
+
+function shouldIgnoreUndoShortcut(target) {
+  if (!target) return false;
+  const tag = target.tagName;
+  return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey || e.altKey) return;
+  if (shouldIgnoreUndoShortcut(e.target)) return;
+  e.preventDefault();
+  undoLastTimetableEdit();
+});
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -251,28 +327,34 @@ function renderEntryConflictDetailSection(box, entry) {
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
   if (!canEdit()) return null;
+  captureTimetableUndo("수업 추가");
   const e = normalizeTimetableEntry({ id: uid("ent"), ...data });
   if (!e.templateId) return null;
   entries().push(e); scheduleSave("timetable"); return e;
 }
 function removeEntry(id) {
   if (!canEdit()) return;
+  captureTimetableUndo("수업 삭제");
   ttDomain().entries = entries().filter(e => e.id !== id);
   scheduleSave("timetable");
 }
 function updateEntry(id, field, value) {
   if (!canEdit()) return;
   const e = entries().find(e => e.id === id); if (!e) return;
+  if (e[field] === value) return;
+  captureTimetableUndo("수업 수정");
   e[field] = value; scheduleSave("timetable");
 }
 function updateConstraint(teacher, field, value) {
   if (!canEdit()) return;
   if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
+  captureTimetableUndo("교사 제약 수정");
   constraints()[teacher][field] = value; scheduleSave("timetable");
 }
 function toggleUnavailable(teacher, day, period) {
   if (!canEdit()) return;
   if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
+  captureTimetableUndo("수업 불가 시간 수정");
   const slots = constraints()[teacher].unavailableSlots;
   const idx = slots.findIndex(s => s.day === day && s.period === period);
   if (idx >= 0) slots.splice(idx, 1); else slots.push({ day, period });
@@ -280,17 +362,22 @@ function toggleUnavailable(teacher, day, period) {
 }
 function updatePeriodLabel(idx, value) {
   if (!canEdit()) return;
+  if (ttConfig().periodLabels[idx] === value) return;
+  captureTimetableUndo("교시명 수정");
   ttConfig().periodLabels[idx] = value; scheduleSave("timetable");
 }
 function setPeriodCount(n) {
   if (!canEdit()) return;
   const count = Math.max(1, Math.min(12, n));
+  if (ttConfig().periodCount === count) return;
+  captureTimetableUndo("교시 수 수정");
   const labels = Array.from({ length: count }, (_, i) => ttConfig().periodLabels[i] || `${i}교시`);
   ttConfig().periodCount = count; ttConfig().periodLabels = labels;
   scheduleSave("timetable");
 }
 function setLunchConfig(afterPeriod, show) {
   if (!canEdit()) return;
+  captureTimetableUndo("점심시간 설정 수정");
   if (afterPeriod !== undefined) ttConfig().lunchAfterPeriod = afterPeriod;
   if (show !== undefined) ttConfig().showLunch = show;
   scheduleSave("timetable");
@@ -1247,6 +1334,8 @@ function buildEntryCard(entry, opts = {}) {
 function moveEntry(entryId, day, period) {
   if (!canEdit()) return;
   const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return;
+  if (e.day === day && e.period === period) return;
+  captureTimetableUndo("수업 이동");
   // If entry has groupId or unitId, move ALL sibling entries to same slot
   if (e.groupId || e.unitId) {
     const siblings = entries().filter(x =>
@@ -1459,7 +1548,7 @@ function showEntryContextMenu(entry, x, y) {
   menu.appendChild(sep());
   // ④ 고정
   menu.appendChild(menuItem(entry.pinned ? "📌 고정 해제" : "📍 이 시간에 고정", () => {
-    const e = entries().find(x=>x.id===entry.id); if(e){ e.pinned=!e.pinned; scheduleSave("timetable"); renderAll(); }
+    const e = entries().find(x=>x.id===entry.id); if(e){ captureTimetableUndo("수업 고정 변경"); e.pinned=!e.pinned; scheduleSave("timetable"); renderAll(); }
   }));
   menu.appendChild(sep());
   // ⑤ 삭제
@@ -1653,6 +1742,7 @@ function showEntryDetail(entry) {
     pinBtn.textContent = entry.pinned ? "📌 고정 해제" : "📍 이 시간에 고정";
     pinBtn.onclick = () => {
       const e = entries().find(x=>x.id===entry.id); if(!e) return;
+      captureTimetableUndo("수업 고정 변경");
       e.pinned = !e.pinned; scheduleSave("timetable"); renderAll(); modal.remove();
     };
     box.appendChild(pinBtn);
@@ -2083,7 +2173,8 @@ function linkedGroups(tidA, tidB) {
   return grpA?.linkedGroupId === gB || grpB?.linkedGroupId === gA;
 }
 
-function checkPlacementValid(item, slot, placed) {
+function checkPlacementValid(item, slot, placed, options = {}) {
+  const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
   const existing = [...entries(), ...placed];
   const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
   const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
@@ -2128,10 +2219,10 @@ function checkPlacementValid(item, slot, placed) {
   for (const teacher of teachers) {
     const c = constraints()[teacher];
     // Unavailable slot check
-    if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
+    if (respectUnavailable && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
     const count = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
-    const max = c?.maxPerDay || 6;
-    if (count >= max) return false;
+    const max = Number(c?.maxPerDay) || 0;
+    if (respectSoftLimits && max > 0 && count >= max) return false;
   }
 
   // 5. Teacher max consecutive
@@ -2143,12 +2234,13 @@ function checkPlacementValid(item, slot, placed) {
       cur = all[i] === all[i-1]+1 ? cur+1 : 1;
       maxC = Math.max(maxC, cur);
     }
-    if (maxC > (constraints()[teacher]?.maxConsecutive || 4)) return false;
+    const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
+    if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
   }
   // 6. Room conflict: if teacher has assigned room, apply; if room already occupied, skip
   for (const teacher of teachers) {
     const c = constraints()[teacher];
-    if (c?.assignedRoomId) {
+    if (respectAssignedRoom && c?.assignedRoomId) {
       // Check if assigned room is already occupied at this slot
       const roomBusy = existing.some(e => e.day===slot.day && e.period===slot.period && e.roomId===c.assignedRoomId);
       if (roomBusy) return false;
@@ -2156,6 +2248,88 @@ function checkPlacementValid(item, slot, placed) {
   }
   return true;
 }
+function autoItemKey(item) {
+  if (item.ttcardId) return `ttc:${item.ttcardId}`;
+  return `tpl:${item.templateId || ""}:${item.gradeKey || ""}:${item.sectionIdx ?? 0}`;
+}
+
+function entryMatchesAutoItem(entry, item) {
+  if (item.ttcardId) {
+    return entry.ttcardId === item.ttcardId || (entry.ttcardIds || []).includes(item.ttcardId);
+  }
+  const templateMatch = entry.templateId === item.templateId || (entry.templateIds || []).includes(item.templateId);
+  const gradeMatch = entry.gradeKey === item.gradeKey || (entry.gradeKeys || []).includes(item.gradeKey);
+  const sectionMatch = (entry.sectionIdx ?? 0) === (item.sectionIdx ?? 0);
+  return templateMatch && gradeMatch && sectionMatch;
+}
+
+function getAutoItemName(item) {
+  if (item.ttcardId) {
+    const card = getTtCardById(item.ttcardId);
+    if (card) return describeTtCard(card).title;
+  }
+  const base = getTemplateCardTitle(getTemplateById(item.templateId)) || "?";
+  return item.gradeKey ? `${base} ${gradeDisplay(item.gradeKey)}${sectionLabel(item.sectionIdx ?? 0)}` : base;
+}
+
+function getAutoItemDifficulty(item) {
+  const audience = audienceForPlacement(item);
+  const teacherCount = splitTeacherNames(item.teacherName).filter(Boolean).length;
+  return teacherCount * 20 + audience.studentKeys.size + audience.classKeys.size * 5;
+}
+
+function scoreAutoSlot(item, slot, placed) {
+  const existing = [...entries(), ...placed];
+  const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+  const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
+  const dayEnts = existing.filter(e => e.day === slot.day);
+  const teacherLoad = teachers.reduce((sum, t) => sum + dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(t)).length, 0);
+  const audience = audienceForPlacement(item);
+  const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
+  const samePeriodLoad = existing.filter(e => e.period === slot.period).length;
+  return slotEnts.length * 100 + teacherLoad * 8 + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
+}
+
+function findBestAutoSlot(item, baseSlots, placed, checkOptions) {
+  const candidates = [];
+  for (const slot of shuffle([...baseSlots])) {
+    if (checkPlacementValid(item, slot, placed, checkOptions)) {
+      candidates.push({ slot, score: scoreAutoSlot(item, slot, placed) });
+    }
+  }
+  candidates.sort((a, b) => a.score - b.score);
+  return candidates[0]?.slot || null;
+}
+
+function getGroupAutoCardIds(group, unitItems = []) {
+  return new Set([
+    ...(group?.poolCardIds || []),
+    ...((group?.units || []).flatMap(u => u.ttcardIds || [])),
+    ...(unitItems || []).flatMap(u => (u.ttcards || []).map(c => c.id)),
+  ].filter(Boolean));
+}
+
+function countPinnedGroupSlots(group, unitItems, pinnedEntries) {
+  const cardIds = getGroupAutoCardIds(group, unitItems);
+  const slots = new Set();
+  pinnedEntries.forEach(e => {
+    const cardMatch = (e.ttcardId && cardIds.has(e.ttcardId)) || (e.ttcardIds || []).some(id => cardIds.has(id));
+    const unitMatch = (unitItems || []).some(u => u.unit?.id && e.unitId === u.unit.id);
+    if (e.groupId === group.id || cardMatch || unitMatch) slots.add(`${e.day}:${e.period}`);
+  });
+  return slots.size;
+}
+
+function placeAutoGroupSlot(group, activeItems, slot, placed) {
+  // Current group manager stores a visible group as one aggregate item.
+  // Keep one aggregate entry per 시수 so each occurrence is handled independently.
+  const groupItem = activeItems[0];
+  const item = groupItem ? makePlacementFromGroupItem(group, groupItem) : null;
+  if (!item) return false;
+  placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+  return true;
+}
+
 export function autoAssignAll() {
   if (!canEdit()) return;
 
@@ -2164,112 +2338,112 @@ export function autoAssignAll() {
 
   if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
+  captureTimetableUndo("자동 배정");
+
   // Preserve pinned entries only
   const pinnedEntries = entries().filter(e => e.pinned);
   ttDomain().entries = [...pinnedEntries];
 
   const { standalone, groupBlocks } = buildSchedulableItems();
-
-  function pinnedCount(item) {
-    return pinnedEntries.filter(e => {
-      if (item.ttcardId && (e.ttcardId === item.ttcardId || (e.ttcardIds || []).includes(item.ttcardId))) return true;
-      return (e.templateId===item.templateId || e.templateIds?.includes(item.templateId)) &&
-        (e.gradeKey===item.gradeKey || e.gradeKeys?.includes(item.gradeKey)) &&
-        (e.sectionIdx??0)===(item.sectionIdx??0);
-    }).length;
-  }
-
-  function groupItemHasPinned(groupItem) {
-    const ids = new Set((groupItem.ttcards || []).map(c => c.id));
-    return pinnedEntries.some(e =>
-      (e.ttcardId && ids.has(e.ttcardId)) ||
-      (e.ttcardIds || []).some(id => ids.has(id)) ||
-      (groupItem.unit?.id && e.unitId === groupItem.unit.id)
-    );
-  }
-
   const pc = ttConfig().periodCount;
   const baseSlots = [];
-  for (let day = 0; day < 5; day++)
-    for (let period = 0; period < pc; period++)
-      baseSlots.push({ day, period });
+  for (let day = 0; day < 5; day++) {
+    for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
+  }
 
-  const MAX_ATTEMPTS = 8;
-  let bestPlaced = [], bestFailed = [], bestScore = -1;
+  const requiredByKey = new Map();
+  const itemByKey = new Map();
+  standalone.forEach(item => {
+    const key = autoItemKey(item);
+    requiredByKey.set(key, (requiredByKey.get(key) || 0) + 1);
+    if (!itemByKey.has(key)) itemByKey.set(key, item);
+  });
 
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const placed = [], failed = [];
+  const pinnedByKey = new Map();
+  itemByKey.forEach((item, key) => {
+    pinnedByKey.set(key, pinnedEntries.filter(e => entryMatchesAutoItem(e, item)).length);
+  });
 
-    // ── Place concurrent groups first: all configured cards in a group share the same slot ──
-    for (const { group, unitItems } of groupBlocks) {
-      if (!group.isConcurrent) continue;
-      const maxCredits = Math.max(...unitItems.map(u => u.credits));
+  const stages = [
+    { name:"strict", label:"교사 제약 포함", attempts:30, options:{ respectSoftLimits:true,  respectUnavailable:true, respectAssignedRoom:true  } },
+    { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:30, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:true  } },
+    { name:"relaxedRoom", label:"교실 자동배정 제한 완화", attempts:20, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:false } },
+  ];
 
-      for (let slot_i = 0; slot_i < maxCredits; slot_i++) {
-        const activeItems = unitItems.filter(u => slot_i < u.credits);
-        if (!activeItems.length) continue;
-        if (activeItems.some(groupItemHasPinned)) continue;
+  let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
 
-        let foundSlot = null;
-        for (const slot of shuffle([...baseSlots])) {
-          const hypo = [];
-          let valid = true;
-          for (const groupItem of activeItems) {
-            const item = makePlacementFromGroupItem(group, groupItem);
-            if (!item || !checkPlacementValid(item, slot, [...placed, ...hypo])) { valid = false; break; }
-            hypo.push({ ...item, ...slot });
+  for (const stage of stages) {
+    for (let attempt = 0; attempt < stage.attempts; attempt++) {
+      const placed = [], failed = [];
+
+      // ── Place concurrent groups first: one independent occurrence per 시수 ──
+      const orderedGroups = shuffle([...groupBlocks]).sort((a, b) => {
+        const ac = Math.max(...a.unitItems.map(u => u.credits));
+        const bc = Math.max(...b.unitItems.map(u => u.credits));
+        return bc - ac;
+      });
+
+      for (const { group, unitItems } of orderedGroups) {
+        if (!group.isConcurrent) continue;
+        const maxCredits = Math.max(...unitItems.map(u => u.credits));
+        const alreadyPinned = countPinnedGroupSlots(group, unitItems, pinnedEntries);
+        const needSlots = Math.max(0, maxCredits - alreadyPinned);
+
+        for (let slot_i = 0; slot_i < needSlots; slot_i++) {
+          const activeItems = unitItems.filter(u => slot_i < u.credits);
+          if (!activeItems.length) continue;
+          const probeItem = makePlacementFromGroupItem(group, activeItems[0]);
+          const foundSlot = probeItem ? findBestAutoSlot(probeItem, baseSlots, placed, stage.options) : null;
+          if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed)) {
+            continue;
           }
-          if (valid) { foundSlot = slot; break; }
-        }
-
-        if (foundSlot) {
-          activeItems.forEach(groupItem => {
-            const item = makePlacementFromGroupItem(group, groupItem);
-            if (item) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...foundSlot }));
-          });
-        } else {
           activeItems.forEach(groupItem => failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` }));
         }
       }
-    }
 
-    // ── Place non-concurrent groups independently ─────────────────
-    for (const { group, unitItems } of groupBlocks) {
-      if (group.isConcurrent) continue;
-      for (const groupItem of unitItems) {
-        for (let i = 0; i < groupItem.credits; i++) {
-          const item = makePlacementFromGroupItem(group, groupItem);
-          let found = false;
-          for (const slot of shuffle([...baseSlots])) {
-            if (item && checkPlacementValid(item, slot, placed)) {
-              placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
-              found = true; break;
-            }
+      // ── Place non-concurrent groups independently (legacy safety) ─────────
+      for (const { group, unitItems } of orderedGroups) {
+        if (group.isConcurrent) continue;
+        for (const groupItem of unitItems) {
+          const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
+          const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
+          for (let i = 0; i < needSlots; i++) {
+            const item = makePlacementFromGroupItem(group, groupItem);
+            const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
+            if (slot) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+            else failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` });
           }
-          if (!found) failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` });
         }
       }
-    }
 
-    // ── Place standalone cards ────────────────────────────────────
-    for (const item of shuffle([...standalone])) {
-      const alreadyPinned = pinnedCount(item);
-      const needCredits = Math.max(0, 1 - alreadyPinned); // standalone = 1 per item
-      if (needCredits <= 0) continue;
-      let found = false;
-      for (const slot of shuffle([...baseSlots])) {
-        if (checkPlacementValid(item, slot, placed)) {
+      // ── Place standalone cards: required count minus already pinned count ──
+      const placedByKey = new Map();
+      const orderedKeys = shuffle([...requiredByKey.keys()]).sort((a, b) => {
+        return getAutoItemDifficulty(itemByKey.get(b)) - getAutoItemDifficulty(itemByKey.get(a));
+      });
+
+      for (const key of orderedKeys) {
+        const item = itemByKey.get(key);
+        const required = requiredByKey.get(key) || 0;
+        const pinned = pinnedByKey.get(key) || 0;
+        while (pinned + (placedByKey.get(key) || 0) < required) {
+          const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
+          if (!slot) {
+            failed.push({ name: getAutoItemName(item) });
+            break;
+          }
           placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
-          found = true; break;
+          placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
         }
       }
-      if (!found) failed.push({ name: getTemplateCardTitle(getTemplateById(item.templateId)) || "?" });
-    }
 
-    if (placed.length > bestScore) {
-      bestScore  = placed.length;
-      bestPlaced = placed;
-      bestFailed = failed;
+      if (placed.length > bestScore || (placed.length === bestScore && failed.length < bestFailed.length)) {
+        bestScore  = placed.length;
+        bestPlaced = placed;
+        bestFailed = failed;
+        bestStage  = stage;
+      }
+      if (!failed.length) break;
     }
     if (!bestFailed.length) break;
   }
@@ -2278,12 +2452,13 @@ export function autoAssignAll() {
   scheduleSave("timetable");
   recomputeConflicts(); renderAll();
 
+  const stageNote = bestStage.name === "strict" ? "" : `\n적용 방식: ${bestStage.label}`;
   if (!bestFailed.length) {
-    alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!`);
+    alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!${stageNote}`);
   } else {
     const names = [...new Set(bestFailed.map(f => f.name))];
     alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${names.length}개:\n${names.slice(0,12).join("\n")}${names.length>12?"\n...":""}` +
-      `\n\n💡 교사 제약 완화 또는 직접 배치로 보완하세요.`);
+      `\n\n💡 실제 운영 가능한 시간표라면, 고정된 수업·수업 불가 시간·동일 교사 중복 여부를 먼저 확인해 주세요.${stageNote}`);
   }
 }
 
@@ -2475,7 +2650,8 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
   }
   if (!keepFn) return;
   if (!confirm(`"${label}"을 초기화할까요?
-되돌릴 수 없습니다.`)) return;
+Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
+  captureTimetableUndo("시간표 초기화");
   ttDomain().entries = entries().filter(keepFn);
   scheduleSave("timetable"); recomputeConflicts(); renderAll();
 });
