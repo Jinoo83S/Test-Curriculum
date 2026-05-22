@@ -3188,7 +3188,51 @@ function clearDragHighlight() {
 }
 
 // ── Auth UI ───────────────────────────────────────────────────────
+const AUTH_SESSION_KEY = "his_auth_recent_user_v1";
+const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+let authResolved = false;
+
+function readRecentAuthSession() {
+  try {
+    const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data?.ts || Date.now() - data.ts > AUTH_SESSION_MAX_AGE_MS) {
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function writeRecentAuthSession(user) {
+  try {
+    if (!user) {
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      return;
+    }
+    sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+      ts: Date.now(),
+      label: user.displayName || user.email || "사용자"
+    }));
+  } catch {
+    // sessionStorage가 막힌 환경에서도 앱은 계속 동작해야 합니다.
+  }
+}
+
+function setAuthCheckingUI() {
+  const statusEl = ttAuthStatus(); const loginEl = ttLoginBtn(); const logoutEl = ttLogoutBtn();
+  const recent = readRecentAuthSession();
+  if (statusEl) statusEl.textContent = recent?.label ? `${recent.label} 로그인 확인 중…` : "로그인 확인 중…";
+  loginEl?.classList.add("hidden");
+  logoutEl?.classList.add("hidden");
+}
+
 function updateAuthUI(user) {
+  authResolved = true;
+  writeRecentAuthSession(user);
   const statusEl = ttAuthStatus(); const loginEl = ttLoginBtn(); const logoutEl = ttLogoutBtn();
   if (user) {
     if (statusEl) statusEl.textContent = user.displayName || user.email || "로그인됨";
@@ -3257,6 +3301,8 @@ setOnUpdate(domain => {
   const knownDomains = ["curriculum","templates","classes","teachers","rosters","rooms","timetable","all"];
   if (knownDomains.includes(domain)) requestRenderAll();
 });
+
+setAuthCheckingUI();
 
 onAuth(async (user) => {
   updateAuthUI(user);

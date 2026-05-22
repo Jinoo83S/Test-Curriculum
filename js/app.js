@@ -562,7 +562,51 @@ function submitTemplateForm() {
 // ================================================================
 // AUTH
 // ================================================================
+const AUTH_SESSION_KEY = "his_auth_recent_user_v1";
+const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
+let authResolved = false;
+
+function readRecentAuthSession() {
+  try {
+    const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data?.ts || Date.now() - data.ts > AUTH_SESSION_MAX_AGE_MS) {
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      return null;
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function writeRecentAuthSession(user) {
+  try {
+    if (!user) {
+      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      return;
+    }
+    sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
+      ts: Date.now(),
+      label: user.displayName || user.email || "사용자"
+    }));
+  } catch {
+    // sessionStorage가 막힌 환경에서도 앱은 계속 동작해야 합니다.
+  }
+}
+
+function setAuthCheckingUI() {
+  const recent = readRecentAuthSession();
+  if (authStatusEl) authStatusEl.textContent = recent?.label ? `${recent.label} 로그인 확인 중…` : "로그인 확인 중…";
+  loginBtn?.classList.add("hidden");
+  logoutBtn?.classList.add("hidden");
+  document.getElementById("loginOverlay")?.classList.add("hidden");
+}
+
 function updateAuthUI(user) {
+  authResolved = true;
+  writeRecentAuthSession(user);
   if (user) {
     authStatusEl && (authStatusEl.textContent = `${user.displayName || user.email || "사용자"} 로그인됨`);
     loginBtn?.classList.add("hidden"); logoutBtn?.classList.remove("hidden");
@@ -682,6 +726,8 @@ setOnTemplateChange(() => {
 setOnCurriculumChange(() => {
   renderSidebar();
 });
+
+setAuthCheckingUI();
 
 onAuth(async (user) => {
   updateAuthUI(user);

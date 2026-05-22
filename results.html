@@ -24,8 +24,8 @@
   </nav>
   <div class="topbar-right">
     <span id="saveStatusEl" class="save-status"></span>
-    <span id="authStatus" class="auth-status">로그인이 필요합니다</span>
-    <button id="loginBtn" class="primary-btn" type="button">Google 로그인</button>
+    <span id="authStatus" class="auth-status">로그인 확인 중…</span>
+    <button id="loginBtn" class="primary-btn hidden" type="button">Google 로그인</button>
     <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
   </div>
 </header>
@@ -36,7 +36,7 @@
 </div>
 <main class="page page-no-sidebar">
   <section class="main-panel">
-    <div id="loginOverlay" class="login-overlay">
+    <div id="loginOverlay" class="login-overlay hidden">
       <div class="login-overlay-box">
         <h2>로그인이 필요합니다</h2>
         <p>Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.</p>
