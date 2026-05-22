@@ -4562,3 +4562,66 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   line-height: 1 !important;
 }
 .tpl-manager-level-tab span { display: none !important; }
+
+
+/* ── 2026-05-22 Compact setup/roster workspace spacing ─────────── */
+.ss-header.ss-compact-header {
+  padding: 6px 12px 4px !important;
+  gap: 10px !important;
+}
+.ss-header.ss-compact-header h2,
+.roster-top-compact h2 {
+  font-size: 17px !important;
+}
+.ss-table-wrap {
+  padding: 0 12px 24px !important;
+}
+.roster-top-compact {
+  padding: 6px 12px 4px !important;
+  gap: 10px !important;
+}
+.roster-layout {
+  grid-template-columns: 272px 1fr !important;
+}
+.roster-left-header {
+  padding: 8px 10px !important;
+}
+.roster-template-list {
+  padding: 6px 6px !important;
+}
+.roster-template-item {
+  padding: 6px 9px !important;
+  margin: 1px 0 !important;
+}
+.roster-template-item.active {
+  padding-left: 6px !important;
+}
+.roster-right {
+  padding: 8px 12px !important;
+  gap: 8px !important;
+}
+.roster-right-title h3 {
+  font-size: 17px !important;
+}
+.roster-section-tabs {
+  padding: 6px 0 0 !important;
+}
+
+/* ── 2026-05-22 Timetable card source/card data summary alignment ─ */
+.ttc-info-details summary {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 7px 8px !important;
+}
+.ttc-info-details summary::before {
+  flex: 0 0 10px !important;
+}
+.ttc-info-summary-title {
+  flex: 0 0 64px !important;
+  text-align: left !important;
+}
+.ttc-info-summary-text {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}

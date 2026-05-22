@@ -27,9 +27,13 @@ export function getCategoryColor(category) {
 import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById } from "./templates.js";
 
 // ── Row Mutations ─────────────────────────────────────────────────
-/** 창체 카테고리는 항상 시수=1 강제 */
+/**
+ * 창체 행의 credits 입력값은 "시간 수"로 사용합니다.
+ * 교육과정 총 시수 계산에서는 창체를 과목당 1로 계산하고,
+ * 창체 합계 행에서만 credits 입력값을 Total #Hours로 합산합니다.
+ */
 function enforceChanCheCredit(row) {
-  if (row && clean(row.category) === "창체") row.credits = "1";
+  // no-op: 입력값을 1로 덮어쓰지 않습니다.
 }
 
 export function updateRowField(grade, rowId, field, value) {
@@ -50,20 +54,9 @@ export function addRow(grade) {
   scheduleSave("curriculum");
 }
 
-/** 창체 카테고리 모든 행의 시수를 1로 일괄 수정 */
-export function fixChanCheCredits(targetCategory = "창체") {
-  if (!canEdit()) return 0;
-  let count = 0;
-  GRADE_KEYS.forEach(grade => {
-    (curriculum().gradeBoards[grade] || []).forEach(row => {
-      if (row.category === targetCategory && String(row.credits) !== "1") {
-        row.credits = "1";
-        count++;
-      }
-    });
-  });
-  if (count > 0) scheduleSave("curriculum");
-  return count;
+/** 이전 버전 호환용: 창체 credits 값은 실제 시간 수이므로 더 이상 일괄 1로 변경하지 않습니다. */
+export function fixChanCheCredits() {
+  return 0;
 }
 
 export function addRowWithTemplate(grade, templateId) {
@@ -207,6 +200,10 @@ function getRowTemplateGroupId(row) {
 
 function summarizeCategoryRows(category, rows) {
   const active = (rows || []).filter(r => r.sem1TemplateId || r.sem2TemplateId);
+  if (clean(category) === "창체") {
+    const totalHours = active.reduce((s, r) => s + parseCreditValue(r.credits), 0);
+    return { totalCourses: active.length, totalCredits: active.length, totalHours };
+  }
   if (clean(category) === "교과") {
     const cRows = active.filter(r => clean(r.track) === "공통");
     const ncRows = active.filter(r => clean(r.track) !== "공통");
@@ -219,7 +216,7 @@ function summarizeCategoryRows(category, rows) {
     const gtc = Array.from(gtMap.values()).reduce((s, grs) => { const tgids = uniqueOrdered(grs.map(getRowTemplateGroupId).filter(Boolean)); if (tgids.length === 1) { const g = getTemplateGroupById(tgids[0]); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); } return s + getRepresentativeTrackCredit(grs); }, 0);
     return { totalCourses, totalCredits: cc + cgc + gtc };
   }
-  return { totalCourses: active.length, totalCredits: active.length };
+  return { totalCourses: active.length, totalCredits: active.length, totalHours: active.reduce((s, r) => s + parseCreditValue(r.credits), 0) };
 }
 
 function getCategorySummary(grade, category) { return summarizeCategoryRows(category, (curriculum().gradeBoards[grade] || []).filter(r => r.category === category)); }
@@ -267,152 +264,14 @@ function buildExpandedMeta(s1, s2) {
   return meta;
 }
 
-function attachExpandClick(card, meta, templateId, grade, rowData, semKey = "sem1") {
+function attachExpandClick(card, meta) {
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
-    openPlacedTemplateEditor(templateId, { grade, rowData, semKey });
+    if (!meta.children.length) return;
+    const exp = card.classList.toggle("placed-expanded");
+    meta.classList.toggle("placed-meta-hidden", !exp);
+    document.querySelectorAll(".placed-card.placed-expanded").forEach(o => { if (o !== card) { o.classList.remove("placed-expanded"); o.querySelector(".placed-meta")?.classList.add("placed-meta-hidden"); } });
   });
-}
-
-function getAppliedGradesLabel(templateId) {
-  return GRADE_KEYS
-    .filter(g => (curriculum().gradeBoards[g] || []).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId))
-    .map(g => g.replace("학년", ""))
-    .join(", ") || "미배정";
-}
-
-function makeTplInput(label, value, onInput, opts = {}) {
-  const wrap = document.createElement("label");
-  wrap.className = "tpl-popup-field" + (opts.wide ? " tpl-popup-field-wide" : "");
-  const span = document.createElement("span");
-  span.textContent = label;
-  const input = document.createElement(opts.type === "select" ? "select" : "input");
-  if (opts.type === "select") {
-    (opts.options || []).forEach(v => { const o = document.createElement("option"); o.value = v; o.textContent = v; if (v === value) o.selected = true; input.appendChild(o); });
-  } else {
-    input.type = opts.type || "text";
-    input.value = value || "";
-    input.placeholder = opts.placeholder || "";
-  }
-  input.disabled = !canEdit();
-  input.addEventListener("input", e => onInput(e.target.value));
-  input.addEventListener("change", e => onInput(e.target.value));
-  wrap.append(span, input);
-  return wrap;
-}
-
-function openPlacedTemplateEditor(templateId, ctx = {}) {
-  const item = getTemplateById(templateId);
-  if (!item) return;
-
-  document.querySelector(".tpl-popup-backdrop")?.remove();
-
-  const draft = {
-    nameKo: item.nameKo || "",
-    nameEn: item.nameEn || "",
-    teacher: item.teacher || "",
-    language: item.language || "Both",
-    useSemesterOverrides: !!item.useSemesterOverrides,
-    sem1NameKo: item.sem1NameKo || "",
-    sem1NameEn: item.sem1NameEn || "",
-    sem1Teacher: item.sem1Teacher || "",
-    sem2NameKo: item.sem2NameKo || "",
-    sem2NameEn: item.sem2NameEn || "",
-    sem2Teacher: item.sem2Teacher || "",
-    schoolLevel: item.schoolLevel || "공통",
-  };
-
-  const backdrop = document.createElement("div");
-  backdrop.className = "tpl-popup-backdrop";
-  const modal = document.createElement("div");
-  modal.className = "tpl-popup-modal";
-
-  const header = document.createElement("div");
-  header.className = "tpl-popup-header";
-  const titleWrap = document.createElement("div");
-  titleWrap.className = "tpl-popup-title-wrap";
-  const title = document.createElement("h3");
-  title.textContent = getTemplateCardTitle(item);
-  const sub = document.createElement("p");
-  sub.textContent = `${ctx.grade || ""} 보드 과목카드 · 적용 학년 ${getAppliedGradesLabel(templateId)}`;
-  titleWrap.append(title, sub);
-  const closeBtn = makeBtn("×", "tpl-popup-close", () => backdrop.remove());
-  header.append(titleWrap, closeBtn);
-
-  const body = document.createElement("div");
-  body.className = "tpl-popup-body";
-
-  const baseSection = document.createElement("section");
-  baseSection.className = "tpl-popup-section";
-  baseSection.innerHTML = '<div class="tpl-popup-section-title">기본 정보</div>';
-  const baseGrid = document.createElement("div");
-  baseGrid.className = "tpl-popup-grid";
-  baseGrid.append(
-    makeTplInput("한글 과목명", draft.nameKo, v => draft.nameKo = v),
-    makeTplInput("영어 과목명", draft.nameEn, v => draft.nameEn = v),
-    makeTplInput("교사", draft.teacher, v => draft.teacher = v, { wide:true, placeholder:"여러 명은 쉼표로 구분" }),
-    makeTplInput("언어", draft.language, v => draft.language = v, { type:"select", options:["Korean", "English", "Both"] }),
-    makeTplInput("학교급", draft.schoolLevel, v => draft.schoolLevel = v, { type:"select", options:["중등", "고등", "공통"] })
-  );
-  baseSection.appendChild(baseGrid);
-
-  const semSection = document.createElement("section");
-  semSection.className = "tpl-popup-section";
-  const semTitle = document.createElement("div");
-  semTitle.className = "tpl-popup-section-title tpl-popup-check-title";
-  const chk = document.createElement("input"); chk.type = "checkbox"; chk.checked = draft.useSemesterOverrides; chk.disabled = !canEdit();
-  const chkLabel = document.createElement("span"); chkLabel.textContent = "1·2학기 이름/교사 분리";
-  semTitle.append(chk, chkLabel);
-
-  const semGrid = document.createElement("div");
-  semGrid.className = "tpl-popup-sem-grid";
-  const renderSemGrid = () => {
-    semGrid.innerHTML = "";
-    semGrid.classList.toggle("is-disabled", !draft.useSemesterOverrides);
-    semGrid.append(
-      makeTplInput("1학기 한글", draft.sem1NameKo, v => draft.sem1NameKo = v),
-      makeTplInput("1학기 영어", draft.sem1NameEn, v => draft.sem1NameEn = v),
-      makeTplInput("1학기 교사", draft.sem1Teacher, v => draft.sem1Teacher = v),
-      makeTplInput("2학기 한글", draft.sem2NameKo, v => draft.sem2NameKo = v),
-      makeTplInput("2학기 영어", draft.sem2NameEn, v => draft.sem2NameEn = v),
-      makeTplInput("2학기 교사", draft.sem2Teacher, v => draft.sem2Teacher = v)
-    );
-    semGrid.querySelectorAll("input,select").forEach(el => { el.disabled = !canEdit() || !draft.useSemesterOverrides; });
-  };
-  chk.addEventListener("change", e => {
-    draft.useSemesterOverrides = e.target.checked;
-    if (draft.useSemesterOverrides) {
-      if (!draft.sem1NameKo) draft.sem1NameKo = draft.nameKo;
-      if (!draft.sem1NameEn) draft.sem1NameEn = draft.nameEn;
-      if (!draft.sem1Teacher) draft.sem1Teacher = draft.teacher;
-      if (!draft.sem2NameKo) draft.sem2NameKo = draft.nameKo;
-      if (!draft.sem2NameEn) draft.sem2NameEn = draft.nameEn;
-      if (!draft.sem2Teacher) draft.sem2Teacher = draft.teacher;
-    }
-    renderSemGrid();
-  });
-  renderSemGrid();
-  semSection.append(semTitle, semGrid);
-
-  const footer = document.createElement("div");
-  footer.className = "tpl-popup-footer";
-  const cancelBtn = makeBtn("취소", "secondary-btn", () => backdrop.remove());
-  const saveBtn = makeBtn("저장", "primary-btn", () => {
-    if (!canEdit()) return;
-    Object.assign(item, draft);
-    scheduleSave("templates");
-    document.dispatchEvent(new CustomEvent("his:template-updated", { detail:{ templateId } }));
-    backdrop.remove();
-  });
-  saveBtn.disabled = !canEdit();
-  footer.append(cancelBtn, saveBtn);
-
-  body.append(baseSection, semSection);
-  modal.append(header, body, footer);
-  backdrop.appendChild(modal);
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
-  document.addEventListener("keydown", function esc(ev) { if (ev.key === "Escape") { backdrop.remove(); document.removeEventListener("keydown", esc); } });
-  document.body.appendChild(backdrop);
 }
 
 function createPlacedCard(templateId, grade, rowData, semKey) {
@@ -433,7 +292,7 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
   const oth = semKey === "sem1" ? rowData.sem2TemplateId : rowData.sem1TemplateId;
   const othItem = oth ? getTemplateById(oth) : null;
   const meta = buildExpandedMeta(semKey === "sem1" ? item : othItem, semKey === "sem2" ? item : othItem);
-  card.append(top, meta); attachExpandClick(card, meta, templateId, grade, rowData, semKey); return card;
+  card.append(top, meta); attachExpandClick(card, meta); return card;
 }
 
 function createMergedPlacedCard(templateId, grade, rowData) {
@@ -451,7 +310,7 @@ function createMergedPlacedCard(templateId, grade, rowData) {
     const cb = makeBtn("×", "clear-cell-btn", e => { e.stopPropagation(); clearRowBoth(grade, rowData.id); });
     cb.addEventListener("mousedown", e => e.stopPropagation()); top.appendChild(cb);
   }
-  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta, templateId, grade, rowData, "sem1"); return card;
+  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta); return card;
 }
 
 function createDropCell(grade, rowData, semKey, templateId) {
@@ -532,7 +391,8 @@ function createCategorySummaryRow(grade, category) {
   const row = document.createElement("div"); row.className = "category-summary-row";
   const lbl = document.createElement("div"); lbl.className = "category-summary-label"; lbl.textContent = `${category} 합계`;
   const crs = document.createElement("div"); crs.className = "category-summary-value"; crs.textContent = `Total #Courses ${s.totalCourses}`;
-  const crd = document.createElement("div"); crd.className = "category-summary-value"; crd.textContent = `Total #Credits ${s.totalCredits}`;
+  const crd = document.createElement("div"); crd.className = "category-summary-value";
+  crd.textContent = clean(category) === "창체" ? `Total #Hours ${s.totalHours || 0}` : `Total #Credits ${s.totalCredits}`;
   row.append(lbl, crs, crd); return row;
 }
 
