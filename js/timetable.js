@@ -62,7 +62,10 @@ function setLastAutoAssignReport(report) {
 }
 
 function subscribeOptionalTimetableDomains() {
-  subscribeDomains(TIMETABLE_OPTIONAL_DOMAINS);
+  // 하단바의 교실 관리/교사 조건은 시간표 본문 데이터와 함께 동작합니다.
+  // rooms만 단독 구독하면 초기 로딩 타이밍에 따라 교실 수정이 저장되지 않는 경우가 있어
+  // 시간표 핵심 도메인과 optional 도메인을 함께 유지합니다.
+  subscribeDomains([...new Set([...TIMETABLE_CORE_DOMAINS, ...TIMETABLE_OPTIONAL_DOMAINS])]);
 }
 
 function isVisible(el) {
@@ -407,20 +410,27 @@ function updateEntry(id, field, value) {
   captureTimetableUndo("수업 수정");
   e[field] = value; scheduleSave("timetable");
 }
-function updateConstraint(teacher, field, value) {
+function updateConstraint(teacher, field, value, { rerender = true } = {}) {
   if (!canEdit()) return;
   if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
   captureTimetableUndo("교사 제약 수정");
-  constraints()[teacher][field] = value; scheduleSave("timetable");
+  constraints()[teacher][field] = value;
+  scheduleSave("timetable");
+  if (rerender) {
+    recomputeConflicts();
+    requestAnimationFrame(() => renderAll());
+  }
 }
 function toggleUnavailable(teacher, day, period) {
   if (!canEdit()) return;
   if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
   captureTimetableUndo("수업 불가 시간 수정");
-  const slots = constraints()[teacher].unavailableSlots;
+  const slots = constraints()[teacher].unavailableSlots || (constraints()[teacher].unavailableSlots = []);
   const idx = slots.findIndex(s => s.day === day && s.period === period);
   if (idx >= 0) slots.splice(idx, 1); else slots.push({ day, period });
   scheduleSave("timetable");
+  recomputeConflicts();
+  requestAnimationFrame(() => renderAll());
 }
 function updatePeriodLabel(idx, value) {
   if (!canEdit()) return;
@@ -2121,7 +2131,7 @@ function renderConstraintsPanel() {
   const rooms = getRooms();
 
   allTeachers.forEach(teacher => {
-    if (!constraints()[teacher]) constraints()[teacher] = {};
+    if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
     const c = constraints()[teacher];
 
     const block = document.createElement("div"); block.className = "tt-con-teacher-block";
@@ -2172,16 +2182,17 @@ function renderConstraintsPanel() {
         if(r.id===c.assignedRoomId) o.selected=true; rSel.appendChild(o);
       });
       rSel.addEventListener("change", e => {
-        updateConstraint(teacher, "assignedRoomId", e.target.value||null);
-        // Apply room to all entries of this teacher
-        if (canEdit()) {
-          entries().forEach(en => {
-            if (splitTeacherNames(en.teacherName).includes(teacher)) {
-              updateEntry(en.id, "roomId", e.target.value||null);
-            }
-          });
-          scheduleSave("timetable"); renderAll();
-        }
+        if (!canEdit()) return;
+        const roomId = e.target.value || null;
+        captureTimetableUndo("교사 배정 교실 수정");
+        constraints()[teacher].assignedRoomId = roomId;
+        // Apply room to all entries of this teacher without stacking many undo snapshots.
+        entries().forEach(en => {
+          if (splitTeacherNames(en.teacherName).includes(teacher)) en.roomId = roomId;
+        });
+        scheduleSave("timetable");
+        recomputeConflicts();
+        renderAll();
       });
       rRow.append(rLabel, rSel); body.appendChild(rRow);
     }
@@ -2210,13 +2221,7 @@ function renderConstraintsPanel() {
         cell.title = isUnavail ? "불가" : "가능";
         if (canEdit()) {
           cell.style.cursor = "pointer";
-          cell.onclick = () => {
-            const existing = c.unavailableSlots || [];
-            const idx = existing.findIndex(s=>s.day===d&&s.period===p);
-            if (idx>=0) existing.splice(idx,1);
-            else existing.push({ day:d, period:p });
-            updateConstraint(teacher, "unavailableSlots", existing);
-          };
+          cell.onclick = () => toggleUnavailable(teacher, d, p);
         }
         rowEl.appendChild(cell);
       });
@@ -2959,7 +2964,8 @@ onAuth(async (user) => {
     } catch (e) {
       console.warn("Migration skipped; continuing timetable load.", e);
     } finally {
-      subscribeDomains(TIMETABLE_CORE_DOMAINS); // 시간표 첫 화면에 필요한 문서만 우선 구독
+      // 시간표 하단바의 교실 관리가 즉시 수정·저장될 수 있도록 rooms도 함께 구독합니다.
+      subscribeDomains([...new Set([...TIMETABLE_CORE_DOMAINS, ...TIMETABLE_OPTIONAL_DOMAINS])]);
     }
   } else {
     unsubscribeAll(); renderAll();
@@ -2981,9 +2987,13 @@ document.querySelectorAll(".tt-view-btn").forEach(btn => {
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const tab = btn.dataset.tab;
+    document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+    const tabMap = { subjects:"ttSubjectsContent", constraints:"ttConstraintsContent", rooms:"ttRoomsContent", logs:"ttLogsContent" };
+    Object.entries(tabMap).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== tab));
     if (tab === "constraints" || tab === "rooms") subscribeOptionalTimetableDomains();
     if (tab === "logs") window._ttBottomToggle?.show?.();
-    requestRenderAll();
+    // hidden 클래스가 먼저 바뀐 뒤 렌더링해야 isVisible()이 정확히 동작합니다.
+    setTimeout(() => renderAll(), 0);
   });
 });
 

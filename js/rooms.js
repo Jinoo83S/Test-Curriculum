@@ -65,12 +65,12 @@ export function renderRoomsView(container, onUpdate) {
       if (f.tag === "select") {
         const sel = document.createElement("select"); sel.disabled = !canEdit();
         ROOM_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === room.type) o.selected = true; sel.appendChild(o); });
-        sel.addEventListener("change", e => updateRoom(room.id, "type", e.target.value));
+        sel.addEventListener("change", e => { updateRoom(room.id, "type", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
         td.appendChild(sel);
       } else {
         const inp = document.createElement("input"); inp.type = f.type; inp.value = f.val; inp.placeholder = f.ph || ""; inp.disabled = !canEdit();
         if (f.min !== undefined) inp.min = f.min;
-        inp.addEventListener("change", e => updateRoom(room.id, f.key, f.type === "number" ? (parseInt(e.target.value) || 0) : e.target.value));
+        inp.addEventListener("change", e => { updateRoom(room.id, f.key, f.type === "number" ? (parseInt(e.target.value) || 0) : e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
         td.appendChild(inp);
       }
       tr.appendChild(td);
@@ -81,12 +81,12 @@ export function renderRoomsView(container, onUpdate) {
     [{ v:"", l:"공용" }, ...GRADE_KEYS.map(g => ({ v:g, l:g }))].forEach(({ v, l }) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === room.grade) o.selected = true; gradeSel.appendChild(o);
     });
-    gradeSel.addEventListener("change", e => updateRoom(room.id, "grade", e.target.value));
+    gradeSel.addEventListener("change", e => { updateRoom(room.id, "grade", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
     gradeTd.appendChild(gradeSel); tr.appendChild(gradeTd);
     // Note
     const noteTd = document.createElement("td");
     const noteInp = document.createElement("input"); noteInp.type = "text"; noteInp.value = room.note || ""; noteInp.disabled = !canEdit();
-    noteInp.addEventListener("change", e => updateRoom(room.id, "note", e.target.value));
+    noteInp.addEventListener("change", e => { updateRoom(room.id, "note", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
     noteTd.appendChild(noteInp); tr.appendChild(noteTd);
     // Delete
     const delTd = document.createElement("td"); delTd.className = "col-del";
