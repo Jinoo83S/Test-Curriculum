@@ -93,6 +93,161 @@ function applyConflictVisuals(card, conflictTypes, conflicts) {
   card.appendChild(markers);
 }
 
+
+function getEntryConflictSet(entry) {
+  return new Set([...(conflictMap.get(entry.id) || []), ...(constraintMap.get(entry.id) || [])]);
+}
+
+function getRoomDisplayName(roomId) {
+  if (!roomId) return "교실 없음";
+  return getRooms().find(r => r.id === roomId)?.name || roomId;
+}
+
+function getSlotLabel(day, period) {
+  const dayLabels = ["월", "화", "수", "목", "금"];
+  const pLabel = ttConfig().periodLabels?.[period] || `${period + 1}교시`;
+  return `${dayLabels[day] ?? "?"} ${pLabel}`;
+}
+
+function entrySharesTeacher(a, b) {
+  const aTeachers = entryTeachers(a).filter(Boolean);
+  const bTeachers = entryTeachers(b).filter(Boolean);
+  return aTeachers.filter(t => bTeachers.includes(t));
+}
+
+function getRelatedConflictEntries(entry, type) {
+  const sameSlot = entries().filter(e => e.id !== entry.id && e.day === entry.day && e.period === entry.period);
+  if (type === "teacher") {
+    return sameSlot
+      .map(e => ({ entry: e, detail: entrySharesTeacher(entry, e).join(", ") }))
+      .filter(x => x.detail);
+  }
+  if (type === "room") {
+    if (!entry.roomId) return [];
+    return sameSlot
+      .filter(e => e.roomId && e.roomId === entry.roomId)
+      .map(e => ({ entry: e, detail: getRoomDisplayName(entry.roomId) }));
+  }
+  if (type === "student") {
+    const audience = audienceForPlacement(entry);
+    return sameSlot
+      .filter(e => audiencesConflict(audience, audienceForPlacement(e)))
+      .filter(e => (conflictMap.get(e.id) || new Set()).has("student"))
+      .map(e => ({ entry: e, detail: getEntryClassSummary(e) }));
+  }
+  if (type === "syncRequired" && entry.groupId) {
+    return entries()
+      .filter(e => e.id !== entry.id && e.groupId === entry.groupId)
+      .map(e => ({ entry: e, detail: getSlotLabel(e.day, e.period) }));
+  }
+  return [];
+}
+
+function getConstraintConflictMessage(type, entry) {
+  const teachers = entryTeachers(entry).join(", ") || "담당 교사";
+  if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
+  if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
+  if (type === "maxPerDay") return `${teachers} 선생님의 일일 수업 수 제한을 초과했습니다.`;
+  return "시간표 제약 조건을 확인해야 합니다.";
+}
+
+function renderEntryConflictDetailSection(box, entry) {
+  const conflicts = getEntryConflictSet(entry);
+  const conflictTypes = getOrderedConflictTypes(conflicts);
+
+  const section = document.createElement("div");
+  section.style.cssText = "margin:10px 0 10px;padding:10px;border-radius:9px;border:1px solid #e2e8f0;background:#f8fafc";
+
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px";
+  const title = document.createElement("div");
+  title.style.cssText = "font-size:12px;font-weight:800;color:#334155";
+  title.textContent = "충돌 내역";
+  header.appendChild(title);
+
+  if (!conflictTypes.length) {
+    const ok = document.createElement("span");
+    ok.style.cssText = "display:inline-flex;align-items:center;border-radius:999px;background:#dcfce7;color:#166534;font-size:10px;font-weight:800;padding:2px 7px";
+    ok.textContent = "충돌 없음";
+    header.appendChild(ok);
+    section.appendChild(header);
+    const desc = document.createElement("div");
+    desc.style.cssText = "font-size:11px;color:#64748b;line-height:1.45";
+    desc.textContent = "현재 선택한 수업에는 교사, 교실, 학생, 제약 조건 충돌이 없습니다.";
+    section.appendChild(desc);
+    box.appendChild(section);
+    return;
+  }
+
+  const chipWrap = document.createElement("div");
+  chipWrap.style.cssText = "display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end";
+  conflictTypes.forEach(type => {
+    const meta = CONFLICT_DISPLAY[type];
+    if (!meta) return;
+    const chip = document.createElement("span");
+    chip.style.cssText = `display:inline-flex;align-items:center;border-radius:999px;background:${meta.color};color:white;font-size:10px;font-weight:900;padding:2px 7px;white-space:nowrap`;
+    chip.textContent = meta.label;
+    chipWrap.appendChild(chip);
+  });
+  header.appendChild(chipWrap);
+  section.appendChild(header);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:6px";
+
+  conflictTypes.forEach(type => {
+    const meta = CONFLICT_DISPLAY[type];
+    if (!meta) return;
+    const item = document.createElement("div");
+    item.style.cssText = `border-left:4px solid ${meta.color};background:white;border-radius:7px;padding:7px 8px;box-shadow:0 0 0 1px #e2e8f0 inset`;
+
+    const top = document.createElement("div");
+    top.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:4px";
+    const badge = document.createElement("span");
+    badge.style.cssText = `display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;border-radius:4px;background:${meta.color};color:white;font-size:10px;font-weight:900`;
+    badge.textContent = meta.short;
+    const label = document.createElement("span");
+    label.style.cssText = "font-size:12px;font-weight:800;color:#1e293b";
+    label.textContent = meta.label;
+    top.append(badge, label);
+    item.appendChild(top);
+
+    const related = getRelatedConflictEntries(entry, type);
+    const body = document.createElement("div");
+    body.style.cssText = "font-size:11px;color:#475569;line-height:1.45";
+
+    if (["teacher", "room", "student", "syncRequired"].includes(type)) {
+      if (related.length) {
+        const ul = document.createElement("ul");
+        ul.style.cssText = "margin:0;padding-left:16px";
+        related.slice(0, 6).forEach(({ entry: other, detail }) => {
+          const li = document.createElement("li");
+          li.textContent = `${entryTitle(other)} · ${getEntryClassSummary(other)} · ${getSlotLabel(other.day, other.period)}${detail ? ` (${detail})` : ""}`;
+          ul.appendChild(li);
+        });
+        if (related.length > 6) {
+          const li = document.createElement("li");
+          li.textContent = `외 ${related.length - 6}건 더 있음`;
+          ul.appendChild(li);
+        }
+        body.appendChild(ul);
+      } else if (type === "syncRequired") {
+        body.textContent = "동시배정 그룹의 구성 카드가 같은 요일·교시에 배치되어야 합니다.";
+      } else {
+        body.textContent = `${meta.label} 충돌이 감지되었습니다. 같은 시간대의 배정 정보를 확인해 주세요.`;
+      }
+    } else {
+      body.textContent = getConstraintConflictMessage(type, entry);
+    }
+
+    item.appendChild(body);
+    list.appendChild(item);
+  });
+
+  section.appendChild(list);
+  box.appendChild(section);
+}
+
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
   if (!canEdit()) return null;
@@ -1462,6 +1617,9 @@ function showEntryDetail(entry) {
   rooms.forEach(r=>{const o=document.createElement("option");o.value=r.id;o.textContent=r.name;if(r.id===entry.roomId)o.selected=true;rSel.appendChild(o);});
   rSel.addEventListener("change", e=>{updateEntry(entry.id,"roomId",e.target.value||null);recomputeConflicts();renderAll();});
   box.append(rLabel, rSel);
+
+  // 7. 충돌 내역
+  renderEntryConflictDetailSection(box, entry);
 
   // 7. 요일/교시 (editable) + 고정
   const dayLabels = ["월","화","수","목","금"];
