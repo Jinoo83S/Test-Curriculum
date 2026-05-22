@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
-import { uid, clean, makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml } from "./utils.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
 import { getRooms, renderRoomsView } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
@@ -26,12 +26,53 @@ let dragData       = null;
 let conflictMap    = new Map();
 let constraintMap  = new Map();
 
+// ── Bottom log panel state ───────────────────────────────────────
+const TT_LOG_KEY = "his_tt_logs_v1";
+const TT_AUTO_REPORT_KEY = "his_tt_auto_report_v1";
+const LOG_LIMIT = 80;
+
+function loadJsonLocal(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (_) { return fallback; }
+}
+
+let timetableLogs = loadJsonLocal(TT_LOG_KEY, []);
+let lastAutoAssignReport = loadJsonLocal(TT_AUTO_REPORT_KEY, null);
+
+function persistLogState() {
+  try {
+    localStorage.setItem(TT_LOG_KEY, JSON.stringify(timetableLogs.slice(0, LOG_LIMIT)));
+    if (lastAutoAssignReport) localStorage.setItem(TT_AUTO_REPORT_KEY, JSON.stringify(lastAutoAssignReport));
+    else localStorage.removeItem(TT_AUTO_REPORT_KEY);
+  } catch (_) {}
+}
+
+function addTimetableLog(kind, title, message = "", detail = {}) {
+  timetableLogs.unshift({ id: uid("log"), ts: Date.now(), kind, title, message, detail });
+  if (timetableLogs.length > LOG_LIMIT) timetableLogs = timetableLogs.slice(0, LOG_LIMIT);
+  persistLogState();
+  if (isVisible($("ttLogsContent"))) renderLogPanel();
+}
+
+function setLastAutoAssignReport(report) {
+  lastAutoAssignReport = report;
+  persistLogState();
+}
+
 function subscribeOptionalTimetableDomains() {
   subscribeDomains(TIMETABLE_OPTIONAL_DOMAINS);
 }
 
 function isVisible(el) {
   return !!el && !el.classList.contains("hidden");
+}
+
+function activateBottomTab(tabName) {
+  window._ttBottomToggle?.show?.();
+  const btn = document.querySelector(`.tt-bottom-tab-btn[data-tab="${tabName}"]`);
+  btn?.click();
 }
 
 // ── Undo stack: Ctrl+Z restores the previous timetable edit ──────
@@ -95,6 +136,7 @@ function undoLastTimetableEdit() {
   scheduleSave("timetable");
   recomputeConflicts();
   renderAll();
+  addTimetableLog("undo", "되돌리기", `${snapshot.label || "직전 작업"} 상태로 되돌렸습니다.`);
 }
 
 function shouldIgnoreUndoShortcut(target) {
@@ -2164,25 +2206,173 @@ function renderViewSelectors() {
 // ── Conflict summary bar ──────────────────────────────────────────
 function renderConflictBar() {
   const bar = $("ttConflictBar"); if (!bar) return;
-  const allSets = [...conflictMap.values(), ...constraintMap.values()];
-  const totalConflicts = allSets.filter(s => s.size > 0).length;
-  bar.className = "tt-conflict-bar " + (totalConflicts > 0 ? "tt-conflict-bar-warn" : "tt-conflict-bar-ok");
+  const { counts, totalAffected } = getConflictCounts();
+  bar.className = "tt-conflict-bar " + (totalAffected > 0 ? "tt-conflict-bar-warn" : "tt-conflict-bar-ok");
+  bar.style.cursor = "pointer";
+  bar.title = "클릭하면 하단 로그 탭에서 상세 충돌 내역을 볼 수 있습니다.";
+  bar.onclick = () => activateBottomTab("logs");
 
-  if (totalConflicts <= 0) {
+  if (totalAffected <= 0) {
     bar.textContent = "✅ 충돌 없음";
     return;
   }
 
-  const counts = Object.fromEntries(CONFLICT_PRIORITY.map(type => [type, 0]));
-  allSets.forEach(set => {
-    getOrderedConflictTypes(set).forEach(type => counts[type]++);
-  });
   const chips = CONFLICT_PRIORITY
     .filter(type => counts[type] > 0)
     .map(type => `<span class="tt-conflict-chip" data-type="${type}">${CONFLICT_DISPLAY[type].label} ${counts[type]}</span>`)
     .join("");
-  bar.innerHTML = `<span class="tt-conflict-summary-label">⚠️ 충돌 ${totalConflicts}건</span>${chips}`;
+  bar.innerHTML = `<span class="tt-conflict-summary-label">⚠️ 충돌 ${totalAffected}건</span>${chips}`;
 }
+
+
+function formatLogTime(ts) {
+  if (!ts) return "-";
+  const d = new Date(ts);
+  return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
+}
+
+function getConflictCounts() {
+  const counts = Object.fromEntries(CONFLICT_PRIORITY.map(type => [type, 0]));
+  const affectedIds = new Set();
+  const combined = new Map();
+  entries().forEach(e => combined.set(e.id, getEntryConflictSet(e)));
+  combined.forEach((set, id) => {
+    if (!set || !set.size) return;
+    affectedIds.add(id);
+    getOrderedConflictTypes(set).forEach(type => { counts[type] = (counts[type] || 0) + 1; });
+  });
+  return { counts, totalAffected: affectedIds.size };
+}
+
+function getConflictDetailRows() {
+  const rows = [];
+  const dayLabels = ["월", "화", "수", "목", "금"];
+  entries()
+    .filter(e => getEntryConflictSet(e).size > 0)
+    .sort((a, b) => a.day !== b.day ? a.day - b.day : (a.period !== b.period ? a.period - b.period : entryTitle(a).localeCompare(entryTitle(b), "ko")))
+    .forEach(entry => {
+      const types = getOrderedConflictTypes(getEntryConflictSet(entry));
+      types.forEach(type => {
+        const meta = CONFLICT_DISPLAY[type];
+        if (!meta) return;
+        const related = getRelatedConflictEntries(entry, type);
+        let detail = "";
+        if (["teacher", "room", "student", "syncRequired"].includes(type)) {
+          detail = related.length
+            ? related.slice(0, 4).map(({ entry: other, detail }) => `${entryTitle(other)} · ${getEntryClassSummary(other)}${detail ? ` (${detail})` : ""}`).join(" / ")
+            : getConflictLabel(new Set([type]));
+          if (related.length > 4) detail += ` / 외 ${related.length - 4}건`;
+        } else {
+          detail = getConstraintConflictMessage(type, entry);
+        }
+        rows.push({
+          type,
+          label: meta.label,
+          color: meta.color,
+          slot: `${dayLabels[entry.day] ?? "?"} ${ttConfig().periodLabels?.[entry.period] || `${entry.period + 1}교시`}`,
+          title: entryTitle(entry),
+          cls: getEntryClassSummary(entry),
+          teacher: entryTeachers(entry).join(", ") || "-",
+          room: getRoomDisplayName(entry.roomId),
+          detail
+        });
+      });
+    });
+  return rows;
+}
+
+function renderLogPanel() {
+  const el = $("ttLogsContent");
+  if (!el) return;
+
+  const { counts, totalAffected } = getConflictCounts();
+  const conflictRows = getConflictDetailRows();
+  const conflictBadges = CONFLICT_PRIORITY
+    .filter(type => counts[type] > 0)
+    .map(type => `<span class="tt-conflict-chip" data-type="${type}">${escapeHtml(CONFLICT_DISPLAY[type].label)} ${counts[type]}</span>`)
+    .join("");
+
+  const auto = lastAutoAssignReport;
+  const failedList = auto?.failedNames?.length
+    ? `<ul class="tt-log-failed-list">${auto.failedNames.slice(0, 20).map(name => `<li>${escapeHtml(name)}</li>`).join("")}${auto.failedNames.length > 20 ? `<li>외 ${auto.failedNames.length - 20}개</li>` : ""}</ul>`
+    : "";
+
+  const logItems = timetableLogs.length
+    ? timetableLogs.slice(0, 25).map(log => `
+      <div class="tt-log-item">
+        <div class="tt-log-item-title"><span>${escapeHtml(log.title)}</span><span class="tt-log-item-time">${formatLogTime(log.ts)}</span></div>
+        ${log.message ? `<div class="tt-log-item-msg">${escapeHtml(log.message)}</div>` : ""}
+      </div>`).join("")
+    : `<div class="tt-log-empty">아직 기록된 로그가 없습니다.</div>`;
+
+  const conflictTable = conflictRows.length
+    ? `<div class="tt-log-table-wrap"><table class="tt-log-table">
+        <thead><tr><th>유형</th><th>시간</th><th>수업</th><th>반</th><th>교사/교실</th><th>상세</th></tr></thead>
+        <tbody>${conflictRows.map(row => `
+          <tr>
+            <td><span class="tt-log-type-chip" style="background:${row.color}">${escapeHtml(row.label)}</span></td>
+            <td>${escapeHtml(row.slot)}</td>
+            <td>${escapeHtml(row.title)}</td>
+            <td>${escapeHtml(row.cls)}</td>
+            <td>${escapeHtml(row.teacher)}<br><span style="color:#64748b">${escapeHtml(row.room)}</span></td>
+            <td>${escapeHtml(row.detail)}</td>
+          </tr>`).join("")}</tbody>
+      </table></div>`
+    : `<div class="tt-log-empty">현재 충돌 내역이 없습니다.</div>`;
+
+  el.innerHTML = `
+    <div class="tt-log-toolbar">
+      <div class="tt-log-title">시간표 로그 · 자동배치 결과 · 충돌 내역</div>
+      <div class="tt-log-actions">
+        <button type="button" onclick="window._ttRefreshLogs?.()">새로고침</button>
+        <button type="button" onclick="window._ttClearLogs?.()">로그 지우기</button>
+      </div>
+    </div>
+    <div class="tt-log-grid">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <section class="tt-log-card">
+          <div class="tt-log-card-hdr"><span>자동배치 결과</span>${auto ? `<span class="tt-log-item-time">${formatLogTime(auto.ts)}</span>` : ""}</div>
+          <div class="tt-log-card-body">
+            ${auto ? `
+              <dl class="tt-log-kv">
+                <dt>대상 학년</dt><dd>${escapeHtml(auto.activeGrades || "-")}</dd>
+                <dt>배치 방식</dt><dd>${escapeHtml(auto.stageLabel || "-")}</dd>
+                <dt>대상 슬롯</dt><dd>${auto.totalTarget ?? "-"}개</dd>
+                <dt>고정 유지</dt><dd>${auto.pinnedCount ?? 0}개</dd>
+                <dt>신규 배치</dt><dd>${auto.placedCount ?? 0}개</dd>
+                <dt>미배치</dt><dd>${auto.failedCount ?? 0}개</dd>
+                <dt>소요 시간</dt><dd>${auto.durationMs != null ? (auto.durationMs / 1000).toFixed(1) + "초" : "-"}</dd>
+              </dl>
+              <div class="tt-log-badges">
+                <span class="tt-log-badge ${auto.failedCount ? "warn" : "ok"}">${auto.failedCount ? "부분 완료" : "전체 완료"}</span>
+                ${(auto.conflictTotal || 0) > 0 ? `<span class="tt-log-badge danger">충돌 ${auto.conflictTotal}건</span>` : `<span class="tt-log-badge ok">충돌 없음</span>`}
+              </div>
+              ${failedList}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}
+          </div>
+        </section>
+        <section class="tt-log-card">
+          <div class="tt-log-card-hdr"><span>최근 로그</span><span class="tt-log-item-time">최대 ${LOG_LIMIT}개 보관</span></div>
+          <div class="tt-log-card-body"><div class="tt-log-list">${logItems}</div></div>
+        </section>
+      </div>
+      <section class="tt-log-card">
+        <div class="tt-log-card-hdr">
+          <span>현재 충돌 내역</span>
+          <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${totalAffected ? `<span class="tt-conflict-summary-label">충돌 ${totalAffected}건</span>${conflictBadges}` : `<span class="tt-log-badge ok">충돌 없음</span>`}</span>
+        </div>
+        <div class="tt-log-card-body">${conflictTable}</div>
+      </section>
+    </div>`;
+}
+
+window._ttRefreshLogs = () => { recomputeConflicts(); renderLogPanel(); };
+window._ttClearLogs = () => {
+  if (!confirm("로그 기록을 지울까요? 자동배치 마지막 결과도 함께 지워집니다.")) return;
+  timetableLogs = [];
+  lastAutoAssignReport = null;
+  persistLogState();
+  renderLogPanel();
+};
 
 // ── Auto-assign ───────────────────────────────────────────────────
 const shuffle = arr => { const a = [...arr]; for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
@@ -2398,8 +2588,11 @@ export async function autoAssignAll() {
   setAutoAssignBusy(true);
   await waitForBrowser();
 
+  const autoStartedAt = Date.now();
+
   try {
   captureTimetableUndo("자동 배정");
+  addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`);
 
   // Preserve pinned entries only
   const pinnedEntries = entries().filter(e => e.pinned);
@@ -2411,6 +2604,12 @@ export async function autoAssignAll() {
   for (let day = 0; day < 5; day++) {
     for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
   }
+
+  const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
+    const credits = unitItems.map(u => u.credits || 0);
+    return sum + (group.isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
+  }, 0);
+  const autoTargetSlots = standalone.length + groupTargetSlots;
 
   const requiredByKey = new Map();
   const itemByKey = new Map();
@@ -2520,19 +2719,43 @@ export async function autoAssignAll() {
 
   bestPlaced.forEach(e => entries().push(e));
   scheduleSave("timetable");
-  recomputeConflicts(); renderAll();
+  recomputeConflicts();
+
+  const names = [...new Set(bestFailed.map(f => f.name))];
+  const conflictSummary = getConflictCounts();
+  const report = {
+    ts: Date.now(),
+    activeGrades: activeGrades.map(gradeDisplay).join(", "),
+    stageName: bestStage.name,
+    stageLabel: bestStage.label,
+    totalTarget: autoTargetSlots,
+    pinnedCount: pinnedEntries.length,
+    placedCount: bestPlaced.length,
+    failedCount: names.length,
+    failedNames: names,
+    durationMs: Date.now() - autoStartedAt,
+    conflictTotal: conflictSummary.totalAffected,
+    conflictCounts: conflictSummary.counts
+  };
+  setLastAutoAssignReport(report);
+  addTimetableLog(
+    "auto",
+    names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
+    `신규 배치 ${bestPlaced.length}개, 미배치 ${names.length}개, 충돌 ${conflictSummary.totalAffected}건 · 방식: ${bestStage.label}`
+  );
+  renderAll();
 
   const stageNote = bestStage.name === "strict" ? "" : `\n적용 방식: ${bestStage.label}`;
-  if (!bestFailed.length) {
-    alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!${stageNote}`);
+  if (!names.length) {
+    alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!${stageNote}\n\n자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
   } else {
-    const names = [...new Set(bestFailed.map(f => f.name))];
     alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${names.length}개:\n${names.slice(0,12).join("\n")}${names.length>12?"\n...":""}` +
-      `\n\n💡 실제 운영 가능한 시간표라면, 고정된 수업·수업 불가 시간·동일 교사 중복 여부를 먼저 확인해 주세요.${stageNote}`);
+      `\n\n💡 실제 운영 가능한 시간표라면, 고정된 수업·수업 불가 시간·동일 교사 중복 여부를 먼저 확인해 주세요.${stageNote}\n\n자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
   }
   } catch (err) {
     console.error("Auto assign failed:", err);
-    alert("자동 배치 중 오류가 발생했습니다. 콘솔 로그를 확인해 주세요.");
+    addTimetableLog("error", "자동 배치 오류", err?.message || String(err));
+    alert("자동 배치 중 오류가 발생했습니다. 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.");
   } finally {
     autoAssignRunning = false;
     setAutoAssignBusy(false);
@@ -2565,6 +2788,9 @@ function renderAll() {
     subscribeOptionalTimetableDomains();
     renderRoomsView(roomsEl, renderAll);
   }
+
+  const logsEl = $("ttLogsContent");
+  if (isVisible(logsEl)) renderLogPanel();
 }
 
 /** Called on dragstart: highlight relevant cells / sidebar cards */
@@ -2698,6 +2924,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const tab = btn.dataset.tab;
     if (tab === "constraints" || tab === "rooms") subscribeOptionalTimetableDomains();
+    if (tab === "logs") window._ttBottomToggle?.show?.();
     requestRenderAll();
   });
 });
