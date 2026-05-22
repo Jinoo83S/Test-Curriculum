@@ -3638,3 +3638,282 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .roster-level-tabs {
   padding: 0 0 10px;
 }
+
+/* ================================================================
+   Curriculum compact layout fix
+   - 사이드바 재펼침 버튼
+   - 보드 행 높이 균일화
+   - 과목 카드 내부 여백 축소
+   - 표 편집 화면 압축
+   ================================================================ */
+
+/* 사이드바 너비는 JS가 --sidebar-width로 제어합니다. */
+.page:not(.page-no-sidebar) {
+  grid-template-columns: var(--sidebar-width, 320px) 1fr;
+}
+.page.sidebar-hidden:not(.page-no-sidebar) {
+  grid-template-columns: 0px 1fr;
+}
+
+.sidebar-floating-toggle {
+  position: fixed;
+  left: 8px;
+  top: 96px;
+  z-index: 1200;
+  width: 30px;
+  height: 42px;
+  padding: 0;
+  border-radius: 0 10px 10px 0;
+  background: #1e3a5f;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(15,23,42,.25);
+  font-size: 15px;
+  font-weight: 900;
+  border: 1px solid rgba(255,255,255,.18);
+}
+.sidebar-floating-toggle:hover {
+  background: #2563eb;
+}
+.sidebar-toggle-inline {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: #e0ecff;
+  color: #1e3a5f;
+  font-size: 12px;
+}
+
+/* 보드 화면 전체를 더 조밀하게 표시 */
+.board-scroll {
+  --curriculum-row-height: 34px;
+  --curriculum-card-height: 30px;
+}
+.grade-board {
+  gap: 6px;
+}
+.grade-column {
+  min-width: 245px;
+}
+.grade-title {
+  padding: 5px 8px;
+}
+.grade-title-name {
+  font-size: 13px;
+}
+.grade-title-badge {
+  padding: 1px 6px;
+  font-size: 9px;
+}
+.grade-header-row,
+.grade-data-row {
+  grid-template-columns: 48px 48px 54px 1fr 1fr 34px 20px;
+}
+.grade-header-row {
+  font-size: 10px;
+}
+.header-cell {
+  padding: 3px 2px;
+}
+.grade-data-row {
+  height: var(--curriculum-row-height);
+  min-height: var(--curriculum-row-height);
+  max-height: var(--curriculum-row-height);
+  overflow: hidden;
+}
+.row-select {
+  font-size: 10px;
+  padding: 1px 13px 1px 3px;
+  line-height: 1.1;
+}
+.credit-input {
+  font-size: 11px;
+  padding: 0 1px;
+}
+.row-delete-btn {
+  font-size: 12px;
+}
+.drop-cell {
+  height: var(--curriculum-row-height);
+  min-height: var(--curriculum-row-height);
+  max-height: var(--curriculum-row-height);
+  padding: 1px 2px;
+  align-items: center;
+}
+.placed-card {
+  height: var(--curriculum-card-height);
+  min-height: var(--curriculum-card-height);
+  max-height: var(--curriculum-card-height);
+  padding: 1px 4px 1px 5px;
+  gap: 0;
+  justify-content: center;
+  border-radius: 3px;
+  box-shadow: 0 1px 2px rgba(15,23,42,.08);
+}
+.placed-title-ko {
+  font-size: 10.5px;
+  line-height: 1.05;
+}
+.placed-title-en {
+  font-size: 8px;
+  line-height: 1.05;
+  margin-top: 1px;
+}
+.placed-top {
+  align-items: center;
+}
+.clear-cell-btn {
+  width: 12px;
+  height: 12px;
+  min-width: 12px;
+  font-size: 8px;
+  margin-top: 0;
+}
+.split-btn {
+  width: 13px;
+  height: 13px;
+  min-width: 13px;
+  font-size: 10px;
+  margin-top: 0;
+}
+.merged-badge,
+.placed-meta,
+.meta-chip {
+  font-size: 8px;
+}
+.track-group-divider {
+  padding: 3px 8px 3px 14px;
+  font-size: 10px;
+  line-height: 1.1;
+}
+.category-summary-row,
+.grade-summary-row {
+  font-size: 10px;
+}
+.category-summary-label,
+.category-summary-value,
+.summary-cell {
+  min-height: 24px;
+  padding: 3px 6px;
+}
+.grade-footer {
+  padding: 3px 5px;
+  gap: 2px;
+}
+.add-row-btn,
+.grade-footer-dropzone {
+  padding: 2px 6px;
+  font-size: 10px;
+}
+
+/* 표 편집 화면 압축 */
+.manager-header {
+  margin-bottom: 6px;
+  gap: 8px;
+}
+.manager-header h2 {
+  font-size: 15px;
+}
+.manager-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+}
+.manager-actions {
+  gap: 5px;
+}
+.manager-actions .primary-btn,
+.manager-actions .secondary-btn,
+.manager-actions .danger-btn,
+.manager-header .primary-btn,
+.manager-header .secondary-btn,
+.manager-header .danger-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.tpl-paste-summary {
+  padding: 5px 12px;
+  font-size: 11px;
+}
+.tpl-paste-body {
+  padding: 0 12px 8px;
+}
+.tpl-paste-body .paste-label {
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.tpl-paste-body textarea.excel-paste-area {
+  min-height: 62px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+.paste-actions {
+  margin-top: 5px;
+  gap: 5px;
+}
+.manager-toolbar {
+  padding: 6px 8px;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+.manager-toolbar input,
+.manager-toolbar select,
+.manager-table input,
+.manager-table select {
+  padding: 3px 5px;
+  font-size: 11px;
+  min-height: 24px;
+}
+.manager-scroll {
+  gap: 6px;
+  padding-bottom: 4px;
+}
+.manager-section-header {
+  padding: 6px 8px;
+}
+.manager-section-header h3 {
+  font-size: 12px;
+}
+.manager-count,
+.manager-section-note {
+  font-size: 10px;
+}
+.manager-table-wrap {
+  line-height: 1.15;
+}
+.manager-table-wrap table,
+.manager-group-table-wrap table {
+  min-width: 1280px;
+}
+.manager-table {
+  min-width: 1280px;
+}
+.manager-table th,
+.manager-table td {
+  padding: 3px 4px;
+}
+.manager-table thead th {
+  font-size: 10px;
+}
+.manager-table .col-delete {
+  width: 54px;
+}
+.manager-table .col-toggle {
+  width: 64px;
+}
+.manager-table .col-language {
+  width: 90px;
+}
+.manager-table .col-group {
+  width: 118px;
+}
+.manager-table .col-credit {
+  width: 76px;
+}
+.manager-table .row-delete-btn-inline {
+  padding: 4px 5px;
+  font-size: 10px;
+}
+.manager-save-status {
+  padding: 4px 8px;
+  font-size: 10px;
+}

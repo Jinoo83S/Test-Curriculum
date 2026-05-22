@@ -579,10 +579,22 @@ function updateAuthUI(user) {
 // ================================================================
 // ── Sidebar toggle / resize ──────────────────────────────────────
 const sidebarToggleBtn = document.getElementById("appSidebarToggle");
-const sidebarFloatingToggleBtn = document.getElementById("appSidebarFloatingToggle");
+let sidebarFloatingToggleBtn = document.getElementById("appSidebarFloatingToggle");
 const sidebarResizer = document.getElementById("appSidebarResizer");
 const pageEl = document.querySelector(".page");
 const sidebarEl = document.getElementById("appSidebar");
+
+// 사이드바를 접은 뒤에도 다시 펼칠 수 있도록 플로팅 버튼을 자동 생성합니다.
+// 분리된 HTML 파일에서 버튼 누락이 있어도 안전하게 동작합니다.
+if (!sidebarFloatingToggleBtn && pageEl && sidebarEl) {
+  sidebarFloatingToggleBtn = document.createElement("button");
+  sidebarFloatingToggleBtn.id = "appSidebarFloatingToggle";
+  sidebarFloatingToggleBtn.type = "button";
+  sidebarFloatingToggleBtn.className = "sidebar-floating-toggle hidden";
+  sidebarFloatingToggleBtn.textContent = "▶";
+  sidebarFloatingToggleBtn.title = "사이드바 펼치기";
+  document.body.appendChild(sidebarFloatingToggleBtn);
+}
 let sidebarWidth = parseInt(localStorage.getItem("cur_sbW") || "320", 10);
 if (!Number.isFinite(sidebarWidth)) sidebarWidth = 320;
 sidebarWidth = Math.max(220, Math.min(520, sidebarWidth));
