@@ -665,7 +665,12 @@ function buildSchedulableItems() {
 
 // ── Conflict recompute ────────────────────────────────────────────
 function recomputeConflicts() {
-  conflictMap   = detectConflicts(entries(), appState.templates.templateGroups, appState.templates.templates);
+  conflictMap   = detectConflicts(
+    entries(),
+    appState.templates.templateGroups,
+    appState.templates.templates,
+    audienceForPlacement
+  );
   constraintMap = detectConstraintViolations(entries(), constraints());
 }
 

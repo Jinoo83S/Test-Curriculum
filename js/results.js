@@ -62,6 +62,8 @@ function buildRows() {
 }
 
 // ── Render ────────────────────────────────────────────────────────
+let activeResultsTab = "full";
+
 export function renderResultsView(container) {
   container.innerHTML = "";
 
@@ -78,23 +80,53 @@ export function renderResultsView(container) {
     const e = document.createElement("div"); e.className = "manager-empty"; e.textContent = "커리큘럼에 배치된 과목이 없습니다."; container.appendChild(e); return;
   }
 
-  // ── Table 1: Full curriculum ──────────────────────────────────
+  const tabBar = document.createElement("div");
+  tabBar.className = "tab-bar results-tab-bar";
+  tabBar.style.marginBottom = "10px";
+
+  const content = document.createElement("div");
+  content.className = "results-tab-content";
+
+  const makeTabBtn = (key, label) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tab-btn" + (activeResultsTab === key ? " active" : "");
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      activeResultsTab = key;
+      [...tabBar.children].forEach(child => child.classList.toggle("active", child.dataset.tab === key));
+      renderResultsTabContent(content, rows);
+    });
+    btn.dataset.tab = key;
+    return btn;
+  };
+
+  tabBar.append(
+    makeTabBtn("full", "전체 커리큘럼"),
+    makeTabBtn("teacher", "교사별 담당 현황")
+  );
+  container.appendChild(tabBar);
+  container.appendChild(content);
+  renderResultsTabContent(content, rows);
+}
+
+function renderResultsTabContent(container, rows) {
+  container.innerHTML = "";
+
+  if (activeResultsTab === "teacher") {
+    const t2Wrap = document.createElement("div"); t2Wrap.className = "results-table-section";
+    const t2Title = document.createElement("h3"); t2Title.className = "results-table-title"; t2Title.textContent = "교사별 담당 현황";
+    t2Wrap.appendChild(t2Title);
+    t2Wrap.appendChild(buildTable2(rows));
+    container.appendChild(t2Wrap);
+    return;
+  }
+
   const t1Wrap = document.createElement("div"); t1Wrap.className = "results-table-section";
-  const t1Title = document.createElement("h3"); t1Title.className = "results-table-title"; t1Title.textContent = "표 1 · 전체 커리큘럼";
+  const t1Title = document.createElement("h3"); t1Title.className = "results-table-title"; t1Title.textContent = "전체 커리큘럼";
   t1Wrap.appendChild(t1Title);
-
-  const t1 = buildTable1(rows);
-  t1Wrap.appendChild(t1);
+  t1Wrap.appendChild(buildTable1(rows));
   container.appendChild(t1Wrap);
-
-  // ── Table 2: Per-teacher ──────────────────────────────────────
-  const t2Wrap = document.createElement("div"); t2Wrap.className = "results-table-section";
-  const t2Title = document.createElement("h3"); t2Title.className = "results-table-title"; t2Title.textContent = "표 2 · 교사별 담당 현황";
-  t2Wrap.appendChild(t2Title);
-
-  const t2 = buildTable2(rows);
-  t2Wrap.appendChild(t2);
-  container.appendChild(t2Wrap);
 }
 
 function buildTable1(rows) {
