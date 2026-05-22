@@ -185,6 +185,26 @@ function getSlotLabel(day, period) {
   return `${dayLabels[day] ?? "?"} ${pLabel}`;
 }
 
+function formatClassLabel(gradeKey, sectionText) {
+  const grade = gradeDisplay(gradeKey);
+  const section = String(sectionText ?? "").trim();
+  if (!section) return grade || "-";
+  // 이미 7A, 10B처럼 학년 숫자가 붙어 있으면 그대로 쓰되 '학년'만 제거합니다.
+  const compact = section.replace(/\s+/g, "").replace(/학년/g, "");
+  if (/^\d{1,2}[A-Za-z가-힣0-9]/.test(compact)) return compact;
+  return `${grade}${section}`;
+}
+
+function formatClassLabelList(gradeKey, labels = []) {
+  const rawLabels = (Array.isArray(labels) ? labels : [labels])
+    .flatMap(label => String(label ?? "")
+      .split(/[,，·\/]+/)
+      .map(x => x.trim())
+      .filter(Boolean));
+  const normalized = rawLabels.length ? rawLabels : [""];
+  return uniqueStrings(normalized.map(label => formatClassLabel(gradeKey, label))).join(", ") || "-";
+}
+
 function entrySharesTeacher(a, b) {
   const aTeachers = entryTeachers(a).filter(Boolean);
   const bTeachers = entryTeachers(b).filter(Boolean);
@@ -1188,10 +1208,26 @@ function setsIntersect(a, b) {
   return false;
 }
 
+function audienceGradeSet(a = {}) {
+  const out = new Set();
+  (a.classKeys || new Set()).forEach(key => {
+    const grade = String(key).split(":")[0];
+    if (grade) out.add(grade);
+  });
+  return out;
+}
+
 function audiencesConflict(a, b) {
   // If both sides have actual roster data, compare students, not homeroom labels.
   // This allows elective groups from the same homeroom to run concurrently when students differ.
   if (a.studentKeys.size && b.studentKeys.size) return setsIntersect(a.studentKeys, b.studentKeys);
+
+  // Different grades can never be a student conflict. This prevents false positives
+  // such as 9A being marked as conflicting with 7A merely because both are section A.
+  const gradesA = audienceGradeSet(a);
+  const gradesB = audienceGradeSet(b);
+  if (gradesA.size && gradesB.size && !setsIntersect(gradesA, gradesB)) return false;
+
   return setsIntersect(a.classKeys, b.classKeys);
 }
 
@@ -1199,17 +1235,25 @@ function getEntryClassSummary(entry) {
   const cardIds = ttCardIdsFromPlacement(entry);
   const parts = [];
   const seen = new Set();
+
+  const addLabel = (gradeKey, label) => {
+    const txt = formatClassLabel(gradeKey, label);
+    if (txt && !seen.has(txt)) { seen.add(txt); parts.push(txt); }
+  };
+
   if (cardIds.length) {
     cardIds.forEach(id => {
       const card = getTtCardById(id);
       if (!card) return;
       const labels = getTtCardClassLabels(card);
-      const txt = `${gradeDisplay(card.gradeKey)}학년 ${labels.join(", ") || sectionLabel(card.sectionIdx ?? 0)}`;
-      if (!seen.has(txt)) { seen.add(txt); parts.push(txt); }
+      const targets = labels.length ? labels : [sectionLabel(card.sectionIdx ?? 0)];
+      targets.forEach(label => addLabel(card.gradeKey, label));
     });
   }
-  if (parts.length) return parts.join(" / ");
-  return entryGradeKeys(entry).map(g => `${gradeDisplay(g)}학년 ${sectionLabel(entry.sectionIdx ?? 0)}`).join(", ") || "-";
+
+  if (parts.length) return parts.join(", ");
+  entryGradeKeys(entry).forEach(g => addLabel(g, sectionLabel(entry.sectionIdx ?? 0)));
+  return parts.join(", ") || "-";
 }
 
 function entryTitle(e) {
@@ -1442,8 +1486,8 @@ function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, 
   titleEl.textContent = title; box.appendChild(titleEl);
 
   const rows = [
-    ["학년",   gradeKeys.map(g => `${gradeDisplay(g)}학년`).join(", ") || "-"],
-    ["반",     detailItems.length ? `${detailItems.length}개 구성 카드` : (sectionIdx != null ? sectionLabel(sectionIdx) : "-")],
+    ["학년",   gradeKeys.map(g => gradeDisplay(g)).join(", ") || "-"],
+    ["반",     detailItems.length ? `${detailItems.length}개 구성 카드` : (sectionIdx != null ? formatClassLabel(firstGrade, sectionLabel(sectionIdx)) : "-")],
     ["담당 교사", teachers.join(", ") || "-"],
     ["시수",   String(credits || "-")],
     ["배정 현황", `${assigned} / ${credits} 차시${isDone ? "  ✅ 완료" : ""}`],
@@ -1475,7 +1519,8 @@ function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, 
       nm.textContent = item.title;
       const sub = document.createElement("div");
       sub.style.cssText = "font-size:10px;color:#64748b;margin-top:2px";
-      sub.textContent = `${gradeDisplay(item.gradeKey)}학년 · ${item.sectionLabel || sectionLabel(item.sectionIdx ?? 0)} · ${(item.teachers || []).join(", ") || "교사 없음"}`;
+      const itemClassLabel = formatClassLabelList(item.gradeKey, item.classLabels?.length ? item.classLabels : [item.sectionLabel || sectionLabel(item.sectionIdx ?? 0)]);
+      sub.textContent = `${itemClassLabel} · ${(item.teachers || []).join(", ") || "교사 없음"}`;
       main.append(nm, sub);
       const cr = document.createElement("div");
       cr.style.cssText = "font-size:10px;font-weight:700;color:#334155;align-self:center;background:#e2e8f0;border-radius:999px;padding:2px 7px";
@@ -2330,14 +2375,30 @@ function placeAutoGroupSlot(group, activeItems, slot, placed) {
   return true;
 }
 
-export function autoAssignAll() {
+const waitForBrowser = () => new Promise(resolve => setTimeout(resolve, 0));
+let autoAssignRunning = false;
+
+function setAutoAssignBusy(isBusy) {
+  const btn = $("ttAutoAssignBtn");
+  if (!btn) return;
+  btn.disabled = isBusy;
+  btn.textContent = isBusy ? "⏳ 자동 배치 중..." : "🎲 자동 배치";
+}
+
+export async function autoAssignAll() {
   if (!canEdit()) return;
+  if (autoAssignRunning) { alert("자동 배치가 이미 진행 중입니다."); return; }
 
   const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
   if (!activeGrades.length) { alert("커리큘럼에 배치된 과목이 없습니다."); return; }
 
   if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
+  autoAssignRunning = true;
+  setAutoAssignBusy(true);
+  await waitForBrowser();
+
+  try {
   captureTimetableUndo("자동 배정");
 
   // Preserve pinned entries only
@@ -2365,15 +2426,21 @@ export function autoAssignAll() {
   });
 
   const stages = [
-    { name:"strict", label:"교사 제약 포함", attempts:30, options:{ respectSoftLimits:true,  respectUnavailable:true, respectAssignedRoom:true  } },
-    { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:30, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:true  } },
-    { name:"relaxedRoom", label:"교실 자동배정 제한 완화", attempts:20, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:false } },
+    { name:"strict", label:"교사 제약 포함", attempts:12, options:{ respectSoftLimits:true,  respectUnavailable:true, respectAssignedRoom:true  } },
+    { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:12, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:true  } },
+    { name:"relaxedRoom", label:"교실 자동배정 제한 완화", attempts:8, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:false } },
   ];
 
   let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
+  let autoOps = 0;
+  const yieldAutoAssign = async () => {
+    autoOps++;
+    if (autoOps % 20 === 0) await waitForBrowser();
+  };
 
   for (const stage of stages) {
     for (let attempt = 0; attempt < stage.attempts; attempt++) {
+      await waitForBrowser();
       const placed = [], failed = [];
 
       // ── Place concurrent groups first: one independent occurrence per 시수 ──
@@ -2390,6 +2457,7 @@ export function autoAssignAll() {
         const needSlots = Math.max(0, maxCredits - alreadyPinned);
 
         for (let slot_i = 0; slot_i < needSlots; slot_i++) {
+          await yieldAutoAssign();
           const activeItems = unitItems.filter(u => slot_i < u.credits);
           if (!activeItems.length) continue;
           const probeItem = makePlacementFromGroupItem(group, activeItems[0]);
@@ -2408,6 +2476,7 @@ export function autoAssignAll() {
           const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
           const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
           for (let i = 0; i < needSlots; i++) {
+            await yieldAutoAssign();
             const item = makePlacementFromGroupItem(group, groupItem);
             const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
             if (slot) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
@@ -2427,6 +2496,7 @@ export function autoAssignAll() {
         const required = requiredByKey.get(key) || 0;
         const pinned = pinnedByKey.get(key) || 0;
         while (pinned + (placedByKey.get(key) || 0) < required) {
+          await yieldAutoAssign();
           const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
           if (!slot) {
             failed.push({ name: getAutoItemName(item) });
@@ -2459,6 +2529,13 @@ export function autoAssignAll() {
     const names = [...new Set(bestFailed.map(f => f.name))];
     alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${names.length}개:\n${names.slice(0,12).join("\n")}${names.length>12?"\n...":""}` +
       `\n\n💡 실제 운영 가능한 시간표라면, 고정된 수업·수업 불가 시간·동일 교사 중복 여부를 먼저 확인해 주세요.${stageNote}`);
+  }
+  } catch (err) {
+    console.error("Auto assign failed:", err);
+    alert("자동 배치 중 오류가 발생했습니다. 콘솔 로그를 확인해 주세요.");
+  } finally {
+    autoAssignRunning = false;
+    setAutoAssignBusy(false);
   }
 }
 

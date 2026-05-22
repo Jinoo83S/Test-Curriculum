@@ -56,10 +56,25 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     return fallbackAudience(e);
   };
   const intersects = (a, b) => { for (const v of a) if (b.has(v)) return true; return false; };
-  const audiencesOverlap = (a, b) => {
+  const audienceGrades = (audience, entry) => {
+    const out = new Set(entry?.gradeKeys?.length ? entry.gradeKeys : (entry?.gradeKey ? [entry.gradeKey] : []));
+    (audience?.classKeys || new Set()).forEach(key => {
+      const grade = String(key).split(":")[0];
+      if (grade) out.add(grade);
+    });
+    return out;
+  };
+  const audiencesOverlap = (a, b, entryA, entryB) => {
     // 실제 수강 학생 정보가 양쪽 모두 있으면 학생 단위로 판정합니다.
-    // 한쪽이라도 학생 정보가 없으면 반/섹션 단위로 보수적으로 판정합니다.
     if (a.studentKeys.size && b.studentKeys.size) return intersects(a.studentKeys, b.studentKeys);
+
+    // 서로 다른 학년은 학생 충돌이 될 수 없습니다.
+    // 예: 9A와 7A는 반 이름이 A로 같아도 충돌이 아닙니다.
+    const gradesA = audienceGrades(a, entryA);
+    const gradesB = audienceGrades(b, entryB);
+    if (gradesA.size && gradesB.size && !intersects(gradesA, gradesB)) return false;
+
+    // 학생 정보가 없을 때만 같은 학년·같은 반 범위로 보수 판정합니다.
     return intersects(a.classKeys, b.classKeys);
   };
 
@@ -102,7 +117,7 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 
         // Student conflict: compare actual audience/class overlap, not grade-only overlap.
         // 7A and 7B in the same period are valid unless they share students or the same class audience.
-        if (audiencesOverlap(audienceFor(a), audienceFor(b))) {
+        if (audiencesOverlap(audienceFor(a), audienceFor(b), a, b)) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }
