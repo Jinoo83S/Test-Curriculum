@@ -561,9 +561,31 @@ function getClassInfosByCardLabel(card) {
   return matched;
 }
 
+function normalizeGradeForClassKey(gradeKey) {
+  return gradeDisplay(gradeKey || "").trim();
+}
+
+function normalizeSectionForClassKey(info = {}) {
+  const raw = String(info.section ?? "").trim();
+  if (raw) {
+    const compact = raw.replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    // "9A"처럼 학년이 이미 붙은 표기는 뒤의 반명만 남깁니다.
+    const m = compact.match(/^\d{1,2}(.+)$/);
+    return m ? m[1] : compact;
+  }
+  return sectionLabel(info.sectionIdx ?? 0).toUpperCase();
+}
+
 function classKey(info) {
   if (!info) return "";
-  return `${info.gradeKey || info.grade}:${info.section || sectionLabel(info.sectionIdx ?? 0)}`;
+  const grade = normalizeGradeForClassKey(info.gradeKey || info.grade);
+  const section = normalizeSectionForClassKey(info);
+  return grade && section ? `${grade}:${section}` : "";
+}
+
+function classKeyFromCard(card) {
+  if (!card) return "";
+  return classKey({ gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0 });
 }
 
 function getRosterEntriesForTtCard(card) {
@@ -1258,6 +1280,13 @@ function audienceForPlacement(x = {}) {
 
   const addCardAudience = (card) => {
     if (!card) return;
+
+    // 핵심: 학생 충돌은 반드시 "카드가 실제로 가리키는 학년+반" 단위로 계산합니다.
+    // 예) 9A와 7A는 반명이 A로 같아도 classKey가 9:A / 7:A로 달라 충돌이 아닙니다.
+    // 예) 그룹카드도 포함된 각 카드의 학년+반을 따로 합산합니다.
+    const directKey = classKeyFromCard(card);
+    if (directKey) classKeys.add(directKey);
+
     getRosterEntriesForTtCard(card).forEach(re => studentKeys.add(`${re.classId}:${re.studentId}`));
     getTtCardClassInfos(card).forEach(info => {
       const key = classKey(info);
@@ -1282,7 +1311,7 @@ function setsIntersect(a, b) {
 function audienceGradeSet(a = {}) {
   const out = new Set();
   (a.classKeys || new Set()).forEach(key => {
-    const grade = String(key).split(":")[0];
+    const grade = normalizeGradeForClassKey(String(key).split(":")[0]);
     if (grade) out.add(grade);
   });
   return out;

@@ -32,12 +32,25 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 
   const unique = list => [...new Set((list || []).filter(Boolean))];
   const entryCardIds = e => unique([...(e.ttcardIds || []), e.ttcardId]);
+  const normalizeGradeForClassKey = gradeKey => String(gradeKey ?? "").replace(/학년/g, "").trim();
+  const sectionLabel = i => String.fromCharCode(65 + Math.max(0, Number.isInteger(i) ? i : (parseInt(i, 10) || 0)));
+  const normalizeSectionForClassKey = section => {
+    const compact = String(section ?? "").replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    if (!compact) return "";
+    const m = compact.match(/^\d{1,2}(.+)$/);
+    return m ? m[1] : compact;
+  };
+  const makeClassKey = (gradeKey, section) => {
+    const g = normalizeGradeForClassKey(gradeKey);
+    const s = normalizeSectionForClassKey(section);
+    return g && s ? `${g}:${s}` : "";
+  };
   const fallbackAudience = e => {
     const grades = e.gradeKeys?.length ? e.gradeKeys : (e.gradeKey ? [e.gradeKey] : []);
-    const sec = e.sectionIdx ?? 0;
+    const sec = sectionLabel(e.sectionIdx ?? 0);
     return {
       studentKeys: new Set(),
-      classKeys: new Set(grades.map(g => `${g}:${sec}`))
+      classKeys: new Set(grades.map(g => makeClassKey(g, sec)).filter(Boolean))
     };
   };
   const normalizeAudience = raw => ({
@@ -57,9 +70,11 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
   };
   const intersects = (a, b) => { for (const v of a) if (b.has(v)) return true; return false; };
   const audienceGrades = (audience, entry) => {
-    const out = new Set(entry?.gradeKeys?.length ? entry.gradeKeys : (entry?.gradeKey ? [entry.gradeKey] : []));
+    const out = new Set((entry?.gradeKeys?.length ? entry.gradeKeys : (entry?.gradeKey ? [entry.gradeKey] : []))
+      .map(normalizeGradeForClassKey)
+      .filter(Boolean));
     (audience?.classKeys || new Set()).forEach(key => {
-      const grade = String(key).split(":")[0];
+      const grade = normalizeGradeForClassKey(String(key).split(":")[0]);
       if (grade) out.add(grade);
     });
     return out;
