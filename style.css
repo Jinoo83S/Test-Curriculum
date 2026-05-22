@@ -4137,3 +4137,91 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   font-weight: 700;
   text-align: right;
 }
+
+/* ================================================================
+   Curriculum board readability + template manager level tabs
+   ================================================================ */
+
+/* 커리큘럼 보드: 행 높이는 유지하되 글자만 한 단계 크게 */
+.grade-header-row {
+  font-size: 11px;
+}
+.row-select {
+  font-size: 11px;
+  font-weight: 600;
+}
+.credit-input {
+  font-size: 12px;
+}
+.placed-title-ko {
+  font-size: 11.5px;
+  line-height: 1.08;
+}
+.placed-title-en {
+  font-size: 9px;
+  line-height: 1.06;
+}
+.meta-chip,
+.merged-badge,
+.placed-meta {
+  font-size: 8.5px;
+}
+.grade-title-name {
+  font-size: 14px;
+}
+.track-group-divider {
+  font-size: 10.8px;
+}
+.category-summary-row,
+.grade-summary-row {
+  font-size: 10.8px;
+}
+
+/* 과목카드 표 편집: 중등/고등 탭 */
+.tpl-manager-level-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin: 0 0 6px;
+  padding: 4px;
+  background: #f1f5f9;
+  border: 1px solid #dbe2ef;
+  border-radius: 8px;
+  width: fit-content;
+}
+.tpl-manager-level-tab {
+  min-width: 92px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1.1;
+}
+.tpl-manager-level-tab strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+.tpl-manager-level-tab span {
+  font-size: 9px;
+  font-weight: 700;
+  color: #64748b;
+}
+.tpl-manager-level-tab:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.tpl-manager-level-tab.active {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(30,58,95,.18);
+}
+.tpl-manager-level-tab.active span {
+  color: #bfdbfe;
+}

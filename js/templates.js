@@ -844,7 +844,11 @@ export function getFilteredTemplates() {
     if (managerUi.language !== "all" && item.language !== managerUi.language) return false;
     if (managerUi.split  === "split" && !item.useSemesterOverrides) return false;
     if (managerUi.split  === "same"  &&  item.useSemesterOverrides) return false;
-    if (managerUi.level  !== "전체"  &&  item.schoolLevel !== managerUi.level) return false;
+    if (managerUi.level !== "전체") {
+      const derived = deriveSchoolLevelFromCurriculum(item.id);
+      const level = derived || item.schoolLevel || "공통";
+      if (!(level === managerUi.level || level === "공통")) return false;
+    }
     if (srch) { const h = [item.nameKo,item.nameEn,item.teacher,item.sem1NameKo,item.sem1NameEn,item.sem1Teacher,item.sem2NameKo,item.sem2NameEn,item.sem2Teacher].join(" ").toLowerCase(); if (!h.includes(srch)) return false; }
     return true;
   });

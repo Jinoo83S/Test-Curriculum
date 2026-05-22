@@ -353,7 +353,47 @@ function renderSidebar() {
 }
 
 function renderTemplateManagerView() {
+  renderTemplateManagerLevelTabs();
   renderTemplateManagerTable(tplMgrTableWrap, tplMgrCount);
+}
+
+function renderTemplateManagerLevelTabs() {
+  if (!tplMgrView) return;
+  let tabs = document.getElementById("templateManagerLevelTabs");
+  if (!tabs) {
+    tabs = document.createElement("div");
+    tabs.id = "templateManagerLevelTabs";
+    tabs.className = "tpl-manager-level-tabs";
+    const toolbar = tplMgrView.querySelector(".manager-toolbar");
+    (toolbar?.parentNode || tplMgrView).insertBefore(tabs, toolbar || tplMgrView.firstChild);
+  }
+
+  const items = [
+    { value: "전체", title: "전체", sub: "중등+고등" },
+    { value: "중등", title: "중등", sub: "7–9학년" },
+    { value: "고등", title: "고등", sub: "10–12학년" },
+  ];
+
+  tabs.innerHTML = items.map(item => `
+    <button type="button" class="tpl-manager-level-tab ${managerUi.level === item.value ? "active" : ""}" data-level="${item.value}">
+      <strong>${item.title}</strong><span>${item.sub}</span>
+    </button>
+  `).join("");
+
+  tabs.querySelectorAll("button[data-level]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const level = btn.dataset.level || "전체";
+      if (managerUi.level === level) return;
+      managerUi.level = level;
+      if (tplMgrLevel) tplMgrLevel.value = level;
+      clearStableOrder();
+      renderTemplateManagerView();
+    });
+  });
+
+  if (tplMgrLevel && tplMgrLevel.value !== managerUi.level) {
+    tplMgrLevel.value = managerUi.level;
+  }
 }
 
 async function renderTeacherPanel() {
