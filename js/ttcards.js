@@ -161,6 +161,102 @@ function updateTtCardField(cardId, field, value) {
   scheduleSave("timetable");
 }
 
+
+function arrText(v) {
+  return Array.isArray(v) ? v.filter(Boolean).join(", ") : clean(v);
+}
+
+function shortId(id) {
+  const v = clean(id);
+  return v.length > 18 ? `${v.slice(0, 18)}…` : v;
+}
+
+function getTtCardSourceSnapshot(card) {
+  const tpl = getTemplateById(card?.templateId);
+  const row = getCurriculumRowForCard(card?.gradeKey, card?.templateId);
+  const classCount = getClassCount(card?.templateId);
+  const semesterMode = tpl?.useSemesterOverrides
+    ? `학기분리 · 1학기 ${clean(tpl.sem1NameKo) || clean(tpl.nameKo) || "-"} / 2학기 ${clean(tpl.sem2NameKo) || clean(tpl.nameKo) || "-"}`
+    : "통합";
+  return {
+    templateId: card?.templateId || "",
+    title: tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목카드)",
+    nameEn: tpl?.nameEn || "",
+    teacher: tpl ? getTemplateTeacherSummary(tpl) : "",
+    language: tpl?.language || "",
+    schoolLevel: tpl?.schoolLevel || "",
+    semesterMode,
+    gradeSection: `${gradeDisplay(card?.gradeKey)}${sectionLabel(card?.sectionIdx ?? 0)}`,
+    classCount: classCount || 1,
+    category: row?.category || "",
+    track: row?.track || "",
+    group: row?.group || "",
+    credits: clean(row?.credits),
+  };
+}
+
+function makeInfoLine(label, value, opts = {}) {
+  const row = document.createElement("div");
+  row.style.cssText = "display:grid;grid-template-columns:58px 1fr;gap:6px;align-items:start;font-size:11px;line-height:1.35;margin:2px 0";
+  const l = document.createElement("span");
+  l.textContent = label;
+  l.style.cssText = "font-weight:800;color:#64748b;white-space:nowrap";
+  const v = document.createElement("span");
+  v.textContent = clean(value) || "-";
+  v.style.cssText = opts.mono
+    ? "font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#334155;word-break:break-all"
+    : "color:#1f2937;word-break:keep-all;overflow-wrap:anywhere";
+  row.append(l, v);
+  return row;
+}
+
+function makeInfoBox(title, lines, options = {}) {
+  const box = document.createElement("div");
+  box.style.cssText = [
+    "border:1px solid #dbe2ef",
+    "border-radius:8px",
+    `background:${options.bg || "#f8fafc"}`,
+    "padding:7px 8px",
+    "min-width:220px"
+  ].join(";");
+  const h = document.createElement("div");
+  h.textContent = title;
+  h.style.cssText = "font-size:11px;font-weight:900;color:#1e3a5f;margin-bottom:5px";
+  box.appendChild(h);
+  lines.forEach(line => box.appendChild(makeInfoLine(line[0], line[1], line[2] || {})));
+  return box;
+}
+
+function createSourceCardBox(card) {
+  const src = getTtCardSourceSnapshot(card);
+  return makeInfoBox("커리큘럼 과목카드 원본", [
+    ["과목", src.title],
+    ["영문", src.nameEn],
+    ["교사", src.teacher],
+    ["언어", src.language],
+    ["학기", src.semesterMode],
+    ["기준반", src.gradeSection],
+    ["반수", `${src.classCount}반`],
+    ["분류", [src.category, src.track, src.group].filter(Boolean).join(" / ")],
+    ["시수", src.credits],
+    ["ID", shortId(src.templateId), { mono:true }],
+  ], { bg:"#f8fbff" });
+}
+
+function createGeneratedCardBox(card) {
+  return makeInfoBox("저장된 시간표 카드 데이터", [
+    ["제목", card.subject || card.label || ""],
+    ["대상", arrText(card.classLabels)],
+    ["반Key", arrText(card.classKeys), { mono:true }],
+    ["학생Key", `${Array.isArray(card.studentKeys) ? card.studentKeys.length : 0}개`],
+    ["교사", card.teacherName || arrText(card.teachers)],
+    ["시수", String(card.credits ?? "")],
+    ["전체", card.isWholeGrade ? "전체 학년 점유" : "지정 반만 점유"],
+    ["상태", card.manualEdited ? "수동 수정됨" : "원본 기준"],
+    ["생성", card.generatedAt ? card.generatedAt.replace("T", " ").slice(0, 16) : ""],
+  ], { bg: card.manualEdited ? "#fff7ed" : "#f8fafc" });
+}
+
 // ── TtCard helpers ────────────────────────────────────────────────
 export function getTtCardLabel(card) {
   if (!card) return "-";
@@ -271,7 +367,17 @@ export function renderTtCardsView(container) {
     section.appendChild(ghdr);
 
     const table = document.createElement("table"); table.className = "ttc-table";
-    table.innerHTML = `<thead><tr><th>과목명</th><th>대상 학년반</th><th>담당 교사</th><th>시수</th><th>그룹</th><th>수정</th></tr></thead>`;
+    table.style.minWidth = "1280px";
+    table.innerHTML = `<thead><tr>
+      <th style="width:260px">커리큘럼 과목카드 원본</th>
+      <th style="width:300px">저장된 시간표 카드 데이터</th>
+      <th style="width:170px">카드명 수정</th>
+      <th style="width:160px">대상 학년반 수정</th>
+      <th style="width:150px">담당 교사 수정</th>
+      <th style="width:80px">시수</th>
+      <th style="width:100px">그룹</th>
+      <th style="width:70px">복원</th>
+    </tr></thead>`;
     const tbody = document.createElement("tbody");
     gc.forEach(card => {
       const grp = grps().find(g =>
@@ -279,31 +385,47 @@ export function renderTtCardsView(container) {
         (g.poolCardIds||[]).includes(card.id)
       );
       const tr = document.createElement("tr");
+      tr.style.verticalAlign = "top";
+
+      const sourceBox = createSourceCardBox(card);
+      const generatedBox = createGeneratedCardBox(card);
+
       const labelInp = document.createElement("input"); labelInp.value = card.label || card.subject || ""; labelInp.disabled = !canEdit();
       labelInp.addEventListener("change", e => updateTtCardField(card.id, "label", e.target.value));
-      const classInp = document.createElement("input"); classInp.value = (card.classLabels || []).join(", "); classInp.disabled = !canEdit();
-      classInp.title = "예: 9A, 9B"; classInp.addEventListener("change", e => {
+      const classInp = document.createElement("textarea"); classInp.value = (card.classLabels || []).join(", "); classInp.disabled = !canEdit();
+      classInp.rows = 2; classInp.title = "예: 9A, 9B"; classInp.addEventListener("change", e => {
         const labels = e.target.value.split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
         updateTtCardField(card.id, "classLabels", labels.join(","));
         const keys = labels.map(l => { const m = l.match(/^(\d{1,2})(.+)$/); return m ? `${m[1]}:${m[2].toUpperCase()}` : l; });
         updateTtCardField(card.id, "classKeys", keys.join(","));
+        renderTtCardsView(container);
       });
-      const teacherInp = document.createElement("input"); teacherInp.value = card.teacherName || ""; teacherInp.disabled = !canEdit();
-      teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); });
+      const teacherInp = document.createElement("textarea"); teacherInp.value = card.teacherName || ""; teacherInp.disabled = !canEdit();
+      teacherInp.rows = 2; teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); renderTtCardsView(container); });
       const creditInp = document.createElement("input"); creditInp.type="number"; creditInp.min="0"; creditInp.step="0.5"; creditInp.value = card.credits || 0; creditInp.disabled = !canEdit();
-      creditInp.style.maxWidth = "70px"; creditInp.addEventListener("change", e => updateTtCardField(card.id, "credits", e.target.value));
+      creditInp.addEventListener("change", e => { updateTtCardField(card.id, "credits", e.target.value); renderTtCardsView(container); });
       const resetBtn = makeBtn("원본", "secondary-btn compact-btn", () => {
         const fresh = buildPersistedTtCard({ id:card.id, templateId:card.templateId, gradeKey:card.gradeKey, sectionIdx:card.sectionIdx ?? 0, existing:null });
         Object.assign(card, fresh, { manualEdited:false }); scheduleSave("timetable"); renderTtCardsView(container);
       });
       resetBtn.disabled = !canEdit();
-      [[labelInp],[classInp],[teacherInp],[creditInp]].forEach(arr => arr[0].style.cssText = "width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px");
+
+      [labelInp, classInp, teacherInp, creditInp].forEach(inp => {
+        inp.style.cssText = "width:100%;padding:5px 7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;line-height:1.35;background:white";
+      });
+      creditInp.style.textAlign = "center";
       [labelInp, classInp, teacherInp, creditInp, resetBtn].forEach(el => { if (el.addEventListener) el.addEventListener("click", e => e.stopPropagation()); });
-      const tds = [labelInp, classInp, teacherInp, creditInp, document.createElement("span"), resetBtn].map(x => { const td=document.createElement("td"); td.appendChild(x); return td; });
-      tds[4].firstChild.outerHTML = grp ? `<span class="ttc-group-chip">${grp.name}</span>` : '<span class="ttc-unassigned-chip">미배정</span>';
+
+      const groupSpan = document.createElement("span");
+      groupSpan.className = grp ? "ttc-group-chip" : "ttc-unassigned-chip";
+      groupSpan.textContent = grp ? grp.name : "미배정";
+
+      const tds = [sourceBox, generatedBox, labelInp, classInp, teacherInp, creditInp, groupSpan, resetBtn]
+        .map(x => { const td=document.createElement("td"); td.style.verticalAlign = "top"; td.appendChild(x); return td; });
       tr.append(...tds);
       tbody.appendChild(tr);
     });
+
     table.appendChild(tbody); section.appendChild(table);
     container.appendChild(section);
   });
