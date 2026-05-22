@@ -288,6 +288,67 @@ function getSlotLabel(day, period) {
   return `${dayLabels[day] ?? "?"} ${pLabel}`;
 }
 
+
+function setToArray(setLike = []) {
+  if (setLike instanceof Set) return [...setLike].filter(Boolean);
+  if (Array.isArray(setLike)) return setLike.filter(Boolean);
+  return setLike ? [setLike] : [];
+}
+
+function setIntersectionArray(a = new Set(), b = new Set()) {
+  const bs = b instanceof Set ? b : new Set(setToArray(b));
+  return setToArray(a).filter(v => bs.has(v));
+}
+
+function classKeyToLabel(key) {
+  const [grade, section] = String(key || "").split(":");
+  return grade && section ? `${grade}${section}` : String(key || "");
+}
+
+function formatClassKeySet(keys) {
+  const arr = setToArray(keys).map(classKeyToLabel).filter(Boolean);
+  return arr.length ? arr.join(", ") : "-";
+}
+
+function formatStudentKeyCount(keys) {
+  const n = setToArray(keys).length;
+  return n ? `${n}명` : "학생Key 없음";
+}
+
+function formatTeacherSet(names) {
+  const arr = setToArray(names);
+  return arr.length ? arr.join(", ") : "-";
+}
+
+function formatRoomSet(roomIds) {
+  const arr = setToArray(roomIds).map(getRoomDisplayName).filter(Boolean);
+  return arr.length ? arr.join(", ") : "-";
+}
+
+function describeOccupancyOverlap(aOcc, bOcc, type) {
+  if (type === "teacher") {
+    const teachers = setIntersectionArray(aOcc.teacherNames, bOcc.teacherNames);
+    return teachers.length ? `겹친 교사: ${teachers.join(", ")}` : "교사 중복";
+  }
+  if (type === "room") {
+    const rooms = setIntersectionArray(aOcc.roomIds, bOcc.roomIds).map(getRoomDisplayName);
+    return rooms.length ? `겹친 교실: ${rooms.join(", ")}` : "교실 중복";
+  }
+  if (type === "student") {
+    const classes = setIntersectionArray(aOcc.classKeys, bOcc.classKeys).map(classKeyToLabel);
+    const students = setIntersectionArray(aOcc.studentKeys, bOcc.studentKeys);
+    const parts = [];
+    if (classes.length) parts.push(`겹친 반: ${classes.join(", ")}`);
+    if (students.length) parts.push(`겹친 학생Key: ${students.length}명`);
+    return parts.length ? parts.join(" · ") : "학생/반 대상 중복";
+  }
+  if (type === "duplicate") {
+    const cards = setIntersectionArray(aOcc.cardIds, bOcc.cardIds);
+    return cards.length ? `같은 시간표 카드 중복: ${cards.length}개` : "중복 카드";
+  }
+  return "";
+}
+
 function formatClassLabel(gradeKey, sectionText) {
   const grade = gradeDisplay(gradeKey);
   const section = String(sectionText ?? "").trim();
@@ -316,33 +377,39 @@ function entrySharesTeacher(a, b) {
 
 function getRelatedConflictEntries(entry, type) {
   const sameSlot = entries().filter(e => e.id !== entry.id && e.day === entry.day && e.period === entry.period);
+  const occ = getPlacementOccupancy(entry);
+
   if (type === "teacher") {
-    const occ = getPlacementOccupancy(entry);
     return sameSlot
       .map(e => {
         const other = getPlacementOccupancy(e);
-        const overlap = [...occ.teacherNames].filter(t => other.teacherNames.has(t));
-        return { entry: e, detail: overlap.join(", ") };
+        const overlap = setIntersectionArray(occ.teacherNames, other.teacherNames);
+        return { entry: e, detail: overlap.length ? `겹친 교사: ${overlap.join(", ")}` : "" };
       })
       .filter(x => x.detail);
   }
+
   if (type === "room") {
-    const occ = getPlacementOccupancy(entry);
     return sameSlot
       .map(e => {
         const other = getPlacementOccupancy(e);
-        const overlap = [...occ.roomIds].filter(r => other.roomIds.has(r));
-        return { entry: e, detail: overlap.map(getRoomDisplayName).join(", ") };
+        const overlap = setIntersectionArray(occ.roomIds, other.roomIds);
+        return { entry: e, detail: overlap.length ? `겹친 교실: ${overlap.map(getRoomDisplayName).join(", ")}` : "" };
       })
       .filter(x => x.detail);
   }
+
   if (type === "student") {
-    const audience = audienceForPlacement(entry);
     return sameSlot
-      .filter(e => audiencesConflict(audience, audienceForPlacement(e)))
-      .filter(e => (conflictMap.get(e.id) || new Set()).has("student"))
-      .map(e => ({ entry: e, detail: getEntryClassSummary(e) }));
+      .map(e => {
+        const other = getPlacementOccupancy(e);
+        if (!audiencesConflict(occ, other)) return null;
+        return { entry: e, detail: describeOccupancyOverlap(occ, other, "student") };
+      })
+      .filter(Boolean)
+      .filter(x => (conflictMap.get(x.entry.id) || new Set()).has("student"));
   }
+
   if (type === "syncRequired" && entry.groupId) {
     return entries()
       .filter(e => e.id !== entry.id && e.groupId === entry.groupId)
@@ -455,6 +522,65 @@ function renderEntryConflictDetailSection(box, entry) {
   section.appendChild(list);
   box.appendChild(section);
 }
+
+function renderEntryCardDataSection(box, entry) {
+  const occ = getPlacementOccupancy(entry);
+  const cardIds = setToArray(occ.cardIds);
+  const cards = cardIds.map(id => getTtCardById(id)).filter(Boolean);
+
+  const section = document.createElement("div");
+  section.style.cssText = "margin:10px 0;padding:10px;border-radius:9px;border:1px solid #dbeafe;background:#eff6ff";
+
+  const title = document.createElement("div");
+  title.style.cssText = "font-size:12px;font-weight:900;color:#1e3a8a;margin-bottom:8px";
+  title.textContent = "저장 카드 데이터 기준";
+  section.appendChild(title);
+
+  const grid = document.createElement("div");
+  grid.style.cssText = "display:grid;grid-template-columns:74px 1fr;gap:5px 8px;font-size:11px;line-height:1.4";
+  const add = (label, value) => {
+    const l = document.createElement("div"); l.style.cssText = "color:#64748b;font-weight:800"; l.textContent = label;
+    const v = document.createElement("div"); v.style.cssText = "color:#0f172a;min-width:0;word-break:break-word"; v.textContent = value || "-";
+    grid.append(l, v);
+  };
+
+  add("대상 반", formatClassKeySet(occ.classKeys));
+  add("학생", formatStudentKeyCount(occ.studentKeys));
+  add("교사", formatTeacherSet(occ.teacherNames));
+  add("교실", formatRoomSet(occ.roomIds));
+  add("카드 ID", cardIds.length ? `${cardIds.length}개` : "-" );
+  section.appendChild(grid);
+
+  if (cards.length) {
+    const list = document.createElement("div");
+    list.style.cssText = "margin-top:8px;display:flex;flex-direction:column;gap:4px";
+    cards.slice(0, 12).forEach(card => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;padding:5px 7px;border:1px solid #bfdbfe;border-radius:6px;background:white;font-size:11px";
+      const name = document.createElement("div");
+      name.style.cssText = "font-weight:800;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      name.textContent = getStoredTtCardTitle(card);
+      const cls = document.createElement("div");
+      cls.style.cssText = "color:#1d4ed8;font-weight:800;white-space:nowrap";
+      cls.textContent = getStoredTtCardClassLabels(card).join(", ") || formatClassKeySet(getStoredTtCardClassKeys(card));
+      const stu = document.createElement("div");
+      stu.style.cssText = "color:#64748b;white-space:nowrap";
+      stu.textContent = `${getStoredTtCardStudentKeys(card).length}명`;
+      row.append(name, cls, stu);
+      list.appendChild(row);
+    });
+    if (cards.length > 12) {
+      const more = document.createElement("div");
+      more.style.cssText = "font-size:10px;color:#64748b;text-align:right";
+      more.textContent = `외 ${cards.length - 12}개 카드`;
+      list.appendChild(more);
+    }
+    section.appendChild(list);
+  }
+
+  box.appendChild(section);
+}
+
 
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
@@ -658,6 +784,19 @@ function classKey(info) {
   const grade = normalizeGradeForClassKey(info.gradeKey || info.grade);
   const section = normalizeSectionForClassKey(info);
   return grade && section ? `${grade}:${section}` : "";
+}
+
+function normalizeClassKeyValue(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  const compact = raw.replace(/\s+/g, "").replace(/학년/g, "").replace(/[()]/g, "").toUpperCase();
+  const m = compact.match(/^(\d{1,2})[:\-_/]?(.+)$/);
+  if (m) {
+    const grade = m[1];
+    const section = m[2].replace(/^반/, "");
+    return grade && section ? `${grade}:${section}` : "";
+  }
+  return compact;
 }
 
 function classKeyFromCard(card) {
@@ -1355,6 +1494,13 @@ function getPlacementOccupancy(x = {}, options = {}) {
       .forEach(v => set.add(v));
   };
 
+  const addClassKeys = (values) => {
+    (Array.isArray(values) ? values : (values ? [values] : []))
+      .map(normalizeClassKeyValue)
+      .filter(Boolean)
+      .forEach(v => classKeys.add(v));
+  };
+
   const addCardOccupancy = (card) => {
     if (!card) return;
     cardIds.add(card.id);
@@ -1362,7 +1508,7 @@ function getPlacementOccupancy(x = {}, options = {}) {
     // 1순위: 시간표 사전작업에서 Firebase에 저장한 확정 카드 데이터
     const storedClassKeys = getStoredTtCardClassKeys(card);
     const storedStudentKeys = getStoredTtCardStudentKeys(card);
-    addMany(classKeys, storedClassKeys);
+    addClassKeys(storedClassKeys);
     addMany(studentKeys, storedStudentKeys);
     addMany(teacherNames, getTeachersForTtCard(card));
 
@@ -1378,12 +1524,20 @@ function getPlacementOccupancy(x = {}, options = {}) {
     }
   };
 
-  addMany(classKeys, x.audienceClassKeys);
+  addClassKeys(x.audienceClassKeys);
   addMany(studentKeys, x.audienceStudentKeys);
   addMany(teacherNames, x.teacherNames);
   addMany(teacherNames, x.teachers);
   addMany(teacherNames, splitTeacherNames(x.teacherName || ""));
   if (x.roomId) roomIds.add(x.roomId);
+
+  // 그룹 entry가 이전 구조로 저장되어 ttcardIds가 비어 있어도, groupId만 있으면
+  // 현재 그룹에 포함된 모든 저장 시간표카드의 점유 반/학생을 다시 합산합니다.
+  // 자동배치와 충돌검사가 고정된 MS채플 같은 전체 그룹 수업을 놓치지 않게 하는 핵심 보정입니다.
+  if (x.groupId) {
+    const grp = (appState.templates.templateGroups || []).find(g => g.id === x.groupId);
+    if (grp) getGroupCards(grp).filter(isStoredTtCardReady).forEach(card => cardIds.add(card.id));
+  }
 
   if (cardIds.size) {
     [...cardIds].forEach(id => addCardOccupancy(getTtCardById(id)));
@@ -1901,7 +2055,7 @@ function showEntryDetail(entry) {
   modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
 
   const box = document.createElement("div");
-  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:300px;max-width:400px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative;max-height:90vh;overflow-y:auto";
+  box.style.cssText = "background:white;border-radius:10px;padding:18px 20px;min-width:300px;max-width:560px;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative;max-height:90vh;overflow-y:auto";
 
   const gradeKeys = entryGradeKeys(entry);
   const gc = getGradeColor(gradeKeys[0] || currentGrade);
@@ -1958,10 +2112,11 @@ function showEntryDetail(entry) {
   rSel.addEventListener("change", e=>{updateEntry(entry.id,"roomId",e.target.value||null);recomputeConflicts();renderAll();});
   box.append(rLabel, rSel);
 
-  // 7. 충돌 내역
+  // 7. 저장 카드 데이터 + 충돌 내역
+  renderEntryCardDataSection(box, entry);
   renderEntryConflictDetailSection(box, entry);
 
-  // 7. 요일/교시 (editable) + 고정
+  // 8. 요일/교시 (editable) + 고정
   const dayLabels = ["월","화","수","목","금"];
   const periods = ttConfig().periodLabels;
   const dtRow = document.createElement("div"); dtRow.style.cssText="display:flex;gap:6px;margin-bottom:8px";
@@ -2650,9 +2805,17 @@ function renderLogPanel() {
     .join("");
 
   const auto = lastAutoAssignReport;
-  const failedList = auto?.failedNames?.length
-    ? `<ul class="tt-log-failed-list">${auto.failedNames.slice(0, 20).map(name => `<li>${escapeHtml(name)}</li>`).join("")}${auto.failedNames.length > 20 ? `<li>외 ${auto.failedNames.length - 20}개</li>` : ""}</ul>`
-    : "";
+  const failedList = auto?.failedDetails?.length
+    ? `<div class="tt-log-table-wrap" style="margin-top:8px;max-height:220px"><table class="tt-log-table">
+        <thead><tr><th>미배치 수업</th><th>주요 사유</th><th>예시</th></tr></thead>
+        <tbody>${auto.failedDetails.slice(0, 30).map(item => {
+          const sample = (item.samples || []).slice(0, 2).map(s => `${escapeHtml(s.slot || "-")} · ${escapeHtml(s.detail || "-")}${s.relatedTitle ? ` · ${escapeHtml(s.relatedTitle)}` : ""}`).join("<br>");
+          return `<tr><td>${escapeHtml(item.name)}</td><td>${escapeHtml(item.reasonText || "-")}</td><td>${sample || "-"}</td></tr>`;
+        }).join("")}${auto.failedDetails.length > 30 ? `<tr><td colspan="3">외 ${auto.failedDetails.length - 30}개</td></tr>` : ""}</tbody>
+      </table></div>`
+    : (auto?.failedNames?.length
+      ? `<ul class="tt-log-failed-list">${auto.failedNames.slice(0, 20).map(name => `<li>${escapeHtml(name)}</li>`).join("")}${auto.failedNames.length > 20 ? `<li>외 ${auto.failedNames.length - 20}개</li>` : ""}</ul>`
+      : "");
 
   const logItems = timetableLogs.length
     ? timetableLogs.slice(0, 25).map(log => `
@@ -2703,6 +2866,7 @@ function renderLogPanel() {
               <div class="tt-log-badges">
                 <span class="tt-log-badge ${auto.failedCount ? "warn" : "ok"}">${auto.failedCount ? "부분 완료" : "전체 완료"}</span>
                 ${(auto.conflictTotal || 0) > 0 ? `<span class="tt-log-badge danger">충돌 ${auto.conflictTotal}건</span>` : `<span class="tt-log-badge ok">충돌 없음</span>`}
+                ${auto.failureReasonCounts ? Object.entries(auto.failureReasonCounts).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([type,count]) => `<span class="tt-log-badge warn">${escapeHtml(CONFLICT_DISPLAY[type]?.label || (type === "duplicate" ? "중복카드" : type))} ${count}</span>`).join("") : ""}
               </div>
               ${failedList}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}
           </div>
@@ -2765,7 +2929,103 @@ function linkedGroups(tidA, tidB) {
   return grpA?.linkedGroupId === gB || grpB?.linkedGroupId === gA;
 }
 
+function getPlacementFailureReasons(item, slot, placed, options = {}) {
+  const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
+  const existing = [...entries(), ...placed];
+  const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+  const itemOcc = getPlacementOccupancy(item, { includeDefaultRoom: respectAssignedRoom });
+  const reasons = [];
+
+  const sameUnit = (a, b) => a.unitId && b.unitId && a.unitId === b.unitId;
+  const addReason = (type, detail, related = null) => {
+    reasons.push({
+      type,
+      label: CONFLICT_DISPLAY[type]?.label || (type === "duplicate" ? "중복카드" : type),
+      slot: getSlotLabel(slot.day, slot.period),
+      detail,
+      relatedTitle: related ? entryTitle(related) : "",
+      relatedClass: related ? getEntryClassSummary(related) : "",
+    });
+  };
+
+  for (const e of slotEnts) {
+    if (sameUnit(item, e)) continue;
+    const eOcc = getPlacementOccupancy(e, { includeDefaultRoom: true });
+
+    if (setIntersectionArray(itemOcc.teacherNames, eOcc.teacherNames).length) {
+      addReason("teacher", describeOccupancyOverlap(itemOcc, eOcc, "teacher"), e);
+    }
+
+    if (itemOcc.cardIds.size && setIntersectionArray(itemOcc.cardIds, eOcc.cardIds).length) {
+      addReason("duplicate", describeOccupancyOverlap(itemOcc, eOcc, "duplicate"), e);
+    }
+    if (!itemOcc.cardIds.size && !eOcc.cardIds.size && e.templateId === item.templateId && e.gradeKey === item.gradeKey && (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0)) {
+      addReason("duplicate", "같은 과목/학년/반이 이미 배치되어 있습니다.", e);
+    }
+
+    if (audiencesConflict(itemOcc, eOcc)) {
+      addReason("student", describeOccupancyOverlap(itemOcc, eOcc, "student"), e);
+    }
+
+    if (setIntersectionArray(itemOcc.roomIds, eOcc.roomIds).length) {
+      addReason("room", describeOccupancyOverlap(itemOcc, eOcc, "room"), e);
+    }
+  }
+
+  const dayEnts = existing.filter(e => e.day === slot.day);
+  for (const teacher of itemOcc.teacherNames) {
+    const c = constraints()[teacher];
+    if (respectUnavailable && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) {
+      addReason("unavailable", `${teacher} 선생님 수업 불가 시간`);
+    }
+    const count = dayEnts.filter(e => getPlacementOccupancy(e).teacherNames.has(teacher)).length;
+    const max = Number(c?.maxPerDay) || 0;
+    if (respectSoftLimits && max > 0 && count >= max) {
+      addReason("maxPerDay", `${teacher} 선생님 일일 ${max}시수 제한 초과`);
+    }
+  }
+
+  for (const teacher of itemOcc.teacherNames) {
+    const dayPeriods = dayEnts
+      .filter(e => getPlacementOccupancy(e).teacherNames.has(teacher))
+      .map(e => e.period);
+    const all = [...dayPeriods, slot.period].sort((a,b) => a-b);
+    let maxC = 1, cur = 1;
+    for (let i = 1; i < all.length; i++) {
+      cur = all[i] === all[i-1]+1 ? cur+1 : 1;
+      maxC = Math.max(maxC, cur);
+    }
+    const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
+    if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) {
+      addReason("maxConsecutive", `${teacher} 선생님 연속 ${maxConsecutive}시수 제한 초과`);
+    }
+  }
+
+  return reasons;
+}
+
 function checkPlacementValid(item, slot, placed, options = {}) {
+  return getPlacementFailureReasons(item, slot, placed, options).length === 0;
+}
+
+function summarizeAutoAssignFailure(item, baseSlots, placed, options = {}) {
+  const counts = {};
+  const samples = [];
+  let checkedSlots = 0;
+  for (const slot of baseSlots) {
+    checkedSlots++;
+    const reasons = getPlacementFailureReasons(item, slot, placed, options);
+    reasons.forEach(r => {
+      counts[r.type] = (counts[r.type] || 0) + 1;
+      if (samples.length < 6) samples.push({ ...r, slot: r.slot || getSlotLabel(slot.day, slot.period) });
+    });
+  }
+  const orderedTypes = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  const reasonText = orderedTypes.length
+    ? orderedTypes.slice(0, 3).map(type => `${CONFLICT_DISPLAY[type]?.label || (type === "duplicate" ? "중복카드" : type)} ${counts[type]}회`).join(" · ")
+    : "배치 가능한 시간이 없습니다.";
+  return { reasonText, reasonCounts: counts, samples, checkedSlots };
+}) {
   const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
   const existing = [...entries(), ...placed];
   const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
@@ -3006,7 +3266,13 @@ export async function autoAssignAll() {
           if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed)) {
             continue;
           }
-          activeItems.forEach(groupItem => failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` }));
+          activeItems.forEach(groupItem => {
+            const failItem = makePlacementFromGroupItem(group, groupItem) || probeItem;
+            failed.push({
+              name: `${group.name} - ${groupItem.name || "그룹 카드"}`,
+              reason: failItem ? summarizeAutoAssignFailure(failItem, baseSlots, placed, stage.options) : { reasonText:"그룹 카드 데이터 없음", reasonCounts:{ data:1 }, samples:[] }
+            });
+          });
         }
       }
 
@@ -3021,7 +3287,10 @@ export async function autoAssignAll() {
             const item = makePlacementFromGroupItem(group, groupItem);
             const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
             if (slot) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
-            else failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` });
+            else failed.push({
+              name: `${group.name} - ${groupItem.name || "그룹 카드"}`,
+              reason: item ? summarizeAutoAssignFailure(item, baseSlots, placed, stage.options) : { reasonText:"그룹 카드 데이터 없음", reasonCounts:{ data:1 }, samples:[] }
+            });
           }
         }
       }
@@ -3040,7 +3309,7 @@ export async function autoAssignAll() {
           await yieldAutoAssign();
           const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
           if (!slot) {
-            failed.push({ name: getAutoItemName(item) });
+            failed.push({ name: getAutoItemName(item), reason: summarizeAutoAssignFailure(item, baseSlots, placed, stage.options) });
             break;
           }
           placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
@@ -3063,7 +3332,23 @@ export async function autoAssignAll() {
   scheduleSave("timetable");
   recomputeConflicts();
 
-  const names = [...new Set(bestFailed.map(f => f.name))];
+  const failedDetailMap = new Map();
+  const failureReasonCounts = {};
+  bestFailed.forEach(f => {
+    if (!failedDetailMap.has(f.name)) {
+      failedDetailMap.set(f.name, {
+        name: f.name,
+        reasonText: f.reason?.reasonText || "배치 가능한 시간이 없습니다.",
+        samples: f.reason?.samples || [],
+        reasonCounts: f.reason?.reasonCounts || {}
+      });
+    }
+    Object.entries(f.reason?.reasonCounts || {}).forEach(([type, count]) => {
+      failureReasonCounts[type] = (failureReasonCounts[type] || 0) + count;
+    });
+  });
+  const failedDetails = [...failedDetailMap.values()];
+  const names = failedDetails.map(f => f.name);
   const conflictSummary = getConflictCounts();
   const report = {
     ts: Date.now(),
@@ -3075,6 +3360,8 @@ export async function autoAssignAll() {
     placedCount: bestPlaced.length,
     failedCount: names.length,
     failedNames: names,
+    failedDetails,
+    failureReasonCounts,
     durationMs: Date.now() - autoStartedAt,
     conflictTotal: conflictSummary.totalAffected,
     conflictCounts: conflictSummary.counts
