@@ -31,6 +31,52 @@ export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
 const grps = () => appState.templates.templateGroups || [];
 
+// ── Canonical stored-card accessors ─────────────────────────────
+// 2순위 이후 그룹관리/시간표 편집은 아래 저장 카드 데이터를 우선 사용합니다.
+// 커리큘럼·수강명단 재계산은 카드 생성/새로고침 때만 수행합니다.
+export function getStoredTtCardTitle(card) {
+  if (!card) return "-";
+  return clean(card.title) || clean(card.titleKo) || clean(card.label) || clean(card.subject) || "-";
+}
+export function getStoredTtCardTitleEn(card) {
+  return clean(card?.titleEn) || clean(card?.subjectEn);
+}
+export function getStoredTtCardTeacherNames(card) {
+  return splitList(card?.teacherNames?.length ? card.teacherNames : (card?.teachers?.length ? card.teachers : card?.teacherName));
+}
+export function getStoredTtCardCredits(card) {
+  const n = parseFloat(card?.credits);
+  return Number.isFinite(n) ? n : 0;
+}
+export function getStoredTtCardClassKeys(card) {
+  return splitList(card?.classKeys);
+}
+export function getStoredTtCardClassLabels(card) {
+  return splitList(card?.classLabels);
+}
+export function getStoredTtCardStudentKeys(card) {
+  return splitList(card?.studentKeys);
+}
+export function getStoredTtCardAudience(card) {
+  return {
+    classKeys: getStoredTtCardClassKeys(card),
+    classLabels: getStoredTtCardClassLabels(card),
+    studentKeys: getStoredTtCardStudentKeys(card),
+  };
+}
+export function getStoredTtCardGradeKeys(card) {
+  const grades = new Set();
+  getStoredTtCardClassKeys(card).forEach(k => {
+    const g = String(k).split(":")[0];
+    if (g) grades.add(`${g}학년`);
+  });
+  if (!grades.size && card?.gradeKey) grades.add(card.gradeKey);
+  return [...grades];
+}
+export function isStoredTtCardReady(card) {
+  return !!card && card.schemaVersion >= 2 && getStoredTtCardCredits(card) > 0 && getStoredTtCardClassKeys(card).length > 0;
+}
+
 
 // ── Persisted card data helpers ─────────────────────────────────
 const TT_CARD_SCHEMA_VERSION = 2;
@@ -603,17 +649,15 @@ function setDrag(d) { _currentDrag = d; }
 
 function gmLevelFilter(card) {
   if (_groupManagerLevel === "전체") return true;
-  const tpl = getTemplateById(card.templateId);
-  if (!tpl) return false;
-  if (_groupManagerLevel === "중등") return ["7학년","8학년","9학년"].includes(card.gradeKey);
-  if (_groupManagerLevel === "고등") return ["10학년","11학년","12학년"].includes(card.gradeKey);
+  const grades = getStoredTtCardGradeKeys(card);
+  if (_groupManagerLevel === "중등") return grades.some(g => ["7학년","8학년","9학년"].includes(g));
+  if (_groupManagerLevel === "고등") return grades.some(g => ["10학년","11학년","12학년"].includes(g));
   return true;
 }
 
 function createTtCardChip(card, opts = {}) {
   const { onDelete, showDelete = false } = opts;
-  const tpl  = getTemplateById(card.templateId);
-  const lang = tpl?.language || "Both";
+  const lang = card?.language || "Both";
   const chip = document.createElement("div"); chip.className = `gm-card ${languageClass(lang)}`;
   chip.draggable = canEdit();
   chip.dataset.ttcardId = card.id;
@@ -621,17 +665,17 @@ function createTtCardChip(card, opts = {}) {
   // Row 1: subject | grade chip | section badge
   const r1 = document.createElement("div"); r1.className = "gm-card-r1";
   const subjectEl = document.createElement("div"); subjectEl.className = "gm-card-subject";
-  subjectEl.textContent = card.title || card.titleKo || card.subject || getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
+  subjectEl.textContent = getStoredTtCardTitle(card);
   const gradeChip = document.createElement("span"); gradeChip.className = "gm-card-grade";
   gradeChip.textContent = gradeDisplay(card.gradeKey);
-  const secLbl = (card.classLabels || []).join(", ") || getSectionLabelFromRoster(card);
+  const secLbl = getStoredTtCardClassLabels(card).join(", ") || getSectionLabelFromRoster(card);
   if (secLbl) { const sb = document.createElement("span"); sb.className = "gm-card-sec"; sb.textContent = secLbl; r1.append(subjectEl, gradeChip, sb); }
   else { r1.append(subjectEl, gradeChip); }
 
   // Row 2: teacher | delete button
   const r2 = document.createElement("div"); r2.className = "gm-card-r2";
   const tchEl = document.createElement("div"); tchEl.className = "gm-card-teacher";
-  tchEl.textContent = card.teacherName || (tpl ? getTemplateTeacherSummary(tpl) : "-");
+  tchEl.textContent = getStoredTtCardTeacherNames(card).join(", ") || "-";
   r2.appendChild(tchEl);
   if (showDelete && canEdit() && onDelete) {
     const del = document.createElement("button"); del.type = "button"; del.className = "gm-card-del"; del.textContent = "×";
@@ -770,7 +814,17 @@ function createGroupBlockGM(groupId, onStructureChange) {
   hdr.append(dragHandle, colBtn, nameInp, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
-  hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
+  const summaryCards = [
+    ...(grpObj.poolCardIds || []),
+    ...((grpObj.units || []).flatMap(u => u.ttcardIds || []))
+  ].map(id => getTtCardById(id)).filter(Boolean);
+  const summaryClasses = uniqueOrdered(summaryCards.flatMap(getStoredTtCardClassLabels));
+  const summaryTeachers = uniqueOrdered(summaryCards.flatMap(getStoredTtCardTeacherNames));
+  const summaryStudents = uniqueOrdered(summaryCards.flatMap(getStoredTtCardStudentKeys)).length;
+  hint.textContent = summaryCards.length
+    ? `동시배정 · ${summaryCards.length}장 · 대상 ${summaryClasses.join(", ") || "-"} · 교사 ${summaryTeachers.join(", ") || "-"} · 학생Key ${summaryStudents}개`
+    : "이 그룹의 과목들은 같은 시간대에 배정됩니다.";
+  block.appendChild(hint);
 
   const body = document.createElement("div"); body.className = "group-block-body";
   if (isGroupCollapsed(groupId)) body.style.display = "none";
@@ -875,49 +929,42 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     filterBar.appendChild(btn);
   });
 
-  // Auto-gen button
+  // Auto-gen button — 저장된 시간표 카드 데이터만 기준으로 그룹을 생성합니다.
   const autoGenBtn = makeBtn("✨ 자동 생성", "group-auto-gen-btn", () => {
     if (!canEdit()) return;
     const cards = getTtCards().filter(c => gmLevelFilter(c));
     if (!cards.length) { alert("시간표 카드가 없습니다.\n먼저 '시간표 카드' 탭에서 카드를 생성하세요."); return; }
 
-    // Group by: curriculum track + 교과군 + gradeKey  (more precise than track+grade only)
     const trackMap = {};
-    GRADE_KEYS.forEach(gradeKey => {
-      const rows = appState.curriculum?.gradeBoards?.[gradeKey] || [];
-      rows.forEach(row => {
-        if (row.category !== "교과") return;
-        if (!row.track || row.track === "공통") return;
-        const subGroup = row.group || "기타";
-        // 같은 학년·같은 구분 안에서도 교과군이 다르면 별도 동시배정 그룹이어야 합니다.
-        // 기존에는 row.track + gradeKey만 사용해 국어/수학/사회 카드가 한 그룹으로 섞일 수 있었습니다.
-        const groupKey = `${row.track}::${subGroup}::${gradeKey}`;
-        if (!trackMap[groupKey]) trackMap[groupKey] = {
-          name: `${gradeDisplay(gradeKey)}-${subGroup !== "기타" ? subGroup : row.track}`, cardIds: new Set()
+    cards.forEach(card => {
+      if (clean(card.category) !== "교과") return;
+      if (!clean(card.track) || clean(card.track) === "공통") return;
+      const subGroup = clean(card.group) || "기타";
+      const groupKey = `${clean(card.track)}::${subGroup}::${card.gradeKey}`;
+      if (!trackMap[groupKey]) {
+        trackMap[groupKey] = {
+          name: `${gradeDisplay(card.gradeKey)}-${subGroup !== "기타" ? subGroup : clean(card.track)}`,
+          cardIds: new Set()
         };
-        [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
-          cards.filter(c => c.templateId === tplId && c.gradeKey === gradeKey)
-            .forEach(c => trackMap[groupKey].cardIds.add(c.id));
-        });
-      });
+      }
+      trackMap[groupKey].cardIds.add(card.id);
     });
 
     const validGroups = Object.values(trackMap).filter(v => v.cardIds.size >= 2);
-    if (!validGroups.length) { alert("자동 생성할 그룹이 없습니다.\n배정/선택 과목이 있는지 확인하세요."); return; }
+    if (!validGroups.length) { alert("자동 생성할 그룹이 없습니다.\n저장된 시간표 카드의 구분/교과군 정보를 확인하세요."); return; }
 
     const existing = grps();
     const existingNames = new Set(existing.map(g => g.name));
     const newGroups = validGroups.filter(({ name }) => !existingNames.has(name));
 
     if (!newGroups.length) { alert("이미 동일한 그룹이 모두 존재합니다."); return; }
-    if (!confirm(`${newGroups.length}개 그룹을 자동 생성합니다. 계속할까요?`)) return;
+    if (!confirm(`${newGroups.length}개 그룹을 저장된 시간표 카드 데이터 기준으로 자동 생성합니다. 계속할까요?`)) return;
 
     newGroups.forEach(({ name, cardIds }) => {
       const grpId = uid("grp");
-      // Cards go into the group pool (unassigned to units) — user creates 묶음수업 manually
       appState.templates.templateGroups.push(normalizeTemplateGroup({
         id: grpId, name, isConcurrent: true, groupType: "concurrent",
-        units: [], poolCardIds: [...cardIds]  // pool: cards in group but not yet in any unit
+        units: [], poolCardIds: [...cardIds]
       }));
     });
     scheduleSave("templates"); onStructureChange();

@@ -7,7 +7,12 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml } from "./utils.js";
-import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
+import {
+  getTtCards, getTtCardById, refreshTtCardData,
+  getStoredTtCardTitle, getStoredTtCardTeacherNames, getStoredTtCardCredits,
+  getStoredTtCardClassKeys, getStoredTtCardClassLabels, getStoredTtCardStudentKeys,
+  getStoredTtCardGradeKeys, isStoredTtCardReady
+} from "./ttcards.js";
 import { getRooms, renderRoomsView, updateRoom } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
 
@@ -537,6 +542,10 @@ function getGroupNameForTemplate(gradeKey, templateId) {
   return getCurriculumRowForTemplate(gradeKey, templateId)?.group || "";
 }
 function isWholeGradeTtCard(card) {
+  if (!card) return false;
+  if (card.schemaVersion >= 2) return !!card.isWholeGrade;
+
+  // Legacy fallback only. 새 카드 데이터는 카드 생성 시점의 isWholeGrade를 사용합니다.
   if (!card?.templateId || !card?.gradeKey) return false;
   const tpl = getTemplateById(card.templateId);
   const title = getTemplateCardTitle(tpl) || clean(card.label);
@@ -544,9 +553,6 @@ function isWholeGradeTtCard(card) {
   const groupName = clean(getGroupNameForTemplate(card.gradeKey, card.templateId));
   const track = clean(getTrackForTemplate(card.gradeKey, card.templateId));
   const label = [title, category, groupName, track, card.label].join(" ");
-
-  // 창체/채플/CA/SA/MS채플처럼 실제로 해당 학년 전체가 동시에 듣는 수업만
-  // 모든 반을 점유하도록 봅니다.
   if (category === "창체") return true;
   if (/(채플|chapel|CA|SA|자율|동아리)/i.test(label)) return true;
   if (/(전체|전학년|whole|all)/i.test(label)) return true;
@@ -573,19 +579,13 @@ function getSectionCount(templateId) {
 }
 
 function getCreditsForTtCard(card) {
-  if (!card) return 0;
-  if (Number.isFinite(parseFloat(card.credits)) && parseFloat(card.credits) > 0) return parseFloat(card.credits);
-  const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
-    .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
-  return parseFloat(row?.credits) || 0;
+  // 시간표 편집은 저장된 시간표 카드 데이터의 credits만 사용합니다.
+  return getStoredTtCardCredits(card);
 }
 
 function getTeachersForTtCard(card) {
-  if (!card) return [];
-  if (Array.isArray(card.teacherNames) && card.teacherNames.length) return card.teacherNames;
-  if (Array.isArray(card.teachers) && card.teachers.length) return card.teachers;
-  if (card.teacherName) return splitTeacherNames(card.teacherName);
-  return getTeachersForTemplate(card.templateId);
+  // 시간표 편집은 저장된 시간표 카드 데이터의 teacherNames만 사용합니다.
+  return getStoredTtCardTeacherNames(card);
 }
 
 function getGroupCards(group) {
@@ -679,10 +679,12 @@ function getTtCardClassInfos(card) {
 
   // 1순위: 시간표 사전작업에서 생성·수정되어 Firebase에 저장된 카드 데이터
   const stored = [];
-  if (Array.isArray(card.classLabels) && card.classLabels.length) {
-    card.classLabels.forEach(label => stored.push(classInfoFromStoredLabel(label, card.gradeKey)));
-  } else if (Array.isArray(card.classKeys) && card.classKeys.length) {
-    card.classKeys.forEach(key => {
+  const storedLabels = getStoredTtCardClassLabels(card);
+  const storedKeys = getStoredTtCardClassKeys(card);
+  if (storedLabels.length) {
+    storedLabels.forEach(label => stored.push(classInfoFromStoredLabel(label, card.gradeKey)));
+  } else if (storedKeys.length) {
+    storedKeys.forEach(key => {
       const info = classInfoFromStoredKey(key, card.gradeKey);
       if (info) stored.push(info);
     });
@@ -731,6 +733,8 @@ function getTtCardClassInfos(card) {
 }
 
 function getTtCardClassLabels(card) {
+  const stored = getStoredTtCardClassLabels(card);
+  if (stored.length) return stored;
   return uniqueStrings(getTtCardClassInfos(card).map(info => info.section || sectionLabel(info.sectionIdx ?? 0)));
 }
 
@@ -771,7 +775,7 @@ function buildEntryDataFromTtCards(cards, { day, period, groupId = null, unitId 
   if (!validCards.length) return null;
   const first = validCards[0];
   const templateIds = [...new Set(validCards.map(c => c.templateId).filter(Boolean))];
-  const gradeKeys = [...new Set(validCards.map(c => c.gradeKey).filter(Boolean))];
+  const gradeKeys = [...new Set(validCards.flatMap(c => getStoredTtCardGradeKeys(c)).filter(Boolean))];
   const teacherName = [...new Set(validCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))].join(",");
   return {
     day, period,
@@ -785,8 +789,8 @@ function buildEntryDataFromTtCards(cards, { day, period, groupId = null, unitId 
     templateId: templateIds[0] || first.templateId,
     gradeKey: gradeKeys[0] || first.gradeKey,
     teacherName,
-    audienceClassKeys: [...new Set(validCards.flatMap(c => c.classKeys || []))],
-    audienceStudentKeys: [...new Set(validCards.flatMap(c => c.studentKeys || []))],
+    audienceClassKeys: [...new Set(validCards.flatMap(c => getStoredTtCardClassKeys(c)))],
+    audienceStudentKeys: [...new Set(validCards.flatMap(c => getStoredTtCardStudentKeys(c)))],
     roomId: null
   };
 }
@@ -800,42 +804,20 @@ function makePlacementFromGroupItem(group, groupItem) {
 
 function entryMatchesClass(entry, cls) {
   if (!entry || !cls) return false;
-  const cardIds = [...(entry.ttcardIds || []), entry.ttcardId].filter(Boolean);
+  const targetKey = classKey(cls);
+  if (!targetKey) return false;
+  const audience = audienceForPlacement(entry);
+  if (audience.classKeys.has(targetKey)) return true;
 
-  if (cardIds.length) {
-    // Check if ANY of the ttcards covers this class
-    return cardIds.some(id => {
+  // Legacy fallback: old entries may not have stored audience data yet.
+  if (ttCardIdsFromPlacement(entry).length) {
+    return ttCardIdsFromPlacement(entry).some(id => {
       const card = getTtCardById(id);
-      if (!card) return false;
-      // Grade must match
-      if (card.gradeKey !== cls.gradeKey) return false;
-      // Try roster-based class infos
-      const infos = getTtCardClassInfos(card);
-      if (infos.length) {
-        return infos.some(info => {
-          if (cls.section && info.section) return info.section === cls.section;
-          return (info.sectionIdx ?? 0) === (cls.sectionIdx ?? 0);
-        });
-      }
-      // Fallback: same sectionIdx
-      return (card.sectionIdx ?? 0) === (cls.sectionIdx ?? 0);
+      if (!card || card.schemaVersion >= 2) return false;
+      return ttCardCoversClass(card, cls);
     });
   }
-
-  // No ttcardIds — gradeKeys + sectionIdx based
-  const eGrades = entry.gradeKeys?.length ? entry.gradeKeys : [entry.gradeKey].filter(Boolean);
-  if (!eGrades.includes(cls.gradeKey)) return false;
-  const eSec = entry.sectionIdx ?? 0;
-  if (eSec === cls.sectionIdx) return true;
-
-  const tplId = entry.templateId || entry.templateIds?.[0];
-  if (!tplId) return false;
-  const allRosterEntries = (appState.rosters?.rosters?.[tplId] || []).filter(re => (re.sectionIdx ?? 0) === eSec);
-  const allCls = appState.classes?.classes || [];
-  return allRosterEntries.some(re => {
-    const clsObj = allCls.find(c => c.id === re.classId);
-    return clsObj && clsObj.grade === cls.gradeKey && clsObj.name === cls.section;
-  });
+  return false;
 }
 
 function placeGroupAt(groupId, day, period) {
@@ -845,7 +827,7 @@ function placeGroupAt(groupId, day, period) {
   // 그룹카드는 화면에서 하나의 카드로 보이므로, 배치도 하나의 aggregate entry로 저장합니다.
   // 이렇게 해야 7AB/8AB/9AB 같은 그룹에서 특정 반(예: 8B)이 누락되지 않고
   // 상세정보·전체반 시간표·자동배치가 같은 기준(ttcardIds 전체)을 보게 됩니다.
-  const cards = getGroupCards(grp);
+  const cards = getGroupCards(grp).filter(isStoredTtCardReady);
   const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id });
   if (!data) return false;
   addEntry(data);
@@ -893,7 +875,7 @@ function getUnitTeachers(unit) {
  * Groups with isConcurrent=true are returned as "blocks" (arrays that must share a slot).
  */
 function buildSchedulableItems() {
-  const ttcards = getTtCards();
+  const ttcards = getTtCards().filter(isStoredTtCardReady);
   const ttcardMap = new Map(ttcards.map(c => [c.id, c]));
 
   const standalone = [];
@@ -902,7 +884,7 @@ function buildSchedulableItems() {
 
   // ── Group blocks: one visible group card = one schedulable aggregate item ──
   (appState.templates.templateGroups || []).forEach(group => {
-    const groupCards = getGroupCards(group);
+    const groupCards = getGroupCards(group).filter(isStoredTtCardReady);
     if (!groupCards.length) return;
     groupCards.forEach(c => groupedCardIds.add(c.id));
 
@@ -921,11 +903,6 @@ function buildSchedulableItems() {
     });
   });
 
-  // Set of templateIds covered by legacy template-based units
-  const templateIdsInUnits = new Set(
-    (appState.templates.templateGroups || []).flatMap(g => (g.units || []).flatMap(u => u.templateIds || []))
-  );
-
   // ── Standalone ttcards (not in any group pool/unit) ──────────────
   ttcards.forEach(card => {
     if (groupedCardIds.has(card.id)) return;
@@ -935,26 +912,11 @@ function buildSchedulableItems() {
     for (let i = 0; i < credits; i++) {
       standalone.push({ kind: "standalone", ttcardId: card.id, ttcardIds: [card.id],
         templateId: card.templateId, templateIds: [card.templateId], sectionIdx: card.sectionIdx,
-        gradeKey: card.gradeKey, gradeKeys: [card.gradeKey], teacherName: teacher,
+        gradeKey: card.gradeKey, gradeKeys: getStoredTtCardGradeKeys(card), teacherName: teacher,
         groupId: null
       });
     }
   });
-
-  // ── Legacy fallback: templates not covered by any ttcard or unit ──
-  if (!ttcards.length) {
-    GRADE_KEYS.forEach(gradeKey => {
-      getSubjectsForGrade(gradeKey).forEach(tpl => {
-        if (templateIdsInUnits.has(tpl.id)) return;
-        const credits  = getCreditsForTemplate(gradeKey, tpl.id);
-        const sections = getSectionCount(tpl.id);
-        const teacher  = getTeachersForTemplate(tpl.id)[0] || "";
-        for (let sec = 0; sec < sections; sec++)
-          for (let i = 0; i < credits; i++)
-            standalone.push({ kind:"standalone", templateId: tpl.id, sectionIdx: sec, gradeKey, teacherName: teacher });
-      });
-    });
-  }
 
   return { standalone, groupBlocks };
 }
@@ -1378,21 +1340,19 @@ function audienceForPlacement(x = {}) {
     if (!card) return;
 
     // 1순위: 시간표 카드에 저장된 대상 학년반/학생 데이터
-    if (Array.isArray(card.classKeys) && card.classKeys.length) {
-      card.classKeys.forEach(k => classKeys.add(k));
-    }
-    if (Array.isArray(card.studentKeys) && card.studentKeys.length) {
-      card.studentKeys.forEach(k => studentKeys.add(k));
-    }
+    const storedClassKeys = getStoredTtCardClassKeys(card);
+    const storedStudentKeys = getStoredTtCardStudentKeys(card);
+    storedClassKeys.forEach(k => classKeys.add(k));
+    storedStudentKeys.forEach(k => studentKeys.add(k));
 
-    // 이전 데이터 호환용 fallback
-    if (!card.classKeys?.length) {
+    // 이전 데이터 호환용 fallback. v2 카드가 있으면 재추론하지 않습니다.
+    if (!storedClassKeys.length && card.schemaVersion < 2) {
       getTtCardClassInfos(card).forEach(info => {
         const key = classKey(info);
         if (key) classKeys.add(key);
       });
     }
-    if (!card.studentKeys?.length) {
+    if (!storedStudentKeys.length && card.schemaVersion < 2) {
       getRosterEntriesForTtCard(card).forEach(re => studentKeys.add(`${re.classId}:${re.studentId}`));
     }
   };
@@ -1472,8 +1432,8 @@ function entryTitle(e) {
   if (e.ttcardId) {
     const card = getTtCardById(e.ttcardId);
     if (card) {
-      const base = card.title || card.titleKo || card.subject || getTemplateCardTitle(getTemplateById(card.templateId)) || "?";
-      const labels = Array.isArray(card.classLabels) && card.classLabels.length ? card.classLabels.join(", ") : "";
+      const base = getStoredTtCardTitle(card);
+      const labels = getStoredTtCardClassLabels(card).join(", ");
       return labels ? `${base} ${labels}` : base;
     }
   }
@@ -1491,14 +1451,14 @@ function entryTeachers(e) {
         const ttcards = getTtCards();
         return [...new Set(unit.ttcardIds.flatMap(id => {
           const card = ttcards.find(c => c.id === id);
-          return card ? getTeachersForTemplate(card.templateId) : [];
+          return card ? getTeachersForTtCard(card) : [];
         }))];
       }
       if (unit.templateIds?.length) return getUnitTeachers(unit);
     }
   }
   // ttcard standalone
-  if (e.ttcardId) { const card = getTtCardById(e.ttcardId); if (card) return getTeachersForTemplate(card.templateId); }
+  if (e.ttcardId) { const card = getTtCardById(e.ttcardId); if (card) return getTeachersForTtCard(card); }
   return getTeachersForTemplate(e.templateId);
 }
 
@@ -1622,7 +1582,7 @@ function handleDrop(data, day, period) {
     const grp  = (appState.templates.templateGroups || []).find(g => g.id === data.groupId);
     const unit = grp?.units?.find(u => u.id === data.unitId);
     if (grp && unit) {
-      const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
+      const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean).filter(isStoredTtCardReady);
       const entryData = buildEntryDataFromTtCards(ttcards, { day, period, groupId: grp.id, unitId: unit.id });
       if (entryData) {
         addEntry(entryData);
@@ -2038,8 +1998,11 @@ function renderSubjectPanel() {
     renderSubjectPanelTtCards(panel, ttcards); return;
   }
 
-  // ── Legacy template-based panel (fallback) ────────────────────
-  renderSubjectPanelLegacy(panel);
+  // 저장된 시간표 카드 데이터만 사용합니다. 커리큘럼 원본 기반 임시 카드는 더 이상 생성하지 않습니다.
+  const e = document.createElement("div");
+  e.className = "tt-empty";
+  e.textContent = "저장된 시간표 카드가 없습니다. 시간표 사전작업 → 시간표 카드에서 카드 생성/재생성을 먼저 실행하세요.";
+  panel.appendChild(e);
 }
 
 function renderSubjectPanelTtCards(panel, allTtcards) {
@@ -2050,11 +2013,11 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
 
   // ── Groups: one card per group ──────────────────────────────
   grpList.forEach(grp => {
-    const grpCards = getGroupCards(grp);
+    const grpCards = getGroupCards(grp).filter(isStoredTtCardReady);
     grpCards.forEach(c => seenIds.add(c.id));
     if (!grpCards.length) return;
 
-    const gradeKeys = [...new Set(grpCards.map(c => c.gradeKey))];
+    const gradeKeys = [...new Set(grpCards.flatMap(c => getStoredTtCardGradeKeys(c)))];
     const credits = Math.max(1, ...grpCards.map(getCreditsForTtCard).filter(v => v > 0));
     const teachers = [...new Set(grpCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))];
     const relatedEntries = entries().filter(e =>
@@ -2081,18 +2044,16 @@ function renderSubjectPanelTtCards(panel, allTtcards) {
   // ── Standalone ttcards (not in any group) ────────────────────
   allTtcards.forEach(c => {
     if (seenIds.has(c.id)) return;
-    const tpl = getTemplateById(c.templateId); if (!tpl) return;
     const gradeColor = getGradeColor(c.gradeKey);
     const credits = getCreditsForTtCard(c);
     const desc = describeTtCard(c);
     const assigned = entries().filter(e =>
-      (e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)) ||
-      (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e,c.gradeKey) && (e.sectionIdx??0)===c.sectionIdx)
+      e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)
     ).length;
     const isDone = credits > 0 && assigned >= credits;
     const label = desc.title;
     const card = buildSidebarCard({ title: label, teachers: getTeachersForTtCard(c),
-      gradeKeys: [c.gradeKey], credits, assigned, isDone, gradeColor, sectionIdx: c.sectionIdx, detailItems: [desc] });
+      gradeKeys: getStoredTtCardGradeKeys(c), credits, assigned, isDone, gradeColor, sectionIdx: c.sectionIdx, detailItems: [desc] });
     card.dataset.templateId = c.templateId;
     card.dataset.ttcardId = c.id;
     if (!isDone) {
@@ -2219,14 +2180,15 @@ function finalizeSidebarPanel(panel, available, done, emptyMsg) {
 
 // ── Constraints panel ─────────────────────────────────────────────
 function getAllTimetableTeachers() {
+  const fromCards = [...new Set(getTtCards().flatMap(getTeachersForTtCard).filter(Boolean))];
+  const fromEntries = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
+  const fromRooms = [...new Set(getRooms().map(r => clean(r.teacherName)).filter(Boolean))];
   const fromTemplates = [...new Set(
     (appState.templates.templates || []).flatMap(t =>
       splitTeacherNames([t.teacher, t.sem1Teacher, t.sem2Teacher].join(","))
     ).filter(Boolean)
   )];
-  const fromEntries = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
-  const fromRooms = [...new Set(getRooms().map(r => clean(r.teacherName)).filter(Boolean))];
-  return [...new Set([...fromTemplates, ...fromEntries, ...fromRooms])].sort((a, b) => a.localeCompare(b, "ko"));
+  return [...new Set([...fromCards, ...fromEntries, ...fromRooms, ...fromTemplates])].sort((a, b) => a.localeCompare(b, "ko"));
 }
 
 function applyRoomToTeacherEntries(teacher, roomId) {
@@ -2937,8 +2899,15 @@ export async function autoAssignAll() {
   if (!canEdit()) return;
   if (autoAssignRunning) { alert("자동 배치가 이미 진행 중입니다."); return; }
 
-  const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
-  if (!activeGrades.length) { alert("커리큘럼에 배치된 과목이 없습니다."); return; }
+  const activeGrades = GRADE_KEYS.filter(g => getTtCards().some(c => getStoredTtCardGradeKeys(c).includes(g) || c.gradeKey === g));
+  if (!activeGrades.length) { alert("저장된 시간표 카드가 없습니다.\n시간표 사전작업 → 시간표 카드에서 카드 생성/재생성을 먼저 실행해 주세요."); return; }
+
+  const notReady = getTtCards().filter(c => !isStoredTtCardReady(c));
+  if (notReady.length) {
+    const sample = notReady.slice(0, 8).map(c => getStoredTtCardTitle(c)).join("\n");
+    alert(`시간표 카드 데이터가 완성되지 않은 카드가 ${notReady.length}개 있습니다.\n대상 반(classKeys) 또는 시수(credits)를 확인한 뒤 다시 실행해 주세요.\n\n${sample}`);
+    return;
+  }
 
   if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
