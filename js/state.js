@@ -253,17 +253,38 @@ export function normalizeTimetableEntry(e = {}) {
     templateIds: Array.isArray(e.templateIds) ? e.templateIds.filter(Boolean) : (templateId ? [templateId] : []),
     gradeKeys:   Array.isArray(e.gradeKeys)   ? e.gradeKeys.filter(Boolean)   : (gradeKey   ? [gradeKey]   : []),
     teacherName: clean(e.teacherName),
+    audienceClassKeys: Array.isArray(e.audienceClassKeys) ? e.audienceClassKeys.map(clean).filter(Boolean) : [],
+    audienceStudentKeys: Array.isArray(e.audienceStudentKeys) ? e.audienceStudentKeys.map(clean).filter(Boolean) : [],
     roomId:      clean(e.roomId) || null,
     pinned:      !!e.pinned,
   };
 }
 export function normalizeTtCard(item = {}) {
+  const arr = v => Array.isArray(v) ? v.map(clean).filter(Boolean) : [];
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
   return {
     id:         item.id || uid("ttc"),
     templateId: clean(item.templateId),
     gradeKey:   clean(item.gradeKey),
-    sectionIdx: parseInt(item.sectionIdx) || 0,
+    sectionIdx: parseInt(item.sectionIdx, 10) || 0,
     label:      clean(item.label),
+
+    // Generated snapshot data.
+    // 시간표 화면은 이 값을 우선 사용하고, 매번 수강명단/반 정보를 재추론하지 않습니다.
+    subject:     clean(item.subject),
+    subjectEn:   clean(item.subjectEn),
+    teacherName: clean(item.teacherName),
+    teachers:    arr(item.teachers),
+    credits:     num(item.credits),
+    category:    clean(item.category),
+    track:       clean(item.track),
+    group:       clean(item.group),
+    classKeys:   arr(item.classKeys),     // internal: "9:A"
+    classLabels: arr(item.classLabels),   // display: "9A"
+    studentKeys: arr(item.studentKeys),   // internal: "classId:studentId"
+    isWholeGrade: !!item.isWholeGrade,
+    generatedAt: clean(item.generatedAt),
+    manualEdited: !!item.manualEdited,
   };
 }
 export function normalizeTimetableConstraint(c = {}) {
@@ -657,13 +678,6 @@ async function applyTimetableSplitIfReady() {
 }
 
 function subscribeTimetableSplit() {
-  // Menu-scoped subscriptions may detach and reattach this domain.
-  // Reset the three split snapshots so stale partial cache is not applied as a fresh timetable.
-  timetableSplitCache.entries = null;
-  timetableSplitCache.ttcards = null;
-  timetableSplitCache.meta = null;
-  timetableSplitCache.metaExists = false;
-
   const onSplitError = err => fallbackToLegacyDocument("timetable", normalizeTimetableDomain, err);
 
   const unsubEntries = onSnapshot(splitRefs.timetableEntries, snap => {
@@ -717,10 +731,6 @@ export function subscribeDomains(domainList = ALL_DOMAINS) {
       err => console.error(domain, err)
     );
   });
-
-  // If every requested domain is already subscribed and loaded, no new snapshot may fire.
-  // Clear the batched-render gate immediately in that case.
-  _checkAllLoaded();
 }
 
 export function subscribeAll() {
@@ -733,7 +743,6 @@ export function unsubscribeDomains(domainList = Object.keys(unsubs)) {
       unsubs[domain]();
       delete unsubs[domain];
     }
-    _subscribedDomains.delete(domain);
   });
 }
 

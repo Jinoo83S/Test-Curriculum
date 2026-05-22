@@ -7,7 +7,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml } from "./utils.js";
-import { getTtCards, getTtCardById } from "./ttcards.js";
+import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
 import { getRooms, renderRoomsView } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
 
@@ -521,13 +521,17 @@ function getSectionCount(templateId) {
 
 function getCreditsForTtCard(card) {
   if (!card) return 0;
+  if (Number.isFinite(parseFloat(card.credits)) && parseFloat(card.credits) > 0) return parseFloat(card.credits);
   const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
     .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
   return parseFloat(row?.credits) || 0;
 }
 
 function getTeachersForTtCard(card) {
-  return card ? getTeachersForTemplate(card.templateId) : [];
+  if (!card) return [];
+  if (Array.isArray(card.teachers) && card.teachers.length) return card.teachers;
+  if (card.teacherName) return splitTeacherNames(card.teacherName);
+  return getTeachersForTemplate(card.templateId);
 }
 
 function getGroupCards(group) {
@@ -598,6 +602,18 @@ function classKeyFromCard(card) {
   return classKey({ gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0 });
 }
 
+
+function classInfoFromStoredLabel(label, fallbackGradeKey = "") {
+  const compact = String(label || "").replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+  const m = compact.match(/^(\d{1,2})(.+)$/);
+  if (m) return { gradeKey: `${m[1]}학년`, section: m[2], sectionIdx: Math.max(0, m[2].charCodeAt(0) - 65) };
+  return { gradeKey: fallbackGradeKey, section: compact, sectionIdx: Math.max(0, compact.charCodeAt(0) - 65) };
+}
+function classInfoFromStoredKey(key, fallbackGradeKey = "") {
+  const [g, sec] = String(key || "").split(":");
+  if (!g || !sec) return null;
+  return classInfoFromStoredLabel(`${g}${sec}`, fallbackGradeKey);
+}
 function getRosterEntriesForTtCard(card) {
   if (!card?.templateId) return [];
   return (appState.rosters?.rosters?.[card.templateId] || [])
@@ -606,6 +622,27 @@ function getRosterEntriesForTtCard(card) {
 
 function getTtCardClassInfos(card) {
   if (!card) return [];
+
+  // 1순위: 시간표 사전작업에서 생성·수정되어 Firebase에 저장된 카드 데이터
+  const stored = [];
+  if (Array.isArray(card.classLabels) && card.classLabels.length) {
+    card.classLabels.forEach(label => stored.push(classInfoFromStoredLabel(label, card.gradeKey)));
+  } else if (Array.isArray(card.classKeys) && card.classKeys.length) {
+    card.classKeys.forEach(key => {
+      const info = classInfoFromStoredKey(key, card.gradeKey);
+      if (info) stored.push(info);
+    });
+  }
+  if (stored.length) {
+    const seen = new Set();
+    return stored.filter(info => {
+      const key = classKey(info);
+      if (!key || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+  }
+
+  // 이하 코드는 이전 데이터 호환용 fallback입니다.
   const rosterEntries = getRosterEntriesForTtCard(card);
   const allClasses = appState.classes?.classes || [];
   const classRows = getAllClasses();
@@ -627,18 +664,11 @@ function getTtCardClassInfos(card) {
   if (labelInfos.length) return labelInfos;
 
   const cc = Math.max(0, parseInt(appState.rosters?.rosterMeta?.[card.templateId]?.classCount) || 0);
-
-  // classCount=1이라고 해서 항상 학년 전체 수업은 아닙니다.
-  // 선택/분반 그룹 카드(예: 9A 국어 + 9A 한국어)는 수강명단이 비어 있으면
-  // 기존 로직에서 9A·9B 전체로 확장되어 잘못 표시/충돌되었습니다.
-  // 따라서 창체·채플 등 명확한 전체 학년 수업만 모든 반으로 확장합니다.
   if (cc <= 1 && isWholeGradeTtCard(card)) {
     const allGradeClasses = classRows.filter(c => c.gradeKey === card.gradeKey);
     if (allGradeClasses.length) return allGradeClasses;
   }
 
-  // 그 외에는 sectionIdx 기준의 실제 반 하나만 점유하도록 봅니다.
-  // 예: 9A 국어/한국어 그룹은 9A만, 9B는 별도 카드가 있을 때만 표시됩니다.
   const matched = classRows.filter(c => c.gradeKey === card.gradeKey && (c.sectionIdx ?? 0) === (card.sectionIdx ?? 0));
   if (matched.length) return matched;
 
@@ -665,7 +695,7 @@ function uniqueStrings(list) {
 
 function describeTtCard(card) {
   const tpl = getTemplateById(card?.templateId);
-  const base = tpl ? getTemplateCardTitle(tpl) : "?";
+  const base = card?.subject || (tpl ? getTemplateCardTitle(tpl) : "?");
   const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card?.templateId]?.classCount) || 1);
   const classLabels = getTtCardClassLabels(card);
   const sec = classLabels.length ? classLabels.join(", ") : sectionLabel(card?.sectionIdx ?? 0);
@@ -701,6 +731,8 @@ function buildEntryDataFromTtCards(cards, { day, period, groupId = null, unitId 
     templateId: templateIds[0] || first.templateId,
     gradeKey: gradeKeys[0] || first.gradeKey,
     teacherName,
+    audienceClassKeys: [...new Set(validCards.flatMap(c => c.classKeys || []))],
+    audienceStudentKeys: [...new Set(validCards.flatMap(c => c.studentKeys || []))],
     roomId: null
   };
 }
@@ -1291,18 +1323,28 @@ function audienceForPlacement(x = {}) {
   const addCardAudience = (card) => {
     if (!card) return;
 
-    // 핵심: 학생 충돌은 반드시 "카드가 실제로 가리키는 학년+반" 단위로 계산합니다.
-    // 예) 9A와 7A는 반명이 A로 같아도 classKey가 9:A / 7:A로 달라 충돌이 아닙니다.
-    // 예) 그룹카드도 포함된 각 카드의 학년+반을 따로 합산합니다.
-    const directKey = classKeyFromCard(card);
-    if (directKey) classKeys.add(directKey);
+    // 1순위: 시간표 카드에 저장된 대상 학년반/학생 데이터
+    if (Array.isArray(card.classKeys) && card.classKeys.length) {
+      card.classKeys.forEach(k => classKeys.add(k));
+    }
+    if (Array.isArray(card.studentKeys) && card.studentKeys.length) {
+      card.studentKeys.forEach(k => studentKeys.add(k));
+    }
 
-    getRosterEntriesForTtCard(card).forEach(re => studentKeys.add(`${re.classId}:${re.studentId}`));
-    getTtCardClassInfos(card).forEach(info => {
-      const key = classKey(info);
-      if (key) classKeys.add(key);
-    });
+    // 이전 데이터 호환용 fallback
+    if (!card.classKeys?.length) {
+      getTtCardClassInfos(card).forEach(info => {
+        const key = classKey(info);
+        if (key) classKeys.add(key);
+      });
+    }
+    if (!card.studentKeys?.length) {
+      getRosterEntriesForTtCard(card).forEach(re => studentKeys.add(`${re.classId}:${re.studentId}`));
+    }
   };
+
+  (x.audienceClassKeys || []).forEach(k => classKeys.add(k));
+  (x.audienceStudentKeys || []).forEach(k => studentKeys.add(k));
 
   if (cardIds.length) {
     cardIds.forEach(id => addCardAudience(getTtCardById(id)));
@@ -1919,6 +1961,22 @@ function showEntryDetail(entry) {
 function renderSubjectPanel() {
   const panel = $("ttSubjectsContent"); if (!panel) return;
   panel.innerHTML = "";
+
+  const toolbar = document.createElement("div");
+  toolbar.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc";
+  const loadBtn = makeBtn("📥 카드 불러오기", "secondary-btn compact-btn", () => {
+    renderSubjectPanel();
+    alert(`저장된 시간표 카드 ${getTtCards().length}개를 불러왔습니다.`);
+  });
+  const refreshBtn = makeBtn("🔄 카드 데이터 갱신", "secondary-btn compact-btn", () => {
+    if (!canEdit()) return;
+    const n = refreshTtCardData();
+    alert(`${n}개 카드 데이터를 갱신했습니다.`);
+    renderAll();
+  });
+  refreshBtn.disabled = !canEdit();
+  toolbar.append(loadBtn, refreshBtn);
+  panel.appendChild(toolbar);
 
   const ttcards = appState.timetable?.ttcards || [];
 

@@ -46,6 +46,12 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     return g && s ? `${g}:${s}` : "";
   };
   const fallbackAudience = e => {
+    if (Array.isArray(e.audienceClassKeys) && e.audienceClassKeys.length) {
+      return {
+        studentKeys: new Set(e.audienceStudentKeys || []),
+        classKeys: new Set(e.audienceClassKeys || [])
+      };
+    }
     const grades = e.gradeKeys?.length ? e.gradeKeys : (e.gradeKey ? [e.gradeKey] : []);
     const sec = sectionLabel(e.sectionIdx ?? 0);
     return {

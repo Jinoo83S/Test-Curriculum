@@ -31,14 +31,143 @@ export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
 const grps = () => appState.templates.templateGroups || [];
 
+
+// ── Persisted card data helpers ─────────────────────────────────
+const classKeyOf = (gradeKey, section) => {
+  const grade = gradeDisplay(gradeKey || "").trim();
+  const sec = String(section || "").replace(/\s+/g, "").replace(/학년/g, "").replace(/^\d{1,2}/, "").toUpperCase();
+  return grade && sec ? `${grade}:${sec}` : "";
+};
+const classLabelOf = (gradeKey, section) => {
+  const grade = gradeDisplay(gradeKey || "").trim();
+  const sec = String(section || "").replace(/\s+/g, "").replace(/학년/g, "").replace(/^\d{1,2}/, "").toUpperCase();
+  return grade && sec ? `${grade}${sec}` : "";
+};
+function getGradeClasses(gradeKey) {
+  const list = (appState.classes?.classes || [])
+    .filter(c => c.grade === gradeKey)
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+  return list.length ? list : [{ id:"", grade: gradeKey, name: sectionLabel(0), students: [] }];
+}
+function getCurriculumRowForCard(gradeKey, templateId) {
+  return (appState.curriculum?.gradeBoards?.[gradeKey] || [])
+    .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId) || null;
+}
+function isWholeGradeRow(row, tpl) {
+  const text = [row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn].map(clean).join(" ").toLowerCase();
+  return row?.category === "창체" || /(채플|chapel|ca|sa|ms채플|자율|동아리)/i.test(text);
+}
+function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
+  const rosterEntries = (appState.rosters?.rosters?.[templateId] || [])
+    .filter(e => (e.sectionIdx ?? 0) === (sectionIdx ?? 0));
+  const classes = appState.classes?.classes || [];
+  const classKeys = new Set(), classLabels = new Set(), studentKeys = new Set();
+
+  rosterEntries.forEach(re => {
+    const cls = classes.find(c => c.id === re.classId);
+    if (!cls || cls.grade !== gradeKey) return;
+    const sec = cls.name || sectionLabel(sectionIdx ?? 0);
+    const key = classKeyOf(gradeKey, sec);
+    const label = classLabelOf(gradeKey, sec);
+    if (key) classKeys.add(key);
+    if (label) classLabels.add(label);
+    studentKeys.add(`${re.classId}:${re.studentId}`);
+  });
+  if (classKeys.size) return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[...studentKeys] };
+
+  const row = getCurriculumRowForCard(gradeKey, templateId);
+  const tpl = getTemplateById(templateId);
+  const whole = isWholeGradeRow(row, tpl);
+  const gradeClasses = getGradeClasses(gradeKey);
+  const targetClasses = whole
+    ? gradeClasses
+    : [gradeClasses[sectionIdx] || { grade: gradeKey, name: sectionLabel(sectionIdx ?? 0) }];
+  targetClasses.forEach(cls => {
+    const sec = cls.name || sectionLabel(sectionIdx ?? 0);
+    const key = classKeyOf(gradeKey, sec);
+    const label = classLabelOf(gradeKey, sec);
+    if (key) classKeys.add(key);
+    if (label) classLabels.add(label);
+  });
+  return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[] };
+}
+function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing = null }) {
+  const tpl = getTemplateById(templateId);
+  const row = getCurriculumRowForCard(gradeKey, templateId);
+  const audience = resolveCardAudience({ templateId, gradeKey, sectionIdx });
+  const teacherName = tpl ? getTemplateTeacherSummary(tpl) : "";
+  const generated = normalizeTtCard({
+    id, templateId, gradeKey, sectionIdx,
+    label: existing?.label || "",
+    subject: tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)",
+    subjectEn: tpl?.nameEn || "",
+    teacherName,
+    teachers: teacherName.split(/[,，·]/).map(x => x.trim()).filter(Boolean),
+    credits: parseFloat(row?.credits) || 0,
+    category: row?.category || "",
+    track: row?.track || "",
+    group: row?.group || "",
+    classKeys: audience.classKeys,
+    classLabels: audience.classLabels,
+    studentKeys: audience.studentKeys,
+    isWholeGrade: isWholeGradeRow(row, tpl),
+    generatedAt: new Date().toISOString(),
+    manualEdited: !!existing?.manualEdited,
+  });
+  if (existing?.manualEdited) {
+    // 수동 수정값은 생성 데이터보다 우선합니다.
+    ["label","teacherName","teachers","credits","classKeys","classLabels","studentKeys","isWholeGrade"].forEach(k => {
+      if (existing[k] !== undefined) generated[k] = existing[k];
+    });
+  }
+  return generated;
+}
+export function refreshTtCardData() {
+  if (!canEdit()) return 0;
+  const existing = new Map(getTtCards().map(c => [c.id, c]));
+  let count = 0;
+  appState.timetable.ttcards = getTtCards().map(c => {
+    count++;
+    return buildPersistedTtCard({ id:c.id, templateId:c.templateId, gradeKey:c.gradeKey, sectionIdx:c.sectionIdx ?? 0, existing: existing.get(c.id) || c });
+  });
+  scheduleSave("timetable");
+  return count;
+}
+export function clearTtCards() {
+  if (!canEdit()) return 0;
+  const ids = new Set(getTtCards().map(c => c.id));
+  appState.timetable.ttcards = [];
+  (appState.templates.templateGroups || []).forEach(g => {
+    g.poolCardIds = (g.poolCardIds || []).filter(id => !ids.has(id));
+    (g.units || []).forEach(u => { u.ttcardIds = (u.ttcardIds || []).filter(id => !ids.has(id)); });
+  });
+  scheduleSave("timetable");
+  scheduleSave("templates");
+  return ids.size;
+}
+function updateTtCardField(cardId, field, value) {
+  if (!canEdit()) return;
+  const card = getTtCardById(cardId); if (!card) return;
+  if (["classLabels","classKeys","teachers","studentKeys"].includes(field)) {
+    card[field] = String(value || "").split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
+  } else if (field === "credits") {
+    card[field] = parseFloat(value) || 0;
+  } else if (field === "isWholeGrade") {
+    card[field] = !!value;
+  } else {
+    card[field] = value;
+  }
+  card.manualEdited = true;
+  scheduleSave("timetable");
+}
+
 // ── TtCard helpers ────────────────────────────────────────────────
 export function getTtCardLabel(card) {
+  if (!card) return "-";
   if (card.label) return card.label;
-  const tpl = getTemplateById(card.templateId);
-  const base = tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)";
-  const cc = getClassCount(card.templateId);
-  const secLabel = getSectionLabelFromRoster(card);
-  return (cc > 1 || (secLabel && secLabel.includes(","))) ? `${base} ${secLabel || sectionLabel(card.sectionIdx)}` : base;
+  const base = card.subject || (getTemplateById(card.templateId) ? getTemplateCardTitle(getTemplateById(card.templateId)) : "(삭제된 과목)");
+  const cls = Array.isArray(card.classLabels) && card.classLabels.length ? card.classLabels.join(", ") : "";
+  return cls ? `${base} ${cls}` : base;
 }
 
 /** Stable deterministic ID so group references survive regeneration */
@@ -66,12 +195,12 @@ export function generateTtCards() {
         const cc = Math.max(1, getClassCount(tplId));
         for (let i = 0; i < cc; i++) {
           const stableId = makeTtcId(tplId, gradeKey, i);
-          if (!seen.has(stableId)) {
-            seen.add(stableId);
-            // Reuse existing card if present (preserves label overrides)
-            cards.push(existing.get(stableId) ||
-              normalizeTtCard({ id: stableId, templateId: tplId, gradeKey, sectionIdx: i }));
-          }
+          if (seen.has(stableId)) continue;
+          seen.add(stableId);
+          cards.push(buildPersistedTtCard({
+            id: stableId, templateId: tplId, gradeKey, sectionIdx: i,
+            existing: existing.get(stableId) || null
+          }));
         }
       });
     });
@@ -92,15 +221,28 @@ export function renderTtCardsView(container) {
   sub.textContent = "커리큘럼 과목과 수강명단 반 수를 바탕으로 시간표용 카드를 생성합니다.";
   left.append(title, sub);
 
+  const btnWrap = document.createElement("div"); btnWrap.style.cssText = "display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end";
   const genBtn = makeBtn("🃏 카드 생성 / 재생성", "primary-btn", () => {
     if (!canEdit()) return;
-    if (getTtCards().length > 0 && !confirm("기존 카드를 모두 삭제하고 재생성합니다.\n(시간표 배치 데이터는 유지됩니다) 계속할까요?")) return;
+    if (getTtCards().length > 0 && !confirm("현재 카드 데이터를 기준으로 다시 생성합니다.\n수동 수정된 값은 유지됩니다. 계속할까요?")) return;
     const n = generateTtCards();
-    alert(`${n}개 시간표 카드가 생성되었습니다.`);
+    alert(`${n}개 시간표 카드 데이터가 생성되었습니다.`);
     renderTtCardsView(container);
   });
-  genBtn.disabled = !canEdit();
-  hdr.append(left, genBtn);
+  const refreshBtn = makeBtn("🔄 카드 데이터 새로고침", "secondary-btn", () => {
+    const n = refreshTtCardData();
+    alert(`${n}개 카드 데이터를 갱신했습니다.`);
+    renderTtCardsView(container);
+  });
+  const clearBtn = makeBtn("🧹 카드 초기화", "danger-btn", () => {
+    if (!confirm("시간표 카드를 모두 초기화하고 그룹 연결에서도 제거할까요?")) return;
+    const n = clearTtCards();
+    alert(`${n}개 카드가 초기화되었습니다.`);
+    renderTtCardsView(container);
+  });
+  [genBtn, refreshBtn, clearBtn].forEach(b => b.disabled = !canEdit());
+  btnWrap.append(genBtn, refreshBtn, clearBtn);
+  hdr.append(left, btnWrap);
   container.appendChild(hdr);
 
   const cards = getTtCards();
@@ -129,23 +271,37 @@ export function renderTtCardsView(container) {
     section.appendChild(ghdr);
 
     const table = document.createElement("table"); table.className = "ttc-table";
-    table.innerHTML = `<thead><tr><th>과목명</th><th>반</th><th>담당 교사</th><th>시수</th><th>그룹</th></tr></thead>`;
+    table.innerHTML = `<thead><tr><th>과목명</th><th>대상 학년반</th><th>담당 교사</th><th>시수</th><th>그룹</th><th>수정</th></tr></thead>`;
     const tbody = document.createElement("tbody");
     gc.forEach(card => {
-      const tpl     = getTemplateById(card.templateId);
-      const cc      = getClassCount(card.templateId);
-      const credits  = getTtCardCredits(card);
       const grp = grps().find(g =>
         (g.units||[]).some(u => (u.ttcardIds||[]).includes(card.id)) ||
         (g.poolCardIds||[]).includes(card.id)
       );
       const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)"}</td>
-        <td>${cc > 1 ? sectionLabel(card.sectionIdx) : "-"}</td>
-        <td>${tpl ? getTemplateTeacherSummary(tpl) : ""}</td>
-        <td>${credits ?? "-"}</td>
-        <td>${grp ? `<span class="ttc-group-chip">${grp.name}</span>` : '<span class="ttc-unassigned-chip">미배정</span>'}</td>`;
+      const labelInp = document.createElement("input"); labelInp.value = card.label || card.subject || ""; labelInp.disabled = !canEdit();
+      labelInp.addEventListener("change", e => updateTtCardField(card.id, "label", e.target.value));
+      const classInp = document.createElement("input"); classInp.value = (card.classLabels || []).join(", "); classInp.disabled = !canEdit();
+      classInp.title = "예: 9A, 9B"; classInp.addEventListener("change", e => {
+        const labels = e.target.value.split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
+        updateTtCardField(card.id, "classLabels", labels.join(","));
+        const keys = labels.map(l => { const m = l.match(/^(\d{1,2})(.+)$/); return m ? `${m[1]}:${m[2].toUpperCase()}` : l; });
+        updateTtCardField(card.id, "classKeys", keys.join(","));
+      });
+      const teacherInp = document.createElement("input"); teacherInp.value = card.teacherName || ""; teacherInp.disabled = !canEdit();
+      teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); });
+      const creditInp = document.createElement("input"); creditInp.type="number"; creditInp.min="0"; creditInp.step="0.5"; creditInp.value = card.credits || 0; creditInp.disabled = !canEdit();
+      creditInp.style.maxWidth = "70px"; creditInp.addEventListener("change", e => updateTtCardField(card.id, "credits", e.target.value));
+      const resetBtn = makeBtn("원본", "secondary-btn compact-btn", () => {
+        const fresh = buildPersistedTtCard({ id:card.id, templateId:card.templateId, gradeKey:card.gradeKey, sectionIdx:card.sectionIdx ?? 0, existing:null });
+        Object.assign(card, fresh, { manualEdited:false }); scheduleSave("timetable"); renderTtCardsView(container);
+      });
+      resetBtn.disabled = !canEdit();
+      [[labelInp],[classInp],[teacherInp],[creditInp]].forEach(arr => arr[0].style.cssText = "width:100%;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:12px");
+      [labelInp, classInp, teacherInp, creditInp, resetBtn].forEach(el => { if (el.addEventListener) el.addEventListener("click", e => e.stopPropagation()); });
+      const tds = [labelInp, classInp, teacherInp, creditInp, document.createElement("span"), resetBtn].map(x => { const td=document.createElement("td"); td.appendChild(x); return td; });
+      tds[4].firstChild.outerHTML = grp ? `<span class="ttc-group-chip">${grp.name}</span>` : '<span class="ttc-unassigned-chip">미배정</span>';
+      tr.append(...tds);
       tbody.appendChild(tr);
     });
     table.appendChild(tbody); section.appendChild(table);
@@ -179,17 +335,17 @@ function createTtCardChip(card, opts = {}) {
   // Row 1: subject | grade chip | section badge
   const r1 = document.createElement("div"); r1.className = "gm-card-r1";
   const subjectEl = document.createElement("div"); subjectEl.className = "gm-card-subject";
-  subjectEl.textContent = getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
+  subjectEl.textContent = card.subject || getTemplateCardTitle(tpl || { nameKo: "(삭제됨)" });
   const gradeChip = document.createElement("span"); gradeChip.className = "gm-card-grade";
   gradeChip.textContent = gradeDisplay(card.gradeKey);
-  const secLbl = getSectionLabelFromRoster(card);
+  const secLbl = (card.classLabels || []).join(", ") || getSectionLabelFromRoster(card);
   if (secLbl) { const sb = document.createElement("span"); sb.className = "gm-card-sec"; sb.textContent = secLbl; r1.append(subjectEl, gradeChip, sb); }
   else { r1.append(subjectEl, gradeChip); }
 
   // Row 2: teacher | delete button
   const r2 = document.createElement("div"); r2.className = "gm-card-r2";
   const tchEl = document.createElement("div"); tchEl.className = "gm-card-teacher";
-  tchEl.textContent = tpl ? getTemplateTeacherSummary(tpl) : "-";
+  tchEl.textContent = card.teacherName || (tpl ? getTemplateTeacherSummary(tpl) : "-");
   r2.appendChild(tchEl);
   if (showDelete && canEdit() && onDelete) {
     const del = document.createElement("button"); del.type = "button"; del.className = "gm-card-del"; del.textContent = "×";
