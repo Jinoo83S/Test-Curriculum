@@ -2,6 +2,34 @@
 // subject-setup.js · Subject Track Groups + Section Count
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
+
+const SETUP_LEVELS = {
+  middle: { label: "중등", hint: "7–9학년", grades: ["7학년", "8학년", "9학년"] },
+  high:   { label: "고등", hint: "10–12학년", grades: ["10학년", "11학년", "12학년"] },
+};
+let activeSetupLevel = "middle";
+
+function getActiveSetupGrades() {
+  return SETUP_LEVELS[activeSetupLevel]?.grades || SETUP_LEVELS.middle.grades;
+}
+
+function renderSetupLevelTabs(onChange) {
+  const tabs = document.createElement("div");
+  tabs.className = "setup-level-tabs";
+  Object.entries(SETUP_LEVELS).forEach(([key, info]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "setup-level-tab" + (key === activeSetupLevel ? " active" : "");
+    btn.innerHTML = `<strong>${info.label}</strong><span>${info.hint}</span>`;
+    btn.addEventListener("click", () => {
+      if (activeSetupLevel === key) return;
+      activeSetupLevel = key;
+      onChange?.();
+    });
+    tabs.appendChild(btn);
+  });
+  return tabs;
+}
 import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState } from "./state.js";
@@ -9,9 +37,9 @@ import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from
 import { getRosterMeta, setRosterClassCount, getClassCount } from "./rosters.js";
 
 // ── Build rows from curriculum IN BOARD ORDER ─────────────────────
-function buildRows() {
+function buildRows(gradeKeys = GRADE_KEYS) {
   const rows = [];
-  GRADE_KEYS.forEach(gradeKey => {
+  gradeKeys.forEach(gradeKey => {
     const board = appState.curriculum.gradeBoards[gradeKey] || [];
     const seenTpl = new Set();
     board.forEach(row => {
@@ -57,11 +85,13 @@ export function renderSubjectSetupView(container) {
   const sub = document.createElement("p"); sub.className = "manager-subtitle";
   sub.textContent = "수강명단 작성 전, 각 과목의 반 수를 설정하세요. 설정된 반 수는 수강명단에 자동 반영됩니다.";
   hdr.append(title, sub); container.appendChild(hdr);
+  container.appendChild(renderSetupLevelTabs(() => renderSubjectSetupView(container)));
 
-  const rows = buildRows();
+  const activeGrades = getActiveSetupGrades();
+  const rows = buildRows(activeGrades);
   if (!rows.length) {
     const e = document.createElement("div"); e.className = "manager-empty";
-    e.textContent = "커리큘럼에 과목이 없습니다. 먼저 커리큘럼 보드에서 과목을 배치하세요.";
+    e.textContent = `${SETUP_LEVELS[activeSetupLevel].label} 과정에 배치된 과목이 없습니다. 먼저 커리큘럼 보드에서 과목을 배치하세요.`;
     container.appendChild(e); return;
   }
 
@@ -84,7 +114,7 @@ export function renderSubjectSetupView(container) {
   const COL_COUNT = 8;
   const grouped = groupByGradeTrack(rows);
 
-  GRADE_KEYS.forEach(gradeKey => {
+  activeGrades.forEach(gradeKey => {
     const gradeGroups = grouped[gradeKey]; if (!gradeGroups) return;
 
     // Calculate total rowspan for grade cell (valid rows + subtotal rows)

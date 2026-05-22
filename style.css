@@ -3595,3 +3595,46 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   color: #991b1b;
 }
 .rooms-table .stu-del-btn:hover:not(:disabled) { background: #fecaca; }
+
+/* ── Setup page middle/high split tabs ─────────────────────────── */
+.setup-level-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 12px;
+  flex-wrap: wrap;
+}
+.setup-level-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid #dbe2ef;
+  border-radius: 999px;
+  background: #f8fbff;
+  color: #475569;
+  font-size: 12px;
+  transition: all .15s ease;
+}
+.setup-level-tab strong {
+  font-size: 13px;
+  color: inherit;
+}
+.setup-level-tab span {
+  font-size: 11px;
+  color: #64748b;
+}
+.setup-level-tab:hover {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+.setup-level-tab.active {
+  background: #1e3a5f;
+  border-color: #1e3a5f;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(30,58,95,.18);
+}
+.setup-level-tab.active span { color: #bfdbfe; }
+.roster-level-tabs {
+  padding: 0 0 10px;
+}
