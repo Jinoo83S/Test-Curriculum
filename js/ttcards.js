@@ -170,7 +170,11 @@ function buildSourceSnapshot({ templateId, gradeKey, sectionIdx }) {
   const teacherNames = splitList(teacherName);
   const titleKo = tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)";
   const titleEn = clean(tpl?.nameEn);
-  const credits = parseFloat(row?.credits) || 0;
+  const rawCredits = parseFloat(row?.credits) || 0;
+  const isChangche = clean(row?.category) === "창체";
+  // 창체의 입력 시수는 실제 운영 시간(Hours)으로 보존하되,
+  // 시간표 카드 생성/자동배치용 시수(Credits)는 항상 1로 고정합니다.
+  const credits = isChangche ? 1 : rawCredits;
   const classCount = Math.max(1, getClassCount(templateId));
   const sourceSnapshot = {
     schemaVersion: TT_CARD_SCHEMA_VERSION,
@@ -196,6 +200,8 @@ function buildSourceSnapshot({ templateId, gradeKey, sectionIdx }) {
       track: clean(row?.track),
       group: clean(row?.group),
       credits: clean(row?.credits),
+      timetableCredits: String(credits),
+      hours: isChangche ? clean(row?.credits) : "",
     },
     roster: {
       classCount,
@@ -269,13 +275,17 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
   });
   if (manual && existing) {
     // 사용자가 직접 수정한 시간표용 확정값은 원본 갱신보다 우선합니다.
-    [
+    // 단, 창체는 시간표 배정용 시수가 반드시 1이어야 하므로 수동 시수값을 보존하지 않습니다.
+    const preserveFields = [
       "label", "title", "titleKo", "titleEn", "subject", "subjectEn",
-      "teacherName", "teacherNames", "teachers", "credits",
+      "teacherName", "teacherNames", "teachers",
       "classKeys", "classLabels", "studentKeys", "isWholeGrade"
-    ].forEach(k => {
+    ];
+    if (src.category !== "창체") preserveFields.push("credits");
+    preserveFields.forEach(k => {
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
+    if (src.category === "창체") generated.credits = 1;
     generated.isManualEdited = true;
     generated.manualEdited = true;
     generated.updatedAt = existing.updatedAt || now;
@@ -312,7 +322,7 @@ function updateTtCardField(cardId, field, value) {
   if (listFields.includes(field)) {
     card[field] = splitList(value);
   } else if (field === "credits") {
-    card[field] = parseFloat(value) || 0;
+    card[field] = clean(card.category) === "창체" ? 1 : (parseFloat(value) || 0);
   } else if (field === "isWholeGrade") {
     card[field] = !!value;
   } else {
@@ -438,7 +448,8 @@ function createSourceCardBox(card) {
     ["기준반", src.gradeSection],
     ["반수", `${src.classCount}반`],
     ["분류", [src.category, src.track, src.group].filter(Boolean).join(" / ")],
-    ["시수", src.credits],
+    ["시수", src.category === "창체" ? "1 (창체 고정)" : src.credits],
+    ["창체시간", src.category === "창체" ? (card?.sourceSnapshot?.curriculum?.hours || src.credits || "-") : ""],
     ["원본Hash", src.sourceHash, { mono:true }],
     ["ID", shortId(src.templateId), { mono:true }],
   ], { bg:"#f8fbff" });
@@ -612,7 +623,8 @@ export function renderTtCardsView(container) {
       });
       const teacherInp = document.createElement("textarea"); teacherInp.value = card.teacherName || ""; teacherInp.disabled = !canEdit();
       teacherInp.rows = 2; teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); renderTtCardsView(container); });
-      const creditInp = document.createElement("input"); creditInp.type="number"; creditInp.min="0"; creditInp.step="0.5"; creditInp.value = card.credits || 0; creditInp.disabled = !canEdit();
+      const creditInp = document.createElement("input"); creditInp.type="number"; creditInp.min="0"; creditInp.step="0.5"; creditInp.value = clean(card.category) === "창체" ? 1 : (card.credits || 0); creditInp.disabled = !canEdit() || clean(card.category) === "창체";
+      creditInp.title = clean(card.category) === "창체" ? "창체 시간표 배정용 시수는 항상 1로 고정됩니다." : "";
       creditInp.addEventListener("change", e => { updateTtCardField(card.id, "credits", e.target.value); renderTtCardsView(container); });
       const resetBtn = makeBtn("원본", "secondary-btn compact-btn", () => {
         const fresh = buildPersistedTtCard({ id:card.id, templateId:card.templateId, gradeKey:card.gradeKey, sectionIdx:card.sectionIdx ?? 0, existing:null });
