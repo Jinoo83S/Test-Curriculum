@@ -11,6 +11,95 @@ export const getRooms    = () => rDomain().rooms;
 export const getRoomById = id => getRooms().find(r => r.id === id) || null;
 export { ROOM_TYPES };
 
+
+function normalizeGradeValue(value) {
+  const v = clean(value).replace(/\s+/g, "");
+  if (!v) return "";
+  const direct = GRADE_KEYS.find(g => g === v || g.replace("학년", "") === v);
+  if (direct) return direct;
+  const m = v.match(/^(7|8|9|10|11|12)(학년|학년전용|전용)?$/);
+  return m ? `${m[1]}학년` : "";
+}
+
+function normalizeRoomTypeValue(value) {
+  const v = clean(value);
+  if (!v) return "일반";
+  return ROOM_TYPES.includes(v) ? v : "일반";
+}
+
+/**
+ * 엑셀 붙여넣기 형식:
+ * 이름 | 유형 | 수용인원 | 전용학년 | 담당/홈룸 교사 | 메모
+ * - 첫 행이 헤더이면 자동 제외합니다.
+ * - 유형이 비어 있거나 등록되지 않은 값이면 "일반"으로 처리합니다.
+ * - 전용학년은 7, 7학년, 10, 10학년 모두 인식합니다.
+ */
+export function parseRoomPaste(raw) {
+  const lines = String(raw || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rooms = [];
+  for (const line of lines) {
+    let cols = line.split(/\t/).map(c => c.trim());
+    if (cols.length === 1) cols = line.split(/\s{2,}/).map(c => c.trim()).filter(Boolean);
+    if (!cols.length || !cols[0]) continue;
+
+    const firstLower = cols[0].toLowerCase().replace(/\s/g, "");
+    if (["이름","교실","교실명","room","roomname","name"].includes(firstLower)) continue;
+
+    const name = clean(cols[0]);
+    if (!name) continue;
+
+    rooms.push(normalizeRoom({
+      name,
+      type: normalizeRoomTypeValue(cols[1]),
+      capacity: parseInt(String(cols[2] || "").replace(/[^0-9]/g, ""), 10) || 0,
+      grade: normalizeGradeValue(cols[3]),
+      teacherName: clean(cols[4]),
+      note: cols.slice(5).join(" ").trim(),
+    }));
+  }
+  return rooms;
+}
+
+function appendRoomPasteArea(container, onUpdate, options) {
+  const pasteWrap = document.createElement("div");
+  pasteWrap.className = "paste-area-wrap rooms-paste-wrap";
+  pasteWrap.innerHTML = `
+    <div class="paste-label">
+      📋 엑셀에서 복사 후 아래 영역에 붙여넣기
+      <span class="paste-hint">열 구성: <strong>교실명</strong> [유형] [수용인원] [전용학년] [담당/홈룸 교사] [메모]</span>
+    </div>`;
+
+  const textarea = document.createElement("textarea");
+  textarea.className = "excel-paste-area";
+  textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 701호\t일반\t24\t7학년\t김OO\t7A 홈룸";
+  textarea.disabled = !canEdit();
+  pasteWrap.appendChild(textarea);
+
+  const pasteActions = document.createElement("div");
+  pasteActions.className = "paste-actions";
+
+  const parseBtn = makeBtn("교실 명단 추가", "primary-btn", () => {
+    if (!canEdit()) return;
+    const raw = textarea.value.trim();
+    if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
+    const parsed = parseRoomPaste(raw);
+    if (!parsed.length) { alert("파싱된 교실이 없습니다."); return; }
+
+    parsed.forEach(room => getRooms().push(room));
+    scheduleSave("rooms");
+    textarea.value = "";
+    onUpdate?.();
+    renderRoomsView(container, onUpdate, options);
+    alert(`${parsed.length}개 교실이 추가되었습니다.`);
+  });
+  parseBtn.disabled = !canEdit();
+
+  const clearBtn = makeBtn("지우기", "secondary-btn", () => { textarea.value = ""; });
+  pasteActions.append(parseBtn, clearBtn);
+  pasteWrap.appendChild(pasteActions);
+  container.appendChild(pasteWrap);
+}
+
 export function addRoom(data = {}) {
   if (!canEdit()) return null;
   const r = normalizeRoom({ ...data, id: uid("room") });
@@ -42,6 +131,8 @@ export function renderRoomsView(container, onUpdate, options = {}) {
   });
   addBtn.disabled = !canEdit();
   hdr.append(title, addBtn); container.appendChild(hdr);
+
+  appendRoomPasteArea(container, onUpdate, options);
 
   if (!getRooms().length) {
     const e = document.createElement("div"); e.className = "tt-empty";
