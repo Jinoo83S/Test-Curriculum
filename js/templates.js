@@ -274,12 +274,12 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
   card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"template", templateId:item.id }); card.classList.add("dragging"); });
   card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
 
-  const main = document.createElement("div"); main.className = "template-main";
-  const titleEl = document.createElement("div"); titleEl.className = "template-name-ko"; titleEl.textContent = getTemplateCardTitle(item);
+  const main = document.createElement("div"); main.className = "template-main template-main-one-line";
+  const titleEl = document.createElement("div");
+  titleEl.className = "template-name-ko";
+  titleEl.textContent = getTemplateCardTitle(item);
+  titleEl.title = getTemplateCardTitle(item);
   main.appendChild(titleEl);
-  if (item.schoolLevel && item.schoolLevel !== "공통") {
-    const dot = document.createElement("span"); dot.className = `school-level-dot level-dot-${item.schoolLevel === "중등" ? "middle" : "high"}`; dot.title = item.schoolLevel; main.appendChild(dot);
-  }
 
   const actions = document.createElement("div"); actions.className = "template-actions compact-actions";
   const editBtn   = makeBtn("수정", "edit-btn",   () => onEdit && onEdit(item.id));
@@ -290,24 +290,31 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
   const tInfo = document.createElement("span"); tInfo.className = "template-teacher-inline"; tInfo.textContent = getTemplateTeacherSummary(item) || "-";
   actions.append(editBtn, copyBtn, deleteBtn, tInfo);
 
-  // Applied grades display
-  const gradesEl = document.createElement("div"); gradesEl.className = "template-applied-grades";
+  // Applied grades display — compact one-line badge on the right side of the card
+  const gradesEl = document.createElement("div");
+  gradesEl.className = "template-applied-grades template-applied-grades-inline";
   const appliedGrades = getTemplateAppliedGrades(item.id);
   if (appliedGrades.length) {
     appliedGrades.forEach(g => {
-      const chip = document.createElement("span"); chip.className = "grade-chip"; chip.textContent = g.replace("학년","");
+      const chip = document.createElement("span");
+      chip.className = "grade-chip";
+      chip.textContent = g.replace("학년", "");
+      chip.title = `${g.replace("학년", "")}학년`;
       gradesEl.appendChild(chip);
     });
   } else {
-    const chip = document.createElement("span"); chip.className = "grade-chip grade-chip-none"; chip.textContent = "미배정";
+    const chip = document.createElement("span");
+    chip.className = "grade-chip grade-chip-none";
+    chip.textContent = "미배정";
     gradesEl.appendChild(chip);
   }
+  main.appendChild(gradesEl);
 
   const preview = document.createElement("div"); preview.className = "template-semester-preview";
   if (isSemesterDataSame(item)) { const s = createSemesterPreviewItem(item, "sem1"); s.style.gridColumn = "1 / -1"; preview.appendChild(s); }
   else { preview.append(createSemesterPreviewItem(item, "sem1"), createSemesterPreviewItem(item, "sem2")); }
 
-  card.append(main, actions, gradesEl, preview);
+  card.append(main, actions, preview);
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
     const was = card.classList.contains("expanded");

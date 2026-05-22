@@ -3917,3 +3917,98 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   padding: 4px 8px;
   font-size: 10px;
 }
+
+/* ── Sidebar subject cards: compact one-line layout ─────────────── */
+.template-list {
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+}
+
+.template-card.compact-card {
+  min-height: 24px;
+  border-radius: 5px;
+  background: #ffffff;
+}
+
+.template-card.compact-card:hover {
+  background: #f8fbff;
+}
+
+.template-card.compact-card .template-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 23px;
+  padding: 2px 5px;
+}
+
+.template-card.compact-card .template-name-ko {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-card.compact-card .school-level-dot {
+  display: none !important;
+}
+
+.template-card.compact-card .template-applied-grades {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+  gap: 2px;
+  min-height: 0;
+  max-width: 48%;
+  padding: 0;
+  overflow: hidden;
+}
+
+.template-card.compact-card .grade-chip {
+  padding: 0 4px;
+  min-width: 14px;
+  height: 16px;
+  justify-content: center;
+  border-radius: 5px;
+  font-size: 9px;
+  line-height: 16px;
+  font-weight: 800;
+}
+
+.template-card.compact-card .grade-chip-none {
+  min-width: auto;
+  padding: 0 5px;
+}
+
+.template-card.compact-card.expanded {
+  grid-column: auto;
+  background: #eef5ff;
+  border-color: #60a5fa;
+}
+
+.template-card.compact-card.expanded .template-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 5px 3px;
+}
+
+.template-card.compact-card.expanded .template-actions button {
+  padding: 1px 5px;
+  font-size: 9px;
+  line-height: 16px;
+}
+
+.template-card.compact-card.expanded .template-teacher-inline {
+  display: none;
+}
+
+.template-card.compact-card.expanded .template-semester-preview {
+  display: none !important;
+}
