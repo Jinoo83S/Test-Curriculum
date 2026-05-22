@@ -23,23 +23,19 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-// ── Student imports ───────────────────────────────────────────────
-import { renderClassList, renderStudentTable, parseExcelPaste, exportStudentXlsx, addNewClass, deleteClass, updateClass, addStudentToClass, getClassById } from "./students.js";
-
-// ── Teacher imports ───────────────────────────────────────────────
-import { renderTeacherView } from "./teachers.js";
-
-// ── Roster imports ────────────────────────────────────────────────
-import { renderRosterView } from "./rosters.js";
-
-// ── Results imports ───────────────────────────────────────────────
-import { renderResultsView } from "./results.js";
-
-// ── TtCards + Group Manager imports ──────────────────────────────
-import { renderTtCardsView, renderGroupManagerView as renderGroupMgrFromTtCards, generateTtCards } from "./ttcards.js";
-
-// ── Subject Setup import ──────────────────────────────────────────
-import { renderSubjectSetupView } from "./subject-setup.js";
+// ── Lazy-loaded view modules ──────────────────────────────────────
+// Initial curriculum board keeps only curriculum/templates in the startup bundle.
+// Other screens are downloaded when the user actually opens that menu.
+const lazyModules = {};
+function lazyImport(key, path) {
+  return lazyModules[key] || (lazyModules[key] = import(path));
+}
+const loadStudents     = () => lazyImport("students", "./students.js");
+const loadTeachers     = () => lazyImport("teachers", "./teachers.js");
+const loadRosters      = () => lazyImport("rosters", "./rosters.js");
+const loadResults      = () => lazyImport("results", "./results.js");
+const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
+const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
 
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");
@@ -210,13 +206,13 @@ function navigateTo(view) {
   // Render
   if (view === "board") { renderBoardTab(); renderSidebar(); }
   else if (view === "manager") { clearStableOrder(); renderTemplateManagerView(); renderSidebar(); }
-  else if (view === "students") { selectedClassId = null; renderStudentView(); }
-  else if (view === "teachers" && teacherContent) renderTeacherView(teacherContent);
-  else if (view === "rosters"  && rosterContent)  renderRosterView(rosterContent);
-  else if (view === "subjectsetup" && subjectSetupContent) renderSubjectSetupView(subjectSetupContent);
-  else if (view === "ttcards"  && ttCardsContent)  renderTtCardsView(ttCardsContent);
-  else if (view === "groups")  renderGroupManagerView(document.getElementById("groupManagerBoard"));
-  else if (view === "results"  && resultsContent)  renderResultsView(resultsContent);
+  else if (view === "students") { selectedClassId = null; void renderStudentView(); }
+  else if (view === "teachers")     void renderTeacherPanel();
+  else if (view === "rosters")      void renderRosterPanel();
+  else if (view === "subjectsetup") void renderSubjectSetupPanel();
+  else if (view === "ttcards")      void renderTtCardsPanel();
+  else if (view === "groups")       void renderGroupManagerView();
+  else if (view === "results")      void renderResultsPanel();
 }
 
 function setView(view) {
@@ -265,11 +261,46 @@ function renderTemplateManagerView() {
   renderTemplateManagerTable(tplMgrTableWrap, tplMgrCount);
 }
 
-function renderGroupManagerView() {
-  if (groupMgrBoard) renderGroupMgrFromTtCards(groupMgrBoard);
+async function renderTeacherPanel() {
+  if (activeMainView !== "teachers" || !teacherContent) return;
+  const { renderTeacherView } = await loadTeachers();
+  if (activeMainView === "teachers") renderTeacherView(teacherContent);
 }
 
-function renderStudentView() {
+async function renderRosterPanel() {
+  if (activeMainView !== "rosters" || !rosterContent) return;
+  const { renderRosterView } = await loadRosters();
+  if (activeMainView === "rosters") renderRosterView(rosterContent);
+}
+
+async function renderResultsPanel() {
+  if (activeMainView !== "results" || !resultsContent) return;
+  const { renderResultsView } = await loadResults();
+  if (activeMainView === "results") renderResultsView(resultsContent);
+}
+
+async function renderTtCardsPanel() {
+  if (activeMainView !== "ttcards" || !ttCardsContent) return;
+  const { renderTtCardsView } = await loadTtCards();
+  if (activeMainView === "ttcards") renderTtCardsView(ttCardsContent);
+}
+
+async function renderSubjectSetupPanel() {
+  if (activeMainView !== "subjectsetup" || !subjectSetupContent) return;
+  const { renderSubjectSetupView } = await loadSubjectSetup();
+  if (activeMainView === "subjectsetup") renderSubjectSetupView(subjectSetupContent);
+}
+
+async function renderGroupManagerView() {
+  if (activeMainView !== "groups" || !groupMgrBoard) return;
+  const { renderGroupManagerView: renderGroupMgrFromTtCards } = await loadTtCards();
+  if (activeMainView === "groups") renderGroupMgrFromTtCards(groupMgrBoard);
+}
+
+async function renderStudentView() {
+  if (activeMainView !== "students") return;
+  const { renderClassList, getClassById } = await loadStudents();
+  if (activeMainView !== "students") return;
   function handleClassSelect(classId) {
     selectedClassId = classId;
     const cls = getClassById(classId);
@@ -278,15 +309,18 @@ function renderStudentView() {
       if (classNameInput)  classNameInput.value   = cls.name;
       if (classGradeSelect) classGradeSelect.value = cls.grade;
     }
-    renderStudentTableView();
+    void renderStudentTableView();
     renderClassList(classListEl, selectedClassId, handleClassSelect);
   }
   renderClassList(classListEl, selectedClassId, handleClassSelect);
 }
 
-function renderStudentTableView() {
-  if (!selectedClassId) return;
-  renderStudentTable(studentTableBody, selectedClassId, studentTableEmpty, studentCountEl);
+async function renderStudentTableView() {
+  if (!selectedClassId || activeMainView !== "students") return;
+  const { renderStudentTable } = await loadStudents();
+  if (activeMainView === "students") {
+    renderStudentTable(studentTableBody, selectedClassId, studentTableEmpty, studentCountEl);
+  }
 }
 
 // Master render — called on every Firestore update
@@ -318,14 +352,14 @@ function render(domain) {
   }
 
   if (activeMainView === "board") renderBoardTab();
-  if (activeMainView === "groups") renderGroupManagerView();
-  if (activeMainView === "manager") renderTemplateManagerView();
-  if (activeMainView === "students") renderStudentView();
-  if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
-  if (activeMainView === "rosters"  && rosterContent)  renderRosterView(rosterContent);
-  if (activeMainView === "results"  && resultsContent) renderResultsView(resultsContent);
-  if (activeMainView === "subjectsetup" && subjectSetupContent) renderSubjectSetupView(subjectSetupContent);
-  if (activeMainView === "ttcards"      && ttCardsContent)      renderTtCardsView(ttCardsContent);
+  if (activeMainView === "groups")       void renderGroupManagerView();
+  if (activeMainView === "manager")      renderTemplateManagerView();
+  if (activeMainView === "students")     void renderStudentView();
+  if (activeMainView === "teachers")     void renderTeacherPanel();
+  if (activeMainView === "rosters")      void renderRosterPanel();
+  if (activeMainView === "results")      void renderResultsPanel();
+  if (activeMainView === "subjectsetup") void renderSubjectSetupPanel();
+  if (activeMainView === "ttcards")      void renderTtCardsPanel();
   renderTabBtns();
 }
 
@@ -522,7 +556,7 @@ setOnTemplateChange(() => {
   renderSidebar();
   if (activeMainView === "board")    renderBoardTab();
   if (activeMainView === "manager")  renderTemplateManagerView();
-  if (activeMainView === "teachers" && teacherContent) renderTeacherView(teacherContent);
+  if (activeMainView === "teachers") void renderTeacherPanel();
 });
 
 // Req 4: sidebar grade chips update on board drag-drop
@@ -538,8 +572,8 @@ onAuth(async (user) => {
     } catch (e) {
       console.warn("Migration skipped; continuing normal load.", e);
     } finally {
-      // index.html: timetable 구독 제외 (시간표 편집은 timetable.html)
-      subscribeDomains(["curriculum","templates","classes","teachers","rosters","rooms"]);
+      // index.html: 기본 데이터 + 시간표 사전작업(ttcards) 표시용 timetable 도메인 구독
+      subscribeDomains(["curriculum","templates","classes","teachers","rosters","rooms","timetable"]);
     }
   } else {
     unsubscribeAll();
@@ -654,40 +688,56 @@ tplPasteBtn?.addEventListener("click", () => {
 tplPasteClearBtn?.addEventListener("click", () => { if (tplPasteArea) tplPasteArea.value = ""; });
 
 // ── Student management ────────────────────────────────────────────
-addClassBtn?.addEventListener("click", () => {
+addClassBtn?.addEventListener("click", async () => {
+  const { addNewClass } = await loadStudents();
   const cls = addNewClass(); if (!cls) return;
   selectedClassId = cls.id;
   studentMainEmpty?.classList.add("hidden"); studentMainContent?.classList.remove("hidden");
   if (classNameInput) classNameInput.value = cls.name;
   if (classGradeSelect) classGradeSelect.value = cls.grade;
-  renderStudentView(); renderStudentTableView();
+  await renderStudentView(); await renderStudentTableView();
   setTimeout(() => { classNameInput?.focus(); classNameInput?.select(); }, 50);
 });
 
-deleteClassBtn?.addEventListener("click", () => {
-  if (deleteClass(selectedClassId)) { selectedClassId = null; studentMainEmpty?.classList.remove("hidden"); studentMainContent?.classList.add("hidden"); renderStudentView(); }
+deleteClassBtn?.addEventListener("click", async () => {
+  const { deleteClass } = await loadStudents();
+  if (deleteClass(selectedClassId)) {
+    selectedClassId = null;
+    studentMainEmpty?.classList.remove("hidden"); studentMainContent?.classList.add("hidden");
+    void renderStudentView();
+  }
 });
 
-classNameInput?.addEventListener("change", e => { updateClass(selectedClassId, "name", e.target.value); renderStudentView(); });
-classGradeSelect?.addEventListener("change", e => { updateClass(selectedClassId, "grade", e.target.value); renderStudentView(); });
+classNameInput?.addEventListener("change", async e => {
+  const { updateClass } = await loadStudents();
+  updateClass(selectedClassId, "name", e.target.value);
+  void renderStudentView();
+});
+classGradeSelect?.addEventListener("change", async e => {
+  const { updateClass } = await loadStudents();
+  updateClass(selectedClassId, "grade", e.target.value);
+  void renderStudentView();
+});
 
-parsePasteBtn?.addEventListener("click", () => {
+parsePasteBtn?.addEventListener("click", async () => {
   const raw = excelPasteArea?.value.trim();
   if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
+  const { getClassById, parseExcelPaste } = await loadStudents();
   const cls = getClassById(selectedClassId); if (!cls) { alert("반을 먼저 선택해 주세요."); return; }
   const parsed = parseExcelPaste(raw);
   if (!parsed.length) { alert("파싱된 학생이 없습니다.\n엑셀에서 이름이 포함된 셀을 복사해 붙여넣기 해주세요."); return; }
   parsed.forEach(s => { cls.students.push(s); }); scheduleSave("classes");
   if (excelPasteArea) excelPasteArea.value = "";
-  renderStudentTableView(); renderStudentView();
+  void renderStudentTableView(); void renderStudentView();
   alert(`${parsed.length}명이 추가되었습니다.`);
 });
 
 clearPasteBtn?.addEventListener("click", () => { if (excelPasteArea) excelPasteArea.value = ""; });
 
-addStudentRowBtn?.addEventListener("click", () => {
+addStudentRowBtn?.addEventListener("click", async () => {
+  const { addStudentToClass } = await loadStudents();
   const s = addStudentToClass(selectedClassId); if (!s) return;
-  renderStudentTableView(); renderStudentView();
+  await renderStudentTableView(); await renderStudentView();
   setTimeout(() => {
     const rows = studentTableBody?.querySelectorAll("tr");
     const last = rows?.[rows.length - 1];
@@ -695,7 +745,10 @@ addStudentRowBtn?.addEventListener("click", () => {
   }, 50);
 });
 
-exportStudentBtn?.addEventListener("click", () => exportStudentXlsx(selectedClassId));
+exportStudentBtn?.addEventListener("click", async () => {
+  const { exportStudentXlsx } = await loadStudents();
+  exportStudentXlsx(selectedClassId);
+});
 
 // ── Initial render ────────────────────────────────────────────────
 setView("board");

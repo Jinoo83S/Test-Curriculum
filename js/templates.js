@@ -5,11 +5,18 @@ import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js";
 import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, currentDrag, setCurrentDrag } from "./state.js";
-import { getClassCount } from "./rosters.js";
 
 const tDomain   = () => appState.templates;
 const templates = () => tDomain().templates;
 const groups    = () => tDomain().templateGroups;
+
+// Keep template rendering independent from rosters.js at startup.
+// This reads the already-loaded appState directly and prevents the initial
+// curriculum page from pulling roster/student modules just to show a badge.
+function getClassCount(templateId) {
+  const meta = appState.rosters?.rosterMeta?.[templateId];
+  return Math.max(0, parseInt(meta?.classCount, 10) || 0);
+}
 
 // ── Template lookups (exported for curriculum.js) ──────────────────
 export function getTemplateById(id)         { return templates().find(t => t.id === id) || null; }
