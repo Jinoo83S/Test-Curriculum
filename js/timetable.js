@@ -317,15 +317,24 @@ function entrySharesTeacher(a, b) {
 function getRelatedConflictEntries(entry, type) {
   const sameSlot = entries().filter(e => e.id !== entry.id && e.day === entry.day && e.period === entry.period);
   if (type === "teacher") {
+    const occ = getPlacementOccupancy(entry);
     return sameSlot
-      .map(e => ({ entry: e, detail: entrySharesTeacher(entry, e).join(", ") }))
+      .map(e => {
+        const other = getPlacementOccupancy(e);
+        const overlap = [...occ.teacherNames].filter(t => other.teacherNames.has(t));
+        return { entry: e, detail: overlap.join(", ") };
+      })
       .filter(x => x.detail);
   }
   if (type === "room") {
-    if (!entry.roomId) return [];
+    const occ = getPlacementOccupancy(entry);
     return sameSlot
-      .filter(e => e.roomId && e.roomId === entry.roomId)
-      .map(e => ({ entry: e, detail: getRoomDisplayName(entry.roomId) }));
+      .map(e => {
+        const other = getPlacementOccupancy(e);
+        const overlap = [...occ.roomIds].filter(r => other.roomIds.has(r));
+        return { entry: e, detail: overlap.map(getRoomDisplayName).join(", ") };
+      })
+      .filter(x => x.detail);
   }
   if (type === "student") {
     const audience = audienceForPlacement(entry);
@@ -927,7 +936,7 @@ function recomputeConflicts() {
     entries(),
     appState.templates.templateGroups,
     appState.templates.templates,
-    audienceForPlacement
+    getPlacementOccupancy
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
 }
@@ -1331,19 +1340,31 @@ function ttCardIdsFromPlacement(x = {}) {
   return uniqueStrings([...(x.ttcardIds || []), x.ttcardId]);
 }
 
-function audienceForPlacement(x = {}) {
-  const studentKeys = new Set();
-  const classKeys = new Set();
-  const cardIds = ttCardIdsFromPlacement(x);
+function getPlacementOccupancy(x = {}, options = {}) {
+  const { includeDefaultRoom = true } = options;
+  const studentKeys  = new Set();
+  const classKeys    = new Set();
+  const teacherNames = new Set();
+  const roomIds      = new Set();
+  const cardIds      = new Set(ttCardIdsFromPlacement(x));
 
-  const addCardAudience = (card) => {
+  const addMany = (set, values) => {
+    (Array.isArray(values) ? values : (values ? [values] : []))
+      .map(v => clean(v))
+      .filter(Boolean)
+      .forEach(v => set.add(v));
+  };
+
+  const addCardOccupancy = (card) => {
     if (!card) return;
+    cardIds.add(card.id);
 
-    // 1순위: 시간표 카드에 저장된 대상 학년반/학생 데이터
+    // 1순위: 시간표 사전작업에서 Firebase에 저장한 확정 카드 데이터
     const storedClassKeys = getStoredTtCardClassKeys(card);
     const storedStudentKeys = getStoredTtCardStudentKeys(card);
-    storedClassKeys.forEach(k => classKeys.add(k));
-    storedStudentKeys.forEach(k => studentKeys.add(k));
+    addMany(classKeys, storedClassKeys);
+    addMany(studentKeys, storedStudentKeys);
+    addMany(teacherNames, getTeachersForTtCard(card));
 
     // 이전 데이터 호환용 fallback. v2 카드가 있으면 재추론하지 않습니다.
     if (!storedClassKeys.length && card.schemaVersion < 2) {
@@ -1357,16 +1378,31 @@ function audienceForPlacement(x = {}) {
     }
   };
 
-  (x.audienceClassKeys || []).forEach(k => classKeys.add(k));
-  (x.audienceStudentKeys || []).forEach(k => studentKeys.add(k));
+  addMany(classKeys, x.audienceClassKeys);
+  addMany(studentKeys, x.audienceStudentKeys);
+  addMany(teacherNames, x.teacherNames);
+  addMany(teacherNames, x.teachers);
+  addMany(teacherNames, splitTeacherNames(x.teacherName || ""));
+  if (x.roomId) roomIds.add(x.roomId);
 
-  if (cardIds.length) {
-    cardIds.forEach(id => addCardAudience(getTtCardById(id)));
+  if (cardIds.size) {
+    [...cardIds].forEach(id => addCardOccupancy(getTtCardById(id)));
   } else if (x.templateId && x.gradeKey) {
-    addCardAudience({ templateId: x.templateId, gradeKey: x.gradeKey, sectionIdx: x.sectionIdx ?? 0 });
+    addCardOccupancy({ templateId: x.templateId, gradeKey: x.gradeKey, sectionIdx: x.sectionIdx ?? 0 });
   }
 
-  return { studentKeys, classKeys };
+  if (includeDefaultRoom && !roomIds.size) {
+    const defaultRoom = getDefaultRoomForTeacherNames([...teacherNames]);
+    if (defaultRoom) roomIds.add(defaultRoom);
+  }
+
+  return { studentKeys, classKeys, teacherNames, roomIds, cardIds };
+}
+
+// Backward-compatible alias: older UI helpers only need student/class audience.
+function audienceForPlacement(x = {}) {
+  const occ = getPlacementOccupancy(x);
+  return { studentKeys: occ.studentKeys, classKeys: occ.classKeys };
 }
 
 function setsIntersect(a, b) {
@@ -2733,57 +2769,44 @@ function checkPlacementValid(item, slot, placed, options = {}) {
   const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
   const existing = [...entries(), ...placed];
   const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
-  const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
+  const itemOcc = getPlacementOccupancy(item, { includeDefaultRoom: respectAssignedRoom });
 
-  // 1. Teacher conflict (always applies — teacher cannot be in two places)
+  const intersects = (a, b) => { for (const v of a) if (b.has(v)) return true; return false; };
+  const sameUnit = (a, b) => a.unitId && b.unitId && a.unitId === b.unitId;
+
   for (const e of slotEnts) {
-    const et = splitTeacherNames(e.teacherName).filter(Boolean);
-    if (teachers.some(t => et.includes(t))) {
-      // Exception: same unit (co-teaching) — but NOT just same group
-      if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
-      return false;
-    }
+    if (sameUnit(item, e)) continue;
+    const eOcc = getPlacementOccupancy(e, { includeDefaultRoom: true });
+
+    // 1. Teacher conflict — same teacherNames 기준. 충돌검사와 동일합니다.
+    if (intersects(itemOcc.teacherNames, eOcc.teacherNames)) return false;
+
+    // 2. Exact duplicate — same timetable card already exists in the slot.
+    if (itemOcc.cardIds.size && intersects(itemOcc.cardIds, eOcc.cardIds)) return false;
+    if (!itemOcc.cardIds.size && !eOcc.cardIds.size && e.templateId === item.templateId && e.gradeKey === item.gradeKey && (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0)) return false;
+
+    // 3. Student/class conflict — stored classKeys/studentKeys 기준. 충돌검사와 동일합니다.
+    if (audiencesConflict(itemOcc, eOcc)) return false;
+
+    // 4. Room conflict — entry room + teacher home/assigned room 기준.
+    if (intersects(itemOcc.roomIds, eOcc.roomIds)) return false;
   }
 
-  // 2. Exact duplicate: same timetable card already exists in the slot.
-  const itemCardIds = new Set(ttCardIdsFromPlacement(item));
-  if (itemCardIds.size && slotEnts.some(e => ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)))) return false;
-  if (!itemCardIds.size && slotEnts.some(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && e.sectionIdx === item.sectionIdx)) return false;
-
-  // 3. Student conflict. Prefer roster-level student comparison; fall back to homeroom coverage.
-  const itemAudience = audienceForPlacement(item);
-  for (const e of slotEnts) {
-    // Same unit → co-located intentionally
-    if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
-
-    const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
-                    (sameGroupTpl(item.templateId, e.templateId));
-    const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
-    const eAudience = audienceForPlacement(e);
-    const conflict = audiencesConflict(itemAudience, eAudience);
-
-    // Concurrent groups may share the same homeroom only when rosters prove students differ.
-    if (conc) {
-      if (itemAudience.studentKeys.size && eAudience.studentKeys.size && conflict) return false;
-      continue;
-    }
-    if (conflict) return false;
-  }
-
-  // 4. Teacher max per day + unavailable slots
+  // 5. Teacher max per day + unavailable slots
   const dayEnts = existing.filter(e => e.day === slot.day);
-  for (const teacher of teachers) {
+  for (const teacher of itemOcc.teacherNames) {
     const c = constraints()[teacher];
-    // Unavailable slot check
     if (respectUnavailable && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
-    const count = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
+    const count = dayEnts.filter(e => getPlacementOccupancy(e).teacherNames.has(teacher)).length;
     const max = Number(c?.maxPerDay) || 0;
     if (respectSoftLimits && max > 0 && count >= max) return false;
   }
 
-  // 5. Teacher max consecutive
-  for (const teacher of teachers) {
-    const dayPeriods = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).map(e => e.period);
+  // 6. Teacher max consecutive
+  for (const teacher of itemOcc.teacherNames) {
+    const dayPeriods = dayEnts
+      .filter(e => getPlacementOccupancy(e).teacherNames.has(teacher))
+      .map(e => e.period);
     const all = [...dayPeriods, slot.period].sort((a,b) => a-b);
     let maxC = 1, cur = 1;
     for (let i = 1; i < all.length; i++) {
@@ -2793,16 +2816,10 @@ function checkPlacementValid(item, slot, placed, options = {}) {
     const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
     if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
   }
-  // 6. Room conflict: if teacher has assigned/home room, apply; if room already occupied, skip
-  for (const teacher of teachers) {
-    const roomId = getEffectiveAssignedRoomId(teacher);
-    if (respectAssignedRoom && roomId) {
-      const roomBusy = existing.some(e => e.day===slot.day && e.period===slot.period && e.roomId===roomId);
-      if (roomBusy) return false;
-    }
-  }
+
   return true;
 }
+
 function autoItemKey(item) {
   if (item.ttcardId) return `ttc:${item.ttcardId}`;
   return `tpl:${item.templateId || ""}:${item.gradeKey || ""}:${item.sectionIdx ?? 0}`;
@@ -2828,19 +2845,17 @@ function getAutoItemName(item) {
 }
 
 function getAutoItemDifficulty(item) {
-  const audience = audienceForPlacement(item);
-  const teacherCount = splitTeacherNames(item.teacherName).filter(Boolean).length;
-  return teacherCount * 20 + audience.studentKeys.size + audience.classKeys.size * 5;
+  const occ = getPlacementOccupancy(item);
+  return occ.teacherNames.size * 20 + occ.studentKeys.size + occ.classKeys.size * 5;
 }
 
 function scoreAutoSlot(item, slot, placed) {
   const existing = [...entries(), ...placed];
   const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
-  const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
   const dayEnts = existing.filter(e => e.day === slot.day);
-  const teacherLoad = teachers.reduce((sum, t) => sum + dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(t)).length, 0);
-  const audience = audienceForPlacement(item);
-  const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
+  const occ = getPlacementOccupancy(item);
+  const teacherLoad = [...occ.teacherNames].reduce((sum, t) => sum + dayEnts.filter(e => getPlacementOccupancy(e).teacherNames.has(t)).length, 0);
+  const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(occ, getPlacementOccupancy(e)) ? 1 : 0), 0);
   const samePeriodLoad = existing.filter(e => e.period === slot.period).length;
   return slotEnts.length * 100 + teacherLoad * 8 + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
 }
