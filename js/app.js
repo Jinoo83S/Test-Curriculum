@@ -124,6 +124,13 @@ const studentTableEmpty = document.getElementById("studentTableEmpty");
 const addStudentRowBtn  = document.getElementById("addStudentRowBtn");
 const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 
+// ── DOM: Board tab buttons ───────────────────────────────────────
+// 분리된 페이지(roster/setup/prework/results)에는 이 버튼들이 없으므로
+// 반드시 명시적으로 null-safe DOM 참조를 만들어야 합니다.
+// 선언이 없으면 해당 페이지에서 ReferenceError가 발생해 하단 서브메뉴 클릭 이벤트가 등록되지 않습니다.
+const tab7to9Btn   = document.getElementById("tab7to9Btn");
+const tab10to12Btn = document.getElementById("tab10to12Btn");
+
 // ── DOM: Topbar nav buttons ───────────────────────────────────────
 const navManagerBtn = document.getElementById("navManagerBtn");
 const navButtons = {
@@ -152,7 +159,8 @@ const VIEW_TO_SECTION = {
   ttcards:"prework",  groups:"prework",
   results:"results",
 };
-let activeSection = document.body?.dataset.section || VIEW_TO_SECTION[activeMainView] || "curriculum";
+const INITIAL_VIEW = document.body?.dataset.initialView || "board";
+let activeSection = document.body?.dataset.section || VIEW_TO_SECTION[INITIAL_VIEW] || "curriculum";
 
 function activateSection(section) {
   activeSection = section;
@@ -188,7 +196,6 @@ document.querySelectorAll("#topbarMainNav [data-section]").forEach(mainBtn => {
 // ================================================================
 // NAVIGATION STATE
 // ================================================================
-const INITIAL_VIEW = document.body?.dataset.initialView || "board";
 let activeMainView = INITIAL_VIEW;
 let activeTab = "tab7to9";
 let selectedClassId = null;
@@ -265,22 +272,27 @@ const dirtyTabs     = new Set(["tab7to9","tab10to12"]);
 export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("tab10to12"); };
 
 // ── View switching ─────────────────────────────────────────────────
-function navigateTo(view) {
+async function navigateTo(view) {
   setView(view);
   syncDomainSubscriptionsForView(view);
   const section = VIEW_TO_SECTION[view] || activeSection;
   activateSection(section);
   activateSubBtn(view);
+
+  // 화면 분리 후에는 현재 화면에 필요한 도메인이 아직 로드되지 않은 상태에서
+  // 먼저 렌더링되어 빈 화면처럼 보일 수 있습니다. 필요한 구독이 붙은 뒤 한 번 더 렌더링합니다.
+  await waitForDomainsLoaded(domainsForView(view), 7000);
+
   // Render
   if (view === "board") { renderBoardTab(); renderSidebar(); }
   else if (view === "manager") { clearStableOrder(); renderTemplateManagerView(); renderSidebar(); }
-  else if (view === "students") { selectedClassId = null; void renderStudentView(); }
-  else if (view === "teachers")     void renderTeacherPanel();
-  else if (view === "rosters")      void renderRosterPanel();
-  else if (view === "subjectsetup") void renderSubjectSetupPanel();
-  else if (view === "ttcards")      void renderTtCardsPanel();
-  else if (view === "groups")       void renderGroupManagerView();
-  else if (view === "results")      void renderResultsPanel();
+  else if (view === "students") { selectedClassId = null; await renderStudentView(); }
+  else if (view === "teachers")     await renderTeacherPanel();
+  else if (view === "rosters")      await renderRosterPanel();
+  else if (view === "subjectsetup") await renderSubjectSetupPanel();
+  else if (view === "ttcards")      await renderTtCardsPanel();
+  else if (view === "groups")       await renderGroupManagerView();
+  else if (view === "results")      await renderResultsPanel();
 }
 
 function setView(view) {
@@ -386,9 +398,9 @@ async function renderStudentView() {
       if (classGradeSelect) classGradeSelect.value = cls.grade;
     }
     void renderStudentTableView();
-    renderClassList(classListEl, selectedClassId, handleClassSelect);
+    if (classListEl) renderClassList(classListEl, selectedClassId, handleClassSelect);
   }
-  renderClassList(classListEl, selectedClassId, handleClassSelect);
+  if (classListEl) renderClassList(classListEl, selectedClassId, handleClassSelect);
 }
 
 async function renderStudentTableView() {
@@ -692,19 +704,19 @@ tab10to12Btn?.addEventListener("click", () => { if (activeTab === "tab10to12") r
 
 // ── Nav buttons ───────────────────────────────────────────────────
 // ── Sub-nav 버튼 클릭 ──────────────────────────────────────────────
-navBoardBtn?.addEventListener("click",   () => { resetDraft(); navigateTo("board"); });
-navManagerBtn?.addEventListener("click", () => navigateTo(activeMainView === "manager" ? "board" : "manager"));
-navButtons.students?.addEventListener("click",     () => navigateTo("students"));
-navButtons.teachers?.addEventListener("click",     () => navigateTo("teachers"));
-navButtons.rosters?.addEventListener("click",      () => navigateTo("rosters"));
-navButtons.subjectsetup?.addEventListener("click", () => navigateTo("subjectsetup"));
-navButtons.results?.addEventListener("click",      () => navigateTo("results"));
-navButtons.ttcards?.addEventListener("click",      () => navigateTo("ttcards"));
-navButtons.groups?.addEventListener("click",       () => navigateTo("groups"));
+navBoardBtn?.addEventListener("click",   () => { resetDraft(); void navigateTo("board"); });
+navManagerBtn?.addEventListener("click", () => void navigateTo(activeMainView === "manager" ? "board" : "manager"));
+navButtons.students?.addEventListener("click",     () => void navigateTo("students"));
+navButtons.teachers?.addEventListener("click",     () => void navigateTo("teachers"));
+navButtons.rosters?.addEventListener("click",      () => void navigateTo("rosters"));
+navButtons.subjectsetup?.addEventListener("click", () => void navigateTo("subjectsetup"));
+navButtons.results?.addEventListener("click",      () => void navigateTo("results"));
+navButtons.ttcards?.addEventListener("click",      () => void navigateTo("ttcards"));
+navButtons.groups?.addEventListener("click",       () => void navigateTo("groups"));
 
 // ── Sidebar view toggles ──────────────────────────────────────────
-openTemplateManagerBtn?.addEventListener("click", () => navigateTo(activeMainView === "manager" ? "board" : "manager"));
-tplMgrBackBtn?.addEventListener("click", () => navigateTo("board"));
+openTemplateManagerBtn?.addEventListener("click", () => void navigateTo(activeMainView === "manager" ? "board" : "manager"));
+tplMgrBackBtn?.addEventListener("click", () => void navigateTo("board"));
 groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); });
 
 // ── Sidebar level filter ──────────────────────────────────────────
