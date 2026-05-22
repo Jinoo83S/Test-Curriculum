@@ -4012,3 +4012,128 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
 .template-card.compact-card.expanded .template-semester-preview {
   display: none !important;
 }
+
+/* ── Sidebar subject card expanded detail layout ───────────────── */
+.template-card.compact-card.expanded {
+  grid-column: 1 / -1;
+  background: #eef5ff;
+  border-color: #60a5fa;
+  box-shadow: 0 2px 7px rgba(37,99,235,0.14);
+}
+
+.template-card.compact-card.expanded .template-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 4px 6px 3px;
+}
+
+.template-card.compact-card.expanded .template-name-ko {
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-card.compact-card.expanded .template-applied-grades {
+  max-width: 92px;
+  gap: 2px;
+}
+
+.template-card.compact-card.expanded .grade-chip {
+  height: 17px;
+  min-width: 16px;
+  padding: 0 4px;
+  font-size: 9.5px;
+  line-height: 17px;
+}
+
+.template-card.compact-card.expanded .template-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  padding: 0;
+  min-width: max-content;
+}
+
+.template-card.compact-card.expanded .template-actions button {
+  padding: 2px 6px;
+  font-size: 10px;
+  line-height: 17px;
+  min-height: 19px;
+  border-radius: 5px;
+}
+
+.template-card.compact-card.expanded .template-semester-preview {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 4px;
+  padding: 2px 6px 6px;
+}
+
+.template-card.compact-card.expanded .semester-preview-item {
+  min-width: 0;
+  border: 1px solid #cbdaf0;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.95);
+  padding: 4px 5px;
+}
+
+.template-card.compact-card.expanded .semester-preview-row {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+
+.template-card.compact-card.expanded .semester-preview-label {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #1e3a5f;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.template-card.compact-card.expanded .semester-preview-line {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.1fr) minmax(46px, .75fr);
+  align-items: center;
+  gap: 5px;
+}
+
+.template-card.compact-card.expanded .semester-preview-name,
+.template-card.compact-card.expanded .semester-preview-en,
+.template-card.compact-card.expanded .semester-preview-teacher {
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.template-card.compact-card.expanded .semester-preview-name {
+  font-size: 11px;
+  line-height: 1.25;
+  font-weight: 800;
+  color: #111827;
+}
+
+.template-card.compact-card.expanded .semester-preview-en {
+  font-size: 10px;
+  line-height: 1.25;
+  color: #64748b;
+}
+
+.template-card.compact-card.expanded .semester-preview-teacher {
+  font-size: 10px;
+  line-height: 1.25;
+  color: #1e3a5f;
+  font-weight: 700;
+  text-align: right;
+}

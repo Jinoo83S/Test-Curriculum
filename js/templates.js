@@ -256,14 +256,35 @@ let _sidebarLevel = "전체";
 export const setSidebarLevel = v => { _sidebarLevel = v; };
 const levelFilter = t => _sidebarLevel === "전체" || t.schoolLevel === _sidebarLevel || t.schoolLevel === "공통";
 
-function createSemesterPreviewItem(item, semKey) {
+function createSemesterPreviewItem(item, semKey, labelOverride = null) {
   const data = getSemesterTemplateData(item, semKey);
-  const wrap = document.createElement("div"); wrap.className = "semester-preview-item";
-  const lbl = document.createElement("div"); lbl.className = "semester-preview-label"; lbl.textContent = SEMESTER_LABELS[semKey];
-  const nm  = document.createElement("div"); nm.className  = "semester-preview-name";  nm.textContent  = data.nameKo || data.nameEn || "-";
-  wrap.append(lbl, nm);
-  if (data.nameEn && data.nameEn !== data.nameKo) { const e = document.createElement("div"); e.className = "semester-preview-en"; e.textContent = data.nameEn; wrap.appendChild(e); }
-  if (data.teacher) { const te = document.createElement("div"); te.className = "semester-preview-teacher"; te.textContent = data.teacher; wrap.appendChild(te); }
+  const wrap = document.createElement("div");
+  wrap.className = "semester-preview-item semester-preview-row";
+
+  const lbl = document.createElement("div");
+  lbl.className = "semester-preview-label";
+  lbl.textContent = labelOverride || SEMESTER_LABELS[semKey];
+
+  const line = document.createElement("div");
+  line.className = "semester-preview-line";
+
+  const ko = document.createElement("div");
+  ko.className = "semester-preview-name semester-preview-ko";
+  ko.textContent = data.nameKo || data.nameEn || "-";
+  ko.title = ko.textContent;
+
+  const en = document.createElement("div");
+  en.className = "semester-preview-en";
+  en.textContent = data.nameEn && data.nameEn !== data.nameKo ? data.nameEn : "";
+  en.title = en.textContent;
+
+  const te = document.createElement("div");
+  te.className = "semester-preview-teacher";
+  te.textContent = data.teacher || "-";
+  te.title = te.textContent;
+
+  line.append(ko, en, te);
+  wrap.append(lbl, line);
   return wrap;
 }
 
@@ -288,7 +309,7 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
   editBtn.disabled = !canEdit(); copyBtn.disabled = !canEdit(); deleteBtn.disabled = !canEdit();
   [editBtn, copyBtn, deleteBtn].forEach(b => b.addEventListener("mousedown", e => e.stopPropagation()));
   const tInfo = document.createElement("span"); tInfo.className = "template-teacher-inline"; tInfo.textContent = getTemplateTeacherSummary(item) || "-";
-  actions.append(editBtn, copyBtn, deleteBtn, tInfo);
+  actions.append(editBtn, copyBtn, deleteBtn);
 
   // Applied grades display — compact one-line badge on the right side of the card
   const gradesEl = document.createElement("div");
@@ -308,13 +329,20 @@ export function createTemplateCard(item, { onEdit, onDelete, onCopy }) {
     chip.textContent = "미배정";
     gradesEl.appendChild(chip);
   }
-  main.appendChild(gradesEl);
+  main.append(gradesEl, actions);
 
-  const preview = document.createElement("div"); preview.className = "template-semester-preview";
-  if (isSemesterDataSame(item)) { const s = createSemesterPreviewItem(item, "sem1"); s.style.gridColumn = "1 / -1"; preview.appendChild(s); }
-  else { preview.append(createSemesterPreviewItem(item, "sem1"), createSemesterPreviewItem(item, "sem2")); }
+  const preview = document.createElement("div");
+  preview.className = "template-semester-preview template-semester-detail";
+  if (isSemesterDataSame(item)) {
+    preview.appendChild(createSemesterPreviewItem(item, "sem1", "1·2학기"));
+  } else {
+    preview.append(
+      createSemesterPreviewItem(item, "sem1"),
+      createSemesterPreviewItem(item, "sem2")
+    );
+  }
 
-  card.append(main, actions, preview);
+  card.append(main, preview);
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
     const was = card.classList.contains("expanded");
