@@ -364,7 +364,16 @@ function renderTemplateManagerLevelTabs() {
     tabs = document.createElement("div");
     tabs.id = "templateManagerLevelTabs";
     tabs.className = "tpl-manager-level-tabs";
-    const toolbar = tplMgrView.querySelector(".manager-toolbar");
+  }
+
+  // 과목카드 표 편집의 과정 탭은 제목 오른쪽 여백에 고정합니다.
+  // 기존처럼 toolbar 위에 삽입하면 검색/필터 영역과 붙어 보여 위치가 어색했습니다.
+  const header  = tplMgrView.querySelector(".manager-header");
+  const actions = tplMgrView.querySelector(".manager-actions");
+  const toolbar = tplMgrView.querySelector(".manager-toolbar");
+  if (header) {
+    if (tabs.parentElement !== header) header.insertBefore(tabs, actions || null);
+  } else if (tabs.parentElement !== (toolbar?.parentNode || tplMgrView)) {
     (toolbar?.parentNode || tplMgrView).insertBefore(tabs, toolbar || tplMgrView.firstChild);
   }
 

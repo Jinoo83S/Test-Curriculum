@@ -4421,3 +4421,20 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   visibility: visible !important;
   opacity: 1 !important;
 }
+
+/* 과목카드 표 편집 과정 탭: 제목 오른쪽 영역 배치 */
+.manager-header > .tpl-manager-level-tabs {
+  margin: 0 8px 0 auto;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+.manager-header > .tpl-manager-level-tabs + .manager-actions {
+  margin-left: 0;
+}
+@media (max-width: 900px) {
+  .manager-header > .tpl-manager-level-tabs {
+    margin: 4px 0 0;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
