@@ -29,14 +29,16 @@ export function deleteRoom(id) {
   scheduleSave("rooms"); return true;
 }
 
-export function renderRoomsView(container, onUpdate) {
+export function renderRoomsView(container, onUpdate, options = {}) {
   container.innerHTML = "";
+  const teacherNames = Array.isArray(options.teacherNames) ? options.teacherNames : [];
+  const onTeacherRoomChange = typeof options.onTeacherRoomChange === "function" ? options.onTeacherRoomChange : null;
 
   const hdr = document.createElement("div"); hdr.className = "rooms-header";
   const title = document.createElement("h3"); title.textContent = "교실 관리";
   const addBtn = makeBtn("+ 교실 추가", "primary-btn compact-btn", () => {
     addRoom({ name: `교실 ${getRooms().length + 1}` });
-    onUpdate?.(); renderRoomsView(container, onUpdate);
+    onUpdate?.(); renderRoomsView(container, onUpdate, options);
   });
   addBtn.disabled = !canEdit();
   hdr.append(title, addBtn); container.appendChild(hdr);
@@ -46,10 +48,17 @@ export function renderRoomsView(container, onUpdate) {
     e.textContent = "등록된 교실이 없습니다. 위 버튼으로 추가하세요."; container.appendChild(e); return;
   }
 
+  if (teacherNames.length) {
+    const dl = document.createElement("datalist");
+    dl.id = "room-teacher-list";
+    teacherNames.forEach(name => { const o = document.createElement("option"); o.value = name; dl.appendChild(o); });
+    container.appendChild(dl);
+  }
+
   const wrap = document.createElement("div"); wrap.className = "rooms-table-wrap";
   const table = document.createElement("table"); table.className = "rooms-table";
   table.innerHTML = `<thead><tr>
-    <th>이름</th><th>유형</th><th>수용인원</th><th>전용학년</th><th>메모</th><th>삭제</th>
+    <th>이름</th><th>유형</th><th>수용인원</th><th>전용학년</th><th>담당/홈룸 교사</th><th>메모</th><th>삭제</th>
   </tr></thead>`;
   const tbody = document.createElement("tbody");
 
@@ -65,12 +74,12 @@ export function renderRoomsView(container, onUpdate) {
       if (f.tag === "select") {
         const sel = document.createElement("select"); sel.disabled = !canEdit();
         ROOM_TYPES.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === room.type) o.selected = true; sel.appendChild(o); });
-        sel.addEventListener("change", e => { updateRoom(room.id, "type", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
+        sel.addEventListener("change", e => { updateRoom(room.id, "type", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate, options); });
         td.appendChild(sel);
       } else {
         const inp = document.createElement("input"); inp.type = f.type; inp.value = f.val; inp.placeholder = f.ph || ""; inp.disabled = !canEdit();
         if (f.min !== undefined) inp.min = f.min;
-        inp.addEventListener("change", e => { updateRoom(room.id, f.key, f.type === "number" ? (parseInt(e.target.value) || 0) : e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
+        inp.addEventListener("change", e => { updateRoom(room.id, f.key, f.type === "number" ? (parseInt(e.target.value) || 0) : e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate, options); });
         td.appendChild(inp);
       }
       tr.appendChild(td);
@@ -81,16 +90,35 @@ export function renderRoomsView(container, onUpdate) {
     [{ v:"", l:"공용" }, ...GRADE_KEYS.map(g => ({ v:g, l:g }))].forEach(({ v, l }) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === room.grade) o.selected = true; gradeSel.appendChild(o);
     });
-    gradeSel.addEventListener("change", e => { updateRoom(room.id, "grade", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
+    gradeSel.addEventListener("change", e => { updateRoom(room.id, "grade", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate, options); });
     gradeTd.appendChild(gradeSel); tr.appendChild(gradeTd);
+
+    // Teacher / homeroom owner
+    const teacherTd = document.createElement("td");
+    const teacherInput = document.createElement("input");
+    teacherInput.type = "text";
+    teacherInput.value = room.teacherName || "";
+    teacherInput.placeholder = "예: 김OO";
+    teacherInput.disabled = !canEdit();
+    teacherInput.setAttribute("list", "room-teacher-list");
+    teacherInput.addEventListener("change", e => {
+      const teacherName = clean(e.target.value);
+      updateRoom(room.id, "teacherName", teacherName);
+      onTeacherRoomChange?.(room.id, teacherName);
+      onUpdate?.();
+      renderRoomsView(container, onUpdate, options);
+    });
+    teacherTd.appendChild(teacherInput);
+    tr.appendChild(teacherTd);
+
     // Note
     const noteTd = document.createElement("td");
     const noteInp = document.createElement("input"); noteInp.type = "text"; noteInp.value = room.note || ""; noteInp.disabled = !canEdit();
-    noteInp.addEventListener("change", e => { updateRoom(room.id, "note", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate); });
+    noteInp.addEventListener("change", e => { updateRoom(room.id, "note", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate, options); });
     noteTd.appendChild(noteInp); tr.appendChild(noteTd);
     // Delete
     const delTd = document.createElement("td"); delTd.className = "col-del";
-    const delBtn = makeBtn("×", "stu-del-btn", () => { if (deleteRoom(room.id)) { onUpdate?.(); renderRoomsView(container, onUpdate); } });
+    const delBtn = makeBtn("×", "stu-del-btn", () => { if (deleteRoom(room.id)) { onUpdate?.(); renderRoomsView(container, onUpdate, options); } });
     delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd);
     tbody.appendChild(tr);
   });

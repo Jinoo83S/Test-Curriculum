@@ -224,6 +224,8 @@ export function normalizeRoom(r = {}) {
     capacity: Number.isFinite(parseInt(r.capacity)) ? parseInt(r.capacity) : 0,
     type: ROOM_TYPES.includes(r.type) ? r.type : "일반",
     grade: GRADE_KEYS.includes(r.grade) ? r.grade : "",
+    // 담임/전용 교사 표시용. 시간표 교사 조건의 홈룸/본인 교실과 연동됩니다.
+    teacherName: clean(r.teacherName),
     note: clean(r.note)
   };
 }
@@ -294,7 +296,11 @@ export function normalizeTimetableConstraint(c = {}) {
     unavailableSlots: Array.isArray(c.unavailableSlots)
       ? c.unavailableSlots.filter(s => Number.isInteger(s.day) && Number.isInteger(s.period))
       : [],
-    assignedRoomId: clean(c.assignedRoomId) || null
+    // assignedRoomId: 실제 자동배정 시 우선 배정할 교실
+    assignedRoomId: clean(c.assignedRoomId) || null,
+    // homeRoomId/useHomeRoom: 교사 조건 화면의 홈룸/본인 교실 기능
+    homeRoomId: clean(c.homeRoomId) || null,
+    useHomeRoom: !!c.useHomeRoom,
   };
 }
 function normalizeTimetableDomain(raw = {}) {

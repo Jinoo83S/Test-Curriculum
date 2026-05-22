@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
-import { getRooms, renderRoomsView } from "./rooms.js";
+import { getRooms, renderRoomsView, updateRoom } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
 
 // ── Accessors ─────────────────────────────────────────────────────
@@ -224,6 +224,59 @@ function getRoomDisplayName(roomId) {
   return getRooms().find(r => r.id === roomId)?.name || roomId;
 }
 
+function getEffectiveAssignedRoomId(teacher) {
+  const c = constraints()[teacher];
+  if (!c) return null;
+  if (c.useHomeRoom && c.homeRoomId) return c.homeRoomId;
+  return c.assignedRoomId || null;
+}
+
+function getDefaultRoomForTeacherNames(teacherNames = []) {
+  const rooms = [...new Set((teacherNames || []).map(getEffectiveAssignedRoomId).filter(Boolean))];
+  return rooms.length === 1 ? rooms[0] : null;
+}
+
+function getDefaultRoomForPlacementData(data = {}) {
+  const names = splitTeacherNames(data.teacherName || "").filter(Boolean);
+  return getDefaultRoomForTeacherNames(names);
+}
+
+function applyDefaultRoomToEntryData(data = {}) {
+  if (!data.roomId) {
+    const roomId = getDefaultRoomForPlacementData(data);
+    if (roomId) data.roomId = roomId;
+  }
+  return data;
+}
+
+function setRoomTeacherOwner(roomId, teacherName) {
+  if (!roomId) return;
+  const rooms = getRooms();
+  rooms.forEach(room => {
+    if (room.id === roomId) room.teacherName = teacherName || "";
+    else if (teacherName && room.teacherName === teacherName) room.teacherName = "";
+  });
+  scheduleSave("rooms");
+}
+
+function syncTeacherHomeRoomFromRoom(roomId, teacherName) {
+  if (!roomId) return;
+  Object.entries(constraints()).forEach(([name, c]) => {
+    if (name !== teacherName && c?.homeRoomId === roomId) {
+      c.homeRoomId = null;
+      if (c.useHomeRoom) c.assignedRoomId = null;
+      c.useHomeRoom = false;
+    }
+  });
+  if (teacherName) {
+    if (!constraints()[teacherName]) constraints()[teacherName] = normalizeTimetableConstraint({});
+    constraints()[teacherName].homeRoomId = roomId;
+    constraints()[teacherName].useHomeRoom = true;
+    constraints()[teacherName].assignedRoomId = roomId;
+  }
+  scheduleSave("timetable");
+}
+
 function getSlotLabel(day, period) {
   const dayLabels = ["월", "화", "수", "목", "금"];
   const pLabel = ttConfig().periodLabels?.[period] || `${period + 1}교시`;
@@ -393,7 +446,7 @@ function renderEntryConflictDetailSection(box, entry) {
 function addEntry(data) {
   if (!canEdit()) return null;
   captureTimetableUndo("수업 추가");
-  const e = normalizeTimetableEntry({ id: uid("ent"), ...data });
+  const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
   entries().push(e); scheduleSave("timetable"); return e;
 }
@@ -2165,17 +2218,128 @@ function finalizeSidebarPanel(panel, available, done, emptyMsg) {
 }
 
 // ── Constraints panel ─────────────────────────────────────────────
-function renderConstraintsPanel() {
-  const el = $("ttConstraintsContent"); if (!el) return;
-  el.innerHTML = "";
-
+function getAllTimetableTeachers() {
   const fromTemplates = [...new Set(
     (appState.templates.templates || []).flatMap(t =>
       splitTeacherNames([t.teacher, t.sem1Teacher, t.sem2Teacher].join(","))
     ).filter(Boolean)
   )];
   const fromEntries = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
-  const allTeachers = [...new Set([...fromTemplates, ...fromEntries])].sort((a, b) => a.localeCompare(b, "ko"));
+  const fromRooms = [...new Set(getRooms().map(r => clean(r.teacherName)).filter(Boolean))];
+  return [...new Set([...fromTemplates, ...fromEntries, ...fromRooms])].sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function applyRoomToTeacherEntries(teacher, roomId) {
+  entries().forEach(en => {
+    if (splitTeacherNames(en.teacherName).includes(teacher)) en.roomId = roomId || null;
+  });
+}
+
+function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
+  const box = document.createElement("div");
+  box.className = "tt-con-bulk-box";
+  box.style.cssText = "display:grid;gap:8px;margin:8px 0 10px;padding:10px;border:1px solid #dbe2ef;border-radius:10px;background:#f8fbff";
+
+  const title = document.createElement("div");
+  title.style.cssText = "font-size:12px;font-weight:800;color:#1e3a5f";
+  title.textContent = "전체 일괄 편집";
+  box.appendChild(title);
+
+  const row1 = document.createElement("div");
+  row1.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
+  const maxDay = document.createElement("input"); maxDay.type = "number"; maxDay.min = "1"; maxDay.max = "12"; maxDay.value = "6"; maxDay.style.cssText = "width:56px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px";
+  const maxCon = document.createElement("input"); maxCon.type = "number"; maxCon.min = "1"; maxCon.max = "12"; maxCon.value = "3"; maxCon.style.cssText = maxDay.style.cssText;
+  const applyNums = makeBtn("전체 적용", "primary-btn compact-btn", () => {
+    if (!canEdit()) return;
+    captureTimetableUndo("교사 조건 전체 일괄 수정");
+    const md = parseInt(maxDay.value) || 6;
+    const mc = parseInt(maxCon.value) || 3;
+    teachers.forEach(t => {
+      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
+      constraints()[t].maxPerDay = md;
+      constraints()[t].maxConsecutive = mc;
+    });
+    scheduleSave("timetable");
+    recomputeConflicts();
+    renderAll();
+  });
+  applyNums.disabled = !canEdit();
+  row1.append("하루 최대", maxDay, "최대 연속", maxCon, applyNums);
+
+  const expandBtn = makeBtn("전체 펼치기", "secondary-btn compact-btn", () => {
+    teachers.forEach(t => { if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({}); constraints()[t]._expanded = true; });
+    renderConstraintsPanel();
+  });
+  const collapseBtn = makeBtn("전체 접기", "secondary-btn compact-btn", () => {
+    teachers.forEach(t => { if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({}); constraints()[t]._expanded = false; });
+    renderConstraintsPanel();
+  });
+  row1.append(expandBtn, collapseBtn);
+  box.appendChild(row1);
+
+  const row2 = document.createElement("div");
+  row2.style.cssText = row1.style.cssText;
+  const daySel = document.createElement("select"); daySel.style.cssText = "padding:4px 6px;border:1px solid #d1d5db;border-radius:5px";
+  dayLabels.forEach((d, i) => { const o = document.createElement("option"); o.value = i; o.textContent = d; daySel.appendChild(o); });
+  const perSel = document.createElement("select"); perSel.style.cssText = daySel.style.cssText;
+  periods.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p || `${i+1}교시`; perSel.appendChild(o); });
+  const setUnav = makeBtn("전체 불가", "secondary-btn compact-btn", () => {
+    if (!canEdit()) return;
+    captureTimetableUndo("전체 수업 불가 시간 추가");
+    const day = parseInt(daySel.value), period = parseInt(perSel.value);
+    teachers.forEach(t => {
+      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
+      const slots = constraints()[t].unavailableSlots || (constraints()[t].unavailableSlots = []);
+      if (!slots.some(s => s.day === day && s.period === period)) slots.push({ day, period });
+    });
+    scheduleSave("timetable"); recomputeConflicts(); renderAll();
+  });
+  const clearUnav = makeBtn("전체 가능", "secondary-btn compact-btn", () => {
+    if (!canEdit()) return;
+    captureTimetableUndo("전체 수업 불가 시간 해제");
+    const day = parseInt(daySel.value), period = parseInt(perSel.value);
+    teachers.forEach(t => {
+      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
+      constraints()[t].unavailableSlots = (constraints()[t].unavailableSlots || []).filter(s => !(s.day === day && s.period === period));
+    });
+    scheduleSave("timetable"); recomputeConflicts(); renderAll();
+  });
+  setUnav.disabled = clearUnav.disabled = !canEdit();
+  row2.append("선택 시간", daySel, perSel, setUnav, clearUnav);
+  box.appendChild(row2);
+
+  const row3 = document.createElement("div");
+  row3.style.cssText = row1.style.cssText;
+  const ownBtn = makeBtn("본인 교실 일괄 적용", "primary-btn compact-btn", () => {
+    if (!canEdit()) return;
+    captureTimetableUndo("본인 교실 일괄 적용");
+    teachers.forEach(t => {
+      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
+      const roomId = constraints()[t].homeRoomId;
+      if (roomId) {
+        constraints()[t].useHomeRoom = true;
+        constraints()[t].assignedRoomId = roomId;
+        applyRoomToTeacherEntries(t, roomId);
+        setRoomTeacherOwner(roomId, t);
+      }
+    });
+    scheduleSave("timetable"); scheduleSave("rooms"); recomputeConflicts(); renderAll();
+  });
+  ownBtn.disabled = !canEdit();
+  row3.append(ownBtn);
+  if (!rooms.length) {
+    const note = document.createElement("span"); note.style.cssText = "font-size:11px;color:#64748b"; note.textContent = "교실을 먼저 등록하면 홈룸/본인 교실을 사용할 수 있습니다."; row3.appendChild(note);
+  }
+  box.appendChild(row3);
+
+  container.appendChild(box);
+}
+
+function renderConstraintsPanel() {
+  const el = $("ttConstraintsContent"); if (!el) return;
+  el.innerHTML = "";
+
+  const allTeachers = getAllTimetableTeachers();
 
   if (!allTeachers.length) {
     el.innerHTML = '<div class="tt-empty">과목카드에 등록된 교사가 없습니다.</div>'; return;
@@ -2187,6 +2351,8 @@ function renderConstraintsPanel() {
   const dayLabels = ["월","화","수","목","금"];
   const periods = ttConfig().periodLabels;
   const rooms = getRooms();
+
+  renderConstraintBulkTools(el, allTeachers, rooms, dayLabels, periods);
 
   allTeachers.forEach(teacher => {
     if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
@@ -2229,30 +2395,102 @@ function renderConstraintsPanel() {
     });
     body.appendChild(numRow);
 
-    // ── Assigned room ─────────────────────────────────────────────
+    // ── Homeroom / assigned room ─────────────────────────────────
     if (rooms.length) {
-      const rRow = document.createElement("div"); rRow.className = "tt-con-room-row";
-      const rLabel = document.createElement("label"); rLabel.textContent = "배정 교실"; rLabel.style.cssText="font-size:11px;font-weight:600;color:#6b7280;margin-right:6px";
-      const rSel = document.createElement("select"); rSel.style.cssText="padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px"; rSel.disabled = !canEdit();
-      const noR = document.createElement("option"); noR.value=""; noR.textContent="없음"; rSel.appendChild(noR);
-      rooms.forEach(r => {
-        const o = document.createElement("option"); o.value=r.id; o.textContent=r.name;
-        if(r.id===c.assignedRoomId) o.selected=true; rSel.appendChild(o);
+      const rWrap = document.createElement("div");
+      rWrap.className = "tt-con-room-row";
+      rWrap.style.cssText = "display:grid;gap:6px;margin-top:6px";
+
+      const makeRoomSelect = (value) => {
+        const sel = document.createElement("select");
+        sel.style.cssText = "padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;max-width:180px";
+        sel.disabled = !canEdit();
+        const noR = document.createElement("option"); noR.value = ""; noR.textContent = "없음"; sel.appendChild(noR);
+        rooms.forEach(r => {
+          const o = document.createElement("option");
+          o.value = r.id;
+          o.textContent = r.teacherName ? `${r.name} (${r.teacherName})` : r.name;
+          if (r.id === value) o.selected = true;
+          sel.appendChild(o);
+        });
+        return sel;
+      };
+
+      const homeLine = document.createElement("div");
+      homeLine.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
+      const homeLabel = document.createElement("label");
+      homeLabel.textContent = "홈룸/본인 교실";
+      homeLabel.style.cssText = "font-size:11px;font-weight:600;color:#6b7280";
+      const homeSel = makeRoomSelect(c.homeRoomId);
+      homeSel.addEventListener("change", e => {
+        if (!canEdit()) return;
+        const roomId = e.target.value || null;
+        captureTimetableUndo("교사 홈룸 수정");
+        c.homeRoomId = roomId;
+        if (roomId) setRoomTeacherOwner(roomId, teacher);
+        if (c.useHomeRoom) {
+          c.assignedRoomId = roomId;
+          applyRoomToTeacherEntries(teacher, roomId);
+        }
+        scheduleSave("timetable");
+        scheduleSave("rooms");
+        recomputeConflicts();
+        renderAll();
       });
+      const useHome = document.createElement("label");
+      useHome.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#374151;font-weight:600";
+      const useChk = document.createElement("input");
+      useChk.type = "checkbox";
+      useChk.checked = !!c.useHomeRoom;
+      useChk.disabled = !canEdit();
+      useChk.addEventListener("change", e => {
+        if (!canEdit()) return;
+        captureTimetableUndo("본인 교실 사용 설정");
+        c.useHomeRoom = e.target.checked;
+        if (c.useHomeRoom) {
+          c.assignedRoomId = c.homeRoomId || null;
+          applyRoomToTeacherEntries(teacher, c.homeRoomId || null);
+          if (c.homeRoomId) setRoomTeacherOwner(c.homeRoomId, teacher);
+        }
+        scheduleSave("timetable");
+        scheduleSave("rooms");
+        recomputeConflicts();
+        renderAll();
+      });
+      useHome.append(useChk, "본인 교실 사용");
+      homeLine.append(homeLabel, homeSel, useHome);
+
+      const assignedLine = document.createElement("div");
+      assignedLine.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
+      const rLabel = document.createElement("label");
+      rLabel.textContent = "배정 교실";
+      rLabel.style.cssText = "font-size:11px;font-weight:600;color:#6b7280";
+      const rSel = makeRoomSelect(c.assignedRoomId);
+      rSel.disabled = !canEdit() || !!c.useHomeRoom;
       rSel.addEventListener("change", e => {
         if (!canEdit()) return;
         const roomId = e.target.value || null;
         captureTimetableUndo("교사 배정 교실 수정");
-        constraints()[teacher].assignedRoomId = roomId;
-        // Apply room to all entries of this teacher without stacking many undo snapshots.
-        entries().forEach(en => {
-          if (splitTeacherNames(en.teacherName).includes(teacher)) en.roomId = roomId;
-        });
+        c.assignedRoomId = roomId;
+        c.useHomeRoom = false;
+        applyRoomToTeacherEntries(teacher, roomId);
         scheduleSave("timetable");
         recomputeConflicts();
         renderAll();
       });
-      rRow.append(rLabel, rSel); body.appendChild(rRow);
+      const applyBtn = makeBtn("현재 배정에 적용", "secondary-btn compact-btn", () => {
+        if (!canEdit()) return;
+        captureTimetableUndo("교사 교실 현재 배정에 적용");
+        applyRoomToTeacherEntries(teacher, getEffectiveAssignedRoomId(teacher));
+        scheduleSave("timetable");
+        recomputeConflicts();
+        renderAll();
+      });
+      applyBtn.disabled = !canEdit();
+      assignedLine.append(rLabel, rSel, applyBtn);
+
+      rWrap.append(homeLine, assignedLine);
+      body.appendChild(rWrap);
     }
 
     // ── Unavailable slots grid ────────────────────────────────────
@@ -2593,12 +2831,11 @@ function checkPlacementValid(item, slot, placed, options = {}) {
     const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
     if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
   }
-  // 6. Room conflict: if teacher has assigned room, apply; if room already occupied, skip
+  // 6. Room conflict: if teacher has assigned/home room, apply; if room already occupied, skip
   for (const teacher of teachers) {
-    const c = constraints()[teacher];
-    if (respectAssignedRoom && c?.assignedRoomId) {
-      // Check if assigned room is already occupied at this slot
-      const roomBusy = existing.some(e => e.day===slot.day && e.period===slot.period && e.roomId===c.assignedRoomId);
+    const roomId = getEffectiveAssignedRoomId(teacher);
+    if (respectAssignedRoom && roomId) {
+      const roomBusy = existing.some(e => e.day===slot.day && e.period===slot.period && e.roomId===roomId);
       if (roomBusy) return false;
     }
   }
@@ -2682,7 +2919,7 @@ function placeAutoGroupSlot(group, activeItems, slot, placed) {
   const groupItem = activeItems[0];
   const item = groupItem ? makePlacementFromGroupItem(group, groupItem) : null;
   if (!item) return false;
-  placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+  placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
   return true;
 }
 
@@ -2799,7 +3036,7 @@ export async function autoAssignAll() {
             await yieldAutoAssign();
             const item = makePlacementFromGroupItem(group, groupItem);
             const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
-            if (slot) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+            if (slot) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
             else failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` });
           }
         }
@@ -2822,7 +3059,7 @@ export async function autoAssignAll() {
             failed.push({ name: getAutoItemName(item) });
             break;
           }
-          placed.push(normalizeTimetableEntry({ id: uid("ent"), ...item, ...slot }));
+          placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
           placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
         }
       }
@@ -2907,7 +3144,14 @@ function renderAll() {
   const roomsEl = $("ttRoomsContent");
   if (isVisible(roomsEl)) {
     subscribeOptionalTimetableDomains();
-    renderRoomsView(roomsEl, renderAll);
+    renderRoomsView(roomsEl, renderAll, {
+      teacherNames: getAllTimetableTeachers(),
+      onTeacherRoomChange: (roomId, teacherName) => {
+        captureTimetableUndo("교실 담당 교사 수정");
+        syncTeacherHomeRoomFromRoom(roomId, teacherName);
+        recomputeConflicts();
+      }
+    });
   }
 
   const logsEl = $("ttLogsContent");
