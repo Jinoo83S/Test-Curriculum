@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
-         normalizeTimetableEntry, normalizeTimetableConstraint, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
+         normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
@@ -28,6 +28,8 @@ import {
 import { createAutoAssignAll } from "./timetable-autoassign.js";
 import { renderTimetableGrid } from "./timetable-grid.js";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
+import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
+import { createTimetableLogHandlers } from "./timetable-log.js";
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
@@ -44,40 +46,12 @@ let dragData       = null;
 let conflictMap    = new Map();
 let constraintMap  = new Map();
 
-// ── Bottom log panel state ───────────────────────────────────────
-const TT_LOG_KEY = "his_tt_logs_v1";
-const TT_AUTO_REPORT_KEY = "his_tt_auto_report_v1";
-const LOG_LIMIT = 80;
-
-function loadJsonLocal(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch (_) { return fallback; }
-}
-
-let timetableLogs = loadJsonLocal(TT_LOG_KEY, []);
-let lastAutoAssignReport = loadJsonLocal(TT_AUTO_REPORT_KEY, null);
-
-function persistLogState() {
-  try {
-    localStorage.setItem(TT_LOG_KEY, JSON.stringify(timetableLogs.slice(0, LOG_LIMIT)));
-    if (lastAutoAssignReport) localStorage.setItem(TT_AUTO_REPORT_KEY, JSON.stringify(lastAutoAssignReport));
-    else localStorage.removeItem(TT_AUTO_REPORT_KEY);
-  } catch (_) {}
-}
-
-function addTimetableLog(kind, title, message = "", detail = {}) {
-  timetableLogs.unshift({ id: uid("log"), ts: Date.now(), kind, title, message, detail });
-  if (timetableLogs.length > LOG_LIMIT) timetableLogs = timetableLogs.slice(0, LOG_LIMIT);
-  persistLogState();
-  if (isVisible($("ttLogsContent"))) renderLogPanel();
-}
-
-function setLastAutoAssignReport(report) {
-  lastAutoAssignReport = report;
-  persistLogState();
-}
+// ── Split module APIs ───────────────────────────────────────────
+let constraintsPanelApi = null;
+let addTimetableLog = () => {};
+let setLastAutoAssignReport = () => {};
+let getConflictCounts = () => ({ counts: {}, totalAffected: 0 });
+let renderLogPanel = () => {};
 
 function subscribeOptionalTimetableDomains() {
   // 하단바의 교실 관리/교사 조건은 시간표 본문 데이터와 함께 동작합니다.
@@ -243,10 +217,19 @@ function getRoomDisplayName(roomId) {
 }
 
 function getEffectiveAssignedRoomId(teacher) {
-  const c = constraints()[teacher];
-  if (!c) return null;
-  if (c.useHomeRoom && c.homeRoomId) return c.homeRoomId;
-  return c.assignedRoomId || null;
+  return constraintsPanelApi?.getEffectiveAssignedRoomId(teacher) || null;
+}
+
+function getAllTimetableTeachers() {
+  return constraintsPanelApi?.getAllTimetableTeachers() || [];
+}
+
+function renderConstraintsPanel() {
+  return constraintsPanelApi?.renderConstraintsPanel();
+}
+
+function syncTeacherHomeRoomFromRoom(roomId, teacherName) {
+  return constraintsPanelApi?.syncTeacherHomeRoomFromRoom(roomId, teacherName);
 }
 
 function getDefaultRoomForTeacherNames(teacherNames = []) {
@@ -265,34 +248,6 @@ function applyDefaultRoomToEntryData(data = {}) {
     if (roomId) data.roomId = roomId;
   }
   return data;
-}
-
-function setRoomTeacherOwner(roomId, teacherName) {
-  if (!roomId) return;
-  const rooms = getRooms();
-  rooms.forEach(room => {
-    if (room.id === roomId) room.teacherName = teacherName || "";
-    else if (teacherName && room.teacherName === teacherName) room.teacherName = "";
-  });
-  scheduleSave("rooms");
-}
-
-function syncTeacherHomeRoomFromRoom(roomId, teacherName) {
-  if (!roomId) return;
-  Object.entries(constraints()).forEach(([name, c]) => {
-    if (name !== teacherName && c?.homeRoomId === roomId) {
-      c.homeRoomId = null;
-      if (c.useHomeRoom) c.assignedRoomId = null;
-      c.useHomeRoom = false;
-    }
-  });
-  if (teacherName) {
-    if (!constraints()[teacherName]) constraints()[teacherName] = normalizeTimetableConstraint({});
-    constraints()[teacherName].homeRoomId = roomId;
-    constraints()[teacherName].useHomeRoom = true;
-    constraints()[teacherName].assignedRoomId = roomId;
-  }
-  scheduleSave("timetable");
 }
 
 function getSlotLabel(day, period) {
@@ -480,28 +435,6 @@ function updateEntry(id, field, value) {
   if (e[field] === value) return;
   captureTimetableUndo("수업 수정");
   e[field] = value; scheduleSave("timetable");
-}
-function updateConstraint(teacher, field, value, { rerender = true } = {}) {
-  if (!canEdit()) return;
-  if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
-  captureTimetableUndo("교사 제약 수정");
-  constraints()[teacher][field] = value;
-  scheduleSave("timetable");
-  if (rerender) {
-    recomputeConflicts();
-    requestAnimationFrame(() => renderAll());
-  }
-}
-function toggleUnavailable(teacher, day, period) {
-  if (!canEdit()) return;
-  if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
-  captureTimetableUndo("수업 불가 시간 수정");
-  const slots = constraints()[teacher].unavailableSlots || (constraints()[teacher].unavailableSlots = []);
-  const idx = slots.findIndex(s => s.day === day && s.period === period);
-  if (idx >= 0) slots.splice(idx, 1); else slots.push({ day, period });
-  scheduleSave("timetable");
-  recomputeConflicts();
-  requestAnimationFrame(() => renderAll());
 }
 function updatePeriodLabel(idx, value) {
   if (!canEdit()) return;
@@ -1085,318 +1018,6 @@ function finalizeSidebarPanel(panel, available, done, emptyMsg) {
   panel.appendChild(wrapper);
 }
 
-// ── Constraints panel ─────────────────────────────────────────────
-function getAllTimetableTeachers() {
-  const fromTemplates = [...new Set(
-    (appState.templates.templates || []).flatMap(t =>
-      splitTeacherNames([t.teacher, t.sem1Teacher, t.sem2Teacher].join(","))
-    ).filter(Boolean)
-  )];
-  const fromEntries = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
-  const fromRooms = [...new Set(getRooms().map(r => clean(r.teacherName)).filter(Boolean))];
-  return [...new Set([...fromTemplates, ...fromEntries, ...fromRooms])].sort((a, b) => a.localeCompare(b, "ko"));
-}
-
-function applyRoomToTeacherEntries(teacher, roomId) {
-  entries().forEach(en => {
-    if (splitTeacherNames(en.teacherName).includes(teacher)) en.roomId = roomId || null;
-  });
-}
-
-function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
-  const box = document.createElement("div");
-  box.className = "tt-con-bulk-box";
-  box.style.cssText = "display:grid;gap:8px;margin:8px 0 10px;padding:10px;border:1px solid #dbe2ef;border-radius:10px;background:#f8fbff";
-
-  const title = document.createElement("div");
-  title.style.cssText = "font-size:12px;font-weight:800;color:#1e3a5f";
-  title.textContent = "전체 일괄 편집";
-  box.appendChild(title);
-
-  const row1 = document.createElement("div");
-  row1.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
-  const maxDay = document.createElement("input"); maxDay.type = "number"; maxDay.min = "1"; maxDay.max = "12"; maxDay.value = "6"; maxDay.style.cssText = "width:56px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px";
-  const maxCon = document.createElement("input"); maxCon.type = "number"; maxCon.min = "1"; maxCon.max = "12"; maxCon.value = "3"; maxCon.style.cssText = maxDay.style.cssText;
-  const applyNums = makeBtn("전체 적용", "primary-btn compact-btn", () => {
-    if (!canEdit()) return;
-    captureTimetableUndo("교사 조건 전체 일괄 수정");
-    const md = parseInt(maxDay.value) || 6;
-    const mc = parseInt(maxCon.value) || 3;
-    teachers.forEach(t => {
-      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
-      constraints()[t].maxPerDay = md;
-      constraints()[t].maxConsecutive = mc;
-    });
-    scheduleSave("timetable");
-    recomputeConflicts();
-    renderAll();
-  });
-  applyNums.disabled = !canEdit();
-  row1.append("하루 최대", maxDay, "최대 연속", maxCon, applyNums);
-
-  const expandBtn = makeBtn("전체 펼치기", "secondary-btn compact-btn", () => {
-    teachers.forEach(t => { if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({}); constraints()[t]._expanded = true; });
-    renderConstraintsPanel();
-  });
-  const collapseBtn = makeBtn("전체 접기", "secondary-btn compact-btn", () => {
-    teachers.forEach(t => { if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({}); constraints()[t]._expanded = false; });
-    renderConstraintsPanel();
-  });
-  row1.append(expandBtn, collapseBtn);
-  box.appendChild(row1);
-
-  const row2 = document.createElement("div");
-  row2.style.cssText = row1.style.cssText;
-  const daySel = document.createElement("select"); daySel.style.cssText = "padding:4px 6px;border:1px solid #d1d5db;border-radius:5px";
-  dayLabels.forEach((d, i) => { const o = document.createElement("option"); o.value = i; o.textContent = d; daySel.appendChild(o); });
-  const perSel = document.createElement("select"); perSel.style.cssText = daySel.style.cssText;
-  periods.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p || `${i+1}교시`; perSel.appendChild(o); });
-  const setUnav = makeBtn("전체 불가", "secondary-btn compact-btn", () => {
-    if (!canEdit()) return;
-    captureTimetableUndo("전체 수업 불가 시간 추가");
-    const day = parseInt(daySel.value), period = parseInt(perSel.value);
-    teachers.forEach(t => {
-      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
-      const slots = constraints()[t].unavailableSlots || (constraints()[t].unavailableSlots = []);
-      if (!slots.some(s => s.day === day && s.period === period)) slots.push({ day, period });
-    });
-    scheduleSave("timetable"); recomputeConflicts(); renderAll();
-  });
-  const clearUnav = makeBtn("전체 가능", "secondary-btn compact-btn", () => {
-    if (!canEdit()) return;
-    captureTimetableUndo("전체 수업 불가 시간 해제");
-    const day = parseInt(daySel.value), period = parseInt(perSel.value);
-    teachers.forEach(t => {
-      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
-      constraints()[t].unavailableSlots = (constraints()[t].unavailableSlots || []).filter(s => !(s.day === day && s.period === period));
-    });
-    scheduleSave("timetable"); recomputeConflicts(); renderAll();
-  });
-  setUnav.disabled = clearUnav.disabled = !canEdit();
-  row2.append("선택 시간", daySel, perSel, setUnav, clearUnav);
-  box.appendChild(row2);
-
-  const row3 = document.createElement("div");
-  row3.style.cssText = row1.style.cssText;
-  const ownBtn = makeBtn("본인 교실 일괄 적용", "primary-btn compact-btn", () => {
-    if (!canEdit()) return;
-    captureTimetableUndo("본인 교실 일괄 적용");
-    teachers.forEach(t => {
-      if (!constraints()[t]) constraints()[t] = normalizeTimetableConstraint({});
-      const roomId = constraints()[t].homeRoomId;
-      if (roomId) {
-        constraints()[t].useHomeRoom = true;
-        constraints()[t].assignedRoomId = roomId;
-        applyRoomToTeacherEntries(t, roomId);
-        setRoomTeacherOwner(roomId, t);
-      }
-    });
-    scheduleSave("timetable"); scheduleSave("rooms"); recomputeConflicts(); renderAll();
-  });
-  ownBtn.disabled = !canEdit();
-  row3.append(ownBtn);
-  if (!rooms.length) {
-    const note = document.createElement("span"); note.style.cssText = "font-size:11px;color:#64748b"; note.textContent = "교실을 먼저 등록하면 홈룸/본인 교실을 사용할 수 있습니다."; row3.appendChild(note);
-  }
-  box.appendChild(row3);
-
-  container.appendChild(box);
-}
-
-function renderConstraintsPanel() {
-  const el = $("ttConstraintsContent"); if (!el) return;
-  el.innerHTML = "";
-
-  const allTeachers = getAllTimetableTeachers();
-
-  if (!allTeachers.length) {
-    el.innerHTML = '<div class="tt-empty">과목카드에 등록된 교사가 없습니다.</div>'; return;
-  }
-
-  const hint = document.createElement("div"); hint.className = "tt-con-hint";
-  hint.textContent = "자동 배치 전 교사 조건을 설정하세요."; el.appendChild(hint);
-
-  const dayLabels = ["월","화","수","목","금"];
-  const periods = ttConfig().periodLabels;
-  const rooms = getRooms();
-
-  renderConstraintBulkTools(el, allTeachers, rooms, dayLabels, periods);
-
-  allTeachers.forEach(teacher => {
-    if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
-    const c = constraints()[teacher];
-
-    const block = document.createElement("div"); block.className = "tt-con-teacher-block";
-
-    // ── Header row: teacher name + expand toggle ──────────────────
-    const hdr = document.createElement("div"); hdr.className = "tt-con-teacher-hdr";
-    const nameEl = document.createElement("span"); nameEl.className = "tt-con-name"; nameEl.textContent = teacher;
-    const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
-    const hasViolation = [...constraintMap.entries()].some(([id, s]) => {
-      const e = entries().find(x=>x.id===id);
-      return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size>0;
-    });
-    const statEl = document.createElement("span"); statEl.className = "tt-con-stat";
-    statEl.textContent = placed ? `${placed}시수 ${hasViolation?"⚠️":"✅"}` : "-";
-    const togBtn = document.createElement("button"); togBtn.type = "button"; togBtn.className = "tt-con-tog";
-    togBtn.textContent = c._expanded ? "▲" : "▼";
-    togBtn.onclick = () => { c._expanded = !c._expanded; renderConstraintsPanel(); };
-    hdr.append(nameEl, statEl, togBtn); block.appendChild(hdr);
-
-    if (!c._expanded) { el.appendChild(block); return; }
-
-    // ── Body ──────────────────────────────────────────────────────
-    const body = document.createElement("div"); body.className = "tt-con-body";
-
-    // Row: 하루 최대 + 최대 연속
-    const numRow = document.createElement("div"); numRow.className = "tt-con-num-row";
-    [
-      { key: "maxPerDay",      label: "하루 최대", def: 6,  min:1, max:12 },
-      { key: "maxConsecutive", label: "최대 연속", def: 4,  min:1, max:12 },
-    ].forEach(f => {
-      const wrap = document.createElement("label"); wrap.className = "tt-con-num-wrap";
-      wrap.textContent = f.label + " ";
-      const inp = document.createElement("input"); inp.type="number"; inp.min=f.min; inp.max=f.max;
-      inp.value = c[f.key] ?? f.def; inp.disabled = !canEdit(); inp.style.width="44px";
-      inp.addEventListener("change", e => updateConstraint(teacher, f.key, parseInt(e.target.value)||f.def));
-      wrap.appendChild(inp); numRow.appendChild(wrap);
-    });
-    body.appendChild(numRow);
-
-    // ── Homeroom / assigned room ─────────────────────────────────
-    if (rooms.length) {
-      const rWrap = document.createElement("div");
-      rWrap.className = "tt-con-room-row";
-      rWrap.style.cssText = "display:grid;gap:6px;margin-top:6px";
-
-      const makeRoomSelect = (value) => {
-        const sel = document.createElement("select");
-        sel.style.cssText = "padding:3px 6px;border:1px solid #d1d5db;border-radius:4px;font-size:11px;max-width:180px";
-        sel.disabled = !canEdit();
-        const noR = document.createElement("option"); noR.value = ""; noR.textContent = "없음"; sel.appendChild(noR);
-        rooms.forEach(r => {
-          const o = document.createElement("option");
-          o.value = r.id;
-          o.textContent = r.teacherName ? `${r.name} (${r.teacherName})` : r.name;
-          if (r.id === value) o.selected = true;
-          sel.appendChild(o);
-        });
-        return sel;
-      };
-
-      const homeLine = document.createElement("div");
-      homeLine.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
-      const homeLabel = document.createElement("label");
-      homeLabel.textContent = "홈룸/본인 교실";
-      homeLabel.style.cssText = "font-size:11px;font-weight:600;color:#6b7280";
-      const homeSel = makeRoomSelect(c.homeRoomId);
-      homeSel.addEventListener("change", e => {
-        if (!canEdit()) return;
-        const roomId = e.target.value || null;
-        captureTimetableUndo("교사 홈룸 수정");
-        c.homeRoomId = roomId;
-        if (roomId) setRoomTeacherOwner(roomId, teacher);
-        if (c.useHomeRoom) {
-          c.assignedRoomId = roomId;
-          applyRoomToTeacherEntries(teacher, roomId);
-        }
-        scheduleSave("timetable");
-        scheduleSave("rooms");
-        recomputeConflicts();
-        renderAll();
-      });
-      const useHome = document.createElement("label");
-      useHome.style.cssText = "display:inline-flex;align-items:center;gap:4px;font-size:11px;color:#374151;font-weight:600";
-      const useChk = document.createElement("input");
-      useChk.type = "checkbox";
-      useChk.checked = !!c.useHomeRoom;
-      useChk.disabled = !canEdit();
-      useChk.addEventListener("change", e => {
-        if (!canEdit()) return;
-        captureTimetableUndo("본인 교실 사용 설정");
-        c.useHomeRoom = e.target.checked;
-        if (c.useHomeRoom) {
-          c.assignedRoomId = c.homeRoomId || null;
-          applyRoomToTeacherEntries(teacher, c.homeRoomId || null);
-          if (c.homeRoomId) setRoomTeacherOwner(c.homeRoomId, teacher);
-        }
-        scheduleSave("timetable");
-        scheduleSave("rooms");
-        recomputeConflicts();
-        renderAll();
-      });
-      useHome.append(useChk, "본인 교실 사용");
-      homeLine.append(homeLabel, homeSel, useHome);
-
-      const assignedLine = document.createElement("div");
-      assignedLine.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
-      const rLabel = document.createElement("label");
-      rLabel.textContent = "배정 교실";
-      rLabel.style.cssText = "font-size:11px;font-weight:600;color:#6b7280";
-      const rSel = makeRoomSelect(c.assignedRoomId);
-      rSel.disabled = !canEdit() || !!c.useHomeRoom;
-      rSel.addEventListener("change", e => {
-        if (!canEdit()) return;
-        const roomId = e.target.value || null;
-        captureTimetableUndo("교사 배정 교실 수정");
-        c.assignedRoomId = roomId;
-        c.useHomeRoom = false;
-        applyRoomToTeacherEntries(teacher, roomId);
-        scheduleSave("timetable");
-        recomputeConflicts();
-        renderAll();
-      });
-      const applyBtn = makeBtn("현재 배정에 적용", "secondary-btn compact-btn", () => {
-        if (!canEdit()) return;
-        captureTimetableUndo("교사 교실 현재 배정에 적용");
-        applyRoomToTeacherEntries(teacher, getEffectiveAssignedRoomId(teacher));
-        scheduleSave("timetable");
-        recomputeConflicts();
-        renderAll();
-      });
-      applyBtn.disabled = !canEdit();
-      assignedLine.append(rLabel, rSel, applyBtn);
-
-      rWrap.append(homeLine, assignedLine);
-      body.appendChild(rWrap);
-    }
-
-    // ── Unavailable slots grid ────────────────────────────────────
-    const unavLabel = document.createElement("div"); unavLabel.style.cssText="font-size:11px;font-weight:600;color:#6b7280;margin-top:8px;margin-bottom:4px"; unavLabel.textContent="수업 불가 시간 (클릭하여 토글)";
-    body.appendChild(unavLabel);
-
-    const grid = document.createElement("div"); grid.className = "tt-con-grid";
-    // Header row
-    const hdrRowEl = document.createElement("div"); hdrRowEl.className = "tt-con-grid-row";
-    hdrRowEl.appendChild(Object.assign(document.createElement("div"), { className:"tt-con-grid-corner" }));
-    dayLabels.forEach(d => {
-      const th = document.createElement("div"); th.className = "tt-con-grid-day"; th.textContent = d; hdrRowEl.appendChild(th);
-    });
-    grid.appendChild(hdrRowEl);
-
-    const unavSlots = c.unavailableSlots || [];
-    periods.forEach((label, p) => {
-      const rowEl = document.createElement("div"); rowEl.className = "tt-con-grid-row";
-      const perLabel = document.createElement("div"); perLabel.className = "tt-con-grid-per"; perLabel.textContent = `${p+1}`; rowEl.appendChild(perLabel);
-      dayLabels.forEach((_, d) => {
-        const cell = document.createElement("div");
-        const isUnavail = unavSlots.some(s => s.day===d && s.period===p);
-        cell.className = "tt-con-grid-cell" + (isUnavail ? " tt-con-unavail" : "");
-        cell.title = isUnavail ? "불가" : "가능";
-        if (canEdit()) {
-          cell.style.cursor = "pointer";
-          cell.onclick = () => toggleUnavailable(teacher, d, p);
-        }
-        rowEl.appendChild(cell);
-      });
-      grid.appendChild(rowEl);
-    });
-    body.appendChild(grid);
-
-    block.appendChild(body); el.appendChild(block);
-  });
-}
-
 // ── View selectors ────────────────────────────────────────────────
 function renderViewSelectors() {
   // Grade selector
@@ -1452,154 +1073,44 @@ function renderConflictBar() {
 }
 
 
-function formatLogTime(ts) {
-  if (!ts) return "-";
-  const d = new Date(ts);
-  return `${String(d.getMonth()+1).padStart(2,"0")}/${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}:${String(d.getSeconds()).padStart(2,"0")}`;
-}
+constraintsPanelApi = createTimetableConstraintsHandlers({
+  appState,
+  entries,
+  constraints,
+  ttConfig,
+  getRooms,
+  clean,
+  splitTeacherNames,
+  makeBtn,
+  canEdit,
+  scheduleSave,
+  captureTimetableUndo,
+  recomputeConflicts,
+  renderAll: () => renderAll(),
+  getConstraintMap: () => constraintMap,
+  $
+});
 
-function getConflictCounts() {
-  const counts = Object.fromEntries(CONFLICT_PRIORITY.map(type => [type, 0]));
-  const affectedIds = new Set();
-  const combined = new Map();
-  entries().forEach(e => combined.set(e.id, getEntryConflictSet(e)));
-  combined.forEach((set, id) => {
-    if (!set || !set.size) return;
-    affectedIds.add(id);
-    getOrderedConflictTypes(set).forEach(type => { counts[type] = (counts[type] || 0) + 1; });
-  });
-  return { counts, totalAffected: affectedIds.size };
-}
+({ addTimetableLog, setLastAutoAssignReport, getConflictCounts, renderLogPanel } = createTimetableLogHandlers({
+  entries,
+  ttConfig,
+  uid,
+  escapeHtml,
+  $,
+  getEntryConflictSet,
+  getOrderedConflictTypes,
+  CONFLICT_DISPLAY,
+  CONFLICT_PRIORITY,
+  getRelatedConflictEntries,
+  entryTitle,
+  getEntryClassSummary,
+  getConstraintConflictMessage,
+  entryTeachers,
+  getRoomDisplayName,
+  getConflictLabel,
+  recomputeConflicts
+}));
 
-function getConflictDetailRows() {
-  const rows = [];
-  const dayLabels = ["월", "화", "수", "목", "금"];
-  entries()
-    .filter(e => getEntryConflictSet(e).size > 0)
-    .sort((a, b) => a.day !== b.day ? a.day - b.day : (a.period !== b.period ? a.period - b.period : entryTitle(a).localeCompare(entryTitle(b), "ko")))
-    .forEach(entry => {
-      const types = getOrderedConflictTypes(getEntryConflictSet(entry));
-      types.forEach(type => {
-        const meta = CONFLICT_DISPLAY[type];
-        if (!meta) return;
-        const related = getRelatedConflictEntries(entry, type);
-        let detail = "";
-        if (["teacher", "room", "student", "syncRequired"].includes(type)) {
-          detail = related.length
-            ? related.slice(0, 4).map(({ entry: other, detail }) => `${entryTitle(other)} · ${getEntryClassSummary(other)}${detail ? ` (${detail})` : ""}`).join(" / ")
-            : getConflictLabel(new Set([type]));
-          if (related.length > 4) detail += ` / 외 ${related.length - 4}건`;
-        } else {
-          detail = getConstraintConflictMessage(type, entry);
-        }
-        rows.push({
-          type,
-          label: meta.label,
-          color: meta.color,
-          slot: `${dayLabels[entry.day] ?? "?"} ${ttConfig().periodLabels?.[entry.period] || `${entry.period + 1}교시`}`,
-          title: entryTitle(entry),
-          cls: getEntryClassSummary(entry),
-          teacher: entryTeachers(entry).join(", ") || "-",
-          room: getRoomDisplayName(entry.roomId),
-          detail
-        });
-      });
-    });
-  return rows;
-}
-
-function renderLogPanel() {
-  const el = $("ttLogsContent");
-  if (!el) return;
-
-  const { counts, totalAffected } = getConflictCounts();
-  const conflictRows = getConflictDetailRows();
-  const conflictBadges = CONFLICT_PRIORITY
-    .filter(type => counts[type] > 0)
-    .map(type => `<span class="tt-conflict-chip" data-type="${type}">${escapeHtml(CONFLICT_DISPLAY[type].label)} ${counts[type]}</span>`)
-    .join("");
-
-  const auto = lastAutoAssignReport;
-  const failedList = auto?.failedNames?.length
-    ? `<ul class="tt-log-failed-list">${auto.failedNames.slice(0, 20).map(name => `<li>${escapeHtml(name)}</li>`).join("")}${auto.failedNames.length > 20 ? `<li>외 ${auto.failedNames.length - 20}개</li>` : ""}</ul>`
-    : "";
-
-  const logItems = timetableLogs.length
-    ? timetableLogs.slice(0, 25).map(log => `
-      <div class="tt-log-item">
-        <div class="tt-log-item-title"><span>${escapeHtml(log.title)}</span><span class="tt-log-item-time">${formatLogTime(log.ts)}</span></div>
-        ${log.message ? `<div class="tt-log-item-msg">${escapeHtml(log.message)}</div>` : ""}
-      </div>`).join("")
-    : `<div class="tt-log-empty">아직 기록된 로그가 없습니다.</div>`;
-
-  const conflictTable = conflictRows.length
-    ? `<div class="tt-log-table-wrap"><table class="tt-log-table">
-        <thead><tr><th>유형</th><th>시간</th><th>수업</th><th>반</th><th>교사/교실</th><th>상세</th></tr></thead>
-        <tbody>${conflictRows.map(row => `
-          <tr>
-            <td><span class="tt-log-type-chip" style="background:${row.color}">${escapeHtml(row.label)}</span></td>
-            <td>${escapeHtml(row.slot)}</td>
-            <td>${escapeHtml(row.title)}</td>
-            <td>${escapeHtml(row.cls)}</td>
-            <td>${escapeHtml(row.teacher)}<br><span style="color:#64748b">${escapeHtml(row.room)}</span></td>
-            <td>${escapeHtml(row.detail)}</td>
-          </tr>`).join("")}</tbody>
-      </table></div>`
-    : `<div class="tt-log-empty">현재 충돌 내역이 없습니다.</div>`;
-
-  el.innerHTML = `
-    <div class="tt-log-toolbar">
-      <div class="tt-log-title">시간표 로그 · 자동배치 결과 · 충돌 내역</div>
-      <div class="tt-log-actions">
-        <button type="button" onclick="window._ttRefreshLogs?.()">새로고침</button>
-        <button type="button" onclick="window._ttClearLogs?.()">로그 지우기</button>
-      </div>
-    </div>
-    <div class="tt-log-grid">
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <section class="tt-log-card">
-          <div class="tt-log-card-hdr"><span>자동배치 결과</span>${auto ? `<span class="tt-log-item-time">${formatLogTime(auto.ts)}</span>` : ""}</div>
-          <div class="tt-log-card-body">
-            ${auto ? `
-              <dl class="tt-log-kv">
-                <dt>대상 학년</dt><dd>${escapeHtml(auto.activeGrades || "-")}</dd>
-                <dt>배치 방식</dt><dd>${escapeHtml(auto.stageLabel || "-")}</dd>
-                <dt>대상 슬롯</dt><dd>${auto.totalTarget ?? "-"}개</dd>
-                <dt>고정 유지</dt><dd>${auto.pinnedCount ?? 0}개</dd>
-                <dt>신규 배치</dt><dd>${auto.placedCount ?? 0}개</dd>
-                <dt>미배치</dt><dd>${auto.failedCount ?? 0}개</dd>
-                <dt>소요 시간</dt><dd>${auto.durationMs != null ? (auto.durationMs / 1000).toFixed(1) + "초" : "-"}</dd>
-              </dl>
-              <div class="tt-log-badges">
-                <span class="tt-log-badge ${auto.failedCount ? "warn" : "ok"}">${auto.failedCount ? "부분 완료" : "전체 완료"}</span>
-                ${(auto.conflictTotal || 0) > 0 ? `<span class="tt-log-badge danger">충돌 ${auto.conflictTotal}건</span>` : `<span class="tt-log-badge ok">충돌 없음</span>`}
-              </div>
-              ${failedList}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}
-          </div>
-        </section>
-        <section class="tt-log-card">
-          <div class="tt-log-card-hdr"><span>최근 로그</span><span class="tt-log-item-time">최대 ${LOG_LIMIT}개 보관</span></div>
-          <div class="tt-log-card-body"><div class="tt-log-list">${logItems}</div></div>
-        </section>
-      </div>
-      <section class="tt-log-card">
-        <div class="tt-log-card-hdr">
-          <span>현재 충돌 내역</span>
-          <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${totalAffected ? `<span class="tt-conflict-summary-label">충돌 ${totalAffected}건</span>${conflictBadges}` : `<span class="tt-log-badge ok">충돌 없음</span>`}</span>
-        </div>
-        <div class="tt-log-card-body">${conflictTable}</div>
-      </section>
-    </div>`;
-}
-
-window._ttRefreshLogs = () => { recomputeConflicts(); renderLogPanel(); };
-window._ttClearLogs = () => {
-  if (!confirm("로그 기록을 지울까요? 자동배치 마지막 결과도 함께 지워집니다.")) return;
-  timetableLogs = [];
-  lastAutoAssignReport = null;
-  persistLogState();
-  renderLogPanel();
-};
 
 // ── Auto-assign ───────────────────────────────────────────────────
 const shuffle = arr => { const a = [...arr]; for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
