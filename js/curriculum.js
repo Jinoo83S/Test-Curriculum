@@ -184,10 +184,6 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   sRow[`${sSemKey}TemplateId`] = re; dRow[`${dSemKey}TemplateId`] = mv; scheduleSave("curriculum"); _onCurriculumChange();
 }
 
-function getTemplateCardTitle(item) {
-  if (!item) return "-";
-  return clean(item.nameKo) || clean(item.sem1NameKo) || clean(item.nameEn) || clean(item.sem1NameEn) || "-";
-}
 
 // ── Summary Calculations ──────────────────────────────────────────
 function getRepresentativeTrackCredit(rows) { return rows.reduce((mx, r) => Math.max(mx, parseCreditValue(r.credits)), 0); }
