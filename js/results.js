@@ -48,17 +48,12 @@ function buildRows() {
       // classCount: prefer from the primary template (sem1 if exists, else sem2)
       const mainTplId = t1id || t2id;
       const classCount = getClassCount(mainTplId);
-
-      // 창체 행의 credits 입력값은 커리큘럼 보드에서는 "실시 시간"으로 보존하지만,
-      // 결과표의 학급별 시수/총시수 계산에서는 무조건 1시수로 집계합니다.
-      const isChanChe = clean(row.category) === "창체";
-      const rawCredits = parseFloat(clean(row.credits)) || 0;
-      const credits    = isChanChe ? 1 : rawCredits;
+      const credits    = parseFloat(clean(row.credits)) || 0;
       const total      = classCount > 0 ? classCount * credits : 0;
 
       rows.push({
         grade, category: row.category, track: row.track, group: row.group,
-        nameKo, nameEn, language, teacher, credits, rawCredits, classCount, total,
+        nameKo, nameEn, language, teacher, credits, classCount, total,
         isSplit: !merged && t1id && t2id
       });
     });

@@ -2,23 +2,41 @@
 // timetable-conflicts.js · Pure Conflict Detection
 // ================================================================
 import { splitTeacherNames } from "./templates.js";
+import {
+  getEntryOccupancy,
+  setsIntersect as occSetsIntersect,
+  audiencesConflict as occAudiencesConflict
+} from "./timetable-occupancy.js";
 
 /**
  * Returns Map<entryId, Set<"teacher"|"room"|"student"|"syncRequired">>
  *
- * getOccupancy(entry) is the single source of truth shared with timetable auto-assignment.
- * It should return any of these fields: { studentKeys, classKeys, teacherNames, roomIds, cardIds }.
+ * getAudience(entry) is optional and can return:
+ * { studentKeys:Set<string>, classKeys:Set<string> }.
+ * When provided, student conflicts are checked by actual audience overlap
+ * instead of grade-only overlap. This prevents 7A and 7B from being marked
+ * as a student conflict simply because both belong to 7th grade.
  */
-export function detectConflicts(entries, templateGroups = [], templates = [], getOccupancy = null) {
+export function detectConflicts(entries, templateGroups = [], templates = [], getAudience = null) {
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
+  // Build lookup maps using new structure
   const tplGroupMap = new Map(templates.map(t => [t.id, t.calcGroupId || null]));
   const groupMap    = new Map(templateGroups.map(g => [g.id, g]));
 
+  const getGroupForEntry = e => e.groupId ? groupMap.get(e.groupId) : (e.templateId ? groupMap.get(tplGroupMap.get(e.templateId)) : null);
+  const sameUnit  = (a, b) => a.unitId && b.unitId && a.unitId === b.unitId;
+  const sameGroup = (a, b) => {
+    const gA = a.groupId || tplGroupMap.get(a.templateId);
+    const gB = b.groupId || tplGroupMap.get(b.templateId);
+    return gA && gA === gB;
+  };
+  const isConcurrent = e => { const g = getGroupForEntry(e); return g?.isConcurrent ?? (g?.groupType === "concurrent"); };
+  const isCrossGrade = e => { const g = getGroupForEntry(e); return g?.isCrossGrade ?? (g?.groupType === "cross-grade"); };
+
   const unique = list => [...new Set((list || []).filter(Boolean))];
   const entryCardIds = e => unique([...(e.ttcardIds || []), e.ttcardId]);
-  const toSet = v => v instanceof Set ? new Set(v) : new Set(Array.isArray(v) ? v.filter(Boolean) : (v ? [v] : []));
   const normalizeGradeForClassKey = gradeKey => String(gradeKey ?? "").replace(/학년/g, "").trim();
   const sectionLabel = i => String.fromCharCode(65 + Math.max(0, Number.isInteger(i) ? i : (parseInt(i, 10) || 0)));
   const normalizeSectionForClassKey = section => {
@@ -32,59 +50,34 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     const s = normalizeSectionForClassKey(section);
     return g && s ? `${g}:${s}` : "";
   };
-
-  const fallbackOccupancy = e => {
-    const grades = e.gradeKeys?.length ? e.gradeKeys : (e.gradeKey ? [e.gradeKey] : []);
-    const sec = sectionLabel(e.sectionIdx ?? 0);
-    return {
-      studentKeys: new Set(e.audienceStudentKeys || []),
-      classKeys: new Set((e.audienceClassKeys?.length ? e.audienceClassKeys : grades.map(g => makeClassKey(g, sec))).filter(Boolean)),
-      teacherNames: new Set(splitTeacherNames(e.teacherName || "").filter(Boolean)),
-      roomIds: new Set(e.roomId ? [e.roomId] : []),
-      cardIds: new Set(entryCardIds(e)),
-    };
-  };
-
-  const normalizeOccupancy = (raw, entry) => {
-    const fb = fallbackOccupancy(entry);
-    const teacherRaw = raw?.teacherNames ?? raw?.teachers ?? splitTeacherNames(raw?.teacherName || entry?.teacherName || "");
-    return {
-      studentKeys: toSet(raw?.studentKeys ?? raw?.audienceStudentKeys ?? fb.studentKeys),
-      classKeys: toSet(raw?.classKeys ?? raw?.audienceClassKeys ?? fb.classKeys),
-      teacherNames: toSet(teacherRaw).size ? toSet(teacherRaw) : fb.teacherNames,
-      roomIds: toSet(raw?.roomIds ?? (raw?.roomId ? [raw.roomId] : null)).size ? toSet(raw?.roomIds ?? (raw?.roomId ? [raw.roomId] : null)) : fb.roomIds,
-      cardIds: toSet(raw?.cardIds ?? entryCardIds(entry)),
-    };
-  };
-
-  const occupancyFor = e => {
-    if (typeof getOccupancy === "function") {
-      try { return normalizeOccupancy(getOccupancy(e), e); }
-      catch (err) { console.warn("Occupancy resolver failed:", err); }
+  const fallbackAudience = e => getEntryOccupancy(e);
+  const normalizeAudience = raw => ({
+    studentKeys: raw?.studentKeys instanceof Set ? raw.studentKeys : new Set(raw?.studentKeys || []),
+    classKeys: raw?.classKeys instanceof Set ? raw.classKeys : new Set(raw?.classKeys || [])
+  });
+  const audienceFor = e => {
+    if (typeof getAudience === "function") {
+      try {
+        const resolved = normalizeAudience(getAudience(e));
+        if (resolved.studentKeys.size || resolved.classKeys.size) return resolved;
+      } catch (err) {
+        console.warn("Audience resolver failed:", err);
+      }
     }
-    return fallbackOccupancy(e);
+    return fallbackAudience(e);
   };
-
-  const intersects = (a, b) => { for (const v of a) if (b.has(v)) return true; return false; };
-  const intersection = (a, b) => { const out = []; for (const v of a) if (b.has(v)) out.push(v); return out; };
-  const occupancyGrades = occ => {
-    const out = new Set();
-    (occ?.classKeys || new Set()).forEach(key => {
+  const intersects = occSetsIntersect;
+  const audienceGrades = (audience, entry) => {
+    const out = new Set((entry?.gradeKeys?.length ? entry.gradeKeys : (entry?.gradeKey ? [entry.gradeKey] : []))
+      .map(normalizeGradeForClassKey)
+      .filter(Boolean));
+    (audience?.classKeys || new Set()).forEach(key => {
       const grade = normalizeGradeForClassKey(String(key).split(":")[0]);
       if (grade) out.add(grade);
     });
     return out;
   };
-  const studentOverlap = (a, b) => {
-    if (a.studentKeys.size && b.studentKeys.size) return intersects(a.studentKeys, b.studentKeys);
-    const gradesA = occupancyGrades(a);
-    const gradesB = occupancyGrades(b);
-    if (gradesA.size && gradesB.size && !intersects(gradesA, gradesB)) return false;
-    return intersects(a.classKeys, b.classKeys);
-  };
-
-  const getGroupForEntry = e => e.groupId ? groupMap.get(e.groupId) : (e.templateId ? groupMap.get(tplGroupMap.get(e.templateId)) : null);
-  const sameUnit  = (a, b) => a.unitId && b.unitId && a.unitId === b.unitId;
+  const audiencesOverlap = (a, b, entryA, entryB) => occAudiencesConflict(a, b);
 
   const bySlot = new Map();
   entries.forEach(e => {
@@ -94,37 +87,49 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
   });
 
   bySlot.forEach(slotEntries => {
-    const occById = new Map(slotEntries.map(e => [e.id, occupancyFor(e)]));
     for (let i = 0; i < slotEntries.length; i++) {
       for (let j = i + 1; j < slotEntries.length; j++) {
         const a = slotEntries[i], b = slotEntries[j];
+
+        // Same unit → intentionally co-located, skip all conflict checks
         if (sameUnit(a, b)) continue;
-        const oa = occById.get(a.id), ob = occById.get(b.id);
 
-        // Teacher conflict: always based on the same teacherNames set used by auto-assignment.
-        if (intersection(oa.teacherNames, ob.teacherNames).length) {
-          result.get(a.id).add("teacher");
-          result.get(b.id).add("teacher");
+        // Teacher conflict (always applies — teachers can't be in two places)
+        if (a.teacherName && b.teacherName) {
+          const ta = splitTeacherNames(a.teacherName);
+          const tb = splitTeacherNames(b.teacherName);
+          if (ta.some(t => tb.includes(t))) {
+            result.get(a.id).add("teacher");
+            result.get(b.id).add("teacher");
+          }
         }
 
-        // Room conflict: includes manually assigned room and teacher home/assigned room when resolver provides it.
-        if (intersection(oa.roomIds, ob.roomIds).length) {
-          result.get(a.id).add("room");
-          result.get(b.id).add("room");
+        // Room conflict (cross-grade same unit shares room intentionally)
+        if (a.roomId && b.roomId && a.roomId === b.roomId) {
+          if (!sameUnit(a, b)) {
+            result.get(a.id).add("room");
+            result.get(b.id).add("room");
+          }
         }
 
-        // Student/class conflict: no special same-group shortcut. If two concurrent cards really have
-        // different studentKeys they are allowed; if studentKeys are missing, same classKeys conflict.
-        if (studentOverlap(oa, ob)) {
+        // Student conflict — skip if: same concurrent group, or cross-grade co-teaching
+        if (sameGroup(a, b) && isConcurrent(a) && isConcurrent(b)) continue; // parallel concurrent classes
+        if (sameGroup(a, b) && (isCrossGrade(a) || isCrossGrade(b))) continue; // cross-grade in same group
+
+        // Student conflict: compare actual audience/class overlap, not grade-only overlap.
+        // 7A and 7B in the same period are valid unless they share students or the same class audience.
+        if (audiencesOverlap(audienceFor(a), audienceFor(b), a, b)) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }
       }
     }
   });
-
   // ── syncRequired: concurrent group members must be together per occurrence ──
-  const concurrentGroups = new Map();
+  // 여러 시수 수업은 1시수, 2시수, 3시수처럼 각 시수별로 별도 슬롯에 배정될 수 있습니다.
+  // 따라서 같은 그룹이 여러 시간대에 있다고 해서 모두 오류로 보지 않습니다.
+  // 각 시간대마다 해당 그룹의 카드 구성이 완성되어 있는지만 확인합니다.
+  const concurrentGroups = new Map(); // groupId → [{entry, slotKey}]
   entries.forEach(e => {
     const grp = e.groupId ? groupMap.get(e.groupId) : null;
     const isConcurrentGroup = !!(grp?.isConcurrent || grp?.groupType === "concurrent");
@@ -148,13 +153,14 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 
     if (expectedCardIds.length) {
       slotMap.forEach(slotEntries => {
-        const covered = new Set(slotEntries.flatMap(e => [...(occupancyFor(e).cardIds || new Set())]));
+        const covered = new Set(slotEntries.flatMap(entryCardIds));
         const isComplete = expectedCardIds.every(id => covered.has(id));
         if (!isComplete) slotEntries.forEach(e => result.get(e.id).add("syncRequired"));
       });
       return;
     }
 
+    // Legacy fallback: if there is no card-level group data, keep the older conservative behavior.
     if (slotMap.size > 1) items.forEach(({ e }) => result.get(e.id).add("syncRequired"));
   });
 
