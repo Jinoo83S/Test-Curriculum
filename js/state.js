@@ -397,21 +397,41 @@ function withoutFirestoreMeta(obj = {}) {
 }
 
 function sameDomainData(a, b) {
-  // 빠른 참조 동일성 먼저
-  if (a === b) return true;
-  if (!a || !b) return false;
-  // 타입별 빠른 비교 (깊은 JSON.stringify 대신)
-  try {
-    const ka = Object.keys(a), kb = Object.keys(b);
-    if (ka.length !== kb.length) return false;
-    // 배열 포함 도메인은 길이만 비교 (세부값 변경은 실시간 업데이트에서 처리)
-    for (const k of ka) {
-      const va = a[k], vb = b[k];
-      if (Array.isArray(va) && Array.isArray(vb)) { if (va.length !== vb.length) return false; }
-      else if (va !== vb) return false;
+  // Firestore 실시간 업데이트에서 배열 길이만 비교하면,
+  // 개수는 같고 내용만 바뀐 수정이 화면에 반영되지 않을 수 있습니다.
+  // 도메인 문서의 updatedAt/createdAt 같은 메타값은 무시하되,
+  // 배열과 중첩 객체의 실제 값은 끝까지 비교합니다.
+  const seen = new WeakMap();
+  const eq = (x, y) => {
+    if (x === y) return true;
+    if (x == null || y == null) return x === y;
+    if (typeof x !== typeof y) return false;
+    if (typeof x !== "object") return Object.is(x, y);
+
+    if (seen.get(x) === y) return true;
+    seen.set(x, y);
+
+    if (Array.isArray(x) || Array.isArray(y)) {
+      if (!Array.isArray(x) || !Array.isArray(y)) return false;
+      if (x.length !== y.length) return false;
+      for (let i = 0; i < x.length; i++) {
+        if (!eq(x[i], y[i])) return false;
+      }
+      return true;
+    }
+
+    const skip = new Set(["updatedAt", "createdAt"]);
+    const kx = Object.keys(x).filter(k => !skip.has(k)).sort();
+    const ky = Object.keys(y).filter(k => !skip.has(k)).sort();
+    if (kx.length !== ky.length) return false;
+    for (let i = 0; i < kx.length; i++) {
+      if (kx[i] !== ky[i]) return false;
+      if (!eq(x[kx[i]], y[ky[i]])) return false;
     }
     return true;
-  } catch (_) { return false; }
+  };
+  try { return eq(a, b); }
+  catch (_) { return false; }
 }
 
 function applyNormalizedDomain(domain, normalized) {

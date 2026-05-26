@@ -24,7 +24,7 @@ export function getCategoryColor(category) {
 }
 
 // ── Template lookup (reads from templates domain) ─────────────────
-import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById } from "./templates.js";
+import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle } from "./templates.js";
 
 // ── Row Mutations ─────────────────────────────────────────────────
 /**
@@ -264,9 +264,191 @@ function buildExpandedMeta(s1, s2) {
   return meta;
 }
 
-function attachExpandClick(card, meta) {
+function createPopupField(label, input) {
+  const field = document.createElement("label");
+  field.className = "tpl-popup-field";
+  const span = document.createElement("span");
+  span.textContent = label;
+  field.append(span, input);
+  return field;
+}
+
+function createPopupInput(value = "", disabled = false) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value || "";
+  input.disabled = disabled;
+  return input;
+}
+
+function createPopupSelect(value, options, disabled = false) {
+  const select = document.createElement("select");
+  select.disabled = disabled;
+  options.forEach(opt => {
+    const o = document.createElement("option");
+    o.value = opt;
+    o.textContent = opt;
+    if (opt === value) o.selected = true;
+    select.appendChild(o);
+  });
+  return select;
+}
+
+function showBoardTemplateDetail(templateId, grade, rowData, semKey) {
+  const item = getTemplateById(templateId);
+  if (!item) return;
+
+  document.querySelector(".tpl-popup-backdrop")?.remove();
+
+  const editable = canEdit();
+  const backdrop = document.createElement("div");
+  backdrop.className = "tpl-popup-backdrop";
+
+  const modal = document.createElement("div");
+  modal.className = "tpl-popup-modal";
+  backdrop.appendChild(modal);
+
+  const header = document.createElement("div");
+  header.className = "tpl-popup-header";
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "tpl-popup-title-wrap";
+  const h3 = document.createElement("h3");
+  h3.textContent = getTemplateCardTitle(item);
+  const sub = document.createElement("p");
+  const semLabel = semKey === "merged" ? "1·2학기 동일" : (SEMESTER_LABELS[semKey] || "");
+  sub.textContent = `${grade} · ${rowData?.category || "-"} / ${rowData?.track || "-"} / ${rowData?.group || "-"} · ${semLabel}`;
+  titleWrap.append(h3, sub);
+  const closeBtn = makeBtn("×", "tpl-popup-close", () => backdrop.remove());
+  header.append(titleWrap, closeBtn);
+
+  const body = document.createElement("div");
+  body.className = "tpl-popup-body";
+
+  const baseSection = document.createElement("div");
+  baseSection.className = "tpl-popup-section";
+  const baseTitle = document.createElement("div");
+  baseTitle.className = "tpl-popup-section-title";
+  baseTitle.textContent = editable ? "과목카드 기본 정보 편집" : "과목카드 기본 정보";
+  const baseGrid = document.createElement("div");
+  baseGrid.className = "tpl-popup-grid";
+
+  const nameKo = createPopupInput(item.nameKo || "", !editable);
+  const nameEn = createPopupInput(item.nameEn || "", !editable);
+  const teacher = createPopupInput(item.teacher || "", !editable);
+  teacher.setAttribute("list", "tpl-teacher-list");
+  const language = createPopupSelect(item.language || "Korean", ["Korean", "English", "Both"], !editable);
+  const schoolLevel = createPopupSelect(item.schoolLevel || "공통", ["공통", "중등", "고등"], !editable);
+
+  baseGrid.append(
+    createPopupField("한글명", nameKo),
+    createPopupField("영문명", nameEn),
+    createPopupField("교사", teacher),
+    createPopupField("언어", language),
+    createPopupField("과정", schoolLevel)
+  );
+  baseSection.append(baseTitle, baseGrid);
+
+  const sepSection = document.createElement("div");
+  sepSection.className = "tpl-popup-section";
+  const sepTitle = document.createElement("label");
+  sepTitle.className = "tpl-popup-section-title tpl-popup-check-title";
+  const sepCheck = document.createElement("input");
+  sepCheck.type = "checkbox";
+  sepCheck.checked = !!item.useSemesterOverrides;
+  sepCheck.disabled = !editable;
+  const sepText = document.createElement("span");
+  sepText.textContent = "학기별 과목명/교사 별도 사용";
+  sepTitle.append(sepCheck, sepText);
+
+  const semGrid = document.createElement("div");
+  semGrid.className = "tpl-popup-sem-grid" + (sepCheck.checked ? "" : " is-disabled");
+  const sem1NameKo = createPopupInput(item.sem1NameKo || "", !editable || !sepCheck.checked);
+  const sem1NameEn = createPopupInput(item.sem1NameEn || "", !editable || !sepCheck.checked);
+  const sem1Teacher = createPopupInput(item.sem1Teacher || "", !editable || !sepCheck.checked);
+  const sem2NameKo = createPopupInput(item.sem2NameKo || "", !editable || !sepCheck.checked);
+  const sem2NameEn = createPopupInput(item.sem2NameEn || "", !editable || !sepCheck.checked);
+  const sem2Teacher = createPopupInput(item.sem2Teacher || "", !editable || !sepCheck.checked);
+  sem1Teacher.setAttribute("list", "tpl-teacher-list");
+  sem2Teacher.setAttribute("list", "tpl-teacher-list");
+
+  const refreshSemDisabled = () => {
+    const disabled = !editable || !sepCheck.checked;
+    semGrid.classList.toggle("is-disabled", !sepCheck.checked);
+    [sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher].forEach(input => { input.disabled = disabled; });
+  };
+  sepCheck.addEventListener("change", refreshSemDisabled);
+
+  semGrid.append(
+    createPopupField("1학기 한글명", sem1NameKo),
+    createPopupField("1학기 영문명", sem1NameEn),
+    createPopupField("1학기 교사", sem1Teacher),
+    createPopupField("2학기 한글명", sem2NameKo),
+    createPopupField("2학기 영문명", sem2NameEn),
+    createPopupField("2학기 교사", sem2Teacher)
+  );
+  sepSection.append(sepTitle, semGrid);
+
+  const rowSection = document.createElement("div");
+  rowSection.className = "tpl-popup-section";
+  const rowTitle = document.createElement("div");
+  rowTitle.className = "tpl-popup-section-title";
+  rowTitle.textContent = "보드 배치 정보";
+  const rowGrid = document.createElement("div");
+  rowGrid.className = "tpl-popup-grid";
+  [["학년", grade], ["구분", rowData?.category], ["트랙", rowData?.track], ["그룹", rowData?.group], ["시수/시간", rowData?.credits]].forEach(([label, value]) => {
+    const input = createPopupInput(value || "-", true);
+    rowGrid.appendChild(createPopupField(label, input));
+  });
+  rowSection.append(rowTitle, rowGrid);
+
+  body.append(baseSection, sepSection, rowSection);
+
+  const footer = document.createElement("div");
+  footer.className = "tpl-popup-footer";
+  const cancelBtn = makeBtn("닫기", "secondary-btn", () => backdrop.remove());
+  footer.appendChild(cancelBtn);
+
+  if (editable) {
+    const saveBtn = makeBtn("저장", "primary-btn", () => {
+      item.nameKo = nameKo.value.trim();
+      item.nameEn = nameEn.value.trim();
+      item.teacher = teacher.value.trim();
+      item.language = language.value;
+      item.schoolLevel = schoolLevel.value;
+      item.useSemesterOverrides = sepCheck.checked;
+      item.sem1NameKo = sem1NameKo.value.trim();
+      item.sem1NameEn = sem1NameEn.value.trim();
+      item.sem1Teacher = sem1Teacher.value.trim();
+      item.sem2NameKo = sem2NameKo.value.trim();
+      item.sem2NameEn = sem2NameEn.value.trim();
+      item.sem2Teacher = sem2Teacher.value.trim();
+
+      if (!item.nameKo && !item.nameEn && !(item.useSemesterOverrides && (item.sem1NameKo || item.sem1NameEn))) {
+        alert("한글명 또는 영문명을 입력해 주세요.");
+        return;
+      }
+      scheduleSave("templates");
+      document.dispatchEvent(new CustomEvent("his:template-updated", { detail: { templateId } }));
+      backdrop.remove();
+    });
+    footer.appendChild(saveBtn);
+  }
+
+  modal.append(header, body, footer);
+  backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
+  document.addEventListener("keydown", function onEsc(e) {
+    if (e.key === "Escape") { backdrop.remove(); document.removeEventListener("keydown", onEsc); }
+  });
+  document.body.appendChild(backdrop);
+}
+
+function attachExpandClick(card, meta, context = {}) {
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
+    if (context.templateId) {
+      showBoardTemplateDetail(context.templateId, context.grade, context.rowData, context.semKey);
+      return;
+    }
     if (!meta.children.length) return;
     const exp = card.classList.toggle("placed-expanded");
     meta.classList.toggle("placed-meta-hidden", !exp);
@@ -292,7 +474,7 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
   const oth = semKey === "sem1" ? rowData.sem2TemplateId : rowData.sem1TemplateId;
   const othItem = oth ? getTemplateById(oth) : null;
   const meta = buildExpandedMeta(semKey === "sem1" ? item : othItem, semKey === "sem2" ? item : othItem);
-  card.append(top, meta); attachExpandClick(card, meta); return card;
+  card.append(top, meta); attachExpandClick(card, meta, { templateId, grade, rowData, semKey }); return card;
 }
 
 function createMergedPlacedCard(templateId, grade, rowData) {
@@ -310,7 +492,7 @@ function createMergedPlacedCard(templateId, grade, rowData) {
     const cb = makeBtn("×", "clear-cell-btn", e => { e.stopPropagation(); clearRowBoth(grade, rowData.id); });
     cb.addEventListener("mousedown", e => e.stopPropagation()); top.appendChild(cb);
   }
-  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta); return card;
+  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta, { templateId, grade, rowData, semKey: "merged" }); return card;
 }
 
 function createDropCell(grade, rowData, semKey, templateId) {

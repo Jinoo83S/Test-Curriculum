@@ -420,11 +420,11 @@ function renderEntryConflictDetailSection(box, entry) {
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
   if (!canEdit()) return null;
-  const block = protectedSlotConflict(data, data?.day, data?.period);
-  if (block) { alertProtectedSlot(block); return null; }
-  captureTimetableUndo("수업 추가");
   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
+  const block = getManualPlacementBlock(e);
+  if (block) { alertManualPlacementBlock(block); return null; }
+  captureTimetableUndo("수업 추가");
   entries().push(e); scheduleSave("timetable"); return e;
 }
 function removeEntry(id) {
@@ -682,6 +682,53 @@ function alertProtectedSlot(block) {
   alert(`이 시간에는 고정된 전체학년 수업(${name})이 있어 다른 과목을 배치할 수 없습니다.`);
 }
 
+const MANUAL_BLOCKING_CONFLICTS = new Set(["teacher", "room", "student"]);
+
+function getManualPlacementBlock(candidates, options = {}) {
+  const candidateList = (Array.isArray(candidates) ? candidates : [candidates])
+    .filter(Boolean)
+    .map((candidate, idx) => normalizeTimetableEntry({
+      ...candidate,
+      id: candidate.id || `__manual_candidate_${idx}`
+    }));
+
+  if (!candidateList.length) return null;
+
+  const excludeIds = new Set(options.excludeIds || []);
+  for (const candidate of candidateList) {
+    const protectedBlock = protectedSlotConflict(candidate, candidate.day, candidate.period, { excludeIds });
+    if (protectedBlock) return { kind: "protected", block: protectedBlock, candidate };
+  }
+
+  const baseEntries = entries().filter(e => !excludeIds.has(e.id));
+  for (const candidate of candidateList) {
+    const conflictResult = detectConflicts(
+      [...baseEntries, candidate],
+      appState.templates.templateGroups,
+      appState.templates.templates,
+      audienceForPlacement
+    );
+    const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
+      .filter(type => MANUAL_BLOCKING_CONFLICTS.has(type));
+    if (blockingTypes.length) {
+      return { kind: "conflict", candidate, conflictTypes: blockingTypes };
+    }
+  }
+
+  return null;
+}
+
+function alertManualPlacementBlock(block) {
+  if (!block) return;
+  if (block.kind === "protected") {
+    alertProtectedSlot(block.block);
+    return;
+  }
+  const label = getConflictLabel(new Set(block.conflictTypes || [])) || "충돌";
+  const title = block.candidate ? entryTitle(block.candidate) : "수업";
+  alert(`배치할 수 없습니다.\n${title} 수업이 같은 시간대의 기존 수업과 충돌합니다.\n충돌 유형: ${label}`);
+}
+
 function getEntryClassSummary(entry) {
   const cardIds = ttCardIdsFromPlacement(entry);
   const parts = [];
@@ -788,16 +835,17 @@ function moveEntry(entryId, day, period) {
   if (!canEdit()) return;
   const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return;
   if (e.day === day && e.period === period) return;
-  captureTimetableUndo("수업 이동");
   // If entry has groupId or unitId, move ALL sibling entries to same slot
   const siblings = (e.groupId || e.unitId) ? entries().filter(x =>
     x.id !== entryId && !x.pinned &&
     ((e.groupId && x.groupId === e.groupId) || (e.unitId && x.unitId === e.unitId)) &&
     x.day === e.day && x.period === e.period
   ) : [];
+  const moving = [e, ...siblings].map(item => ({ ...item, day, period }));
   const excludeIds = [e.id, ...siblings.map(s => s.id)];
-  const block = protectedSlotConflict({ ...e, day, period }, day, period, { excludeIds });
-  if (block) { alertProtectedSlot(block); return; }
+  const block = getManualPlacementBlock(moving, { excludeIds });
+  if (block) { alertManualPlacementBlock(block); return; }
+  captureTimetableUndo("수업 이동");
   siblings.forEach(s => { s.day = day; s.period = period; });
   e.day = day; e.period = period;
   scheduleSave("timetable");
