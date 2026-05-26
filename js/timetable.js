@@ -32,6 +32,10 @@ import { createTimetableDetailHandlers } from "./timetable-detail.js";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
 import { createTimetableSidebarHandlers } from "./timetable-sidebar.js";
+import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
+import { createTimetableUndoHandlers } from "./timetable-undo.js";
+import { createTimetableAuthUi } from "./timetable-auth-ui.js";
+import { exportTimetableXlsx } from "./timetable-export.js";
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
@@ -72,82 +76,9 @@ function activateBottomTab(tabName) {
   btn?.click();
 }
 
-// ── Undo stack: Ctrl+Z restores the previous timetable edit ──────
-const UNDO_LIMIT = 50;
-let undoStack = [];
-let undoCaptureLocked = false;
-let undoApplying = false;
-
-function cloneForUndo(v) {
-  try { return structuredClone(v); }
-  catch (_) { return JSON.parse(JSON.stringify(v ?? null)); }
-}
-
-function getUndoSnapshot() {
-  return cloneForUndo({
-    entries: ttDomain().entries || [],
-    config: ttDomain().config || {},
-    teacherConstraints: ttDomain().teacherConstraints || {},
-  });
-}
-
-function sameUndoSnapshot(a, b) {
-  try { return JSON.stringify(a) === JSON.stringify(b); }
-  catch (_) { return false; }
-}
-
-function captureTimetableUndo(label = "시간표 편집") {
-  if (!canEdit() || undoApplying || undoCaptureLocked) return;
-  const snapshot = getUndoSnapshot();
-  const last = undoStack[undoStack.length - 1];
-  if (!last || !sameUndoSnapshot(last.data, snapshot)) {
-    undoStack.push({ label, data: snapshot });
-    if (undoStack.length > UNDO_LIMIT) undoStack.shift();
-  }
-  undoCaptureLocked = true;
-  queueMicrotask(() => { undoCaptureLocked = false; });
-}
-
-function restoreTimetableSnapshot(snapshot) {
-  const restored = cloneForUndo(snapshot);
-  ttDomain().entries = restored.entries || [];
-  ttDomain().config = restored.config || ttDomain().config || {};
-  ttDomain().teacherConstraints = restored.teacherConstraints || {};
-}
-
-function undoLastTimetableEdit() {
-  if (!canEdit()) return;
-  const snapshot = undoStack.pop();
-  if (!snapshot) {
-    const bar = $("ttConflictBar");
-    if (bar) {
-      const prev = bar.textContent;
-      bar.textContent = "되돌릴 작업이 없습니다.";
-      setTimeout(() => { if (bar.textContent === "되돌릴 작업이 없습니다.") bar.textContent = prev; }, 1200);
-    }
-    return;
-  }
-  undoApplying = true;
-  restoreTimetableSnapshot(snapshot.data);
-  undoApplying = false;
-  scheduleSave("timetable");
-  recomputeConflicts();
-  renderAll();
-  addTimetableLog("undo", "되돌리기", `${snapshot.label || "직전 작업"} 상태로 되돌렸습니다.`);
-}
-
-function shouldIgnoreUndoShortcut(target) {
-  if (!target) return false;
-  const tag = target.tagName;
-  return target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
-
-document.addEventListener("keydown", e => {
-  if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey || e.altKey) return;
-  if (shouldIgnoreUndoShortcut(e.target)) return;
-  e.preventDefault();
-  undoLastTimetableEdit();
-});
+// ── Undo stack is implemented in timetable-undo.js ──────────────
+let captureTimetableUndo = () => {};
+let undoLastTimetableEdit = () => {};
 
 // ── DOM refs ──────────────────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -156,56 +87,31 @@ const ttAuthStatus = () => $("ttAuthStatus");
 const ttLoginBtn   = () => $("ttLoginBtn");
 const ttLogoutBtn  = () => $("ttLogoutBtn");
 
+const undoHandlers = createTimetableUndoHandlers({
+  canEdit,
+  getSnapshot: () => ({
+    entries: ttDomain().entries || [],
+    config: ttDomain().config || {},
+    teacherConstraints: ttDomain().teacherConstraints || {},
+  }),
+  restoreSnapshot: snapshot => {
+    ttDomain().entries = snapshot.entries || [];
+    ttDomain().config = snapshot.config || ttDomain().config || {};
+    ttDomain().teacherConstraints = snapshot.teacherConstraints || {};
+  },
+  scheduleSave,
+  recomputeConflicts,
+  renderAll: () => renderAll(),
+  addTimetableLog: (...args) => addTimetableLog(...args),
+  getFeedbackElement: () => $("ttConflictBar"),
+});
+captureTimetableUndo = undoHandlers.captureTimetableUndo;
+undoLastTimetableEdit = undoHandlers.undoLastTimetableEdit;
+undoHandlers.installUndoShortcut();
 
-// ── Grade colors ──────────────────────────────────────────────────
-const GRADE_COLORS = {
-  "7학년":  { bg:"#dbeafe", text:"#1d4ed8", border:"#3b82f6" },
-  "8학년":  { bg:"#dcfce7", text:"#166534", border:"#22c55e" },
-  "9학년":  { bg:"#fef3c7", text:"#92400e", border:"#f59e0b" },
-  "10학년": { bg:"#fce7f3", text:"#be185d", border:"#ec4899" },
-  "11학년": { bg:"#ede9fe", text:"#6d28d9", border:"#8b5cf6" },
-  "12학년": { bg:"#e0f2fe", text:"#0369a1", border:"#0ea5e9" }
-};
-function getGradeColor(gradeKey) {
-  return GRADE_COLORS[gradeKey] || { bg:"#f1f5f9", text:"#374151", border:"#94a3b8" };
-}
-
-
-// ── Conflict display colors / labels ─────────────────────────────
-const CONFLICT_DISPLAY = {
-  teacher:        { label:"교사", short:"교", color:"#dc2626" },
-  room:           { label:"교실", short:"실", color:"#ea580c" },
-  student:        { label:"학생", short:"학", color:"#7c3aed" },
-  syncRequired:   { label:"동시배정", short:"동", color:"#2563eb" },
-  unavailable:    { label:"불가시간", short:"불", color:"#475569" },
-  maxConsecutive: { label:"연속초과", short:"연", color:"#ca8a04" },
-  maxPerDay:      { label:"일일초과", short:"일", color:"#ca8a04" },
-};
-const CONFLICT_PRIORITY = ["teacher", "room", "student", "syncRequired", "unavailable", "maxConsecutive", "maxPerDay"];
-function getOrderedConflictTypes(conflicts) {
-  return CONFLICT_PRIORITY.filter(type => conflicts.has(type));
-}
+// ── Conflict display helpers ───────────────────────────────────
 function applyConflictVisuals(card, conflictTypes, conflicts) {
-  if (!conflictTypes.length) return;
-  const primary = conflictTypes[0];
-  card.style.setProperty("--tt-conflict-color", CONFLICT_DISPLAY[primary]?.color || "#dc2626");
-  conflictTypes.forEach(type => card.classList.add(`tt-conflict-${type}`));
-  card.dataset.conflictTypes = conflictTypes.join(",");
-  card.title = getConflictLabel(conflicts);
-
-  const markers = document.createElement("div");
-  markers.className = "tt-conflict-markers";
-  conflictTypes.forEach(type => {
-    const meta = CONFLICT_DISPLAY[type];
-    if (!meta) return;
-    const dot = document.createElement("span");
-    dot.className = "tt-conflict-dot";
-    dot.dataset.type = type;
-    dot.textContent = meta.short;
-    dot.title = meta.label;
-    markers.appendChild(dot);
-  });
-  card.appendChild(markers);
+  applyConflictVisualsBase(card, conflictTypes, conflicts, getConflictLabel);
 }
 
 
@@ -451,7 +357,7 @@ function setPeriodCount(n) {
   const count = Math.max(1, Math.min(12, n));
   if (ttConfig().periodCount === count) return;
   captureTimetableUndo("교시 수 수정");
-  const labels = Array.from({ length: count }, (_, i) => ttConfig().periodLabels[i] || `${i}교시`);
+  const labels = Array.from({ length: count }, (_, i) => ttConfig().periodLabels[i] || `${i + 1}교시`);
   ttConfig().periodCount = count; ttConfig().periodLabels = labels;
   scheduleSave("timetable");
 }
@@ -1117,107 +1023,27 @@ function clearDragHighlight() {
 }
 
 // ── Auth UI ───────────────────────────────────────────────────────
-const AUTH_SESSION_KEY = "his_auth_recent_user_v1";
-const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
-let authResolved = false;
-
-function readRecentAuthSession() {
-  try {
-    const raw = sessionStorage.getItem(AUTH_SESSION_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (!data?.ts || Date.now() - data.ts > AUTH_SESSION_MAX_AGE_MS) {
-      sessionStorage.removeItem(AUTH_SESSION_KEY);
-      return null;
-    }
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function writeRecentAuthSession(user) {
-  try {
-    if (!user) {
-      sessionStorage.removeItem(AUTH_SESSION_KEY);
-      return;
-    }
-    sessionStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
-      ts: Date.now(),
-      label: user.displayName || user.email || "사용자"
-    }));
-  } catch {
-    // sessionStorage가 막힌 환경에서도 앱은 계속 동작해야 합니다.
-  }
-}
-
-function setAuthCheckingUI() {
-  const statusEl = ttAuthStatus(); const loginEl = ttLoginBtn(); const logoutEl = ttLogoutBtn();
-  const recent = readRecentAuthSession();
-  if (statusEl) statusEl.textContent = recent?.label ? `${recent.label} 로그인 확인 중…` : "로그인 확인 중…";
-  loginEl?.classList.add("hidden");
-  logoutEl?.classList.add("hidden");
-}
-
-function updateAuthUI(user) {
-  authResolved = true;
-  writeRecentAuthSession(user);
-  const statusEl = ttAuthStatus(); const loginEl = ttLoginBtn(); const logoutEl = ttLogoutBtn();
-  if (user) {
-    if (statusEl) statusEl.textContent = user.displayName || user.email || "로그인됨";
-    loginEl?.classList.add("hidden"); logoutEl?.classList.remove("hidden");
-  } else {
-    if (statusEl) statusEl.textContent = "로그인 필요";
-    loginEl?.classList.remove("hidden"); logoutEl?.classList.add("hidden");
-  }
-}
+const authUi = createTimetableAuthUi({
+  statusEl: ttAuthStatus,
+  loginBtn: ttLoginBtn,
+  logoutBtn: ttLogoutBtn,
+});
+const setAuthCheckingUI = authUi.setAuthCheckingUI;
+const updateAuthUI = authUi.updateAuthUI;
 
 // ── Excel Export ──────────────────────────────────────────────────
 function exportXlsx() {
-  const wb = XLSX.utils.book_new();
-  const days = ["월","화","수","목","금"];
-  const periods = ttConfig().periodLabels;
-
-  GRADE_KEYS.forEach(grade => {
-    const data = [["교시/요일", ...days]];
-    periods.forEach((label, period) => {
-      const row = [label];
-      days.forEach((_, day) => {
-        const cell = entries()
-          .filter(e => entryHasGrade(e, grade) && e.day === day && e.period === period)
-          .map(e => {
-            const tpl = getTemplateById(e.templateId);
-            const name = entryTitle(e);
-            const room = getRooms().find(r => r.id === e.roomId);
-            return [name, e.teacherName, room?.name].filter(Boolean).join("/");
-          }).join("|");
-        row.push(cell);
-      });
-      data.push(row);
-    });
-    const ws = XLSX.utils.aoa_to_sheet(data);
-    ws["!cols"] = [{ wch: 8 }, ...days.map(() => ({ wch: 20 }))];
-    XLSX.utils.book_append_sheet(wb, ws, grade);
+  exportTimetableXlsx({
+    GRADE_KEYS,
+    entries,
+    ttConfig,
+    splitTeacherNames,
+    entryHasGrade,
+    entryTitle,
+    entryGradeKeys,
+    gradeDisplay,
+    getRooms,
   });
-
-  // Teacher summary sheet
-  const teacherRows = [["교사", "요일", "교시", "과목", "학년", "교실"]];
-  const allTeachers = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))].sort((a,b) => a.localeCompare(b,"ko"));
-  const dayLabels = ["월","화","수","목","금"];
-  allTeachers.forEach(teacher => {
-    entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher))
-      .sort((a, b) => a.day !== b.day ? a.day - b.day : a.period - b.period)
-      .forEach(e => {
-        const room = getRooms().find(r => r.id === e.roomId);
-        teacherRows.push([teacher, dayLabels[e.day], ttConfig().periodLabels[e.period] || e.period + 1,
-          entryTitle(e), entryGradeKeys(e).map(gradeDisplay).join(", "), room?.name || ""]);
-      });
-  });
-  const wsT = XLSX.utils.aoa_to_sheet(teacherRows);
-  wsT["!cols"] = [14,6,8,20,8,14].map(w => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, wsT, "교사별");
-
-  XLSX.writeFile(wb, "HIS_Timetable.xlsx");
 }
 
 // ── Bootstrap ─────────────────────────────────────────────────────

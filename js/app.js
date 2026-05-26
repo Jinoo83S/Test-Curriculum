@@ -48,7 +48,6 @@ const exportXlsxBtn    = document.getElementById("exportXlsxBtn");
 // ── DOM: Sidebar ──────────────────────────────────────────────────
 const templateListEl        = document.getElementById("templateList");
 const sidebarLevelFilter    = document.getElementById("sidebarSchoolLevelFilter");
-const openTemplateManagerBtn = document.getElementById("openTemplateManagerBtn");
 const categoryOptionList    = document.getElementById("categoryOptionList");
 const trackOptionList       = document.getElementById("trackOptionList");
 const groupOptionList       = document.getElementById("groupOptionList");
@@ -535,7 +534,7 @@ function setControlsDisabled(disabled) {
    sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher,
    categoryOptionInput, trackOptionInput, groupOptionInput,
    addCategoryOptionBtn, addTrackOptionBtn, addGroupOptionBtn,
-   resetBoardBtn, exportXlsxBtn, openTemplateManagerBtn,
+   resetBoardBtn, exportXlsxBtn,
    groupMgrAddBtn,
    tplMgrBackBtn, tplMgrAddBtn, tplMgrSaveBtn, tplMgrDiscBtn,
    tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrSortBtn, tplMgrLevel,
@@ -816,13 +815,6 @@ onAuth(async (user) => {
 loginBtn?.addEventListener("click", login);
 logoutBtn?.addEventListener("click", logout);
 exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
-document.getElementById("fixChanCheBtn")?.addEventListener("click", () => {
-  if (!canEdit()) { alert("로그인이 필요합니다."); return; }
-  const count = fixChanCheCredits("창체");
-  if (count > 0) { invalidateTabs(); renderBoardTab(); alert(`✅ 창체 시수 ${count}개 항목을 1로 수정했습니다.`); }
-  else alert("이미 모든 창체 시수가 1입니다.");
-});
-
 resetBoardBtn?.addEventListener("click", async () => {
   if (!canEdit()) return;
   if (!confirm("커리큘럼 보드를 초기화할까요? (과목카드/학생 데이터는 유지됩니다)")) return;
@@ -852,7 +844,6 @@ navButtons.ttcards?.addEventListener("click",      () => void navigateTo("ttcard
 navButtons.groups?.addEventListener("click",       () => void navigateTo("groups"));
 
 // ── Sidebar view toggles ──────────────────────────────────────────
-openTemplateManagerBtn?.addEventListener("click", () => void navigateTo(activeMainView === "manager" ? "board" : "manager"));
 tplMgrBackBtn?.addEventListener("click", () => void navigateTo("board"));
 groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); });
 

@@ -303,11 +303,23 @@ export function normalizeTimetableConstraint(c = {}) {
     useHomeRoom: !!c.useHomeRoom,
   };
 }
+function normalizePeriodLabels(rawLabels, periodCount) {
+  if (!Array.isArray(rawLabels) || rawLabels.length !== periodCount) {
+    return Array.from({ length: periodCount }, (_, i) => `${i + 1}교시`);
+  }
+
+  const labels = rawLabels.map(clean);
+  const looksLikeOldZeroBasedDefault = labels.every((label, i) => label === `${i}교시`);
+  if (looksLikeOldZeroBasedDefault) {
+    return labels.map((_, i) => `${i + 1}교시`);
+  }
+
+  return labels.map((label, i) => label || `${i + 1}교시`);
+}
+
 function normalizeTimetableDomain(raw = {}) {
   const pc = Math.max(1, Math.min(12, parseInt(raw.config?.periodCount) || 8));
-  const pl = Array.isArray(raw.config?.periodLabels) && raw.config.periodLabels.length === pc
-    ? raw.config.periodLabels.map(clean)
-    : Array.from({ length: pc }, (_, i) => `${i}교시`);  // starts from 0교시
+  const pl = normalizePeriodLabels(raw.config?.periodLabels, pc);
   const constraints = {};
   if (raw.teacherConstraints && typeof raw.teacherConstraints === "object") {
     Object.entries(raw.teacherConstraints).forEach(([k, v]) => {
