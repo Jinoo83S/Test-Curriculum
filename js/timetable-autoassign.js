@@ -14,7 +14,7 @@ export function createAutoAssignAll(deps) {
     describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade,
     entries, ttDomain, ttConfig, constraints,
     buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
-    audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement,
+    audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
     shuffle, captureTimetableUndo, addTimetableLog, setLastAutoAssignReport,
     getConflictCounts, recomputeConflicts, renderAll, $
   } = deps;
@@ -55,6 +55,9 @@ export function createAutoAssignAll(deps) {
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
     const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
+
+    // 0. Pinned whole-grade activities such as chapel/창체 protect their slot first.
+    if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) return false;
 
     // 1. Teacher conflict (always applies — teacher cannot be in two places)
     for (const e of slotEnts) {

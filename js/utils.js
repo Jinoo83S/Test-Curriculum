@@ -38,6 +38,28 @@ export const parseCreditValue = v => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** 창체는 원본 입력값(시간 수)을 보존하되, 결과표/시간표 적용 시수는 항상 1로 봅니다. */
+export function isChanCheCategory(category) {
+  return clean(category) === "창체";
+}
+
+export function getEffectiveCredit(rowOrCredits, category = "") {
+  const isRow = rowOrCredits && typeof rowOrCredits === "object" && !Array.isArray(rowOrCredits);
+  const rawCategory = isRow ? rowOrCredits.category : category;
+  if (isChanCheCategory(rawCategory)) return 1;
+  const rawCredits = isRow ? rowOrCredits.credits : rowOrCredits;
+  const n = parseCreditValue(rawCredits);
+  return n > 0 ? n : 0;
+}
+
+/** 고정 수업 보호 대상: 창체/채플/자율/동아리/전체학년 성격의 수업 */
+export function isProtectedWholeGradeLabel(...values) {
+  const text = values.map(clean).filter(Boolean).join(" ");
+  if (!text) return false;
+  if (/(창체|채플|chapel|ms\s*채플|자율|동아리|전체|전학년|whole\s*grade|all\s*grade)/i.test(text)) return true;
+  return /(^|[^A-Za-z0-9가-힣])(CA|SA)(?=$|[^A-Za-z0-9가-힣])/i.test(text);
+}
+
 export function languageClass(lang) {
   return `lang-${String(lang || "both").toLowerCase()}`;
 }

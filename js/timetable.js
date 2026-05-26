@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
-import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml } from "./utils.js";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
 import { getRooms, renderRoomsView, updateRoom } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
@@ -19,6 +19,7 @@ import {
 } from "./timetable-occupancy.js";
 import {
   getSubjectsForGrade, getCreditsForTemplate, getCategoryColor, getAssignedCount,
+  getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate,
   getTeachersForTemplate, getSectionCount, getCreditsForTtCard, getTeachersForTtCard,
   getGroupCards, getTtCardClassLabels, describeTtCard, buildEntryDataFromTtCards,
   makePlacementFromGroupItem, entryMatchesClass, getUnitForTemplate, getUnitDisplayTitle,
@@ -419,6 +420,8 @@ function renderEntryConflictDetailSection(box, entry) {
 // ── Entry CRUD ────────────────────────────────────────────────────
 function addEntry(data) {
   if (!canEdit()) return null;
+  const block = protectedSlotConflict(data, data?.day, data?.period);
+  if (block) { alertProtectedSlot(block); return null; }
   captureTimetableUndo("수업 추가");
   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
@@ -471,8 +474,7 @@ function placeGroupAt(groupId, day, period) {
   const cards = getGroupCards(grp);
   const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id });
   if (!data) return false;
-  addEntry(data);
-  return true;
+  return !!addEntry(data);
 }
 
 // ── Unit helpers ──────────────────────────────────────────────────
@@ -597,6 +599,89 @@ function audiencesConflict(a, b) {
   return occAudiencesConflict(a, b);
 }
 
+function getEntryProtectionText(entry = {}) {
+  const parts = [entry.label, entry.subject, entry.category, entry.track, entry.group, entry.teacherName];
+
+  if (entry.groupId) {
+    const grp = (appState.templates?.templateGroups || []).find(g => g.id === entry.groupId);
+    parts.push(grp?.name);
+  }
+
+  ttCardIdsFromPlacement(entry).forEach(id => {
+    const card = getTtCardById(id);
+    if (!card) return;
+    parts.push(card.label, card.subject, card.subjectEn, card.category, card.track, card.group);
+  });
+
+  entryTemplateIds(entry).forEach(templateId => {
+    const tpl = getTemplateById(templateId);
+    parts.push(getTemplateCardTitle(tpl), tpl?.nameKo, tpl?.nameEn);
+    (entryGradeKeys(entry).length ? entryGradeKeys(entry) : [entry.gradeKey]).filter(Boolean).forEach(gradeKey => {
+      parts.push(getCategoryForTemplate(gradeKey, templateId));
+      parts.push(getTrackForTemplate(gradeKey, templateId));
+      parts.push(getGroupNameForTemplate(gradeKey, templateId));
+    });
+  });
+
+  return parts.map(clean).filter(Boolean).join(" ");
+}
+
+function isProtectedPinnedEntry(entry = {}) {
+  return !!entry.pinned && isProtectedWholeGradeLabel(getEntryProtectionText(entry));
+}
+
+function extractGradeKeysFromProtectionText(text = "") {
+  const compact = clean(text);
+  const found = new Set();
+  GRADE_KEYS.forEach(g => {
+    const n = gradeDisplay(g);
+    const re = new RegExp(`(^|[^0-9])${n}\\s*(학년|grade|G)?(?=$|[^0-9])`, "i");
+    if (re.test(compact)) found.add(g);
+  });
+  if (/(중등|middle|MS|junior)/i.test(compact)) ["7학년", "8학년", "9학년"].forEach(g => found.add(g));
+  if (/(고등|high|HS|senior)/i.test(compact)) ["10학년", "11학년", "12학년"].forEach(g => found.add(g));
+  return found;
+}
+
+function protectedGradesForEntry(entry = {}) {
+  const grades = new Set();
+  audienceGradeSet(audienceForPlacement(entry)).forEach(g => {
+    const key = GRADE_KEYS.find(x => gradeDisplay(x) === gradeDisplay(g)) || g;
+    if (key) grades.add(key);
+  });
+  entryGradeKeys(entry).forEach(g => grades.add(g));
+  extractGradeKeysFromProtectionText(getEntryProtectionText(entry)).forEach(g => grades.add(g));
+  return grades;
+}
+
+function protectedSlotConflict(candidate = {}, day = candidate.day, period = candidate.period, options = {}) {
+  const excludeIds = new Set(options.excludeIds || []);
+  const existing = [...entries(), ...(options.placed || [])];
+  const slotEntries = existing.filter(e => e && e.day === day && e.period === period && !excludeIds.has(e.id));
+  if (!slotEntries.length) return null;
+
+  const candidateAudience = audienceForPlacement({ ...candidate, day, period });
+  const candidateGrades = audienceGradeSet(candidateAudience);
+
+  for (const fixed of slotEntries) {
+    if (!isProtectedPinnedEntry(fixed)) continue;
+    const fixedAudience = audienceForPlacement(fixed);
+    if (audiencesConflict(candidateAudience, fixedAudience)) {
+      return { entry: fixed, reason: "audience" };
+    }
+    const fixedGrades = protectedGradesForEntry(fixed);
+    if (setsIntersect(candidateGrades, fixedGrades)) {
+      return { entry: fixed, reason: "grade" };
+    }
+  }
+  return null;
+}
+
+function alertProtectedSlot(block) {
+  const name = block?.entry ? entryTitle(block.entry) : "고정 수업";
+  alert(`이 시간에는 고정된 전체학년 수업(${name})이 있어 다른 과목을 배치할 수 없습니다.`);
+}
+
 function getEntryClassSummary(entry) {
   const cardIds = ttCardIdsFromPlacement(entry);
   const parts = [];
@@ -705,14 +790,15 @@ function moveEntry(entryId, day, period) {
   if (e.day === day && e.period === period) return;
   captureTimetableUndo("수업 이동");
   // If entry has groupId or unitId, move ALL sibling entries to same slot
-  if (e.groupId || e.unitId) {
-    const siblings = entries().filter(x =>
-      x.id !== entryId && !x.pinned &&
-      ((e.groupId && x.groupId === e.groupId) || (e.unitId && x.unitId === e.unitId)) &&
-      x.day === e.day && x.period === e.period
-    );
-    siblings.forEach(s => { s.day = day; s.period = period; });
-  }
+  const siblings = (e.groupId || e.unitId) ? entries().filter(x =>
+    x.id !== entryId && !x.pinned &&
+    ((e.groupId && x.groupId === e.groupId) || (e.unitId && x.unitId === e.unitId)) &&
+    x.day === e.day && x.period === e.period
+  ) : [];
+  const excludeIds = [e.id, ...siblings.map(s => s.id)];
+  const block = protectedSlotConflict({ ...e, day, period }, day, period, { excludeIds });
+  if (block) { alertProtectedSlot(block); return; }
+  siblings.forEach(s => { s.day = day; s.period = period; });
   e.day = day; e.period = period;
   scheduleSave("timetable");
 }
@@ -910,7 +996,7 @@ export const autoAssignAll = createAutoAssignAll({
   describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade,
   entries, ttDomain, ttConfig, constraints,
   buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
-  audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement,
+  audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
   shuffle, captureTimetableUndo, addTimetableLog, setLastAutoAssignReport,
   getConflictCounts, recomputeConflicts, renderAll, $
 });

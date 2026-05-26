@@ -5,7 +5,7 @@ import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
 import { appState } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
-import { clean, sectionLabel, gradeDisplay } from "./utils.js";
+import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];
@@ -23,7 +23,7 @@ export function getSubjectsForGrade(gradeKey) {
 export function getCreditsForTemplate(gradeKey, templateId) {
   const row = (appState.curriculum.gradeBoards[gradeKey] || [])
     .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId);
-  return row ? (parseFloat(row.credits) || 0) : 0;
+  return row ? getEffectiveCredit(row) : 0;
 }
 
 export function getCurriculumRowForTemplate(gradeKey, templateId) {
@@ -54,10 +54,7 @@ export function isWholeGradeTtCard(card) {
 
   // 창체/채플/CA/SA/MS채플처럼 실제로 해당 학년 전체가 동시에 듣는 수업만
   // 모든 반을 점유하도록 봅니다.
-  if (category === "창체") return true;
-  if (/(채플|chapel|CA|SA|자율|동아리)/i.test(label)) return true;
-  if (/(전체|전학년|whole|all)/i.test(label)) return true;
-  return false;
+  return isChanCheCategory(category) || isProtectedWholeGradeLabel(label);
 }
 
 export function getCategoryColor(category) {
@@ -85,10 +82,11 @@ export function getSectionCount(templateId) {
 
 export function getCreditsForTtCard(card) {
   if (!card) return 0;
-  if (Number.isFinite(parseFloat(card.credits)) && parseFloat(card.credits) > 0) return parseFloat(card.credits);
   const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
     .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
-  return parseFloat(row?.credits) || 0;
+  if (isChanCheCategory(card.category) || isChanCheCategory(row?.category)) return 1;
+  if (Number.isFinite(parseFloat(card.credits)) && parseFloat(card.credits) > 0) return parseFloat(card.credits);
+  return getEffectiveCredit(row);
 }
 
 export function getTeachersForTtCard(card) {

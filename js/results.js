@@ -2,7 +2,7 @@
 // results.js · Curriculum Result Tables
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { clean, escapeHtml } from "./utils.js";
+import { clean, escapeHtml, getEffectiveCredit } from "./utils.js";
 import { appState } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js";
 import { getRosterMeta, getClassCount } from "./rosters.js";
@@ -48,7 +48,7 @@ function buildRows() {
       // classCount: prefer from the primary template (sem1 if exists, else sem2)
       const mainTplId = t1id || t2id;
       const classCount = getClassCount(mainTplId);
-      const credits    = parseFloat(clean(row.credits)) || 0;
+      const credits    = getEffectiveCredit(row);
       const total      = classCount > 0 ? classCount * credits : 0;
 
       rows.push({

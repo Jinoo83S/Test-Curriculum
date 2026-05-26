@@ -2,7 +2,7 @@
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay } from "./utils.js";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
 import {
@@ -54,8 +54,7 @@ function getCurriculumRowForCard(gradeKey, templateId) {
     .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId) || null;
 }
 function isWholeGradeRow(row, tpl) {
-  const text = [row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn].map(clean).join(" ").toLowerCase();
-  return row?.category === "창체" || /(채플|chapel|ca|sa|ms채플|자율|동아리)/i.test(text);
+  return isChanCheCategory(row?.category) || isProtectedWholeGradeLabel(row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn);
 }
 function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
   const rosterEntries = (appState.rosters?.rosters?.[templateId] || [])
@@ -103,7 +102,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     subjectEn: tpl?.nameEn || "",
     teacherName,
     teachers: teacherName.split(/[,，·]/).map(x => x.trim()).filter(Boolean),
-    credits: parseFloat(row?.credits) || 0,
+    credits: getEffectiveCredit(row),
     category: row?.category || "",
     track: row?.track || "",
     group: row?.group || "",
@@ -116,7 +115,9 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
   });
   if (existing?.manualEdited) {
     // 수동 수정값은 생성 데이터보다 우선합니다.
+    // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     ["label","teacherName","teachers","credits","classKeys","classLabels","studentKeys","isWholeGrade"].forEach(k => {
+      if (k === "credits" && isChanCheCategory(generated.category)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
   }
@@ -151,7 +152,7 @@ function updateTtCardField(cardId, field, value) {
   if (["classLabels","classKeys","teachers","studentKeys"].includes(field)) {
     card[field] = String(value || "").split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
   } else if (field === "credits") {
-    card[field] = parseFloat(value) || 0;
+    card[field] = isChanCheCategory(card.category) ? 1 : (parseFloat(value) || 0);
   } else if (field === "isWholeGrade") {
     card[field] = !!value;
   } else {
