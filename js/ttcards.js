@@ -94,22 +94,22 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
   const tpl = getTemplateById(templateId);
   const row = getCurriculumRowForCard(gradeKey, templateId);
   const audience = resolveCardAudience({ templateId, gradeKey, sectionIdx });
-  const teacherName = tpl ? getTemplateTeacherSummary(tpl) : "";
+  const teacherName = tpl ? getTemplateTeacherSummary(tpl) : (existing?.teacherName || "");
   const generated = normalizeTtCard({
     id, templateId, gradeKey, sectionIdx,
     label: existing?.label || "",
-    subject: tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목)",
-    subjectEn: tpl?.nameEn || "",
+    subject: tpl ? getTemplateCardTitle(tpl) : (existing?.subject || "(삭제된 과목)"),
+    subjectEn: tpl?.nameEn || existing?.subjectEn || "",
     teacherName,
     teachers: teacherName.split(/[,，·]/).map(x => x.trim()).filter(Boolean),
-    credits: getEffectiveCredit(row),
-    category: row?.category || "",
-    track: row?.track || "",
-    group: row?.group || "",
-    classKeys: audience.classKeys,
-    classLabels: audience.classLabels,
-    studentKeys: audience.studentKeys,
-    isWholeGrade: isWholeGradeRow(row, tpl),
+    credits: row ? getEffectiveCredit(row) : (existing?.credits || 0),
+    category: row?.category || existing?.category || "",
+    track: row?.track || existing?.track || "",
+    group: row?.group || existing?.group || "",
+    classKeys: audience.classKeys.length ? audience.classKeys : (existing?.classKeys || []),
+    classLabels: audience.classLabels.length ? audience.classLabels : (existing?.classLabels || []),
+    studentKeys: audience.studentKeys.length ? audience.studentKeys : (existing?.studentKeys || []),
+    isWholeGrade: row ? isWholeGradeRow(row, tpl) : !!existing?.isWholeGrade,
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,
   });

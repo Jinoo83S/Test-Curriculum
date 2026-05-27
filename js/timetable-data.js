@@ -10,6 +10,31 @@ import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategor
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];
 
+function getTtCardTitleSnapshot(card) {
+  if (!card) return "";
+  const stored = clean(card.subject) || clean(card.label) || clean(card.subjectEn);
+  if (stored) return stored;
+  const tpl = getTemplateById(card.templateId);
+  return tpl ? getTemplateCardTitle(tpl) : "";
+}
+
+function findTtCardSnapshot(gradeKey, templateId, sectionIdx = null) {
+  return getTtCards().find(c =>
+    (!gradeKey || c.gradeKey === gradeKey) &&
+    (!templateId || c.templateId === templateId) &&
+    (sectionIdx == null || (c.sectionIdx ?? 0) === (sectionIdx ?? 0))
+  ) || null;
+}
+
+function getCardsForEntry(e) {
+  const ids = ttCardIdsFromEntry(e);
+  return ids.map(id => getTtCardById(id)).filter(Boolean);
+}
+
+function ttCardIdsFromEntry(e) {
+  return [...(e?.ttcardIds || []), e?.ttcardId].filter(Boolean);
+}
+
 export function getSubjectsForGrade(gradeKey) {
   const board = appState.curriculum.gradeBoards[gradeKey] || [];
   const seen = new Set();
@@ -21,6 +46,9 @@ export function getSubjectsForGrade(gradeKey) {
 }
 
 export function getCreditsForTemplate(gradeKey, templateId) {
+  // 시간표 화면에서는 커리큘럼 원본이 아니라 저장된 시간표 카드 스냅샷을 우선 사용합니다.
+  const card = findTtCardSnapshot(gradeKey, templateId);
+  if (card) return getCreditsForTtCard(card);
   const row = (appState.curriculum.gradeBoards[gradeKey] || [])
     .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId);
   return row ? getEffectiveCredit(row) : 0;
@@ -32,24 +60,27 @@ export function getCurriculumRowForTemplate(gradeKey, templateId) {
 }
 
 export function getCategoryForTemplate(gradeKey, templateId) {
-  return getCurriculumRowForTemplate(gradeKey, templateId)?.category || "";
+  const card = findTtCardSnapshot(gradeKey, templateId);
+  return card?.category || getCurriculumRowForTemplate(gradeKey, templateId)?.category || "";
 }
 
 export function getTrackForTemplate(gradeKey, templateId) {
-  return getCurriculumRowForTemplate(gradeKey, templateId)?.track || "";
+  const card = findTtCardSnapshot(gradeKey, templateId);
+  return card?.track || getCurriculumRowForTemplate(gradeKey, templateId)?.track || "";
 }
 
 export function getGroupNameForTemplate(gradeKey, templateId) {
-  return getCurriculumRowForTemplate(gradeKey, templateId)?.group || "";
+  const card = findTtCardSnapshot(gradeKey, templateId);
+  return card?.group || getCurriculumRowForTemplate(gradeKey, templateId)?.group || "";
 }
 
 export function isWholeGradeTtCard(card) {
   if (!card?.templateId || !card?.gradeKey) return false;
-  const tpl = getTemplateById(card.templateId);
-  const title = getTemplateCardTitle(tpl) || clean(card.label);
-  const category = clean(getCategoryForTemplate(card.gradeKey, card.templateId));
-  const groupName = clean(getGroupNameForTemplate(card.gradeKey, card.templateId));
-  const track = clean(getTrackForTemplate(card.gradeKey, card.templateId));
+  if (card.isWholeGrade) return true;
+  const title = getTtCardTitleSnapshot(card);
+  const category = clean(card.category || getCategoryForTemplate(card.gradeKey, card.templateId));
+  const groupName = clean(card.group || getGroupNameForTemplate(card.gradeKey, card.templateId));
+  const track = clean(card.track || getTrackForTemplate(card.gradeKey, card.templateId));
   const label = [title, category, groupName, track, card.label].join(" ");
 
   // 창체/채플/CA/SA/MS채플처럼 실제로 해당 학년 전체가 동시에 듣는 수업만
@@ -67,6 +98,13 @@ export function getAssignedCount(templateId, gradeKey) {
 }
 
 export function getTeachersForTemplate(templateId) {
+  // 시간표에서는 저장된 ttcard 교사 스냅샷을 우선 사용합니다.
+  const fromCards = [...new Set(getTtCards()
+    .filter(c => c.templateId === templateId)
+    .flatMap(c => (Array.isArray(c.teachers) && c.teachers.length) ? c.teachers : splitTeacherNames(c.teacherName))
+    .filter(Boolean))];
+  if (fromCards.length) return fromCards;
+
   const tpl = getTemplateById(templateId); if (!tpl) return [];
   return [...new Set([
     ...splitTeacherNames(tpl.teacher),
@@ -82,10 +120,15 @@ export function getSectionCount(templateId) {
 
 export function getCreditsForTtCard(card) {
   if (!card) return 0;
+  // 저장된 시간표 카드 스냅샷을 우선합니다. 커리큘럼 원본 수정이 시간표에 즉시 반영되지 않도록 분리합니다.
+  if (isChanCheCategory(card.category)) return 1;
+  const stored = parseFloat(card.credits);
+  if (Number.isFinite(stored) && stored > 0) return stored;
+
+  // 이전 데이터 호환용 fallback: 카드에 시수 스냅샷이 없는 경우에만 커리큘럼을 참조합니다.
   const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
     .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
-  if (isChanCheCategory(card.category) || isChanCheCategory(row?.category)) return 1;
-  if (Number.isFinite(parseFloat(card.credits)) && parseFloat(card.credits) > 0) return parseFloat(card.credits);
+  if (isChanCheCategory(row?.category)) return 1;
   return getEffectiveCredit(row);
 }
 
@@ -257,8 +300,7 @@ export function uniqueStrings(list) {
 }
 
 export function describeTtCard(card) {
-  const tpl = getTemplateById(card?.templateId);
-  const base = card?.subject || (tpl ? getTemplateCardTitle(tpl) : "?");
+  const base = getTtCardTitleSnapshot(card) || "?";
   const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card?.templateId]?.classCount) || 1);
   const classLabels = getTtCardClassLabels(card);
   const sec = classLabels.length ? classLabels.join(", ") : sectionLabel(card?.sectionIdx ?? 0);
@@ -359,16 +401,27 @@ export function getUnitForTemplate(templateId) {
 /** Get display title for a unit (comma-joined template names) */
 
 export function getUnitDisplayTitle(unit) {
-  return unit.templateIds
-    .map(id => { const t = getTemplateById(id); return t ? getTemplateCardTitle(t) : "?"; })
-    .filter(Boolean).join(" / ") || unit.name || "?";
+  if (Array.isArray(unit?.ttcardIds) && unit.ttcardIds.length) {
+    const titles = unit.ttcardIds.map(id => getTtCardTitleSnapshot(getTtCardById(id))).filter(Boolean);
+    if (titles.length) return [...new Set(titles)].join(" / ");
+  }
+  return (unit?.templateIds || [])
+    .map(id => getTtCardTitleSnapshot(findTtCardSnapshot(null, id)) || (() => { const t = getTemplateById(id); return t ? getTemplateCardTitle(t) : "?"; })())
+    .filter(Boolean).join(" / ") || unit?.name || "?";
 }
 
 /** Get all grade keys covered by a unit's templates */
 
 export function getUnitGradeKeys(unit) {
   const grades = new Set();
-  unit.templateIds.forEach(id => {
+  (unit?.ttcardIds || []).forEach(id => {
+    const card = getTtCardById(id);
+    if (card?.gradeKey) grades.add(card.gradeKey);
+  });
+  if (grades.size) return [...grades];
+
+  (unit?.templateIds || []).forEach(id => {
+    getTtCards().filter(c => c.templateId === id).forEach(c => { if (c.gradeKey) grades.add(c.gradeKey); });
     GRADE_KEYS.forEach(g => {
       const board = appState.curriculum.gradeBoards[g] || [];
       if (board.some(r => r.sem1TemplateId === id || r.sem2TemplateId === id)) grades.add(g);
@@ -380,7 +433,9 @@ export function getUnitGradeKeys(unit) {
 /** Get teachers for a unit (union of all template teachers) */
 
 export function getUnitTeachers(unit) {
-  return [...new Set(unit.templateIds.flatMap(id => getTeachersForTemplate(id)))];
+  const fromCards = (unit?.ttcardIds || []).flatMap(id => getTeachersForTtCard(getTtCardById(id)));
+  if (fromCards.length) return [...new Set(fromCards.filter(Boolean))];
+  return [...new Set((unit?.templateIds || []).flatMap(id => getTeachersForTemplate(id)))];
 }
 
 /**
@@ -429,44 +484,45 @@ export function entryHasGrade(e, grade) {
 }
 
 export function entryTitle(e) {
-  // Group entry → show group name
+  const cards = getCardsForEntry(e);
+
+  // Group entry → 저장된 group name이 있으면 우선 사용, 없으면 카드 제목 스냅샷으로 표시합니다.
   if (e.groupId) {
     const grp = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
     if (grp?.name) return grp.name;
+    const titles = [...new Set(cards.map(c => getTtCardTitleSnapshot(c)).filter(Boolean))];
+    if (titles.length) return titles.join(" / ");
   }
-  // ttcard standalone
-  if (e.ttcardId) {
-    const card = getTtCardById(e.ttcardId);
-    if (card) {
-      const tpl = getTemplateById(card.templateId);
-      const base = tpl ? getTemplateCardTitle(tpl) : "?";
-      const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card.templateId]?.classCount) || 1);
-      return cc > 1 ? `${base} ${sectionLabel(card.sectionIdx)}` : base;
-    }
+
+  if (cards.length) {
+    if (cards.length === 1) return describeTtCard(cards[0]).title;
+    const titles = [...new Set(cards.map(c => getTtCardTitleSnapshot(c)).filter(Boolean))];
+    return titles.join(" / ") || "?";
   }
+
+  const snapshot = findTtCardSnapshot(e.gradeKey, e.templateId, e.sectionIdx);
+  if (snapshot) return describeTtCard(snapshot).title;
   return getTemplateCardTitle(getTemplateById(e.templateId)) || "?";
 }
 
 export function entryTeachers(e) {
   // Always prefer stored teacherName (most accurate)
   if (e.teacherName) return splitTeacherNames(e.teacherName).filter(Boolean);
+
+  const cards = getCardsForEntry(e);
+  if (cards.length) {
+    return [...new Set(cards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))];
+  }
+
   // Unit entry → derive from ttcardIds (new) or templateIds (legacy)
   if (e.unitId) {
     const grp  = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
     const unit = grp?.units.find(u => u.id === e.unitId);
-    if (unit) {
-      if (unit.ttcardIds?.length) {
-        const ttcards = getTtCards();
-        return [...new Set(unit.ttcardIds.flatMap(id => {
-          const card = ttcards.find(c => c.id === id);
-          return card ? getTeachersForTemplate(card.templateId) : [];
-        }))];
-      }
-      if (unit.templateIds?.length) return getUnitTeachers(unit);
-    }
+    if (unit) return getUnitTeachers(unit);
   }
-  // ttcard standalone
-  if (e.ttcardId) { const card = getTtCardById(e.ttcardId); if (card) return getTeachersForTemplate(card.templateId); }
+
+  const snapshot = findTtCardSnapshot(e.gradeKey, e.templateId, e.sectionIdx);
+  if (snapshot) return getTeachersForTtCard(snapshot);
   return getTeachersForTemplate(e.templateId);
 }
 

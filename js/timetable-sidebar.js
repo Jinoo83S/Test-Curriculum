@@ -99,8 +99,6 @@ export function createTimetableSidebarHandlers(deps) {
     // ── Standalone ttcards (not in any group) ────────────────────
     allTtcards.forEach(c => {
       if (seenIds.has(c.id)) return;
-      const tpl = getTemplateById(c.templateId);
-      if (!tpl) return;
       const gradeColor = getGradeColor(c.gradeKey);
       const credits = getCreditsForTtCard(c);
       const desc = describeTtCard(c);

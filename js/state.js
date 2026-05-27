@@ -629,7 +629,10 @@ export const DOMAIN_NORMALIZERS = {
 };
 
 export const ALL_DOMAINS = Object.keys(DOMAIN_NORMALIZERS);
-export const TIMETABLE_CORE_DOMAINS = ["curriculum", "templates", "classes", "rosters", "timetable"];
+// 시간표 편집 화면은 커리큘럼 원본을 실시간 구독하지 않습니다.
+// 시간표는 appState.timetable.ttcards에 저장된 스냅샷(과목명/교사/시수/반/전체학년 여부)을 기준으로 동작합니다.
+// templates는 기존 그룹/묶음수업 구조가 아직 이 도메인에 저장되어 있어 유지합니다.
+export const TIMETABLE_CORE_DOMAINS = ["templates", "classes", "rosters", "timetable"];
 export const TIMETABLE_OPTIONAL_DOMAINS = ["rooms"];
 
 export function isDomainSubscribed(domain) {
