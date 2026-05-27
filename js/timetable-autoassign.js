@@ -489,7 +489,14 @@ export function createAutoAssignAll(deps) {
             await yieldAutoAssign();
             const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
             if (!slot) {
-              failed.push(makeFailedPlacement(getAutoItemName(item), item));
+              // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
+              // break하면, 마지막 보정 단계가 1시수만 복구하고 나머지는 계속 하단에 남습니다.
+              // 현재 남은 필요 시수만큼 failed를 기록해 final repair가 전부 처리하게 합니다.
+              const already = pinned + (placedByKey.get(key) || 0);
+              const remaining = Math.max(1, required - already);
+              for (let miss = 0; miss < remaining; miss++) {
+                failed.push(makeFailedPlacement(getAutoItemName(item), item, { occurrence: already + miss + 1, required }));
+              }
               break;
             }
             const entry = makeAutoEntry(item, slot);

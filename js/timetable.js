@@ -20,7 +20,8 @@ import {
   audiencesConflict as occAudiencesConflict,
   audienceGradeSet as occAudienceGradeSet,
   conflictDetailBetween as occConflictDetailBetween,
-  formatClassLabelFromKey as occFormatClassLabelFromKey
+  formatClassLabelFromKey as occFormatClassLabelFromKey,
+  normalizeClassKey as occNormalizeClassKey
 } from "./timetable-occupancy.js";
 import {
   getSubjectsForGrade, getCreditsForTemplate, getCategoryColor, getAssignedCount,
@@ -733,10 +734,31 @@ function ttCardIdsFromPlacement(x = {}) {
 }
 
 function audienceForPlacement(x = {}) {
-  return getEntryOccupancy(x, {
+  const audience = getEntryOccupancy(x, {
     getTtCardById,
     templateGroups: appState.timetable?.ttcardGroups || []
   });
+
+  // 전체학년/채플/창체 카드의 오래된 저장값에 특정 반(A)만 남아 있으면
+  // 자동배치가 해당 수업을 한 반 수업으로 오해합니다.
+  // timetable-data의 현재 학급 기준 classLabels를 다시 합쳐 자동배치/충돌 기준을 보정합니다.
+  ttCardIdsFromPlacement(x).forEach(id => {
+    const card = getTtCardById(id);
+    if (!card) return;
+    const whole = !!card.isWholeGrade || isProtectedWholeGradeLabel(
+      card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
+    );
+    if (!whole) return;
+    getTtCardClassLabels(card).forEach(label => {
+      const key = occNormalizeClassKey(label, card.gradeKey);
+      if (key) {
+        audience.classKeys.add(key);
+        audience.classLabels.add(occFormatClassLabelFromKey(key));
+      }
+    });
+  });
+
+  return audience;
 }
 
 function setsIntersect(a, b) {
@@ -1138,7 +1160,7 @@ const ttSidebarHandlers = createTimetableSidebarHandlers({
   GRADE_KEYS, appState, entries, $, makeBtn, canEdit, clean,
   getTemplateById, getTemplateCardTitle,
   getTtCards, getTtCardById, refreshTtCardData,
-  getGroupCards, getCreditsForTtCard, getTeachersForTtCard, describeTtCard,
+  getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard,
   getSubjectsForGrade, getUnitForTemplate, getUnitDisplayTitle, getUnitGradeKeys, getUnitTeachers,
   getCreditsForTemplate, getTeachersForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
   getGradeColor, gradeDisplay, sectionLabel,

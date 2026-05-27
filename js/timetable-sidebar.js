@@ -12,7 +12,7 @@ export function createTimetableSidebarHandlers(deps) {
     GRADE_KEYS, appState, entries, $, makeBtn, canEdit,
     getTemplateById, getTemplateCardTitle,
     getTtCards, refreshTtCardData,
-    getGroupCards, getCreditsForTtCard, getTeachersForTtCard, describeTtCard,
+    getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard,
     getSubjectsForGrade, getUnitForTemplate, getUnitGradeKeys, getUnitTeachers,
     getCreditsForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
     getGradeColor, gradeDisplay, sectionLabel,
@@ -383,6 +383,17 @@ export function createTimetableSidebarHandlers(deps) {
 
   function getClassLabelsForTtCard(card) {
     if (!card) return [];
+
+    // timetable-data.js의 canonical class helper를 우선 사용합니다.
+    // 채플/창체/전체학년 카드에 과거 classLabels가 7A만 저장되어 있어도
+    // 현재 학급 목록 기준으로 7A/7B 전체가 표시됩니다.
+    if (typeof getTtCardClassLabels === "function") {
+      const canonical = getTtCardClassLabels(card)
+        .map(label => formatFullClassLabel(card.gradeKey, label))
+        .filter(Boolean);
+      if (canonical.length) return unique(canonical);
+    }
+
     const labels = [];
     if (Array.isArray(card.classLabels) && card.classLabels.length) {
       card.classLabels.forEach(label => labels.push(formatFullClassLabel(card.gradeKey, label)));

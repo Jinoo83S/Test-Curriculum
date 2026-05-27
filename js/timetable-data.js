@@ -230,6 +230,19 @@ export function getRosterEntriesForTtCard(card) {
 export function getTtCardClassInfos(card) {
   if (!card) return [];
 
+  const classRows = getAllClasses();
+  const explicitWhole = !!card.isWholeGrade || isProtectedWholeGradeLabel(
+    card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
+  );
+
+  // 전체학년/채플/창체 계열 카드는 과거 저장값에 7A만 남아 있어도
+  // 현재 학급 목록 기준으로 해당 학년 전체 반을 우선 점유하게 합니다.
+  // 이 기준을 하단 카드 수, 충돌검사, 자동배치가 함께 사용해야 합니다.
+  if (explicitWhole && card.gradeKey) {
+    const allGradeClasses = classRows.filter(c => c.gradeKey === card.gradeKey);
+    if (allGradeClasses.length) return allGradeClasses;
+  }
+
   // 1순위: 시간표 사전작업에서 생성·수정되어 Firebase에 저장된 카드 데이터
   const stored = [];
   if (Array.isArray(card.classLabels) && card.classLabels.length) {
@@ -252,7 +265,6 @@ export function getTtCardClassInfos(card) {
   // 이하 코드는 이전 데이터 호환용 fallback입니다.
   const rosterEntries = getRosterEntriesForTtCard(card);
   const allClasses = appState.classes?.classes || [];
-  const classRows = getAllClasses();
   const seen = new Set();
   const infos = [];
 
