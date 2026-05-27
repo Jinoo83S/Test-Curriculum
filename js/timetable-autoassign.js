@@ -575,12 +575,11 @@ export function createAutoAssignAll(deps) {
 
 자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
     } else {
+      const failedList = names.slice(0, 12).join("\n");
+      const moreFailed = names.length > 12 ? "\n..." : "";
       alert(`✅ ${bestPlaced.length}개 배치 완료${forcedNote}
 ⚠️ 그래도 미배치 ${names.length}개:
-${names.slice(0,12).join("
-")}${names.length>12?"
-...":""}` +
-        `
+${failedList}${moreFailed}
 
 💡 남은 카드는 고정 채플/창체 보호 슬롯 또는 동일 카드 동일 시간 중복 때문에 배치할 수 없었습니다.${stageNote}
 
