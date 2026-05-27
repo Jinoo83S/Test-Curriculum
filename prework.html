@@ -24,8 +24,8 @@
   </nav>
   <div class="topbar-right">
     <div class="top-mode-switch" aria-label="개발 모드 전환">
-      <button id="topLocalModeBtn" class="secondary-btn top-mode-btn" type="button" onclick="(function(){try{localStorage.setItem('his_local_dev_mode_v1','on')}catch(e){} var u=new URL(location.href); u.searchParams.set('local','1'); location.href=u.toString();})()">로컬 모드</button>
-      <button id="topOnlineModeBtn" class="secondary-btn top-mode-btn" type="button" onclick="(function(){try{localStorage.removeItem('his_local_dev_mode_v1')}catch(e){} var u=new URL(location.href); u.searchParams.set('local','0'); location.href=u.toString();})()">온라인 모드</button>
+      <button id="topLocalModeBtn" class="secondary-btn top-mode-btn" type="button">로컬 모드</button>
+      <button id="topOnlineModeBtn" class="secondary-btn top-mode-btn" type="button">온라인 모드</button>
     </div>
     <span id="saveStatusEl" class="save-status"></span>
     <span id="authStatus" class="auth-status">로그인 확인 중…</span>
@@ -66,6 +66,7 @@
 </div>
   </section>
 </main>
+<script type="module" src="js/local-dev.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

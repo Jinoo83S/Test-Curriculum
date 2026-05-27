@@ -73,19 +73,52 @@ export function clearLocalStateStore() {
 }
 
 
+
 // ── Top Local/Online mode switch buttons ─────────────────────────
-function switchModeToLocal() {
-  try { localStorage.setItem(MODE_KEY, "on"); } catch (_) {}
+function currentModeFromStorage() {
+  try { return localStorage.getItem(MODE_KEY) === "on"; }
+  catch (_) { return LOCAL_DEV_MODE; }
+}
+
+function applyModeToUrl(local) {
   const url = new URL(window.location.href);
-  url.searchParams.set("local", "1");
+  url.searchParams.set("local", local ? "1" : "0");
   window.location.href = url.toString();
 }
 
+async function seedLocalStateFromCurrentRuntime() {
+  // 온라인 화면에서 이미 불러온 Firestore 데이터를 로컬 저장소로 복사합니다.
+  // Firestore quota가 막힌 뒤에도, 현재 화면에 로드된 데이터만큼은 local=1에서 계속 테스트할 수 있습니다.
+  try {
+    const mod = await import("./state.js");
+    if (typeof mod.seedLocalSnapshotFromRuntime === "function") {
+      return mod.seedLocalSnapshotFromRuntime();
+    }
+  } catch (e) {
+    console.warn("Local mode seed skipped.", e);
+  }
+  return null;
+}
+
+async function switchModeToLocal() {
+  const localBtn = document.getElementById("topLocalModeBtn");
+  try {
+    if (localBtn) {
+      localBtn.disabled = true;
+      localBtn.textContent = "로컬 전환 중…";
+    }
+    if (!currentModeFromStorage()) {
+      await seedLocalStateFromCurrentRuntime();
+    }
+  } finally {
+    enableLocalDevMode();
+    applyModeToUrl(true);
+  }
+}
+
 function switchModeToOnline() {
-  try { localStorage.removeItem(MODE_KEY); } catch (_) {}
-  const url = new URL(window.location.href);
-  url.searchParams.set("local", "0");
-  window.location.href = url.toString();
+  disableLocalDevMode();
+  applyModeToUrl(false);
 }
 
 function setupTopModeSwitchButtons() {
@@ -93,28 +126,47 @@ function setupTopModeSwitchButtons() {
   const onlineBtn = document.getElementById("topOnlineModeBtn");
   if (!localBtn || !onlineBtn) return;
 
-  localBtn.classList.toggle("mode-active", LOCAL_DEV_MODE);
-  localBtn.classList.toggle("mode-online-active", false);
-  localBtn.setAttribute("aria-pressed", LOCAL_DEV_MODE ? "true" : "false");
-  localBtn.title = LOCAL_DEV_MODE
-    ? "현재 로컬 모드입니다. Firebase를 읽거나 쓰지 않습니다."
-    : "로컬 모드로 전환합니다. Firebase quota를 사용하지 않습니다.";
+  const isLocal = currentModeFromStorage();
+  document.documentElement.classList.toggle("his-local-mode", isLocal);
+  document.documentElement.classList.toggle("his-online-mode", !isLocal);
+  if (document.body) {
+    document.body.classList.toggle("his-local-mode", isLocal);
+    document.body.classList.toggle("his-online-mode", !isLocal);
+  }
 
-  onlineBtn.classList.toggle("mode-active", false);
-  onlineBtn.classList.toggle("mode-online-active", !LOCAL_DEV_MODE);
-  onlineBtn.setAttribute("aria-pressed", !LOCAL_DEV_MODE ? "true" : "false");
-  onlineBtn.title = LOCAL_DEV_MODE
+  localBtn.classList.toggle("mode-active", isLocal);
+  localBtn.classList.remove("mode-online-active");
+  localBtn.setAttribute("aria-pressed", isLocal ? "true" : "false");
+  localBtn.title = isLocal
+    ? "현재 로컬 모드입니다. Firebase를 읽거나 쓰지 않습니다."
+    : "현재 화면에 로드된 데이터를 로컬 저장소로 복사한 뒤 로컬 모드로 전환합니다.";
+
+  onlineBtn.classList.remove("mode-active");
+  onlineBtn.classList.toggle("mode-online-active", !isLocal);
+  onlineBtn.setAttribute("aria-pressed", !isLocal ? "true" : "false");
+  onlineBtn.title = isLocal
     ? "온라인 모드로 전환합니다. 이후 Firebase를 사용합니다."
     : "현재 온라인 모드입니다. Firebase를 사용합니다.";
 
-  localBtn.addEventListener("click", (event) => {
+  localBtn.onclick = (event) => {
     event.preventDefault();
-    if (!LOCAL_DEV_MODE) switchModeToLocal();
-  });
-  onlineBtn.addEventListener("click", (event) => {
+    if (!currentModeFromStorage()) switchModeToLocal();
+  };
+  onlineBtn.onclick = (event) => {
     event.preventDefault();
-    if (LOCAL_DEV_MODE) switchModeToOnline();
-  });
+    if (currentModeFromStorage()) switchModeToOnline();
+  };
+}
+
+export { switchModeToLocal, switchModeToOnline, setupTopModeSwitchButtons };
+
+if (typeof window !== "undefined") {
+  window.HIS_MODE_SWITCH = {
+    toLocal: switchModeToLocal,
+    toOnline: switchModeToOnline,
+    refresh: setupTopModeSwitchButtons,
+    isLocal: currentModeFromStorage,
+  };
 }
 
 if (document.readyState === "loading") {

@@ -827,8 +827,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <h1>시간표 편집</h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
-      <button id="topLocalModeBtn" class="tt-mode-btn" type="button" onclick="(function(){try{localStorage.setItem('his_local_dev_mode_v1','on')}catch(e){} var u=new URL(location.href); u.searchParams.set('local','1'); location.href=u.toString();})()">로컬 모드</button>
-      <button id="topOnlineModeBtn" class="tt-mode-btn" type="button" onclick="(function(){try{localStorage.removeItem('his_local_dev_mode_v1')}catch(e){} var u=new URL(location.href); u.searchParams.set('local','0'); location.href=u.toString();})()">온라인 모드</button>
+      <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
+      <button id="topOnlineModeBtn" class="tt-mode-btn" type="button">온라인 모드</button>
     </div>
     <span class="tt-auth-status" id="ttAuthStatus">로그인 확인 중…</span>
     <button id="ttLoginBtn" class="hidden">Google 로그인</button>
@@ -889,6 +889,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
+<script type="module" src="js/local-dev.js"></script>
 <script type="module" src="js/timetable.js"></script>
 <script>
 /* ── Tab switching ── */

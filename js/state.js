@@ -533,6 +533,32 @@ export function importLocalSnapshot(payload) {
   fireUpdate("all");
 }
 
+
+export function seedLocalSnapshotFromRuntime() {
+  const store = readLocalStateStore();
+  const storedData = store?.data && typeof store.data === "object" ? store.data : (store || {});
+  const data = { ...(storedData || {}) };
+  const seededDomains = [];
+
+  ALL_DOMAINS.forEach(domain => {
+    if (initialLoad[domain]) {
+      data[domain] = normalizedForDomain(domain);
+      seededDomains.push(domain);
+    } else if (data[domain]) {
+      data[domain] = DOMAIN_NORMALIZERS[domain](data[domain] || {});
+    }
+  });
+
+  writeLocalStateStore({
+    version: 1,
+    mode: "his-local-dev",
+    seededAt: new Date().toISOString(),
+    seededDomains,
+    data
+  });
+  return seededDomains;
+}
+
 export function resetLocalSnapshot() {
   clearLocalStateStore();
   ALL_DOMAINS.forEach(domain => {

@@ -5010,3 +5010,11 @@ a.topbar-nav-link { text-decoration: none; display: inline-flex; align-items: ce
   .grade-header-row,
   .grade-data-row { grid-template-columns: 42px 44px 48px 1fr 1fr 32px 22px !important; }
 }
+
+/* keep mode switch visible in compact topbars */
+.topbar-right { min-width: max-content; }
+.topbar { overflow: visible; }
+@media (max-width: 1180px) {
+  .topbar { height: auto !important; min-height: 44px; padding-top: 4px; padding-bottom: 4px; }
+  .topbar-right { justify-content: flex-end; }
+}
