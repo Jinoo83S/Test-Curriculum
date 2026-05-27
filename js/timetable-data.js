@@ -231,7 +231,7 @@ export function getTtCardClassInfos(card) {
   if (!card) return [];
 
   const classRows = getAllClasses();
-  const explicitWhole = !!card.isWholeGrade || isProtectedWholeGradeLabel(
+  const explicitWhole = !!card.isWholeGrade || isChanCheCategory(card.category) || isProtectedWholeGradeLabel(
     card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
   );
 
@@ -349,7 +349,7 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
     templateId: templateIds[0] || first.templateId,
     gradeKey: gradeKeys[0] || first.gradeKey,
     teacherName,
-    audienceClassKeys: [...new Set(validCards.flatMap(c => c.classKeys || []))],
+    audienceClassKeys: [...new Set(validCards.flatMap(c => getTtCardClassInfos(c).map(classKey)).filter(Boolean))],
     audienceStudentKeys: [...new Set(validCards.flatMap(c => c.studentKeys || []))],
     roomId: null
   };
@@ -400,6 +400,151 @@ export function entryMatchesClass(entry, cls) {
     const clsObj = allCls.find(c => c.id === re.classId);
     return clsObj && clsObj.grade === cls.gradeKey && clsObj.name === cls.section;
   });
+}
+
+
+export function calculateClassCreditSummary(ttcards = getTtCards(), groups = appState.timetable?.ttcardGroups || []) {
+  const result = { classes: [], gradeSummaries: [], total: 0, diagnostics: [] };
+  const groupedIds = new Set();
+  const classMap = new Map();
+
+  const ensureClass = (key, info = {}) => {
+    if (!key) return null;
+    if (!classMap.has(key)) {
+      const label = formatClassLabelFromInfo(info, key);
+      classMap.set(key, {
+        key,
+        label,
+        gradeKey: info.gradeKey || gradeKeyFromClassKey(key),
+        section: info.section || sectionFromClassKey(key),
+        credits: 0,
+        contributions: []
+      });
+    }
+    return classMap.get(key);
+  };
+
+  const addContribution = (key, info, credits, meta) => {
+    const value = Number(credits) || 0;
+    if (!key || value <= 0) return;
+    const row = ensureClass(key, info);
+    if (!row) return;
+    row.credits += value;
+    row.contributions.push({ credits: value, ...meta });
+  };
+
+  const cardClassPairs = (card) => getTtCardClassInfos(card).map(info => ({ info, key: classKey(info) })).filter(x => x.key);
+
+  (groups || []).forEach(group => {
+    const cards = getGroupCards(group);
+    if (!cards.length) return;
+    cards.forEach(c => groupedIds.add(c.id));
+
+    // 동시배정 그룹은 구성 과목의 시수를 합산하지 않습니다.
+    // 같은 학급에 여러 구성 과목이 걸려 있으면 그 시간에는 동시에 1칸만 필요하므로
+    // 학급별 contribution은 최대 시수로 계산합니다.
+    const byClass = new Map();
+    cards.forEach(card => {
+      const credits = getCreditsForTtCard(card);
+      cardClassPairs(card).forEach(({ key, info }) => {
+        const prev = byClass.get(key);
+        if (!prev || credits > prev.credits) {
+          byClass.set(key, { key, info, credits, card });
+        }
+      });
+    });
+
+    byClass.forEach(({ key, info, credits, card }) => {
+      addContribution(key, info, credits, {
+        kind: "group",
+        groupId: group.id,
+        groupName: group.name || "그룹",
+        cardId: card.id,
+        title: getTtCardTitleSnapshot(card) || card.subject || card.label || "그룹 카드"
+      });
+    });
+  });
+
+  (ttcards || []).forEach(card => {
+    if (!card || groupedIds.has(card.id)) return;
+    const credits = getCreditsForTtCard(card);
+    cardClassPairs(card).forEach(({ key, info }) => {
+      addContribution(key, info, credits, {
+        kind: "card",
+        cardId: card.id,
+        title: getTtCardTitleSnapshot(card) || card.subject || card.label || "시간표 카드"
+      });
+    });
+  });
+
+  const classes = [...classMap.values()].sort((a, b) => compareClassSummaryRows(a, b));
+  const byGrade = new Map();
+  classes.forEach(row => {
+    const grade = gradeNumberFromGradeKey(row.gradeKey || gradeKeyFromClassKey(row.key));
+    if (!grade) return;
+    if (!byGrade.has(grade)) byGrade.set(grade, []);
+    byGrade.get(grade).push(row);
+  });
+
+  const gradeSummaries = [...byGrade.entries()]
+    .sort((a, b) => Number(a[0]) - Number(b[0]))
+    .map(([grade, rows]) => {
+      const values = rows.map(r => r.credits);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      return { grade, rows, min, max, value: max, isBalanced: min === max };
+    });
+
+  result.classes = classes;
+  result.gradeSummaries = gradeSummaries;
+  result.total = gradeSummaries.reduce((sum, g) => sum + (Number(g.value) || 0), 0);
+  result.diagnostics = buildClassCreditDiagnostics(classes, gradeSummaries);
+  return result;
+}
+
+function buildClassCreditDiagnostics(classes, gradeSummaries) {
+  const lines = [];
+  gradeSummaries.forEach(gs => {
+    if (gs.isBalanced) return;
+    lines.push(`${gs.grade}학년: ${gs.min}~${gs.max}시수`);
+    const max = gs.max;
+    gs.rows.forEach(row => {
+      if (row.credits === max) return;
+      lines.push(`- ${row.label}: ${row.credits}시수 (기준보다 ${max - row.credits}시수 적음)`);
+      const titles = row.contributions.slice(0, 8).map(c => `  · ${c.kind === "group" ? `[그룹] ${c.groupName}` : c.title}: ${c.credits}시수`);
+      lines.push(...titles);
+      if (row.contributions.length > 8) lines.push(`  · ... 외 ${row.contributions.length - 8}개`);
+    });
+  });
+  if (!lines.length) lines.push("학급별 필요 시수가 균형 상태입니다.");
+  return lines;
+}
+
+function formatClassLabelFromInfo(info = {}, fallbackKey = "") {
+  const g = gradeNumberFromGradeKey(info.gradeKey || gradeKeyFromClassKey(fallbackKey));
+  const s = info.section || sectionFromClassKey(fallbackKey) || sectionLabel(info.sectionIdx ?? 0);
+  return g && s ? `${g}${s}` : (fallbackKey || "?");
+}
+
+function gradeKeyFromClassKey(key = "") {
+  const g = String(key || "").split(":")[0] || "";
+  return g ? `${Number(g)}학년` : "";
+}
+
+function sectionFromClassKey(key = "") {
+  return String(key || "").split(":")[1] || "";
+}
+
+function gradeNumberFromGradeKey(gradeKey = "") {
+  const m = String(gradeKey || "").match(/\d{1,2}/);
+  return m ? String(Number(m[0])) : "";
+}
+
+function compareClassSummaryRows(a, b) {
+  const ga = Number(gradeNumberFromGradeKey(a.gradeKey || gradeKeyFromClassKey(a.key))) || 0;
+  const gb = Number(gradeNumberFromGradeKey(b.gradeKey || gradeKeyFromClassKey(b.key))) || 0;
+  if (ga !== gb) return ga - gb;
+  return String(a.section || sectionFromClassKey(a.key)).localeCompare(String(b.section || sectionFromClassKey(b.key)), "ko", { numeric: true });
 }
 
 export function getUnitForTemplate(templateId) {

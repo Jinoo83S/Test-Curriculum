@@ -12,7 +12,7 @@ export function createTimetableSidebarHandlers(deps) {
     GRADE_KEYS, appState, entries, $, makeBtn, canEdit,
     getTemplateById, getTemplateCardTitle,
     getTtCards, refreshTtCardData,
-    getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard,
+    getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
     getSubjectsForGrade, getUnitForTemplate, getUnitGradeKeys, getUnitTeachers,
     getCreditsForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
     getGradeColor, gradeDisplay, sectionLabel,
@@ -67,7 +67,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const ttcards = appState.timetable?.ttcards || [];
     const filteredTtcards = filterTtCardsByGrade(ttcards);
-    toolbar.append(loadBtn, refreshBtn, buildGradeFilterControls(ttcards), buildClassCountSummary(filteredTtcards));
+    toolbar.append(loadBtn, refreshBtn, buildGradeFilterControls(ttcards), buildCreditDiagnosticButton(ttcards), buildClassCountSummary(ttcards));
     panel.appendChild(toolbar);
 
     if (ttcards.length > 0) {
@@ -234,17 +234,18 @@ export function createTimetableSidebarHandlers(deps) {
     label.style.cssText = "font-size:11px;font-weight:800;color:#475569;margin-right:2px;white-space:nowrap";
     wrap.appendChild(label);
 
-    const gradeOptions = getAvailableGradeFilterOptions(ttcards);
+    const summary = getClassCreditSummary(ttcards);
+    const gradeOptions = getAvailableGradeFilterOptions(summary);
     if (activeGradeFilter !== "all" && !gradeOptions.some(opt => opt.value === activeGradeFilter)) {
       activeGradeFilter = "all";
       saveGradeFilter(activeGradeFilter);
     }
 
-    const makeFilterBtn = (value, text, count) => {
+    const makeFilterBtn = (value, text, countText) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tt-grade-filter-btn" + (activeGradeFilter === value ? " active" : "");
-      btn.textContent = count != null ? `${text} ${count}` : text;
+      btn.textContent = countText != null ? `${text} ${countText}` : text;
       btn.title = value === "all" ? "전체 학년 카드 보기" : `${text}학년 카드만 보기`;
       const active = activeGradeFilter === value;
       btn.style.cssText = active
@@ -259,27 +260,18 @@ export function createTimetableSidebarHandlers(deps) {
       return btn;
     };
 
-    wrap.appendChild(makeFilterBtn("all", "전체", (ttcards || []).length));
-    gradeOptions.forEach(opt => wrap.appendChild(makeFilterBtn(opt.value, opt.label, opt.count)));
+    wrap.appendChild(makeFilterBtn("all", "전체", formatCreditValue(summary.total)));
+    gradeOptions.forEach(opt => wrap.appendChild(makeFilterBtn(opt.value, opt.label, opt.countText)));
     return wrap;
   }
 
-  function getAvailableGradeFilterOptions(ttcards) {
-    const counts = new Map();
-    (ttcards || []).forEach(card => {
-      collectGradeNumbersForCard(card).forEach(grade => {
-        counts.set(grade, (counts.get(grade) || 0) + 1);
-      });
+  function getAvailableGradeFilterOptions(summary) {
+    return (summary.gradeSummaries || []).map(gs => {
+      const countText = gs.isBalanced
+        ? formatCreditValue(gs.value)
+        : `${formatCreditValue(gs.min)}~${formatCreditValue(gs.max)}`;
+      return { value: gs.grade, label: gs.grade, countText };
     });
-
-    const gradeOrder = unique([
-      ...GRADE_KEYS.map(getGradeNumber).filter(Boolean),
-      ...counts.keys()
-    ]).sort((a, b) => Number(a) - Number(b));
-
-    return gradeOrder
-      .filter(grade => counts.has(grade))
-      .map(grade => ({ value: grade, label: grade, count: counts.get(grade) || 0 }));
   }
 
   function filterTtCardsByGrade(ttcards) {
@@ -340,18 +332,29 @@ export function createTimetableSidebarHandlers(deps) {
     }
   }
 
+  function buildCreditDiagnosticButton(ttcards) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "secondary-btn compact-btn";
+    btn.textContent = "🔎 시수 진단";
+    btn.title = "학급별 필요 시수 차이 원인을 확인합니다.";
+    btn.addEventListener("click", () => showClassCreditDiagnostics(ttcards));
+    return btn;
+  }
+
   function buildClassCountSummary(ttcards) {
     const wrap = document.createElement("div");
     wrap.className = "tt-class-count-summary";
     wrap.style.cssText = "margin-left:auto;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:11px;color:#334155";
 
     const label = document.createElement("span");
-    label.textContent = "학급별 카드";
-    label.style.cssText = "font-weight:800;color:#475569;margin-right:2px";
+    label.textContent = "학급별 필요 시수";
+    label.style.cssText = "font-weight:800;color:#475569;margin-right:2px;white-space:nowrap";
     wrap.appendChild(label);
 
-    const counts = getClassCardCounts(ttcards);
-    if (!counts.length) {
+    const summary = getClassCreditSummary(ttcards);
+    const rows = summary.classes || [];
+    if (!rows.length) {
       const empty = document.createElement("span");
       empty.textContent = "없음";
       empty.style.cssText = "font-size:11px;color:#94a3b8";
@@ -359,26 +362,47 @@ export function createTimetableSidebarHandlers(deps) {
       return wrap;
     }
 
-    counts.forEach(({ label, count }) => {
+    rows.forEach(row => {
       const chip = document.createElement("span");
-      const gc = getGradeColor(gradeKeyFromClassLabel(label));
-      chip.textContent = `${label} ${count}`;
-      chip.title = `${label} 시간표 카드 ${count}개`;
+      const gc = getGradeColor(row.gradeKey || gradeKeyFromClassLabel(row.label));
+      chip.textContent = `${row.label} ${formatCreditValue(row.credits)}`;
+      chip.title = `${row.label} 필요 시수 ${formatCreditValue(row.credits)}`;
       chip.style.cssText = `display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:999px;background:${gc.bg};border:1px solid ${gc.border};color:${gc.text};font-weight:800;line-height:16px;white-space:nowrap`;
       wrap.appendChild(chip);
     });
     return wrap;
   }
 
-  function getClassCardCounts(ttcards) {
-    const counts = new Map();
-    (ttcards || []).forEach(card => {
-      const labels = getClassLabelsForTtCard(card);
-      labels.forEach(label => counts.set(label, (counts.get(label) || 0) + 1));
+  function getClassCreditSummary(ttcards) {
+    if (typeof calculateClassCreditSummary === "function") {
+      return calculateClassCreditSummary(ttcards || [], appState.timetable?.ttcardGroups || []);
+    }
+    return { classes: [], gradeSummaries: [], total: 0, diagnostics: ["시수 계산 함수를 찾을 수 없습니다."] };
+  }
+
+  function showClassCreditDiagnostics(ttcards) {
+    const summary = getClassCreditSummary(ttcards);
+    const lines = [];
+    lines.push("학급별 필요 시수 진단");
+    lines.push("");
+    (summary.gradeSummaries || []).forEach(gs => {
+      const label = gs.isBalanced
+        ? `${gs.grade}학년: ${formatCreditValue(gs.value)}시수 균형`
+        : `${gs.grade}학년: ${formatCreditValue(gs.min)}~${formatCreditValue(gs.max)}시수 차이 있음`;
+      lines.push(label);
+      (gs.rows || []).forEach(row => {
+        lines.push(`- ${row.label}: ${formatCreditValue(row.credits)}시수`);
+      });
+      lines.push("");
     });
-    return [...counts.entries()]
-      .sort((a, b) => compareClassLabels(a[0], b[0]))
-      .map(([label, count]) => ({ label, count }));
+    lines.push("차이 원인 후보");
+    lines.push(...(summary.diagnostics || []));
+    alert(lines.join("\n"));
+  }
+
+  function formatCreditValue(value) {
+    const n = Number(value) || 0;
+    return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
   }
 
   function getClassLabelsForTtCard(card) {

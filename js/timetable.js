@@ -30,7 +30,7 @@ import {
   getGroupCards, getTtCardClassLabels, describeTtCard, buildEntryDataFromTtCards,
   makePlacementFromGroupItem, entryMatchesClass, getUnitForTemplate, getUnitDisplayTitle,
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
-  entryHasGrade, entryTitle, entryTeachers
+  entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js";
 import { createAutoAssignAll } from "./timetable-autoassign.js";
 import { renderTimetableGrid } from "./timetable-grid.js";
@@ -1167,7 +1167,7 @@ const ttSidebarHandlers = createTimetableSidebarHandlers({
   GRADE_KEYS, appState, entries, $, makeBtn, canEdit, clean,
   getTemplateById, getTemplateCardTitle,
   getTtCards, getTtCardById, refreshTtCardData,
-  getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard,
+  getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
   getSubjectsForGrade, getUnitForTemplate, getUnitDisplayTitle, getUnitGradeKeys, getUnitTeachers,
   getCreditsForTemplate, getTeachersForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
   getGradeColor, gradeDisplay, sectionLabel,
