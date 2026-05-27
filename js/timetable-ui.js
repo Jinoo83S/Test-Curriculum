@@ -39,6 +39,7 @@ export function applyConflictVisuals(card, conflictTypes, conflicts, getConflict
   card.dataset.conflictTypes = conflictTypes.join(",");
   card.title = typeof getConflictLabel === "function" ? getConflictLabel(conflicts) : "";
 
+  // 카드 우측 상단: 충돌 유형별 짧은 배지
   const markers = document.createElement("div");
   markers.className = "tt-conflict-markers";
   conflictTypes.forEach(type => {
@@ -52,4 +53,18 @@ export function applyConflictVisuals(card, conflictTypes, conflicts, getConflict
     markers.appendChild(dot);
   });
   card.appendChild(markers);
+
+  // 카드 하단: 여러 충돌이 있을 때 항목별 색을 한눈에 보이게 하는 스트라이프
+  const stripes = document.createElement("div");
+  stripes.className = "tt-conflict-stripes";
+  conflictTypes.forEach(type => {
+    const meta = CONFLICT_DISPLAY[type];
+    if (!meta) return;
+    const seg = document.createElement("span");
+    seg.className = "tt-conflict-stripe";
+    seg.dataset.type = type;
+    seg.title = meta.label;
+    stripes.appendChild(seg);
+  });
+  card.appendChild(stripes);
 }

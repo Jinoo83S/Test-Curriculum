@@ -526,8 +526,10 @@ function addEntry(data) {
   if (!canEdit()) return null;
   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
-  const block = getManualPlacementBlock(e);
-  if (block) { alertManualPlacementBlock(block); return null; }
+
+  // 수동 드래그 배치는 충돌이 있어도 먼저 허용합니다.
+  // 이후 recomputeConflicts()에서 교사/교실/학생/동시배정/제약 충돌을 색상 배지로 표시합니다.
+  // 자동배치는 기존처럼 배치 가능 여부를 사전에 검사합니다.
   captureTimetableUndo("수업 추가");
   entries().push(e); scheduleSave("timetable"); return e;
 }
@@ -1007,10 +1009,8 @@ function moveEntry(entryId, day, period) {
     ((e.groupId && x.groupId === e.groupId) || (e.unitId && x.unitId === e.unitId)) &&
     x.day === e.day && x.period === e.period
   ) : [];
-  const moving = [e, ...siblings].map(item => ({ ...item, day, period }));
-  const excludeIds = [e.id, ...siblings.map(s => s.id)];
-  const block = getManualPlacementBlock(moving, { excludeIds });
-  if (block) { alertManualPlacementBlock(block); return; }
+
+  // 수업 이동도 충돌이 있어도 허용하고, 이동 후 충돌 표시로 확인하게 합니다.
   captureTimetableUndo("수업 이동");
   siblings.forEach(s => { s.day = day; s.period = period; });
   e.day = day; e.period = period;

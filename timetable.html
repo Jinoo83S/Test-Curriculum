@@ -606,6 +606,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-conflict-dot[data-type="maxConsecutive"],
 .tt-conflict-dot[data-type="maxPerDay"]{background:var(--tt-conflict-max)}
 .tt-entry-card.tt-entry-conflict .tt-entry-title{padding-right:14px}
+
+.tt-conflict-stripes{
+  position:absolute;
+  left:0;
+  right:0;
+  bottom:0;
+  height:4px;
+  display:flex;
+  overflow:hidden;
+  border-radius:0 0 6px 6px;
+  pointer-events:none;
+}
+.tt-conflict-stripe{flex:1 1 0;min-width:4px}
+.tt-conflict-stripe[data-type="teacher"]{background:var(--tt-conflict-teacher)}
+.tt-conflict-stripe[data-type="room"]{background:var(--tt-conflict-room)}
+.tt-conflict-stripe[data-type="student"]{background:var(--tt-conflict-student)}
+.tt-conflict-stripe[data-type="syncRequired"]{background:var(--tt-conflict-sync)}
+.tt-conflict-stripe[data-type="unavailable"]{background:var(--tt-conflict-unavailable)}
+.tt-conflict-stripe[data-type="maxConsecutive"],
+.tt-conflict-stripe[data-type="maxPerDay"]{background:var(--tt-conflict-max)}
+.tt-entry-card.tt-entry-conflict{padding-bottom:5px!important}
 .tt-conflict-bar{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .tt-conflict-summary-label{font-weight:800;margin-right:2px}
 .tt-conflict-chip{display:inline-flex;align-items:center;gap:3px;padding:1px 6px;border-radius:999px;color:white;font-size:10px;font-weight:800;line-height:16px;white-space:nowrap}
