@@ -4,7 +4,8 @@
 import { GRADE_KEYS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
-         normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS } from "./state.js";
+         normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
+         setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
@@ -49,6 +50,32 @@ let currentGrade   = "7학년";
 let currentTeacher = "";
 let currentRoom    = "";
 let dragData       = null;
+const TT_DRAG_MIME = "application/x-his-timetable-drag";
+
+function writeDragDataToEvent(ev, data, effect = "move") {
+  if (!ev?.dataTransfer || !data) return;
+  ev.dataTransfer.effectAllowed = effect;
+  const payload = JSON.stringify(data);
+  ev.dataTransfer.setData(TT_DRAG_MIME, payload);
+  ev.dataTransfer.setData("text/plain", payload);
+}
+
+function readDragDataFromEvent(ev) {
+  const dt = ev?.dataTransfer;
+  if (!dt) return null;
+  for (const type of [TT_DRAG_MIME, "text/plain"]) {
+    try {
+      const raw = dt.getData(type);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && parsed.kind) return parsed;
+    } catch (_) {
+      // Ignore non-JSON values inserted by browser/extensions.
+    }
+  }
+  return null;
+}
+
 let conflictMap    = new Map();
 let constraintMap  = new Map();
 
@@ -74,6 +101,91 @@ function activateBottomTab(tabName) {
   window._ttBottomToggle?.show?.();
   const btn = document.querySelector(`.tt-bottom-tab-btn[data-tab="${tabName}"]`);
   btn?.click();
+}
+
+let ttSaveStatusEl = null;
+let ttSaveModeBtn = null;
+let ttSavePendingBtn = null;
+let ttSaveStatusTimer = null;
+
+function updateTtSaveControls() {
+  if (ttSaveModeBtn) {
+    ttSaveModeBtn.textContent = isAutoSaveEnabled() ? "자동저장 ON" : "자동저장 OFF";
+    ttSaveModeBtn.title = isAutoSaveEnabled()
+      ? "클릭하면 개발용 수동 저장 모드로 전환됩니다."
+      : "클릭하면 자동 저장을 다시 켭니다.";
+  }
+  if (ttSavePendingBtn) {
+    const dirty = getDirtyDomains();
+    ttSavePendingBtn.hidden = dirty.length === 0;
+    ttSavePendingBtn.textContent = dirty.length ? `저장 대기(${dirty.length})` : "저장 대기";
+  }
+}
+
+function setupTtSaveQuotaControls() {
+  const parent = document.querySelector(".tt-topbar-right");
+  if (!parent || ttSaveStatusEl) return;
+
+  ttSaveStatusEl = document.createElement("span");
+  ttSaveStatusEl.className = "tt-save-status";
+  ttSaveStatusEl.style.fontSize = "12px";
+  ttSaveStatusEl.style.fontWeight = "800";
+  ttSaveStatusEl.style.color = "#64748b";
+
+  ttSaveModeBtn = document.createElement("button");
+  ttSaveModeBtn.type = "button";
+  ttSaveModeBtn.className = "tt-save-mode-btn";
+  ttSaveModeBtn.addEventListener("click", async () => {
+    const next = !isAutoSaveEnabled();
+    setAutoSaveEnabled(next);
+    updateTtSaveControls();
+    if (next && getDirtyDomains().length) await savePendingNow();
+  });
+
+  ttSavePendingBtn = document.createElement("button");
+  ttSavePendingBtn.type = "button";
+  ttSavePendingBtn.className = "tt-save-btn";
+  ttSavePendingBtn.addEventListener("click", async () => {
+    await savePendingNow();
+    updateTtSaveControls();
+  });
+
+  const saveBtn = $("ttSaveBtn");
+  parent.insertBefore(ttSaveStatusEl, saveBtn || null);
+  parent.insertBefore(ttSaveModeBtn, saveBtn || null);
+  parent.insertBefore(ttSavePendingBtn, saveBtn || null);
+  updateTtSaveControls();
+}
+
+function setupTtSaveStatusHandler() {
+  setOnSaveStatus((status, detail) => {
+    if (!ttSaveStatusEl) return;
+    clearTimeout(ttSaveStatusTimer);
+    updateTtSaveControls();
+
+    if (status === "saving") {
+      ttSaveStatusEl.textContent = "저장 대기 중…";
+      ttSaveStatusEl.style.color = "#ca8a04";
+    } else if (status === "dirty") {
+      const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
+      ttSaveStatusEl.textContent = `변경 ${count}개 대기`;
+      ttSaveStatusEl.style.color = "#ca8a04";
+    } else if (status === "saved") {
+      ttSaveStatusEl.textContent = "저장됨";
+      ttSaveStatusEl.style.color = "#15803d";
+      ttSaveStatusTimer = setTimeout(() => { ttSaveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드"; updateTtSaveControls(); }, 2500);
+    } else if (status === "skipped") {
+      ttSaveStatusEl.textContent = "변경 없음";
+      ttSaveStatusEl.style.color = "#15803d";
+      ttSaveStatusTimer = setTimeout(() => { ttSaveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드"; updateTtSaveControls(); }, 1500);
+    } else if (status === "mode") {
+      ttSaveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드";
+      ttSaveStatusEl.style.color = "#64748b";
+    } else {
+      ttSaveStatusEl.textContent = "저장 실패";
+      ttSaveStatusEl.style.color = "#dc2626";
+    }
+  });
 }
 
 // ── Undo stack is implemented in timetable-undo.js ──────────────
@@ -753,6 +865,7 @@ function buildEntryCard(entry, opts = {}) {
   card.addEventListener("dragstart", ev => {
     if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
     dragData = { kind: "entry", entryId: entry.id, teacherName: entry.teacherName, gradeKey: entry.gradeKey, sectionIdx: entry.sectionIdx ?? 0 };
+    writeDragDataToEvent(ev, dragData, "move");
     applyDragHighlight(dragData);
     card.classList.add("tt-dragging");
   });
@@ -1082,6 +1195,8 @@ setOnUpdate(domain => {
   if (knownDomains.includes(domain)) requestRenderAll();
 });
 
+setupTtSaveQuotaControls();
+setupTtSaveStatusHandler();
 setAuthCheckingUI();
 
 onAuth(async (user) => {
@@ -1128,7 +1243,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 $("ttLoginBtn")?.addEventListener("click", login);
 $("ttLogoutBtn")?.addEventListener("click", logout);
 $("ttExportBtn")?.addEventListener("click", exportXlsx);
-$("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); alert("저장되었습니다."); });
+$("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); await savePendingNow(); alert("저장되었습니다."); });
 $("ttClearGradeBtn")?.addEventListener("click", () => {
   if (!canEdit()) return;
   let label, keepFn;
@@ -1165,13 +1280,15 @@ window._ttApplyPeriod = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?
   const bottomBar = $("ttBottom");
   if (bottomBar) {
     bottomBar.addEventListener("dragover", e => {
-      if (dragData?.kind === "entry") { e.preventDefault(); bottomBar.style.outline = "3px dashed #ef4444"; }
+      const current = dragData || readDragDataFromEvent(e);
+      if (current?.kind === "entry") { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; bottomBar.style.outline = "3px dashed #ef4444"; }
     });
     bottomBar.addEventListener("dragleave", () => { bottomBar.style.outline = ""; });
     bottomBar.addEventListener("drop", e => {
-      e.preventDefault(); bottomBar.style.outline = "";
-      if (dragData?.kind === "entry" && canEdit()) {
-        removeEntry(dragData.entryId); dragData = null; recomputeConflicts(); renderAll();
+      e.preventDefault(); e.stopPropagation(); bottomBar.style.outline = "";
+      const current = dragData || readDragDataFromEvent(e);
+      if (current?.kind === "entry" && canEdit()) {
+        removeEntry(current.entryId); dragData = null; recomputeConflicts(); renderAll();
       }
     });
   }

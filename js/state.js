@@ -36,32 +36,121 @@ export const initialLoad = {
 // ── Per-domain save timers ────────────────────────────────────────
 const saveTimers = {};
 const dirtyDomains = new Set();
-const SAVE_DELAY_MS = 3000;
+// 개발 중에는 드래그/입력 테스트가 많아지므로 자동저장 간격을 조금 길게 둡니다.
+const SAVE_DELAY_MS = 10000;
+const AUTO_SAVE_KEY = "his_auto_save_v1";
+
+// 마지막으로 Firestore에서 읽었거나 Firestore에 저장한 상태의 fingerprint입니다.
+// 같은 데이터는 다시 쓰지 않아 quota를 소모하지 않도록 합니다.
+const savedDomainFingerprints = {};
+const splitDocFingerprints = {
+  classes: { classes: new Map() },
+  rosters: { rosters: new Map() },
+  timetable: { timetableEntries: new Map(), ttcards: new Map(), timetableMeta: null },
+};
 
 let _onSaveStatus = null;
-export const setOnSaveStatus = (cb) => { _onSaveStatus = cb; };
+export const setOnSaveStatus = (cb) => {
+  _onSaveStatus = cb;
+  _onSaveStatus?.("mode", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains() });
+};
+
+function stableStringify(value) {
+  const seen = new WeakSet();
+  const normalize = (v) => {
+    if (v == null || typeof v !== "object") return v;
+    if (v instanceof Date) return v.toISOString();
+    if (seen.has(v)) return null;
+    seen.add(v);
+    if (Array.isArray(v)) return v.map(normalize);
+    const out = {};
+    Object.keys(v)
+      .filter(k => k !== "updatedAt" && k !== "createdAt")
+      .sort()
+      .forEach(k => { out[k] = normalize(v[k]); });
+    return out;
+  };
+  return JSON.stringify(normalize(value));
+}
+
+function fp(value) { return stableStringify(value); }
+
+function normalizedForDomain(domain) {
+  const normalizer = DOMAIN_NORMALIZERS?.[domain];
+  return normalizer ? normalizer(appState[domain]) : appState[domain];
+}
+
+function markDomainSaved(domain, normalized = normalizedForDomain(domain)) {
+  savedDomainFingerprints[domain] = fp(normalized);
+  markSplitBaselines(domain, normalized);
+}
+
+function domainChanged(domain, normalized = normalizedForDomain(domain)) {
+  return savedDomainFingerprints[domain] !== fp(normalized);
+}
+
+export function isAutoSaveEnabled() {
+  try { return localStorage.getItem(AUTO_SAVE_KEY) !== "off"; }
+  catch (_) { return true; }
+}
+
+export function setAutoSaveEnabled(enabled) {
+  try { localStorage.setItem(AUTO_SAVE_KEY, enabled ? "on" : "off"); } catch (_) {}
+  Object.keys(saveTimers).forEach(domain => {
+    clearTimeout(saveTimers[domain]);
+    delete saveTimers[domain];
+  });
+  if (enabled) {
+    dirtyDomains.forEach(domain => {
+      saveTimers[domain] = setTimeout(() => saveNow(domain), 1000);
+    });
+  }
+  _onSaveStatus?.("mode", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains() });
+}
+
+export function getDirtyDomains() {
+  return [...dirtyDomains];
+}
 
 export function scheduleSave(domain) {
   if (!canEdit() || !initialLoad[domain]) return;
   dirtyDomains.add(domain);
-  _onSaveStatus?.("saving");
+
+  if (!isAutoSaveEnabled()) {
+    clearTimeout(saveTimers[domain]);
+    delete saveTimers[domain];
+    _onSaveStatus?.("dirty", { autoSave: false, dirtyDomains: getDirtyDomains() });
+    return;
+  }
+
+  _onSaveStatus?.("saving", { autoSave: true, dirtyDomains: getDirtyDomains() });
   clearTimeout(saveTimers[domain]);
   saveTimers[domain] = setTimeout(() => saveNow(domain), SAVE_DELAY_MS);
 }
 
-export async function saveNow(domain) {
+export async function saveNow(domain, options = {}) {
   if (!canEdit() || !initialLoad[domain]) return;
   clearTimeout(saveTimers[domain]);
   delete saveTimers[domain];
+
+  const normalized = normalizedForDomain(domain);
+  if (!options.force && !domainChanged(domain, normalized)) {
+    dirtyDomains.delete(domain);
+    _onSaveStatus?.("skipped", { domain, dirtyDomains: getDirtyDomains() });
+    return;
+  }
+
   try {
     if (SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
-      await saveSplitDomain(domain);
+      await saveSplitDomain(domain, { force: !!options.force, normalized });
     } else {
       // Ordinary domains, or split domains temporarily running in legacy fallback mode.
-      await setDoc(refs[domain], { ...appState[domain], updatedAt: serverTimestamp() });
+      await setDoc(refs[domain], { ...normalized, updatedAt: serverTimestamp() });
     }
+    markDomainSaved(domain, normalized);
     dirtyDomains.delete(domain);
-    _onSaveStatus?.("saved");
+    _onSaveStatus?.("saved", { domain, dirtyDomains: getDirtyDomains() });
+    console.info(`[Firestore save] ${domain} 저장 완료`);
   } catch (e) {
     console.error(`Save failed [${domain}]:`, e);
     _onSaveStatus?.("error", e);
@@ -72,6 +161,8 @@ export async function flushPendingSaves() {
   const domains = [...dirtyDomains];
   await Promise.all(domains.map(d => saveNow(d)));
 }
+
+export const savePendingNow = flushPendingSaves;
 
 // ================================================================
 // DATA NORMALIZATION
@@ -458,12 +549,102 @@ function applyNormalizedDomain(domain, normalized) {
   }
 
   if (initialLoad[domain] && sameDomainData(appState[domain], normalized)) {
+    markDomainSaved(domain, normalized);
     initialLoad[domain] = true;
     return;
   }
   appState[domain] = normalized;
+  markDomainSaved(domain, normalized);
   initialLoad[domain] = true;
   fireUpdate(domain);
+}
+
+function mapFromItems(items, toDocData) {
+  const m = new Map();
+  (items || []).forEach(item => {
+    if (!item?.id) return;
+    m.set(item.id, fp(toDocData(item)));
+  });
+  return m;
+}
+
+function markSplitBaselines(domain, normalized = normalizedForDomain(domain)) {
+  if (domain === "classes") {
+    splitDocFingerprints.classes.classes = mapFromItems(
+      normalizeClassesDomain(normalized).classes,
+      item => item
+    );
+    return;
+  }
+
+  if (domain === "rosters") {
+    const n = normalizeRostersDomain(normalized);
+    const ids = uniqueOrdered([
+      ...Object.keys(n.rosters || {}),
+      ...Object.keys(n.rosterMeta || {})
+    ].filter(Boolean));
+    const docs = ids.map(id => ({
+      id,
+      templateId: id,
+      entries: n.rosters[id] || [],
+      meta: n.rosterMeta[id] || { classCount: "" }
+    }));
+    splitDocFingerprints.rosters.rosters = mapFromItems(docs, item => ({
+      templateId: item.templateId,
+      entries: item.entries || [],
+      meta: item.meta || { classCount: "" }
+    }));
+    return;
+  }
+
+  if (domain === "timetable") {
+    const n = normalizeTimetableDomain(normalized);
+    splitDocFingerprints.timetable.timetableEntries = mapFromItems(n.entries, item => item);
+    splitDocFingerprints.timetable.ttcards = mapFromItems(n.ttcards, item => item);
+    splitDocFingerprints.timetable.timetableMeta = fp({
+      config: n.config,
+      teacherConstraints: n.teacherConstraints,
+      ttcardGroups: n.ttcardGroups || []
+    });
+  }
+}
+
+async function commitChangedCollection(collKey, collRef, items, toDocData, options = {}) {
+  const baseline = splitDocFingerprints[collKey.domain]?.[collKey.name] || new Map();
+  const current = new Map();
+  const ops = [];
+
+  (items || []).forEach(item => {
+    if (!item?.id) return;
+    const data = toDocData(item);
+    const hash = fp(data);
+    current.set(item.id, hash);
+    if (options.force || baseline.get(item.id) !== hash) {
+      ops.push({
+        type: "set",
+        ref: doc(collRef, item.id),
+        data: { ...data, updatedAt: serverTimestamp() },
+        options: { merge: false }
+      });
+    }
+  });
+
+  baseline.forEach((_, id) => {
+    if (!current.has(id)) ops.push({ type: "delete", ref: doc(collRef, id) });
+  });
+
+  if (ops.length) await commitWriteOps(ops);
+  splitDocFingerprints[collKey.domain][collKey.name] = current;
+  return ops.length;
+}
+
+async function commitChangedDoc(baselinePath, ref, data, options = {}) {
+  const hash = fp(data);
+  const current = baselinePath.reduce((obj, key) => obj?.[key], splitDocFingerprints);
+  if (!options.force && current === hash) return 0;
+  await setDoc(ref, { ...data, updatedAt: serverTimestamp() }, { merge: false });
+  if (baselinePath.length === 2) splitDocFingerprints[baselinePath[0]][baselinePath[1]] = hash;
+  return 1;
 }
 
 async function commitWriteOps(ops) {
@@ -501,15 +682,22 @@ async function syncCollection(collRef, items, toDocData) {
   if (ops.length) await commitWriteOps(ops);
 }
 
-async function saveSplitDomain(domain) {
+async function saveSplitDomain(domain, options = {}) {
   if (domain === "classes") {
-    const classes = normalizeClassesDomain(appState.classes).classes;
-    await syncCollection(splitRefs.classes, classes, item => item);
+    const classes = normalizeClassesDomain(options.normalized || appState.classes).classes;
+    const writes = await commitChangedCollection(
+      { domain: "classes", name: "classes" },
+      splitRefs.classes,
+      classes,
+      item => item,
+      options
+    );
+    console.info(`[Firestore save] classes split writes: ${writes}`);
     return;
   }
 
   if (domain === "rosters") {
-    const normalized = normalizeRostersDomain(appState.rosters);
+    const normalized = normalizeRostersDomain(options.normalized || appState.rosters);
     const ids = uniqueOrdered([
       ...Object.keys(normalized.rosters || {}),
       ...Object.keys(normalized.rosterMeta || {})
@@ -520,24 +708,48 @@ async function saveSplitDomain(domain) {
       entries: normalized.rosters[id] || [],
       meta: normalized.rosterMeta[id] || { classCount: "" }
     }));
-    await syncCollection(splitRefs.rosters, docs, item => ({
-      templateId: item.templateId,
-      entries: item.entries || [],
-      meta: item.meta || { classCount: "" }
-    }));
+    const writes = await commitChangedCollection(
+      { domain: "rosters", name: "rosters" },
+      splitRefs.rosters,
+      docs,
+      item => ({
+        templateId: item.templateId,
+        entries: item.entries || [],
+        meta: item.meta || { classCount: "" }
+      }),
+      options
+    );
+    console.info(`[Firestore save] rosters split writes: ${writes}`);
     return;
   }
 
   if (domain === "timetable") {
-    const normalized = normalizeTimetableDomain(appState.timetable);
-    await syncCollection(splitRefs.timetableEntries, normalized.entries, item => item);
-    await syncCollection(splitRefs.ttcards, normalized.ttcards, item => item);
-    await setDoc(splitRefs.timetableMeta, {
-      config: normalized.config,
-      teacherConstraints: normalized.teacherConstraints,
-      ttcardGroups: normalized.ttcardGroups || [],
-      updatedAt: serverTimestamp()
-    }, { merge: false });
+    const normalized = normalizeTimetableDomain(options.normalized || appState.timetable);
+    const entryWrites = await commitChangedCollection(
+      { domain: "timetable", name: "timetableEntries" },
+      splitRefs.timetableEntries,
+      normalized.entries,
+      item => item,
+      options
+    );
+    const cardWrites = await commitChangedCollection(
+      { domain: "timetable", name: "ttcards" },
+      splitRefs.ttcards,
+      normalized.ttcards,
+      item => item,
+      options
+    );
+    const metaWrites = await commitChangedDoc(
+      ["timetable", "timetableMeta"],
+      splitRefs.timetableMeta,
+      {
+        config: normalized.config,
+        teacherConstraints: normalized.teacherConstraints,
+        ttcardGroups: normalized.ttcardGroups || []
+      },
+      options
+    );
+    console.info(`[Firestore save] timetable split writes: entries ${entryWrites}, cards ${cardWrites}, meta ${metaWrites}`);
   }
 }
 
@@ -552,7 +764,7 @@ async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
     // One-time forward migration from old one-document storage to split collections.
     // Skip if this domain is already in legacy fallback mode because subcollection access failed.
     if (canEdit() && SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
-      await saveSplitDomain(domain);
+      await saveSplitDomain(domain, { force: true, normalized });
     }
     return true;
   } catch (e) {
@@ -565,8 +777,10 @@ async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
 function handleSnap(domain, normalizeFn) {
   return async (snap) => {
     if (!snap.exists()) {
+      const normalized = normalizeFn({});
+      appState[domain] = normalized;
+      markDomainSaved(domain, normalized);
       initialLoad[domain] = true;
-      await saveNow(domain);
       fireUpdate(domain);
       return;
     }
@@ -756,7 +970,7 @@ async function applyTimetableSplitIfReady() {
 
   // 편집 권한이 있으면 이관한 그룹을 새 위치에 저장해 다음부터는 templates를 읽지 않습니다.
   if (canEdit() && raw.ttcardGroups.length && !(timetableSplitCache.meta?.ttcardGroups || []).length) {
-    try { await saveSplitDomain("timetable"); } catch (e) { console.warn("Timetable group migration save skipped.", e); }
+    try { await saveSplitDomain("timetable", { force: true }); } catch (e) { console.warn("Timetable group migration save skipped.", e); }
   }
 }
 

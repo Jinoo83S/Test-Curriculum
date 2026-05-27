@@ -3,7 +3,8 @@
 // ================================================================
 import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
-import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus } from "./state.js";
+import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus,
+         isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow } from "./state.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
@@ -744,17 +745,77 @@ setOnUpdate(domain => {
   }, 50);
 });
 
-// ── Save status indicator ─────────────────────────────────────────
+// ── Save status indicator / quota-saving controls ─────────────────
 const saveStatusEl = document.getElementById("saveStatusEl");
 let saveStatusTimer = null;
-setOnSaveStatus((status, err) => {
+let saveModeBtn = null;
+let savePendingBtn = null;
+
+function updateSaveControlButtons() {
+  if (saveModeBtn) {
+    saveModeBtn.textContent = isAutoSaveEnabled() ? "자동저장 ON" : "자동저장 OFF";
+    saveModeBtn.title = isAutoSaveEnabled()
+      ? "클릭하면 개발용 수동 저장 모드로 전환됩니다."
+      : "클릭하면 자동 저장을 다시 켭니다.";
+  }
+  if (savePendingBtn) {
+    const dirty = getDirtyDomains();
+    savePendingBtn.hidden = dirty.length === 0;
+    savePendingBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "수동 저장";
+  }
+}
+
+function setupSaveQuotaControls() {
+  const parent = saveStatusEl?.parentElement;
+  if (!parent || saveModeBtn) return;
+
+  saveModeBtn = document.createElement("button");
+  saveModeBtn.type = "button";
+  saveModeBtn.className = "secondary-btn";
+  saveModeBtn.style.padding = "6px 10px";
+  saveModeBtn.addEventListener("click", async () => {
+    const next = !isAutoSaveEnabled();
+    setAutoSaveEnabled(next);
+    updateSaveControlButtons();
+    if (next && getDirtyDomains().length) await savePendingNow();
+  });
+
+  savePendingBtn = document.createElement("button");
+  savePendingBtn.type = "button";
+  savePendingBtn.className = "primary-btn";
+  savePendingBtn.style.padding = "6px 10px";
+  savePendingBtn.addEventListener("click", async () => {
+    await savePendingNow();
+    updateSaveControlButtons();
+  });
+
+  saveStatusEl.insertAdjacentElement("afterend", savePendingBtn);
+  saveStatusEl.insertAdjacentElement("afterend", saveModeBtn);
+  updateSaveControlButtons();
+}
+
+setupSaveQuotaControls();
+
+setOnSaveStatus((status, detail) => {
   if (!saveStatusEl) return;
   clearTimeout(saveStatusTimer);
+  updateSaveControlButtons();
+
   if (status === "saving") {
-    saveStatusEl.textContent = "💾 저장 중…"; saveStatusEl.className = "save-status saving";
+    saveStatusEl.textContent = "💾 저장 대기 중…"; saveStatusEl.className = "save-status saving";
+  } else if (status === "dirty") {
+    const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
+    saveStatusEl.textContent = `✍️ 변경사항 ${count}개 저장 대기`;
+    saveStatusEl.className = "save-status saving";
   } else if (status === "saved") {
     saveStatusEl.textContent = "✅ 저장됨"; saveStatusEl.className = "save-status saved";
-    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; }, 2500);
+    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 2500);
+  } else if (status === "skipped") {
+    saveStatusEl.textContent = "✅ 변경 없음"; saveStatusEl.className = "save-status saved";
+    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 1500);
+  } else if (status === "mode") {
+    saveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드";
+    saveStatusEl.className = "save-status";
   } else {
     saveStatusEl.textContent = "⚠️ 저장 실패 (네트워크 또는 권한 확인)"; saveStatusEl.className = "save-status error";
   }
