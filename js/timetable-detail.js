@@ -6,7 +6,8 @@ import { canEdit } from "./auth.js";
 import { getRooms } from "./rooms.js";
 import { sectionLabel, gradeDisplay } from "./utils.js";
 import {
-  entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle
+  entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
+  getTtCardById, describeTtCard
 } from "./timetable-data.js";
 
 function removeExistingModal() {
@@ -50,6 +51,87 @@ function formatClassLabelList(gradeKey, labels = []) {
       .filter(Boolean));
   const normalized = rawLabels.length ? rawLabels : [""];
   return [...new Set(normalized.map(label => formatClassLabel(gradeKey, label)))].join(", ") || "-";
+}
+
+
+function getGroupDetailCards(entry) {
+  if (!entry) return [];
+  const directIds = [entry.ttcardId, ...(entry.ttcardIds || [])].filter(Boolean);
+  const group = entry.groupId
+    ? (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId)
+    : null;
+
+  let ids = [...directIds];
+
+  if (group) {
+    const unit = entry.unitId ? (group.units || []).find(u => u.id === entry.unitId) : null;
+    if (unit?.ttcardIds?.length) {
+      ids = [...ids, ...unit.ttcardIds];
+    } else if (!ids.length) {
+      ids = [
+        ...(group.poolCardIds || []),
+        ...(group.units || []).flatMap(u => u.ttcardIds || [])
+      ];
+    }
+  }
+
+  const seen = new Set();
+  return ids
+    .filter(id => id && !seen.has(id) && seen.add(id))
+    .map(id => getTtCardById(id))
+    .filter(Boolean)
+    .map(describeTtCard);
+}
+
+function appendGroupDetailSection(box, detailItems, { title = "구성 과목" } = {}) {
+  if (!detailItems?.length) return;
+
+  const section = document.createElement("div");
+  section.style.cssText = "margin:10px 0 10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc";
+
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:7px";
+  const h = document.createElement("div");
+  h.style.cssText = "font-size:12px;font-weight:800;color:#334155";
+  h.textContent = title;
+  const count = document.createElement("span");
+  count.style.cssText = "font-size:10px;font-weight:800;color:#166534;background:#dcfce7;border-radius:999px;padding:2px 7px";
+  count.textContent = `${detailItems.length}개`;
+  header.append(h, count);
+  section.appendChild(header);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:flex;flex-direction:column;gap:5px";
+  detailItems.forEach(item => {
+    const row = document.createElement("div");
+    row.style.cssText = "display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:7px 8px;border:1px solid #e5e7eb;border-radius:8px;background:white";
+
+    const main = document.createElement("div");
+    main.style.cssText = "min-width:0";
+    const name = document.createElement("div");
+    name.style.cssText = "font-size:12px;font-weight:800;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    name.textContent = item.title || item.subject || "-";
+    name.title = name.textContent;
+
+    const sub = document.createElement("div");
+    sub.style.cssText = "font-size:10px;color:#64748b;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+    const cls = formatClassLabelList(
+      item.gradeKey,
+      item.classLabels?.length ? item.classLabels : [item.sectionLabel || sectionLabel(item.sectionIdx ?? 0)]
+    );
+    sub.textContent = `${cls} · ${(item.teachers || []).join(", ") || "교사 없음"}`;
+    sub.title = sub.textContent;
+    main.append(name, sub);
+
+    const credit = document.createElement("span");
+    credit.style.cssText = "font-size:10px;font-weight:800;color:#334155;background:#e2e8f0;border-radius:999px;padding:2px 7px;white-space:nowrap";
+    credit.textContent = `${item.credits || "-"}시수`;
+
+    row.append(main, credit);
+    list.appendChild(row);
+  });
+  section.appendChild(list);
+  box.appendChild(section);
 }
 
 export function createTimetableDetailHandlers(ctx) {
@@ -336,6 +418,8 @@ export function createTimetableDetailHandlers(ctx) {
     if (entry.groupId) {
       const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
       makeRow("그룹", grp?.name || entry.groupId);
+      const detailCards = getGroupDetailCards(entry);
+      appendGroupDetailSection(box, detailCards, { title: entry.unitId ? "묶음수업 구성" : "그룹 구성 과목" });
     }
 
     const rLabel = document.createElement("label");
