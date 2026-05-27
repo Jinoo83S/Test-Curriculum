@@ -5,6 +5,7 @@ import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
 import { appState } from "./state.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
+export { getTtCardById } from "./ttcards.js";
 import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js";
 
 const ttDomain  = () => appState.timetable;
