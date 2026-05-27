@@ -64,6 +64,50 @@ export function teacherNamesFromValue(value) {
   return clean(value).split(/[,，·]/).map(s => s.trim()).filter(Boolean);
 }
 
+function isStrictWholeGradeText(...values) {
+  const text = values.map(clean).filter(Boolean).join(" ");
+  if (!text) return false;
+  // CA/SA 단독 표기는 교과군일 수 있으므로 여기서는 전체학년 보호 키워드로 보지 않습니다.
+  return /(창체|채플|chapel|ms\s*채플|자율|동아리|전체|전학년|whole\s*grade|all\s*grade)/i.test(text);
+}
+
+function classKeyGrades(classKeys = new Set()) {
+  const out = new Set();
+  (classKeys || new Set()).forEach(key => {
+    const g = normalizeGradeForClassKey(String(key).split(":")[0]);
+    if (g) out.add(g);
+  });
+  return out;
+}
+
+function collapseStaleWholeGradeCardAudience(card = {}, occupancy) {
+  const classKeys = occupancy.classKeys || new Set();
+  const studentKeys = occupancy.studentKeys || new Set();
+  const gradeKey = card.gradeKey;
+
+  // 과거 버전에서 CA/SA 계열 카드를 whole-grade로 잘못 생성해 classKeys가
+  // 9:A+9:B처럼 저장된 경우가 있습니다. 실제 학생명단이 없고,
+  // 명시적인 전체학년 키워드도 없으며, 한 학년 안에서 여러 반만 잡혀 있으면
+  // 해당 카드의 sectionIdx 한 반으로 되돌려 학생 충돌 오판을 막습니다.
+  if (studentKeys.size) return occupancy;
+  if (!gradeKey || classKeys.size <= 1) return occupancy;
+
+  const strict = isStrictWholeGradeText(
+    card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
+  );
+  if (strict) return occupancy;
+
+  const grades = classKeyGrades(classKeys);
+  if (grades.size !== 1) return occupancy;
+
+  const fallbackKey = makeClassKey(gradeKey, sectionLabel(card.sectionIdx ?? 0));
+  if (!fallbackKey) return occupancy;
+
+  occupancy.classKeys = new Set([fallbackKey]);
+  occupancy.classLabels = new Set([formatClassLabelFromKey(fallbackKey)]);
+  return occupancy;
+}
+
 export function getCardOccupancy(card = {}) {
   const classKeys = new Set();
   const classLabels = new Set();
@@ -101,7 +145,7 @@ export function getCardOccupancy(card = {}) {
     }
   }
 
-  return { classKeys, classLabels, studentKeys, teacherNames, ttcardIds };
+  return collapseStaleWholeGradeCardAudience(card, { classKeys, classLabels, studentKeys, teacherNames, ttcardIds });
 }
 
 function mergeInto(target, source) {
@@ -136,23 +180,35 @@ export function getEntryOccupancy(entry = {}, ctx = {}) {
   const getTtCardById = ctx.getTtCardById || (() => null);
   const getGroupById = ctx.getGroupById || ((id) => (ctx.templateGroups || []).find(g => g.id === id));
 
-  // 1. Entry snapshot audience saved at placement time.
-  (entry.audienceClassKeys || []).forEach(k => {
-    const key = normalizeClassKey(k, entry.gradeKey);
-    if (key) {
-      out.classKeys.add(key);
-      out.classLabels.add(formatClassLabelFromKey(key));
-    }
-  });
-  (entry.audienceStudentKeys || []).forEach(k => { if (clean(k)) out.studentKeys.add(clean(k)); });
-
-  // 2. Card-level data is the source of truth.
   const directCardIds = ttCardIdsFromPlacement(entry);
+
+  // 1. Card-level data is the source of truth.
+  // 기존 entry.audienceClassKeys에는 과거 CA/SA 오판으로 9:A+9:B처럼
+  // 넓게 저장된 값이 남아 있을 수 있습니다. 카드 데이터가 존재하면
+  // stale snapshot을 합치지 않고 카드 기준으로 점유 범위를 다시 계산합니다.
+  let cardAudienceFound = false;
   directCardIds.forEach(id => {
     const card = getTtCardById(id);
-    if (card) mergeInto(out, getCardOccupancy(card));
-    else out.ttcardIds.add(id);
+    if (card) {
+      cardAudienceFound = true;
+      mergeInto(out, getCardOccupancy(card));
+    } else {
+      out.ttcardIds.add(id);
+    }
   });
+
+  // 2. Entry snapshot audience saved at placement time.
+  // 카드가 없거나 카드에 청중 정보가 없을 때만 호환용으로 사용합니다.
+  if (!cardAudienceFound || (!out.classKeys.size && !out.studentKeys.size)) {
+    (entry.audienceClassKeys || []).forEach(k => {
+      const key = normalizeClassKey(k, entry.gradeKey);
+      if (key) {
+        out.classKeys.add(key);
+        out.classLabels.add(formatClassLabelFromKey(key));
+      }
+    });
+    (entry.audienceStudentKeys || []).forEach(k => { if (clean(k)) out.studentKeys.add(clean(k)); });
+  }
 
   // 3. Legacy fallback for old group entries only.
   // Important: a normal grouped card entry can have entry.groupId while still representing

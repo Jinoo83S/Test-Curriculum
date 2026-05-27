@@ -52,12 +52,18 @@ export function getEffectiveCredit(rowOrCredits, category = "") {
   return n > 0 ? n : 0;
 }
 
-/** 고정 수업 보호 대상: 창체/채플/자율/동아리/전체학년 성격의 수업 */
+/**
+ * 고정/전체학년 보호 대상: 실제로 같은 학년·여러 반 전체를 막아야 하는 수업만 true.
+ *
+ * 주의: CA/SA는 학교 내 교과군·분류명으로도 쓰일 수 있어, 그 자체만으로
+ * 전체학년 수업으로 판단하면 9A/9B처럼 서로 다른 반 수업이 학생 충돌로 오판됩니다.
+ * 따라서 CA/SA 단독 표기는 보호 키워드에서 제외하고, 창체/채플/전체/전학년 등
+ * 명시적인 전체학년 성격의 표현이나 카드의 실제 classKeys로 판단합니다.
+ */
 export function isProtectedWholeGradeLabel(...values) {
   const text = values.map(clean).filter(Boolean).join(" ");
   if (!text) return false;
-  if (/(창체|채플|chapel|ms\s*채플|자율|동아리|전체|전학년|whole\s*grade|all\s*grade)/i.test(text)) return true;
-  return /(^|[^A-Za-z0-9가-힣])(CA|SA)(?=$|[^A-Za-z0-9가-힣])/i.test(text);
+  return /(창체|채플|chapel|ms\s*채플|자율|동아리|전체|전학년|whole\s*grade|all\s*grade)/i.test(text);
 }
 
 export function languageClass(lang) {
