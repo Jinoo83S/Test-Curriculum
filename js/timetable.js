@@ -660,6 +660,31 @@ function getEntryClassSummary(entry) {
   return parts.join(", ") || "-";
 }
 
+
+const ttDetailHandlers = createTimetableDetailHandlers({
+  entries,
+  ttConfig,
+  currentGrade: () => currentGrade,
+  getGradeColor,
+  getEntryClassSummary,
+  renderEntryConflictDetailSection,
+  removeEntry,
+  updateEntry,
+  moveEntry,
+  recomputeConflicts,
+  renderAll: () => renderAll(),
+  captureTimetableUndo: (...args) => captureTimetableUndo(...args),
+});
+
+const {
+  showSidebarCardDetail,
+  showEntryDetailByUnit,
+  showEntryContextMenu,
+  showSubjectAssignmentHistory,
+  highlightSidebarCard,
+  showEntryDetail,
+} = ttDetailHandlers;
+
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;
   const title     = entryTitle(entry);
