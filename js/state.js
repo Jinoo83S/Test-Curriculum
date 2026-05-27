@@ -662,10 +662,37 @@ function sameDomainData(a, b) {
   catch (_) { return false; }
 }
 
+function hasUnsavedLocalChanges(domain) {
+  if (LOCAL_DEV_MODE) return false;
+  if (!initialLoad[domain]) return false;
+  if (!dirtyDomains.has(domain)) return false;
+  // dirtyDomains can contain a domain even when the current data eventually
+  // became identical to the saved baseline. Only protect truly changed data.
+  return domainChanged(domain);
+}
+
+function shouldDeferRemoteApply(domain, normalized) {
+  if (!hasUnsavedLocalChanges(domain)) return false;
+  if (sameDomainData(appState[domain], normalized)) return false;
+  return true;
+}
+
 function applyNormalizedDomain(domain, normalized) {
   if (domain === "classes") {
     const prev = appState.classes.classes || [];
     if (normalized.classes.length === 0 && prev.length > 0) normalized.classes = prev;
+  }
+
+  // 온라인 모드에서 드래그/편집 직후 자동저장 대기 중일 때,
+  // Firestore 실시간 구독이 아직 저장 전의 원격 데이터를 다시 밀어 넣으면
+  // 화면상 카드가 원래 자리로 튕겨 보입니다.
+  // 사용자의 로컬 변경이 저장 대기 중이면 원격 스냅샷 적용을 잠시 보류합니다.
+  // 저장이 완료되면 markDomainSaved + dirty 해제로 다시 원격 스냅샷을 정상 반영합니다.
+  if (shouldDeferRemoteApply(domain, normalized)) {
+    console.info(`[Firestore remote update deferred] ${domain}: unsaved local changes are pending.`);
+    _onSaveStatus?.("dirty", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains(), deferredRemote: domain });
+    initialLoad[domain] = true;
+    return;
   }
 
   if (initialLoad[domain] && sameDomainData(appState[domain], normalized)) {
