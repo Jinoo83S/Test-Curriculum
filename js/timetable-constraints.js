@@ -26,14 +26,15 @@ export function createTimetableConstraintsHandlers({
   }
 
   function getAllTimetableTeachers() {
-    const fromTemplates = [...new Set(
-      (appState.templates.templates || []).flatMap(t =>
-        splitTeacherNames([t.teacher, t.sem1Teacher, t.sem2Teacher].join(","))
-      ).filter(Boolean)
+    const fromCards = [...new Set(
+      (appState.timetable?.ttcards || []).flatMap(c => [
+        ...(Array.isArray(c.teachers) ? c.teachers : []),
+        ...splitTeacherNames(c.teacherName)
+      ]).filter(Boolean)
     )];
     const fromEntries = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))];
     const fromRooms = [...new Set(getRooms().map(r => clean(r.teacherName)).filter(Boolean))];
-    return [...new Set([...fromTemplates, ...fromEntries, ...fromRooms])].sort((a, b) => a.localeCompare(b, "ko"));
+    return [...new Set([...fromCards, ...fromEntries, ...fromRooms])].sort((a, b) => a.localeCompare(b, "ko"));
   }
 
   function getEffectiveAssignedRoomId(teacher) {

@@ -168,8 +168,9 @@ export function deleteTemplate(templateId) {
     );
   }
 
-  // 5. templateGroups pool + units
-  (appState.templates.templateGroups || []).forEach(g => {
+  // 5. timetable ttcardGroups pool + units
+  // 시간표 그룹은 더 이상 templates 도메인이 아니라 timetable 도메인에 저장됩니다.
+  (appState.timetable?.ttcardGroups || []).forEach(g => {
     g.poolCardIds = (g.poolCardIds || [])
       .filter(id => !deletedTtcardIds.has(id));
 
@@ -187,7 +188,7 @@ export function deleteTemplate(templateId) {
     );
   });
 
-  scheduleSave("templates"); scheduleSave("curriculum");
+  scheduleSave("templates"); scheduleSave("curriculum"); scheduleSave("timetable");
   scheduleSave("rosters"); scheduleSave("timetable");
 }
 

@@ -334,7 +334,7 @@ export function createTimetableDetailHandlers(ctx) {
     }
 
     if (entry.groupId) {
-      const grp = (appState.templates.templateGroups || []).find(g => g.id === entry.groupId);
+      const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
       makeRow("그룹", grp?.name || entry.groupId);
     }
 

@@ -390,7 +390,7 @@ export function entryMatchesClass(entry, cls) {
 }
 
 export function getUnitForTemplate(templateId) {
-  for (const grp of (appState.templates.templateGroups || [])) {
+  for (const grp of (appState.timetable.ttcardGroups || [])) {
     for (const unit of (grp.units || [])) {
       if (unit.templateIds.includes(templateId)) return { group: grp, unit };
     }
@@ -488,7 +488,7 @@ export function entryTitle(e) {
 
   // Group entry → 저장된 group name이 있으면 우선 사용, 없으면 카드 제목 스냅샷으로 표시합니다.
   if (e.groupId) {
-    const grp = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
+    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === e.groupId);
     if (grp?.name) return grp.name;
     const titles = [...new Set(cards.map(c => getTtCardTitleSnapshot(c)).filter(Boolean))];
     if (titles.length) return titles.join(" / ");
@@ -516,7 +516,7 @@ export function entryTeachers(e) {
 
   // Unit entry → derive from ttcardIds (new) or templateIds (legacy)
   if (e.unitId) {
-    const grp  = (appState.templates.templateGroups || []).find(g => g.id === e.groupId);
+    const grp  = (appState.timetable.ttcardGroups || []).find(g => g.id === e.groupId);
     const unit = grp?.units.find(u => u.id === e.unitId);
     if (unit) return getUnitTeachers(unit);
   }

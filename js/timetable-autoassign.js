@@ -19,34 +19,45 @@ export function createAutoAssignAll(deps) {
     getConflictCounts, recomputeConflicts, renderAll, $
   } = deps;
 
+  const ttGroups = () => appState.timetable?.ttcardGroups || [];
+  const groupContainsCardId = (group, cardId) => {
+    if (!group || !cardId) return false;
+    if ((group.poolCardIds || []).includes(cardId)) return true;
+    return (group.units || []).some(unit => (unit.ttcardIds || []).includes(cardId));
+  };
+  function groupIdsForTemplate(templateId) {
+    if (!templateId) return [];
+    const cardIds = (appState.timetable?.ttcards || [])
+      .filter(c => c.templateId === templateId)
+      .map(c => c.id);
+    return ttGroups()
+      .filter(g => cardIds.some(id => groupContainsCardId(g, id)))
+      .map(g => g.id);
+  }
   function isConcurrentTpl(templateId) {
-    const tpl = appState.templates.templates?.find(t => t.id === templateId);
-    const gid = tpl?.calcGroupId; if (!gid) return false;
-    const grp = appState.templates.templateGroups?.find(g => g.id === gid);
-    return grp?.groupType === "concurrent";
+    const ids = groupIdsForTemplate(templateId);
+    return ttGroups().some(g => ids.includes(g.id) && (g.groupType === "concurrent" || !!g.isConcurrent));
   }
   /** Check if a placement item/entry belongs to a concurrent group */
   function isConcurrentItem(x) {
     if (x.groupId) {
-      const grp = appState.templates.templateGroups?.find(g => g.id === x.groupId);
+      const grp = ttGroups().find(g => g.id === x.groupId);
       if (grp) return grp.groupType === "concurrent" || !!grp.isConcurrent;
     }
     return isConcurrentTpl(x.templateId);
   }
   function sameGroupTpl(tidA, tidB) {
-    const tA = appState.templates.templates?.find(t => t.id === tidA);
-    const tB = appState.templates.templates?.find(t => t.id === tidB);
-    return tA?.calcGroupId && tA.calcGroupId === tB?.calcGroupId;
+    const a = new Set(groupIdsForTemplate(tidA));
+    return groupIdsForTemplate(tidB).some(id => a.has(id));
   }
   function getGroupId(tid) {
-    return appState.templates.templates?.find(t => t.id === tid)?.calcGroupId || null;
+    return groupIdsForTemplate(tid)[0] || null;
   }
   function linkedGroups(tidA, tidB) {
     const gA = getGroupId(tidA), gB = getGroupId(tidB);
     if (!gA || !gB || gA === gB) return false;
-    const groups = appState.templates.templateGroups || [];
-    const grpA = groups.find(g => g.id === gA);
-    const grpB = groups.find(g => g.id === gB);
+    const grpA = ttGroups().find(g => g.id === gA);
+    const grpB = ttGroups().find(g => g.id === gB);
     return grpA?.linkedGroupId === gB || grpB?.linkedGroupId === gA;
   }
 

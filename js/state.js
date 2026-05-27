@@ -339,6 +339,11 @@ function normalizeTimetableDomain(raw = {}) {
       ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
       : [],
     ttcards: Array.isArray(raw.ttcards) ? raw.ttcards.map(normalizeTtCard) : [],
+    // 시간표 전용 묶음수업/그룹 스냅샷입니다.
+    // 예전 데이터 호환을 위해 raw.templateGroups도 한 번 수용합니다.
+    ttcardGroups: Array.isArray(raw.ttcardGroups)
+      ? raw.ttcardGroups.map(normalizeTemplateGroup).filter(g => g.name)
+      : (Array.isArray(raw.templateGroups) ? raw.templateGroups.map(normalizeTemplateGroup).filter(g => g.name) : []),
     teacherConstraints: constraints
   };
 }
@@ -530,6 +535,7 @@ async function saveSplitDomain(domain) {
     await setDoc(splitRefs.timetableMeta, {
       config: normalized.config,
       teacherConstraints: normalized.teacherConstraints,
+      ttcardGroups: normalized.ttcardGroups || [],
       updatedAt: serverTimestamp()
     }, { merge: false });
   }
@@ -595,6 +601,7 @@ function domainHasData(domain) {
   if (domain === "timetable") {
     return (appState.timetable?.entries || []).length > 0 ||
       (appState.timetable?.ttcards || []).length > 0 ||
+      (appState.timetable?.ttcardGroups || []).length > 0 ||
       Object.keys(appState.timetable?.teacherConstraints || {}).length > 0;
   }
   return false;
@@ -629,10 +636,9 @@ export const DOMAIN_NORMALIZERS = {
 };
 
 export const ALL_DOMAINS = Object.keys(DOMAIN_NORMALIZERS);
-// 시간표 편집 화면은 커리큘럼 원본을 실시간 구독하지 않습니다.
-// 시간표는 appState.timetable.ttcards에 저장된 스냅샷(과목명/교사/시수/반/전체학년 여부)을 기준으로 동작합니다.
-// templates는 기존 그룹/묶음수업 구조가 아직 이 도메인에 저장되어 있어 유지합니다.
-export const TIMETABLE_CORE_DOMAINS = ["templates", "classes", "rosters", "timetable"];
+// 시간표 편집 화면은 커리큘럼/템플릿 원본을 실시간 구독하지 않습니다.
+// 시간표는 appState.timetable.ttcards 및 appState.timetable.ttcardGroups에 저장된 스냅샷 기준으로 동작합니다.
+export const TIMETABLE_CORE_DOMAINS = ["classes", "rosters", "timetable"];
 export const TIMETABLE_OPTIONAL_DOMAINS = ["rooms"];
 
 export function isDomainSubscribed(domain) {
@@ -689,6 +695,23 @@ const timetableSplitCache = {
   metaExists: false,
 };
 
+let legacyTemplateGroupMigrationAttempted = false;
+async function loadLegacyTemplateGroupsForTimetable() {
+  if (legacyTemplateGroupMigrationAttempted) return [];
+  legacyTemplateGroupMigrationAttempted = true;
+  try {
+    const snap = await getDoc(refs.templates);
+    if (!snap.exists()) return [];
+    const rawGroups = snap.data()?.templateGroups;
+    return Array.isArray(rawGroups)
+      ? rawGroups.map(normalizeTemplateGroup).filter(g => g.name)
+      : [];
+  } catch (e) {
+    console.warn("Legacy templateGroups migration skipped.", e);
+    return [];
+  }
+}
+
 async function applyTimetableSplitIfReady() {
   if (!timetableSplitCache.entries || !timetableSplitCache.ttcards || timetableSplitCache.meta === null) return;
 
@@ -702,7 +725,7 @@ async function applyTimetableSplitIfReady() {
   if (!hasSplitData && !splitConfirmed.has("timetable") && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
-      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
+      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
     });
     if (migrated) return;
   }
@@ -712,10 +735,29 @@ async function applyTimetableSplitIfReady() {
   const raw = {
     config: timetableSplitCache.meta?.config || {},
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
+    ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
     entries: timetableSplitCache.entries,
     ttcards: timetableSplitCache.ttcards,
   };
+
+  // 기존 운영 데이터는 그룹 정보가 templates.templateGroups에만 있을 수 있습니다.
+  // 시간표 화면에서는 templates를 실시간 구독하지 않으므로, 최초 1회만 읽어 timetable.ttcardGroups로 이관합니다.
+  if (!raw.ttcardGroups.length) {
+    const currentGroups = appState.timetable?.ttcardGroups || [];
+    if (currentGroups.length) {
+      raw.ttcardGroups = currentGroups;
+    } else {
+      const legacyGroups = await loadLegacyTemplateGroupsForTimetable();
+      if (legacyGroups.length) raw.ttcardGroups = legacyGroups;
+    }
+  }
+
   applyNormalizedDomain("timetable", normalizeTimetableDomain(raw));
+
+  // 편집 권한이 있으면 이관한 그룹을 새 위치에 저장해 다음부터는 templates를 읽지 않습니다.
+  if (canEdit() && raw.ttcardGroups.length && !(timetableSplitCache.meta?.ttcardGroups || []).length) {
+    try { await saveSplitDomain("timetable"); } catch (e) { console.warn("Timetable group migration save skipped.", e); }
+  }
 }
 
 function subscribeTimetableSplit() {

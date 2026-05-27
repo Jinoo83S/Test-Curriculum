@@ -371,7 +371,7 @@ function setLunchConfig(afterPeriod, show) {
 
 // ── Data helpers ──────────────────────────────────────────────────
 function placeGroupAt(groupId, day, period) {
-  const grp = (appState.templates.templateGroups || []).find(g => g.id === groupId);
+  const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === groupId);
   if (!grp) return false;
 
   // 그룹카드는 화면에서 하나의 카드로 보이므로, 배치도 하나의 aggregate entry로 저장합니다.
@@ -394,7 +394,7 @@ function buildSchedulableItems() {
   const groupedCardIds = new Set();
 
   // ── Group blocks: one visible group card = one schedulable aggregate item ──
-  (appState.templates.templateGroups || []).forEach(group => {
+  (appState.timetable.ttcardGroups || []).forEach(group => {
     const groupCards = getGroupCards(group);
     if (!groupCards.length) return;
     groupCards.forEach(c => groupedCardIds.add(c.id));
@@ -416,7 +416,7 @@ function buildSchedulableItems() {
 
   // Set of templateIds covered by legacy template-based units
   const templateIdsInUnits = new Set(
-    (appState.templates.templateGroups || []).flatMap(g => (g.units || []).flatMap(u => u.templateIds || []))
+    (appState.timetable.ttcardGroups || []).flatMap(g => (g.units || []).flatMap(u => u.templateIds || []))
   );
 
   // ── Standalone ttcards (not in any group pool/unit) ──────────────
@@ -456,8 +456,8 @@ function buildSchedulableItems() {
 function recomputeConflicts() {
   conflictMap   = detectConflicts(
     entries(),
-    appState.templates.templateGroups,
-    appState.templates.templates,
+    appState.timetable.ttcardGroups,
+    [],
     audienceForPlacement
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
@@ -489,7 +489,7 @@ function ttCardIdsFromPlacement(x = {}) {
 function audienceForPlacement(x = {}) {
   return getEntryOccupancy(x, {
     getTtCardById,
-    templateGroups: appState.templates?.templateGroups || []
+    templateGroups: appState.timetable?.ttcardGroups || []
   });
 }
 
@@ -509,7 +509,7 @@ function getEntryProtectionText(entry = {}) {
   const parts = [entry.label, entry.subject, entry.category, entry.track, entry.group, entry.teacherName];
 
   if (entry.groupId) {
-    const grp = (appState.templates?.templateGroups || []).find(g => g.id === entry.groupId);
+    const grp = (appState.timetable?.ttcardGroups || []).find(g => g.id === entry.groupId);
     parts.push(grp?.name);
   }
 
@@ -610,8 +610,8 @@ function getManualPlacementBlock(candidates, options = {}) {
   for (const candidate of candidateList) {
     const conflictResult = detectConflicts(
       [...baseEntries, candidate],
-      appState.templates.templateGroups,
-      appState.templates.templates,
+      appState.timetable.ttcardGroups,
+      [],
       audienceForPlacement
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
@@ -803,7 +803,7 @@ function handleDrop(data, day, period) {
 
   // 3. Unit drop (묶음수업): place all ttcards in the unit together.
   if (data.unitId) {
-    const grp  = (appState.templates.templateGroups || []).find(g => g.id === data.groupId);
+    const grp  = (appState.timetable.ttcardGroups || []).find(g => g.id === data.groupId);
     const unit = grp?.units?.find(u => u.id === data.unitId);
     if (grp && unit) {
       const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);

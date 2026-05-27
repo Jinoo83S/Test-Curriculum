@@ -7,8 +7,6 @@ import { canEdit } from "./auth.js";
 import { appState, scheduleSave, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary,
-  addLiveTemplateGroup, deleteLiveTemplateGroup, renameLiveTemplateGroup,
-  getTemplateCredits,
 } from "./templates.js";
 import { getClassCount } from "./rosters.js";
 
@@ -29,7 +27,21 @@ function getSectionLabelFromRoster(card) {
 }
 export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
-const grps = () => appState.templates.templateGroups || [];
+const grps = () => appState.timetable.ttcardGroups || [];
+function ensureTtCardGroups() {
+  if (!Array.isArray(appState.timetable.ttcardGroups)) appState.timetable.ttcardGroups = [];
+  return appState.timetable.ttcardGroups;
+}
+function renameTtCardGroup(groupId, newName) {
+  const g = grps().find(g => g.id === groupId);
+  if (!g) return;
+  g.name = clean(newName) || g.name;
+  scheduleSave("timetable");
+}
+function deleteTtCardGroup(groupId) {
+  appState.timetable.ttcardGroups = grps().filter(g => g.id !== groupId);
+  scheduleSave("timetable");
+}
 
 
 // ── Persisted card data helpers ─────────────────────────────────
@@ -138,12 +150,11 @@ export function clearTtCards() {
   if (!canEdit()) return 0;
   const ids = new Set(getTtCards().map(c => c.id));
   appState.timetable.ttcards = [];
-  (appState.templates.templateGroups || []).forEach(g => {
+  (appState.timetable.ttcardGroups || []).forEach(g => {
     g.poolCardIds = (g.poolCardIds || []).filter(id => !ids.has(id));
     (g.units || []).forEach(u => { u.ttcardIds = (u.ttcardIds || []).filter(id => !ids.has(id)); });
   });
   scheduleSave("timetable");
-  scheduleSave("templates");
   return ids.size;
 }
 function updateTtCardField(cardId, field, value) {
@@ -508,7 +519,7 @@ function deleteCard(card) {
   });
   appState.timetable.ttcards = (appState.timetable.ttcards||[]).filter(c => c.id !== card.id);
   appState.timetable.entries = (appState.timetable.entries||[]).filter(e => e.ttcardId !== card.id && !(e.ttcardIds||[]).includes(card.id));
-  scheduleSave("templates"); scheduleSave("timetable");
+  scheduleSave("timetable"); scheduleSave("timetable");
 }
 
 function createUnitBlockGM(groupId, unit, onStructureChange) {
@@ -528,7 +539,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     if (!canEdit()) return;
     const g = grps().find(g => g.id === groupId); if (!g) return;
     g.units = g.units.filter(u => u.id !== unit.id);
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
   }); delBtn.disabled = !canEdit();
   hdr.appendChild(delBtn); wrap.appendChild(hdr);
 
@@ -543,7 +554,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     });
     if (!unit.ttcardIds) unit.ttcardIds = [];
     if (!unit.ttcardIds.includes(cardId)) unit.ttcardIds.push(cardId);
-    scheduleSave("templates"); scheduleSave("timetable"); onStructureChange();
+    scheduleSave("timetable"); scheduleSave("timetable"); onStructureChange();
   });
 
   ttcards.forEach(card => {
@@ -553,7 +564,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     });
     const rx = makeBtn("↩", "gm-card-remove", () => {
       unit.ttcardIds = unit.ttcardIds.filter(id => id !== card.id);
-      scheduleSave("templates"); onStructureChange();
+      scheduleSave("timetable"); onStructureChange();
     }); rx.title = "묶음에서 제거"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
     c.appendChild(rx);
     cardArea.appendChild(c);
@@ -588,13 +599,13 @@ function createGroupBlockGM(groupId, onStructureChange) {
     const srcId = e.dataTransfer.getData("application/group-id");
     const destId = groupId;
     if (!srcId || srcId === destId) return;
-    const arr = appState.templates.templateGroups;
+    const arr = ensureTtCardGroups();
     const si = arr.findIndex(g => g.id === srcId);
     const di = arr.findIndex(g => g.id === destId);
     if (si < 0 || di < 0) return;
     const [moved] = arr.splice(si, 1);
     arr.splice(di, 0, moved);
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
   });
 
   const hdr = document.createElement("div"); hdr.className = "group-block-hdr";
@@ -618,9 +629,9 @@ function createGroupBlockGM(groupId, onStructureChange) {
 
   const nameInp = document.createElement("input"); nameInp.type = "text"; nameInp.className = "group-block-name";
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
-  nameInp.addEventListener("change", e => { renameLiveTemplateGroup(groupId, e.target.value); });
+  nameInp.addEventListener("change", e => { renameTtCardGroup(groupId, e.target.value); });
 
-  const delBtn = makeBtn("×", "group-col-del-btn group-col-del-x", () => { deleteLiveTemplateGroup(groupId); onStructureChange(); });
+  const delBtn = makeBtn("×", "group-col-del-btn group-col-del-x", () => { deleteTtCardGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit(); delBtn.title = "그룹 삭제";
   hdr.append(dragHandle, colBtn, nameInp, delBtn); block.appendChild(hdr);
 
@@ -650,7 +661,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     });
     if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
     if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
   });
   const unitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
   const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id));
@@ -675,7 +686,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
     if (!canEdit()) return;
     if (!grpObj.units) grpObj.units = [];
     grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [] });
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
   body.appendChild(addUnitBtn);
   block.appendChild(body);
@@ -770,12 +781,12 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     newGroups.forEach(({ name, cardIds }) => {
       const grpId = uid("grp");
       // Cards go into the group pool (unassigned to units) — user creates 묶음수업 manually
-      appState.templates.templateGroups.push(normalizeTemplateGroup({
+      ensureTtCardGroups().push(normalizeTemplateGroup({
         id: grpId, name, isConcurrent: true, groupType: "concurrent",
         units: [], poolCardIds: [...cardIds]  // pool: cards in group but not yet in any unit
       }));
     });
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
     alert(`${newGroups.length}개 그룹이 생성되었습니다.`);
   });
   autoGenBtn.disabled = !canEdit();
@@ -784,8 +795,8 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   const resetAllBtn = makeBtn("🔄 전체 초기화", "group-reset-all-btn", () => {
     if (!canEdit()) return;
     if (!confirm("그룹을 전체 초기화합니다.\n모든 그룹과 묶음수업이 삭제되고 카드는 미배정 상태로 돌아갑니다.\n계속할까요?")) return;
-    appState.templates.templateGroups = [];
-    scheduleSave("templates"); onStructureChange();
+    appState.timetable.ttcardGroups = [];
+    scheduleSave("timetable"); onStructureChange();
   }); resetAllBtn.disabled = !canEdit();
   filterBar.appendChild(resetAllBtn);
   board.appendChild(filterBar);
@@ -813,7 +824,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
       g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
       g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
     });
-    scheduleSave("templates"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
   });
 
   if (unassigned.length) {

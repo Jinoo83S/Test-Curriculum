@@ -61,7 +61,7 @@ export function createTimetableSidebarHandlers(deps) {
     const availableCards = [];
     const doneCards = [];
     const seenIds = new Set();
-    const grpList = appState.templates.templateGroups || [];
+    const grpList = appState.timetable.ttcardGroups || [];
 
     // ── Groups: one card per group ──────────────────────────────
     grpList.forEach(grp => {
