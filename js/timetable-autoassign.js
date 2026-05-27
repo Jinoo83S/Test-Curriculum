@@ -191,6 +191,101 @@ export function createAutoAssignAll(deps) {
     return candidates[0]?.slot || null;
   }
 
+  function makeAutoEntry(item, slot) {
+    if (!item || !slot) return null;
+    return normalizeTimetableEntry({
+      id: uid("ent"),
+      ...applyDefaultRoomToEntryData({ ...item, ...slot })
+    });
+  }
+
+  function exactDuplicateInSlot(item, slot, placed = []) {
+    const itemCardIds = new Set(ttCardIdsFromPlacement(item));
+    const slotEnts = [...entries(), ...placed].filter(e => e.day === slot.day && e.period === slot.period);
+    if (itemCardIds.size) {
+      return slotEnts.some(e => ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)));
+    }
+    return slotEnts.some(e =>
+      e.templateId === item.templateId &&
+      e.gradeKey === item.gradeKey &&
+      (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0)
+    );
+  }
+
+  function forcedSlotScore(item, slot, placed = []) {
+    // 마지막 보정 단계용 점수입니다.
+    // 원칙적으로 충돌 없는 슬롯을 찾고, 불가피할 때만 최소 충돌 슬롯에 배치합니다.
+    // 단, 고정 채플/창체 등 보호 슬롯 침범과 동일 카드 동일 시간 중복은 끝까지 막습니다.
+    if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) return Infinity;
+    if (exactDuplicateInSlot(item, slot, placed)) return Infinity;
+
+    const existing = [...entries(), ...placed];
+    const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+    const dayEnts = existing.filter(e => e.day === slot.day);
+    const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
+    const itemAudience = audienceForPlacement(item);
+    let score = slotEnts.length * 10 + existing.filter(e => e.period === slot.period).length * 0.25;
+
+    for (const e of slotEnts) {
+      const sameUnit = item.unitId && e.unitId && item.unitId === e.unitId;
+      if (sameUnit) continue;
+
+      const et = splitTeacherNames(e.teacherName).filter(Boolean);
+      if (teachers.some(t => et.includes(t))) score += 1000;
+
+      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) || sameGroupTpl(item.templateId, e.templateId);
+      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      const conflict = audiencesConflict(itemAudience, audienceForPlacement(e));
+      if (conflict && !conc) score += 800;
+      if (e.roomId) {
+        const assignedRooms = teachers.map(getEffectiveAssignedRoomId).filter(Boolean);
+        if (assignedRooms.includes(e.roomId)) score += 250;
+      }
+    }
+
+    for (const teacher of teachers) {
+      const c = constraints()[teacher];
+      if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) score += 500;
+      const dayLoad = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
+      const max = Number(c?.maxPerDay) || 0;
+      if (max > 0 && dayLoad >= max) score += 150 + (dayLoad - max + 1) * 30;
+
+      const dayPeriods = dayEnts
+        .filter(e => splitTeacherNames(e.teacherName).includes(teacher))
+        .map(e => e.period);
+      const all = [...dayPeriods, slot.period].sort((a,b) => a-b);
+      let maxC = 1, cur = 1;
+      for (let i = 1; i < all.length; i++) {
+        cur = all[i] === all[i-1]+1 ? cur+1 : 1;
+        maxC = Math.max(maxC, cur);
+      }
+      const maxConsecutive = Number(c?.maxConsecutive) || 0;
+      if (maxConsecutive > 0 && maxC > maxConsecutive) score += 120 + (maxC - maxConsecutive) * 30;
+
+      const roomId = getEffectiveAssignedRoomId(teacher);
+      if (roomId) {
+        const roomBusy = slotEnts.some(e => e.roomId === roomId);
+        if (roomBusy) score += 250;
+      }
+    }
+
+    return score + Math.random();
+  }
+
+  function findLeastBadSlot(item, baseSlots, placed = []) {
+    const candidates = [];
+    for (const slot of shuffle([...baseSlots])) {
+      const score = forcedSlotScore(item, slot, placed);
+      if (Number.isFinite(score)) candidates.push({ slot, score });
+    }
+    candidates.sort((a, b) => a.score - b.score);
+    return candidates[0]?.slot || null;
+  }
+
+  function makeFailedPlacement(name, item, meta = {}) {
+    return { name: name || getAutoItemName(item), item, ...meta };
+  }
+
   function getGroupAutoCardIds(group, unitItems = []) {
     return new Set([
       ...(group?.poolCardIds || []),
@@ -313,9 +408,10 @@ export function createAutoAssignAll(deps) {
     });
 
     const stages = [
-      { name:"strict", label:"교사 제약 포함", attempts:12, options:{ respectSoftLimits:true,  respectUnavailable:true, respectAssignedRoom:true  } },
-      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:12, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:true  } },
-      { name:"relaxedRoom", label:"교실 자동배정 제한 완화", attempts:8, options:{ respectSoftLimits:false, respectUnavailable:true, respectAssignedRoom:false } },
+      { name:"strict", label:"교사 제약 포함", attempts:30, options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true  } },
+      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:24, options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true  } },
+      { name:"relaxedRoom", label:"교실 자동배정 제한 완화", attempts:16, options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:false } },
+      { name:"relaxedUnavailable", label:"교사 불가시간까지 완화", attempts:10, options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:false } },
     ];
 
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
@@ -352,7 +448,10 @@ export function createAutoAssignAll(deps) {
             if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed)) {
               continue;
             }
-            activeItems.forEach(groupItem => failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` }));
+            activeItems.forEach(groupItem => {
+              const item = makePlacementFromGroupItem(group, groupItem);
+              failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item, { groupId: group.id }));
+            });
           }
         }
 
@@ -366,8 +465,12 @@ export function createAutoAssignAll(deps) {
               await yieldAutoAssign();
               const item = makePlacementFromGroupItem(group, groupItem);
               const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
-              if (slot) placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
-              else failed.push({ name: `${group.name} - ${groupItem.name || "그룹 카드"}` });
+              if (slot) {
+                const entry = makeAutoEntry(item, slot);
+                if (entry) placed.push(entry);
+              } else {
+                failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item, { groupId: group.id }));
+              }
             }
           }
         }
@@ -386,10 +489,11 @@ export function createAutoAssignAll(deps) {
             await yieldAutoAssign();
             const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
             if (!slot) {
-              failed.push({ name: getAutoItemName(item) });
+              failed.push(makeFailedPlacement(getAutoItemName(item), item));
               break;
             }
-            placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
+            const entry = makeAutoEntry(item, slot);
+            if (entry) placed.push(entry);
             placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
           }
         }
@@ -405,6 +509,31 @@ export function createAutoAssignAll(deps) {
       if (!bestFailed.length) break;
     }
 
+    // ── Final repair pass ─────────────────────────────────────────
+    // Greedy 자동배치가 끝까지 못 넣은 카드는 그냥 남기지 않고,
+    // 보호 슬롯과 동일 카드 중복만 피하면서 최소 충돌 슬롯에 배치합니다.
+    // 이후 recomputeConflicts()가 교사/학생/교실 충돌을 색상과 상세 내역으로 표시합니다.
+    const forcedPlaced = [];
+    const stillFailed = [];
+    for (const failedItem of bestFailed) {
+      const item = failedItem.item;
+      if (!item) {
+        stillFailed.push(failedItem);
+        continue;
+      }
+      const slot = findLeastBadSlot(item, baseSlots, bestPlaced);
+      const entry = slot ? makeAutoEntry(item, slot) : null;
+      if (entry) {
+        entry.autoForced = true;
+        bestPlaced.push(entry);
+        forcedPlaced.push(failedItem);
+      } else {
+        stillFailed.push(failedItem);
+      }
+      await yieldAutoAssign();
+    }
+    bestFailed = stillFailed;
+
     bestPlaced.forEach(e => entries().push(e));
     scheduleSave("timetable");
     recomputeConflicts();
@@ -419,8 +548,10 @@ export function createAutoAssignAll(deps) {
       totalTarget: autoTargetSlots,
       pinnedCount: pinnedEntries.length,
       placedCount: bestPlaced.length,
+      forcedCount: forcedPlaced.length,
       failedCount: names.length,
       failedNames: names,
+      forcedNames: [...new Set(forcedPlaced.map(f => f.name))],
       durationMs: Date.now() - autoStartedAt,
       conflictTotal: conflictSummary.totalAffected,
       conflictCounts: conflictSummary.counts
@@ -429,16 +560,31 @@ export function createAutoAssignAll(deps) {
     addTimetableLog(
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `신규 배치 ${bestPlaced.length}개, 미배치 ${names.length}개, 충돌 ${conflictSummary.totalAffected}건 · 방식: ${bestStage.label}`
+      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 미배치 ${names.length}개, 충돌 ${conflictSummary.totalAffected}건 · 방식: ${bestStage.label}`
     );
     renderAll();
 
-    const stageNote = bestStage.name === "strict" ? "" : `\n적용 방식: ${bestStage.label}`;
+    const stageNote = bestStage.name === "strict" ? "" : `
+적용 방식: ${bestStage.label}`;
+    const forcedNote = forcedPlaced.length
+      ? `
+⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`
+      : "";
     if (!names.length) {
-      alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!${stageNote}\n\n자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
+      alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!${stageNote}${forcedNote}
+
+자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
     } else {
-      alert(`✅ ${bestPlaced.length}개 배치 완료\n⚠️ 미배치 ${names.length}개:\n${names.slice(0,12).join("\n")}${names.length>12?"\n...":""}` +
-        `\n\n💡 실제 운영 가능한 시간표라면, 고정된 수업·수업 불가 시간·동일 교사 중복 여부를 먼저 확인해 주세요.${stageNote}\n\n자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
+      alert(`✅ ${bestPlaced.length}개 배치 완료${forcedNote}
+⚠️ 그래도 미배치 ${names.length}개:
+${names.slice(0,12).join("
+")}${names.length>12?"
+...":""}` +
+        `
+
+💡 남은 카드는 고정 채플/창체 보호 슬롯 또는 동일 카드 동일 시간 중복 때문에 배치할 수 없었습니다.${stageNote}
+
+자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
     }
     } catch (err) {
       console.error("Auto assign failed:", err);
