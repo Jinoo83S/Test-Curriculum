@@ -437,6 +437,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-topbar .tt-mode-btn.mode-active{background:#fef3c7;color:#92400e;border-color:#fde68a}
 .tt-topbar .tt-mode-btn.mode-online-active{background:#dcfce7;color:#166534;border-color:#86efac}
 
+
+/* ── Responsive timetable topbar ───────────────────────── */
+.tt-topbar{
+  height:auto!important;
+  min-height:44px!important;
+  flex-wrap:wrap!important;
+  align-items:center!important;
+  gap:6px 10px!important;
+  padding:6px 14px!important;
+}
+.tt-topbar h1,.tt-back{flex:0 0 auto}
+.tt-topbar-right{
+  min-width:0!important;
+  flex:1 1 auto!important;
+  flex-wrap:wrap!important;
+  justify-content:flex-end!important;
+  gap:6px!important;
+}
+.tt-topbar-right > *{flex:0 0 auto}
+.tt-topbar button,.tt-topbar .tt-mode-btn{white-space:nowrap!important;writing-mode:horizontal-tb!important;text-orientation:mixed!important}
+.tt-local-dev-menu,
+.local-dev-menu{position:relative;display:inline-flex;align-items:center;flex:0 0 auto}
+.tt-local-dev-menu>summary,
+.local-dev-menu>summary{list-style:none;cursor:pointer;user-select:none;font-weight:900;font-size:11px;line-height:1.1;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;white-space:nowrap}
+.tt-local-dev-menu>summary::-webkit-details-marker,.local-dev-menu>summary::-webkit-details-marker{display:none}
+.tt-local-dev-menu>summary::after,.local-dev-menu>summary::after{content:" ▾";font-size:10px}
+.tt-local-dev-menu[open]>summary::after,.local-dev-menu[open]>summary::after{content:" ▴"}
+.local-dev-menu-panel{position:absolute;right:0;top:calc(100% + 6px);z-index:1000;display:flex;flex-direction:column;gap:6px;min-width:150px;padding:8px;border-radius:10px;background:white;color:#111827;border:1px solid #dbe2ef;box-shadow:0 12px 28px rgba(15,23,42,.22)}
+.local-dev-menu-panel button{width:100%;justify-content:center;white-space:nowrap;color:#111827!important;background:#e5e7eb!important;border-color:#d1d5db!important}
+@media (max-width:960px){
+  .tt-topbar-right{flex-basis:100%;justify-content:flex-start!important;padding-top:3px;border-top:1px solid rgba(255,255,255,.10)}
+}
+@media (max-width:640px){
+  .tt-topbar-right{overflow-x:auto;flex-wrap:nowrap!important;padding-bottom:2px}
+}
+
 </style>
 
 <style>

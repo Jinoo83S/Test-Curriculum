@@ -166,22 +166,29 @@ function setupTtSaveQuotaControls() {
   if (!parent || ttSaveStatusEl) return;
 
   if (LOCAL_DEV_MODE) {
-    const badge = document.createElement("span");
-    badge.textContent = "LOCAL DEV";
-    badge.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
-    badge.style.cssText = "font-weight:900;font-size:12px;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
+    const devMenu = document.createElement("details");
+    devMenu.className = "tt-local-dev-menu local-dev-menu";
+    devMenu.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
+
+    const summary = document.createElement("summary");
+    summary.textContent = "LOCAL DEV";
+    devMenu.appendChild(summary);
+
+    const panel = document.createElement("div");
+    panel.className = "local-dev-menu-panel";
 
     const exportBtn = document.createElement("button");
     exportBtn.type = "button";
-    exportBtn.className = "tt-save-mode-btn";
+    exportBtn.className = "tt-save-mode-btn local-dev-action";
     exportBtn.textContent = "로컬 내보내기";
     exportBtn.addEventListener("click", () => {
       downloadJsonFile(`his-local-dev-${new Date().toISOString().slice(0,10)}.json`, exportLocalSnapshot());
+      devMenu.open = false;
     });
 
     const importBtn = document.createElement("button");
     importBtn.type = "button";
-    importBtn.className = "tt-save-mode-btn";
+    importBtn.className = "tt-save-mode-btn local-dev-action";
     importBtn.textContent = "로컬 가져오기";
     importBtn.addEventListener("click", async () => {
       try {
@@ -189,6 +196,7 @@ function setupTtSaveQuotaControls() {
         if (!json) return;
         importLocalSnapshot(json);
         renderAll();
+        devMenu.open = false;
         alert("로컬 데이터를 가져왔습니다.");
       } catch (e) {
         console.error(e);
@@ -198,20 +206,18 @@ function setupTtSaveQuotaControls() {
 
     const resetLocalBtn = document.createElement("button");
     resetLocalBtn.type = "button";
-    resetLocalBtn.className = "tt-save-mode-btn";
+    resetLocalBtn.className = "tt-save-mode-btn local-dev-action";
     resetLocalBtn.textContent = "로컬 초기화";
     resetLocalBtn.addEventListener("click", () => {
       if (!confirm("브라우저에 저장된 로컬 개발 데이터를 초기화할까요? Firebase 데이터에는 영향이 없습니다.")) return;
       resetLocalSnapshot();
       renderAll();
+      devMenu.open = false;
     });
 
-    /* 온라인 모드 전환은 HTML 상단의 [온라인 모드] 버튼이 담당합니다. */
-
-    parent.insertBefore(badge, parent.firstChild);
-    parent.insertBefore(exportBtn, badge.nextSibling);
-    parent.insertBefore(importBtn, exportBtn.nextSibling);
-    parent.insertBefore(resetLocalBtn, importBtn.nextSibling);
+    panel.append(exportBtn, importBtn, resetLocalBtn);
+    devMenu.appendChild(panel);
+    parent.insertBefore(devMenu, parent.firstChild);
   }
 
   ttSaveStatusEl = document.createElement("span");

@@ -807,24 +807,29 @@ function setupSaveQuotaControls() {
   if (!parent || saveModeBtn) return;
 
   if (LOCAL_DEV_MODE) {
-    const badge = document.createElement("span");
-    badge.textContent = "LOCAL DEV";
-    badge.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
-    badge.style.cssText = "font-weight:900;font-size:12px;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
+    const devMenu = document.createElement("details");
+    devMenu.className = "local-dev-menu";
+    devMenu.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
+
+    const summary = document.createElement("summary");
+    summary.textContent = "LOCAL DEV";
+    devMenu.appendChild(summary);
+
+    const panel = document.createElement("div");
+    panel.className = "local-dev-menu-panel";
 
     const exportBtn = document.createElement("button");
     exportBtn.type = "button";
-    exportBtn.className = "secondary-btn";
-    exportBtn.style.padding = "6px 10px";
+    exportBtn.className = "secondary-btn local-dev-action";
     exportBtn.textContent = "로컬 내보내기";
     exportBtn.addEventListener("click", () => {
       downloadJsonFile(`his-local-dev-${new Date().toISOString().slice(0,10)}.json`, exportLocalSnapshot());
+      devMenu.open = false;
     });
 
     const importBtn = document.createElement("button");
     importBtn.type = "button";
-    importBtn.className = "secondary-btn";
-    importBtn.style.padding = "6px 10px";
+    importBtn.className = "secondary-btn local-dev-action";
     importBtn.textContent = "로컬 가져오기";
     importBtn.addEventListener("click", async () => {
       try {
@@ -833,6 +838,7 @@ function setupSaveQuotaControls() {
         importLocalSnapshot(json);
         invalidateTabs();
         render("all");
+        devMenu.open = false;
         alert("로컬 데이터를 가져왔습니다.");
       } catch (e) {
         console.error(e);
@@ -842,21 +848,19 @@ function setupSaveQuotaControls() {
 
     const resetLocalBtn = document.createElement("button");
     resetLocalBtn.type = "button";
-    resetLocalBtn.className = "secondary-btn";
-    resetLocalBtn.style.padding = "6px 10px";
+    resetLocalBtn.className = "secondary-btn local-dev-action";
     resetLocalBtn.textContent = "로컬 초기화";
     resetLocalBtn.addEventListener("click", () => {
       if (!confirm("브라우저에 저장된 로컬 개발 데이터를 초기화할까요? Firebase 데이터에는 영향이 없습니다.")) return;
       resetLocalSnapshot();
       invalidateTabs();
       render("all");
+      devMenu.open = false;
     });
 
-    /* 온라인 모드 전환은 HTML 상단의 [온라인 모드] 버튼이 담당합니다. */
-    saveStatusEl.insertAdjacentElement("afterend", resetLocalBtn);
-    saveStatusEl.insertAdjacentElement("afterend", importBtn);
-    saveStatusEl.insertAdjacentElement("afterend", exportBtn);
-    saveStatusEl.insertAdjacentElement("afterend", badge);
+    panel.append(exportBtn, importBtn, resetLocalBtn);
+    devMenu.appendChild(panel);
+    saveStatusEl.insertAdjacentElement("afterend", devMenu);
   }
 
   saveModeBtn = document.createElement("button");
