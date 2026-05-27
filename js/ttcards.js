@@ -747,19 +747,18 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     const cards = getTtCards().filter(c => gmLevelFilter(c));
     if (!cards.length) { alert("시간표 카드가 없습니다.\n먼저 '시간표 카드' 탭에서 카드를 생성하세요."); return; }
 
-    // Group by: curriculum track + 교과군 + gradeKey  (more precise than track+grade only)
+    // Group by: 학년 + 구분(row.track).
+    // 사용자가 원하는 자동 생성 기준은 "학년-구분"이며, 교과군(row.group)은 그룹 분리 조건에 넣지 않습니다.
     const trackMap = {};
     GRADE_KEYS.forEach(gradeKey => {
       const rows = appState.curriculum?.gradeBoards?.[gradeKey] || [];
       rows.forEach(row => {
         if (row.category !== "교과") return;
-        if (!row.track || row.track === "공통") return;
-        const subGroup = row.group || "기타";
-        // 같은 학년·같은 구분 안에서도 교과군이 다르면 별도 동시배정 그룹이어야 합니다.
-        // 기존에는 row.track + gradeKey만 사용해 국어/수학/사회 카드가 한 그룹으로 섞일 수 있었습니다.
-        const groupKey = `${row.track}::${subGroup}::${gradeKey}`;
+        const trackName = clean(row.track);
+        if (!trackName || trackName === "공통") return;
+        const groupKey = `${gradeKey}::${trackName}`;
         if (!trackMap[groupKey]) trackMap[groupKey] = {
-          name: `${gradeDisplay(gradeKey)}-${subGroup !== "기타" ? subGroup : row.track}`, cardIds: new Set()
+          name: `${gradeDisplay(gradeKey)}-${trackName}`, cardIds: new Set()
         };
         [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
           cards.filter(c => c.templateId === tplId && c.gradeKey === gradeKey)
@@ -846,6 +845,25 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   const rightHdr  = document.createElement("div"); rightHdr.className = "group-right-col-hdr";
   rightHdr.appendChild(Object.assign(document.createElement("span"), { className:"group-pool-main-label", textContent:"그룹 목록" }));
 
+  const addGroupBtn = makeBtn("+ 그룹 추가", "group-add-btn", () => {
+    if (!canEdit()) return;
+    const existingNames = new Set(grps().map(g => clean(g.name)));
+    let n = grps().length + 1;
+    let name = `그룹 ${n}`;
+    while (existingNames.has(name)) name = `그룹 ${++n}`;
+    ensureTtCardGroups().push(normalizeTemplateGroup({
+      id: uid("grp"),
+      name,
+      isConcurrent: true,
+      groupType: "concurrent",
+      units: [],
+      poolCardIds: []
+    }));
+    scheduleSave("timetable");
+    onStructureChange();
+  });
+  addGroupBtn.disabled = !canEdit();
+
   const filteredGroups = grps().filter(g => {
     const unitCards = (g.units||[]).flatMap(u => (u.ttcardIds||[]).map(id => getTtCardById(id)).filter(Boolean));
     const poolCards = (g.poolCardIds||[]).map(id => getTtCardById(id)).filter(Boolean);
@@ -861,7 +879,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     grps().forEach(g => setGroupCollapsed(g.id, collapse));
     onStructureChange();
   });
-  togWrap.append(togBtn); rightHdr.style.display = "flex"; rightHdr.style.alignItems = "center";
+  togWrap.append(addGroupBtn, togBtn); rightHdr.style.display = "flex"; rightHdr.style.alignItems = "center";
   rightHdr.appendChild(togWrap);
 
   const rightCol = document.createElement("div"); rightCol.className = "group-right-col";

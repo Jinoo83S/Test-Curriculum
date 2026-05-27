@@ -5157,3 +5157,16 @@ a.topbar-nav-link {
     height: calc(100vh - 124px) !important;
   }
 }
+
+/* Group manager add button */
+.group-add-btn {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.group-add-btn:hover { background: #dbeafe; }
+.group-add-btn:disabled { opacity: .45; cursor: default; }
