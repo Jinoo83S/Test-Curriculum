@@ -17,7 +17,7 @@ import {
  * instead of grade-only overlap. This prevents 7A and 7B from being marked
  * as a student conflict simply because both belong to 7th grade.
  */
-export function detectConflicts(entries, templateGroups = [], templates = [], getAudience = null) {
+export function detectConflicts(entries, templateGroups = [], templates = [], getAudience = null, options = {}) {
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
@@ -78,6 +78,12 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     return out;
   };
   const audiencesOverlap = (a, b, entryA, entryB) => occAudiencesConflict(a, b);
+  const normalizeGradeSet = set => new Set([...(set || [])].map(normalizeGradeForClassKey).filter(Boolean));
+  const protectedGradesFor = entry => {
+    if (typeof options.getProtectedGrades !== "function") return new Set();
+    try { return normalizeGradeSet(options.getProtectedGrades(entry)); }
+    catch (err) { console.warn("Protected grade resolver failed:", err); return new Set(); }
+  };
 
   const bySlot = new Map();
   entries.forEach(e => {
@@ -118,7 +124,15 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 
         // Student conflict: compare actual audience/class overlap, not grade-only overlap.
         // 7A and 7B in the same period are valid unless they share students or the same class audience.
-        if (audiencesOverlap(audienceFor(a), audienceFor(b), a, b)) {
+        const audienceA = audienceFor(a);
+        const audienceB = audienceFor(b);
+        const protectedA = protectedGradesFor(a);
+        const protectedB = protectedGradesFor(b);
+        const gradeOverlapWithProtected =
+          (protectedA.size && intersects(protectedA, audienceGrades(audienceB, b))) ||
+          (protectedB.size && intersects(protectedB, audienceGrades(audienceA, a)));
+
+        if (gradeOverlapWithProtected || audiencesOverlap(audienceA, audienceB, a, b)) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }

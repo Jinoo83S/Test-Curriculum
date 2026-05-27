@@ -656,7 +656,8 @@ function recomputeConflicts() {
     entries(),
     appState.timetable.ttcardGroups,
     [],
-    audienceForPlacement
+    audienceForPlacement,
+    { getProtectedGrades: protectedGradesForEntry }
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
 }
@@ -747,15 +748,40 @@ function extractGradeKeysFromProtectionText(text = "") {
   return found;
 }
 
+function canonicalGradeKey(value) {
+  const raw = clean(value);
+  if (!raw) return "";
+  return GRADE_KEYS.find(g => gradeDisplay(g) === gradeDisplay(raw)) || raw;
+}
+
+function audienceCanonicalGradeSet(audience = {}) {
+  const out = new Set();
+  audienceGradeSet(audience).forEach(g => {
+    const key = canonicalGradeKey(g);
+    if (key) out.add(key);
+  });
+  return out;
+}
+
 function protectedGradesForEntry(entry = {}) {
+  const text = getEntryProtectionText(entry);
+  if (!isProtectedWholeGradeLabel(text)) return new Set();
+
   const grades = new Set();
-  audienceGradeSet(audienceForPlacement(entry)).forEach(g => {
-    const key = GRADE_KEYS.find(x => gradeDisplay(x) === gradeDisplay(g)) || g;
+  audienceCanonicalGradeSet(audienceForPlacement(entry)).forEach(g => grades.add(g));
+  entryGradeKeys(entry).forEach(g => {
+    const key = canonicalGradeKey(g);
     if (key) grades.add(key);
   });
-  entryGradeKeys(entry).forEach(g => grades.add(g));
-  extractGradeKeysFromProtectionText(getEntryProtectionText(entry)).forEach(g => grades.add(g));
+  extractGradeKeysFromProtectionText(text).forEach(g => {
+    const key = canonicalGradeKey(g);
+    if (key) grades.add(key);
+  });
   return grades;
+}
+
+function isProtectedBlockingEntry(entry = {}) {
+  return protectedGradesForEntry(entry).size > 0;
 }
 
 function protectedSlotConflict(candidate = {}, day = candidate.day, period = candidate.period, options = {}) {
@@ -764,18 +790,27 @@ function protectedSlotConflict(candidate = {}, day = candidate.day, period = can
   const slotEntries = existing.filter(e => e && e.day === day && e.period === period && !excludeIds.has(e.id));
   if (!slotEntries.length) return null;
 
-  const candidateAudience = audienceForPlacement({ ...candidate, day, period });
-  const candidateGrades = audienceGradeSet(candidateAudience);
+  const candidateWithSlot = { ...candidate, day, period };
+  const candidateAudience = audienceForPlacement(candidateWithSlot);
+  const candidateGrades = audienceCanonicalGradeSet(candidateAudience);
+  const candidateProtectedGrades = protectedGradesForEntry(candidateWithSlot);
 
   for (const fixed of slotEntries) {
-    if (!isProtectedPinnedEntry(fixed)) continue;
+    const fixedProtectedGrades = protectedGradesForEntry(fixed);
+    if (!candidateProtectedGrades.size && !fixedProtectedGrades.size) continue;
+
     const fixedAudience = audienceForPlacement(fixed);
+    const fixedGrades = audienceCanonicalGradeSet(fixedAudience);
+
+    // 채플/창체/전체학년 수업은 학생명단 키가 불완전해도 학년·반 범위가 겹치면 막습니다.
     if (audiencesConflict(candidateAudience, fixedAudience)) {
       return { entry: fixed, reason: "audience" };
     }
-    const fixedGrades = protectedGradesForEntry(fixed);
-    if (setsIntersect(candidateGrades, fixedGrades)) {
-      return { entry: fixed, reason: "grade" };
+    if (fixedProtectedGrades.size && setsIntersect(candidateGrades, fixedProtectedGrades)) {
+      return { entry: fixed, reason: "protected-fixed-grade" };
+    }
+    if (candidateProtectedGrades.size && setsIntersect(candidateProtectedGrades, fixedGrades)) {
+      return { entry: fixed, reason: "protected-candidate-grade" };
     }
   }
   return null;
@@ -810,7 +845,8 @@ function getManualPlacementBlock(candidates, options = {}) {
       [...baseEntries, candidate],
       appState.timetable.ttcardGroups,
       [],
-      audienceForPlacement
+      audienceForPlacement,
+      { getProtectedGrades: protectedGradesForEntry }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
       .filter(type => MANUAL_BLOCKING_CONFLICTS.has(type));
