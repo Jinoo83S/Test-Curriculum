@@ -7,7 +7,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot } from "./state.js";
-import { LOCAL_DEV_MODE, disableLocalDevMode } from "./local-dev.js";
+import { LOCAL_DEV_MODE } from "./local-dev.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
@@ -204,22 +204,12 @@ function setupTtSaveQuotaControls() {
       renderAll();
     });
 
-    const exitLocalBtn = document.createElement("button");
-    exitLocalBtn.type = "button";
-    exitLocalBtn.className = "tt-save-mode-btn";
-    exitLocalBtn.textContent = "로컬 종료";
-    exitLocalBtn.addEventListener("click", () => {
-      disableLocalDevMode();
-      const url = new URL(location.href);
-      url.searchParams.set("local", "0");
-      location.href = url.toString();
-    });
+    /* 온라인 모드 전환은 HTML 상단의 [온라인 모드] 버튼이 담당합니다. */
 
     parent.insertBefore(badge, parent.firstChild);
     parent.insertBefore(exportBtn, badge.nextSibling);
     parent.insertBefore(importBtn, exportBtn.nextSibling);
     parent.insertBefore(resetLocalBtn, importBtn.nextSibling);
-    parent.insertBefore(exitLocalBtn, resetLocalBtn.nextSibling);
   }
 
   ttSaveStatusEl = document.createElement("span");

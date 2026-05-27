@@ -59,6 +59,40 @@ button {
   border-radius: 20px;
 }
 
+/* ── Local/Online mode switch ───────────────────────── */
+.top-mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid rgba(255,255,255,0.22);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.10);
+}
+.top-mode-btn {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  color: #dbeafe;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.top-mode-btn:hover {
+  background: rgba(255,255,255,0.28);
+  color: #ffffff;
+}
+.top-mode-btn.mode-active {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+  box-shadow: 0 0 0 1px rgba(253,230,138,0.25) inset;
+}
+.top-mode-btn.mode-online-active {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
 /* ── Page Layout ─────────────────────────────────────── */
 .page {
   display: grid;

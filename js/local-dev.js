@@ -71,3 +71,54 @@ export function clearLocalStateStore() {
   try { localStorage.removeItem(LOCAL_STATE_KEY); return true; }
   catch (_) { return false; }
 }
+
+
+// ── Top Local/Online mode switch buttons ─────────────────────────
+function switchModeToLocal() {
+  try { localStorage.setItem(MODE_KEY, "on"); } catch (_) {}
+  const url = new URL(window.location.href);
+  url.searchParams.set("local", "1");
+  window.location.href = url.toString();
+}
+
+function switchModeToOnline() {
+  try { localStorage.removeItem(MODE_KEY); } catch (_) {}
+  const url = new URL(window.location.href);
+  url.searchParams.set("local", "0");
+  window.location.href = url.toString();
+}
+
+function setupTopModeSwitchButtons() {
+  const localBtn = document.getElementById("topLocalModeBtn");
+  const onlineBtn = document.getElementById("topOnlineModeBtn");
+  if (!localBtn || !onlineBtn) return;
+
+  localBtn.classList.toggle("mode-active", LOCAL_DEV_MODE);
+  localBtn.classList.toggle("mode-online-active", false);
+  localBtn.setAttribute("aria-pressed", LOCAL_DEV_MODE ? "true" : "false");
+  localBtn.title = LOCAL_DEV_MODE
+    ? "현재 로컬 모드입니다. Firebase를 읽거나 쓰지 않습니다."
+    : "로컬 모드로 전환합니다. Firebase quota를 사용하지 않습니다.";
+
+  onlineBtn.classList.toggle("mode-active", false);
+  onlineBtn.classList.toggle("mode-online-active", !LOCAL_DEV_MODE);
+  onlineBtn.setAttribute("aria-pressed", !LOCAL_DEV_MODE ? "true" : "false");
+  onlineBtn.title = LOCAL_DEV_MODE
+    ? "온라인 모드로 전환합니다. 이후 Firebase를 사용합니다."
+    : "현재 온라인 모드입니다. Firebase를 사용합니다.";
+
+  localBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (!LOCAL_DEV_MODE) switchModeToLocal();
+  });
+  onlineBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (LOCAL_DEV_MODE) switchModeToOnline();
+  });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", setupTopModeSwitchButtons, { once: true });
+} else {
+  setupTopModeSwitchButtons();
+}

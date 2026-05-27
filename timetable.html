@@ -430,6 +430,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .tt-entry-card { min-height: 19px !important; }
 }
 
+/* ── Local/Online mode switch ───────────────────────── */
+.tt-mode-switch{display:inline-flex;align-items:center;gap:2px;padding:2px;border:1px solid rgba(255,255,255,.22);border-radius:999px;background:rgba(255,255,255,.10)}
+.tt-topbar .tt-mode-btn{padding:4px 9px;border-radius:999px;background:rgba(255,255,255,.16);color:#dbeafe;border:1px solid transparent;white-space:nowrap;font-size:11px;font-weight:800}
+.tt-topbar .tt-mode-btn:hover{background:rgba(255,255,255,.28);color:#fff}
+.tt-topbar .tt-mode-btn.mode-active{background:#fef3c7;color:#92400e;border-color:#fde68a}
+.tt-topbar .tt-mode-btn.mode-online-active{background:#dcfce7;color:#166534;border-color:#86efac}
+
 </style>
 
 <style>
@@ -819,6 +826,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <a href="index.html" class="tt-back">← HIS</a>
   <h1>시간표 편집</h1>
   <div class="tt-topbar-right">
+    <div class="tt-mode-switch" aria-label="개발 모드 전환">
+      <button id="topLocalModeBtn" class="tt-mode-btn" type="button" onclick="(function(){try{localStorage.setItem('his_local_dev_mode_v1','on')}catch(e){} var u=new URL(location.href); u.searchParams.set('local','1'); location.href=u.toString();})()">로컬 모드</button>
+      <button id="topOnlineModeBtn" class="tt-mode-btn" type="button" onclick="(function(){try{localStorage.removeItem('his_local_dev_mode_v1')}catch(e){} var u=new URL(location.href); u.searchParams.set('local','0'); location.href=u.toString();})()">온라인 모드</button>
+    </div>
     <span class="tt-auth-status" id="ttAuthStatus">로그인 확인 중…</span>
     <button id="ttLoginBtn" class="hidden">Google 로그인</button>
     <button id="ttLogoutBtn" class="hidden">로그아웃</button>

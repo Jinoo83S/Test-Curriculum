@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus,
          isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot } from "./state.js";
-import { LOCAL_DEV_MODE, disableLocalDevMode } from "./local-dev.js";
+import { LOCAL_DEV_MODE } from "./local-dev.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
@@ -852,19 +852,7 @@ function setupSaveQuotaControls() {
       render("all");
     });
 
-    const exitLocalBtn = document.createElement("button");
-    exitLocalBtn.type = "button";
-    exitLocalBtn.className = "secondary-btn";
-    exitLocalBtn.style.padding = "6px 10px";
-    exitLocalBtn.textContent = "로컬 종료";
-    exitLocalBtn.addEventListener("click", () => {
-      disableLocalDevMode();
-      const url = new URL(location.href);
-      url.searchParams.set("local", "0");
-      location.href = url.toString();
-    });
-
-    saveStatusEl.insertAdjacentElement("afterend", exitLocalBtn);
+    /* 온라인 모드 전환은 HTML 상단의 [온라인 모드] 버튼이 담당합니다. */
     saveStatusEl.insertAdjacentElement("afterend", resetLocalBtn);
     saveStatusEl.insertAdjacentElement("afterend", importBtn);
     saveStatusEl.insertAdjacentElement("afterend", exportBtn);
