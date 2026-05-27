@@ -18,7 +18,9 @@ import {
   getEntryOccupancy,
   setsIntersect as occSetsIntersect,
   audiencesConflict as occAudiencesConflict,
-  audienceGradeSet as occAudienceGradeSet
+  audienceGradeSet as occAudienceGradeSet,
+  conflictDetailBetween as occConflictDetailBetween,
+  formatClassLabelFromKey as occFormatClassLabelFromKey
 } from "./timetable-occupancy.js";
 import {
   getSubjectsForGrade, getCreditsForTemplate, getCategoryColor, getAssignedCount,
@@ -372,6 +374,10 @@ function formatClassLabel(gradeKey, sectionText) {
   return `${grade}${section}`;
 }
 
+function localUniqueStrings(list = []) {
+  return [...new Set((list || []).map(clean).filter(Boolean))];
+}
+
 function formatClassLabelList(gradeKey, labels = []) {
   const rawLabels = (Array.isArray(labels) ? labels : [labels])
     .flatMap(label => String(label ?? "")
@@ -379,13 +385,47 @@ function formatClassLabelList(gradeKey, labels = []) {
       .map(x => x.trim())
       .filter(Boolean));
   const normalized = rawLabels.length ? rawLabels : [""];
-  return uniqueStrings(normalized.map(label => formatClassLabel(gradeKey, label))).join(", ") || "-";
+  return localUniqueStrings(normalized.map(label => formatClassLabel(gradeKey, label))).join(", ") || "-";
 }
 
 function entrySharesTeacher(a, b) {
   const aTeachers = entryTeachers(a).filter(Boolean);
   const bTeachers = entryTeachers(b).filter(Boolean);
   return aTeachers.filter(t => bTeachers.includes(t));
+}
+
+function formatGradeSetForDetail(set = new Set()) {
+  return [...(set || new Set())].map(g => gradeDisplay(g)).filter(Boolean).join(", ");
+}
+
+function setIntersectionValues(a = new Set(), b = new Set()) {
+  const out = [];
+  for (const v of a || new Set()) if ((b || new Set()).has(v)) out.push(v);
+  return out;
+}
+
+function getStudentConflictDetail(entry, other) {
+  const audience = audienceForPlacement(entry);
+  const otherAudience = audienceForPlacement(other);
+  const detail = occConflictDetailBetween(audience, otherAudience);
+
+  const classLabels = localUniqueStrings((detail.classKeys || []).map(occFormatClassLabelFromKey).filter(Boolean));
+  if (classLabels.length) return `겹치는 학급: ${classLabels.join(", ")}`;
+
+  if (detail.studentKeys?.length) return `겹치는 학생: ${detail.studentKeys.length}명`;
+
+  const protectedA = protectedGradesForEntry(entry);
+  const protectedB = protectedGradesForEntry(other);
+  const otherGrades = audienceCanonicalGradeSet(otherAudience);
+  const thisGrades = audienceCanonicalGradeSet(audience);
+  const protectedReasons = [];
+  const byA = setIntersectionValues(protectedA, otherGrades);
+  const byB = setIntersectionValues(protectedB, thisGrades);
+  if (byA.length) protectedReasons.push(`${entryTitle(entry)} 전체학년 보호: ${formatGradeSetForDetail(new Set(byA))}`);
+  if (byB.length) protectedReasons.push(`${entryTitle(other)} 전체학년 보호: ${formatGradeSetForDetail(new Set(byB))}`);
+  if (protectedReasons.length) return protectedReasons.join(" / ");
+
+  return "학급·학생명단 겹침 없음 — 충돌 판정 데이터를 재확인하세요";
 }
 
 function getRelatedConflictEntries(entry, type) {
@@ -402,11 +442,10 @@ function getRelatedConflictEntries(entry, type) {
       .map(e => ({ entry: e, detail: getRoomDisplayName(entry.roomId) }));
   }
   if (type === "student") {
-    const audience = audienceForPlacement(entry);
     return sameSlot
-      .filter(e => audiencesConflict(audience, audienceForPlacement(e)))
       .filter(e => (conflictMap.get(e.id) || new Set()).has("student"))
-      .map(e => ({ entry: e, detail: getEntryClassSummary(e) }));
+      .map(e => ({ entry: e, detail: getStudentConflictDetail(entry, e) }))
+      .filter(x => x.detail);
   }
   if (type === "syncRequired" && entry.groupId) {
     return entries()

@@ -128,11 +128,20 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         const audienceB = audienceFor(b);
         const protectedA = protectedGradesFor(a);
         const protectedB = protectedGradesFor(b);
-        const gradeOverlapWithProtected =
-          (protectedA.size && intersects(protectedA, audienceGrades(audienceB, b))) ||
-          (protectedB.size && intersects(protectedB, audienceGrades(audienceA, a)));
+        // Student conflict is first determined by actual class/student audience overlap.
+        // Whole-grade lessons such as MS채플 should already carry all covered classKeys
+        // (7:A, 7:B, 8:A, 8:B...). Older grade-only protection was too broad and
+        // incorrectly marked same-grade A/B parallel classes as student conflicts.
+        const actualAudienceOverlap = audiencesOverlap(audienceA, audienceB, a, b);
 
-        if (gradeOverlapWithProtected || audiencesOverlap(audienceA, audienceB, a, b)) {
+        // Fallback only when a protected whole-grade entry has no concrete class audience.
+        // This preserves protection for very old entries while avoiding false positives
+        // when classKeys are available.
+        const protectedFallbackOverlap =
+          (protectedA.size && !audienceA.classKeys.size && intersects(protectedA, audienceGrades(audienceB, b))) ||
+          (protectedB.size && !audienceB.classKeys.size && intersects(protectedB, audienceGrades(audienceA, a)));
+
+        if (actualAudienceOverlap || protectedFallbackOverlap) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }
