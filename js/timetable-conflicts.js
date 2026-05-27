@@ -100,6 +100,13 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         // Same unit → intentionally co-located, skip all conflict checks
         if (sameUnit(a, b)) continue;
 
+        // Same concurrent group → intentionally same-time parallel/level-split lessons.
+        // Example: 한국어 일부 학생 + 국어 A 나머지 학생 must be together.
+        // Do not flag teacher/student/room conflicts inside the same concurrent group;
+        // incomplete same-time composition is handled separately by syncRequired.
+        const sameConcurrentGroup = sameGroup(a, b) && isConcurrent(a) && isConcurrent(b);
+        if (sameConcurrentGroup) continue;
+
         // Teacher conflict (always applies — teachers can't be in two places)
         if (a.teacherName && b.teacherName) {
           const ta = splitTeacherNames(a.teacherName);
@@ -118,8 +125,7 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
           }
         }
 
-        // Student conflict — skip if: same concurrent group, or cross-grade co-teaching
-        if (sameGroup(a, b) && isConcurrent(a) && isConcurrent(b)) continue; // parallel concurrent classes
+        // Student conflict — skip if cross-grade co-teaching in the same group
         if (sameGroup(a, b) && (isCrossGrade(a) || isCrossGrade(b))) continue; // cross-grade in same group
 
         // Student conflict: compare actual audience/class overlap, not grade-only overlap.

@@ -416,6 +416,13 @@ function getStudentConflictDetail(entry, other) {
   const otherAudience = audienceForPlacement(other);
   const detail = occConflictDetailBetween(audience, otherAudience);
 
+  // 세부 수강명단이 양쪽 모두 있는 경우에는 학급명보다 실제 학생 교집합을 먼저 보여줍니다.
+  // 같은 8A 안에서도 한국어/국어 A처럼 학생이 분리되어 있으면 충돌이 아니며,
+  // 실제로 겹칠 때만 학생 수가 표시됩니다.
+  if (audience.studentKeys?.size && otherAudience.studentKeys?.size && detail.studentKeys?.length) {
+    return `겹치는 학생: ${detail.studentKeys.length}명`;
+  }
+
   const classLabels = localUniqueStrings((detail.classKeys || []).map(occFormatClassLabelFromKey).filter(Boolean));
   if (classLabels.length) return `겹치는 학급: ${classLabels.join(", ")}`;
 

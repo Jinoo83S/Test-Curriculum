@@ -407,7 +407,15 @@ export function createTimetableDetailHandlers(ctx) {
     box.append(tLabel, tSel);
 
     const tplId = entry.templateId || entry.templateIds?.[0];
-    if (tplId) {
+    const groupDetailCards = entry.groupId ? getGroupDetailCards(entry) : [];
+    if (entry.groupId) {
+      const groupCredits = Math.max(1, ...groupDetailCards.map(item => Number(item.credits) || 0).filter(v => v > 0));
+      const assignedSlots = new Set(entries()
+        .filter(e => e.groupId === entry.groupId)
+        .map(e => `${e.day}:${e.period}`)
+      ).size;
+      makeRow("시수/배정", `${assignedSlots} / ${groupCredits} 차시`);
+    } else if (tplId) {
       const credits = (() => {
         const row = (appState.curriculum.gradeBoards[gradeKeys[0] || currentGrade()] || []).find(r => r.sem1TemplateId === tplId || r.sem2TemplateId === tplId);
         return row?.credits ?? "-";
@@ -419,8 +427,7 @@ export function createTimetableDetailHandlers(ctx) {
     if (entry.groupId) {
       const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
       makeRow("그룹", grp?.name || entry.groupId);
-      const detailCards = getGroupDetailCards(entry);
-      appendGroupDetailSection(box, detailCards, { title: entry.unitId ? "묶음수업 구성" : "그룹 구성 과목" });
+      appendGroupDetailSection(box, groupDetailCards, { title: entry.unitId ? "묶음수업 구성" : "그룹 구성 과목" });
     }
 
     const rLabel = document.createElement("label");

@@ -268,18 +268,28 @@ export function audienceGradeSet(occupancy = {}) {
 export function audiencesConflict(a = {}, b = {}) {
   const classA = a.classKeys || new Set();
   const classB = b.classKeys || new Set();
+  const studentsA = a.studentKeys || new Set();
+  const studentsB = b.studentKeys || new Set();
 
-  // Class/section audience is the primary source of truth for timetable cards.
-  // 9A and 9B must not be marked as a student conflict just because an older
-  // group/roster snapshot has overlapping studentKeys. Whole-grade lessons are
-  // represented by having all relevant classKeys, so class-key intersection still
-  // catches chapel/CA/SA overlaps correctly.
-  if (classA.size && classB.size) return setsIntersect(classA, classB);
+  // 1) 학급 정보가 양쪽 모두 있으면 먼저 학급 교집합을 확인합니다.
+  //    8A와 8B처럼 학급이 다르면, 과거 roster snapshot에 같은 학생키가 남아 있어도
+  //    학생 충돌로 보지 않습니다.
+  if (classA.size && classB.size) {
+    if (!setsIntersect(classA, classB)) return false;
 
-  // Fallback: when class/section data is missing, use actual student overlap.
-  if (a.studentKeys?.size && b.studentKeys?.size) return setsIntersect(a.studentKeys, b.studentKeys);
+    // 2) 같은 학급 안에서 세부 수강명단이 양쪽 모두 설정되어 있으면,
+    //    학급명이 아니라 실제 학생 ID 교집합으로만 충돌을 판단합니다.
+    //    예: 한국어 일부 학생 + 국어 A 나머지 학생 → 겹치는 학생이 없으면 충돌 없음.
+    if (studentsA.size && studentsB.size) return setsIntersect(studentsA, studentsB);
 
-  // Different grades should never conflict merely because both are A section.
+    // 3) 한쪽이라도 수강명단이 없으면 해당 학급 전체 수업으로 보고 보수적으로 충돌 처리합니다.
+    return true;
+  }
+
+  // 4) 학급 정보가 부족한 경우에만 학생명단 기준으로 판단합니다.
+  if (studentsA.size && studentsB.size) return setsIntersect(studentsA, studentsB);
+
+  // 5) 서로 다른 학년은 단순히 같은 A반이라는 이유로 충돌하지 않습니다.
   const gradesA = audienceGradeSet(a);
   const gradesB = audienceGradeSet(b);
   if (gradesA.size && gradesB.size && !setsIntersect(gradesA, gradesB)) return false;

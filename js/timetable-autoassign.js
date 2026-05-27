@@ -70,11 +70,17 @@ export function createAutoAssignAll(deps) {
     // 0. Pinned whole-grade activities such as chapel/창체 protect their slot first.
     if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) return false;
 
-    // 1. Teacher conflict (always applies — teacher cannot be in two places)
+    // 1. Teacher conflict. Same concurrent group is an intentional same-time bundle
+    //    (for example Korean + Korean A split by roster), so internal teacher/student/room
+    //    conflicts inside that group must not block placement.
     for (const e of slotEnts) {
+      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
+                      (sameGroupTpl(item.templateId, e.templateId));
+      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      if (conc) continue;
+
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
       if (teachers.some(t => et.includes(t))) {
-        // Exception: same unit (co-teaching) — but NOT just same group
         if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
         return false;
       }
@@ -128,11 +134,16 @@ export function createAutoAssignAll(deps) {
       const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
       if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
     }
-    // 6. Room conflict: if teacher has assigned/home room, apply; if room already occupied, skip
+    // 6. Room conflict: if teacher has assigned/home room, apply; same concurrent group can share intentionally.
     for (const teacher of teachers) {
       const roomId = getEffectiveAssignedRoomId(teacher);
       if (respectAssignedRoom && roomId) {
-        const roomBusy = existing.some(e => e.day===slot.day && e.period===slot.period && e.roomId===roomId);
+        const roomBusy = existing.some(e => {
+          if (!(e.day===slot.day && e.period===slot.period && e.roomId===roomId)) return false;
+          const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
+                          (sameGroupTpl(item.templateId, e.templateId));
+          return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
+        });
         if (roomBusy) return false;
       }
     }
@@ -230,13 +241,15 @@ export function createAutoAssignAll(deps) {
       const sameUnit = item.unitId && e.unitId && item.unitId === e.unitId;
       if (sameUnit) continue;
 
+      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) || sameGroupTpl(item.templateId, e.templateId);
+      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      if (conc) continue;
+
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
       if (teachers.some(t => et.includes(t))) score += 1000;
 
-      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) || sameGroupTpl(item.templateId, e.templateId);
-      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
       const conflict = audiencesConflict(itemAudience, audienceForPlacement(e));
-      if (conflict && !conc) score += 800;
+      if (conflict) score += 800;
       if (e.roomId) {
         const assignedRooms = teachers.map(getEffectiveAssignedRoomId).filter(Boolean);
         if (assignedRooms.includes(e.roomId)) score += 250;
