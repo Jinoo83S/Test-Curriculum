@@ -2,14 +2,19 @@
 // auth.js · Authentication
 // ================================================================
 import { auth, provider } from "./config.js";
+import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js";
 import {
   signInWithPopup, getRedirectResult,
   signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-export const canEdit = () => !!auth.currentUser;
+export const canEdit = () => LOCAL_DEV_MODE || !!auth.currentUser;
 
 export async function login() {
+  if (LOCAL_DEV_MODE) {
+    alert("로컬 개발 모드입니다. Firebase 로그인 없이 편집 가능합니다.");
+    return;
+  }
   if (location.protocol === "file:") {
     alert("파일을 직접 열면 로그인이 불가능합니다.\nlocalhost 또는 배포 주소에서 실행하세요.");
     return;
@@ -37,9 +42,17 @@ export async function logout() {
   catch (e) { console.error(e); alert("로그아웃에 실패했습니다."); }
 }
 
-export function onAuth(cb) { return onAuthStateChanged(auth, cb); }
+export function onAuth(cb) {
+  if (LOCAL_DEV_MODE) {
+    queueMicrotask(() => cb(LOCAL_DEV_USER));
+    return () => {};
+  }
+  return onAuthStateChanged(auth, cb);
+}
 
 // redirect 로그인 잔여 처리 (이전 버전 호환)
-getRedirectResult(auth)
-  .then(result => { if (result?.user) console.log("Redirect login 완료:", result.user.email); })
-  .catch(e => { if (e.code !== "auth/no-current-user") console.warn("Redirect result:", e.code); });
+if (!LOCAL_DEV_MODE) {
+  getRedirectResult(auth)
+    .then(result => { if (result?.user) console.log("Redirect login 완료:", result.user.email); })
+    .catch(e => { if (e.code !== "auth/no-current-user") console.warn("Redirect result:", e.code); });
+}

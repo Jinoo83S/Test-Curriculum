@@ -4,6 +4,7 @@
 import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS } from "./config.js";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
 import { canEdit } from "./auth.js";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -137,6 +138,20 @@ export async function saveNow(domain, options = {}) {
   if (!options.force && !domainChanged(domain, normalized)) {
     dirtyDomains.delete(domain);
     _onSaveStatus?.("skipped", { domain, dirtyDomains: getDirtyDomains() });
+    return;
+  }
+
+  if (LOCAL_DEV_MODE) {
+    try {
+      saveLocalDomain(domain, normalized);
+      markDomainSaved(domain, normalized);
+      dirtyDomains.delete(domain);
+      _onSaveStatus?.("saved", { domain, local: true, dirtyDomains: getDirtyDomains() });
+      console.info(`[Local dev save] ${domain} 저장 완료`);
+    } catch (e) {
+      console.error(`Local save failed [${domain}]:`, e);
+      _onSaveStatus?.("error", e);
+    }
     return;
   }
 
@@ -451,6 +466,85 @@ export const appState = {
   rooms:      normalizeRoomsDomain({}),
   timetable:  normalizeTimetableDomain({}),
 };
+
+// ================================================================
+// LOCAL DEVELOPMENT STORAGE
+// ================================================================
+function getLocalStoredDomain(domain) {
+  const store = readLocalStateStore();
+  const data = store?.data && typeof store.data === "object" ? store.data : store;
+  return data?.[domain] || {};
+}
+
+function saveLocalDomain(domain, normalized = normalizedForDomain(domain)) {
+  const store = readLocalStateStore();
+  const next = store?.data && typeof store.data === "object"
+    ? { ...store, data: { ...store.data } }
+    : { version: 1, data: { ...(store || {}) } };
+  next.version = next.version || 1;
+  next.updatedAt = new Date().toISOString();
+  next.data[domain] = normalized;
+  if (!writeLocalStateStore(next)) throw new Error("localStorage 저장 실패");
+}
+
+function subscribeLocalDomains(domainList = ALL_DOMAINS) {
+  const unique = [...new Set(domainList || [])].filter(d => DOMAIN_NORMALIZERS[d]);
+  setSubscribedDomains(unique);
+  unique.forEach(domain => {
+    const normalized = DOMAIN_NORMALIZERS[domain](getLocalStoredDomain(domain));
+    applyNormalizedDomain(domain, normalized);
+  });
+  if (!unique.length) queueMicrotask(() => fireUpdate("all"));
+}
+
+export function exportLocalSnapshot() {
+  const store = readLocalStateStore();
+  const storedData = store?.data && typeof store.data === "object" ? store.data : (store || {});
+  const data = {};
+  ALL_DOMAINS.forEach(domain => {
+    // 현재 화면에서 아직 로드하지 않은 도메인은 appState의 기본 빈값으로 덮지 않고,
+    // localStorage에 저장된 값을 그대로 보존해 내보냅니다.
+    data[domain] = initialLoad[domain]
+      ? normalizedForDomain(domain)
+      : DOMAIN_NORMALIZERS[domain](storedData[domain] || {});
+  });
+  return {
+    version: 1,
+    mode: "his-local-dev",
+    exportedAt: new Date().toISOString(),
+    data
+  };
+}
+
+export function importLocalSnapshot(payload) {
+  const source = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+  if (!source || typeof source !== "object") throw new Error("가져올 JSON 데이터가 올바르지 않습니다.");
+
+  const data = {};
+  ALL_DOMAINS.forEach(domain => {
+    data[domain] = DOMAIN_NORMALIZERS[domain](source[domain] || {});
+    appState[domain] = data[domain];
+    markDomainSaved(domain, data[domain]);
+    initialLoad[domain] = true;
+  });
+  writeLocalStateStore({ version: 1, mode: "his-local-dev", importedAt: new Date().toISOString(), data });
+  dirtyDomains.clear();
+  Object.keys(saveTimers).forEach(domain => { clearTimeout(saveTimers[domain]); delete saveTimers[domain]; });
+  fireUpdate("all");
+}
+
+export function resetLocalSnapshot() {
+  clearLocalStateStore();
+  ALL_DOMAINS.forEach(domain => {
+    const normalized = DOMAIN_NORMALIZERS[domain]({});
+    appState[domain] = normalized;
+    markDomainSaved(domain, normalized);
+    initialLoad[domain] = true;
+  });
+  dirtyDomains.clear();
+  Object.keys(saveTimers).forEach(domain => { clearTimeout(saveTimers[domain]); delete saveTimers[domain]; });
+  fireUpdate("all");
+}
 
 // Ensure consistency (re-normalize in place)
 export function ensureConsistency(domain) {
@@ -1001,6 +1095,11 @@ function subscribeTimetableSplit() {
  * Split domains use collection listeners; other domains keep one-document listeners.
  */
 export function subscribeDomains(domainList = ALL_DOMAINS) {
+  if (LOCAL_DEV_MODE) {
+    subscribeLocalDomains(domainList);
+    return;
+  }
+
   setSubscribedDomains(domainList); // 배치 렌더링 준비
   domainList.forEach(domain => {
     if (!DOMAIN_NORMALIZERS[domain]) {
@@ -1051,6 +1150,7 @@ export function unsubscribeAll() {
 // DATA MIGRATION: old boards/main → new separate docs
 // ================================================================
 export async function migrateFromLegacy() {
+  if (LOCAL_DEV_MODE) return;
   // ① localStorage 캐시 — 이미 완료된 경우 Firestore 왕복 없이 즉시 반환
   const MIGRATE_KEY = "his_migrated_v2";
   if (localStorage.getItem(MIGRATE_KEY) === "done") return;

@@ -4,7 +4,9 @@
 import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus,
-         isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow } from "./state.js";
+         isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot } from "./state.js";
+import { LOCAL_DEV_MODE, disableLocalDevMode } from "./local-dev.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
@@ -244,7 +246,7 @@ function waitForDomainsLoaded(domains, timeoutMs = 7000) {
 }
 
 function syncDomainSubscriptionsForView(view) {
-  if (!auth.currentUser) return;
+  if (!canEdit()) return;
   const desired = new Set(domainsForView(view));
   const toRemove = [...activeDomainSubscriptions].filter(d => !desired.has(d));
   const toAdd = [...desired].filter(d => !activeDomainSubscriptions.has(d));
@@ -261,7 +263,7 @@ function syncDomainSubscriptionsForView(view) {
 }
 
 async function ensureDomains(domains) {
-  if (!auth.currentUser) return false;
+  if (!canEdit()) return false;
   const desired = new Set([...activeDomainSubscriptions, ...(domains || [])]);
   const toAdd = [...desired].filter(d => !activeDomainSubscriptions.has(d));
   if (toAdd.length) {
@@ -765,9 +767,109 @@ function updateSaveControlButtons() {
   }
 }
 
+function downloadJsonFile(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function pickJsonFile() {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json,application/json";
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (!file) { resolve(null); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        try { resolve(JSON.parse(String(reader.result || "{}"))); }
+        catch (e) { reject(e); }
+      };
+      reader.onerror = () => reject(reader.error || new Error("파일을 읽지 못했습니다."));
+      reader.readAsText(file);
+    }, { once: true });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
+
 function setupSaveQuotaControls() {
   const parent = saveStatusEl?.parentElement;
   if (!parent || saveModeBtn) return;
+
+  if (LOCAL_DEV_MODE) {
+    const badge = document.createElement("span");
+    badge.textContent = "LOCAL DEV";
+    badge.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
+    badge.style.cssText = "font-weight:900;font-size:12px;padding:6px 10px;border-radius:999px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;";
+
+    const exportBtn = document.createElement("button");
+    exportBtn.type = "button";
+    exportBtn.className = "secondary-btn";
+    exportBtn.style.padding = "6px 10px";
+    exportBtn.textContent = "로컬 내보내기";
+    exportBtn.addEventListener("click", () => {
+      downloadJsonFile(`his-local-dev-${new Date().toISOString().slice(0,10)}.json`, exportLocalSnapshot());
+    });
+
+    const importBtn = document.createElement("button");
+    importBtn.type = "button";
+    importBtn.className = "secondary-btn";
+    importBtn.style.padding = "6px 10px";
+    importBtn.textContent = "로컬 가져오기";
+    importBtn.addEventListener("click", async () => {
+      try {
+        const json = await pickJsonFile();
+        if (!json) return;
+        importLocalSnapshot(json);
+        invalidateTabs();
+        render("all");
+        alert("로컬 데이터를 가져왔습니다.");
+      } catch (e) {
+        console.error(e);
+        alert("JSON 가져오기에 실패했습니다: " + (e?.message || e));
+      }
+    });
+
+    const resetLocalBtn = document.createElement("button");
+    resetLocalBtn.type = "button";
+    resetLocalBtn.className = "secondary-btn";
+    resetLocalBtn.style.padding = "6px 10px";
+    resetLocalBtn.textContent = "로컬 초기화";
+    resetLocalBtn.addEventListener("click", () => {
+      if (!confirm("브라우저에 저장된 로컬 개발 데이터를 초기화할까요? Firebase 데이터에는 영향이 없습니다.")) return;
+      resetLocalSnapshot();
+      invalidateTabs();
+      render("all");
+    });
+
+    const exitLocalBtn = document.createElement("button");
+    exitLocalBtn.type = "button";
+    exitLocalBtn.className = "secondary-btn";
+    exitLocalBtn.style.padding = "6px 10px";
+    exitLocalBtn.textContent = "로컬 종료";
+    exitLocalBtn.addEventListener("click", () => {
+      disableLocalDevMode();
+      const url = new URL(location.href);
+      url.searchParams.set("local", "0");
+      location.href = url.toString();
+    });
+
+    saveStatusEl.insertAdjacentElement("afterend", exitLocalBtn);
+    saveStatusEl.insertAdjacentElement("afterend", resetLocalBtn);
+    saveStatusEl.insertAdjacentElement("afterend", importBtn);
+    saveStatusEl.insertAdjacentElement("afterend", exportBtn);
+    saveStatusEl.insertAdjacentElement("afterend", badge);
+  }
 
   saveModeBtn = document.createElement("button");
   saveModeBtn.type = "button";
