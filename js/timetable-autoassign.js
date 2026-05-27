@@ -230,14 +230,49 @@ export function createAutoAssignAll(deps) {
     btn.textContent = isBusy ? "⏳ 자동 배치 중..." : "🎲 자동 배치";
   }
 
+  function getActiveGradesFromScheduleItems(standalone = [], groupBlocks = []) {
+    const gradeSet = new Set();
+    const addGrade = (g) => {
+      if (g && GRADE_KEYS.includes(g)) gradeSet.add(g);
+    };
+
+    standalone.forEach(item => {
+      addGrade(item.gradeKey);
+      (item.gradeKeys || []).forEach(addGrade);
+    });
+
+    groupBlocks.forEach(({ unitItems }) => {
+      (unitItems || []).forEach(unitItem => {
+        (unitItem.gradeKeys || []).forEach(addGrade);
+        (unitItem.ttcards || []).forEach(card => {
+          addGrade(card.gradeKey);
+          (card.gradeKeys || []).forEach(addGrade);
+        });
+      });
+    });
+
+    return GRADE_KEYS.filter(g => gradeSet.has(g));
+  }
+
   async function autoAssignAll() {
     if (!canEdit()) return;
     if (autoAssignRunning) { alert("자동 배치가 이미 진행 중입니다."); return; }
 
-    const activeGrades = GRADE_KEYS.filter(g => getSubjectsForGrade(g).length > 0);
-    if (!activeGrades.length) { alert("커리큘럼에 배치된 과목이 없습니다."); return; }
+    // 커리큘럼/템플릿 실시간 의존성을 끊었기 때문에, 자동배치 대상도
+    // appState.curriculum.gradeBoards가 아니라 시간표 사전작업에서 생성된
+    // timetable.ttcards / timetable.ttcardGroups 스냅샷 기준으로 판단합니다.
+    const { standalone, groupBlocks } = buildSchedulableItems();
+    const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
+    const autoItemCount = standalone.length + groupBlocks.reduce((sum, { unitItems }) => {
+      return sum + (unitItems || []).reduce((unitSum, item) => unitSum + Math.max(1, Number(item.credits) || 0), 0);
+    }, 0);
 
-    if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
+    if (!autoItemCount || !activeGrades.length) {
+      alert("시간표 사전작업에서 생성된 과목 카드가 없습니다.\n먼저 시간표 사전작업에서 카드를 생성하거나, 로컬 모드 전환 시 온라인 데이터를 복사해 주세요.");
+      return;
+    }
+
+    if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.map(gradeDisplay).join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
 
     autoAssignRunning = true;
     setAutoAssignBusy(true);
@@ -252,8 +287,6 @@ export function createAutoAssignAll(deps) {
     // Preserve pinned entries only
     const pinnedEntries = entries().filter(e => e.pinned);
     ttDomain().entries = [...pinnedEntries];
-
-    const { standalone, groupBlocks } = buildSchedulableItems();
     const pc = ttConfig().periodCount;
     const baseSlots = [];
     for (let day = 0; day < 5; day++) {
