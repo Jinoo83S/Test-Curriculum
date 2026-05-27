@@ -7,8 +7,9 @@ import { getRooms } from "./rooms.js";
 import { sectionLabel, gradeDisplay } from "./utils.js";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
-  getTtCardById, describeTtCard
+  describeTtCard
 } from "./timetable-data.js";
+import { getTtCardById } from "./ttcards.js";
 
 function removeExistingModal() {
   const existing = document.getElementById("tt-entry-detail-modal");

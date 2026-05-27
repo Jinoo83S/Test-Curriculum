@@ -154,9 +154,14 @@ export function getEntryOccupancy(entry = {}, ctx = {}) {
     else out.ttcardIds.add(id);
   });
 
-  // 3. Important fallback for old fixed group entries:
-  // If entry has groupId but old entry.ttcardIds is empty/incomplete, load current group cards.
-  if (entry.groupId) {
+  // 3. Legacy fallback for old group entries only.
+  // Important: a normal grouped card entry can have entry.groupId while still representing
+  // only one class/card (for example 9A and 9B cards in the same group).
+  // If we always merge every card in the group, each entry becomes 9A+9B and different
+  // sections are incorrectly marked as a student conflict.
+  // Therefore we load group-wide cards only when the entry has no concrete card/audience
+  // snapshot at all.
+  if (entry.groupId && !directCardIds.length && !out.classKeys.size && !out.studentKeys.size) {
     const group = getGroupById(entry.groupId);
     getGroupCardIds(group).forEach(id => {
       if (out.ttcardIds.has(id)) return;
@@ -205,7 +210,17 @@ export function audienceGradeSet(occupancy = {}) {
 }
 
 export function audiencesConflict(a = {}, b = {}) {
-  // Actual student overlap wins when both sides have student data.
+  const classA = a.classKeys || new Set();
+  const classB = b.classKeys || new Set();
+
+  // Class/section audience is the primary source of truth for timetable cards.
+  // 9A and 9B must not be marked as a student conflict just because an older
+  // group/roster snapshot has overlapping studentKeys. Whole-grade lessons are
+  // represented by having all relevant classKeys, so class-key intersection still
+  // catches chapel/CA/SA overlaps correctly.
+  if (classA.size && classB.size) return setsIntersect(classA, classB);
+
+  // Fallback: when class/section data is missing, use actual student overlap.
   if (a.studentKeys?.size && b.studentKeys?.size) return setsIntersect(a.studentKeys, b.studentKeys);
 
   // Different grades should never conflict merely because both are A section.
@@ -213,7 +228,7 @@ export function audiencesConflict(a = {}, b = {}) {
   const gradesB = audienceGradeSet(b);
   if (gradesA.size && gradesB.size && !setsIntersect(gradesA, gradesB)) return false;
 
-  return setsIntersect(a.classKeys || new Set(), b.classKeys || new Set());
+  return setsIntersect(classA, classB);
 }
 
 export function conflictDetailBetween(a = {}, b = {}) {
