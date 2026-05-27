@@ -422,16 +422,16 @@ export function renderTtCardsView(container) {
 
       const labelInp = document.createElement("input"); labelInp.value = card.label || card.subject || ""; labelInp.disabled = !canEdit();
       labelInp.addEventListener("change", e => updateTtCardField(card.id, "label", e.target.value));
-      const classInp = document.createElement("textarea"); classInp.value = (card.classLabels || []).join(", "); classInp.disabled = !canEdit();
-      classInp.rows = 2; classInp.title = "예: 9A, 9B"; classInp.addEventListener("change", e => {
+      const classInp = document.createElement("input"); classInp.type = "text"; classInp.value = (card.classLabels || []).join(", "); classInp.disabled = !canEdit();
+      classInp.title = "예: 9A, 9B"; classInp.addEventListener("change", e => {
         const labels = e.target.value.split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
         updateTtCardField(card.id, "classLabels", labels.join(","));
         const keys = labels.map(l => { const m = l.match(/^(\d{1,2})(.+)$/); return m ? `${m[1]}:${m[2].toUpperCase()}` : l; });
         updateTtCardField(card.id, "classKeys", keys.join(","));
         renderTtCardsView(container);
       });
-      const teacherInp = document.createElement("textarea"); teacherInp.value = card.teacherName || ""; teacherInp.disabled = !canEdit();
-      teacherInp.rows = 2; teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); renderTtCardsView(container); });
+      const teacherInp = document.createElement("input"); teacherInp.type = "text"; teacherInp.value = card.teacherName || ""; teacherInp.disabled = !canEdit();
+      teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); renderTtCardsView(container); });
       const creditInp = document.createElement("input"); creditInp.type="number"; creditInp.min="0"; creditInp.step="0.5"; creditInp.value = card.credits || 0; creditInp.disabled = !canEdit();
       creditInp.addEventListener("change", e => { updateTtCardField(card.id, "credits", e.target.value); renderTtCardsView(container); });
       const resetBtn = makeBtn("원본", "secondary-btn compact-btn", () => {
