@@ -322,13 +322,26 @@ function normalizeRostersDomain(raw = {}) {
 }
 
 // ── Rooms ──────────────────────────────────────────────────────────
+// 기본 교실 유형입니다. 실제 화면에서는 rooms.roomTypes에 저장된 값을 우선 사용합니다.
 export const ROOM_TYPES = ["일반", "특별", "체육관", "음악실", "과학실", "기타"];
+
+function normalizeRoomTypes(rawTypes = [], discoveredTypes = []) {
+  const merged = uniqueOrdered([
+    "일반",
+    ...ROOM_TYPES,
+    ...(Array.isArray(rawTypes) ? rawTypes : []),
+    ...(Array.isArray(discoveredTypes) ? discoveredTypes : []),
+  ].map(clean).filter(Boolean));
+  return merged.length ? merged : ["일반"];
+}
+
 export function normalizeRoom(r = {}) {
   return {
     id: r.id || uid("room"),
     name: clean(r.name) || "새 교실",
     capacity: Number.isFinite(parseInt(r.capacity)) ? parseInt(r.capacity) : 0,
-    type: ROOM_TYPES.includes(r.type) ? r.type : "일반",
+    // 사용자가 교실 유형을 직접 편집할 수 있으므로, 기존 ROOM_TYPES에 없는 값도 보존합니다.
+    type: clean(r.type) || "일반",
     grade: GRADE_KEYS.includes(r.grade) ? r.grade : "",
     // 담임/전용 교사 표시용. 시간표 교사 조건의 홈룸/본인 교실과 연동됩니다.
     teacherName: clean(r.teacherName),
@@ -336,7 +349,14 @@ export function normalizeRoom(r = {}) {
   };
 }
 function normalizeRoomsDomain(raw = {}) {
-  return { rooms: Array.isArray(raw.rooms) ? raw.rooms.map(normalizeRoom) : [] };
+  const rawRooms = Array.isArray(raw.rooms) ? raw.rooms : [];
+  const discoveredTypes = rawRooms.map(r => clean(r?.type)).filter(Boolean);
+  const roomTypes = normalizeRoomTypes(raw.roomTypes, discoveredTypes);
+  const rooms = rawRooms.map(normalizeRoom).map(room => ({
+    ...room,
+    type: roomTypes.includes(room.type) ? room.type : "일반"
+  }));
+  return { rooms, roomTypes };
 }
 
 // ── Timetable ──────────────────────────────────────────────────────
