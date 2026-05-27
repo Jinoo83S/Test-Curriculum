@@ -24,13 +24,31 @@ export function createTimetableSidebarHandlers(deps) {
     if (typeof setDragData === "function") setDragData(value);
   }
 
+  const TT_DRAG_MIME = "application/x-his-timetable-drag";
+
+  function beginSidebarDrag(event, card, data, effect = "copy") {
+    setDragging(data);
+    if (event?.dataTransfer) {
+      event.dataTransfer.effectAllowed = effect;
+      const payload = JSON.stringify(data);
+      event.dataTransfer.setData(TT_DRAG_MIME, payload);
+      event.dataTransfer.setData("text/plain", payload);
+    }
+    card.classList.add("tt-dragging");
+  }
+
+  function endSidebarDrag(card) {
+    setDragging(null);
+    card.classList.remove("tt-dragging");
+  }
+
   function renderSubjectPanel() {
     const panel = $("ttSubjectsContent");
     if (!panel) return;
     panel.innerHTML = "";
 
     const toolbar = document.createElement("div");
-    toolbar.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc";
+    toolbar.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;flex-wrap:wrap";
 
     const loadBtn = makeBtn("📥 카드 불러오기", "secondary-btn compact-btn", () => {
       renderSubjectPanel();
@@ -45,10 +63,10 @@ export function createTimetableSidebarHandlers(deps) {
     });
     refreshBtn.disabled = !canEdit();
 
-    toolbar.append(loadBtn, refreshBtn);
+    const ttcards = appState.timetable?.ttcards || [];
+    toolbar.append(loadBtn, refreshBtn, buildClassCountSummary(ttcards));
     panel.appendChild(toolbar);
 
-    const ttcards = appState.timetable?.ttcards || [];
     if (ttcards.length > 0) {
       renderSubjectPanelTtCards(panel, ttcards);
       return;
@@ -80,18 +98,17 @@ export function createTimetableSidebarHandlers(deps) {
       const gradeColor = getGradeColor(gradeKeys[0] || "7학년");
       const detailItems = grpCards.map(describeTtCard);
       const title = `[${grp.name}] ${detailItems.map(i => i.title).join(" · ")}`;
-      const card = buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, groupName: grp.name, detailItems });
+      const classLabels = compactClassLabelGroups(
+        detailItems.flatMap(item => classLabelsFromDetailItem(item))
+      );
+      const card = buildSidebarCard({ title, teachers, gradeKeys, classLabels, credits, assigned, isDone, gradeColor, groupName: grp.name, detailItems });
       card.dataset.groupId = grp.id;
       card.style.outline = "1.5px solid " + gradeColor.border;
       if (!isDone) {
-        card.addEventListener("dragstart", () => {
-          setDragging({ kind: "group", groupId: grp.id, ttcardIds: grpCards.map(c => c.id), gradeKey: gradeKeys[0] });
-          card.classList.add("tt-dragging");
+        card.addEventListener("dragstart", ev => {
+          beginSidebarDrag(ev, card, { kind: "group", groupId: grp.id, ttcardIds: grpCards.map(c => c.id), gradeKey: gradeKeys[0] });
         });
-        card.addEventListener("dragend", () => {
-          setDragging(null);
-          card.classList.remove("tt-dragging");
-        });
+        card.addEventListener("dragend", () => endSidebarDrag(card));
       }
       (isDone ? doneCards : availableCards).push(card);
     });
@@ -111,6 +128,7 @@ export function createTimetableSidebarHandlers(deps) {
         title: desc.title,
         teachers: getTeachersForTtCard(c),
         gradeKeys: [c.gradeKey],
+        classLabels: compactClassLabelGroups(getClassLabelsForTtCard(c)),
         credits,
         assigned,
         isDone,
@@ -121,14 +139,10 @@ export function createTimetableSidebarHandlers(deps) {
       card.dataset.templateId = c.templateId;
       card.dataset.ttcardId = c.id;
       if (!isDone) {
-        card.addEventListener("dragstart", () => {
-          setDragging({ kind: "subject", ttcardId: c.id, templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey });
-          card.classList.add("tt-dragging");
+        card.addEventListener("dragstart", ev => {
+          beginSidebarDrag(ev, card, { kind: "subject", ttcardId: c.id, templateId: c.templateId, sectionIdx: c.sectionIdx, gradeKey: c.gradeKey });
         });
-        card.addEventListener("dragend", () => {
-          setDragging(null);
-          card.classList.remove("tt-dragging");
-        });
+        card.addEventListener("dragend", () => endSidebarDrag(card));
       }
       (isDone ? doneCards : availableCards).push(card);
     });
@@ -161,6 +175,7 @@ export function createTimetableSidebarHandlers(deps) {
             title: getUnitDisplayTitleSafe(unit),
             teachers,
             gradeKeys,
+            classLabels: compactClassLabelGroups(gradeKeys.map(g => formatFullClassLabel(g, sectionLabel(0)))),
             credits,
             assigned,
             isDone,
@@ -168,14 +183,10 @@ export function createTimetableSidebarHandlers(deps) {
           });
           card.addEventListener("click", () => showEntryDetailByUnit(unit, group, gradeKeys));
           if (!isDone) {
-            card.addEventListener("dragstart", () => {
-              setDragging({ kind: "subject", templateId: unit.templateIds[0], unitId: unit.id, groupId: group.id, sectionIdx: 0, gradeKey: gradeKeys[0] || gradeKey });
-              card.classList.add("tt-dragging");
+            card.addEventListener("dragstart", ev => {
+              beginSidebarDrag(ev, card, { kind: "subject", templateId: unit.templateIds[0], unitId: unit.id, groupId: group.id, sectionIdx: 0, gradeKey: gradeKeys[0] || gradeKey });
             });
-            card.addEventListener("dragend", () => {
-              setDragging(null);
-              card.classList.remove("tt-dragging");
-            });
+            card.addEventListener("dragend", () => endSidebarDrag(card));
           }
           (isDone ? doneCards : availableCards).push(card);
         } else {
@@ -191,16 +202,12 @@ export function createTimetableSidebarHandlers(deps) {
             const isDone = credits > 0 && assigned >= credits;
             const gradeColor = getGradeColor(gradeKey);
             const title = sections > 1 ? `${getTemplateCardTitle(tpl)} ${sectionLabel(sec)}` : getTemplateCardTitle(tpl);
-            const card = buildSidebarCard({ title, teachers, gradeKeys: [gradeKey], credits, assigned, isDone, gradeColor });
+            const card = buildSidebarCard({ title, teachers, gradeKeys: [gradeKey], classLabels: compactClassLabelGroups([formatFullClassLabel(gradeKey, sectionLabel(sec))]), credits, assigned, isDone, gradeColor });
             if (!isDone) {
-              card.addEventListener("dragstart", () => {
-                setDragging({ kind: "subject", templateId: tpl.id, sectionIdx: sec, gradeKey });
-                card.classList.add("tt-dragging");
+              card.addEventListener("dragstart", ev => {
+                beginSidebarDrag(ev, card, { kind: "subject", templateId: tpl.id, sectionIdx: sec, gradeKey });
               });
-              card.addEventListener("dragend", () => {
-                setDragging(null);
-                card.classList.remove("tt-dragging");
-              });
+              card.addEventListener("dragend", () => endSidebarDrag(card));
             }
             (isDone ? doneCards : availableCards).push(card);
           }
@@ -209,6 +216,132 @@ export function createTimetableSidebarHandlers(deps) {
     });
 
     finalizeSidebarPanel(panel, availableCards, doneCards, "커리큘럼에 배치된 과목이 없습니다.");
+  }
+
+  function buildClassCountSummary(ttcards) {
+    const wrap = document.createElement("div");
+    wrap.className = "tt-class-count-summary";
+    wrap.style.cssText = "margin-left:auto;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:11px;color:#334155";
+
+    const label = document.createElement("span");
+    label.textContent = "학급별 카드";
+    label.style.cssText = "font-weight:800;color:#475569;margin-right:2px";
+    wrap.appendChild(label);
+
+    const counts = getClassCardCounts(ttcards);
+    if (!counts.length) {
+      const empty = document.createElement("span");
+      empty.textContent = "없음";
+      empty.style.cssText = "font-size:11px;color:#94a3b8";
+      wrap.appendChild(empty);
+      return wrap;
+    }
+
+    counts.forEach(({ label, count }) => {
+      const chip = document.createElement("span");
+      const gc = getGradeColor(gradeKeyFromClassLabel(label));
+      chip.textContent = `${label} ${count}`;
+      chip.title = `${label} 시간표 카드 ${count}개`;
+      chip.style.cssText = `display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:999px;background:${gc.bg};border:1px solid ${gc.border};color:${gc.text};font-weight:800;line-height:16px;white-space:nowrap`;
+      wrap.appendChild(chip);
+    });
+    return wrap;
+  }
+
+  function getClassCardCounts(ttcards) {
+    const counts = new Map();
+    (ttcards || []).forEach(card => {
+      const labels = getClassLabelsForTtCard(card);
+      labels.forEach(label => counts.set(label, (counts.get(label) || 0) + 1));
+    });
+    return [...counts.entries()]
+      .sort((a, b) => compareClassLabels(a[0], b[0]))
+      .map(([label, count]) => ({ label, count }));
+  }
+
+  function getClassLabelsForTtCard(card) {
+    if (!card) return [];
+    const labels = [];
+    if (Array.isArray(card.classLabels) && card.classLabels.length) {
+      card.classLabels.forEach(label => labels.push(formatFullClassLabel(card.gradeKey, label)));
+    } else if (Array.isArray(card.classKeys) && card.classKeys.length) {
+      card.classKeys.forEach(key => {
+        const [g, sec] = String(key || "").split(":");
+        labels.push(formatFullClassLabel(g ? `${g}학년` : card.gradeKey, sec));
+      });
+    } else {
+      labels.push(formatFullClassLabel(card.gradeKey, sectionLabel(card.sectionIdx ?? 0)));
+    }
+    return unique(labels.filter(Boolean));
+  }
+
+  function classLabelsFromDetailItem(item) {
+    if (!item) return [];
+    const raw = Array.isArray(item.classLabels) && item.classLabels.length
+      ? item.classLabels
+      : [item.sectionLabel || sectionLabel(item.sectionIdx ?? 0)];
+    return raw.map(label => formatFullClassLabel(item.gradeKey, label)).filter(Boolean);
+  }
+
+  function compactClassLabelGroups(labels) {
+    const parsed = unique((labels || []).map(normalizeClassLabel).filter(Boolean))
+      .map(label => parseClassLabel(label));
+    const byGrade = new Map();
+    const others = [];
+    parsed.forEach(item => {
+      if (!item.grade || !item.section) { others.push(item.raw); return; }
+      if (!byGrade.has(item.grade)) byGrade.set(item.grade, []);
+      byGrade.get(item.grade).push(item.section);
+    });
+    const grouped = [...byGrade.entries()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([grade, sections]) => `${grade}${unique(sections).sort(compareSectionLabels).join("")}`);
+    return [...grouped, ...unique(others)];
+  }
+
+  function formatFullClassLabel(gradeKey, section) {
+    const grade = gradeDisplay(gradeKey || "").replace(/[^0-9]/g, "");
+    const secRaw = String(section || "").trim();
+    if (!secRaw) return "";
+    const compact = secRaw.replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    const parsed = parseClassLabel(compact);
+    if (parsed.grade && parsed.section) return `${parsed.grade}${parsed.section}`;
+    const sec = compact.replace(/^\d{1,2}/, "");
+    return grade && sec ? `${grade}${sec}` : compact;
+  }
+
+  function normalizeClassLabel(label) {
+    const compact = String(label || "").replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    const parsed = parseClassLabel(compact);
+    return parsed.grade && parsed.section ? `${parsed.grade}${parsed.section}` : compact;
+  }
+
+  function parseClassLabel(label) {
+    const raw = String(label || "").replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    const m = raw.match(/^(\d{1,2})([A-Z가-힣0-9]+)$/);
+    return m ? { raw, grade: m[1], section: m[2] } : { raw, grade: "", section: "" };
+  }
+
+  function gradeKeyFromClassLabel(label) {
+    const parsed = parseClassLabel(label);
+    return parsed.grade ? `${parsed.grade}학년` : "";
+  }
+
+  function compareClassLabels(a, b) {
+    const pa = parseClassLabel(a);
+    const pb = parseClassLabel(b);
+    const ga = parseInt(pa.grade, 10) || 0;
+    const gb = parseInt(pb.grade, 10) || 0;
+    if (ga !== gb) return ga - gb;
+    return compareSectionLabels(pa.section || pa.raw, pb.section || pb.raw);
+  }
+
+  function compareSectionLabels(a, b) {
+    return String(a || "").localeCompare(String(b || ""), "ko", { numeric: true });
+  }
+
+  function unique(list) {
+    return [...new Set((list || []).filter(Boolean))];
   }
 
   function getTeachersForTemplateSafe(templateId) {
@@ -228,7 +361,7 @@ export function createTimetableSidebarHandlers(deps) {
       .join(" / ") || "묶음수업";
   }
 
-  function buildSidebarCard({ title, teachers, gradeKeys, credits, assigned, isDone, gradeColor, sectionIdx, groupName, detailItems = [] }) {
+  function buildSidebarCard({ title, teachers, gradeKeys, classLabels = [], credits, assigned, isDone, gradeColor, sectionIdx, groupName, detailItems = [] }) {
     const card = document.createElement("div");
     card.className = "tt-subject-card tt-sc-compact" + (isDone ? " tt-subject-done" : "");
     card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
@@ -258,11 +391,14 @@ export function createTimetableSidebarHandlers(deps) {
     tchEl.title = uniqueTeachers.join(", ");
     const chipWrap = document.createElement("div");
     chipWrap.className = "tt-sc-grade-chips";
-    (gradeKeys || []).forEach(g => {
+    const displayChips = classLabels?.length ? classLabels : compactClassLabelGroups((gradeKeys || []).map(g => `${gradeDisplay(g)}${sectionIdx != null ? sectionLabel(sectionIdx) : ""}`));
+    displayChips.forEach(label => {
       const chip = document.createElement("span");
-      const gc = getGradeColor(g);
-      chip.style.cssText = `font-size:8px;font-weight:700;padding:0 4px;line-height:14px;border-radius:999px;background:${gc.border};color:white;white-space:nowrap`;
-      chip.textContent = gradeDisplay(g);
+      const gradeKey = gradeKeyFromClassLabel(label) || (gradeKeys || [])[0];
+      const gc = getGradeColor(gradeKey);
+      chip.style.cssText = `font-size:8px;font-weight:800;padding:0 4px;line-height:14px;border-radius:999px;background:${gc.border};color:white;white-space:nowrap`;
+      chip.textContent = label;
+      chip.title = `대상 학급: ${label}`;
       chipWrap.appendChild(chip);
     });
     row2.append(tchEl, chipWrap);
