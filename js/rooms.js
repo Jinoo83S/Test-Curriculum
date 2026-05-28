@@ -24,6 +24,82 @@ export const getRoomTypes = () => {
 export const getRoomById = id => getRooms().find(r => r.id === id) || null;
 export { ROOM_TYPES };
 
+function gradeSortIndex(grade) {
+  const idx = GRADE_KEYS.indexOf(grade);
+  return idx >= 0 ? idx : 999;
+}
+
+function compactClassName(name) {
+  return clean(name).replace(/\s+/g, "").replace(/학년/g, "").replace(/반$/g, "");
+}
+
+export function formatHomeRoomClassLabel(cls) {
+  if (!cls) return "";
+  const gradeNo = clean(cls.grade).replace("학년", "");
+  const name = compactClassName(cls.name);
+  if (!gradeNo && !name) return "";
+  if (name && gradeNo && name.startsWith(gradeNo)) return name;
+  return `${gradeNo}${name}`;
+}
+
+function getHomeRoomClassOptions() {
+  const classes = Array.isArray(appState.classes?.classes) ? appState.classes.classes : [];
+  return classes
+    .slice()
+    .sort((a, b) => {
+      const gi = gradeSortIndex(a.grade) - gradeSortIndex(b.grade);
+      if (gi) return gi;
+      return formatHomeRoomClassLabel(a).localeCompare(formatHomeRoomClassLabel(b), "ko", { numeric: true });
+    })
+    .map(cls => ({
+      id: cls.id,
+      label: formatHomeRoomClassLabel(cls),
+      grade: cls.grade,
+      className: cls.name,
+    }))
+    .filter(opt => opt.id && opt.label);
+}
+
+function getHomeRoomLabelByClassId(classId) {
+  const opt = getHomeRoomClassOptions().find(o => o.id === classId);
+  return opt?.label || "";
+}
+
+function normalizeHomeRoomLabel(value) {
+  return clean(value)
+    .replace(/\s+/g, "")
+    .replace(/학년/g, "")
+    .replace(/반$/g, "")
+    .toUpperCase();
+}
+
+function findClassIdByHomeRoomLabel(value) {
+  const key = normalizeHomeRoomLabel(value);
+  if (!key) return "";
+  const opt = getHomeRoomClassOptions().find(o => normalizeHomeRoomLabel(o.label) === key);
+  return opt?.id || "";
+}
+
+export function setRoomHomeRoomClass(roomId, classId) {
+  if (!canEdit()) return false;
+  const room = getRoomById(roomId);
+  if (!room) return false;
+  const normalizedClassId = clean(classId);
+
+  // 한 학급의 홈룸은 하나의 교실에만 연결되도록 중복 연결을 정리합니다.
+  if (normalizedClassId) {
+    getRooms().forEach(other => {
+      if (other.id !== roomId && other.homeRoomClassId === normalizedClassId) {
+        other.homeRoomClassId = "";
+      }
+    });
+  }
+
+  room.homeRoomClassId = normalizedClassId;
+  scheduleSave("rooms");
+  return true;
+}
+
 function makeUniqueRoomTypeName(base = "새 유형") {
   const existing = new Set(getRoomTypes());
   let name = clean(base) || "새 유형";
@@ -93,10 +169,12 @@ function normalizeRoomTypeValue(value) {
 
 /**
  * 엑셀 붙여넣기 형식:
- * 이름 | 유형 | 수용인원 | 전용학년 | 담당/홈룸 교사 | 메모
+ * 이름 | 유형 | 수용인원 | 전용학년 | 홈룸 | 담당 교사 | 메모
  * - 첫 행이 헤더이면 자동 제외합니다.
  * - 유형이 비어 있거나 등록되지 않은 값이면 "일반"으로 처리합니다.
  * - 전용학년은 7, 7학년, 10, 10학년 모두 인식합니다.
+ * - 홈룸은 명단에 등록된 반을 7A, 8B 형식으로 인식합니다.
+ * - 기존 형식(5번째 열이 담당 교사)도 계속 인식합니다.
  */
 export function parseRoomPaste(raw) {
   const lines = String(raw || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -112,13 +190,18 @@ export function parseRoomPaste(raw) {
     const name = clean(cols[0]);
     if (!name) continue;
 
+    const homeRoomClassId = findClassIdByHomeRoomLabel(cols[4]);
+    const teacherColIndex = homeRoomClassId ? 5 : 4;
+    const noteColIndex = homeRoomClassId ? 6 : 5;
+
     rooms.push(normalizeRoom({
       name,
       type: normalizeRoomTypeValue(cols[1]),
       capacity: parseInt(String(cols[2] || "").replace(/[^0-9]/g, ""), 10) || 0,
       grade: normalizeGradeValue(cols[3]),
-      teacherName: clean(cols[4]),
-      note: cols.slice(5).join(" ").trim(),
+      homeRoomClassId,
+      teacherName: clean(cols[teacherColIndex]),
+      note: cols.slice(noteColIndex).join(" ").trim(),
     }));
   }
   return rooms;
@@ -198,12 +281,12 @@ function appendRoomPasteArea(container, onUpdate, options) {
   pasteWrap.innerHTML = `
     <div class="paste-label">
       📋 엑셀에서 복사 후 아래 영역에 붙여넣기
-      <span class="paste-hint">열 구성: <strong>교실명</strong> [유형] [수용인원] [전용학년] [담당/홈룸 교사] [메모]</span>
+      <span class="paste-hint">열 구성: <strong>교실명</strong> [유형] [수용인원] [전용학년] [홈룸] [담당 교사] [메모]</span>
     </div>`;
 
   const textarea = document.createElement("textarea");
   textarea.className = "excel-paste-area";
-  textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 701호\t일반\t24\t7학년\t김OO\t7A 홈룸";
+  textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 701호\t일반\t24\t7\t7A\t김OO\t홈룸 교실";
   textarea.disabled = !canEdit();
   pasteWrap.appendChild(textarea);
 
@@ -304,7 +387,7 @@ export function renderRoomsView(container, onUpdate, options = {}) {
   const wrap = document.createElement("div"); wrap.className = "rooms-table-wrap";
   const table = document.createElement("table"); table.className = "rooms-table";
   table.innerHTML = `<thead><tr>
-    <th>이름</th><th>유형</th><th>수용인원</th><th>전용학년</th><th>담당/홈룸 교사</th><th>메모</th><th>삭제</th>
+    <th>이름</th><th>유형</th><th>수용인원</th><th>전용학년</th><th>홈룸</th><th>담당 교사</th><th>메모</th><th>삭제</th>
   </tr></thead>`;
   const tbody = document.createElement("tbody");
 
@@ -339,7 +422,40 @@ export function renderRoomsView(container, onUpdate, options = {}) {
     gradeSel.addEventListener("change", e => { updateRoom(room.id, "grade", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate, options); });
     gradeTd.appendChild(gradeSel); tr.appendChild(gradeTd);
 
-    // Teacher / homeroom owner
+    // Homeroom class select
+    const homeRoomTd = document.createElement("td");
+    const homeRoomSel = document.createElement("select");
+    homeRoomSel.disabled = !canEdit();
+    const emptyHomeOpt = document.createElement("option");
+    emptyHomeOpt.value = "";
+    emptyHomeOpt.textContent = "없음";
+    if (!room.homeRoomClassId) emptyHomeOpt.selected = true;
+    homeRoomSel.appendChild(emptyHomeOpt);
+
+    const homeRoomOptions = getHomeRoomClassOptions();
+    homeRoomOptions.forEach(opt => {
+      const o = document.createElement("option");
+      o.value = opt.id;
+      o.textContent = opt.label;
+      if (opt.id === room.homeRoomClassId) o.selected = true;
+      homeRoomSel.appendChild(o);
+    });
+    if (room.homeRoomClassId && !getHomeRoomLabelByClassId(room.homeRoomClassId)) {
+      const o = document.createElement("option");
+      o.value = room.homeRoomClassId;
+      o.textContent = "삭제된 반";
+      o.selected = true;
+      homeRoomSel.appendChild(o);
+    }
+    homeRoomSel.addEventListener("change", e => {
+      setRoomHomeRoomClass(room.id, e.target.value);
+      onUpdate?.();
+      renderRoomsView(container, onUpdate, options);
+    });
+    homeRoomTd.appendChild(homeRoomSel);
+    tr.appendChild(homeRoomTd);
+
+    // Teacher / room owner
     const teacherTd = document.createElement("td");
     const teacherInput = document.createElement("input");
     teacherInput.type = "text";

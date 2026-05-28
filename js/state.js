@@ -345,7 +345,9 @@ export function normalizeRoom(r = {}) {
     // 사용자가 교실 유형을 직접 편집할 수 있으므로, 기존 ROOM_TYPES에 없는 값도 보존합니다.
     type: clean(r.type) || "일반",
     grade: GRADE_KEYS.includes(r.grade) ? r.grade : "",
-    // 담임/전용 교사 표시용. 시간표 교사 조건의 홈룸/본인 교실과 연동됩니다.
+    // 홈룸: 명단에서 설정한 반 ID를 저장합니다. 표시값은 rooms.js에서 7A/8B 형식으로 계산합니다.
+    homeRoomClassId: clean(r.homeRoomClassId || r.homeRoomId),
+    // 담당/전용 교사 표시용. 시간표 교사 조건의 홈룸/본인 교실과 연동됩니다.
     teacherName: clean(r.teacherName),
     note: clean(r.note)
   };
