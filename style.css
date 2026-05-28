@@ -6550,3 +6550,224 @@ button.his-ui-btn {
     justify-content: flex-start;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────
+   Stage 4 · Teacher bulk editor refined UI
+   실제 렌더링 함수(timetable-constraints.js)의 his-* 클래스에 직접 대응
+──────────────────────────────────────────────────────────────── */
+.his-bulk-editor {
+  display: grid !important;
+  gap: 10px !important;
+  margin: 8px 0 12px !important;
+  padding: 12px !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 18px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .06) !important;
+}
+.his-bulk-editor-main {
+  display: grid !important;
+  grid-template-columns: minmax(180px, auto) auto 1fr !important;
+  gap: 10px !important;
+  align-items: center !important;
+}
+.his-bulk-editor-title {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-width: 0 !important;
+}
+.his-bulk-editor-title strong {
+  color: #0f172a !important;
+  font-size: 13px !important;
+  font-weight: 950 !important;
+  letter-spacing: -.01em !important;
+  white-space: nowrap !important;
+}
+.his-bulk-editor-title span {
+  display: inline-flex !important;
+  align-items: center !important;
+  height: 22px !important;
+  padding: 0 8px !important;
+  border-radius: 999px !important;
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+.his-bulk-quick-fields {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex-wrap: nowrap !important;
+}
+.his-mini-field {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  height: 34px !important;
+  padding: 4px 7px 4px 10px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 12px !important;
+  background: #f8fafc !important;
+  color: #475569 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+.his-mini-field input {
+  width: 46px !important;
+  height: 24px !important;
+  margin: 0 !important;
+  padding: 2px 5px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: #0f172a !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+  text-align: center !important;
+}
+.his-bulk-editor-actions {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 6px !important;
+  flex-wrap: wrap !important;
+  min-width: 0 !important;
+}
+.his-bulk-time-details {
+  border-top: 1px dashed #dbeafe !important;
+  padding-top: 9px !important;
+}
+.his-bulk-time-details > summary {
+  list-style: none !important;
+  cursor: pointer !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 30px !important;
+  padding: 5px 10px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 999px !important;
+  background: #f8fafc !important;
+  color: #0f172a !important;
+  font-size: 12px !important;
+  font-weight: 950 !important;
+  user-select: none !important;
+}
+.his-bulk-time-details > summary::-webkit-details-marker { display: none !important; }
+.his-bulk-time-details > summary::before {
+  content: "▸";
+  color: #2563eb;
+  font-size: 12px;
+  transition: transform .16s ease;
+}
+.his-bulk-time-details[open] > summary::before { transform: rotate(90deg); }
+.his-bulk-time-details > summary em {
+  color: #64748b !important;
+  font-size: 11px !important;
+  font-style: normal !important;
+  font-weight: 800 !important;
+}
+.his-bulk-time-wrap {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  margin-top: 10px !important;
+}
+.his-bulk-time-grid {
+  display: grid !important;
+  grid-template-columns: 32px repeat(5, 38px) !important;
+  gap: 4px !important;
+  padding: 10px !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.7) !important;
+}
+.his-bulk-time-head,
+.his-bulk-time-period,
+.his-bulk-time-corner,
+.his-bulk-time-cell {
+  width: 100% !important;
+  min-height: 28px !important;
+  border-radius: 9px !important;
+  display: grid !important;
+  place-items: center !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+  line-height: 1 !important;
+  box-sizing: border-box !important;
+}
+.his-bulk-time-head {
+  background: #eff6ff !important;
+  color: #1d4ed8 !important;
+}
+.his-bulk-time-period {
+  background: #f1f5f9 !important;
+  color: #64748b !important;
+}
+.his-bulk-time-corner { background: transparent !important; }
+.his-bulk-time-cell {
+  appearance: none !important;
+  border: 1px solid #e2e8f0 !important;
+  background: #f8fafc !important;
+  color: #1d4ed8 !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+.his-bulk-time-cell:hover:not(:disabled) {
+  border-color: #93c5fd !important;
+  background: #eff6ff !important;
+}
+.his-bulk-time-cell.is-selected {
+  border-color: #1d4ed8 !important;
+  background: linear-gradient(180deg, #2563eb, #1d4ed8) !important;
+  color: #fff !important;
+  box-shadow: 0 8px 16px rgba(37, 99, 235, .22) !important;
+}
+.his-bulk-time-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  flex-wrap: wrap !important;
+  max-width: 520px !important;
+  padding-top: 2px !important;
+}
+.his-bulk-selected-label {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 30px !important;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  background: #e2e8f0 !important;
+  color: #334155 !important;
+  font-size: 11px !important;
+  font-weight: 950 !important;
+  white-space: nowrap !important;
+}
+@media (max-width: 1100px) {
+  .his-bulk-editor-main {
+    grid-template-columns: 1fr !important;
+    align-items: start !important;
+  }
+  .his-bulk-editor-actions { justify-content: flex-start !important; }
+}
+@media (max-width: 760px) {
+  .his-bulk-time-details > summary {
+    align-items: flex-start !important;
+    border-radius: 14px !important;
+    flex-direction: column !important;
+    gap: 2px !important;
+  }
+  .his-bulk-time-grid {
+    grid-template-columns: 28px repeat(5, 32px) !important;
+    gap: 3px !important;
+    padding: 8px !important;
+    overflow-x: auto !important;
+  }
+}

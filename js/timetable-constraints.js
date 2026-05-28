@@ -128,27 +128,46 @@ export function createTimetableConstraintsHandlers({
 
   function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
     const box = document.createElement("div");
-    box.className = "tt-con-bulk-box tt-ui-card";
+    box.className = "tt-con-bulk-box his-bulk-editor";
 
     const main = document.createElement("div");
-    main.className = "tt-con-bulk-main";
+    main.className = "his-bulk-editor-main";
 
     const title = document.createElement("div");
-    title.className = "tt-con-bulk-title";
+    title.className = "his-bulk-editor-title";
     title.innerHTML = `<strong>전체 일괄 편집</strong><span>교사 ${teachers.length}명 · 교실 ${rooms.length}개</span>`;
     main.appendChild(title);
 
+    const quickFields = document.createElement("div");
+    quickFields.className = "his-bulk-quick-fields";
+
+    const maxDayLabel = document.createElement("label");
+    maxDayLabel.className = "his-mini-field";
+    maxDayLabel.innerHTML = `<span>하루 최대</span>`;
     const maxDay = document.createElement("input");
-    maxDay.type = "number"; maxDay.min = "1"; maxDay.max = "12"; maxDay.value = "6";
+    maxDay.type = "number";
+    maxDay.min = "1";
+    maxDay.max = "12";
+    maxDay.value = "6";
+    maxDayLabel.appendChild(maxDay);
+
+    const maxConLabel = document.createElement("label");
+    maxConLabel.className = "his-mini-field";
+    maxConLabel.innerHTML = `<span>연속</span>`;
     const maxCon = document.createElement("input");
-    maxCon.type = "number"; maxCon.min = "1"; maxCon.max = "12"; maxCon.value = "3";
+    maxCon.type = "number";
+    maxCon.min = "1";
+    maxCon.max = "12";
+    maxCon.value = "3";
+    maxConLabel.appendChild(maxCon);
 
-    const numWrap = document.createElement("div");
-    numWrap.className = "tt-con-bulk-fieldset";
-    numWrap.append("하루", maxDay, "연속", maxCon);
-    main.appendChild(numWrap);
+    quickFields.append(maxDayLabel, maxConLabel);
+    main.appendChild(quickFields);
 
-    const applyNums = makeBtn("적용", "primary-btn compact-btn tt-action-btn", () => {
+    const actions = document.createElement("div");
+    actions.className = "his-bulk-editor-actions";
+
+    const applyNums = makeBtn("전체 적용", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
       if (!canEdit()) return;
       captureTimetableUndo("교사 조건 전체 일괄 수정");
       const md = parseInt(maxDay.value) || 6;
@@ -163,19 +182,18 @@ export function createTimetableConstraintsHandlers({
       renderAll();
     });
     applyNums.disabled = !canEdit();
-    main.appendChild(applyNums);
 
-    const expandBtn = makeBtn("전체 펼치기", "secondary-btn compact-btn tt-action-btn", () => {
+    const expandBtn = makeBtn("전체 펼치기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = true; });
       renderConstraintsPanel();
     });
-    const collapseBtn = makeBtn("전체 접기", "secondary-btn compact-btn tt-action-btn", () => {
+
+    const collapseBtn = makeBtn("전체 접기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = false; });
       renderConstraintsPanel();
     });
-    main.append(expandBtn, collapseBtn);
 
-    const syncRoomsBtn = makeBtn("교실 데이터 반영", "secondary-btn compact-btn tt-action-btn", () => {
+    const syncRoomsBtn = makeBtn("교실 데이터 반영", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => {
       if (!canEdit()) return;
       if (!rooms.length) {
         alert("등록된 교실 데이터가 없습니다. 먼저 교실 관리에서 교실과 담당 교사를 입력해 주세요.");
@@ -193,91 +211,129 @@ export function createTimetableConstraintsHandlers({
     });
     syncRoomsBtn.disabled = !canEdit() || !rooms.length;
     syncRoomsBtn.title = "명단/교실 관리의 담당 교사 정보를 교사별 본인 교실로 반영합니다.";
-    main.appendChild(syncRoomsBtn);
 
+    actions.append(applyNums, expandBtn, collapseBtn, syncRoomsBtn);
+    main.appendChild(actions);
     box.appendChild(main);
 
     const details = document.createElement("details");
-    details.className = "tt-con-bulk-more";
+    details.className = "his-bulk-time-details";
+
     const summary = document.createElement("summary");
-    summary.textContent = "선택 시간 일괄 불가/가능";
+    summary.innerHTML = `<span>선택 시간 일괄 불가/가능</span><em>시간표에서 여러 칸을 선택한 뒤 전체 교사에게 적용</em>`;
     details.appendChild(summary);
 
-    const selected = { day: 0, period: 0 };
+    const selected = new Set();
+    const keyOf = (d, p) => `${d}:${p}`;
+    const parseKey = key => {
+      const [day, period] = String(key).split(":").map(v => parseInt(v, 10));
+      return { day, period };
+    };
+
     const gridWrap = document.createElement("div");
-    gridWrap.className = "tt-bulk-time-wrap";
+    gridWrap.className = "his-bulk-time-wrap";
+
     const grid = document.createElement("div");
-    grid.className = "tt-bulk-time-grid";
+    grid.className = "his-bulk-time-grid";
+
+    const selectedLabel = document.createElement("span");
+    selectedLabel.className = "his-bulk-selected-label";
+
+    const refreshSelectionLabel = () => {
+      selectedLabel.textContent = selected.size ? `선택 ${selected.size}칸` : "선택 없음";
+    };
 
     const renderBulkGrid = () => {
       grid.innerHTML = "";
-      const head = document.createElement("div");
-      head.className = "tt-bulk-time-row";
-      head.appendChild(Object.assign(document.createElement("div"), { className: "tt-bulk-time-corner" }));
+      const corner = document.createElement("div");
+      corner.className = "his-bulk-time-corner";
+      grid.appendChild(corner);
+
       dayLabels.forEach(d => {
         const th = document.createElement("div");
-        th.className = "tt-bulk-time-head";
+        th.className = "his-bulk-time-head";
         th.textContent = d;
-        head.appendChild(th);
+        grid.appendChild(th);
       });
-      grid.appendChild(head);
 
-      periods.forEach((label, p) => {
-        const row = document.createElement("div");
-        row.className = "tt-bulk-time-row";
-        const per = document.createElement("div");
-        per.className = "tt-bulk-time-period";
-        per.textContent = `${p + 1}`;
-        row.appendChild(per);
-        dayLabels.forEach((_, d) => {
+      periods.forEach((label, pIdx) => {
+        const periodCell = document.createElement("div");
+        periodCell.className = "his-bulk-time-period";
+        periodCell.textContent = `${pIdx + 1}`;
+        grid.appendChild(periodCell);
+
+        dayLabels.forEach((dayLabel, dIdx) => {
           const btn = document.createElement("button");
           btn.type = "button";
-          const isSelected = selected.day === d && selected.period === p;
-          btn.className = "tt-bulk-time-cell" + (isSelected ? " is-selected" : "");
-          btn.title = `${dayLabels[d]} ${periods[p] || `${p + 1}교시`}`;
+          const key = keyOf(dIdx, pIdx);
+          const isSelected = selected.has(key);
+          btn.className = "his-bulk-time-cell" + (isSelected ? " is-selected" : "");
+          btn.title = `${dayLabel} ${label || `${pIdx + 1}교시`}`;
           btn.textContent = isSelected ? "✓" : "";
           btn.disabled = !canEdit();
           btn.addEventListener("click", () => {
-            selected.day = d;
-            selected.period = p;
+            if (selected.has(key)) selected.delete(key);
+            else selected.add(key);
             renderBulkGrid();
+            refreshSelectionLabel();
           });
-          row.appendChild(btn);
+          grid.appendChild(btn);
         });
-        grid.appendChild(row);
       });
     };
-    renderBulkGrid();
 
-    const actionLine = document.createElement("div");
-    actionLine.className = "tt-bulk-time-actions";
-    const currentLabel = document.createElement("span");
-    currentLabel.className = "tt-bulk-selected-label";
-    const updateLabel = () => { currentLabel.textContent = `선택: ${dayLabels[selected.day]} ${periods[selected.period] || `${selected.period + 1}교시`}`; };
-    const setUnav = makeBtn("전체 불가", "danger-btn compact-btn tt-action-btn", () => {
+    const selectAllBtn = makeBtn("전체 선택", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
       if (!canEdit()) return;
-      captureTimetableUndo("전체 수업 불가 시간 추가");
+      selected.clear();
+      dayLabels.forEach((_, dIdx) => periods.forEach((__, pIdx) => selected.add(keyOf(dIdx, pIdx))));
+      renderBulkGrid();
+      refreshSelectionLabel();
+    });
+
+    const clearSelectBtn = makeBtn("선택 해제", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => {
+      selected.clear();
+      renderBulkGrid();
+      refreshSelectionLabel();
+    });
+
+    const applyAvailability = unavailable => {
+      if (!canEdit()) return;
+      if (!selected.size) {
+        alert("먼저 시간표에서 적용할 칸을 선택해 주세요.");
+        return;
+      }
+      captureTimetableUndo(unavailable ? "전체 수업 불가 시간 추가" : "전체 수업 불가 시간 해제");
+      const slotsToApply = [...selected].map(parseKey);
       teachers.forEach(t => {
         const c = ensureConstraint(t);
-        const slots = c.unavailableSlots || (c.unavailableSlots = []);
-        if (!slots.some(s => s.day === selected.day && s.period === selected.period)) slots.push({ day: selected.day, period: selected.period });
+        const slots = Array.isArray(c.unavailableSlots) ? c.unavailableSlots : [];
+        if (unavailable) {
+          slotsToApply.forEach(slot => {
+            if (!slots.some(s => s.day === slot.day && s.period === slot.period)) {
+              slots.push({ day: slot.day, period: slot.period });
+            }
+          });
+          c.unavailableSlots = slots;
+        } else {
+          c.unavailableSlots = slots.filter(s => !slotsToApply.some(slot => slot.day === s.day && slot.period === s.period));
+        }
       });
-      scheduleSave("timetable"); recomputeConflicts(); renderAll();
-    });
-    const clearUnav = makeBtn("전체 가능", "secondary-btn compact-btn tt-action-btn", () => {
-      if (!canEdit()) return;
-      captureTimetableUndo("전체 수업 불가 시간 해제");
-      teachers.forEach(t => {
-        const c = ensureConstraint(t);
-        c.unavailableSlots = (c.unavailableSlots || []).filter(s => !(s.day === selected.day && s.period === selected.period));
-      });
-      scheduleSave("timetable"); recomputeConflicts(); renderAll();
-    });
-    setUnav.disabled = clearUnav.disabled = !canEdit();
-    updateLabel();
-    grid.addEventListener("click", updateLabel);
-    actionLine.append(currentLabel, setUnav, clearUnav);
-    gridWrap.append(grid, actionLine);
+      scheduleSave("timetable");
+      recomputeConflicts();
+      renderAll();
+    };
+
+    const setUnav = makeBtn("선택 시간 불가", "his-ui-btn his-ui-btn-danger his-ui-btn-compact", () => applyAvailability(true));
+    const clearUnav = makeBtn("선택 시간 가능", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => applyAvailability(false));
+    [selectAllBtn, clearSelectBtn, setUnav, clearUnav].forEach(btn => { btn.disabled = !canEdit(); });
+
+    const timeActions = document.createElement("div");
+    timeActions.className = "his-bulk-time-actions";
+    timeActions.append(selectedLabel, selectAllBtn, clearSelectBtn, setUnav, clearUnav);
+
+    refreshSelectionLabel();
+    renderBulkGrid();
+    gridWrap.append(grid, timeActions);
     details.appendChild(gridWrap);
     box.appendChild(details);
 
