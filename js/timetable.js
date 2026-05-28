@@ -13,7 +13,7 @@ import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
-import { getRooms, renderRoomsView, updateRoom } from "./rooms.js";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
@@ -393,21 +393,99 @@ function syncTeacherHomeRoomFromRoom(roomId, teacherName) {
 }
 
 function getDefaultRoomForTeacherNames(teacherNames = []) {
-  const rooms = [...new Set((teacherNames || []).map(getEffectiveAssignedRoomId).filter(Boolean))];
-  return rooms.length === 1 ? rooms[0] : null;
+  const names = (teacherNames || []).map(clean).filter(Boolean);
+  const fromConstraints = [...new Set(names.map(getEffectiveAssignedRoomId).filter(Boolean))];
+  if (fromConstraints.length === 1) return fromConstraints[0];
+  if (fromConstraints.length > 1) return null;
+  const fromRooms = [...new Set(getRooms()
+    .filter(r => names.includes(clean(r.teacherName)))
+    .map(r => r.id)
+    .filter(Boolean))];
+  return fromRooms.length === 1 ? fromRooms[0] : null;
+}
+
+function classIdForAudienceClassKey(classKey = "") {
+  const [gradeNo, section] = String(classKey || "").split(":");
+  if (!gradeNo || !section) return "";
+  const grade = `${Number(gradeNo)}학년`;
+  const sec = clean(section).toUpperCase();
+  const cls = (appState.classes?.classes || []).find(c =>
+    c.grade === grade && clean(c.name).toUpperCase() === sec
+  );
+  return cls?.id || "";
+}
+
+function getHomeRoomIdForPlacementData(data = {}) {
+  const classKeys = Array.isArray(data.audienceClassKeys) ? data.audienceClassKeys : [];
+  const classIds = classKeys.map(classIdForAudienceClassKey).filter(Boolean);
+  if (!classIds.length) return null;
+  const rooms = getRooms().filter(r => r.homeRoomClassId && classIds.includes(r.homeRoomClassId));
+  const roomIds = [...new Set(rooms.map(r => r.id))];
+  return roomIds.length === 1 ? roomIds[0] : null;
+}
+
+function getCardPreferenceForPlacementData(data = {}) {
+  const ids = [...(data.ttcardIds || []), data.ttcardId].filter(Boolean);
+  const cards = ids.map(id => getTtCardById(id)).filter(Boolean);
+  if (!cards.length) return { rule: "auto", fixedRoomId: null };
+  const rules = [...new Set(cards.map(c => clean(c.roomRule) || "auto"))];
+  const fixedIds = [...new Set(cards.map(c => clean(c.fixedRoomId)).filter(Boolean))];
+  if (rules.length === 1) return { rule: rules[0] || "auto", fixedRoomId: fixedIds.length === 1 ? fixedIds[0] : null };
+  if (fixedIds.length === 1 && rules.every(r => r === "auto" || r === "fixed")) return { rule: "fixed", fixedRoomId: fixedIds[0] };
+  return { rule: "auto", fixedRoomId: null };
+}
+
+function resolveRoomForPlacementData(data = {}, forcedRule = null) {
+  const preference = getCardPreferenceForPlacementData(data);
+  const rule = clean(forcedRule || data.roomRule || preference.rule || "auto");
+  const fixedRoomId = clean(data.fixedRoomId || preference.fixedRoomId);
+  if (rule === "none") return null;
+  if (rule === "fixed") return fixedRoomId || null;
+  if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
+  if (rule === "teacher") return getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
+  // auto: 지정교실 → 홈룸 → 교사교실 순서로 추천합니다.
+  return fixedRoomId || getHomeRoomIdForPlacementData(data) || getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || "")) || null;
 }
 
 function getDefaultRoomForPlacementData(data = {}) {
-  const names = splitTeacherNames(data.teacherName || "").filter(Boolean);
-  return getDefaultRoomForTeacherNames(names);
+  return resolveRoomForPlacementData(data);
 }
 
 function applyDefaultRoomToEntryData(data = {}) {
-  if (!data.roomId) {
-    const roomId = getDefaultRoomForPlacementData(data);
-    if (roomId) data.roomId = roomId;
-  }
+  if (data.roomPinned && data.roomId) return data;
+  const roomId = resolveRoomForPlacementData(data);
+  data.roomRule = clean(data.roomRule || getCardPreferenceForPlacementData(data).rule || "auto");
+  data.roomId = roomId || null;
   return data;
+}
+
+function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null) {
+  if (!canEdit()) return false;
+  const ids = [...new Set((cardIds || []).filter(Boolean))];
+  if (!ids.length) return false;
+  captureTimetableUndo("과목카드 교실 설정");
+  const normalizedRule = clean(rule) || "auto";
+  (appState.timetable.ttcards || []).forEach(card => {
+    if (!ids.includes(card.id)) return;
+    card.roomRule = normalizedRule;
+    card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : null;
+    card.manualEdited = true;
+  });
+  scheduleSave("timetable");
+  return true;
+}
+
+function applyRoomRuleToEntry(entryId, rule = "auto", roomId = null) {
+  if (!canEdit()) return false;
+  const e = entries().find(x => x.id === entryId);
+  if (!e) return false;
+  captureTimetableUndo("수업 교실 설정");
+  e.roomRule = clean(rule) || "auto";
+  e.roomPinned = e.roomRule === "fixed";
+  if (e.roomRule === "fixed") e.roomId = clean(roomId) || e.roomId || null;
+  else e.roomId = resolveRoomForPlacementData(e, e.roomRule);
+  scheduleSave("timetable");
+  return true;
 }
 
 function getSlotLabel(day, period) {
@@ -1029,6 +1107,12 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   recomputeConflicts,
   renderAll: () => renderAll(),
   captureTimetableUndo: (...args) => captureTimetableUndo(...args),
+  resolveRoomForPlacementData,
+  getHomeRoomIdForPlacementData,
+  getDefaultRoomForTeacherNames,
+  setTtCardRoomPreference,
+  applyRoomRuleToEntry,
+  getRoomDisplayName,
 });
 
 const {

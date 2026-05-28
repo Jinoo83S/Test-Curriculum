@@ -320,6 +320,9 @@ export function describeTtCard(card) {
   const sec = classLabels.length ? classLabels.join(", ") : sectionLabel(card?.sectionIdx ?? 0);
   const shouldShowSection = cc > 1 || classLabels.length > 1;
   return {
+    id: card?.id || "",
+    ttcardId: card?.id || "",
+    templateId: card?.templateId || "",
     title: shouldShowSection ? `${base} ${sec}` : base,
     subject: base,
     gradeKey: card?.gradeKey || "",
@@ -328,6 +331,8 @@ export function describeTtCard(card) {
     classLabels,
     teachers: getTeachersForTtCard(card),
     credits: getCreditsForTtCard(card),
+    roomRule: card?.roomRule || "auto",
+    fixedRoomId: card?.fixedRoomId || null,
   };
 }
 

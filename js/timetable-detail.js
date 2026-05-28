@@ -4,7 +4,7 @@
 import { appState, scheduleSave } from "./state.js";
 import { canEdit } from "./auth.js";
 import { getRooms } from "./rooms.js";
-import { sectionLabel, gradeDisplay } from "./utils.js";
+import { sectionLabel, gradeDisplay, clean } from "./utils.js";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
@@ -33,6 +33,143 @@ function makeModal({ maxWidth = 440, minWidth = 300 } = {}) {
   modal.appendChild(box);
   modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
   return { modal, box, closeBtn };
+}
+
+const ROOM_RULE_LABELS = {
+  auto: "자동 추천",
+  fixed: "지정 교실 고정",
+  homeroom: "홈룸 우선",
+  teacher: "교사 교실 우선",
+  none: "교실 사용 안 함",
+};
+
+function normalizeRoomRule(rule) {
+  const r = clean(rule) || "auto";
+  return ROOM_RULE_LABELS[r] ? r : "auto";
+}
+
+function makeRoomRuleSelect(value = "auto") {
+  const sel = document.createElement("select");
+  sel.style.cssText = "width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px";
+  Object.entries(ROOM_RULE_LABELS).forEach(([v, l]) => {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = l;
+    if (v === normalizeRoomRule(value)) o.selected = true;
+    sel.appendChild(o);
+  });
+  return sel;
+}
+
+function makeRoomSelect(value = "", { includeNone = true } = {}) {
+  const sel = document.createElement("select");
+  sel.style.cssText = "width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px";
+  if (includeNone) {
+    const no = document.createElement("option");
+    no.value = "";
+    no.textContent = "교실 없음";
+    if (!value) no.selected = true;
+    sel.appendChild(no);
+  }
+  getRooms().forEach(r => {
+    const o = document.createElement("option");
+    o.value = r.id;
+    o.textContent = r.name;
+    if (r.id === value) o.selected = true;
+    sel.appendChild(o);
+  });
+  return sel;
+}
+
+function appendSelectField(box, labelText, control, { hint = "" } = {}) {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "margin:8px 0";
+  const label = document.createElement("label");
+  label.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
+  label.textContent = labelText;
+  wrap.appendChild(label);
+  wrap.appendChild(control);
+  if (hint) {
+    const h = document.createElement("div");
+    h.style.cssText = "margin-top:3px;font-size:10px;color:#64748b;line-height:1.35";
+    h.textContent = hint;
+    wrap.appendChild(h);
+  }
+  box.appendChild(wrap);
+  return wrap;
+}
+
+function getRoomRuleHint(rule, roomId = "") {
+  const r = normalizeRoomRule(rule);
+  if (r === "fixed") return roomId ? `항상 ${getRooms().find(x => x.id === roomId)?.name || roomId} 교실을 사용합니다.` : "지정 교실을 선택해야 합니다.";
+  if (r === "homeroom") return "대상 학급의 홈룸 교실을 우선 추천합니다.";
+  if (r === "teacher") return "담당 교사의 전용/담당 교실을 우선 추천합니다.";
+  if (r === "none") return "이 수업은 교실을 배정하지 않습니다.";
+  return "지정 교실, 홈룸, 교사 교실 순서로 자동 추천합니다.";
+}
+
+function appendCardRoomRuleEditor(box, detailItems, ctx, modal) {
+  const cardIds = [...new Set((detailItems || []).map(i => i.ttcardId || i.id).filter(Boolean))];
+  if (!cardIds.length || !canEdit()) return;
+  const first = getTtCardById(cardIds[0]);
+  const sameRule = cardIds.every(id => normalizeRoomRule(getTtCardById(id)?.roomRule) === normalizeRoomRule(first?.roomRule));
+  const sameRoom = cardIds.every(id => clean(getTtCardById(id)?.fixedRoomId) === clean(first?.fixedRoomId));
+
+  const section = document.createElement("div");
+  section.style.cssText = "margin:12px 0 10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc";
+  const h = document.createElement("div");
+  h.style.cssText = "font-size:12px;font-weight:800;color:#334155;margin-bottom:6px";
+  h.textContent = cardIds.length > 1 ? "과목카드 교실 규칙 · 구성 카드 전체 적용" : "과목카드 교실 규칙";
+  section.appendChild(h);
+
+  const ruleSel = makeRoomRuleSelect(sameRule ? first?.roomRule : "auto");
+  ruleSel.disabled = !canEdit();
+  const roomSel = makeRoomSelect(sameRoom ? first?.fixedRoomId : "");
+  roomSel.disabled = !canEdit();
+
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:10px;color:#64748b;line-height:1.35;margin-top:5px";
+  const refreshHint = () => {
+    roomSel.parentElement.style.display = normalizeRoomRule(ruleSel.value) === "fixed" ? "block" : "none";
+    hint.textContent = getRoomRuleHint(ruleSel.value, roomSel.value);
+  };
+
+  const ruleWrap = document.createElement("div");
+  ruleWrap.style.marginBottom = "6px";
+  const ruleLabel = document.createElement("label");
+  ruleLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
+  ruleLabel.textContent = "배정 방식";
+  ruleWrap.append(ruleLabel, ruleSel);
+  section.appendChild(ruleWrap);
+
+  const roomWrap = document.createElement("div");
+  roomWrap.style.marginBottom = "6px";
+  const roomLabel = document.createElement("label");
+  roomLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
+  roomLabel.textContent = "지정 교실";
+  roomWrap.append(roomLabel, roomSel);
+  section.appendChild(roomWrap);
+
+  const apply = document.createElement("button");
+  apply.type = "button";
+  apply.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer";
+  apply.textContent = "교실 규칙 저장";
+  apply.onclick = () => {
+    if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
+      alert("지정 교실 고정은 교실을 선택해야 합니다.");
+      return;
+    }
+    const ok = ctx.setTtCardRoomPreference?.(cardIds, ruleSel.value, roomSel.value);
+    if (ok) {
+      ctx.renderAll?.();
+      modal.remove();
+    }
+  };
+  ruleSel.addEventListener("change", refreshHint);
+  roomSel.addEventListener("change", refreshHint);
+  refreshHint();
+  section.append(hint, apply);
+  box.appendChild(section);
 }
 
 function formatClassLabel(gradeKey, sectionText) {
@@ -147,6 +284,11 @@ export function createTimetableDetailHandlers(ctx) {
     const gc = ctx.getGradeColor(firstGrade);
     box.style.borderTop = `4px solid ${gc.border}`;
 
+    const modeEl = document.createElement("div");
+    modeEl.style.cssText = "font-size:10px;font-weight:900;color:#2563eb;background:#dbeafe;border-radius:999px;padding:2px 7px;display:inline-block;margin-bottom:6px";
+    modeEl.textContent = "과목카드 상세";
+    box.appendChild(modeEl);
+
     const titleEl = document.createElement("div");
     titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:10px;color:#1e3a5f;padding-right:20px";
     titleEl.textContent = title;
@@ -203,6 +345,8 @@ export function createTimetableDetailHandlers(ctx) {
       });
       box.appendChild(list);
     }
+
+    appendCardRoomRuleEditor(box, detailItems, ctx, modal);
 
     if (credits > 0) {
       const pct = Math.min(100, Math.round((assigned / credits) * 100));
@@ -364,6 +508,11 @@ export function createTimetableDetailHandlers(ctx) {
     const gc = ctx.getGradeColor(gradeKeys[0] || currentGrade());
     box.style.borderTop = `4px solid ${gc.border}`;
 
+    const modeEl = document.createElement("div");
+    modeEl.style.cssText = "font-size:10px;font-weight:900;color:#166534;background:#dcfce7;border-radius:999px;padding:2px 7px;display:inline-block;margin-bottom:6px";
+    modeEl.textContent = "배치 상세";
+    box.appendChild(modeEl);
+
     const titleEl = document.createElement("div");
     titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:8px;color:#1e3a5f;padding-right:24px";
     titleEl.textContent = entryTitle(entry);
@@ -430,29 +579,90 @@ export function createTimetableDetailHandlers(ctx) {
       appendGroupDetailSection(box, groupDetailCards, { title: entry.unitId ? "묶음수업 구성" : "그룹 구성 과목" });
     }
 
-    const rLabel = document.createElement("label");
-    rLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:600";
-    rLabel.textContent = "교실";
-    const rSel = document.createElement("select");
-    rSel.style.cssText = "width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:8px";
-    rSel.disabled = !canEdit();
-    const noR = document.createElement("option");
-    noR.value = "";
-    noR.textContent = "교실 없음";
-    rSel.appendChild(noR);
-    getRooms().forEach(r => {
-      const o = document.createElement("option");
-      o.value = r.id;
-      o.textContent = r.name;
-      if (r.id === entry.roomId) o.selected = true;
-      rSel.appendChild(o);
-    });
-    rSel.addEventListener("change", e => {
-      ctx.updateEntry(entry.id, "roomId", e.target.value || null);
+    const roomSection = document.createElement("div");
+    roomSection.style.cssText = "margin:12px 0 10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc";
+    const roomTitle = document.createElement("div");
+    roomTitle.style.cssText = "font-size:12px;font-weight:800;color:#334155;margin-bottom:6px";
+    roomTitle.textContent = "교실 배정";
+    roomSection.appendChild(roomTitle);
+
+    const ruleSel = makeRoomRuleSelect(entry.roomPinned ? "fixed" : (entry.roomRule || "auto"));
+    ruleSel.disabled = !canEdit();
+    const roomSel = makeRoomSelect(entry.roomId || "");
+    roomSel.disabled = !canEdit();
+
+    const ruleWrap = document.createElement("div");
+    ruleWrap.style.marginBottom = "6px";
+    const ruleLabel = document.createElement("label");
+    ruleLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
+    ruleLabel.textContent = "배정 방식";
+    ruleWrap.append(ruleLabel, ruleSel);
+
+    const roomWrap = document.createElement("div");
+    roomWrap.style.marginBottom = "6px";
+    const roomLabel = document.createElement("label");
+    roomLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
+    roomLabel.textContent = "교실";
+    roomWrap.append(roomLabel, roomSel);
+
+    const hint = document.createElement("div");
+    hint.style.cssText = "font-size:10px;color:#64748b;line-height:1.35;margin:4px 0 7px";
+    const refreshRoomUi = () => {
+      const rule = normalizeRoomRule(ruleSel.value);
+      roomWrap.style.display = (rule === "fixed" || entry.roomPinned) ? "block" : "block";
+      hint.textContent = entry.roomPinned
+        ? `이 배치 수업은 현재 교실(${ctx.getRoomDisplayName?.(roomSel.value) || roomSel.value || "교실 없음"})에 고정되어 있습니다.`
+        : getRoomRuleHint(rule, roomSel.value);
+    };
+
+    const applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer;margin-bottom:6px";
+    applyBtn.textContent = "교실 설정 적용";
+    applyBtn.disabled = !canEdit();
+    applyBtn.onclick = () => {
+      if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) { alert("고정할 교실을 선택해 주세요."); return; }
+      ctx.applyRoomRuleToEntry?.(entry.id, ruleSel.value, roomSel.value);
       ctx.recomputeConflicts();
       ctx.renderAll();
+      modal.remove();
+    };
+
+    roomSel.addEventListener("change", () => {
+      if (!canEdit()) return;
+      // 교실만 바꾼 경우에는 현재 배치 수업에 직접 반영합니다. 고정은 별도 버튼/배정 방식에서 처리합니다.
+      ctx.updateEntry(entry.id, "roomId", roomSel.value || null);
+      ctx.recomputeConflicts();
+      ctx.renderAll();
+      refreshRoomUi();
     });
-    box.append(rLabel, rSel);
+    ruleSel.addEventListener("change", refreshRoomUi);
+    refreshRoomUi();
+
+    roomSection.append(ruleWrap, roomWrap, hint, applyBtn);
+
+    if (canEdit()) {
+      const roomPinBtn = document.createElement("button");
+      roomPinBtn.type = "button";
+      roomPinBtn.style.cssText = "width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;background:white;color:#334155;font-size:12px;font-weight:800;cursor:pointer";
+      roomPinBtn.textContent = entry.roomPinned ? "🔓 교실 고정 해제" : "📍 이 교실에 고정";
+      roomPinBtn.onclick = () => {
+        const roomId = roomSel.value || entry.roomId || "";
+        if (!entry.roomPinned && !roomId) { alert("고정할 교실을 먼저 선택해 주세요."); return; }
+        const e = entries().find(x => x.id === entry.id);
+        if (!e) return;
+        ctx.captureTimetableUndo("교실 고정 변경");
+        e.roomPinned = !e.roomPinned;
+        e.roomRule = e.roomPinned ? "fixed" : (ruleSel.value || "auto");
+        if (e.roomPinned) e.roomId = roomId;
+        scheduleSave("timetable");
+        ctx.recomputeConflicts();
+        ctx.renderAll();
+        modal.remove();
+      };
+      roomSection.appendChild(roomPinBtn);
+    }
+    box.appendChild(roomSection);
 
     ctx.renderEntryConflictDetailSection(box, entry);
 

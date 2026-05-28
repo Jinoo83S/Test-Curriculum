@@ -530,6 +530,8 @@ export function normalizeTimetableEntry(e = {}) {
     audienceClassKeys: Array.isArray(e.audienceClassKeys) ? e.audienceClassKeys.map(clean).filter(Boolean) : [],
     audienceStudentKeys: Array.isArray(e.audienceStudentKeys) ? e.audienceStudentKeys.map(clean).filter(Boolean) : [],
     roomId:      clean(e.roomId) || null,
+    roomRule:    clean(e.roomRule) || "auto",
+    roomPinned:  !!e.roomPinned,
     pinned:      !!e.pinned,
   };
 }
@@ -557,6 +559,8 @@ export function normalizeTtCard(item = {}) {
     classLabels: arr(item.classLabels),   // display: "9A"
     studentKeys: arr(item.studentKeys),   // internal: "classId:studentId"
     isWholeGrade: !!item.isWholeGrade,
+    roomRule:    clean(item.roomRule) || "auto",
+    fixedRoomId: clean(item.fixedRoomId) || null,
     generatedAt: clean(item.generatedAt),
     manualEdited: !!item.manualEdited,
   };
