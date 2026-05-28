@@ -5431,3 +5431,39 @@ a.topbar-nav-link {
   opacity: .45;
   cursor: not-allowed;
 }
+
+/* ── Rooms header actions / type editor visibility fix ─────────── */
+.rooms-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.rooms-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.danger-lite {
+  border-color: #fecaca !important;
+  background: #fff1f2 !important;
+  color: #991b1b !important;
+}
+.danger-lite:hover:not(:disabled) {
+  background: #fee2e2 !important;
+}
+.room-type-manager {
+  display: block !important;
+  visibility: visible !important;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(180deg, #f8fbff 0%, #eff6ff 100%);
+  box-shadow: 0 1px 4px rgba(37, 99, 235, .08);
+}
+.room-type-manager-head strong::before {
+  content: "🏷️ ";
+}
+.rooms-table select option {
+  white-space: nowrap;
+}

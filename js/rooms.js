@@ -127,8 +127,8 @@ function appendRoomTypeManager(container, onUpdate, options) {
   head.className = "room-type-manager-head";
   head.innerHTML = `
     <div>
-      <strong>교실 유형</strong>
-      <span>유형을 추가·수정하면 아래 교실 목록의 유형 선택지에도 바로 반영됩니다.</span>
+      <strong>유형 편집</strong>
+      <span>추가·수정한 유형은 아래 교실 목록의 유형 드롭다운에 바로 반영됩니다.</span>
     </div>`;
 
   const addBtn = makeBtn("+ 유형 추가", "secondary-btn compact-btn", () => {
@@ -245,6 +245,18 @@ export function deleteRoom(id) {
   scheduleSave("rooms"); return true;
 }
 
+export function resetRooms() {
+  if (!canEdit()) return false;
+  const count = getRooms().length;
+  const message = count
+    ? `등록된 교실 ${count}개를 모두 초기화할까요?\n교실 유형 목록은 유지되고, 교실 목록만 비워집니다.`
+    : "등록된 교실이 없습니다. 그래도 교실 목록을 초기화할까요?";
+  if (!confirm(message)) return false;
+  rDomain().rooms = [];
+  scheduleSave("rooms");
+  return true;
+}
+
 export function renderRoomsView(container, onUpdate, options = {}) {
   container.innerHTML = "";
   const teacherNames = Array.isArray(options.teacherNames) ? options.teacherNames : [];
@@ -252,12 +264,22 @@ export function renderRoomsView(container, onUpdate, options = {}) {
 
   const hdr = document.createElement("div"); hdr.className = "rooms-header";
   const title = document.createElement("h3"); title.textContent = "교실 관리";
+  const actions = document.createElement("div");
+  actions.className = "rooms-header-actions";
   const addBtn = makeBtn("+ 교실 추가", "primary-btn compact-btn", () => {
     addRoom({ name: `교실 ${getRooms().length + 1}` });
     onUpdate?.(); renderRoomsView(container, onUpdate, options);
   });
   addBtn.disabled = !canEdit();
-  hdr.append(title, addBtn); container.appendChild(hdr);
+  const resetBtn = makeBtn("초기화", "secondary-btn compact-btn danger-lite", () => {
+    if (resetRooms()) {
+      onUpdate?.();
+      renderRoomsView(container, onUpdate, options);
+    }
+  });
+  resetBtn.disabled = !canEdit();
+  actions.append(addBtn, resetBtn);
+  hdr.append(title, actions); container.appendChild(hdr);
 
   appendRoomTypeManager(container, onUpdate, options);
   appendRoomPasteArea(container, onUpdate, options);
@@ -306,7 +328,7 @@ export function renderRoomsView(container, onUpdate, options = {}) {
     // Grade select
     const gradeTd = document.createElement("td");
     const gradeSel = document.createElement("select"); gradeSel.disabled = !canEdit();
-    [{ v:"", l:"공용" }, ...GRADE_KEYS.map(g => ({ v:g, l:g }))].forEach(({ v, l }) => {
+    [{ v:"", l:"공용" }, ...GRADE_KEYS.map(g => ({ v:g, l:g.replace("학년", "") }))].forEach(({ v, l }) => {
       const o = document.createElement("option"); o.value = v; o.textContent = l; if (v === room.grade) o.selected = true; gradeSel.appendChild(o);
     });
     gradeSel.addEventListener("change", e => { updateRoom(room.id, "grade", e.target.value); onUpdate?.(); renderRoomsView(container, onUpdate, options); });
