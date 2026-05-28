@@ -476,9 +476,13 @@ export function createAutoAssignAll(deps) {
     // timetable.ttcards / timetable.ttcardGroups 스냅샷 기준으로 판단합니다.
     const { standalone, groupBlocks } = buildSchedulableItems();
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
-    const autoItemCount = standalone.length + groupBlocks.reduce((sum, { unitItems }) => {
-      return sum + (unitItems || []).reduce((unitSum, item) => unitSum + Math.max(1, Number(item.credits) || 0), 0);
+    const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
+      const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
+      const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
+      return sum + (isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
     }, 0);
+    const autoTargetSlots = standalone.length + groupTargetSlots;
+    const autoItemCount = autoTargetSlots;
 
     if (!autoItemCount || !activeGrades.length) {
       alert("시간표 사전작업에서 생성된 과목 카드가 없습니다.\n먼저 시간표 사전작업에서 카드를 생성하거나, 로컬 모드 전환 시 온라인 데이터를 복사해 주세요.");
@@ -539,12 +543,6 @@ export function createAutoAssignAll(deps) {
       log: "그룹 수업은 동시배정 단위로 계산합니다."
     }, true);
 
-    const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
-      const credits = unitItems.map(u => u.credits || 0);
-      return sum + (group.isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
-    }, 0);
-    const autoTargetSlots = standalone.length + groupTargetSlots;
-
     const requiredByKey = new Map();
     const itemByKey = new Map();
     standalone.forEach(item => {
@@ -597,8 +595,8 @@ export function createAutoAssignAll(deps) {
         });
 
         for (const { group, unitItems } of orderedGroups) {
-          if (!group.isConcurrent) continue;
-          const maxCredits = Math.max(...unitItems.map(u => u.credits));
+          if (!(group.isConcurrent || group.groupType === "concurrent")) continue;
+          const maxCredits = Math.max(0, ...(unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
           const alreadyPinned = countPinnedGroupSlots(group, unitItems, pinnedEntries);
           const needSlots = Math.max(0, maxCredits - alreadyPinned);
 
@@ -628,7 +626,7 @@ export function createAutoAssignAll(deps) {
 
         // ── Place non-concurrent groups independently (legacy safety) ─────────
         for (const { group, unitItems } of orderedGroups) {
-          if (group.isConcurrent) continue;
+          if (group.isConcurrent || group.groupType === "concurrent") continue;
           for (const groupItem of unitItems) {
             const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
             const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
