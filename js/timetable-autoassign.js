@@ -20,45 +20,51 @@ export function createAutoAssignAll(deps) {
   } = deps;
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
-  const groupContainsCardId = (group, cardId) => {
+
+  const groupContainsCardId = (group, cardId, { includeExcluded = false } = {}) => {
     if (!group || !cardId) return false;
+    if (!includeExcluded && (group.excludedCardIds || []).includes(cardId)) return false;
     if ((group.poolCardIds || []).includes(cardId)) return true;
     return (group.units || []).some(unit => (unit.ttcardIds || []).includes(cardId));
   };
-  function groupIdsForTemplate(templateId) {
-    if (!templateId) return [];
-    const cardIds = (appState.timetable?.ttcards || [])
-      .filter(c => c.templateId === templateId)
-      .map(c => c.id);
+
+  function groupIdsForCardId(cardId, options = {}) {
+    if (!cardId) return [];
     return ttGroups()
-      .filter(g => cardIds.some(id => groupContainsCardId(g, id)))
+      .filter(g => groupContainsCardId(g, cardId, options))
       .map(g => g.id);
   }
-  function isConcurrentTpl(templateId) {
-    const ids = groupIdsForTemplate(templateId);
-    return ttGroups().some(g => ids.includes(g.id) && (g.groupType === "concurrent" || !!g.isConcurrent));
+
+  function groupIdsForPlacement(x) {
+    const ids = new Set();
+    if (x?.groupId) ids.add(x.groupId);
+    ttCardIdsFromPlacement(x).forEach(cardId => {
+      groupIdsForCardId(cardId).forEach(groupId => ids.add(groupId));
+    });
+
+    // Legacy fallback only: older entries may not have ttcardId/ttcardIds.
+    // Do not use this for normal current entries because templateId can be reused
+    // across grades/cards and would make excluded cards look grouped again.
+    if (!ids.size && x?.templateId) {
+      (appState.timetable?.ttcards || [])
+        .filter(c => c.templateId === x.templateId && (!x.gradeKey || c.gradeKey === x.gradeKey) && ((x.sectionIdx ?? null) == null || (c.sectionIdx ?? 0) === (x.sectionIdx ?? 0)))
+        .forEach(c => groupIdsForCardId(c.id).forEach(groupId => ids.add(groupId)));
+    }
+    return [...ids];
   }
+
+  function sameActiveGroup(a, b) {
+    const aIds = new Set(groupIdsForPlacement(a));
+    if (!aIds.size) return false;
+    return groupIdsForPlacement(b).some(id => aIds.has(id));
+  }
+
   /** Check if a placement item/entry belongs to a concurrent group */
   function isConcurrentItem(x) {
-    if (x.groupId) {
-      const grp = ttGroups().find(g => g.id === x.groupId);
-      if (grp) return grp.groupType === "concurrent" || !!grp.isConcurrent;
-    }
-    return isConcurrentTpl(x.templateId);
-  }
-  function sameGroupTpl(tidA, tidB) {
-    const a = new Set(groupIdsForTemplate(tidA));
-    return groupIdsForTemplate(tidB).some(id => a.has(id));
-  }
-  function getGroupId(tid) {
-    return groupIdsForTemplate(tid)[0] || null;
-  }
-  function linkedGroups(tidA, tidB) {
-    const gA = getGroupId(tidA), gB = getGroupId(tidB);
-    if (!gA || !gB || gA === gB) return false;
-    const grpA = ttGroups().find(g => g.id === gA);
-    const grpB = ttGroups().find(g => g.id === gB);
-    return grpA?.linkedGroupId === gB || grpB?.linkedGroupId === gA;
+    return groupIdsForPlacement(x).some(groupId => {
+      const grp = ttGroups().find(g => g.id === groupId);
+      return grp && (grp.groupType === "concurrent" || !!grp.isConcurrent);
+    });
   }
 
   function checkPlacementValid(item, slot, placed, options = {}) {
@@ -78,8 +84,7 @@ export function createAutoAssignAll(deps) {
     //    (for example Korean + Korean A split by roster), so internal teacher/student/room
     //    conflicts inside that group must not block placement.
     for (const e of slotEnts) {
-      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
-                      (sameGroupTpl(item.templateId, e.templateId));
+      const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
       if (conc) continue;
 
@@ -101,8 +106,7 @@ export function createAutoAssignAll(deps) {
       // Same unit → co-located intentionally
       if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
 
-      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
-                      (sameGroupTpl(item.templateId, e.templateId));
+      const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
       const eAudience = audienceForPlacement(e);
       const conflict = audiencesConflict(itemAudience, eAudience);
@@ -144,8 +148,7 @@ export function createAutoAssignAll(deps) {
       if (respectAssignedRoom && roomId) {
         const roomBusy = existing.some(e => {
           if (!(e.day===slot.day && e.period===slot.period && e.roomId===roomId)) return false;
-          const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) ||
-                          (sameGroupTpl(item.templateId, e.templateId));
+          const sameGrp = sameActiveGroup(item, e);
           return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
         });
         if (roomBusy) return false;
@@ -247,7 +250,7 @@ export function createAutoAssignAll(deps) {
       const sameUnit = item.unitId && e.unitId && item.unitId === e.unitId;
       if (sameUnit) continue;
 
-      const sameGrp = (item.groupId && e.groupId && item.groupId === e.groupId) || sameGroupTpl(item.templateId, e.templateId);
+      const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
       if (conc) continue;
 
