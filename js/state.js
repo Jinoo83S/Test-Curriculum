@@ -41,6 +41,144 @@ const dirtyDomains = new Set();
 const SAVE_DELAY_MS = 10000;
 const AUTO_SAVE_KEY = "his_auto_save_v1";
 
+
+// ── Firestore usage monitor (client-side estimate) ───────────────
+// Firebase 콘솔의 실제 프로젝트 사용량을 직접 읽는 기능은 아니며,
+// 이 브라우저에서 앱이 수행한 읽기/쓰기/삭제를 보수적으로 기록합니다.
+const FIRESTORE_USAGE_KEY = "his_firestore_usage_v1";
+const FIRESTORE_USAGE_LIMITS = { reads: 50000, writes: 20000, deletes: 20000 };
+
+function usageDayKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultUsageDay(day = usageDayKey()) {
+  return { day, reads: 0, writes: 0, deletes: 0, logs: [], startedAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+}
+
+function readUsageStore() {
+  try {
+    const raw = localStorage.getItem(FIRESTORE_USAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeUsageStore(store) {
+  try { localStorage.setItem(FIRESTORE_USAGE_KEY, JSON.stringify(store || {})); } catch (_) {}
+}
+
+function getTodayUsageStore() {
+  const day = usageDayKey();
+  const store = readUsageStore();
+  if (!store.current || store.current.day !== day) {
+    if (store.current?.day) {
+      store.history = Array.isArray(store.history) ? store.history : [];
+      store.history.unshift(store.current);
+      store.history = store.history.slice(0, 14);
+    }
+    store.current = defaultUsageDay(day);
+    writeUsageStore(store);
+  }
+  return store;
+}
+
+export function recordFirestoreUsage(type, count = 1, label = "", meta = {}) {
+  if (LOCAL_DEV_MODE) return;
+  const n = Math.max(0, Number(count) || 0);
+  if (!n) return;
+  const store = getTodayUsageStore();
+  const current = store.current || defaultUsageDay();
+  if (type === "read" || type === "reads") current.reads += n;
+  else if (type === "write" || type === "writes") current.writes += n;
+  else if (type === "delete" || type === "deletes") current.deletes += n;
+  else return;
+  current.updatedAt = new Date().toISOString();
+  current.logs = Array.isArray(current.logs) ? current.logs : [];
+  current.logs.push({ at: current.updatedAt, type, count: n, label: clean(label), meta });
+  current.logs = current.logs.slice(-80);
+  store.current = current;
+  writeUsageStore(store);
+}
+
+function shouldCountSnapshotForUsage(snap) {
+  return !snap?.metadata?.fromCache && !snap?.metadata?.hasPendingWrites;
+}
+
+function recordDocSnapshotUsage(label, snap, state = {}) {
+  if (!shouldCountSnapshotForUsage(snap)) return;
+  const count = snap?.exists?.() ? 1 : 0;
+  if (count) recordFirestoreUsage("reads", count, label, { source: state.seen ? "snapshot-update" : "snapshot-initial" });
+  state.seen = true;
+}
+
+function recordCollectionSnapshotUsage(label, snap, state = {}) {
+  if (!shouldCountSnapshotForUsage(snap)) return;
+  let count = 0;
+  if (!state.seen) {
+    count = snap?.size || 0;
+  } else {
+    try { count = (snap.docChanges?.() || []).length; }
+    catch (_) { count = snap?.size || 0; }
+  }
+  if (count) recordFirestoreUsage("reads", count, label, { source: state.seen ? "snapshot-update" : "snapshot-initial" });
+  state.seen = true;
+}
+
+function estimateCurrentDomainReadCount(domain) {
+  if (domain === "classes") {
+    return { domain, count: (appState.classes?.classes || []).length, note: "split/classes 컬렉션" };
+  }
+  if (domain === "rosters") {
+    const ids = uniqueOrdered([
+      ...Object.keys(appState.rosters?.rosters || {}),
+      ...Object.keys(appState.rosters?.rosterMeta || {})
+    ]);
+    return { domain, count: ids.length, note: "split/rosters 과목별 문서" };
+  }
+  if (domain === "timetable") {
+    const entries = (appState.timetable?.entries || []).length;
+    const cards = (appState.timetable?.ttcards || []).length;
+    return { domain, count: entries + cards + 1, note: `entries ${entries} + cards ${cards} + meta 1` };
+  }
+  return { domain, count: 1, note: `boards/${domain} 단일 문서` };
+}
+
+export function getFirestoreUsageStats() {
+  const store = getTodayUsageStore();
+  const byDomain = [...(_subscribedDomains || [])].map(estimateCurrentDomainReadCount);
+  const total = byDomain.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+  return {
+    limits: { ...FIRESTORE_USAGE_LIMITS },
+    current: { ...(store.current || defaultUsageDay()) },
+    history: Array.isArray(store.history) ? store.history : [],
+    subscribedDomains: [...(_subscribedDomains || [])],
+    currentSubscriptionEstimate: { total, byDomain },
+    localMode: LOCAL_DEV_MODE,
+    dirtyDomains: getDirtyDomains(),
+    initialLoad: { ...initialLoad }
+  };
+}
+
+export function exportFirestoreUsageSnapshot() {
+  return {
+    version: 1,
+    mode: "his-firestore-usage-estimate",
+    exportedAt: new Date().toISOString(),
+    note: "이 파일은 현재 브라우저에서 앱이 기록한 Firestore 사용량 추정치입니다. Firebase 콘솔의 전체 프로젝트 사용량과 다를 수 있습니다.",
+    ...getFirestoreUsageStats()
+  };
+}
+
+export function resetFirestoreUsageStats() {
+  const store = readUsageStore();
+  store.current = defaultUsageDay();
+  writeUsageStore(store);
+  return store.current;
+}
+
 // 마지막으로 Firestore에서 읽었거나 Firestore에 저장한 상태의 fingerprint입니다.
 // 같은 데이터는 다시 쓰지 않아 quota를 소모하지 않도록 합니다.
 const savedDomainFingerprints = {};
@@ -161,6 +299,7 @@ export async function saveNow(domain, options = {}) {
     } else {
       // Ordinary domains, or split domains temporarily running in legacy fallback mode.
       await setDoc(refs[domain], { ...normalized, updatedAt: serverTimestamp() });
+      recordFirestoreUsage("writes", 1, `save: boards/${domain}`, { operation: "setDoc" });
     }
     markDomainSaved(domain, normalized);
     dirtyDomains.delete(domain);
@@ -621,6 +760,7 @@ function jsonSafeClone(value) {
 async function readDiagnosticDoc(label, ref) {
   try {
     const snap = await getDoc(ref);
+    recordFirestoreUsage("reads", 1, label, { operation: "getDoc" });
     return {
       label,
       ok: true,
@@ -636,6 +776,7 @@ async function readDiagnosticDoc(label, ref) {
 async function readDiagnosticCollection(label, collRef) {
   try {
     const snap = await getDocs(collRef);
+    recordFirestoreUsage("reads", Math.max(1, snap.size || 0), label, { operation: "getDocs" });
     return {
       label,
       ok: true,
@@ -1000,6 +1141,7 @@ async function commitChangedDoc(baselinePath, ref, data, options = {}) {
   const current = baselinePath.reduce((obj, key) => obj?.[key], splitDocFingerprints);
   if (!options.force && current === hash) return 0;
   await setDoc(ref, { ...data, updatedAt: serverTimestamp() }, { merge: false });
+  recordFirestoreUsage("writes", 1, `save: ${baselinePath.join("/")}`, { operation: "setDoc" });
   if (baselinePath.length === 2) splitDocFingerprints[baselinePath[0]][baselinePath[1]] = hash;
   return 1;
 }
@@ -1013,11 +1155,17 @@ async function commitWriteOps(ops) {
       if (op.type === "delete") batch.delete(op.ref);
     });
     await batch.commit();
+    const slice = ops.slice(i, i + CHUNK_SIZE);
+    const writes = slice.filter(op => op.type === "set").length;
+    const deletes = slice.filter(op => op.type === "delete").length;
+    if (writes) recordFirestoreUsage("writes", writes, "batch set", { operation: "writeBatch" });
+    if (deletes) recordFirestoreUsage("deletes", deletes, "batch delete", { operation: "writeBatch" });
   }
 }
 
 async function syncCollection(collRef, items, toDocData) {
   const snap = await getDocs(collRef);
+  recordFirestoreUsage("reads", Math.max(1, snap.size || 0), "syncCollection existing docs", { operation: "getDocs" });
   const existingIds = new Set(snap.docs.map(d => d.id));
   const nextIds = new Set(items.map(item => item.id).filter(Boolean));
   const ops = [];
@@ -1113,6 +1261,7 @@ async function saveSplitDomain(domain, options = {}) {
 async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
   try {
     const snap = await getDoc(refs[domain]);
+    recordFirestoreUsage("reads", 1, `legacy fallback: boards/${domain}`, { operation: "getDoc" });
     if (!snap.exists()) return false;
     const normalized = normalizeFn(snap.data());
     const hasData = options.hasData ? options.hasData(normalized) : true;
@@ -1132,7 +1281,9 @@ async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
 
 // Snapshot handlers per ordinary one-document domain
 function handleSnap(domain, normalizeFn) {
+  const usageState = { seen: false };
   return async (snap) => {
+    recordDocSnapshotUsage(`listen: boards/${domain}`, snap, usageState);
     if (!snap.exists()) {
       const normalized = normalizeFn({});
       appState[domain] = normalized;
@@ -1217,7 +1368,9 @@ export function isDomainSubscribed(domain) {
 }
 
 function subscribeClassesSplit() {
+  const usageState = { seen: false };
   unsubs.classes = onSnapshot(splitRefs.classes, async snap => {
+    recordCollectionSnapshotUsage("listen: split/classes", snap, usageState);
     if (!snap.empty) markSplitConfirmed("classes");
 
     // _split 컬렉션 확인됨 → fallback 불필요
@@ -1236,7 +1389,9 @@ function subscribeClassesSplit() {
 }
 
 function subscribeRostersSplit() {
+  const usageState = { seen: false };
   unsubs.rosters = onSnapshot(splitRefs.rosters, async snap => {
+    recordCollectionSnapshotUsage("listen: split/rosters", snap, usageState);
     if (!snap.empty) markSplitConfirmed("rosters");
 
     if (snap.empty && !splitConfirmed.has("rosters") && !splitFallbackAttempted.rosters) {
@@ -1333,18 +1488,24 @@ async function applyTimetableSplitIfReady() {
 
 function subscribeTimetableSplit() {
   const onSplitError = err => fallbackToLegacyDocument("timetable", normalizeTimetableDomain, err);
+  const entriesUsage = { seen: false };
+  const cardsUsage = { seen: false };
+  const metaUsage = { seen: false };
 
   const unsubEntries = onSnapshot(splitRefs.timetableEntries, snap => {
+    recordCollectionSnapshotUsage("listen: split/timetableEntries", snap, entriesUsage);
     timetableSplitCache.entries = snap.docs.map(d => normalizeTimetableEntry({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyTimetableSplitIfReady();
   }, onSplitError);
 
   const unsubCards = onSnapshot(splitRefs.ttcards, snap => {
+    recordCollectionSnapshotUsage("listen: split/ttcards", snap, cardsUsage);
     timetableSplitCache.ttcards = snap.docs.map(d => normalizeTtCard({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyTimetableSplitIfReady();
   }, onSplitError);
 
   const unsubMeta = onSnapshot(splitRefs.timetableMeta, snap => {
+    recordDocSnapshotUsage("listen: split/timetableMeta", snap, metaUsage);
     timetableSplitCache.metaExists = snap.exists();
     timetableSplitCache.meta = snap.exists() ? withoutFirestoreMeta(snap.data()) : {};
     applyTimetableSplitIfReady();
@@ -1421,6 +1582,7 @@ export async function migrateFromLegacy() {
   let legacySnap = null;
   try {
     legacySnap = await getDoc(refs.legacy);
+    recordFirestoreUsage("reads", 1, "legacy migration: boards/main", { operation: "getDoc" });
   } catch (e) {
     console.warn("Legacy migration skipped; legacy document could not be read.", e);
     localStorage.setItem(MIGRATE_KEY, "done"); // 읽기 실패도 더 이상 시도 안 함
@@ -1445,7 +1607,7 @@ export async function migrateFromLegacy() {
 
   const snaps = await Promise.all(
     migrationTargets.map(async ([domain]) => {
-      try { return await getDoc(refs[domain]); }
+      try { const snap = await getDoc(refs[domain]); recordFirestoreUsage("reads", 1, `migration check: boards/${domain}`, { operation: "getDoc" }); return snap; }
       catch (e) { console.warn(`Migration check skipped for ${domain}.`, e); return null; }
     })
   );
@@ -1461,6 +1623,7 @@ export async function migrateFromLegacy() {
     await Promise.all(missingTargets.map(([domain, normalizeFn]) =>
       setDoc(refs[domain], { ...normalizeFn(legacy), updatedAt: serverTimestamp() })
     ));
+    recordFirestoreUsage("writes", missingTargets.length, "legacy migration writes", { operation: "setDoc" });
     localStorage.setItem(MIGRATE_KEY, "done");
     console.log("Migration complete.");
   } catch (e) {

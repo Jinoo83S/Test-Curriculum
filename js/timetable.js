@@ -9,6 +9,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 import { openDataCleanupDialog } from "./data-cleanup.js";
+import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
@@ -252,7 +253,16 @@ function setupTtSaveQuotaControls() {
     cleanupBtn.textContent = "DB 정리";
     cleanupBtn.title = "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.";
     cleanupBtn.addEventListener("click", () => openDataCleanupDialog());
+
+    const usageBtn = document.createElement("button");
+    usageBtn.type = "button";
+    usageBtn.className = "tt-save-mode-btn firestore-usage-btn dev-tool-control";
+    usageBtn.textContent = "사용량";
+    usageBtn.title = "이 브라우저에서 발생한 Firestore 읽기/쓰기/삭제 추정치를 확인합니다.";
+    usageBtn.addEventListener("click", () => openFirestoreUsageDialog());
+
     parent.insertBefore(cleanupBtn, parent.firstChild);
+    parent.insertBefore(usageBtn, parent.firstChild);
     parent.insertBefore(diagBtn, parent.firstChild);
   }
 

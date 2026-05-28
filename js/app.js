@@ -8,6 +8,7 @@ import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUp
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 import { openDataCleanupDialog } from "./data-cleanup.js";
+import { openFirestoreUsageDialog } from "./firestore-usage.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
@@ -27,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "20260528_room_homeroom_force";
+const APP_MODULE_VERSION = "20260528_usage_monitor";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -899,7 +900,17 @@ function setupSaveQuotaControls() {
     cleanupBtn.textContent = "DB 정리";
     cleanupBtn.title = "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.";
     cleanupBtn.addEventListener("click", () => openDataCleanupDialog());
+
+    const usageBtn = document.createElement("button");
+    usageBtn.type = "button";
+    usageBtn.className = "secondary-btn firestore-usage-btn dev-tool-control";
+    usageBtn.style.padding = "6px 10px";
+    usageBtn.textContent = "사용량";
+    usageBtn.title = "이 브라우저에서 발생한 Firestore 읽기/쓰기/삭제 추정치를 확인합니다.";
+    usageBtn.addEventListener("click", () => openFirestoreUsageDialog());
+
     saveStatusEl.insertAdjacentElement("afterend", cleanupBtn);
+    saveStatusEl.insertAdjacentElement("afterend", usageBtn);
     saveStatusEl.insertAdjacentElement("afterend", diagBtn);
   }
 
