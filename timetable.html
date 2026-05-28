@@ -473,6 +473,29 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .tt-topbar-right{overflow-x:auto;flex-wrap:nowrap!important;padding-bottom:2px}
 }
 
+
+
+/* ── Developer tools visibility ───────────────────────── */
+.developer-toggle-btn{white-space:nowrap;font-weight:800}
+.his-dev-tools-off .tt-mode-switch,
+.his-dev-tools-off .top-mode-switch,
+.his-dev-tools-off .local-dev-menu,
+.his-dev-tools-off .firestore-diagnostic-btn,
+.his-dev-tools-off .data-cleanup-btn,
+.his-dev-tools-off .tt-save-status,
+.his-dev-tools-off .save-status,
+.his-dev-tools-off .dev-tool-control{display:none!important}
+.his-dev-tools-off .developer-toggle-btn{display:inline-flex!important}
+
+/* ── DB cleanup modal ───────────────────────── */
+.cleanup-modal-backdrop{position:fixed;inset:0;z-index:10000;background:rgba(15,23,42,.52);display:flex;align-items:center;justify-content:center;padding:22px}
+.cleanup-modal{width:min(920px,96vw);max-height:88vh;overflow:hidden;background:#fff;border-radius:18px;box-shadow:0 24px 70px rgba(15,23,42,.32);border:1px solid #e5e7eb;display:flex;flex-direction:column;color:#1e293b}
+.cleanup-modal-header,.cleanup-modal-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid #e5e7eb}
+.cleanup-modal-footer{border-bottom:0;border-top:1px solid #e5e7eb;justify-content:flex-end}
+.cleanup-modal-header h3{margin:0 0 4px;font-size:18px;color:#1e293b}.cleanup-modal-header p{margin:0;color:#64748b;font-size:13px}
+.cleanup-modal-body{padding:16px 18px;overflow:auto;display:grid;gap:14px}.cleanup-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.cleanup-summary>div,.cleanup-section{border:1px solid #e5e7eb;border-radius:14px;background:#f8fafc;padding:12px}.cleanup-section h4{margin:0 0 8px;font-size:14px}.cleanup-section p{margin:6px 0;line-height:1.5}.cleanup-list{margin:0;padding-left:18px;display:grid;gap:4px;font-size:13px}.muted{color:#64748b}
+
 </style>
 
 <style>
@@ -946,8 +969,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script type="module" src="js/local-dev.js"></script>
-<script type="module" src="js/timetable.js"></script>
+<script type="module" src="js/local-dev.js?v=20260528_room_homeroom_force"></script>
+<script type="module" src="js/timetable.js?v=20260528_room_homeroom_force"></script>
 <script>
 /* ── Tab switching ── */
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {

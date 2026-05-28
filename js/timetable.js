@@ -8,6 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
+import { openDataCleanupDialog } from "./data-cleanup.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
@@ -222,7 +223,7 @@ function setupTtSaveQuotaControls() {
   } else {
     const diagBtn = document.createElement("button");
     diagBtn.type = "button";
-    diagBtn.className = "tt-save-mode-btn firestore-diagnostic-btn";
+    diagBtn.className = "tt-save-mode-btn firestore-diagnostic-btn dev-tool-control";
     diagBtn.textContent = "Firestore 진단";
     diagBtn.title = "현재 Firestore 저장 데이터를 JSON으로 내보냅니다. 읽기 quota를 사용합니다.";
     diagBtn.addEventListener("click", async () => {
@@ -245,6 +246,13 @@ function setupTtSaveQuotaControls() {
         diagBtn.textContent = prevText;
       }
     });
+    const cleanupBtn = document.createElement("button");
+    cleanupBtn.type = "button";
+    cleanupBtn.className = "tt-save-mode-btn data-cleanup-btn dev-tool-control";
+    cleanupBtn.textContent = "DB 정리";
+    cleanupBtn.title = "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.";
+    cleanupBtn.addEventListener("click", () => openDataCleanupDialog());
+    parent.insertBefore(cleanupBtn, parent.firstChild);
     parent.insertBefore(diagBtn, parent.firstChild);
   }
 
@@ -256,7 +264,7 @@ function setupTtSaveQuotaControls() {
 
   ttSaveModeBtn = document.createElement("button");
   ttSaveModeBtn.type = "button";
-  ttSaveModeBtn.className = "tt-save-mode-btn";
+  ttSaveModeBtn.className = "tt-save-mode-btn dev-tool-control";
   ttSaveModeBtn.addEventListener("click", async () => {
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
@@ -266,7 +274,7 @@ function setupTtSaveQuotaControls() {
 
   ttSavePendingBtn = document.createElement("button");
   ttSavePendingBtn.type = "button";
-  ttSavePendingBtn.className = "tt-save-btn";
+  ttSavePendingBtn.className = "tt-save-btn dev-tool-control";
   ttSavePendingBtn.addEventListener("click", async () => {
     await savePendingNow();
     updateTtSaveControls();

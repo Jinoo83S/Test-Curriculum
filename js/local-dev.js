@@ -2,6 +2,7 @@
 // local-dev.js · Firebase-free local development mode
 // ================================================================
 const MODE_KEY = "his_local_dev_mode_v1";
+const DEV_TOOLS_KEY = "his_developer_tools_v1";
 
 function readQueryMode() {
   try {
@@ -74,6 +75,56 @@ export function clearLocalStateStore() {
 
 
 
+
+// ── Developer tools visibility switch ───────────────────────────
+export function isDeveloperToolsEnabled() {
+  try { return localStorage.getItem(DEV_TOOLS_KEY) !== "off"; }
+  catch (_) { return true; }
+}
+
+export function setDeveloperToolsEnabled(enabled) {
+  try { localStorage.setItem(DEV_TOOLS_KEY, enabled ? "on" : "off"); } catch (_) {}
+  applyDeveloperToolsVisibility();
+}
+
+function ensureDeveloperToggleButton() {
+  const localBtn = document.getElementById("topLocalModeBtn");
+  const modeSwitch = localBtn?.closest?.(".top-mode-switch, .tt-mode-switch");
+  const host = modeSwitch?.parentElement || document.querySelector(".topbar-right, .tt-topbar-right");
+  if (!host) return null;
+  let btn = document.getElementById("topDeveloperToolsBtn");
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "topDeveloperToolsBtn";
+    btn.type = "button";
+    btn.className = host.classList.contains("tt-topbar-right") ? "tt-mode-btn developer-toggle-btn" : "secondary-btn top-mode-btn developer-toggle-btn";
+    btn.title = "개발자 도구 버튼 표시/숨김";
+    if (modeSwitch) modeSwitch.insertAdjacentElement("beforebegin", btn);
+    else host.insertBefore(btn, host.firstChild);
+  }
+  return btn;
+}
+
+function applyDeveloperToolsVisibility() {
+  const enabled = isDeveloperToolsEnabled();
+  document.documentElement.classList.toggle("his-dev-tools-off", !enabled);
+  document.documentElement.classList.toggle("his-dev-tools-on", enabled);
+  if (document.body) {
+    document.body.classList.toggle("his-dev-tools-off", !enabled);
+    document.body.classList.toggle("his-dev-tools-on", enabled);
+  }
+  const btn = ensureDeveloperToggleButton();
+  if (btn) {
+    btn.textContent = enabled ? "개발자 ON" : "개발자 OFF";
+    btn.classList.toggle("mode-active", enabled);
+    btn.setAttribute("aria-pressed", enabled ? "true" : "false");
+    btn.onclick = (event) => {
+      event.preventDefault();
+      setDeveloperToolsEnabled(!isDeveloperToolsEnabled());
+    };
+  }
+}
+
 // ── Top Local/Online mode switch buttons ─────────────────────────
 function currentModeFromStorage() {
   try { return localStorage.getItem(MODE_KEY) === "on"; }
@@ -122,6 +173,7 @@ function switchModeToOnline() {
 }
 
 function setupTopModeSwitchButtons() {
+  applyDeveloperToolsVisibility();
   const localBtn = document.getElementById("topLocalModeBtn");
   const onlineBtn = document.getElementById("topOnlineModeBtn");
   if (!localBtn || !onlineBtn) return;
@@ -166,6 +218,8 @@ if (typeof window !== "undefined") {
     toOnline: switchModeToOnline,
     refresh: setupTopModeSwitchButtons,
     isLocal: currentModeFromStorage,
+    isDeveloperToolsEnabled,
+    setDeveloperToolsEnabled,
   };
 }
 

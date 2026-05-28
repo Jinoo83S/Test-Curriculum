@@ -7,6 +7,7 @@ import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUp
          isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
+import { openDataCleanupDialog } from "./data-cleanup.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
 import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
@@ -867,7 +868,7 @@ function setupSaveQuotaControls() {
   } else {
     const diagBtn = document.createElement("button");
     diagBtn.type = "button";
-    diagBtn.className = "secondary-btn firestore-diagnostic-btn";
+    diagBtn.className = "secondary-btn firestore-diagnostic-btn dev-tool-control";
     diagBtn.style.padding = "6px 10px";
     diagBtn.textContent = "Firestore 진단";
     diagBtn.title = "현재 Firestore 저장 데이터를 JSON으로 내보냅니다. 읽기 quota를 사용합니다.";
@@ -891,12 +892,20 @@ function setupSaveQuotaControls() {
         diagBtn.textContent = prevText;
       }
     });
+    const cleanupBtn = document.createElement("button");
+    cleanupBtn.type = "button";
+    cleanupBtn.className = "secondary-btn data-cleanup-btn dev-tool-control";
+    cleanupBtn.style.padding = "6px 10px";
+    cleanupBtn.textContent = "DB 정리";
+    cleanupBtn.title = "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.";
+    cleanupBtn.addEventListener("click", () => openDataCleanupDialog());
+    saveStatusEl.insertAdjacentElement("afterend", cleanupBtn);
     saveStatusEl.insertAdjacentElement("afterend", diagBtn);
   }
 
   saveModeBtn = document.createElement("button");
   saveModeBtn.type = "button";
-  saveModeBtn.className = "secondary-btn";
+  saveModeBtn.className = "secondary-btn dev-tool-control";
   saveModeBtn.style.padding = "6px 10px";
   saveModeBtn.addEventListener("click", async () => {
     const next = !isAutoSaveEnabled();
@@ -907,7 +916,7 @@ function setupSaveQuotaControls() {
 
   savePendingBtn = document.createElement("button");
   savePendingBtn.type = "button";
-  savePendingBtn.className = "primary-btn";
+  savePendingBtn.className = "primary-btn dev-tool-control";
   savePendingBtn.style.padding = "6px 10px";
   savePendingBtn.addEventListener("click", async () => {
     await savePendingNow();
