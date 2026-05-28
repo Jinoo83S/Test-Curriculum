@@ -70,6 +70,10 @@ export function createAutoAssignAll(deps) {
     // 0. Pinned whole-grade activities such as chapel/창체 protect their slot first.
     if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) return false;
 
+    // 0-1. If a card was explicitly removed from an auto group, do not let the
+    // auto-assigner place it in that group's same-time slot by coincidence.
+    if (slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e))) return false;
+
     // 1. Teacher conflict. Same concurrent group is an intentional same-time bundle
     //    (for example Korean + Korean A split by roster), so internal teacher/student/room
     //    conflicts inside that group must not block placement.
@@ -182,13 +186,14 @@ export function createAutoAssignAll(deps) {
   function scoreAutoSlot(item, slot, placed) {
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+    const exclusionPenalty = slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e)) ? 100000 : 0;
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
     const dayEnts = existing.filter(e => e.day === slot.day);
     const teacherLoad = teachers.reduce((sum, t) => sum + dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(t)).length, 0);
     const audience = audienceForPlacement(item);
     const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
     const samePeriodLoad = existing.filter(e => e.period === slot.period).length;
-    return slotEnts.length * 100 + teacherLoad * 8 + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
+    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
   }
 
   function findBestAutoSlot(item, baseSlots, placed, checkOptions) {
@@ -232,6 +237,7 @@ export function createAutoAssignAll(deps) {
 
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+    if (slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e))) return Infinity;
     const dayEnts = existing.filter(e => e.day === slot.day);
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
     const itemAudience = audienceForPlacement(item);
@@ -300,11 +306,40 @@ export function createAutoAssignAll(deps) {
   }
 
   function getGroupAutoCardIds(group, unitItems = []) {
+    const excluded = new Set(group?.excludedCardIds || []);
     return new Set([
       ...(group?.poolCardIds || []),
       ...((group?.units || []).flatMap(u => u.ttcardIds || [])),
       ...(unitItems || []).flatMap(u => (u.ttcards || []).map(c => c.id)),
-    ].filter(Boolean));
+    ].filter(id => id && !excluded.has(id)));
+  }
+
+  function getExcludedGroupIdsForCard(cardId) {
+    if (!cardId) return [];
+    return ttGroups()
+      .filter(group => (group.excludedCardIds || []).includes(cardId))
+      .map(group => group.id);
+  }
+
+  function hasAutoGroupExclusionSlotConflict(item, existingEntry) {
+    if (!item || !existingEntry) return false;
+
+    const itemCardIds = ttCardIdsFromPlacement(item).filter(Boolean);
+    const entryCardIds = ttCardIdsFromPlacement(existingEntry).filter(Boolean);
+
+    // Case A. We are placing an auto group. A card explicitly removed from this
+    // group must not be placed in the same slot by coincidence.
+    if (item.groupId && entryCardIds.some(cardId => getExcludedGroupIdsForCard(cardId).includes(item.groupId))) {
+      return true;
+    }
+
+    // Case B. We are placing a standalone card. If that card was explicitly
+    // excluded from an auto group, it must stay away from that group's slots.
+    if (existingEntry.groupId && itemCardIds.some(cardId => getExcludedGroupIdsForCard(cardId).includes(existingEntry.groupId))) {
+      return true;
+    }
+
+    return false;
   }
 
   function countPinnedGroupSlots(group, unitItems, pinnedEntries) {
@@ -381,6 +416,35 @@ export function createAutoAssignAll(deps) {
     const cancelBtn = overlay.querySelector(".tt-auto-progress-cancel");
     const logEl = overlay.querySelector(".tt-auto-progress-log");
     const cardEl = overlay.querySelector(".tt-auto-progress-card");
+
+    // Strong inline styling: the dialog must stay readable even if an older
+    // cached style.css is still being served by GitHub Pages.
+    if (cardEl) {
+      cardEl.style.cssText = "width:min(560px,calc(100vw - 32px));max-height:min(720px,calc(100vh - 40px));overflow:auto;background:#fff;border:1px solid #dbe4f0;border-radius:22px;box-shadow:0 32px 100px rgba(15,23,42,.38);padding:0;outline:none;color:#172033;font-family:inherit;";
+      const head = overlay.querySelector(".tt-auto-progress-head");
+      if (head) head.style.cssText = "display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:22px 24px 16px;border-bottom:1px solid #eef2f7;background:linear-gradient(135deg,#f8fbff,#eef6ff);";
+      const bodyEls = [".tt-auto-progress-step",".tt-auto-progress-detail",".tt-auto-progress-bar-wrap",".tt-auto-progress-percent",".tt-auto-progress-stats",".tt-auto-progress-current",".tt-auto-progress-log",".tt-auto-progress-actions"];
+      bodyEls.forEach(sel => { const el = overlay.querySelector(sel); if (el) el.classList.add("tt-auto-progress-body-item"); });
+      const step = overlay.querySelector(".tt-auto-progress-step");
+      if (step) step.style.cssText = "margin:18px 24px 6px;font-size:15px;font-weight:900;color:#173b68;";
+      const detail = overlay.querySelector(".tt-auto-progress-detail");
+      if (detail) detail.style.cssText = "margin:0 24px 14px;min-height:28px;font-size:13px;line-height:1.55;color:#475569;";
+      const barWrap = overlay.querySelector(".tt-auto-progress-bar-wrap");
+      if (barWrap) barWrap.style.cssText = "margin:0 24px;height:12px;border-radius:999px;overflow:hidden;background:#e5eaf2;border:1px solid #d9e2ec;";
+      if (barEl) barEl.style.cssText = "width:0%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#2563eb,#7c3aed);transition:width .16s ease;";
+      if (percentEl) percentEl.style.cssText = "margin:6px 24px 0;text-align:right;font-size:12px;font-weight:900;color:#334155;";
+      const stats = overlay.querySelector(".tt-auto-progress-stats");
+      if (stats) stats.style.cssText = "display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:14px 24px 0;";
+      overlay.querySelectorAll(".tt-auto-progress-stats span").forEach(el => el.style.cssText = "background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:8px 9px;font-size:12px;color:#64748b;");
+      overlay.querySelectorAll(".tt-auto-progress-stats b").forEach(el => el.style.cssText = "display:block;margin-top:2px;color:#0f172a;font-size:15px;");
+      if (currentEl) currentEl.style.cssText = "margin:12px 24px 0;padding:9px 11px;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      if (logEl) logEl.style.cssText = "margin:12px 24px 0;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px dashed #cbd5e1;font-size:12px;line-height:1.55;color:#64748b;max-height:110px;overflow:auto;";
+      const actions = overlay.querySelector(".tt-auto-progress-actions");
+      if (actions) actions.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin:16px 24px 22px;";
+      if (cancelBtn) cancelBtn.style.cssText = "border:0;border-radius:10px;color:#fff;font-weight:900;padding:9px 16px;cursor:pointer;background:#dc2626;";
+      if (closeBtn) closeBtn.style.cssText = "border:0;border-radius:10px;color:#fff;font-weight:900;padding:9px 16px;cursor:pointer;background:#173b68;";
+    }
+
     const stat = (key, value) => {
       const el = overlay.querySelector(`[data-k="${key}"]`);
       if (el && value !== undefined && value !== null) el.textContent = String(value);
