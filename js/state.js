@@ -315,7 +315,7 @@ function normalizeRostersDomain(raw = {}) {
   const rosterMeta = {};
   if (raw.rosterMeta && typeof raw.rosterMeta === "object") {
     Object.entries(raw.rosterMeta).forEach(([tid, meta]) => {
-      rosterMeta[tid] = { classCount: clean(meta?.classCount) };
+      rosterMeta[tid] = { classCount: clean(meta?.classCount), missingExcluded: !!meta?.missingExcluded };
     });
   }
   return { rosters, rosterMeta };
@@ -758,12 +758,12 @@ function markSplitBaselines(domain, normalized = normalizedForDomain(domain)) {
       id,
       templateId: id,
       entries: n.rosters[id] || [],
-      meta: n.rosterMeta[id] || { classCount: "" }
+      meta: n.rosterMeta[id] || { classCount: "", missingExcluded: false }
     }));
     splitDocFingerprints.rosters.rosters = mapFromItems(docs, item => ({
       templateId: item.templateId,
       entries: item.entries || [],
-      meta: item.meta || { classCount: "" }
+      meta: item.meta || { classCount: "", missingExcluded: false }
     }));
     return;
   }
@@ -877,7 +877,7 @@ async function saveSplitDomain(domain, options = {}) {
       id,
       templateId: id,
       entries: normalized.rosters[id] || [],
-      meta: normalized.rosterMeta[id] || { classCount: "" }
+      meta: normalized.rosterMeta[id] || { classCount: "", missingExcluded: false }
     }));
     const writes = await commitChangedCollection(
       { domain: "rosters", name: "rosters" },
@@ -886,7 +886,7 @@ async function saveSplitDomain(domain, options = {}) {
       item => ({
         templateId: item.templateId,
         entries: item.entries || [],
-        meta: item.meta || { classCount: "" }
+        meta: item.meta || { classCount: "", missingExcluded: false }
       }),
       options
     );
@@ -1067,7 +1067,7 @@ function subscribeRostersSplit() {
       const data = withoutFirestoreMeta(d.data());
       const templateId = clean(data.templateId) || d.id;
       raw.rosters[templateId] = Array.isArray(data.entries) ? data.entries : [];
-      raw.rosterMeta[templateId] = data.meta || { classCount: "" };
+      raw.rosterMeta[templateId] = data.meta || { classCount: "", missingExcluded: false };
     });
     applyNormalizedDomain("rosters", normalizeRostersDomain(raw));
   }, err => fallbackToLegacyDocument("rosters", normalizeRostersDomain, err));

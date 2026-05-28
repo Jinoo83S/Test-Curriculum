@@ -5540,3 +5540,28 @@ a.topbar-nav-link {
   border-radius: 8px;
   font-weight: 700;
 }
+
+/* ── Roster missing-filter controls ───────────────────────────── */
+.warning-soft-btn {
+  border: 1px solid #fed7aa !important;
+  background: #fff7ed !important;
+  color: #9a3412 !important;
+  font-weight: 800 !important;
+}
+.warning-soft-btn:hover {
+  background: #ffedd5 !important;
+}
+.roster-missing-excluded-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.roster-missing-exclude-toggle {
+  white-space: nowrap;
+}

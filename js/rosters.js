@@ -13,6 +13,7 @@ const ROSTER_LEVELS = {
   high:   { label: "고등", hint: "10–12학년", grades: ["10학년", "11학년", "12학년"] },
 };
 let rosterSchoolLevel = "middle";
+const ROSTER_FILTER_MISSING = "__missing__";
 
 function getActiveRosterGrades() {
   return ROSTER_LEVELS[rosterSchoolLevel]?.grades || ROSTER_LEVELS.middle.grades;
@@ -67,12 +68,26 @@ export function getRoster(templateId, gradeKey = null) {
 export function getRosterSection(templateId, sIdx, gradeKey = null) {
   return getRoster(templateId, gradeKey).filter(e => (e.sectionIdx ?? 0) === sIdx);
 }
-export function getRosterMeta(templateId) { return rosterMeta()[templateId] || { classCount: "" }; }
+export function getRosterMeta(templateId) {
+  const meta = rosterMeta()[templateId] || {};
+  return { classCount: cleanMetaValue(meta.classCount), missingExcluded: !!meta.missingExcluded };
+}
+function cleanMetaValue(value) { return String(value ?? "").trim(); }
 export function getClassCount(templateId) { return Math.max(0, parseInt(getRosterMeta(templateId).classCount, 10) || 0); }
+export function isMissingRosterExcluded(templateId) { return !!getRosterMeta(templateId).missingExcluded; }
+export function isRosterMissing(templateId) {
+  return filterRosterEntriesByActiveLevel(getRoster(templateId)).length <= 0 && !isMissingRosterExcluded(templateId);
+}
 export function setRosterClassCount(templateId, value) {
   if (!canEdit()) return;
   if (!rosterMeta()[templateId]) rosterMeta()[templateId] = {};
   rosterMeta()[templateId].classCount = value;
+  scheduleSave("rosters");
+}
+export function setMissingRosterExcluded(templateId, excluded) {
+  if (!canEdit()) return;
+  if (!rosterMeta()[templateId]) rosterMeta()[templateId] = {};
+  rosterMeta()[templateId].missingExcluded = !!excluded;
   scheduleSave("rosters");
 }
 
@@ -140,7 +155,7 @@ export function renderRosterView(container) {
   const prevRightScroll = document.getElementById("rosterRightPanel")?.scrollTop ?? 0;
   const prevLeftScroll  = document.getElementById("rosterTplList")?.scrollTop ?? 0;
   container.innerHTML = "";
-  if (!getActiveRosterGrades().includes(rosterGradeFilter) && rosterGradeFilter !== "전체") rosterGradeFilter = "전체";
+  if (!getActiveRosterGrades().includes(rosterGradeFilter) && rosterGradeFilter !== "전체" && rosterGradeFilter !== ROSTER_FILTER_MISSING) rosterGradeFilter = "전체";
   const activeTemplateIds = new Set(getPlacedTemplates("전체").map(({ tpl }) => tpl.id));
   if (selectedRosterTemplateId && !activeTemplateIds.has(selectedRosterTemplateId)) {
     selectedRosterTemplateId = null;
@@ -157,14 +172,29 @@ export function renderRosterView(container) {
   const leftHdr   = document.createElement("div"); leftHdr.className   = "roster-left-header";
   const leftTitle = document.createElement("h3");  leftTitle.textContent = "과목 선택";
   const gfSel = document.createElement("select"); gfSel.className = "roster-grade-filter";
-  ["전체", ...getActiveRosterGrades()].forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = g === "전체" ? `${ROSTER_LEVELS[rosterSchoolLevel].label} 전체` : g; if (g === rosterGradeFilter) o.selected = true; gfSel.appendChild(o); });
+  const gradeFilterOptions = ["전체", ...getActiveRosterGrades(), ROSTER_FILTER_MISSING];
+  gradeFilterOptions.forEach(g => {
+    const o = document.createElement("option");
+    o.value = g;
+    o.textContent = g === "전체"
+      ? `${ROSTER_LEVELS[rosterSchoolLevel].label} 전체`
+      : g === ROSTER_FILTER_MISSING ? "명단 미지정" : g;
+    if (g === rosterGradeFilter) o.selected = true;
+    gfSel.appendChild(o);
+  });
   gfSel.addEventListener("change", e => { rosterGradeFilter = e.target.value; renderRosterView(container); });
   leftHdr.append(leftTitle, gfSel); leftPanel.appendChild(leftHdr);
 
   const tplList = document.createElement("div"); tplList.className = "roster-template-list"; tplList.id = "rosterTplList";
-  const ftpl = getPlacedTemplates(rosterGradeFilter);
+  const baseFilterGrade = rosterGradeFilter === ROSTER_FILTER_MISSING ? "전체" : rosterGradeFilter;
+  const ftpl = getPlacedTemplates(baseFilterGrade).filter(({ tpl }) => rosterGradeFilter !== ROSTER_FILTER_MISSING || isRosterMissing(tpl.id));
   if (!ftpl.length) {
-    const e = document.createElement("div"); e.className = "roster-template-empty"; e.textContent = `${ROSTER_LEVELS[rosterSchoolLevel].label} 과정에 배치된 과목이 없습니다.`; tplList.appendChild(e);
+    const e = document.createElement("div");
+    e.className = "roster-template-empty";
+    e.textContent = rosterGradeFilter === ROSTER_FILTER_MISSING
+      ? "명단 미지정 과목이 없습니다."
+      : `${ROSTER_LEVELS[rosterSchoolLevel].label} 과정에 배치된 과목이 없습니다.`;
+    tplList.appendChild(e);
   } else {
     // Group by track (curriculum order preserved within each track)
     const trackGroups = {}; // track → [{ tpl, gradeKey }]
@@ -175,7 +205,8 @@ export function renderRosterView(container) {
 
     const renderItem = (tpl, gradeKey) => {
       const rosterCount = filterRosterEntriesByActiveLevel(getRoster(tpl.id)).length;
-      const missingRoster = rosterCount <= 0;
+      const missingExcluded = isMissingRosterExcluded(tpl.id);
+      const missingRoster = rosterCount <= 0 && !missingExcluded;
       const item = document.createElement("div");
       item.className = "roster-template-item"
         + (tpl.id === selectedRosterTemplateId ? " active" : "")
@@ -197,6 +228,11 @@ export function renderRosterView(container) {
         warn.className = "roster-missing-roster-badge";
         warn.textContent = "명단 미지정";
         metaRow.appendChild(warn);
+      } else if (rosterCount <= 0 && missingExcluded) {
+        const badge = document.createElement("span");
+        badge.className = "roster-missing-excluded-badge";
+        badge.textContent = "미지정 제외";
+        metaRow.appendChild(badge);
       }
       // Section badge
       const cc = getClassCount(tpl.id);
@@ -244,7 +280,8 @@ function renderRosterDetail(panel, container) {
   panel.innerHTML = "";
   const tpl  = getTemplateById(selectedRosterTemplateId); if (!tpl) return;
   const roster = filterRosterEntriesByActiveLevel(getRoster(selectedRosterTemplateId));
-  const rosterMissing = roster.length <= 0;
+  const missingExcluded = isMissingRosterExcluded(selectedRosterTemplateId);
+  const rosterMissing = roster.length <= 0 && !missingExcluded;
   const cc   = getClassCount(selectedRosterTemplateId);
   const multi = cc > 1;
   if (multi && selectedSection >= cc) selectedSection = 0;
@@ -257,7 +294,9 @@ function renderRosterDetail(panel, container) {
   const rname = document.createElement("h3"); rname.textContent = buildLabel(tpl);
   const rcnt  = document.createElement("span");
   rcnt.className = "student-count-badge" + (rosterMissing ? " roster-count-badge-empty" : "");
-  rcnt.textContent = rosterMissing ? "0명 수강 · 명단 미지정" : `${roster.length}명 수강`;
+  rcnt.textContent = roster.length <= 0
+    ? (missingExcluded ? "0명 수강 · 미지정 제외" : "0명 수강 · 명단 미지정")
+    : `${roster.length}명 수강`;
   rtitle.append(rname, rcnt);
   const ccWrap = document.createElement("div"); ccWrap.className = "roster-class-count-wrap";
   if (cc > 0) {
@@ -267,8 +306,17 @@ function renderRosterDetail(panel, container) {
   }
   const clearAll = makeBtn("명단 초기화", "danger-btn compact-btn", () => { clearRoster(selectedRosterTemplateId, null); renderRosterView(container); });
   clearAll.disabled = !canEdit();
+  const excludeMissingBtn = makeBtn(
+    missingExcluded ? "미지정 제외 해제" : "미지정 제외",
+    (missingExcluded ? "secondary-btn" : "warning-soft-btn") + " compact-btn roster-missing-exclude-toggle",
+    () => { setMissingRosterExcluded(selectedRosterTemplateId, !missingExcluded); renderRosterView(container); }
+  );
+  excludeMissingBtn.disabled = !canEdit();
+  excludeMissingBtn.title = missingExcluded
+    ? "다시 명단 미지정 검사 대상에 포함합니다."
+    : "0명이어도 명단 미지정 과목으로 표시하지 않습니다.";
   const expBtn = makeBtn("📥 내보내기", "secondary-btn compact-btn", () => exportRosterXlsx(selectedRosterTemplateId));
-  rhdr.append(rtitle, ccWrap, clearAll, expBtn);
+  rhdr.append(rtitle, ccWrap, clearAll, excludeMissingBtn, expBtn);
   panel.appendChild(rhdr);
 
   // Section tabs
@@ -304,7 +352,9 @@ function renderRosterDetail(panel, container) {
   if (!displayRoster.length) {
     const e = document.createElement("div");
     e.className = "roster-enrolled-empty" + (rosterMissing ? " roster-enrolled-empty-warning" : "");
-    e.textContent = rosterMissing ? "수강명단이 0명입니다. 아래 학생 목록에서 수강 학생을 추가해 주세요." : "아직 수강 학생이 없습니다.";
+    e.textContent = rosterMissing
+      ? "수강명단이 0명입니다. 아래 학생 목록에서 수강 학생을 추가해 주세요."
+      : missingExcluded ? "이 과목은 명단 미지정 검사에서 제외되어 있습니다." : "아직 수강 학생이 없습니다.";
     panel.appendChild(e);
   } else {
     const wrap = document.createElement("div"); wrap.className = "roster-enrolled-wrap";
