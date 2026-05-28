@@ -106,14 +106,20 @@ export function createTimetableConstraintsHandlers({
     const teacherSet = new Set((teachers || []).map(clean).filter(Boolean));
     let changed = 0;
     (rooms || []).forEach(room => {
-      const owner = clean(room.teacherName);
-      if (!owner || !teacherSet.has(owner)) return;
+      const rawTeacher = clean(room.teacherName);
+      const noteTeacher = clean(room.note);
+      let owner = teacherSet.has(rawTeacher) ? rawTeacher : "";
+      // 이전 붙여넣기 데이터에서 teacherName에 7A/8B 같은 홈룸값이 들어가고
+      // 실제 교사명이 note에 남아 있는 경우가 있어 note도 보조로 확인합니다.
+      if (!owner && teacherSet.has(noteTeacher)) owner = noteTeacher;
+      if (!owner) return;
       const c = ensureConstraint(owner);
       const needs = c.homeRoomId !== room.id || c.assignedRoomId !== room.id || !c.useHomeRoom;
       if (needs) {
         c.homeRoomId = room.id;
         c.assignedRoomId = room.id;
         c.useHomeRoom = true;
+        if (room.teacherName !== owner) room.teacherName = owner;
         changed += 1;
       }
     });
@@ -122,7 +128,7 @@ export function createTimetableConstraintsHandlers({
 
   function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
     const box = document.createElement("div");
-    box.className = "tt-con-bulk-box";
+    box.className = "tt-con-bulk-box tt-ui-card";
 
     const main = document.createElement("div");
     main.className = "tt-con-bulk-main";
@@ -142,7 +148,7 @@ export function createTimetableConstraintsHandlers({
     numWrap.append("하루", maxDay, "연속", maxCon);
     main.appendChild(numWrap);
 
-    const applyNums = makeBtn("적용", "primary-btn compact-btn", () => {
+    const applyNums = makeBtn("적용", "primary-btn compact-btn tt-action-btn", () => {
       if (!canEdit()) return;
       captureTimetableUndo("교사 조건 전체 일괄 수정");
       const md = parseInt(maxDay.value) || 6;
@@ -159,17 +165,17 @@ export function createTimetableConstraintsHandlers({
     applyNums.disabled = !canEdit();
     main.appendChild(applyNums);
 
-    const expandBtn = makeBtn("펼치기", "secondary-btn compact-btn", () => {
+    const expandBtn = makeBtn("전체 펼치기", "secondary-btn compact-btn tt-action-btn", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = true; });
       renderConstraintsPanel();
     });
-    const collapseBtn = makeBtn("접기", "secondary-btn compact-btn", () => {
+    const collapseBtn = makeBtn("전체 접기", "secondary-btn compact-btn tt-action-btn", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = false; });
       renderConstraintsPanel();
     });
     main.append(expandBtn, collapseBtn);
 
-    const syncRoomsBtn = makeBtn("교실 데이터 반영", "secondary-btn compact-btn", () => {
+    const syncRoomsBtn = makeBtn("교실 데이터 반영", "secondary-btn compact-btn tt-action-btn", () => {
       if (!canEdit()) return;
       if (!rooms.length) {
         alert("등록된 교실 데이터가 없습니다. 먼저 교실 관리에서 교실과 담당 교사를 입력해 주세요.");
@@ -197,36 +203,82 @@ export function createTimetableConstraintsHandlers({
     summary.textContent = "선택 시간 일괄 불가/가능";
     details.appendChild(summary);
 
-    const row = document.createElement("div");
-    row.className = "tt-con-bulk-time-row";
-    const daySel = document.createElement("select");
-    dayLabels.forEach((d, i) => { const o = document.createElement("option"); o.value = i; o.textContent = d; daySel.appendChild(o); });
-    const perSel = document.createElement("select");
-    periods.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p || `${i+1}교시`; perSel.appendChild(o); });
-    const setUnav = makeBtn("전체 불가", "secondary-btn compact-btn", () => {
+    const selected = { day: 0, period: 0 };
+    const gridWrap = document.createElement("div");
+    gridWrap.className = "tt-bulk-time-wrap";
+    const grid = document.createElement("div");
+    grid.className = "tt-bulk-time-grid";
+
+    const renderBulkGrid = () => {
+      grid.innerHTML = "";
+      const head = document.createElement("div");
+      head.className = "tt-bulk-time-row";
+      head.appendChild(Object.assign(document.createElement("div"), { className: "tt-bulk-time-corner" }));
+      dayLabels.forEach(d => {
+        const th = document.createElement("div");
+        th.className = "tt-bulk-time-head";
+        th.textContent = d;
+        head.appendChild(th);
+      });
+      grid.appendChild(head);
+
+      periods.forEach((label, p) => {
+        const row = document.createElement("div");
+        row.className = "tt-bulk-time-row";
+        const per = document.createElement("div");
+        per.className = "tt-bulk-time-period";
+        per.textContent = `${p + 1}`;
+        row.appendChild(per);
+        dayLabels.forEach((_, d) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          const isSelected = selected.day === d && selected.period === p;
+          btn.className = "tt-bulk-time-cell" + (isSelected ? " is-selected" : "");
+          btn.title = `${dayLabels[d]} ${periods[p] || `${p + 1}교시`}`;
+          btn.textContent = isSelected ? "✓" : "";
+          btn.disabled = !canEdit();
+          btn.addEventListener("click", () => {
+            selected.day = d;
+            selected.period = p;
+            renderBulkGrid();
+          });
+          row.appendChild(btn);
+        });
+        grid.appendChild(row);
+      });
+    };
+    renderBulkGrid();
+
+    const actionLine = document.createElement("div");
+    actionLine.className = "tt-bulk-time-actions";
+    const currentLabel = document.createElement("span");
+    currentLabel.className = "tt-bulk-selected-label";
+    const updateLabel = () => { currentLabel.textContent = `선택: ${dayLabels[selected.day]} ${periods[selected.period] || `${selected.period + 1}교시`}`; };
+    const setUnav = makeBtn("전체 불가", "danger-btn compact-btn tt-action-btn", () => {
       if (!canEdit()) return;
       captureTimetableUndo("전체 수업 불가 시간 추가");
-      const day = parseInt(daySel.value), period = parseInt(perSel.value);
       teachers.forEach(t => {
         const c = ensureConstraint(t);
         const slots = c.unavailableSlots || (c.unavailableSlots = []);
-        if (!slots.some(s => s.day === day && s.period === period)) slots.push({ day, period });
+        if (!slots.some(s => s.day === selected.day && s.period === selected.period)) slots.push({ day: selected.day, period: selected.period });
       });
       scheduleSave("timetable"); recomputeConflicts(); renderAll();
     });
-    const clearUnav = makeBtn("전체 가능", "secondary-btn compact-btn", () => {
+    const clearUnav = makeBtn("전체 가능", "secondary-btn compact-btn tt-action-btn", () => {
       if (!canEdit()) return;
       captureTimetableUndo("전체 수업 불가 시간 해제");
-      const day = parseInt(daySel.value), period = parseInt(perSel.value);
       teachers.forEach(t => {
         const c = ensureConstraint(t);
-        c.unavailableSlots = (c.unavailableSlots || []).filter(s => !(s.day === day && s.period === period));
+        c.unavailableSlots = (c.unavailableSlots || []).filter(s => !(s.day === selected.day && s.period === selected.period));
       });
       scheduleSave("timetable"); recomputeConflicts(); renderAll();
     });
     setUnav.disabled = clearUnav.disabled = !canEdit();
-    row.append("선택 시간", daySel, perSel, setUnav, clearUnav);
-    details.appendChild(row);
+    updateLabel();
+    grid.addEventListener("click", updateLabel);
+    actionLine.append(currentLabel, setUnav, clearUnav);
+    gridWrap.append(grid, actionLine);
+    details.appendChild(gridWrap);
     box.appendChild(details);
 
     container.appendChild(box);

@@ -391,7 +391,7 @@ export async function openDataCleanupDialog() {
       <h3>DB 진단/정리</h3>
       <p>기존 Firestore 데이터를 삭제하지 않고, 중복 카드와 홈룸 데이터를 보정합니다.</p>
     </div>`;
-  const closeBtn = el("button", "cleanup-icon-close", "×");
+  const closeBtn = el("button", "cleanup-icon-close ui-icon-btn", "×");
   closeBtn.type = "button";
   closeBtn.title = "닫기";
   closeBtn.setAttribute("aria-label", "DB 진단/정리 닫기");
@@ -400,11 +400,11 @@ export async function openDataCleanupDialog() {
 
   const body = el("div", "cleanup-modal-body", "진단 중…");
   const footer = el("div", "cleanup-modal-footer");
-  const refreshBtn = el("button", "cleanup-refresh-btn", "↻ 다시 진단");
+  const refreshBtn = el("button", "cleanup-refresh-btn ui-soft-btn", "↻ 다시 진단");
   refreshBtn.type = "button";
-  const applyBtn = el("button", "cleanup-apply-btn", "정리 실행");
+  const applyBtn = el("button", "cleanup-apply-btn ui-primary-btn", "정리 실행");
   applyBtn.type = "button";
-  const closeFooterBtn = el("button", "cleanup-cancel-btn", "닫기");
+  const closeFooterBtn = el("button", "cleanup-cancel-btn ui-ghost-btn", "닫기");
   closeFooterBtn.type = "button";
   closeFooterBtn.addEventListener("click", () => overlay.remove());
   footer.append(closeFooterBtn, refreshBtn, applyBtn);

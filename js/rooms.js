@@ -223,7 +223,7 @@ function appendRoomTypeManager(container, onUpdate, options) {
       <span>추가·수정한 유형은 아래 교실 목록의 유형 드롭다운에 바로 반영됩니다.</span>
     </div>`;
 
-  const addBtn = makeBtn("+ 유형 추가", "secondary-btn compact-btn", () => {
+  const addBtn = makeBtn("+ 유형 추가", "secondary-btn compact-btn tt-action-btn room-type-add-btn", () => {
     addRoomType();
     onUpdate?.();
     renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
@@ -303,7 +303,7 @@ function appendRoomPasteArea(container, onUpdate, options) {
   const pasteActions = document.createElement("div");
   pasteActions.className = "paste-actions";
 
-  const parseBtn = makeBtn("교실 명단 추가", "primary-btn compact-btn", () => {
+  const parseBtn = makeBtn("교실 명단 추가", "primary-btn compact-btn tt-action-btn", () => {
     if (!canEdit()) return;
     const raw = textarea.value.trim();
     if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
@@ -319,7 +319,7 @@ function appendRoomPasteArea(container, onUpdate, options) {
   });
   parseBtn.disabled = !canEdit();
 
-  const clearBtn = makeBtn("지우기", "secondary-btn compact-btn", () => { textarea.value = ""; });
+  const clearBtn = makeBtn("지우기", "secondary-btn compact-btn tt-action-btn", () => { textarea.value = ""; });
   pasteActions.append(parseBtn, clearBtn);
   inner.appendChild(pasteActions);
   details.appendChild(inner);
@@ -366,12 +366,12 @@ export function renderRoomsView(container, onUpdate, options = {}) {
   const title = document.createElement("h3"); title.textContent = "교실 관리";
   const actions = document.createElement("div");
   actions.className = "rooms-header-actions";
-  const addBtn = makeBtn("+ 교실 추가", "primary-btn compact-btn", () => {
+  const addBtn = makeBtn("+ 교실 추가", "primary-btn compact-btn tt-action-btn", () => {
     addRoom({ name: `교실 ${getRooms().length + 1}` });
     onUpdate?.(); renderRoomsView(container, onUpdate, options);
   });
   addBtn.disabled = !canEdit();
-  const resetBtn = makeBtn("초기화", "secondary-btn compact-btn danger-lite", () => {
+  const resetBtn = makeBtn("초기화", "danger-btn compact-btn tt-action-btn", () => {
     if (resetRooms()) {
       onUpdate?.();
       renderRoomsView(container, onUpdate, options);

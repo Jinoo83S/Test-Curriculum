@@ -50,14 +50,14 @@ export function createTimetableSidebarHandlers(deps) {
     panel.innerHTML = "";
 
     const toolbar = document.createElement("div");
-    toolbar.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:6px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;flex-wrap:wrap";
+    toolbar.className = "tt-card-toolbar";
 
-    const loadBtn = makeBtn("📥 카드 불러오기", "secondary-btn compact-btn", () => {
+    const loadBtn = makeBtn("📥 카드 불러오기", "secondary-btn compact-btn tt-action-btn", () => {
       renderSubjectPanel();
       alert(`저장된 시간표 카드 ${getTtCards().length}개를 불러왔습니다.`);
     });
 
-    const refreshBtn = makeBtn("🔄 카드 데이터 갱신", "secondary-btn compact-btn", () => {
+    const refreshBtn = makeBtn("🔄 카드 데이터 갱신", "secondary-btn compact-btn tt-action-btn", () => {
       if (!canEdit()) return;
       const n = refreshTtCardData();
       alert(`${n}개 카드 데이터를 갱신했습니다.`);
@@ -227,7 +227,7 @@ export function createTimetableSidebarHandlers(deps) {
   function buildGradeFilterControls(ttcards) {
     const wrap = document.createElement("div");
     wrap.className = "tt-grade-filter-controls";
-    wrap.style.cssText = "display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-left:4px;padding-left:6px;border-left:1px solid #cbd5e1";
+    wrap.className = "tt-grade-filter-controls";
 
     const label = document.createElement("span");
     label.textContent = "학년 필터";
@@ -335,7 +335,7 @@ export function createTimetableSidebarHandlers(deps) {
   function buildCreditDiagnosticButton(ttcards) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "secondary-btn compact-btn";
+    btn.className = "secondary-btn compact-btn tt-action-btn";
     btn.textContent = "🔎 시수 진단";
     btn.title = "학급별 필요 시수 차이 원인을 확인합니다.";
     btn.addEventListener("click", () => showClassCreditDiagnostics(ttcards));
@@ -345,7 +345,6 @@ export function createTimetableSidebarHandlers(deps) {
   function buildClassCountSummary(ttcards) {
     const wrap = document.createElement("div");
     wrap.className = "tt-class-count-summary";
-    wrap.style.cssText = "margin-left:auto;display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:11px;color:#334155";
 
     const label = document.createElement("span");
     label.textContent = "학급별 필요 시수";
