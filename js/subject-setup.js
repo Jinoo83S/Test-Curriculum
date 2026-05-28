@@ -138,6 +138,7 @@ export function renderSubjectSetupView(container) {
         const tpl = getTemplateById(r.tplId);
         const tr  = document.createElement("tr");
         if (isChoice) tr.className = "ss-row-choice";
+        updateMissingClassCountState(tr, null, r.tplId);
 
         // Grade cell
         if (!gradeRendered) {
@@ -189,8 +190,11 @@ export function renderSubjectSetupView(container) {
           const v = parseInt(e.target.value) || 0;
           setRosterClassCount(r.tplId, v || "");
           renderPreview(preview, r.tplId);
+          updateMissingClassCountState(tr, tdCnt, r.tplId);
         });
-        tdCnt.appendChild(inp); tr.appendChild(tdCnt);
+        tdCnt.appendChild(inp);
+        updateMissingClassCountState(tr, tdCnt, r.tplId);
+        tr.appendChild(tdCnt);
 
         // 반 preview
         renderPreview(preview, r.tplId);
@@ -217,6 +221,22 @@ export function renderSubjectSetupView(container) {
 
   table.appendChild(tbody); tableWrap.appendChild(table);
   container.appendChild(tableWrap);
+}
+
+function updateMissingClassCountState(rowEl, countCell, tplId) {
+  const missing = getClassCount(tplId) <= 0;
+  if (rowEl) {
+    rowEl.classList.toggle("ss-row-missing-classcount", missing);
+    rowEl.title = missing ? "반 수가 지정되지 않은 과목입니다." : "";
+  }
+  if (!countCell) return;
+  countCell.querySelectorAll(".ss-missing-count-badge").forEach(el => el.remove());
+  if (missing) {
+    const badge = document.createElement("div");
+    badge.className = "ss-missing-count-badge";
+    badge.textContent = "반수 미지정";
+    countCell.appendChild(badge);
+  }
 }
 
 function renderPreview(el, tplId) {

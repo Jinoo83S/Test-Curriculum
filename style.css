@@ -5467,3 +5467,31 @@ a.topbar-nav-link {
 .rooms-table select option {
   white-space: nowrap;
 }
+
+/* Subject Setup — missing section count highlight */
+.ss-table tbody tr.ss-row-missing-classcount td {
+  background: #fff7ed !important;
+  box-shadow: inset 3px 0 0 #f97316;
+}
+.ss-table tbody tr.ss-row-missing-classcount:hover td {
+  background: #ffedd5 !important;
+}
+.ss-row-missing-classcount .ss-td-name {
+  color: #9a3412 !important;
+}
+.ss-row-missing-classcount .ss-count-input {
+  border-color: #f97316 !important;
+  background: #fff7ed !important;
+}
+.ss-missing-count-badge {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fed7aa;
+  color: #9a3412;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.4;
+  white-space: nowrap;
+}
