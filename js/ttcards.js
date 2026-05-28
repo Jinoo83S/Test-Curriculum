@@ -511,6 +511,26 @@ function createTtCardChip(card, opts = {}) {
   return chip;
 }
 
+function ensureGroupExcludedIds(group) {
+  if (!group) return [];
+  if (!Array.isArray(group.excludedCardIds)) group.excludedCardIds = [];
+  return group.excludedCardIds;
+}
+
+function excludeCardFromGroup(groupId, cardId) {
+  const group = grps().find(g => g.id === groupId);
+  if (!group || !cardId) return;
+  group.poolCardIds = (group.poolCardIds || []).filter(id => id !== cardId);
+  (group.units || []).forEach(u => { u.ttcardIds = (u.ttcardIds || []).filter(id => id !== cardId); });
+  const ex = ensureGroupExcludedIds(group);
+  if (!ex.includes(cardId)) ex.push(cardId);
+}
+
+function unexcludeCardFromGroup(group, cardId) {
+  if (!group || !cardId) return;
+  group.excludedCardIds = (group.excludedCardIds || []).filter(id => id !== cardId);
+}
+
 function deleteCard(card) {
   if (!confirm(`"${getTtCardLabel(card)}" 카드를 삭제할까요?`)) return;
   grps().forEach(g => {
@@ -552,9 +572,10 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
       g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== cardId); });
       g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== cardId);
     });
+    unexcludeCardFromGroup(grps().find(g => g.id === groupId), cardId);
     if (!unit.ttcardIds) unit.ttcardIds = [];
     if (!unit.ttcardIds.includes(cardId)) unit.ttcardIds.push(cardId);
-    scheduleSave("timetable"); scheduleSave("timetable"); onStructureChange();
+    scheduleSave("timetable"); onStructureChange();
   });
 
   ttcards.forEach(card => {
@@ -563,9 +584,10 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
       onDelete: () => {}
     });
     const rx = makeBtn("↩", "gm-card-remove", () => {
-      unit.ttcardIds = unit.ttcardIds.filter(id => id !== card.id);
+      if (!canEdit()) return;
+      excludeCardFromGroup(groupId, card.id);
       scheduleSave("timetable"); onStructureChange();
-    }); rx.title = "묶음에서 제거"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
+    }); rx.title = "이 자동 그룹에서 제외"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
     c.appendChild(rx);
     cardArea.appendChild(c);
   });
@@ -659,12 +681,14 @@ function createGroupBlockGM(groupId, onStructureChange) {
       g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
       if (g.id !== groupId) g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
     });
+    unexcludeCardFromGroup(grpObj, drag.ttcardId);
     if (!grpObj.poolCardIds) grpObj.poolCardIds = [];
     if (!grpObj.poolCardIds.includes(drag.ttcardId)) grpObj.poolCardIds.push(drag.ttcardId);
     scheduleSave("timetable"); onStructureChange();
   });
   const unitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
-  const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id));
+  const excludedIds = new Set(grpObj.excludedCardIds || []);
+  const poolIds = (grpObj.poolCardIds||[]).filter(id => !unitCardIds.has(id) && !excludedIds.has(id));
   if (poolIds.length === 0) {
     const ph = document.createElement("div"); ph.className = "group-pool-empty-hint";
     ph.textContent = "미배정 카드를 여기로 드래그"; poolCards.appendChild(ph);
@@ -673,7 +697,13 @@ function createGroupBlockGM(groupId, onStructureChange) {
       const card = getTtCardById(id); if (!card) return;
       const chip = createTtCardChip(card, {
         showDelete: true,
-        onDelete: (c) => { deleteCard(c); onStructureChange(); }
+        onDelete: (c) => {
+          if (!canEdit()) return;
+          if (!confirm(`"${getTtCardLabel(c)}" 카드를 이 자동 그룹에서 제외할까요?\n카드 자체는 삭제되지 않고 미배정 카드로 이동합니다.`)) return;
+          excludeCardFromGroup(groupId, c.id);
+          scheduleSave("timetable");
+          onStructureChange();
+        }
       });
       chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: id }); chip.classList.add("dragging"); });
       chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
@@ -809,8 +839,8 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   leftCol.appendChild(leftHdr);
 
   const allAssignedIds = new Set([
-    ...grps().flatMap(g => (g.units||[]).flatMap(u => u.ttcardIds||[])),
-    ...grps().flatMap(g => g.poolCardIds||[])
+    ...grps().flatMap(g => (g.units||[]).flatMap(u => u.ttcardIds||[]).filter(id => !(g.excludedCardIds||[]).includes(id))),
+    ...grps().flatMap(g => (g.poolCardIds||[]).filter(id => !(g.excludedCardIds||[]).includes(id)))
   ]);
   const unassigned = getTtCards().filter(c => gmLevelFilter(c) && !allAssignedIds.has(c.id))
     .sort((a, b) => getTtCardLabel(a).localeCompare(getTtCardLabel(b), "ko"));
@@ -820,8 +850,13 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     if (drag.kind !== "ttcard") return;
     // Remove from all units AND poolCardIds
     grps().forEach(g => {
+      const had = (g.poolCardIds||[]).includes(drag.ttcardId) || (g.units||[]).some(u => (u.ttcardIds||[]).includes(drag.ttcardId));
       g.units.forEach(u => { u.ttcardIds = (u.ttcardIds||[]).filter(id => id !== drag.ttcardId); });
       g.poolCardIds = (g.poolCardIds||[]).filter(id => id !== drag.ttcardId);
+      if (had) {
+        const ex = ensureGroupExcludedIds(g);
+        if (!ex.includes(drag.ttcardId)) ex.push(drag.ttcardId);
+      }
     });
     scheduleSave("timetable"); onStructureChange();
   });

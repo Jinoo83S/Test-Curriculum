@@ -387,6 +387,9 @@ export function normalizeTemplateGroup(item = {}) {
     isCrossGrade,
     units: Array.isArray(item.units) ? item.units.map(normalizeUnit) : [],
     poolCardIds: Array.isArray(item.poolCardIds) ? item.poolCardIds.filter(Boolean) : [],
+    // 자동 생성 그룹에서 사용자가 제외한 카드입니다.
+    // 카드 자체를 삭제하지 않고 그룹 동시배정 대상에서만 제외하기 위해 별도로 보존합니다.
+    excludedCardIds: Array.isArray(item.excludedCardIds) ? item.excludedCardIds.filter(Boolean) : [],
     groupType: isConcurrent ? "concurrent" : (isCrossGrade ? "cross-grade" : "off"),
     linkedGroupId: clean(item.linkedGroupId) || null
   };

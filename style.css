@@ -5172,25 +5172,29 @@ a.topbar-nav-link {
 .group-add-btn:disabled { opacity: .45; cursor: default; }
 
 /* Auto assignment progress dialog */
+.tt-auto-progress-open { overflow: hidden; }
 .tt-auto-progress-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.48);
-  backdrop-filter: blur(2px);
+  background: rgba(15, 23, 42, 0.56);
+  backdrop-filter: blur(3px);
+  padding: 24px;
+  box-sizing: border-box;
 }
 .tt-auto-progress-card {
-  width: min(560px, calc(100vw - 32px));
+  width: min(620px, calc(100vw - 32px));
   max-height: min(760px, calc(100vh - 40px));
   overflow: auto;
   background: #fff;
   border: 1px solid #dbe4f0;
   border-radius: 18px;
-  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.28);
-  padding: 22px;
+  box-shadow: 0 30px 90px rgba(15, 23, 42, 0.34);
+  padding: 24px;
+  outline: none;
   color: #172033;
 }
 .tt-auto-progress-head {
@@ -5304,17 +5308,21 @@ a.topbar-nav-link {
   margin-top: 16px;
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
-.tt-auto-progress-close {
+.tt-auto-progress-close,
+.tt-auto-progress-cancel {
   border: 0;
   border-radius: 10px;
-  background: #173b68;
   color: #fff;
   font-weight: 900;
   padding: 9px 16px;
   cursor: pointer;
 }
-.tt-auto-progress-close:disabled {
+.tt-auto-progress-close { background: #173b68; }
+.tt-auto-progress-cancel { background: #dc2626; }
+.tt-auto-progress-close:disabled,
+.tt-auto-progress-cancel:disabled {
   background: #cbd5e1;
   color: #64748b;
   cursor: default;
@@ -5339,6 +5347,13 @@ a.topbar-nav-link {
 }
 .tt-auto-progress-overlay.is-error .tt-auto-progress-bar {
   background: #ef4444;
+}
+.tt-auto-progress-overlay.is-cancelled .tt-auto-progress-badge {
+  background: #e5e7eb;
+  color: #374151;
+}
+.tt-auto-progress-overlay.is-cancelled .tt-auto-progress-bar {
+  background: #94a3b8;
 }
 .tt-auto-progress-failed ul {
   margin: 5px 0 0 18px;

@@ -142,6 +142,7 @@ export function getTeachersForTtCard(card) {
 
 export function getGroupCards(group) {
   if (!group) return [];
+  const excluded = new Set(group.excludedCardIds || []);
   const unitIds = new Set((group.units || []).flatMap(u => u.ttcardIds || []));
   const ids = [
     ...(group.poolCardIds || []).filter(id => !unitIds.has(id)),
@@ -149,7 +150,7 @@ export function getGroupCards(group) {
   ];
   const seen = new Set();
   return ids
-    .filter(id => id && !seen.has(id) && seen.add(id))
+    .filter(id => id && !excluded.has(id) && !seen.has(id) && seen.add(id))
     .map(id => getTtCardById(id))
     .filter(Boolean);
 }

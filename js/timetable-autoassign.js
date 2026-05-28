@@ -330,15 +330,18 @@ export function createAutoAssignAll(deps) {
 
   const waitForBrowser = () => new Promise(resolve => setTimeout(resolve, 0));
   let autoAssignRunning = false;
-  function createAutoAssignProgressDialog(totalTarget = 0) {
+  function createAutoAssignProgressDialog(totalTarget = 0, onCancel = null) {
     const old = document.getElementById("ttAutoAssignProgressOverlay");
     if (old) old.remove();
 
+    let cancelled = false;
     const overlay = document.createElement("div");
     overlay.id = "ttAutoAssignProgressOverlay";
     overlay.className = "tt-auto-progress-overlay";
+    // Inline fallback: GitHub Pages/cache 문제로 CSS가 늦게 적용되어도 반드시 팝업 중앙에 뜨게 합니다.
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.56);backdrop-filter:blur(3px);padding:24px;box-sizing:border-box;";
     overlay.innerHTML = `
-      <div class="tt-auto-progress-card" role="dialog" aria-modal="true" aria-live="polite">
+      <div class="tt-auto-progress-card" role="dialog" aria-modal="true" aria-live="polite" tabindex="-1">
         <div class="tt-auto-progress-head">
           <div>
             <div class="tt-auto-progress-title">자동배치 진행 중</div>
@@ -359,10 +362,12 @@ export function createAutoAssignAll(deps) {
         <div class="tt-auto-progress-current">현재 카드: -</div>
         <div class="tt-auto-progress-log"></div>
         <div class="tt-auto-progress-actions">
+          <button type="button" class="tt-auto-progress-cancel">취소</button>
           <button type="button" class="tt-auto-progress-close" disabled>닫기</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
+    document.body.classList.add("tt-auto-progress-open");
 
     const stepEl = overlay.querySelector(".tt-auto-progress-step");
     const detailEl = overlay.querySelector(".tt-auto-progress-detail");
@@ -373,20 +378,42 @@ export function createAutoAssignAll(deps) {
     const subtitleEl = overlay.querySelector(".tt-auto-progress-subtitle");
     const currentEl = overlay.querySelector(".tt-auto-progress-current");
     const closeBtn = overlay.querySelector(".tt-auto-progress-close");
+    const cancelBtn = overlay.querySelector(".tt-auto-progress-cancel");
     const logEl = overlay.querySelector(".tt-auto-progress-log");
+    const cardEl = overlay.querySelector(".tt-auto-progress-card");
     const stat = (key, value) => {
       const el = overlay.querySelector(`[data-k="${key}"]`);
       if (el && value !== undefined && value !== null) el.textContent = String(value);
     };
     const logs = [];
+    const esc = v => String(v ?? "").replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]));
     const setPercent = (value) => {
       const pct = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
       barEl.style.width = `${pct}%`;
       percentEl.textContent = `${pct}%`;
     };
-    closeBtn.addEventListener("click", () => overlay.remove());
+    const removeOverlay = () => {
+      overlay.remove();
+      document.body.classList.remove("tt-auto-progress-open");
+    };
+    closeBtn.addEventListener("click", removeOverlay);
+    cancelBtn.addEventListener("click", () => {
+      if (cancelled) return;
+      cancelled = true;
+      cancelBtn.disabled = true;
+      cancelBtn.textContent = "취소 요청됨";
+      badgeEl.textContent = "CANCEL";
+      stepEl.textContent = "취소 요청";
+      detailEl.textContent = "현재 계산 단계를 정리한 뒤 자동배치를 중단합니다.";
+      if (typeof onCancel === "function") onCancel();
+    });
+    overlay.addEventListener("keydown", e => {
+      if (e.key === "Escape" && !closeBtn.disabled) removeOverlay();
+    });
+    setTimeout(() => cardEl?.focus(), 0);
 
     return {
+      isCancelled() { return cancelled; },
       async update(data = {}) {
         if (data.title) titleEl.textContent = data.title;
         if (data.subtitle) subtitleEl.textContent = data.subtitle;
@@ -401,17 +428,19 @@ export function createAutoAssignAll(deps) {
         if (data.log) {
           logs.unshift(data.log);
           while (logs.length > 6) logs.pop();
-          logEl.innerHTML = logs.map(line => `<div>• ${String(line).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</div>`).join("");
+          logEl.innerHTML = logs.map(line => `<div>• ${esc(line)}</div>`).join("");
         }
         await waitForBrowser();
       },
       async complete(data = {}) {
         overlay.classList.add(data.partial ? "is-partial" : "is-complete");
+        cancelBtn.disabled = true;
+        cancelBtn.style.display = "none";
         badgeEl.textContent = data.partial ? "PARTIAL" : "DONE";
         titleEl.textContent = data.title || (data.partial ? "자동배치 부분 완료" : "자동배치 완료");
         subtitleEl.textContent = data.subtitle || "결과를 확인해 주세요.";
         stepEl.textContent = data.step || "완료";
-        detailEl.innerHTML = data.detailHtml || data.detail || "자동배치가 완료되었습니다.";
+        detailEl.innerHTML = data.detailHtml || esc(data.detail || "자동배치가 완료되었습니다.");
         setPercent(100);
         if (data.placed !== undefined) stat("placed", data.placed);
         if (data.best !== undefined) stat("best", data.best);
@@ -421,8 +450,23 @@ export function createAutoAssignAll(deps) {
         closeBtn.focus();
         await waitForBrowser();
       },
+      async cancel(message = "사용자 요청으로 자동배치를 취소했습니다.") {
+        overlay.classList.add("is-cancelled");
+        cancelBtn.disabled = true;
+        cancelBtn.style.display = "none";
+        badgeEl.textContent = "CANCELLED";
+        titleEl.textContent = "자동배치 취소됨";
+        subtitleEl.textContent = "시간표에는 변경 사항을 반영하지 않았습니다.";
+        stepEl.textContent = "취소 완료";
+        detailEl.textContent = message;
+        closeBtn.disabled = false;
+        closeBtn.focus();
+        await waitForBrowser();
+      },
       async error(message) {
         overlay.classList.add("is-error");
+        cancelBtn.disabled = true;
+        cancelBtn.style.display = "none";
         badgeEl.textContent = "ERROR";
         titleEl.textContent = "자동배치 오류";
         subtitleEl.textContent = "진행 중 오류가 발생했습니다.";
@@ -431,7 +475,7 @@ export function createAutoAssignAll(deps) {
         closeBtn.disabled = false;
         await waitForBrowser();
       },
-      close() { overlay.remove(); }
+      close() { removeOverlay(); }
     };
   }
 
@@ -496,10 +540,12 @@ export function createAutoAssignAll(deps) {
     await waitForBrowser();
 
     const autoStartedAt = Date.now();
-    const progress = createAutoAssignProgressDialog(autoTargetSlots);
+    let autoAssignCancelled = false;
+    const progress = createAutoAssignProgressDialog(autoTargetSlots, () => { autoAssignCancelled = true; });
     let lastProgressAt = 0;
     const updateProgress = async (data = {}, force = false) => {
       const now = Date.now();
+      if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
       if (!force && now - lastProgressAt < 120) return;
       lastProgressAt = now;
       await progress.update({ total: autoTargetSlots, ...data });
@@ -566,9 +612,11 @@ export function createAutoAssignAll(deps) {
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
     let autoOps = 0;
     const yieldAutoAssign = async (data = null, force = false) => {
+      if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
       autoOps++;
       if (data) await updateProgress(data, force);
       else if (autoOps % 20 === 0) await waitForBrowser();
+      if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
     };
 
     for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
@@ -764,6 +812,8 @@ export function createAutoAssignAll(deps) {
       currentCard: "-"
     }, true);
 
+    if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
+
     bestPlaced.forEach(e => entries().push(e));
     scheduleSave("timetable");
     recomputeConflicts();
@@ -827,12 +877,17 @@ export function createAutoAssignAll(deps) {
       currentCard: "-"
     });
     } catch (err) {
-      console.error("Auto assign failed:", err);
-      addTimetableLog("error", "자동 배치 오류", err?.message || String(err));
-      if (progress) {
-        await progress.error(`자동 배치 중 오류가 발생했습니다. ${err?.message || String(err)} 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.`);
+      if (err?.message === "__AUTO_ASSIGN_CANCELLED__") {
+        addTimetableLog("auto", "자동 배치 취소", "사용자 요청으로 자동배치를 중단했습니다. 시간표에는 변경 사항을 반영하지 않았습니다.");
+        if (progress) await progress.cancel("사용자 요청으로 자동배치를 중단했습니다. 시간표에는 변경 사항을 반영하지 않았습니다.");
       } else {
-        alert("자동 배치 중 오류가 발생했습니다. 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.");
+        console.error("Auto assign failed:", err);
+        addTimetableLog("error", "자동 배치 오류", err?.message || String(err));
+        if (progress) {
+          await progress.error(`자동 배치 중 오류가 발생했습니다. ${err?.message || String(err)} 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.`);
+        } else {
+          alert("자동 배치 중 오류가 발생했습니다. 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.");
+        }
       }
     } finally {
       autoAssignRunning = false;
