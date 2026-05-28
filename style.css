@@ -5495,3 +5495,48 @@ a.topbar-nav-link {
   line-height: 1.4;
   white-space: nowrap;
 }
+
+
+/* ── Roster missing student list highlight ───────────────────── */
+.roster-template-item.roster-template-missing-roster {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-left: 4px solid #f97316;
+  padding-left: 8px;
+}
+.roster-template-item.roster-template-missing-roster:hover {
+  background: #ffedd5;
+}
+.roster-template-item.roster-template-missing-roster.active {
+  background: #fed7aa;
+  border-left-color: #ea580c;
+}
+.roster-template-count.roster-template-count-empty {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.roster-missing-roster-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fed7aa;
+  color: #9a3412;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.roster-detail-missing-roster {
+  background: linear-gradient(180deg, #fff7ed 0, #ffffff 92px);
+}
+.roster-count-badge-empty {
+  background: #fed7aa !important;
+  color: #9a3412 !important;
+}
+.roster-enrolled-empty.roster-enrolled-empty-warning {
+  border: 1px dashed #fb923c;
+  background: #fff7ed;
+  color: #9a3412;
+  border-radius: 8px;
+  font-weight: 700;
+}
