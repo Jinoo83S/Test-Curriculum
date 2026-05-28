@@ -213,17 +213,18 @@ function getRoomsRenderRoot(container) {
 
 function appendRoomTypeManager(container, onUpdate, options) {
   const wrap = document.createElement("div");
-  wrap.className = "room-type-manager";
+  wrap.className = "room-type-manager his-room-card";
 
   const head = document.createElement("div");
-  head.className = "room-type-manager-head";
+  head.className = "room-type-manager-head his-room-card-head";
   head.innerHTML = `
-    <div>
+    <div class="his-room-card-title-wrap">
+      <span class="his-room-card-kicker">교실 유형</span>
       <strong>유형 편집</strong>
-      <span>추가·수정한 유형은 아래 교실 목록의 유형 드롭다운에 바로 반영됩니다.</span>
+      <span>추가·수정한 유형은 교실 목록의 유형 드롭다운에 바로 반영됩니다.</span>
     </div>`;
 
-  const addBtn = makeBtn("+ 유형 추가", "secondary-btn compact-btn tt-action-btn room-type-add-btn", () => {
+  const addBtn = makeBtn("+ 유형 추가", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact room-type-add-btn", () => {
     addRoomType();
     onUpdate?.();
     renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
@@ -263,7 +264,7 @@ function appendRoomTypeManager(container, onUpdate, options) {
     const usingCount = getRooms().filter(room => room.type === type).length;
     count.textContent = `${usingCount}개`;
 
-    const delBtn = makeBtn("×", "room-type-del", () => {
+    const delBtn = makeBtn("×", "his-ui-btn his-ui-icon-btn his-ui-btn-danger room-type-del", () => {
       if (deleteRoomType(type)) {
         onUpdate?.();
         renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
@@ -281,10 +282,10 @@ function appendRoomTypeManager(container, onUpdate, options) {
 
 function appendRoomPasteArea(container, onUpdate, options) {
   const details = document.createElement("details");
-  details.className = "paste-area-wrap rooms-paste-wrap rooms-paste-details";
+  details.className = "paste-area-wrap rooms-paste-wrap rooms-paste-details his-room-card";
 
   const summary = document.createElement("summary");
-  summary.innerHTML = `📋 엑셀 붙여넣기 <span class="paste-hint">교실명 · 유형 · 수용인원 · 전용학년 · 홈룸 · 담당 교사 · 메모</span>`;
+  summary.innerHTML = `<span class="his-room-card-kicker">붙여넣기</span><strong>엑셀 붙여넣기</strong><span class="paste-hint">교실명 · 유형 · 수용인원 · 전용학년 · 홈룸 · 담당 교사 · 메모</span>`;
   details.appendChild(summary);
 
   const inner = document.createElement("div");
@@ -303,7 +304,7 @@ function appendRoomPasteArea(container, onUpdate, options) {
   const pasteActions = document.createElement("div");
   pasteActions.className = "paste-actions";
 
-  const parseBtn = makeBtn("교실 명단 추가", "primary-btn compact-btn tt-action-btn", () => {
+  const parseBtn = makeBtn("교실 명단 추가", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
     if (!canEdit()) return;
     const raw = textarea.value.trim();
     if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
@@ -319,7 +320,7 @@ function appendRoomPasteArea(container, onUpdate, options) {
   });
   parseBtn.disabled = !canEdit();
 
-  const clearBtn = makeBtn("지우기", "secondary-btn compact-btn tt-action-btn", () => { textarea.value = ""; });
+  const clearBtn = makeBtn("지우기", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => { textarea.value = ""; });
   pasteActions.append(parseBtn, clearBtn);
   inner.appendChild(pasteActions);
   details.appendChild(inner);
@@ -359,19 +360,22 @@ export function resetRooms() {
 
 export function renderRoomsView(container, onUpdate, options = {}) {
   container.innerHTML = "";
+  container.classList.add("rooms-view-panel");
   const teacherNames = Array.isArray(options.teacherNames) ? options.teacherNames : [];
   const onTeacherRoomChange = typeof options.onTeacherRoomChange === "function" ? options.onTeacherRoomChange : null;
 
-  const hdr = document.createElement("div"); hdr.className = "rooms-header";
-  const title = document.createElement("h3"); title.textContent = "교실 관리";
+  const hdr = document.createElement("div"); hdr.className = "rooms-header his-room-main-header";
+  const titleWrap = document.createElement("div");
+  titleWrap.className = "rooms-title-wrap";
+  titleWrap.innerHTML = `<span class="his-room-card-kicker">Room</span><h3>교실 관리</h3><p>교실 유형, 홈룸, 담당 교사, 수용인원을 관리합니다.</p>`;
   const actions = document.createElement("div");
   actions.className = "rooms-header-actions";
-  const addBtn = makeBtn("+ 교실 추가", "primary-btn compact-btn tt-action-btn", () => {
+  const addBtn = makeBtn("+ 교실 추가", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
     addRoom({ name: `교실 ${getRooms().length + 1}` });
     onUpdate?.(); renderRoomsView(container, onUpdate, options);
   });
   addBtn.disabled = !canEdit();
-  const resetBtn = makeBtn("초기화", "danger-btn compact-btn tt-action-btn", () => {
+  const resetBtn = makeBtn("초기화", "his-ui-btn his-ui-btn-danger his-ui-btn-compact", () => {
     if (resetRooms()) {
       onUpdate?.();
       renderRoomsView(container, onUpdate, options);
@@ -379,7 +383,7 @@ export function renderRoomsView(container, onUpdate, options = {}) {
   });
   resetBtn.disabled = !canEdit();
   actions.append(addBtn, resetBtn);
-  hdr.append(title, actions); container.appendChild(hdr);
+  hdr.append(titleWrap, actions); container.appendChild(hdr);
 
   const toolsRow = document.createElement("div");
   toolsRow.className = "rooms-tools-row";
@@ -496,7 +500,7 @@ export function renderRoomsView(container, onUpdate, options = {}) {
     noteTd.appendChild(noteInp); tr.appendChild(noteTd);
     // Delete
     const delTd = document.createElement("td"); delTd.className = "col-del";
-    const delBtn = makeBtn("×", "stu-del-btn", () => { if (deleteRoom(room.id)) { onUpdate?.(); renderRoomsView(container, onUpdate, options); } });
+    const delBtn = makeBtn("×", "his-ui-btn his-ui-icon-btn his-ui-btn-danger stu-del-btn", () => { if (deleteRoom(room.id)) { onUpdate?.(); renderRoomsView(container, onUpdate, options); } });
     delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd);
     tbody.appendChild(tr);
   });

@@ -6830,3 +6830,303 @@ button.his-ui-btn {
     width: 330px !important;
   }
 }
+
+/* ================================================================
+   Stage 6 · Room management UI cleanup
+   - 명단/시간표 하단바의 교실 관리 화면만 대상으로 실제 렌더링 클래스와 연결합니다.
+================================================================ */
+.rooms-view-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.his-room-main-header {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  padding: 10px 12px !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 16px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .06) !important;
+  margin-bottom: 0 !important;
+}
+.rooms-title-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.rooms-title-wrap h3 {
+  margin: 0 !important;
+  color: #0f172a !important;
+  font-size: 16px !important;
+  letter-spacing: -0.02em;
+}
+.rooms-title-wrap p {
+  margin: 0;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.25;
+}
+.his-room-card-kicker {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.rooms-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.rooms-tools-row {
+  display: grid !important;
+  grid-template-columns: minmax(360px, 1.05fr) minmax(300px, .95fr) !important;
+  gap: 10px !important;
+  align-items: stretch !important;
+  margin-bottom: 0 !important;
+}
+.his-room-card,
+.room-type-manager.his-room-card,
+.rooms-paste-details.his-room-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dbeafe !important;
+  border-radius: 16px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, .055) !important;
+  padding: 11px !important;
+  margin: 0 !important;
+}
+.his-room-card-head,
+.room-type-manager-head.his-room-card-head {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  margin: 0 0 9px !important;
+}
+.his-room-card-title-wrap {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.his-room-card-title-wrap strong,
+.room-type-manager-head .his-room-card-title-wrap strong {
+  color: #0f172a !important;
+  font-size: 14px !important;
+  font-weight: 900 !important;
+  letter-spacing: -0.02em;
+}
+.his-room-card-title-wrap > span:not(.his-room-card-kicker) {
+  color: #64748b !important;
+  font-size: 11px !important;
+  line-height: 1.25;
+  margin-left: 0 !important;
+}
+.room-type-manager-head strong::before { content: none !important; }
+.room-type-list {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) !important;
+  gap: 7px !important;
+  max-height: 124px !important;
+  overflow: auto !important;
+  padding: 1px 3px 3px 1px !important;
+}
+.room-type-item {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto auto !important;
+  align-items: center !important;
+  gap: 6px !important;
+  min-height: 34px !important;
+  padding: 5px 6px !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 13px !important;
+  background: #fff !important;
+  box-shadow: inset 0 -1px 0 rgba(15, 23, 42, .025) !important;
+}
+.room-type-item input {
+  width: 100% !important;
+  height: 26px !important;
+  min-width: 0 !important;
+  padding: 3px 7px !important;
+  border: 1px solid transparent !important;
+  border-radius: 9px !important;
+  background: transparent !important;
+  color: #0f172a !important;
+  font-size: 12px !important;
+  font-weight: 900 !important;
+}
+.room-type-item input:not(:disabled):focus {
+  border-color: #bfdbfe !important;
+  background: #f8fbff !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .08) !important;
+}
+.room-type-count {
+  height: 22px !important;
+  min-width: 34px !important;
+  padding: 0 8px !important;
+  border-radius: 999px !important;
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+}
+.room-type-del.his-ui-btn,
+.rooms-table .stu-del-btn.his-ui-btn {
+  width: 26px !important;
+  min-width: 26px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 !important;
+  border-radius: 11px !important;
+  background: #fff1f2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
+  box-shadow: none !important;
+  font-size: 15px !important;
+}
+.room-type-del.his-ui-btn:hover:not(:disabled),
+.rooms-table .stu-del-btn.his-ui-btn:hover:not(:disabled) {
+  background: #fee2e2 !important;
+  transform: none !important;
+}
+.rooms-paste-details summary {
+  display: grid !important;
+  grid-template-columns: auto 1fr auto !important;
+  align-items: center !important;
+  gap: 8px !important;
+  min-height: 38px !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: #0f172a !important;
+  font-weight: 900 !important;
+}
+.rooms-paste-details summary strong {
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+.rooms-paste-details summary .paste-hint {
+  justify-self: end;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+}
+.rooms-paste-details summary::after {
+  content: "열기" !important;
+  float: none !important;
+  justify-self: end;
+  padding: 5px 9px !important;
+  border-radius: 999px !important;
+  background: #e0ecff !important;
+  color: #1d4ed8 !important;
+  font-size: 10px !important;
+  font-weight: 900 !important;
+}
+.rooms-paste-details[open] summary::after { content: "닫기" !important; }
+.rooms-paste-inner {
+  margin-top: 10px;
+  padding: 10px 0 0 !important;
+  border-top: 1px solid #e2e8f0 !important;
+  display: grid !important;
+  gap: 8px !important;
+}
+.rooms-paste-details .excel-paste-area {
+  height: 78px !important;
+  min-height: 78px !important;
+  padding: 9px 10px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 12px !important;
+  background: #fff !important;
+  font-size: 12px !important;
+}
+.paste-actions {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 7px !important;
+  flex-wrap: wrap;
+}
+.rooms-table-wrap {
+  max-height: 390px !important;
+  overflow: auto !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 16px !important;
+  background: #fff !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .055) !important;
+}
+.rooms-table {
+  min-width: 1120px !important;
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  font-size: 11px !important;
+}
+.rooms-table thead th,
+.rooms-table th {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 2 !important;
+  padding: 7px 6px !important;
+  background: #eff6ff !important;
+  color: #1e3a5f !important;
+  border-bottom: 1px solid #bfdbfe !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+.rooms-table td {
+  padding: 4px 5px !important;
+  background: #fff !important;
+  border-bottom: 1px solid #eef2f7 !important;
+}
+.rooms-table tbody tr:nth-child(even) td { background: #fbfdff !important; }
+.rooms-table tbody tr:hover td { background: #f8fbff !important; }
+.rooms-table input,
+.rooms-table select {
+  min-height: 29px !important;
+  padding: 5px 7px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 10px !important;
+  background: #fff !important;
+  color: #0f172a !important;
+  font-size: 11px !important;
+}
+.rooms-table input:focus,
+.rooms-table select:focus {
+  outline: none !important;
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .08) !important;
+}
+.rooms-table .col-del {
+  width: 42px !important;
+  text-align: center !important;
+}
+.rooms-header-actions .his-ui-btn,
+.room-type-manager .his-ui-btn,
+.rooms-paste-details .his-ui-btn {
+  text-decoration: none !important;
+}
+@media (max-width: 980px) {
+  .rooms-tools-row { grid-template-columns: 1fr !important; }
+  .his-room-main-header { align-items: flex-start !important; }
+}
+@media (max-width: 640px) {
+  .his-room-main-header { display: grid !important; }
+  .rooms-header-actions { justify-content: stretch !important; }
+  .rooms-header-actions .his-ui-btn { flex: 1 1 auto; }
+  .rooms-paste-details summary { grid-template-columns: auto 1fr !important; }
+  .rooms-paste-details summary .paste-hint { display: none; }
+}
