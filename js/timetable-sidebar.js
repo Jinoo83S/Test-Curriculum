@@ -50,14 +50,17 @@ export function createTimetableSidebarHandlers(deps) {
     panel.innerHTML = "";
 
     const toolbar = document.createElement("div");
-    toolbar.className = "tt-card-toolbar";
+    toolbar.className = "tt-card-toolbar his-card-toolbar";
 
-    const loadBtn = makeBtn("📥 카드 불러오기", "secondary-btn compact-btn tt-action-btn", () => {
+    const actionGroup = document.createElement("div");
+    actionGroup.className = "tt-card-toolbar-actions";
+
+    const loadBtn = makeBtn("📥 카드 불러오기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
       renderSubjectPanel();
       alert(`저장된 시간표 카드 ${getTtCards().length}개를 불러왔습니다.`);
     });
 
-    const refreshBtn = makeBtn("🔄 카드 데이터 갱신", "secondary-btn compact-btn tt-action-btn", () => {
+    const refreshBtn = makeBtn("🔄 카드 데이터 갱신", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
       if (!canEdit()) return;
       const n = refreshTtCardData();
       alert(`${n}개 카드 데이터를 갱신했습니다.`);
@@ -65,9 +68,12 @@ export function createTimetableSidebarHandlers(deps) {
     });
     refreshBtn.disabled = !canEdit();
 
+    const diagBtn = buildCreditDiagnosticButton(appState.timetable?.ttcards || []);
+    actionGroup.append(loadBtn, refreshBtn, diagBtn);
+
     const ttcards = appState.timetable?.ttcards || [];
     const filteredTtcards = filterTtCardsByGrade(ttcards);
-    toolbar.append(loadBtn, refreshBtn, buildGradeFilterControls(ttcards), buildCreditDiagnosticButton(ttcards), buildClassCountSummary(ttcards));
+    toolbar.append(actionGroup, buildGradeFilterControls(ttcards), buildClassCountSummary(ttcards));
     panel.appendChild(toolbar);
 
     if (ttcards.length > 0) {
@@ -227,11 +233,10 @@ export function createTimetableSidebarHandlers(deps) {
   function buildGradeFilterControls(ttcards) {
     const wrap = document.createElement("div");
     wrap.className = "tt-grade-filter-controls";
-    wrap.className = "tt-grade-filter-controls";
 
     const label = document.createElement("span");
+    label.className = "tt-toolbar-label";
     label.textContent = "학년 필터";
-    label.style.cssText = "font-size:11px;font-weight:800;color:#475569;margin-right:2px;white-space:nowrap";
     wrap.appendChild(label);
 
     const summary = getClassCreditSummary(ttcards);
@@ -248,9 +253,6 @@ export function createTimetableSidebarHandlers(deps) {
       btn.textContent = countText != null ? `${text} ${countText}` : text;
       btn.title = value === "all" ? "전체 학년 카드 보기" : `${text}학년 카드만 보기`;
       const active = activeGradeFilter === value;
-      btn.style.cssText = active
-        ? "height:24px;padding:0 9px;border-radius:999px;border:1px solid #2563eb;background:#2563eb;color:white;font-size:11px;font-weight:900;cursor:pointer;white-space:nowrap"
-        : "height:24px;padding:0 9px;border-radius:999px;border:1px solid #cbd5e1;background:white;color:#334155;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap";
       btn.addEventListener("click", () => {
         if (activeGradeFilter === value) return;
         activeGradeFilter = value;
@@ -335,7 +337,7 @@ export function createTimetableSidebarHandlers(deps) {
   function buildCreditDiagnosticButton(ttcards) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "secondary-btn compact-btn tt-action-btn";
+    btn.className = "his-ui-btn his-ui-btn-ghost his-ui-btn-compact tt-toolbar-action";
     btn.textContent = "🔎 시수 진단";
     btn.title = "학급별 필요 시수 차이 원인을 확인합니다.";
     btn.addEventListener("click", () => showClassCreditDiagnostics(ttcards));
@@ -348,7 +350,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const label = document.createElement("span");
     label.textContent = "학급별 필요 시수";
-    label.style.cssText = "font-weight:800;color:#475569;margin-right:2px;white-space:nowrap";
+    label.className = "tt-toolbar-label";
     wrap.appendChild(label);
 
     const summary = getClassCreditSummary(ttcards);
@@ -356,7 +358,7 @@ export function createTimetableSidebarHandlers(deps) {
     if (!rows.length) {
       const empty = document.createElement("span");
       empty.textContent = "없음";
-      empty.style.cssText = "font-size:11px;color:#94a3b8";
+      empty.className = "tt-summary-empty";
       wrap.appendChild(empty);
       return wrap;
     }
@@ -366,7 +368,10 @@ export function createTimetableSidebarHandlers(deps) {
       const gc = getGradeColor(row.gradeKey || gradeKeyFromClassLabel(row.label));
       chip.textContent = `${row.label} ${formatCreditValue(row.credits)}`;
       chip.title = `${row.label} 필요 시수 ${formatCreditValue(row.credits)}`;
-      chip.style.cssText = `display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:999px;background:${gc.bg};border:1px solid ${gc.border};color:${gc.text};font-weight:800;line-height:16px;white-space:nowrap`;
+      chip.className = "tt-credit-chip";
+      chip.style.setProperty("--tt-chip-bg", gc.bg);
+      chip.style.setProperty("--tt-chip-border", gc.border);
+      chip.style.setProperty("--tt-chip-text", gc.text);
       wrap.appendChild(chip);
     });
     return wrap;

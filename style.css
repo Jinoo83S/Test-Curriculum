@@ -6416,3 +6416,137 @@ button.his-ui-btn {
   .his-ui-modal-footer { flex-wrap: wrap; }
   .his-ui-modal-footer .his-ui-btn { flex: 1 1 auto; }
 }
+
+/* ================================================================
+   Stage 3 · Timetable bottom subject-card toolbar
+   - 과목 카드 하단바 툴바만 대상으로 공통 버튼 시스템을 실제 적용합니다.
+================================================================ */
+.his-ui-btn-compact {
+  min-height: 32px;
+  padding: 7px 12px;
+  border-radius: 11px;
+  font-size: 12px;
+}
+.tt-card-toolbar.his-card-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, auto) minmax(260px, 1fr) minmax(360px, 1.6fr);
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 10px 0;
+  padding: 10px 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .06), inset 0 1px 0 rgba(255,255,255,.9);
+}
+.tt-card-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.tt-card-toolbar .tt-toolbar-action {
+  height: 32px;
+  min-height: 32px;
+  padding: 0 12px !important;
+  border-radius: 11px !important;
+}
+.tt-card-toolbar .tt-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  margin-right: 2px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.tt-card-toolbar .tt-grade-filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.tt-card-toolbar .tt-grade-filter-controls::-webkit-scrollbar,
+.tt-class-count-summary::-webkit-scrollbar { height: 6px; }
+.tt-card-toolbar .tt-grade-filter-controls::-webkit-scrollbar-thumb,
+.tt-class-count-summary::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+.tt-card-toolbar .tt-grade-filter-btn,
+.tt-card-toolbar .tt-grade-filter-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  min-height: 24px;
+  padding: 0 10px !important;
+  border-radius: 999px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #fff !important;
+  color: #334155 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  line-height: 1 !important;
+  white-space: nowrap;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.tt-card-toolbar .tt-grade-filter-btn.active,
+.tt-card-toolbar .tt-grade-filter-controls button.active {
+  border-color: #2563eb !important;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  color: #fff !important;
+  box-shadow: 0 3px 8px rgba(37, 99, 235, .20) !important;
+}
+.tt-card-toolbar .tt-class-count-summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 11px;
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+.tt-credit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--tt-chip-bg, #eef2ff);
+  border: 1px solid var(--tt-chip-border, #c7d2fe);
+  color: var(--tt-chip-text, #3730a3);
+  font-weight: 900;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.tt-summary-empty {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+@media (max-width: 1280px) {
+  .tt-card-toolbar.his-card-toolbar {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .tt-card-toolbar-actions,
+  .tt-card-toolbar .tt-grade-filter-controls,
+  .tt-card-toolbar .tt-class-count-summary {
+    justify-content: flex-start;
+  }
+}
