@@ -330,6 +330,111 @@ export function createAutoAssignAll(deps) {
 
   const waitForBrowser = () => new Promise(resolve => setTimeout(resolve, 0));
   let autoAssignRunning = false;
+  function createAutoAssignProgressDialog(totalTarget = 0) {
+    const old = document.getElementById("ttAutoAssignProgressOverlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "ttAutoAssignProgressOverlay";
+    overlay.className = "tt-auto-progress-overlay";
+    overlay.innerHTML = `
+      <div class="tt-auto-progress-card" role="dialog" aria-modal="true" aria-live="polite">
+        <div class="tt-auto-progress-head">
+          <div>
+            <div class="tt-auto-progress-title">자동배치 진행 중</div>
+            <div class="tt-auto-progress-subtitle">조건을 비교하며 시간표를 구성하고 있습니다.</div>
+          </div>
+          <span class="tt-auto-progress-badge">RUNNING</span>
+        </div>
+        <div class="tt-auto-progress-step">준비 중...</div>
+        <div class="tt-auto-progress-detail">자동배치 데이터를 준비하고 있습니다.</div>
+        <div class="tt-auto-progress-bar-wrap"><div class="tt-auto-progress-bar"></div></div>
+        <div class="tt-auto-progress-percent">0%</div>
+        <div class="tt-auto-progress-stats">
+          <span>전체 <b data-k="total">${totalTarget}</b></span>
+          <span>현재 배치 <b data-k="placed">0</b></span>
+          <span>최선 배치 <b data-k="best">0</b></span>
+          <span>미배치 후보 <b data-k="failed">0</b></span>
+        </div>
+        <div class="tt-auto-progress-current">현재 카드: -</div>
+        <div class="tt-auto-progress-log"></div>
+        <div class="tt-auto-progress-actions">
+          <button type="button" class="tt-auto-progress-close" disabled>닫기</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const stepEl = overlay.querySelector(".tt-auto-progress-step");
+    const detailEl = overlay.querySelector(".tt-auto-progress-detail");
+    const barEl = overlay.querySelector(".tt-auto-progress-bar");
+    const percentEl = overlay.querySelector(".tt-auto-progress-percent");
+    const badgeEl = overlay.querySelector(".tt-auto-progress-badge");
+    const titleEl = overlay.querySelector(".tt-auto-progress-title");
+    const subtitleEl = overlay.querySelector(".tt-auto-progress-subtitle");
+    const currentEl = overlay.querySelector(".tt-auto-progress-current");
+    const closeBtn = overlay.querySelector(".tt-auto-progress-close");
+    const logEl = overlay.querySelector(".tt-auto-progress-log");
+    const stat = (key, value) => {
+      const el = overlay.querySelector(`[data-k="${key}"]`);
+      if (el && value !== undefined && value !== null) el.textContent = String(value);
+    };
+    const logs = [];
+    const setPercent = (value) => {
+      const pct = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+      barEl.style.width = `${pct}%`;
+      percentEl.textContent = `${pct}%`;
+    };
+    closeBtn.addEventListener("click", () => overlay.remove());
+
+    return {
+      async update(data = {}) {
+        if (data.title) titleEl.textContent = data.title;
+        if (data.subtitle) subtitleEl.textContent = data.subtitle;
+        if (data.step) stepEl.textContent = data.step;
+        if (data.detail) detailEl.textContent = data.detail;
+        if (data.currentCard !== undefined) currentEl.textContent = `현재 카드: ${data.currentCard || "-"}`;
+        if (data.percent !== undefined) setPercent(data.percent);
+        stat("total", data.total);
+        stat("placed", data.placed);
+        stat("best", data.best);
+        stat("failed", data.failed);
+        if (data.log) {
+          logs.unshift(data.log);
+          while (logs.length > 6) logs.pop();
+          logEl.innerHTML = logs.map(line => `<div>• ${String(line).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</div>`).join("");
+        }
+        await waitForBrowser();
+      },
+      async complete(data = {}) {
+        overlay.classList.add(data.partial ? "is-partial" : "is-complete");
+        badgeEl.textContent = data.partial ? "PARTIAL" : "DONE";
+        titleEl.textContent = data.title || (data.partial ? "자동배치 부분 완료" : "자동배치 완료");
+        subtitleEl.textContent = data.subtitle || "결과를 확인해 주세요.";
+        stepEl.textContent = data.step || "완료";
+        detailEl.innerHTML = data.detailHtml || data.detail || "자동배치가 완료되었습니다.";
+        setPercent(100);
+        if (data.placed !== undefined) stat("placed", data.placed);
+        if (data.best !== undefined) stat("best", data.best);
+        if (data.failed !== undefined) stat("failed", data.failed);
+        if (data.currentCard !== undefined) currentEl.textContent = `현재 카드: ${data.currentCard || "-"}`;
+        closeBtn.disabled = false;
+        closeBtn.focus();
+        await waitForBrowser();
+      },
+      async error(message) {
+        overlay.classList.add("is-error");
+        badgeEl.textContent = "ERROR";
+        titleEl.textContent = "자동배치 오류";
+        subtitleEl.textContent = "진행 중 오류가 발생했습니다.";
+        stepEl.textContent = "오류";
+        detailEl.textContent = message || "자동배치 중 오류가 발생했습니다.";
+        closeBtn.disabled = false;
+        await waitForBrowser();
+      },
+      close() { overlay.remove(); }
+    };
+  }
+
 
   function setAutoAssignBusy(isBusy) {
     const btn = $("ttAutoAssignBtn");
@@ -387,19 +492,52 @@ export function createAutoAssignAll(deps) {
     await waitForBrowser();
 
     const autoStartedAt = Date.now();
+    const progress = createAutoAssignProgressDialog(autoTargetSlots);
+    let lastProgressAt = 0;
+    const updateProgress = async (data = {}, force = false) => {
+      const now = Date.now();
+      if (!force && now - lastProgressAt < 120) return;
+      lastProgressAt = now;
+      await progress.update({ total: autoTargetSlots, ...data });
+    };
 
     try {
+    await updateProgress({
+      percent: 2,
+      step: "초기화",
+      detail: "기존 배치와 고정 수업을 확인하고 있습니다.",
+      currentCard: "-",
+      placed: 0,
+      best: 0,
+      failed: 0,
+      log: `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`
+    }, true);
     captureTimetableUndo("자동 배정");
     addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`);
 
     // Preserve pinned entries only
     const pinnedEntries = entries().filter(e => e.pinned);
     ttDomain().entries = [...pinnedEntries];
+    await updateProgress({
+      percent: 6,
+      step: "고정 수업 보호",
+      detail: `고정된 수업 ${pinnedEntries.length}개를 유지하고 나머지 자동배치 대상을 준비합니다.`,
+      placed: 0,
+      best: 0,
+      failed: 0
+    }, true);
     const pc = ttConfig().periodCount;
     const baseSlots = [];
     for (let day = 0; day < 5; day++) {
       for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
     }
+
+    await updateProgress({
+      percent: 10,
+      step: "배치 대상 분석",
+      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다.`,
+      log: "그룹 수업은 동시배정 단위로 계산합니다."
+    }, true);
 
     const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
       const credits = unitItems.map(u => u.credits || 0);
@@ -429,14 +567,26 @@ export function createAutoAssignAll(deps) {
 
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
     let autoOps = 0;
-    const yieldAutoAssign = async () => {
+    const yieldAutoAssign = async (data = null, force = false) => {
       autoOps++;
-      if (autoOps % 20 === 0) await waitForBrowser();
+      if (data) await updateProgress(data, force);
+      else if (autoOps % 20 === 0) await waitForBrowser();
     };
 
-    for (const stage of stages) {
+    for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
+      const stage = stages[stageIndex];
       for (let attempt = 0; attempt < stage.attempts; attempt++) {
-        await waitForBrowser();
+        const stagePercent = 12 + Math.min(68, ((stageIndex / stages.length) * 68) + ((attempt / Math.max(1, stage.attempts)) * (68 / stages.length)));
+        await updateProgress({
+          percent: stagePercent,
+          step: `자동배치 탐색 · ${stage.label}`,
+          detail: `시도 ${attempt + 1} / ${stage.attempts} · 현재까지 최선 ${Math.max(0, bestScore)}개 배치`,
+          placed: 0,
+          best: Math.max(0, bestScore),
+          failed: bestFailed.length,
+          currentCard: "-",
+          log: attempt === 0 ? `${stage.label} 단계 시작` : null
+        }, true);
         const placed = [], failed = [];
 
         // ── Place concurrent groups first: one independent occurrence per 시수 ──
@@ -453,7 +603,15 @@ export function createAutoAssignAll(deps) {
           const needSlots = Math.max(0, maxCredits - alreadyPinned);
 
           for (let slot_i = 0; slot_i < needSlots; slot_i++) {
-            await yieldAutoAssign();
+            await yieldAutoAssign({
+              percent: stagePercent,
+              step: `그룹 수업 배치 · ${stage.label}`,
+              detail: `${group.name || "그룹"} ${slot_i + 1} / ${needSlots}회차를 배치하고 있습니다.`,
+              placed: placed.length,
+              best: Math.max(0, bestScore),
+              failed: failed.length,
+              currentCard: group.name || "그룹 수업"
+            });
             const activeItems = unitItems.filter(u => slot_i < u.credits);
             if (!activeItems.length) continue;
             const probeItem = makePlacementFromGroupItem(group, activeItems[0]);
@@ -475,7 +633,15 @@ export function createAutoAssignAll(deps) {
             const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
             const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
             for (let i = 0; i < needSlots; i++) {
-              await yieldAutoAssign();
+              await yieldAutoAssign({
+                percent: stagePercent,
+                step: `그룹 카드 배치 · ${stage.label}`,
+                detail: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"} 배치 중`,
+                placed: placed.length,
+                best: Math.max(0, bestScore),
+                failed: failed.length,
+                currentCard: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"}`
+              });
               const item = makePlacementFromGroupItem(group, groupItem);
               const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
               if (slot) {
@@ -499,7 +665,15 @@ export function createAutoAssignAll(deps) {
           const required = requiredByKey.get(key) || 0;
           const pinned = pinnedByKey.get(key) || 0;
           while (pinned + (placedByKey.get(key) || 0) < required) {
-            await yieldAutoAssign();
+            await yieldAutoAssign({
+              percent: stagePercent,
+              step: `일반 카드 배치 · ${stage.label}`,
+              detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.`,
+              placed: placed.length,
+              best: Math.max(0, bestScore),
+              failed: failed.length,
+              currentCard: getAutoItemName(item)
+            });
             const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
             if (!slot) {
               // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
@@ -523,6 +697,15 @@ export function createAutoAssignAll(deps) {
           bestPlaced = placed;
           bestFailed = failed;
           bestStage  = stage;
+          await updateProgress({
+            percent: stagePercent,
+            step: `최선 결과 갱신 · ${stage.label}`,
+            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개`,
+            placed: placed.length,
+            best: bestPlaced.length,
+            failed: bestFailed.length,
+            log: `최선 결과 갱신: ${bestPlaced.length}개 배치`
+          }, true);
         }
         if (!failed.length) break;
       }
@@ -533,6 +716,17 @@ export function createAutoAssignAll(deps) {
     // Greedy 자동배치가 끝까지 못 넣은 카드는 그냥 남기지 않고,
     // 보호 슬롯과 동일 카드 중복만 피하면서 최소 충돌 슬롯에 배치합니다.
     // 이후 recomputeConflicts()가 교사/학생/교실 충돌을 색상과 상세 내역으로 표시합니다.
+    await updateProgress({
+      percent: 84,
+      step: "미배치 보정 준비",
+      detail: `미배치 후보 ${bestFailed.length}개를 최소 충돌 위치에 보정 배치합니다.`,
+      placed: bestPlaced.length,
+      best: bestPlaced.length,
+      failed: bestFailed.length,
+      currentCard: "-",
+      log: bestFailed.length ? "보정 배치 단계 시작" : "보정 배치 대상 없음"
+    }, true);
+
     const forcedPlaced = [];
     const stillFailed = [];
     for (const failedItem of bestFailed) {
@@ -550,9 +744,27 @@ export function createAutoAssignAll(deps) {
       } else {
         stillFailed.push(failedItem);
       }
-      await yieldAutoAssign();
+      await yieldAutoAssign({
+        percent: 86 + Math.min(9, forcedPlaced.length + stillFailed.length),
+        step: "미배치 보정 중",
+        detail: `${failedItem.name || "카드"} 보정 배치 결과를 반영하고 있습니다.`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: stillFailed.length,
+        currentCard: failedItem.name || "보정 대상"
+      }, true);
     }
     bestFailed = stillFailed;
+
+    await updateProgress({
+      percent: 96,
+      step: "결과 반영",
+      detail: "배치 결과를 시간표에 반영하고 충돌을 재계산합니다.",
+      placed: bestPlaced.length,
+      best: bestPlaced.length,
+      failed: bestFailed.length,
+      currentCard: "-"
+    }, true);
 
     bestPlaced.forEach(e => entries().push(e));
     scheduleSave("timetable");
@@ -584,31 +796,46 @@ export function createAutoAssignAll(deps) {
     );
     renderAll();
 
-    const stageNote = bestStage.name === "strict" ? "" : `
-적용 방식: ${bestStage.label}`;
-    const forcedNote = forcedPlaced.length
-      ? `
-⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`
-      : "";
-    if (!names.length) {
-      alert(`✅ 전체 ${bestPlaced.length}개 슬롯 배치 완료!${stageNote}${forcedNote}
-
-자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
-    } else {
-      const failedList = names.slice(0, 12).join("\n");
-      const moreFailed = names.length > 12 ? "\n..." : "";
-      alert(`✅ ${bestPlaced.length}개 배치 완료${forcedNote}
-⚠️ 그래도 미배치 ${names.length}개:
-${failedList}${moreFailed}
-
-💡 남은 카드는 고정 채플/창체 보호 슬롯 또는 동일 카드 동일 시간 중복 때문에 배치할 수 없었습니다.${stageNote}
-
-자세한 결과는 하단 [로그] 탭에서 확인할 수 있습니다.`);
+    const detailLines = [
+      `<b>정상 배치</b> ${bestPlaced.length - forcedPlaced.length}개`,
+      `<b>보정 배치</b> ${forcedPlaced.length}개`,
+      `<b>미배치</b> ${names.length}개`,
+      `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
+      `<b>적용 방식</b> ${bestStage.label}`,
+      `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
+    ];
+    if (forcedPlaced.length) {
+      detailLines.push(`⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`);
     }
+    if (names.length) {
+      const failedList = names.slice(0, 12)
+        .map(name => `<li>${String(name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
+        .join("");
+      const moreFailed = names.length > 12 ? `<li>외 ${names.length - 12}개</li>` : "";
+      detailLines.push(`<div class="tt-auto-progress-failed"><b>남은 카드</b><ul>${failedList}${moreFailed}</ul></div>`);
+      detailLines.push(`남은 카드는 고정 채플/창체 보호 슬롯 또는 동일 카드 동일 시간 중복 때문에 배치할 수 없었습니다.`);
+    }
+    detailLines.push(`자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.`);
+
+    await progress.complete({
+      partial: !!names.length,
+      title: names.length ? "자동배치 부분 완료" : "자동배치 완료",
+      subtitle: names.length ? "일부 카드는 직접 확인이 필요합니다." : "모든 대상 슬롯을 배치했습니다.",
+      step: names.length ? "부분 완료" : "완료",
+      detailHtml: detailLines.map(line => `<div>${line}</div>`).join(""),
+      placed: bestPlaced.length,
+      best: bestPlaced.length,
+      failed: names.length,
+      currentCard: "-"
+    });
     } catch (err) {
       console.error("Auto assign failed:", err);
       addTimetableLog("error", "자동 배치 오류", err?.message || String(err));
-      alert("자동 배치 중 오류가 발생했습니다. 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.");
+      if (progress) {
+        await progress.error(`자동 배치 중 오류가 발생했습니다. ${err?.message || String(err)} 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.`);
+      } else {
+        alert("자동 배치 중 오류가 발생했습니다. 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.");
+      }
     } finally {
       autoAssignRunning = false;
       setAutoAssignBusy(false);
