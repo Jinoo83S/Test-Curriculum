@@ -6280,3 +6280,139 @@ button:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; transform
   border: 1px solid #cbd5e1 !important;
   background: #fff !important;
 }
+
+
+/* ================================================================
+   Stage 1 UI system: shared buttons and DB cleanup modal baseline
+   - 실제 렌더링 코드가 이 class를 사용해야 적용됩니다.
+   - DB 정리 팝업은 JS inline fallback도 함께 적용했습니다.
+================================================================ */
+.his-ui-btn,
+button.his-ui-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .08);
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
+}
+.his-ui-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 16px rgba(15, 23, 42, .13);
+}
+.his-ui-btn:disabled {
+  opacity: .55;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+.his-ui-btn-primary {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8) !important;
+  color: #fff !important;
+}
+.his-ui-btn-secondary {
+  background: #eef5ff !important;
+  color: #1d4ed8 !important;
+  border: 1px solid #bfdbfe !important;
+}
+.his-ui-btn-ghost {
+  background: #f1f5f9 !important;
+  color: #475569 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+.his-ui-btn-danger {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+  border: 1px solid #fecaca !important;
+}
+.his-ui-icon-btn {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 14px;
+  box-shadow: none;
+}
+.his-ui-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 28px !important;
+  background: rgba(15, 23, 42, .54) !important;
+  backdrop-filter: blur(5px);
+}
+.his-ui-modal {
+  width: min(820px, calc(100vw - 56px)) !important;
+  max-height: min(86vh, 820px) !important;
+  overflow: hidden !important;
+  background: #fff !important;
+  border-radius: 24px !important;
+  box-shadow: 0 30px 80px rgba(15,23,42,.32) !important;
+  border: 1px solid rgba(226,232,240,.96) !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+}
+.his-ui-modal-header {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  padding: 20px 22px 16px !important;
+  background: linear-gradient(180deg, #f8fbff, #fff) !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+}
+.his-ui-modal-body {
+  padding: 18px 20px !important;
+  overflow: auto !important;
+  background: #f8fafc !important;
+  display: grid !important;
+  gap: 14px !important;
+}
+.his-ui-modal-footer {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 9px !important;
+  padding: 14px 20px !important;
+  border-top: 1px solid #e2e8f0 !important;
+  background: #fff !important;
+}
+.his-ui-kicker {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 900;
+}
+.cleanup-modal .cleanup-summary > div,
+.cleanup-modal .cleanup-section {
+  border-radius: 16px !important;
+  background: #fff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04) !important;
+}
+@media (max-width: 640px) {
+  .his-ui-modal-backdrop { padding: 12px !important; }
+  .his-ui-modal { width: calc(100vw - 24px) !important; border-radius: 18px !important; }
+  .his-ui-modal-footer { flex-wrap: wrap; }
+  .his-ui-modal-footer .his-ui-btn { flex: 1 1 auto; }
+}

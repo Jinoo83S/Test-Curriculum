@@ -371,6 +371,53 @@ function renderPreviewBody(body, preview) {
   body.appendChild(roomBox);
 }
 
+
+function applyInlineStyles(node, styles = {}) {
+  if (!node) return node;
+  Object.assign(node.style, styles);
+  return node;
+}
+
+function makeUiButton(label, variant = "secondary", extraClass = "") {
+  const btn = el("button", `his-ui-btn his-ui-btn-${variant} ${extraClass}`.trim(), label);
+  btn.type = "button";
+  const base = {
+    appearance: "none",
+    WebkitAppearance: "none",
+    border: "0",
+    borderRadius: "12px",
+    minHeight: "36px",
+    padding: "8px 14px",
+    fontSize: "13px",
+    fontWeight: "900",
+    letterSpacing: "-0.01em",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "6px",
+    whiteSpace: "nowrap",
+    lineHeight: "1",
+    boxShadow: "0 1px 2px rgba(15,23,42,.08)",
+  };
+  const variants = {
+    primary: { background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff" },
+    secondary: { background: "#eef5ff", color: "#1d4ed8", border: "1px solid #bfdbfe" },
+    ghost: { background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0" },
+    danger: { background: "#fee2e2", color: "#b91c1c", border: "1px solid #fecaca" },
+  };
+  applyInlineStyles(btn, { ...base, ...(variants[variant] || variants.secondary) });
+  return btn;
+}
+
+function setButtonBusy(btn, busy, label) {
+  if (!btn) return;
+  btn.disabled = !!busy;
+  btn.textContent = label;
+  btn.style.opacity = busy ? ".62" : "";
+  btn.style.cursor = busy ? "default" : "pointer";
+}
+
 export async function openDataCleanupDialog() {
   if (!canEdit()) {
     alert("로그인/편집 권한이 필요합니다.");
@@ -382,32 +429,92 @@ export async function openDataCleanupDialog() {
     return;
   }
 
-  const overlay = el("div", "cleanup-modal-backdrop");
-  const modal = el("div", "cleanup-modal");
-  const header = el("div", "cleanup-modal-header");
-  header.innerHTML = `
-    <div class="cleanup-title-block">
-      <span class="cleanup-kicker">데이터 안전 정리</span>
-      <h3>DB 진단/정리</h3>
-      <p>기존 Firestore 데이터를 삭제하지 않고, 중복 카드와 홈룸 데이터를 보정합니다.</p>
-    </div>`;
-  const closeBtn = el("button", "cleanup-icon-close ui-icon-btn", "×");
-  closeBtn.type = "button";
+  const overlay = el("div", "cleanup-modal-backdrop his-ui-modal-backdrop");
+  applyInlineStyles(overlay, {
+    position: "fixed",
+    inset: "0",
+    zIndex: "10000",
+    background: "rgba(15,23,42,.54)",
+    backdropFilter: "blur(5px)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "28px",
+  });
+
+  const modal = el("div", "cleanup-modal his-ui-modal");
+  applyInlineStyles(modal, {
+    width: "min(820px, calc(100vw - 56px))",
+    maxHeight: "min(86vh, 820px)",
+    overflow: "hidden",
+    background: "#fff",
+    borderRadius: "24px",
+    boxShadow: "0 30px 80px rgba(15,23,42,.32)",
+    border: "1px solid rgba(226,232,240,.96)",
+    display: "grid",
+    gridTemplateRows: "auto minmax(0,1fr) auto",
+  });
+
+  const header = el("div", "cleanup-modal-header his-ui-modal-header");
+  applyInlineStyles(header, {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "16px",
+    padding: "20px 22px 16px",
+    background: "linear-gradient(180deg,#f8fbff,#ffffff)",
+    borderBottom: "1px solid #e2e8f0",
+  });
+
+  const titleBlock = el("div", "cleanup-title-block");
+  titleBlock.innerHTML = `
+    <span class="cleanup-kicker his-ui-kicker" style="display:inline-flex;align-items:center;margin-bottom:6px;padding:4px 9px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:900;">데이터 안전 정리</span>
+    <h3 style="margin:0 0 5px;font-size:21px;font-weight:900;letter-spacing:-.03em;color:#0f172a;">DB 진단/정리</h3>
+    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.45;">기존 Firestore 데이터를 삭제하지 않고, 중복 카드와 홈룸 데이터를 보정합니다.</p>
+  `;
+
+  const closeBtn = makeUiButton("×", "ghost", "cleanup-icon-close his-ui-icon-btn");
   closeBtn.title = "닫기";
   closeBtn.setAttribute("aria-label", "DB 진단/정리 닫기");
+  applyInlineStyles(closeBtn, {
+    width: "36px",
+    minWidth: "36px",
+    height: "36px",
+    minHeight: "36px",
+    padding: "0",
+    borderRadius: "14px",
+    fontSize: "20px",
+    boxShadow: "none",
+  });
   closeBtn.addEventListener("click", () => overlay.remove());
-  header.appendChild(closeBtn);
+  header.append(titleBlock, closeBtn);
 
-  const body = el("div", "cleanup-modal-body", "진단 중…");
-  const footer = el("div", "cleanup-modal-footer");
-  const refreshBtn = el("button", "cleanup-refresh-btn ui-soft-btn", "↻ 다시 진단");
-  refreshBtn.type = "button";
-  const applyBtn = el("button", "cleanup-apply-btn ui-primary-btn", "정리 실행");
-  applyBtn.type = "button";
-  const closeFooterBtn = el("button", "cleanup-cancel-btn ui-ghost-btn", "닫기");
-  closeFooterBtn.type = "button";
+  const body = el("div", "cleanup-modal-body his-ui-modal-body");
+  body.textContent = "진단 중…";
+  applyInlineStyles(body, {
+    padding: "18px 20px",
+    overflow: "auto",
+    background: "#f8fafc",
+    display: "grid",
+    gap: "14px",
+  });
+
+  const footer = el("div", "cleanup-modal-footer his-ui-modal-footer");
+  applyInlineStyles(footer, {
+    display: "flex",
+    justifyContent: "flex-end",
+    gap: "9px",
+    padding: "14px 20px",
+    borderTop: "1px solid #e2e8f0",
+    background: "#fff",
+  });
+
+  const closeFooterBtn = makeUiButton("닫기", "ghost", "cleanup-cancel-btn");
+  const refreshBtn = makeUiButton("↻ 다시 진단", "secondary", "cleanup-refresh-btn");
+  const applyBtn = makeUiButton("정리 실행", "primary", "cleanup-apply-btn");
   closeFooterBtn.addEventListener("click", () => overlay.remove());
   footer.append(closeFooterBtn, refreshBtn, applyBtn);
+
   modal.append(header, body, footer);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);
@@ -426,9 +533,8 @@ export async function openDataCleanupDialog() {
       return;
     }
     if (!confirm("표시된 항목을 정리하고 저장할까요? 실행 전 Firestore 진단 JSON을 보관해 두는 것을 권장합니다.")) return;
-    applyBtn.disabled = true;
-    refreshBtn.disabled = true;
-    applyBtn.textContent = "정리 중…";
+    setButtonBusy(applyBtn, true, "정리 중…");
+    setButtonBusy(refreshBtn, true, "↻ 다시 진단");
     try {
       const result = await applyDataCleanup(preview);
       preview = result.preview;
@@ -438,9 +544,9 @@ export async function openDataCleanupDialog() {
       console.error(e);
       alert("DB 정리에 실패했습니다: " + (e?.message || e));
     } finally {
-      applyBtn.disabled = false;
-      refreshBtn.disabled = false;
-      applyBtn.textContent = "정리 실행";
+      setButtonBusy(applyBtn, false, "정리 실행");
+      setButtonBusy(refreshBtn, false, "↻ 다시 진단");
     }
   });
 }
+
