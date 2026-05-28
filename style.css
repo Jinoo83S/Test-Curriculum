@@ -5703,3 +5703,290 @@ a.topbar-nav-link {
 .usage-log-list{display:grid;gap:6px;max-height:220px;overflow:auto}.usage-log-item{display:grid;grid-template-columns:64px 70px 70px 1fr;gap:8px;align-items:center;padding:7px 8px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc;font-size:12px}.usage-log-item span{color:#64748b}.usage-log-item b{color:#1d4ed8}.usage-log-item strong{text-align:right}.usage-log-item em{font-style:normal;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usage-empty{margin:0;color:#64748b;font-size:13px}.usage-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:16px 20px}.danger-outline{border-color:#fecaca!important;color:#b91c1c!important;background:#fff5f5!important}
 @media(max-width:640px){.usage-modal-backdrop{padding:8px}.usage-log-item{grid-template-columns:1fr 1fr;align-items:start}.usage-log-item em{grid-column:1/-1}.usage-actions{justify-content:stretch}.usage-actions button{flex:1 1 auto}}
+
+/* ── Compact DB cleanup dialog polish ───────────────────────────── */
+.cleanup-modal-header {
+  background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%);
+  align-items: flex-start;
+}
+.cleanup-title-block { min-width: 0; }
+.cleanup-kicker {
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 900;
+}
+.cleanup-icon-close {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #dbe2ef;
+  border-radius: 999px;
+  background: #fff;
+  color: #475569;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(15,23,42,.08);
+}
+.cleanup-icon-close:hover { background: #f1f5f9; color: #0f172a; }
+.cleanup-modal-footer {
+  background: #f8fafc;
+  gap: 8px;
+}
+.cleanup-cancel-btn,
+.cleanup-refresh-btn,
+.cleanup-apply-btn {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cleanup-cancel-btn { background: #e2e8f0; color: #334155; }
+.cleanup-refresh-btn { background: #dbeafe; color: #1d4ed8; }
+.cleanup-apply-btn { background: #1d4ed8; color: #fff; box-shadow: 0 4px 12px rgba(29,78,216,.22); }
+.cleanup-cancel-btn:hover { background: #cbd5e1; }
+.cleanup-refresh-btn:hover { background: #bfdbfe; }
+.cleanup-apply-btn:hover { background: #1e40af; }
+.cleanup-cancel-btn:disabled,
+.cleanup-refresh-btn:disabled,
+.cleanup-apply-btn:disabled { opacity: .55; cursor: default; box-shadow: none; }
+
+/* ── Timetable teacher constraints compact layout ───────────────── */
+.tt-con-bulk-box {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid #dbe2ef;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+.tt-con-bulk-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tt-con-bulk-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 6px;
+  color: #1e3a5f;
+}
+.tt-con-bulk-title strong { font-size: 12px; font-weight: 900; }
+.tt-con-bulk-title span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+}
+.tt-con-bulk-fieldset {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #475569;
+  font-weight: 800;
+}
+.tt-con-bulk-fieldset input,
+.tt-con-bulk-time-row select {
+  height: 28px;
+  padding: 3px 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+}
+.tt-con-bulk-fieldset input { width: 52px; }
+.tt-con-bulk-more {
+  border-top: 1px dashed #dbe2ef;
+  padding-top: 5px;
+}
+.tt-con-bulk-more summary {
+  cursor: pointer;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  user-select: none;
+}
+.tt-con-bulk-time-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px;
+  color: #475569;
+  font-weight: 800;
+}
+.tt-con-teacher-list {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, minmax(36px, auto));
+  grid-auto-columns: minmax(260px, 310px);
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 2px 8px;
+  scrollbar-width: thin;
+}
+.tt-con-teacher-block {
+  border: 1px solid #dbe2ef;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04);
+  overflow: hidden;
+}
+.tt-con-teacher-hdr {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #f8fafc;
+}
+.tt-con-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 900;
+  color: #1e3a5f;
+}
+.tt-con-stat {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 900;
+}
+.tt-con-tog {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 8px;
+  background: #e2e8f0;
+  color: #475569;
+  cursor: pointer;
+}
+.tt-con-body {
+  padding: 8px;
+  display: grid;
+  gap: 7px;
+  max-height: 300px;
+  overflow: auto;
+}
+.tt-con-num-row,
+.tt-con-room-row > div {
+  display: flex !important;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.tt-con-num-wrap {
+  font-size: 11px;
+  color: #475569;
+  font-weight: 800;
+}
+.tt-con-grid { min-width: 220px; }
+.tt-con-grid-row { display: grid; grid-template-columns: 26px repeat(5, 1fr); gap: 2px; }
+.tt-con-grid-day,
+.tt-con-grid-per,
+.tt-con-grid-corner,
+.tt-con-grid-cell {
+  min-height: 18px;
+  border-radius: 5px;
+  background: #f1f5f9;
+  text-align: center;
+  font-size: 10px;
+  color: #64748b;
+}
+.tt-con-grid-cell { border: 1px solid #dbe2ef; }
+.tt-con-grid-cell.tt-con-unavail { background: #fee2e2; border-color: #fca5a5; }
+
+/* ── Compact room management panel ─────────────────────────────── */
+.rooms-tools-row {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.1fr) minmax(280px, .9fr);
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 10px;
+}
+.rooms-paste-details {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.rooms-paste-details summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #1e3a5f;
+  background: #f8fbff;
+}
+.rooms-paste-details summary::-webkit-details-marker { display: none; }
+.rooms-paste-details summary::after {
+  content: "열기";
+  float: right;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 10px;
+}
+.rooms-paste-details[open] summary::after { content: "닫기"; }
+.rooms-paste-inner {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid #e5edf7;
+}
+.rooms-paste-details .excel-paste-area {
+  min-height: 74px;
+  height: 74px;
+  font-size: 12px;
+}
+.room-type-manager {
+  margin: 0 !important;
+  padding: 9px 10px !important;
+}
+.room-type-manager-head { margin-bottom: 7px !important; }
+.room-type-manager-head span { display: none; }
+.room-type-list { gap: 6px !important; max-height: 76px; overflow: auto; padding-right: 4px; }
+.room-type-item { padding: 4px 5px !important; }
+.room-type-item input { width: 92px !important; font-size: 11px !important; }
+.room-type-count { height: 18px !important; min-width: 28px !important; font-size: 10px !important; }
+.room-type-del { width: 20px !important; height: 20px !important; }
+.rooms-table-wrap {
+  max-height: 380px;
+  overflow: auto;
+}
+.rooms-table { font-size: 11px; min-width: 1120px; }
+.rooms-table th,
+.rooms-table td { padding: 4px 5px; }
+.rooms-table input,
+.rooms-table select {
+  padding: 4px 6px;
+  min-height: 28px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.rooms-table .stu-del-btn { width: 24px; height: 24px; }
+@media (max-width: 900px) {
+  .rooms-tools-row { grid-template-columns: 1fr; }
+  .tt-con-teacher-list { grid-template-rows: repeat(2, minmax(36px, auto)); }
+}

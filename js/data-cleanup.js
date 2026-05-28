@@ -385,19 +385,29 @@ export async function openDataCleanupDialog() {
   const overlay = el("div", "cleanup-modal-backdrop");
   const modal = el("div", "cleanup-modal");
   const header = el("div", "cleanup-modal-header");
-  header.innerHTML = `<div><h3>DB 진단/정리</h3><p>기존 Firestore 데이터를 삭제하지 않고, 중복 카드와 홈룸 데이터를 보정합니다.</p></div>`;
-  const closeBtn = el("button", "secondary-btn", "닫기");
+  header.innerHTML = `
+    <div class="cleanup-title-block">
+      <span class="cleanup-kicker">데이터 안전 정리</span>
+      <h3>DB 진단/정리</h3>
+      <p>기존 Firestore 데이터를 삭제하지 않고, 중복 카드와 홈룸 데이터를 보정합니다.</p>
+    </div>`;
+  const closeBtn = el("button", "cleanup-icon-close", "×");
   closeBtn.type = "button";
+  closeBtn.title = "닫기";
+  closeBtn.setAttribute("aria-label", "DB 진단/정리 닫기");
   closeBtn.addEventListener("click", () => overlay.remove());
   header.appendChild(closeBtn);
 
   const body = el("div", "cleanup-modal-body", "진단 중…");
   const footer = el("div", "cleanup-modal-footer");
-  const refreshBtn = el("button", "secondary-btn", "다시 진단");
+  const refreshBtn = el("button", "cleanup-refresh-btn", "↻ 다시 진단");
   refreshBtn.type = "button";
-  const applyBtn = el("button", "primary-btn", "정리 실행");
+  const applyBtn = el("button", "cleanup-apply-btn", "정리 실행");
   applyBtn.type = "button";
-  footer.append(refreshBtn, applyBtn);
+  const closeFooterBtn = el("button", "cleanup-cancel-btn", "닫기");
+  closeFooterBtn.type = "button";
+  closeFooterBtn.addEventListener("click", () => overlay.remove());
+  footer.append(closeFooterBtn, refreshBtn, applyBtn);
   modal.append(header, body, footer);
   overlay.appendChild(modal);
   document.body.appendChild(overlay);

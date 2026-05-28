@@ -102,21 +102,47 @@ export function createTimetableConstraintsHandlers({
     requestAnimationFrame(() => renderAll());
   }
 
+  function syncTeacherRoomAssignmentsFromRooms(teachers = [], rooms = []) {
+    const teacherSet = new Set((teachers || []).map(clean).filter(Boolean));
+    let changed = 0;
+    (rooms || []).forEach(room => {
+      const owner = clean(room.teacherName);
+      if (!owner || !teacherSet.has(owner)) return;
+      const c = ensureConstraint(owner);
+      const needs = c.homeRoomId !== room.id || c.assignedRoomId !== room.id || !c.useHomeRoom;
+      if (needs) {
+        c.homeRoomId = room.id;
+        c.assignedRoomId = room.id;
+        c.useHomeRoom = true;
+        changed += 1;
+      }
+    });
+    return changed;
+  }
+
   function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
     const box = document.createElement("div");
     box.className = "tt-con-bulk-box";
-    box.style.cssText = "display:grid;gap:8px;margin:8px 0 10px;padding:10px;border:1px solid #dbe2ef;border-radius:10px;background:#f8fbff";
+
+    const main = document.createElement("div");
+    main.className = "tt-con-bulk-main";
 
     const title = document.createElement("div");
-    title.style.cssText = "font-size:12px;font-weight:800;color:#1e3a5f";
-    title.textContent = "전체 일괄 편집";
-    box.appendChild(title);
+    title.className = "tt-con-bulk-title";
+    title.innerHTML = `<strong>전체 일괄 편집</strong><span>교사 ${teachers.length}명 · 교실 ${rooms.length}개</span>`;
+    main.appendChild(title);
 
-    const row1 = document.createElement("div");
-    row1.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;align-items:center";
-    const maxDay = document.createElement("input"); maxDay.type = "number"; maxDay.min = "1"; maxDay.max = "12"; maxDay.value = "6"; maxDay.style.cssText = "width:56px;padding:4px 6px;border:1px solid #d1d5db;border-radius:5px";
-    const maxCon = document.createElement("input"); maxCon.type = "number"; maxCon.min = "1"; maxCon.max = "12"; maxCon.value = "3"; maxCon.style.cssText = maxDay.style.cssText;
-    const applyNums = makeBtn("전체 적용", "primary-btn compact-btn", () => {
+    const maxDay = document.createElement("input");
+    maxDay.type = "number"; maxDay.min = "1"; maxDay.max = "12"; maxDay.value = "6";
+    const maxCon = document.createElement("input");
+    maxCon.type = "number"; maxCon.min = "1"; maxCon.max = "12"; maxCon.value = "3";
+
+    const numWrap = document.createElement("div");
+    numWrap.className = "tt-con-bulk-fieldset";
+    numWrap.append("하루", maxDay, "연속", maxCon);
+    main.appendChild(numWrap);
+
+    const applyNums = makeBtn("적용", "primary-btn compact-btn", () => {
       if (!canEdit()) return;
       captureTimetableUndo("교사 조건 전체 일괄 수정");
       const md = parseInt(maxDay.value) || 6;
@@ -131,24 +157,51 @@ export function createTimetableConstraintsHandlers({
       renderAll();
     });
     applyNums.disabled = !canEdit();
-    row1.append("하루 최대", maxDay, "최대 연속", maxCon, applyNums);
+    main.appendChild(applyNums);
 
-    const expandBtn = makeBtn("전체 펼치기", "secondary-btn compact-btn", () => {
+    const expandBtn = makeBtn("펼치기", "secondary-btn compact-btn", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = true; });
       renderConstraintsPanel();
     });
-    const collapseBtn = makeBtn("전체 접기", "secondary-btn compact-btn", () => {
+    const collapseBtn = makeBtn("접기", "secondary-btn compact-btn", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = false; });
       renderConstraintsPanel();
     });
-    row1.append(expandBtn, collapseBtn);
-    box.appendChild(row1);
+    main.append(expandBtn, collapseBtn);
 
-    const row2 = document.createElement("div");
-    row2.style.cssText = row1.style.cssText;
-    const daySel = document.createElement("select"); daySel.style.cssText = "padding:4px 6px;border:1px solid #d1d5db;border-radius:5px";
+    const syncRoomsBtn = makeBtn("교실 데이터 반영", "secondary-btn compact-btn", () => {
+      if (!canEdit()) return;
+      if (!rooms.length) {
+        alert("등록된 교실 데이터가 없습니다. 먼저 교실 관리에서 교실과 담당 교사를 입력해 주세요.");
+        return;
+      }
+      captureTimetableUndo("교사 조건에 교실 담당 데이터 반영");
+      const changed = syncTeacherRoomAssignmentsFromRooms(teachers, rooms);
+      if (changed) {
+        scheduleSave("timetable");
+        scheduleSave("rooms");
+        recomputeConflicts();
+        renderAll();
+      }
+      alert(changed ? `${changed}개 교실 담당 정보를 교사 조건에 반영했습니다.` : "새로 반영할 교실 담당 정보가 없습니다.");
+    });
+    syncRoomsBtn.disabled = !canEdit() || !rooms.length;
+    syncRoomsBtn.title = "명단/교실 관리의 담당 교사 정보를 교사별 본인 교실로 반영합니다.";
+    main.appendChild(syncRoomsBtn);
+
+    box.appendChild(main);
+
+    const details = document.createElement("details");
+    details.className = "tt-con-bulk-more";
+    const summary = document.createElement("summary");
+    summary.textContent = "선택 시간 일괄 불가/가능";
+    details.appendChild(summary);
+
+    const row = document.createElement("div");
+    row.className = "tt-con-bulk-time-row";
+    const daySel = document.createElement("select");
     dayLabels.forEach((d, i) => { const o = document.createElement("option"); o.value = i; o.textContent = d; daySel.appendChild(o); });
-    const perSel = document.createElement("select"); perSel.style.cssText = daySel.style.cssText;
+    const perSel = document.createElement("select");
     periods.forEach((p, i) => { const o = document.createElement("option"); o.value = i; o.textContent = p || `${i+1}교시`; perSel.appendChild(o); });
     const setUnav = makeBtn("전체 불가", "secondary-btn compact-btn", () => {
       if (!canEdit()) return;
@@ -172,32 +225,9 @@ export function createTimetableConstraintsHandlers({
       scheduleSave("timetable"); recomputeConflicts(); renderAll();
     });
     setUnav.disabled = clearUnav.disabled = !canEdit();
-    row2.append("선택 시간", daySel, perSel, setUnav, clearUnav);
-    box.appendChild(row2);
-
-    const row3 = document.createElement("div");
-    row3.style.cssText = row1.style.cssText;
-    const ownBtn = makeBtn("본인 교실 일괄 적용", "primary-btn compact-btn", () => {
-      if (!canEdit()) return;
-      captureTimetableUndo("본인 교실 일괄 적용");
-      teachers.forEach(t => {
-        const c = ensureConstraint(t);
-        const roomId = c.homeRoomId;
-        if (roomId) {
-          c.useHomeRoom = true;
-          c.assignedRoomId = roomId;
-          applyRoomToTeacherEntries(t, roomId);
-          setRoomTeacherOwner(roomId, t);
-        }
-      });
-      scheduleSave("timetable"); scheduleSave("rooms"); recomputeConflicts(); renderAll();
-    });
-    ownBtn.disabled = !canEdit();
-    row3.append(ownBtn);
-    if (!rooms.length) {
-      const note = document.createElement("span"); note.style.cssText = "font-size:11px;color:#64748b"; note.textContent = "교실을 먼저 등록하면 홈룸/본인 교실을 사용할 수 있습니다."; row3.appendChild(note);
-    }
-    box.appendChild(row3);
+    row.append("선택 시간", daySel, perSel, setUnav, clearUnav);
+    details.appendChild(row);
+    box.appendChild(details);
 
     container.appendChild(box);
   }
@@ -221,6 +251,10 @@ export function createTimetableConstraintsHandlers({
 
     renderConstraintBulkTools(el, allTeachers, rooms, dayLabels, periods);
 
+    const teacherList = document.createElement("div");
+    teacherList.className = "tt-con-teacher-list";
+    el.appendChild(teacherList);
+
     allTeachers.forEach(teacher => {
       const c = ensureConstraint(teacher);
 
@@ -241,7 +275,7 @@ export function createTimetableConstraintsHandlers({
       togBtn.onclick = () => { c._expanded = !c._expanded; renderConstraintsPanel(); };
       hdr.append(nameEl, statEl, togBtn); block.appendChild(hdr);
 
-      if (!c._expanded) { el.appendChild(block); return; }
+      if (!c._expanded) { teacherList.appendChild(block); return; }
 
       const body = document.createElement("div"); body.className = "tt-con-body";
 
@@ -386,7 +420,7 @@ export function createTimetableConstraintsHandlers({
       });
       body.appendChild(grid);
 
-      block.appendChild(body); el.appendChild(block);
+      block.appendChild(body); teacherList.appendChild(block);
     });
   }
 

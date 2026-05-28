@@ -207,6 +207,10 @@ export function parseRoomPaste(raw) {
   return rooms;
 }
 
+function getRoomsRenderRoot(container) {
+  return container?._roomsRoot || container?.closest?.(".rooms-tools-row")?.parentElement || container;
+}
+
 function appendRoomTypeManager(container, onUpdate, options) {
   const wrap = document.createElement("div");
   wrap.className = "room-type-manager";
@@ -222,7 +226,7 @@ function appendRoomTypeManager(container, onUpdate, options) {
   const addBtn = makeBtn("+ 유형 추가", "secondary-btn compact-btn", () => {
     addRoomType();
     onUpdate?.();
-    renderRoomsView(container, onUpdate, options);
+    renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
   });
   addBtn.disabled = !canEdit();
   head.appendChild(addBtn);
@@ -248,7 +252,7 @@ function appendRoomTypeManager(container, onUpdate, options) {
       }
       if (renameRoomType(type, next)) {
         onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
+        renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
       } else {
         e.target.value = type;
       }
@@ -262,7 +266,7 @@ function appendRoomTypeManager(container, onUpdate, options) {
     const delBtn = makeBtn("×", "room-type-del", () => {
       if (deleteRoomType(type)) {
         onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
+        renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
       }
     });
     delBtn.disabled = !canEdit() || type === "일반";
@@ -276,24 +280,30 @@ function appendRoomTypeManager(container, onUpdate, options) {
 }
 
 function appendRoomPasteArea(container, onUpdate, options) {
-  const pasteWrap = document.createElement("div");
-  pasteWrap.className = "paste-area-wrap rooms-paste-wrap";
-  pasteWrap.innerHTML = `
-    <div class="paste-label">
-      📋 엑셀에서 복사 후 아래 영역에 붙여넣기
-      <span class="paste-hint">열 구성: <strong>교실명</strong> [유형] [수용인원] [전용학년] [홈룸] [담당 교사] [메모]</span>
-    </div>`;
+  const details = document.createElement("details");
+  details.className = "paste-area-wrap rooms-paste-wrap rooms-paste-details";
+
+  const summary = document.createElement("summary");
+  summary.innerHTML = `📋 엑셀 붙여넣기 <span class="paste-hint">교실명 · 유형 · 수용인원 · 전용학년 · 홈룸 · 담당 교사 · 메모</span>`;
+  details.appendChild(summary);
+
+  const inner = document.createElement("div");
+  inner.className = "rooms-paste-inner";
+  const label = document.createElement("div");
+  label.className = "paste-label";
+  label.innerHTML = `<span class="paste-hint">예) 701호\t일반\t24\t7\t7A\t김OO\t홈룸 교실</span>`;
+  inner.appendChild(label);
 
   const textarea = document.createElement("textarea");
   textarea.className = "excel-paste-area";
-  textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)\n예) 701호\t일반\t24\t7\t7A\t김OO\t홈룸 교실";
+  textarea.placeholder = "엑셀 데이터를 붙여넣으세요 (Ctrl+V)";
   textarea.disabled = !canEdit();
-  pasteWrap.appendChild(textarea);
+  inner.appendChild(textarea);
 
   const pasteActions = document.createElement("div");
   pasteActions.className = "paste-actions";
 
-  const parseBtn = makeBtn("교실 명단 추가", "primary-btn", () => {
+  const parseBtn = makeBtn("교실 명단 추가", "primary-btn compact-btn", () => {
     if (!canEdit()) return;
     const raw = textarea.value.trim();
     if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
@@ -304,16 +314,18 @@ function appendRoomPasteArea(container, onUpdate, options) {
     scheduleSave("rooms");
     textarea.value = "";
     onUpdate?.();
-    renderRoomsView(container, onUpdate, options);
+    renderRoomsView(getRoomsRenderRoot(container), onUpdate, options);
     alert(`${parsed.length}개 교실이 추가되었습니다.`);
   });
   parseBtn.disabled = !canEdit();
 
-  const clearBtn = makeBtn("지우기", "secondary-btn", () => { textarea.value = ""; });
+  const clearBtn = makeBtn("지우기", "secondary-btn compact-btn", () => { textarea.value = ""; });
   pasteActions.append(parseBtn, clearBtn);
-  pasteWrap.appendChild(pasteActions);
-  container.appendChild(pasteWrap);
+  inner.appendChild(pasteActions);
+  details.appendChild(inner);
+  container.appendChild(details);
 }
+
 
 export function addRoom(data = {}) {
   if (!canEdit()) return null;
@@ -369,8 +381,12 @@ export function renderRoomsView(container, onUpdate, options = {}) {
   actions.append(addBtn, resetBtn);
   hdr.append(title, actions); container.appendChild(hdr);
 
-  appendRoomTypeManager(container, onUpdate, options);
-  appendRoomPasteArea(container, onUpdate, options);
+  const toolsRow = document.createElement("div");
+  toolsRow.className = "rooms-tools-row";
+  toolsRow._roomsRoot = container;
+  appendRoomTypeManager(toolsRow, onUpdate, options);
+  appendRoomPasteArea(toolsRow, onUpdate, options);
+  container.appendChild(toolsRow);
 
   if (!getRooms().length) {
     const e = document.createElement("div"); e.className = "tt-empty";
