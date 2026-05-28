@@ -6771,3 +6771,62 @@ button.his-ui-btn {
     overflow-x: auto !important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────
+   Stage 5 · Teacher list 3-row horizontal strip
+   교사 조건 목록이 세로 1열로 늘어나는 문제를 막고,
+   3행 × 가로 스크롤 구조로 고정합니다.
+──────────────────────────────────────────────────────────────── */
+.tt-con-teacher-list {
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-template-rows: repeat(3, minmax(36px, auto)) !important;
+  grid-auto-columns: minmax(250px, 290px) !important;
+  grid-template-columns: none !important;
+  flex-direction: initial !important;
+  flex-wrap: initial !important;
+  align-content: initial !important;
+  align-items: start !important;
+  gap: 8px !important;
+  width: 100% !important;
+  max-height: none !important;
+  min-height: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  padding: 4px 2px 12px !important;
+  box-sizing: border-box !important;
+  scrollbar-width: thin !important;
+}
+.tt-con-teacher-list::-webkit-scrollbar { height: 9px; }
+.tt-con-teacher-list::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+.tt-con-teacher-list::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 999px; }
+.tt-con-teacher-block {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  min-height: 36px !important;
+  flex: initial !important;
+  align-self: start !important;
+}
+.tt-con-teacher-block:has(.tt-con-body) {
+  grid-row: span 3 !important;
+  width: 360px !important;
+  max-height: 430px !important;
+  overflow: auto !important;
+}
+.tt-con-teacher-block:not(:has(.tt-con-body)) .tt-con-teacher-hdr {
+  border-bottom: 0 !important;
+}
+@media (max-width: 900px) {
+  .tt-con-teacher-list {
+    grid-template-rows: repeat(2, minmax(36px, auto)) !important;
+    grid-auto-columns: minmax(230px, 270px) !important;
+  }
+  .tt-con-teacher-block:has(.tt-con-body) {
+    grid-row: span 2 !important;
+    width: 330px !important;
+  }
+}
