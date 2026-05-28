@@ -74,6 +74,7 @@ export function createTimetableSidebarHandlers(deps) {
     const ttcards = appState.timetable?.ttcards || [];
     const filteredTtcards = filterTtCardsByGrade(ttcards);
     toolbar.append(actionGroup, buildGradeFilterControls(ttcards), buildClassCountSummary(ttcards));
+    applySubjectToolbarInlineUi(toolbar);
     panel.appendChild(toolbar);
 
     if (ttcards.length > 0) {
@@ -82,6 +83,110 @@ export function createTimetableSidebarHandlers(deps) {
     }
 
     renderSubjectPanelLegacy(panel);
+  }
+
+  function applySubjectToolbarInlineUi(toolbar) {
+    if (!toolbar) return;
+    Object.assign(toolbar.style, {
+      display: "grid",
+      gridTemplateColumns: "minmax(260px, auto) minmax(240px, 1fr) minmax(340px, 1.5fr)",
+      alignItems: "center",
+      gap: "10px",
+      margin: "0 0 10px 0",
+      padding: "10px 12px",
+      border: "1px solid #dbeafe",
+      borderRadius: "16px",
+      background: "linear-gradient(180deg, #ffffff 0%, #f6f9ff 100%)",
+      boxShadow: "0 2px 10px rgba(15, 23, 42, .06), inset 0 1px 0 rgba(255,255,255,.9)"
+    });
+    const actionGroup = toolbar.querySelector(".tt-card-toolbar-actions");
+    if (actionGroup) Object.assign(actionGroup.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "7px",
+      minWidth: "0",
+      flexWrap: "wrap"
+    });
+    toolbar.querySelectorAll(".his-ui-btn, .tt-toolbar-action").forEach(btn => {
+      Object.assign(btn.style, {
+        appearance: "none",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "6px",
+        height: "32px",
+        minHeight: "32px",
+        padding: "0 12px",
+        borderRadius: "11px",
+        border: btn.classList.contains("his-ui-btn-ghost") ? "1px solid #e2e8f0" : "1px solid #bfdbfe",
+        background: btn.classList.contains("his-ui-btn-ghost") ? "#f1f5f9" : "#eef5ff",
+        color: btn.classList.contains("his-ui-btn-ghost") ? "#475569" : "#1d4ed8",
+        fontSize: "12px",
+        fontWeight: "900",
+        lineHeight: "1",
+        whiteSpace: "nowrap",
+        cursor: "pointer",
+        boxShadow: "0 1px 2px rgba(15, 23, 42, .08)"
+      });
+    });
+    toolbar.querySelectorAll(".tt-grade-filter-controls, .tt-class-count-summary").forEach(box => {
+      Object.assign(box.style, {
+        display: "flex",
+        alignItems: "center",
+        gap: "5px",
+        minWidth: "0",
+        padding: "6px 8px",
+        border: "1px solid #e2e8f0",
+        borderRadius: "14px",
+        background: "#f8fafc",
+        overflowX: "auto",
+        flexWrap: "nowrap"
+      });
+    });
+    toolbar.querySelectorAll(".tt-toolbar-label").forEach(label => {
+      Object.assign(label.style, {
+        display: "inline-flex",
+        alignItems: "center",
+        height: "22px",
+        marginRight: "2px",
+        color: "#475569",
+        fontSize: "11px",
+        fontWeight: "900",
+        whiteSpace: "nowrap"
+      });
+    });
+    toolbar.querySelectorAll(".tt-grade-filter-btn").forEach(btn => {
+      const active = btn.classList.contains("active");
+      Object.assign(btn.style, {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "24px",
+        minHeight: "24px",
+        padding: "0 10px",
+        borderRadius: "999px",
+        border: active ? "1px solid #2563eb" : "1px solid #cbd5e1",
+        background: active ? "linear-gradient(135deg, #2563eb, #1d4ed8)" : "#fff",
+        color: active ? "#fff" : "#334155",
+        fontSize: "11px",
+        fontWeight: "900",
+        lineHeight: "1",
+        whiteSpace: "nowrap",
+        boxShadow: active ? "0 3px 8px rgba(37, 99, 235, .20)" : "none"
+      });
+    });
+    toolbar.querySelectorAll(".tt-credit-chip").forEach(chip => {
+      Object.assign(chip.style, {
+        display: "inline-flex",
+        alignItems: "center",
+        minHeight: "20px",
+        padding: "0 7px",
+        borderRadius: "999px",
+        fontSize: "11px",
+        fontWeight: "900",
+        whiteSpace: "nowrap"
+      });
+    });
   }
 
   function renderSubjectPanelTtCards(panel, allTtcards) {
