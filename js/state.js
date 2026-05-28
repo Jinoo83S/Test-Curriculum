@@ -596,6 +596,192 @@ export function resetLocalSnapshot() {
   fireUpdate("all");
 }
 
+
+function jsonSafeClone(value) {
+  const seen = new WeakSet();
+  const convert = (v) => {
+    if (v == null || typeof v !== "object") return v;
+    if (typeof v.toDate === "function") {
+      try { return v.toDate().toISOString(); } catch (_) {}
+    }
+    if (typeof v.toMillis === "function") {
+      try { return new Date(v.toMillis()).toISOString(); } catch (_) {}
+    }
+    if (v instanceof Date) return v.toISOString();
+    if (seen.has(v)) return "[Circular]";
+    seen.add(v);
+    if (Array.isArray(v)) return v.map(convert);
+    const out = {};
+    Object.keys(v).sort().forEach(k => { out[k] = convert(v[k]); });
+    return out;
+  };
+  return convert(value);
+}
+
+async function readDiagnosticDoc(label, ref) {
+  try {
+    const snap = await getDoc(ref);
+    return {
+      label,
+      ok: true,
+      exists: snap.exists(),
+      data: snap.exists() ? jsonSafeClone(withoutFirestoreMeta(snap.data())) : null,
+      error: null
+    };
+  } catch (e) {
+    return { label, ok: false, exists: false, data: null, error: e?.message || String(e) };
+  }
+}
+
+async function readDiagnosticCollection(label, collRef) {
+  try {
+    const snap = await getDocs(collRef);
+    return {
+      label,
+      ok: true,
+      count: snap.size,
+      docs: snap.docs.map(d => ({ id: d.id, data: jsonSafeClone(withoutFirestoreMeta(d.data())) })),
+      error: null
+    };
+  } catch (e) {
+    return { label, ok: false, count: 0, docs: [], error: e?.message || String(e) };
+  }
+}
+
+function buildNormalizedDiagnostic(raw) {
+  const boards = raw?.boards || {};
+  const split = raw?.split || {};
+  const splitClassDocs = split.classes?.docs || [];
+  const splitRosterDocs = split.rosters?.docs || [];
+  const splitEntryDocs = split.timetableEntries?.docs || [];
+  const splitTtCardDocs = split.ttcards?.docs || [];
+  const splitMetaDoc = split.timetableMeta;
+
+  const rostersRaw = { rosters: {}, rosterMeta: {} };
+  splitRosterDocs.forEach(d => {
+    const data = d.data || {};
+    const templateId = clean(data.templateId) || d.id;
+    rostersRaw.rosters[templateId] = Array.isArray(data.entries) ? data.entries : [];
+    rostersRaw.rosterMeta[templateId] = data.meta || { classCount: "", missingExcluded: false };
+  });
+
+  const timetableRaw = {
+    config: splitMetaDoc?.data?.config || {},
+    teacherConstraints: splitMetaDoc?.data?.teacherConstraints || {},
+    ttcardGroups: splitMetaDoc?.data?.ttcardGroups || splitMetaDoc?.data?.templateGroups || [],
+    entries: splitEntryDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
+    ttcards: splitTtCardDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
+  };
+
+  const normalized = {
+    curriculum: normalizeCurriculumDomain(boards.curriculum?.data || {}),
+    templates: normalizeTemplatesDomain(boards.templates?.data || {}),
+    teachers: normalizeTeachersDomain(boards.teachers?.data || {}),
+    rooms: normalizeRoomsDomain(boards.rooms?.data || {}),
+    classes: splitClassDocs.length
+      ? normalizeClassesDomain({ classes: splitClassDocs.map(d => ({ id: d.id, ...(d.data || {}) })) })
+      : normalizeClassesDomain(boards.classesLegacy?.data || {}),
+    rosters: splitRosterDocs.length
+      ? normalizeRostersDomain(rostersRaw)
+      : normalizeRostersDomain(boards.rostersLegacy?.data || {}),
+    timetable: (splitEntryDocs.length || splitTtCardDocs.length || splitMetaDoc?.exists)
+      ? normalizeTimetableDomain(timetableRaw)
+      : normalizeTimetableDomain(boards.timetableLegacy?.data || {}),
+  };
+  return normalized;
+}
+
+function summarizeDiagnostic(normalized) {
+  const classes = normalized.classes?.classes || [];
+  const students = classes.reduce((sum, c) => sum + (Array.isArray(c.students) ? c.students.length : 0), 0);
+  const rosters = normalized.rosters?.rosters || {};
+  const rosterMeta = normalized.rosters?.rosterMeta || {};
+  const rosterIds = uniqueOrdered([...Object.keys(rosters), ...Object.keys(rosterMeta)]);
+  const zeroRosterIds = rosterIds.filter(id => (rosters[id] || []).length <= 0 && !rosterMeta[id]?.missingExcluded);
+  return {
+    curriculumGrades: Object.fromEntries(GRADE_KEYS.map(g => [g, (normalized.curriculum?.gradeBoards?.[g] || []).length])),
+    templateCount: (normalized.templates?.templates || []).length,
+    legacyTemplateGroupCount: (normalized.templates?.templateGroups || []).length,
+    classCount: classes.length,
+    studentCount: students,
+    teacherCount: (normalized.teachers?.teachers || []).length,
+    roomCount: (normalized.rooms?.rooms || []).length,
+    roomTypeCount: (normalized.rooms?.roomTypes || []).length,
+    rosterSubjectCount: rosterIds.length,
+    zeroRosterSubjectCount: zeroRosterIds.length,
+    zeroRosterSubjectIds: zeroRosterIds,
+    timetableEntryCount: (normalized.timetable?.entries || []).length,
+    ttcardCount: (normalized.timetable?.ttcards || []).length,
+    ttcardGroupCount: (normalized.timetable?.ttcardGroups || []).length,
+    timetablePeriodCount: normalized.timetable?.config?.periodCount || null,
+  };
+}
+
+export async function exportFirestoreDiagnosticSnapshot() {
+  if (LOCAL_DEV_MODE) {
+    throw new Error("로컬 모드에서는 Firestore 진단 내보내기를 실행할 수 없습니다. 온라인 모드로 전환한 뒤 실행해 주세요.");
+  }
+
+  const [
+    curriculumDoc, templatesDoc, classesLegacyDoc, teachersDoc,
+    rostersLegacyDoc, roomsDoc, timetableLegacyDoc, legacyDoc,
+    classesSplit, rostersSplit, timetableEntriesSplit, ttcardsSplit, timetableMetaDoc
+  ] = await Promise.all([
+    readDiagnosticDoc("boards/curriculum", refs.curriculum),
+    readDiagnosticDoc("boards/templates", refs.templates),
+    readDiagnosticDoc("boards/classes", refs.classes),
+    readDiagnosticDoc("boards/teachers", refs.teachers),
+    readDiagnosticDoc("boards/rosters", refs.rosters),
+    readDiagnosticDoc("boards/rooms", refs.rooms),
+    readDiagnosticDoc("boards/timetable", refs.timetable),
+    readDiagnosticDoc("boards/main", refs.legacy),
+    readDiagnosticCollection("boards/_split/classes", splitRefs.classes),
+    readDiagnosticCollection("boards/_split/rosters", splitRefs.rosters),
+    readDiagnosticCollection("boards/_split/timetableEntries", splitRefs.timetableEntries),
+    readDiagnosticCollection("boards/_split/ttcards", splitRefs.ttcards),
+    readDiagnosticDoc("boards/_split/timetableMeta/main", splitRefs.timetableMeta),
+  ]);
+
+  const raw = {
+    boards: {
+      curriculum: curriculumDoc,
+      templates: templatesDoc,
+      classesLegacy: classesLegacyDoc,
+      teachers: teachersDoc,
+      rostersLegacy: rostersLegacyDoc,
+      rooms: roomsDoc,
+      timetableLegacy: timetableLegacyDoc,
+      legacy: legacyDoc,
+    },
+    split: {
+      classes: classesSplit,
+      rosters: rostersSplit,
+      timetableEntries: timetableEntriesSplit,
+      ttcards: ttcardsSplit,
+      timetableMeta: timetableMetaDoc,
+    }
+  };
+
+  const normalized = buildNormalizedDiagnostic(raw);
+  return {
+    version: 1,
+    mode: "his-firestore-diagnostic",
+    exportedAt: new Date().toISOString(),
+    projectId: "his-curriculum-8e737",
+    source: "Firestore direct read",
+    note: "학생 이름 등 운영 데이터가 포함될 수 있습니다. 외부 공유 전 개인정보 범위를 확인해 주세요.",
+    summary: summarizeDiagnostic(normalized),
+    localRuntime: {
+      dirtyDomains: getDirtyDomains(),
+      initialLoad: { ...initialLoad },
+      autoSave: isAutoSaveEnabled(),
+      subscribedDomains: [..._subscribedDomains]
+    },
+    normalized,
+    raw
+  };
+}
+
 // Ensure consistency (re-normalize in place)
 export function ensureConsistency(domain) {
   if (domain === "curriculum") appState.curriculum = normalizeCurriculumDomain(appState.curriculum);

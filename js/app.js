@@ -5,7 +5,7 @@ import { auth, GRADE_GROUPS } from "./config.js";
 import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad, setOnSaveStatus,
          isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot } from "./state.js";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
@@ -26,12 +26,15 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
+const APP_MODULE_VERSION = "20260528_room_homeroom_force";
+
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
 // Other screens are downloaded when the user actually opens that menu.
 const lazyModules = {};
 function lazyImport(key, path) {
-  return lazyModules[key] || (lazyModules[key] = import(path));
+  const versionedPath = path.includes("?") ? `${path}&v=${APP_MODULE_VERSION}` : `${path}?v=${APP_MODULE_VERSION}`;
+  return lazyModules[key] || (lazyModules[key] = import(versionedPath));
 }
 const loadStudents     = () => lazyImport("students", "./students.js");
 const loadTeachers     = () => lazyImport("teachers", "./teachers.js");
@@ -215,7 +218,7 @@ const VIEW_DOMAIN_SETS = {
   manager:      ["curriculum", "templates", "teachers"],
   teachers:     ["templates", "teachers"],
   students:     ["classes", "rosters"],
-  rooms:        ["rooms", "teachers"],
+  rooms:        ["rooms", "teachers", "classes"],
   subjectsetup: ["curriculum", "templates", "rosters"],
   rosters:      ["curriculum", "templates", "classes", "rosters"],
   ttcards:      ["curriculum", "templates", "classes", "rosters", "timetable"],
@@ -861,6 +864,34 @@ function setupSaveQuotaControls() {
     panel.append(exportBtn, importBtn, resetLocalBtn);
     devMenu.appendChild(panel);
     saveStatusEl.insertAdjacentElement("afterend", devMenu);
+  } else {
+    const diagBtn = document.createElement("button");
+    diagBtn.type = "button";
+    diagBtn.className = "secondary-btn firestore-diagnostic-btn";
+    diagBtn.style.padding = "6px 10px";
+    diagBtn.textContent = "Firestore 진단";
+    diagBtn.title = "현재 Firestore 저장 데이터를 JSON으로 내보냅니다. 읽기 quota를 사용합니다.";
+    diagBtn.addEventListener("click", async () => {
+      if (!canEdit()) {
+        alert("온라인 모드에서 로그인 후 실행할 수 있습니다.");
+        return;
+      }
+      if (!confirm("Firestore 저장 데이터를 진단용 JSON으로 내보낼까요?\n읽기 quota가 일부 사용됩니다.")) return;
+      const prevText = diagBtn.textContent;
+      diagBtn.disabled = true;
+      diagBtn.textContent = "진단 내보내는 중…";
+      try {
+        const snapshot = await exportFirestoreDiagnosticSnapshot();
+        downloadJsonFile(`his-firestore-diagnostic-${new Date().toISOString().slice(0,10)}.json`, snapshot);
+      } catch (e) {
+        console.error(e);
+        alert("Firestore 진단 내보내기에 실패했습니다: " + (e?.message || e));
+      } finally {
+        diagBtn.disabled = false;
+        diagBtn.textContent = prevText;
+      }
+    });
+    saveStatusEl.insertAdjacentElement("afterend", diagBtn);
   }
 
   saveModeBtn = document.createElement("button");

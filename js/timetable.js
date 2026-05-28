@@ -6,7 +6,7 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot } from "./state.js";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
@@ -219,6 +219,33 @@ function setupTtSaveQuotaControls() {
     panel.append(exportBtn, importBtn, resetLocalBtn);
     devMenu.appendChild(panel);
     parent.insertBefore(devMenu, parent.firstChild);
+  } else {
+    const diagBtn = document.createElement("button");
+    diagBtn.type = "button";
+    diagBtn.className = "tt-save-mode-btn firestore-diagnostic-btn";
+    diagBtn.textContent = "Firestore 진단";
+    diagBtn.title = "현재 Firestore 저장 데이터를 JSON으로 내보냅니다. 읽기 quota를 사용합니다.";
+    diagBtn.addEventListener("click", async () => {
+      if (!canEdit()) {
+        alert("온라인 모드에서 로그인 후 실행할 수 있습니다.");
+        return;
+      }
+      if (!confirm("Firestore 저장 데이터를 진단용 JSON으로 내보낼까요?\n읽기 quota가 일부 사용됩니다.")) return;
+      const prevText = diagBtn.textContent;
+      diagBtn.disabled = true;
+      diagBtn.textContent = "진단 중…";
+      try {
+        const snapshot = await exportFirestoreDiagnosticSnapshot();
+        downloadJsonFile(`his-firestore-diagnostic-${new Date().toISOString().slice(0,10)}.json`, snapshot);
+      } catch (e) {
+        console.error(e);
+        alert("Firestore 진단 내보내기에 실패했습니다: " + (e?.message || e));
+      } finally {
+        diagBtn.disabled = false;
+        diagBtn.textContent = prevText;
+      }
+    });
+    parent.insertBefore(diagBtn, parent.firstChild);
   }
 
   ttSaveStatusEl = document.createElement("span");
