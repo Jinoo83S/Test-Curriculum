@@ -129,36 +129,74 @@ export function createTimetableConstraintsHandlers({
   function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
     const box = document.createElement("div");
     box.className = "tt-con-bulk-box his-bulk-editor";
+    box.dataset.uiVersion = "teacher-bulk-v4-r2";
+    box.style.cssText = [
+      "margin:8px 0 10px",
+      "padding:10px 12px",
+      "border:1px solid #dbe4f0",
+      "border-radius:16px",
+      "background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)",
+      "box-shadow:0 8px 22px rgba(15,23,42,.06)"
+    ].join(";");
+
+    const polishBtn = (btn, variant = "soft") => {
+      if (!btn) return btn;
+      const bg = variant === "primary" ? "#2563eb" : variant === "danger" ? "#ef4444" : variant === "ghost" ? "#ffffff" : "#eef4ff";
+      const fg = variant === "primary" || variant === "danger" ? "#ffffff" : variant === "ghost" ? "#334155" : "#1e3a8a";
+      const bd = variant === "ghost" ? "#cbd5e1" : "transparent";
+      btn.style.cssText = [
+        "height:28px",
+        "padding:0 10px",
+        "border-radius:999px",
+        `border:1px solid ${bd}`,
+        `background:${bg}`,
+        `color:${fg}`,
+        "font-size:12px",
+        "font-weight:800",
+        "line-height:1",
+        "box-shadow:none",
+        "white-space:nowrap",
+        "cursor:pointer"
+      ].join(";");
+      return btn;
+    };
 
     const main = document.createElement("div");
     main.className = "his-bulk-editor-main";
+    main.style.cssText = "display:flex;align-items:center;gap:10px;flex-wrap:wrap;";
 
     const title = document.createElement("div");
     title.className = "his-bulk-editor-title";
-    title.innerHTML = `<strong>전체 일괄 편집</strong><span>교사 ${teachers.length}명 · 교실 ${rooms.length}개</span>`;
+    title.style.cssText = "display:flex;flex-direction:column;gap:2px;min-width:180px;";
+    title.innerHTML = `<strong style="font-size:13px;font-weight:900;color:#0f172a;">전체 일괄 편집 <em style="font-style:normal;font-size:10px;font-weight:900;color:#2563eb;background:#dbeafe;border-radius:999px;padding:2px 6px;margin-left:4px;">v4-r2</em></strong><span style="font-size:11px;color:#64748b;">교사 ${teachers.length}명 · 교실 ${rooms.length}개</span>`;
     main.appendChild(title);
 
     const quickFields = document.createElement("div");
     quickFields.className = "his-bulk-quick-fields";
+    quickFields.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;";
 
     const maxDayLabel = document.createElement("label");
     maxDayLabel.className = "his-mini-field";
+    maxDayLabel.style.cssText = "height:30px;display:flex;align-items:center;gap:5px;padding:0 8px;border:1px solid #dbe4f0;border-radius:12px;background:#fff;font-size:11px;font-weight:800;color:#475569;";
     maxDayLabel.innerHTML = `<span>하루 최대</span>`;
     const maxDay = document.createElement("input");
     maxDay.type = "number";
     maxDay.min = "1";
     maxDay.max = "12";
     maxDay.value = "6";
+    maxDay.style.cssText = "width:44px;height:22px;border:1px solid #cbd5e1;border-radius:8px;text-align:center;font-weight:800;";
     maxDayLabel.appendChild(maxDay);
 
     const maxConLabel = document.createElement("label");
     maxConLabel.className = "his-mini-field";
+    maxConLabel.style.cssText = "height:30px;display:flex;align-items:center;gap:5px;padding:0 8px;border:1px solid #dbe4f0;border-radius:12px;background:#fff;font-size:11px;font-weight:800;color:#475569;";
     maxConLabel.innerHTML = `<span>연속</span>`;
     const maxCon = document.createElement("input");
     maxCon.type = "number";
     maxCon.min = "1";
     maxCon.max = "12";
     maxCon.value = "3";
+    maxCon.style.cssText = "width:44px;height:22px;border:1px solid #cbd5e1;border-radius:8px;text-align:center;font-weight:800;";
     maxConLabel.appendChild(maxCon);
 
     quickFields.append(maxDayLabel, maxConLabel);
@@ -166,8 +204,9 @@ export function createTimetableConstraintsHandlers({
 
     const actions = document.createElement("div");
     actions.className = "his-bulk-editor-actions";
+    actions.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-left:auto;";
 
-    const applyNums = makeBtn("전체 적용", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
+    const applyNums = polishBtn(makeBtn("전체 적용", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
       if (!canEdit()) return;
       captureTimetableUndo("교사 조건 전체 일괄 수정");
       const md = parseInt(maxDay.value) || 6;
@@ -180,20 +219,20 @@ export function createTimetableConstraintsHandlers({
       scheduleSave("timetable");
       recomputeConflicts();
       renderAll();
-    });
+    }), "primary");
     applyNums.disabled = !canEdit();
 
-    const expandBtn = makeBtn("전체 펼치기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+    const expandBtn = polishBtn(makeBtn("전체 펼치기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = true; });
       renderConstraintsPanel();
-    });
+    }), "soft");
 
-    const collapseBtn = makeBtn("전체 접기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+    const collapseBtn = polishBtn(makeBtn("전체 접기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
       teachers.forEach(t => { ensureConstraint(t)._expanded = false; });
       renderConstraintsPanel();
-    });
+    }), "soft");
 
-    const syncRoomsBtn = makeBtn("교실 데이터 반영", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => {
+    const syncRoomsBtn = polishBtn(makeBtn("교실 데이터 반영", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => {
       if (!canEdit()) return;
       if (!rooms.length) {
         alert("등록된 교실 데이터가 없습니다. 먼저 교실 관리에서 교실과 담당 교사를 입력해 주세요.");
@@ -208,7 +247,7 @@ export function createTimetableConstraintsHandlers({
         renderAll();
       }
       alert(changed ? `${changed}개 교실 담당 정보를 교사 조건에 반영했습니다.` : "새로 반영할 교실 담당 정보가 없습니다.");
-    });
+    }), "ghost");
     syncRoomsBtn.disabled = !canEdit() || !rooms.length;
     syncRoomsBtn.title = "명단/교실 관리의 담당 교사 정보를 교사별 본인 교실로 반영합니다.";
 
@@ -218,9 +257,11 @@ export function createTimetableConstraintsHandlers({
 
     const details = document.createElement("details");
     details.className = "his-bulk-time-details";
+    details.style.cssText = "margin-top:9px;border-top:1px dashed #cbd5e1;padding-top:8px;";
 
     const summary = document.createElement("summary");
-    summary.innerHTML = `<span>선택 시간 일괄 불가/가능</span><em>시간표에서 여러 칸을 선택한 뒤 전체 교사에게 적용</em>`;
+    summary.style.cssText = "width:fit-content;display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px;border-radius:999px;background:#eef4ff;color:#1e3a8a;font-size:12px;font-weight:900;";
+    summary.innerHTML = `<span>선택 시간 일괄 불가/가능</span><em style="font-size:11px;font-style:normal;color:#64748b;font-weight:700;">시간표에서 여러 칸을 선택한 뒤 전체 교사에게 적용</em>`;
     details.appendChild(summary);
 
     const selected = new Set();
@@ -232,9 +273,11 @@ export function createTimetableConstraintsHandlers({
 
     const gridWrap = document.createElement("div");
     gridWrap.className = "his-bulk-time-wrap";
+    gridWrap.style.cssText = "margin-top:8px;display:flex;gap:10px;align-items:flex-start;flex-wrap:wrap;";
 
     const grid = document.createElement("div");
     grid.className = "his-bulk-time-grid";
+    grid.style.cssText = `display:grid;grid-template-columns:42px repeat(${dayLabels.length},34px);gap:4px;align-items:center;`;
 
     const selectedLabel = document.createElement("span");
     selectedLabel.className = "his-bulk-selected-label";
@@ -247,11 +290,13 @@ export function createTimetableConstraintsHandlers({
       grid.innerHTML = "";
       const corner = document.createElement("div");
       corner.className = "his-bulk-time-corner";
+      corner.style.cssText = "height:24px;";
       grid.appendChild(corner);
 
       dayLabels.forEach(d => {
         const th = document.createElement("div");
         th.className = "his-bulk-time-head";
+        th.style.cssText = "height:24px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#475569;";
         th.textContent = d;
         grid.appendChild(th);
       });
@@ -259,6 +304,7 @@ export function createTimetableConstraintsHandlers({
       periods.forEach((label, pIdx) => {
         const periodCell = document.createElement("div");
         periodCell.className = "his-bulk-time-period";
+        periodCell.style.cssText = "height:28px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:#64748b;";
         periodCell.textContent = `${pIdx + 1}`;
         grid.appendChild(periodCell);
 
@@ -268,6 +314,16 @@ export function createTimetableConstraintsHandlers({
           const key = keyOf(dIdx, pIdx);
           const isSelected = selected.has(key);
           btn.className = "his-bulk-time-cell" + (isSelected ? " is-selected" : "");
+          btn.style.cssText = [
+            "width:34px",
+            "height:28px",
+            "border-radius:9px",
+            "border:1px solid " + (isSelected ? "#2563eb" : "#cbd5e1"),
+            "background:" + (isSelected ? "#2563eb" : "#ffffff"),
+            "color:" + (isSelected ? "#ffffff" : "#94a3b8"),
+            "font-weight:900",
+            "cursor:pointer"
+          ].join(";");
           btn.title = `${dayLabel} ${label || `${pIdx + 1}교시`}`;
           btn.textContent = isSelected ? "✓" : "";
           btn.disabled = !canEdit();
@@ -282,19 +338,19 @@ export function createTimetableConstraintsHandlers({
       });
     };
 
-    const selectAllBtn = makeBtn("전체 선택", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+    const selectAllBtn = polishBtn(makeBtn("전체 선택", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
       if (!canEdit()) return;
       selected.clear();
       dayLabels.forEach((_, dIdx) => periods.forEach((__, pIdx) => selected.add(keyOf(dIdx, pIdx))));
       renderBulkGrid();
       refreshSelectionLabel();
-    });
+    }), "soft");
 
-    const clearSelectBtn = makeBtn("선택 해제", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => {
+    const clearSelectBtn = polishBtn(makeBtn("선택 해제", "his-ui-btn his-ui-btn-ghost his-ui-btn-compact", () => {
       selected.clear();
       renderBulkGrid();
       refreshSelectionLabel();
-    });
+    }), "ghost");
 
     const applyAvailability = unavailable => {
       if (!canEdit()) return;
@@ -323,12 +379,14 @@ export function createTimetableConstraintsHandlers({
       renderAll();
     };
 
-    const setUnav = makeBtn("선택 시간 불가", "his-ui-btn his-ui-btn-danger his-ui-btn-compact", () => applyAvailability(true));
-    const clearUnav = makeBtn("선택 시간 가능", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => applyAvailability(false));
+    const setUnav = polishBtn(makeBtn("선택 시간 불가", "his-ui-btn his-ui-btn-danger his-ui-btn-compact", () => applyAvailability(true)), "danger");
+    const clearUnav = polishBtn(makeBtn("선택 시간 가능", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => applyAvailability(false)), "soft");
     [selectAllBtn, clearSelectBtn, setUnav, clearUnav].forEach(btn => { btn.disabled = !canEdit(); });
 
     const timeActions = document.createElement("div");
     timeActions.className = "his-bulk-time-actions";
+    timeActions.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;max-width:420px;";
+    selectedLabel.style.cssText = "font-size:11px;font-weight:900;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:999px;padding:6px 8px;";
     timeActions.append(selectedLabel, selectAllBtn, clearSelectBtn, setUnav, clearUnav);
 
     refreshSelectionLabel();
