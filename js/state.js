@@ -325,11 +325,13 @@ function normalizeRostersDomain(raw = {}) {
 // 기본 교실 유형입니다. 실제 화면에서는 rooms.roomTypes에 저장된 값을 우선 사용합니다.
 export const ROOM_TYPES = ["일반", "특별", "체육관", "음악실", "과학실", "기타"];
 
-function normalizeRoomTypes(rawTypes = [], discoveredTypes = []) {
+function normalizeRoomTypes(rawTypes, discoveredTypes = []) {
+  const hasSavedTypes = Array.isArray(rawTypes);
+  const savedTypes = hasSavedTypes ? rawTypes.map(clean).filter(Boolean) : [];
+  const baseTypes = hasSavedTypes ? savedTypes : ROOM_TYPES;
   const merged = uniqueOrdered([
     "일반",
-    ...ROOM_TYPES,
-    ...(Array.isArray(rawTypes) ? rawTypes : []),
+    ...baseTypes,
     ...(Array.isArray(discoveredTypes) ? discoveredTypes : []),
   ].map(clean).filter(Boolean));
   return merged.length ? merged : ["일반"];

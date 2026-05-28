@@ -9,10 +9,15 @@ import { GRADE_KEYS } from "./config.js";
 const rDomain = () => appState.rooms;
 export const getRooms    = () => rDomain().rooms;
 export const getRoomTypes = () => {
-  const types = Array.isArray(rDomain().roomTypes) ? rDomain().roomTypes.map(clean).filter(Boolean) : [];
-  const merged = [...new Set(["일반", ...ROOM_TYPES, ...types])];
-  if (!Array.isArray(rDomain().roomTypes) || rDomain().roomTypes.length !== merged.length) {
-    rDomain().roomTypes = merged;
+  const domain = rDomain();
+  const savedTypes = Array.isArray(domain.roomTypes)
+    ? domain.roomTypes.map(clean).filter(Boolean)
+    : [];
+  const baseTypes = savedTypes.length ? savedTypes : ["일반", ...ROOM_TYPES];
+  const roomUsedTypes = getRooms().map(room => clean(room.type)).filter(Boolean);
+  const merged = [...new Set(["일반", ...baseTypes, ...roomUsedTypes])];
+  if (JSON.stringify(domain.roomTypes || []) !== JSON.stringify(merged)) {
+    domain.roomTypes = merged;
   }
   return merged;
 };
