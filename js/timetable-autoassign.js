@@ -280,10 +280,12 @@ export function createAutoAssignAll(deps) {
       if (conc) continue;
 
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
-      if (teachers.some(t => et.includes(t))) score += 1000;
+      if (teachers.some(t => et.includes(t))) return Infinity;
 
       const conflict = audiencesConflict(itemAudience, audienceForPlacement(e));
-      if (conflict) score += 800;
+      // 보정 배치에서도 같은 학생/같은 학급의 수업 중복은 절대 만들지 않습니다.
+      // 빈칸이 있는데 같은 반에 두 과목이 겹쳐 들어가는 현상을 막습니다.
+      if (conflict) return Infinity;
       if (e.roomId) {
         const assignedRooms = teachers.map(getEffectiveAssignedRoomId).filter(Boolean);
         if (assignedRooms.includes(e.roomId)) score += 250;
@@ -898,9 +900,9 @@ export function createAutoAssignAll(deps) {
     }
 
     // ── Final repair pass ─────────────────────────────────────────
-    // Greedy 자동배치가 끝까지 못 넣은 카드는 그냥 남기지 않고,
-    // 보호 슬롯과 동일 카드 중복만 피하면서 최소 충돌 슬롯에 배치합니다.
-    // 이후 recomputeConflicts()가 교사/학생/교실 충돌을 색상과 상세 내역으로 표시합니다.
+    // Greedy 자동배치가 끝까지 못 넣은 카드는 보정 배치를 시도합니다.
+    // 단, 보호 슬롯·동일 카드 중복·교사 중복·학생/학급 중복·교실 중복은 만들지 않습니다.
+    // 배치 가능한 안전 슬롯이 없으면 무리하게 겹쳐 넣지 않고 미배치로 남깁니다.
     await updateProgress({
       percent: 84,
       step: "미배치 보정 준비",
