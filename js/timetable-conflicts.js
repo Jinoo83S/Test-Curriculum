@@ -85,6 +85,13 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     catch (err) { console.warn("Protected grade resolver failed:", err); return new Set(); }
   };
 
+  // Room is required for scheduled lessons unless explicitly set to no-room.
+  // Treat missing room as a first-class conflict so it appears in cards, detail popups and logs.
+  entries.forEach(e => {
+    const rule = String(e.roomRule || "auto").trim();
+    if (!e.roomId && rule !== "none") result.get(e.id)?.add("roomMissing");
+  });
+
   const bySlot = new Map();
   entries.forEach(e => {
     const k = `${e.day}:${e.period}`;
@@ -123,13 +130,25 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
           }
         }
 
+        // Student conflict — same concurrent group means intentional level/roster split.
+        // Teacher/room conflicts were already checked above, but student conflict must be
+        // judged only by actual roster overlap. Same class label alone is not a conflict here.
+        const audienceA = audienceFor(a);
+        const audienceB = audienceFor(b);
+        if (sameConcurrentGroup) {
+          const bothRostered = audienceA.studentKeys?.size && audienceB.studentKeys?.size;
+          if (bothRostered && intersects(audienceA.studentKeys, audienceB.studentKeys)) {
+            result.get(a.id).add("student");
+            result.get(b.id).add("student");
+          }
+          continue;
+        }
+
         // Student conflict — skip if cross-grade co-teaching in the same group
         if (sameGroup(a, b) && (isCrossGrade(a) || isCrossGrade(b))) continue; // cross-grade in same group
 
         // Student conflict: compare actual audience/class overlap, not grade-only overlap.
         // 7A and 7B in the same period are valid unless they share students or the same class audience.
-        const audienceA = audienceFor(a);
-        const audienceB = audienceFor(b);
         const protectedA = protectedGradesFor(a);
         const protectedB = protectedGradesFor(b);
         // Student conflict is first determined by actual class/student audience overlap.
@@ -145,11 +164,7 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
           (protectedA.size && !audienceA.classKeys.size && intersects(protectedA, audienceGrades(audienceB, b))) ||
           (protectedB.size && !audienceB.classKeys.size && intersects(protectedB, audienceGrades(audienceA, a)));
 
-        // Concurrent split lessons in the same group may intentionally share the same class label.
-        // When both sides have roster snapshots, allow the same slot only if actual student sets do not overlap.
-        const concurrentRosterSplitOk = sameConcurrentGroup && audienceA.studentKeys?.size && audienceB.studentKeys?.size && !intersects(audienceA.studentKeys, audienceB.studentKeys);
-
-        if ((actualAudienceOverlap || protectedFallbackOverlap) && !concurrentRosterSplitOk) {
+        if (actualAudienceOverlap || protectedFallbackOverlap) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }
@@ -255,6 +270,7 @@ export function getConflictLabel(set) {
   const labels = [];
   if (set.has("teacher")) labels.push("교사 중복");
   if (set.has("room"))    labels.push("교실 중복");
+  if (set.has("roomMissing")) labels.push("교실 미배정");
   if (set.has("student")) labels.push("학생 중복");
   if (set.has("maxPerDay")) labels.push("일일 최대 초과");
   if (set.has("maxConsecutive")) labels.push("연속수업 초과");

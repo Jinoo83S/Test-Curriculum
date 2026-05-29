@@ -867,6 +867,7 @@ function getRelatedConflictEntries(entry, type) {
 
 function getConstraintConflictMessage(type, entry) {
   const teachers = entryTeachers(entry).join(", ") || "담당 교사";
+  if (type === "roomMissing") return "이 수업에는 교실이 배정되지 않았습니다. 상세보기 또는 우클릭 메뉴에서 교실을 지정해 주세요.";
   if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
   if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
   if (type === "maxPerDay") return `${teachers} 선생님의 일일 수업 수 제한을 초과했습니다.`;

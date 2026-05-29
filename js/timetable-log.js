@@ -93,6 +93,8 @@ export function createTimetableLogHandlers({
               ? related.slice(0, 4).map(({ entry: other, detail }) => `${entryTitle(other)} · ${getEntryClassSummary(other)}${detail ? ` (${detail})` : ""}`).join(" / ")
               : getConflictLabel(new Set([type]));
             if (related.length > 4) detail += ` / 외 ${related.length - 4}건`;
+          } else if (type === "roomMissing") {
+            detail = "교실이 배정되지 않았습니다. 자동배치 결과에서 누락된 교실입니다.";
           } else {
             detail = getConstraintConflictMessage(type, entry);
           }

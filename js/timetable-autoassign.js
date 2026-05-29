@@ -112,12 +112,17 @@ export function createAutoAssignAll(deps) {
 
   function applyAutoRoomToEntryData(data = {}, slot = data, placed = []) {
     const entryData = applyDefaultRoomToEntryData({ ...data });
-    if (!entryData.roomId) return entryData;
-    if (!roomConflictsInSlot(entryData, slot, placed)) return entryData;
-
     const rule = String(entryData.roomRule || "auto").trim();
+
+    if (rule === "none") return { ...entryData, roomId: null };
+
+    // 고정 교실은 사용자가 지정한 값 그대로 유지합니다.
     if (entryData.roomPinned || rule === "fixed") return entryData;
 
+    // 기본 추천 교실이 있고 해당 시간에 비어 있으면 그대로 사용합니다.
+    if (entryData.roomId && !roomConflictsInSlot(entryData, slot, placed)) return entryData;
+
+    // 기본 추천 교실이 없거나 이미 사용 중이면, 해당 시간에 비어 있는 교실을 자동 보조 배정합니다.
     for (const room of sortRoomCandidatesFor(entryData)) {
       if (!room.id || room.id === entryData.roomId) continue;
       const test = { ...entryData, roomId: room.id };
@@ -999,6 +1004,8 @@ export function createAutoAssignAll(deps) {
     recomputeConflicts();
 
     const names = [...new Set(bestFailed.map(f => f.name))];
+    const missingRoomEntries = bestPlaced.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
+    const missingRoomNames = [...new Set(missingRoomEntries.map(e => getAutoItemName(e)))];
     const conflictSummary = getConflictCounts();
     const report = {
       ts: Date.now(),
@@ -1014,26 +1021,43 @@ export function createAutoAssignAll(deps) {
       forcedNames: [...new Set(forcedPlaced.map(f => f.name))],
       durationMs: Date.now() - autoStartedAt,
       conflictTotal: conflictSummary.totalAffected,
-      conflictCounts: conflictSummary.counts
+      conflictCounts: conflictSummary.counts,
+      missingRoomCount: missingRoomEntries.length,
+      missingRoomNames
     };
     setLastAutoAssignReport(report);
     addTimetableLog(
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 미배치 ${names.length}개, 충돌 ${conflictSummary.totalAffected}건 · 방식: ${bestStage.label}`
+      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · 방식: ${bestStage.label}`
     );
+    if (missingRoomEntries.length) {
+      addTimetableLog(
+        "warn",
+        "교실 미배정 수업 확인 필요",
+        `${missingRoomNames.slice(0, 12).join(", ")}${missingRoomNames.length > 12 ? ` 외 ${missingRoomNames.length - 12}개` : ""}`
+      );
+    }
     renderAll();
 
     const detailLines = [
       `<b>정상 배치</b> ${bestPlaced.length - forcedPlaced.length}개`,
       `<b>보정 배치</b> ${forcedPlaced.length}개`,
       `<b>미배치</b> ${names.length}개`,
+      `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
       `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
       `<b>적용 방식</b> ${bestStage.label}`,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
     if (forcedPlaced.length) {
       detailLines.push(`⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`);
+    }
+    if (missingRoomEntries.length) {
+      const missingList = missingRoomNames.slice(0, 12)
+        .map(name => `<li>${String(name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
+        .join("");
+      const moreMissing = missingRoomNames.length > 12 ? `<li>외 ${missingRoomNames.length - 12}개</li>` : "";
+      detailLines.push(`<div class="tt-auto-progress-failed"><b>교실 미배정</b><ul>${missingList}${moreMissing}</ul></div>`);
     }
     if (names.length) {
       const failedList = names.slice(0, 12)
