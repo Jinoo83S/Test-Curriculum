@@ -11,7 +11,7 @@ export function createTimetableSidebarHandlers(deps) {
   const {
     GRADE_KEYS, appState, entries, $, makeBtn, canEdit,
     getTemplateById, getTemplateCardTitle,
-    getTtCards, refreshTtCardData,
+    getTtCards, getTtCardById, refreshTtCardData,
     getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
     getSubjectsForGrade, getUnitForTemplate, getUnitGradeKeys, getUnitTeachers,
     getCreditsForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
@@ -91,7 +91,7 @@ export function createTimetableSidebarHandlers(deps) {
     actionGroup.append(loadBtn, refreshBtn, diagBtn);
 
     if (!modal) {
-      const popupBtn = makeBtn("🗂 팝업", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
+      const popupBtn = makeBtn("🗂 편집", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
         openSubjectCardModal();
       });
       popupBtn.title = "넓은 팝업창에서 과목 카드별 저장 데이터를 편집합니다.";
@@ -155,7 +155,7 @@ export function createTimetableSidebarHandlers(deps) {
     if (subjectCardModal?.isConnected) {
       subjectCardModal.classList.remove("hidden");
       subjectCardModal.focus?.();
-      renderSubjectPanelInto(subjectCardModalBody, { modal: true });
+      renderSubjectCardEditor(subjectCardModalBody);
       return;
     }
 
@@ -168,7 +168,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const header = document.createElement("div");
     header.className = "tt-subject-card-dialog-head";
-    header.innerHTML = `<div><strong>과목 카드 팝업 편집</strong><span>저장된 시간표 카드 JSON 값을 카드별로 확인하고 수정합니다.</span></div>`;
+    header.innerHTML = `<div><strong>과목 카드 편집</strong><span>저장된 시간표 카드 JSON 값을 카드별로 확인하고 수정합니다.</span></div>`;
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
