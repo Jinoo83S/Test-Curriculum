@@ -72,12 +72,12 @@ export function createTimetableSidebarHandlers(deps) {
     const actionGroup = document.createElement("div");
     actionGroup.className = "tt-card-toolbar-actions";
 
-    const loadBtn = makeBtn("📥 카드 불러오기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
+    const loadBtn = makeBtn("📥 불러오기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
       refreshSubjectViews();
       alert(`저장된 시간표 카드 ${getTtCards().length}개를 불러왔습니다.`);
     });
 
-    const refreshBtn = makeBtn("🔄 카드 데이터 갱신", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
+    const refreshBtn = makeBtn("🔄 갱신", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
       if (!canEdit()) return;
       const n = refreshTtCardData();
       alert(`${n}개 카드 데이터를 갱신했습니다.`);
@@ -90,7 +90,7 @@ export function createTimetableSidebarHandlers(deps) {
     actionGroup.append(loadBtn, refreshBtn, diagBtn);
 
     if (!modal) {
-      const popupBtn = makeBtn("🗂 팝업 편집", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
+      const popupBtn = makeBtn("🗂 팝업", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
         openSubjectCardModal();
       });
       popupBtn.title = "넓은 팝업창에서 과목 카드를 검색·정렬·확인합니다.";
@@ -564,7 +564,7 @@ export function createTimetableSidebarHandlers(deps) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "his-ui-btn his-ui-btn-ghost his-ui-btn-compact tt-toolbar-action";
-    btn.textContent = "🔎 시수 진단";
+    btn.textContent = "🔎 진단";
     btn.title = "학급별 필요 시수 차이 원인을 확인합니다.";
     btn.addEventListener("click", () => showClassCreditDiagnostics(ttcards));
     return btn;

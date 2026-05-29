@@ -172,68 +172,71 @@ button.his-ui-icon-btn {
 .tt-card-toolbar,
 .his-card-toolbar {
   display: grid !important;
-  grid-template-columns: minmax(230px, 17%) minmax(120px, 8%) minmax(260px, 25%) minmax(360px, 1fr) !important;
+  grid-template-columns: minmax(250px, 18%) minmax(96px, 7%) minmax(320px, 24%) minmax(420px, 51%) !important;
   align-items: center !important;
-  gap: 6px !important;
-  padding: 6px 8px !important;
-  margin: 3px 6px 7px !important;
+  gap: 4px !important;
+  padding: 4px 6px !important;
+  margin: 2px 6px 5px !important;
   border: 1px solid #e2e8f0 !important;
-  border-radius: 12px !important;
+  border-radius: 10px !important;
   background: #ffffff !important;
   box-shadow: 0 1px 3px rgba(15, 23, 42, .05) !important;
+  overflow: visible !important;
 }
 .tt-card-toolbar > * { min-width: 0 !important; }
 .tt-card-toolbar-actions {
   display: flex !important;
   align-items: center !important;
-  gap: 4px !important;
+  gap: 3px !important;
   flex-wrap: nowrap !important;
   min-width: 0 !important;
-  overflow: hidden !important;
+  overflow: visible !important;
 }
 .tt-card-toolbar .tt-toolbar-action,
 .tt-card-toolbar .his-ui-btn {
-  height: 26px !important;
-  min-height: 26px !important;
-  padding: 0 8px !important;
-  border-radius: 9px !important;
-  font-size: 11px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 0 6px !important;
+  border-radius: 8px !important;
+  font-size: 10px !important;
   font-weight: 900 !important;
   white-space: nowrap !important;
   line-height: 1 !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
 }
 .tt-card-sort-control {
-  height: 26px !important;
-  min-height: 26px !important;
+  height: 22px !important;
+  min-height: 22px !important;
   width: 100% !important;
   box-sizing: border-box !important;
-  padding: 0 6px !important;
-  gap: 4px !important;
-  border-radius: 9px !important;
-  font-size: 11px !important;
+  padding: 0 5px !important;
+  gap: 3px !important;
+  border-radius: 8px !important;
+  font-size: 10px !important;
   overflow: hidden !important;
 }
 .tt-card-sort-control .tt-toolbar-label { margin-right: 0 !important; }
 .tt-card-sort-select {
   width: 100% !important;
   min-width: 0 !important;
-  height: 22px !important;
-  border-radius: 7px !important;
-  padding: 0 18px 0 6px !important;
-  font-size: 11px !important;
+  height: 19px !important;
+  border-radius: 6px !important;
+  padding: 0 16px 0 5px !important;
+  font-size: 10px !important;
 }
 .tt-grade-filter,
 .tt-class-count-summary {
   display: flex !important;
   align-items: center !important;
-  gap: 4px !important;
-  height: 26px !important;
-  min-height: 26px !important;
-  padding: 2px 6px !important;
+  gap: 3px !important;
+  height: 22px !important;
+  min-height: 22px !important;
+  padding: 1px 5px !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
   border: 1px solid #e2e8f0 !important;
-  border-radius: 10px !important;
+  border-radius: 9px !important;
   background: #f8fafc !important;
   white-space: nowrap !important;
   scrollbar-width: thin !important;
@@ -242,7 +245,7 @@ button.his-ui-icon-btn {
 .tt-toolbar-label {
   flex: 0 0 auto !important;
   color: #334155 !important;
-  font-size: 10px !important;
+  font-size: 9.5px !important;
   font-weight: 900 !important;
   margin-right: 1px !important;
 }
@@ -251,14 +254,14 @@ button.his-ui-icon-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  height: 20px !important;
-  min-width: 30px !important;
-  padding: 0 7px !important;
+  height: 18px !important;
+  min-width: 28px !important;
+  padding: 0 6px !important;
   border-radius: 999px !important;
   border: 1px solid var(--tt-chip-border, #bfdbfe) !important;
   background: var(--tt-chip-bg, #eff6ff) !important;
   color: var(--tt-chip-text, #1d4ed8) !important;
-  font-size: 10.5px !important;
+  font-size: 9.8px !important;
   font-weight: 900 !important;
   box-shadow: 0 1px 1px rgba(15,23,42,.04) !important;
   flex: 0 0 auto !important;
@@ -273,14 +276,42 @@ button.tt-grade-filter-btn.active {
   border-color: #2563eb !important;
   color: #fff !important;
 }
-.tt-summary-empty { color: #94a3b8 !important; font-size: 10.5px !important; font-weight: 700 !important; }
-@media (max-width: 1200px) {
+.tt-summary-empty { color: #94a3b8 !important; font-size: 10px !important; font-weight: 700 !important; }
+@media (max-width: 1280px) {
   .tt-card-toolbar,
   .his-card-toolbar {
-    grid-template-columns: minmax(230px, 1fr) minmax(260px, 1fr) !important;
+    grid-template-columns: minmax(220px, 1fr) minmax(90px, .45fr) minmax(260px, 1fr) minmax(360px, 1.35fr) !important;
+  }
+  .tt-card-toolbar .tt-toolbar-action,
+  .tt-card-toolbar .his-ui-btn { padding: 0 5px !important; font-size: 9.5px !important; }
+}
+@media (max-width: 980px) {
+  .tt-card-toolbar,
+  .his-card-toolbar {
+    grid-template-columns: minmax(220px, 1fr) minmax(260px, 1fr) !important;
+    align-items: start !important;
   }
 }
 
+/* 시간표 카드/하단 과목 카드: 말줄임표 없이 카드 영역에서 잘라 보이게 */
+.tt-entry-title,
+.tt-entry-teacher,
+.tt-entry-teacher2,
+.tt-entry-room2,
+.tt-sc-name,
+.tt-sc-teacher {
+  overflow: hidden !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+}
+.tt-entry-title,
+.tt-entry-teacher2,
+.tt-entry-room2 {
+  display: block !important;
+}
 /* ───────────────────────────────────────────────
    Teacher constraints bulk editor
    ─────────────────────────────────────────────── */
@@ -615,7 +646,7 @@ button.tt-grade-filter-btn.active {
 .tt-teacher-picker-names {
   min-width: 0 !important;
   overflow: hidden !important;
-  text-overflow: ellipsis !important;
+  text-overflow: clip !important;
   white-space: nowrap !important;
   font-size: 12px !important;
   font-weight: 800 !important;
@@ -773,10 +804,10 @@ button.tt-grade-filter-btn.active {
   word-break: keep-all !important;
 }
 .tt-entry-title {
-  overflow: visible !important;
+  overflow: hidden !important;
   text-overflow: clip !important;
-  white-space: normal !important;
-  word-break: keep-all !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
   display: block !important;
   -webkit-line-clamp: unset !important;
   line-clamp: unset !important;
@@ -922,4 +953,21 @@ button.tt-grade-filter-btn.active {
   .tt-subject-card-dialog { width: 96vw !important; height: 86vh !important; }
   .tt-subject-modal-body-inner .tt-sc-cards { grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)) !important; }
   .tt-subject-card-search { flex-basis: 100% !important; max-width: none !important; }
+}
+
+/* Final override: timetable/sidebar cards should clip text without ellipsis. */
+.tt-entry-card .tt-entry-title,
+.tt-entry-card .tt-entry-teacher,
+.tt-entry-card .tt-entry-teacher2,
+.tt-entry-card .tt-entry-room2,
+.tt-sc-compact .tt-sc-name,
+.tt-sc-compact .tt-sc-teacher,
+.tt-subject-card .tt-sc-name,
+.tt-subject-card .tt-sc-teacher {
+  overflow: hidden !important;
+  text-overflow: clip !important;
+  white-space: nowrap !important;
+  word-break: normal !important;
+  display: block !important;
+  max-width: 100% !important;
 }

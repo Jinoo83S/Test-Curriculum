@@ -926,7 +926,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=subject_card_modal"/>
+<link rel="stylesheet" href="timetable-ui.css?v=subject_toolbar_card_clip"/>
 
 </head>
 <body>
@@ -998,7 +998,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script type="module" src="js/local-dev.js?v=room_missing_conflict_r1"></script>
-<script type="module" src="js/timetable.js?v=subject_card_modal"></script>
+<script type="module" src="js/timetable.js?v=subject_toolbar_card_clip"></script>
 <script>
 /* ── Tab switching ── */
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
@@ -1609,7 +1609,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=subject_card_modal";
+  var href = "timetable-ui.css?v=subject_toolbar_card_clip";
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

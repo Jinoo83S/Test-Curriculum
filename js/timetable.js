@@ -39,7 +39,7 @@ import { renderTimetableGrid } from "./timetable-grid.js";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js?v=teacher_constraints_modal";
 import { createTimetableLogHandlers } from "./timetable-log.js";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=subject_card_modal";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=subject_toolbar_card_clip";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
@@ -1441,7 +1441,7 @@ function buildEntryCard(entry, opts = {}) {
   const titleEl = document.createElement("div");
   titleEl.className = "tt-entry-title";
   titleEl.textContent = title;
-  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:visible;white-space:normal;word-break:keep-all;text-overflow:clip;";
+  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:hidden;white-space:nowrap;word-break:normal;text-overflow:clip;";
   row1.appendChild(titleEl);
 
   if (isMulti) {
