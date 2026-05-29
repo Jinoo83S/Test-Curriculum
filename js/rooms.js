@@ -448,14 +448,14 @@ function ensureRoomAssignmentStatusStyles() {
     .room-editor-field input,.room-editor-field select{height:27px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;padding:0 7px;font-size:10.5px;color:#334155;box-sizing:border-box;width:100%;}
     .room-editor-field input:disabled,.room-editor-field select:disabled,.room-editor-name:disabled{background:#f8fafc;color:#94a3b8;}
     .rooms-editor-empty{margin:8px;border:1px dashed #cbd5e1;border-radius:9px;padding:10px;text-align:center;color:#64748b;background:#f8fafc;font-size:11px;font-weight:800;}
-    .rooms-view-panel .his-room-main-header,.rooms-view-panel .rooms-header{margin:0 0 6px;padding:7px 9px;border-radius:10px;gap:8px;}
-    .rooms-view-panel .rooms-title-wrap{gap:1px;}
-    .rooms-view-panel .his-room-card-kicker{font-size:9px;line-height:1;font-weight:900;}
-    .rooms-view-panel .rooms-title-wrap h3{font-size:14px;line-height:1.15;margin:0;}
-    .rooms-view-panel .rooms-title-wrap p{font-size:10px;line-height:1.25;margin:1px 0 0;}
-    .rooms-view-panel .rooms-header-actions{gap:5px;}
+    .rooms-view-panel .his-room-main-header,.rooms-view-panel .rooms-header{margin:0 0 4px !important;padding:4px 7px !important;border-radius:8px !important;gap:6px !important;min-height:34px !important;box-shadow:0 1px 3px rgba(15,23,42,.04) !important;}
+    .rooms-view-panel .rooms-title-wrap{gap:0 !important;display:flex !important;flex-direction:column !important;justify-content:center !important;}
+    .rooms-view-panel .his-room-card-kicker{font-size:8px !important;line-height:1 !important;font-weight:900 !important;margin:0 0 1px !important;letter-spacing:.035em !important;}
+    .rooms-view-panel .rooms-title-wrap h3{font-size:12px !important;line-height:1.1 !important;margin:0 !important;}
+    .rooms-view-panel .rooms-title-wrap p{display:none !important;font-size:9px !important;line-height:1.1 !important;margin:0 !important;}
+    .rooms-view-panel .rooms-header-actions{gap:4px !important;align-items:center !important;}
     .rooms-view-panel .his-ui-btn{min-height:0;}
-    .rooms-view-panel .his-ui-btn-compact{height:26px;padding:0 8px;font-size:10.5px;border-radius:8px;}
+    .rooms-view-panel .his-ui-btn-compact{height:24px !important;padding:0 7px !important;font-size:10px !important;border-radius:7px !important;line-height:1 !important;}
     .rooms-view-panel .his-ui-icon-btn{width:26px;height:26px;min-width:26px;padding:0;border-radius:7px;font-size:13px;}
     @media (max-width:1100px){.rooms-management-layout{grid-template-columns:1fr;}.room-editor-list{max-height:none;}}
   `;
@@ -667,18 +667,22 @@ export function renderRoomsView(container, onUpdate, options = {}) {
 
   const hdr = document.createElement("div");
   hdr.className = "rooms-header his-room-main-header";
+  hdr.style.cssText = "margin:0 0 4px!important;padding:4px 7px!important;min-height:34px!important;border-radius:8px!important;gap:6px!important;";
   const titleWrap = document.createElement("div");
   titleWrap.className = "rooms-title-wrap";
-  titleWrap.innerHTML = `<span class="his-room-card-kicker">Room</span><h3>교실 관리</h3><p>배정 현황과 교실 정보를 관리합니다.</p>`;
+  titleWrap.style.cssText = "display:flex!important;flex-direction:column!important;justify-content:center!important;gap:0!important;";
+  titleWrap.innerHTML = `<span class="his-room-card-kicker" style="font-size:8px;line-height:1;margin:0 0 1px;">Room</span><h3 style="font-size:12px;line-height:1.1;margin:0;">교실 관리</h3>`;
 
   const actions = document.createElement("div");
   actions.className = "rooms-header-actions";
+  actions.style.cssText = "display:flex!important;align-items:center!important;gap:4px!important;";
   const addBtn = makeBtn("+ 교실 추가", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
     addRoom({ name: `교실 ${getRooms().length + 1}` });
     onUpdate?.();
     renderRoomsView(container, onUpdate, options);
   });
   addBtn.disabled = !canEdit();
+  addBtn.style.cssText = "height:24px!important;padding:0 7px!important;font-size:10px!important;border-radius:7px!important;line-height:1!important;";
   actions.append(addBtn);
   hdr.append(titleWrap, actions);
   container.appendChild(hdr);

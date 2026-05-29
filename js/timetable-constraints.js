@@ -128,7 +128,80 @@ export function createTimetableConstraintsHandlers({
     return changed;
   }
 
+
+  function ensureCompactConstraintStyles() {
+    if (typeof document === "undefined" || document.getElementById("ttCompactConstraintStyle")) return;
+    const style = document.createElement("style");
+    style.id = "ttCompactConstraintStyle";
+    style.textContent = `
+      #ttConstraintsContent{font-size:11px!important;line-height:1.25!important;}
+      #ttConstraintsContent .tt-con-hint{margin:2px 6px 5px!important;padding:4px 6px!important;font-size:10.5px!important;line-height:1.2!important;}
+      #ttConstraintsContent .tt-con-bulk-box,#ttConstraintsContent .his-bulk-editor{margin:4px 6px 6px!important;padding:6px 8px!important;border-radius:10px!important;box-shadow:0 1px 3px rgba(15,23,42,.04)!important;}
+      #ttConstraintsContent .his-bulk-editor-main{gap:6px!important;align-items:center!important;}
+      #ttConstraintsContent .his-bulk-editor-title{min-width:130px!important;gap:0!important;margin-right:2px!important;}
+      #ttConstraintsContent .his-bulk-editor-title strong{font-size:11.5px!important;line-height:1.15!important;}
+      #ttConstraintsContent .his-bulk-editor-title span{font-size:9.5px!important;line-height:1.15!important;}
+      #ttConstraintsContent .his-bulk-quick-fields{gap:5px!important;}
+      #ttConstraintsContent .his-mini-field{height:24px!important;padding:0 6px!important;gap:4px!important;border-radius:8px!important;font-size:10px!important;}
+      #ttConstraintsContent .his-mini-field input{width:40px!important;height:19px!important;padding:1px 4px!important;font-size:10px!important;}
+      #ttConstraintsContent .his-bulk-editor-actions{gap:4px!important;}
+      #ttConstraintsContent .his-bulk-editor-actions .his-ui-btn,#ttConstraintsContent .his-bulk-time-actions .his-ui-btn{height:23px!important;min-height:0!important;padding:0 7px!important;border-radius:7px!important;font-size:10px!important;line-height:1!important;}
+      #ttConstraintsContent .his-bulk-time-details{margin-top:5px!important;border-radius:9px!important;}
+      #ttConstraintsContent .his-bulk-time-details>summary{padding:6px 8px!important;gap:5px!important;font-size:10.5px!important;}
+      #ttConstraintsContent .his-bulk-time-details>summary em{font-size:9.5px!important;}
+      #ttConstraintsContent .his-bulk-time-wrap{padding:0 8px 8px!important;}
+      #ttConstraintsContent .his-bulk-time-grid{grid-template-columns:32px repeat(5,28px)!important;gap:3px!important;max-width:none!important;margin-top:4px!important;}
+      #ttConstraintsContent .his-bulk-time-head,#ttConstraintsContent .his-bulk-time-period,#ttConstraintsContent .his-bulk-time-corner{height:21px!important;border-radius:6px!important;font-size:9.5px!important;}
+      #ttConstraintsContent .his-bulk-time-cell{height:21px!important;border-radius:6px!important;font-size:10px!important;}
+      #ttConstraintsContent .his-bulk-time-actions{gap:4px!important;margin-top:6px!important;}
+      #ttConstraintsContent .his-bulk-selected-label{height:22px!important;padding:0 6px!important;font-size:9.5px!important;}
+      #ttConstraintsContent .tt-con-teacher-list{grid-template-rows:repeat(3,minmax(26px,auto))!important;grid-auto-columns:minmax(190px,225px)!important;gap:5px!important;padding:4px 6px 8px!important;}
+      #ttConstraintsContent .tt-con-teacher-block{border-radius:9px!important;box-shadow:none!important;}
+      #ttConstraintsContent .tt-con-teacher-hdr{min-height:25px!important;padding:4px 7px!important;gap:5px!important;}
+      #ttConstraintsContent .tt-con-name{font-size:10.5px!important;}
+      #ttConstraintsContent .tt-con-stat{font-size:9px!important;}
+      #ttConstraintsContent .tt-con-tog{font-size:10px!important;padding:0!important;}
+      #ttConstraintsContent .tt-con-body{padding:6px 7px 7px!important;}
+      #ttConstraintsContent .tt-con-num-row{gap:5px!important;margin:0!important;}
+      #ttConstraintsContent .tt-con-num-wrap{font-size:10px!important;}
+      #ttConstraintsContent .tt-con-num-wrap input{height:20px!important;width:38px!important;font-size:10px!important;padding:1px 4px!important;}
+      #ttConstraintsContent .tt-con-room-row{gap:4px!important;margin-top:4px!important;}
+      #ttConstraintsContent .tt-con-room-row label{font-size:10px!important;}
+      #ttConstraintsContent .tt-con-room-row select{height:22px!important;max-width:150px!important;font-size:10px!important;padding:2px 5px!important;}
+      #ttConstraintsContent .tt-con-room-row .secondary-btn,#ttConstraintsContent .tt-con-room-row .compact-btn{height:22px!important;min-height:0!important;padding:0 6px!important;font-size:9.5px!important;border-radius:6px!important;}
+      #ttConstraintsContent .tt-con-grid{min-width:170px!important;}
+      #ttConstraintsContent .tt-con-grid-row{grid-template-columns:22px repeat(5,1fr)!important;gap:2px!important;}
+      #ttConstraintsContent .tt-con-grid-day,#ttConstraintsContent .tt-con-grid-per,#ttConstraintsContent .tt-con-grid-corner,#ttConstraintsContent .tt-con-grid-cell{height:20px!important;min-height:20px!important;font-size:9px!important;border-radius:5px!important;}
+      @media (max-width:760px){#ttConstraintsContent .tt-con-teacher-list{grid-template-rows:repeat(2,minmax(26px,auto))!important;grid-auto-columns:minmax(180px,210px)!important;}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function getBulkConstraintDefaults(teachers = []) {
+    const saved = ttConfig().teacherBulkDefaults || {};
+    const toPositiveInt = (value, fallback) => {
+      const n = parseInt(value, 10);
+      return Number.isFinite(n) && n > 0 ? n : fallback;
+    };
+    const commonValue = (field, fallback) => {
+      const values = (teachers || [])
+        .map(t => constraints()[t]?.[field])
+        .map(v => parseInt(v, 10))
+        .filter(v => Number.isFinite(v) && v > 0);
+      if (!values.length) return fallback;
+      const counts = new Map();
+      values.forEach(v => counts.set(v, (counts.get(v) || 0) + 1));
+      return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+    };
+    return {
+      maxPerDay: toPositiveInt(saved.maxPerDay, commonValue("maxPerDay", 6)),
+      maxConsecutive: toPositiveInt(saved.maxConsecutive, commonValue("maxConsecutive", 3)),
+    };
+  }
+
   function renderConstraintBulkTools(container, teachers, rooms, dayLabels, periods) {
+    ensureCompactConstraintStyles();
+    const bulkDefaults = getBulkConstraintDefaults(teachers);
     const box = document.createElement("div");
     box.className = "tt-con-bulk-box his-bulk-editor";
 
@@ -150,7 +223,7 @@ export function createTimetableConstraintsHandlers({
     maxDay.type = "number";
     maxDay.min = "1";
     maxDay.max = "12";
-    maxDay.value = "6";
+    maxDay.value = String(bulkDefaults.maxPerDay);
     maxDayLabel.appendChild(maxDay);
 
     const maxConLabel = document.createElement("label");
@@ -160,7 +233,7 @@ export function createTimetableConstraintsHandlers({
     maxCon.type = "number";
     maxCon.min = "1";
     maxCon.max = "12";
-    maxCon.value = "3";
+    maxCon.value = String(bulkDefaults.maxConsecutive);
     maxConLabel.appendChild(maxCon);
 
     quickFields.append(maxDayLabel, maxConLabel);
@@ -172,13 +245,14 @@ export function createTimetableConstraintsHandlers({
     const applyNums = makeBtn("전체 적용", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
       if (!canEdit()) return;
       captureTimetableUndo("교사 조건 전체 일괄 수정");
-      const md = parseInt(maxDay.value) || 6;
-      const mc = parseInt(maxCon.value) || 3;
+      const md = parseInt(maxDay.value) || bulkDefaults.maxPerDay || 6;
+      const mc = parseInt(maxCon.value) || bulkDefaults.maxConsecutive || 3;
       teachers.forEach(t => {
         const c = ensureConstraint(t);
         c.maxPerDay = md;
         c.maxConsecutive = mc;
       });
+      ttConfig().teacherBulkDefaults = { maxPerDay: md, maxConsecutive: mc };
       scheduleSave("timetable");
       recomputeConflicts();
       renderAll();
@@ -343,6 +417,7 @@ export function createTimetableConstraintsHandlers({
   }
 
   function renderConstraintsPanel() {
+    ensureCompactConstraintStyles();
     const el = $("ttConstraintsContent"); if (!el) return;
     el.innerHTML = "";
 
