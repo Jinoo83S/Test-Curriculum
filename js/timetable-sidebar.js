@@ -46,19 +46,34 @@ export function createTimetableSidebarHandlers(deps) {
     card.classList.remove("tt-dragging");
   }
 
+  let subjectCardModal = null;
+  let subjectCardModalBody = null;
+  let subjectCardModalQuery = "";
+
   function renderSubjectPanel() {
-    const panel = $("ttSubjectsContent");
+    renderSubjectPanelInto($("ttSubjectsContent"), { modal: false });
+  }
+
+  function refreshSubjectViews() {
+    renderSubjectPanelInto($("ttSubjectsContent"), { modal: false });
+    if (subjectCardModalBody && subjectCardModal?.isConnected) {
+      renderSubjectPanelInto(subjectCardModalBody, { modal: true });
+    }
+  }
+
+  function renderSubjectPanelInto(panel, { modal = false } = {}) {
     if (!panel) return;
     panel.innerHTML = "";
+    panel.classList.toggle("tt-subject-modal-body-inner", !!modal);
 
     const toolbar = document.createElement("div");
-    toolbar.className = "tt-card-toolbar his-card-toolbar";
+    toolbar.className = "tt-card-toolbar his-card-toolbar" + (modal ? " is-modal" : "");
 
     const actionGroup = document.createElement("div");
     actionGroup.className = "tt-card-toolbar-actions";
 
     const loadBtn = makeBtn("📥 카드 불러오기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
-      renderSubjectPanel();
+      refreshSubjectViews();
       alert(`저장된 시간표 카드 ${getTtCards().length}개를 불러왔습니다.`);
     });
 
@@ -67,23 +82,122 @@ export function createTimetableSidebarHandlers(deps) {
       const n = refreshTtCardData();
       alert(`${n}개 카드 데이터를 갱신했습니다.`);
       renderAll();
+      refreshSubjectViews();
     });
     refreshBtn.disabled = !canEdit();
 
     const diagBtn = buildCreditDiagnosticButton(appState.timetable?.ttcards || []);
     actionGroup.append(loadBtn, refreshBtn, diagBtn);
 
+    if (!modal) {
+      const popupBtn = makeBtn("🗂 팝업 편집", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
+        openSubjectCardModal();
+      });
+      popupBtn.title = "넓은 팝업창에서 과목 카드를 검색·정렬·확인합니다.";
+      actionGroup.append(popupBtn);
+    }
+
     const ttcards = appState.timetable?.ttcards || [];
-    const filteredTtcards = filterTtCardsByGrade(ttcards);
-    toolbar.append(actionGroup, buildCardSortControls(), buildGradeFilterControls(ttcards), buildClassCountSummary(ttcards));
+    toolbar.append(actionGroup, buildCardSortControls(), buildGradeFilterControls(ttcards));
+    if (modal) toolbar.appendChild(buildSubjectCardSearchControl(panel));
+    toolbar.appendChild(buildClassCountSummary(ttcards));
     panel.appendChild(toolbar);
+
+    if (modal) {
+      const note = document.createElement("div");
+      note.className = "tt-subject-modal-note";
+      note.textContent = "하단바 기능은 그대로 유지됩니다. 이 창에서는 과목 카드를 넓게 보고, 검색·정렬·필터·상세 확인을 할 수 있습니다.";
+      panel.appendChild(note);
+    }
 
     if (ttcards.length > 0) {
       renderSubjectPanelTtCards(panel, ttcards);
+      if (modal) applySubjectCardSearch(panel);
       return;
     }
 
     renderSubjectPanelLegacy(panel);
+    if (modal) applySubjectCardSearch(panel);
+  }
+
+  function buildSubjectCardSearchControl(panel) {
+    const wrap = document.createElement("label");
+    wrap.className = "tt-subject-card-search";
+    wrap.innerHTML = `<span>검색</span>`;
+    const input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = "과목·교사·교실·반";
+    input.value = subjectCardModalQuery;
+    input.addEventListener("input", () => {
+      subjectCardModalQuery = input.value || "";
+      applySubjectCardSearch(panel);
+    });
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  function applySubjectCardSearch(panel) {
+    const root = panel || subjectCardModalBody;
+    if (!root) return;
+    const query = String(subjectCardModalQuery || "").trim().toLocaleLowerCase("ko");
+    root.querySelectorAll(".tt-subject-card").forEach(card => {
+      const haystack = String(card.dataset.searchText || card.textContent || "").toLocaleLowerCase("ko");
+      card.classList.toggle("hidden", !!query && !haystack.includes(query));
+    });
+    root.querySelectorAll(".tt-card-status-section").forEach(section => {
+      const visible = [...section.querySelectorAll(".tt-subject-card")].some(card => !card.classList.contains("hidden"));
+      section.classList.toggle("is-search-empty", !visible);
+    });
+  }
+
+  function openSubjectCardModal() {
+    if (subjectCardModal?.isConnected) {
+      subjectCardModal.classList.remove("hidden");
+      subjectCardModal.focus?.();
+      renderSubjectPanelInto(subjectCardModalBody, { modal: true });
+      return;
+    }
+
+    subjectCardModal = document.createElement("div");
+    subjectCardModal.className = "tt-subject-card-modal";
+    subjectCardModal.tabIndex = -1;
+
+    const dialog = document.createElement("div");
+    dialog.className = "tt-subject-card-dialog";
+
+    const header = document.createElement("div");
+    header.className = "tt-subject-card-dialog-head";
+    header.innerHTML = `<div><strong>과목 카드 팝업 편집</strong><span>정렬, 학년 필터, 배치 필요/완료 상태를 넓은 화면에서 확인합니다.</span></div>`;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "tt-subject-card-dialog-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "닫기";
+    closeBtn.addEventListener("click", closeSubjectCardModal);
+    header.appendChild(closeBtn);
+
+    subjectCardModalBody = document.createElement("div");
+    subjectCardModalBody.className = "tt-subject-card-dialog-body";
+
+    dialog.append(header, subjectCardModalBody);
+    subjectCardModal.appendChild(dialog);
+    document.body.appendChild(subjectCardModal);
+
+    subjectCardModal.addEventListener("keydown", ev => {
+      if (ev.key === "Escape") closeSubjectCardModal();
+    });
+    // 교사 조건 팝업처럼 작업용 창으로 사용하므로 바깥 클릭으로는 닫지 않습니다.
+
+    renderSubjectPanelInto(subjectCardModalBody, { modal: true });
+    subjectCardModal.focus?.();
+  }
+
+  function closeSubjectCardModal() {
+    if (!subjectCardModal) return;
+    subjectCardModal.remove();
+    subjectCardModal = null;
+    subjectCardModalBody = null;
   }
 
   function renderSubjectPanelTtCards(panel, allTtcards) {
@@ -266,7 +380,7 @@ export function createTimetableSidebarHandlers(deps) {
         if (activeGradeFilter === value) return;
         activeGradeFilter = value;
         saveGradeFilter(value);
-        renderSubjectPanel();
+        refreshSubjectViews();
       });
       return btn;
     };
@@ -370,7 +484,7 @@ export function createTimetableSidebarHandlers(deps) {
     select.addEventListener("change", () => {
       activeCardSort = select.value || "name";
       saveCardSort(activeCardSort);
-      renderSubjectPanel();
+      refreshSubjectViews();
     });
 
     wrap.append(label, select);
@@ -646,6 +760,15 @@ export function createTimetableSidebarHandlers(deps) {
     card.dataset.sortTeacher = normalizeSortText(uniqueTeachers.join(", "));
     card.dataset.sortGroup = normalizeSortText(sortGroup || groupName || guessGroupFromTitle(displayTitle));
     card.dataset.sortRoom = normalizeSortText(sortRoom || collectRoomNamesForDetailItems(detailItems).join(", "));
+    card.dataset.searchText = normalizeSortText([
+      displayTitle,
+      uniqueTeachers.join(", "),
+      (classLabels || []).join(", "),
+      (gradeKeys || []).join(", "),
+      sortGroup,
+      sortRoom,
+      collectRoomNamesForDetailItems(detailItems).join(", ")
+    ].filter(Boolean).join(" "));
 
     const row1 = document.createElement("div");
     row1.className = "tt-sc-row1";

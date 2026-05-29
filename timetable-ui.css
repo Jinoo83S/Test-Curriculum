@@ -781,3 +781,145 @@ button.tt-grade-filter-btn.active {
   -webkit-line-clamp: unset !important;
   line-clamp: unset !important;
 }
+
+/* 과목 카드 팝업 편집 */
+.tt-subject-popup-open {
+  background: #1d4ed8 !important;
+  color: #ffffff !important;
+  border-color: #1d4ed8 !important;
+}
+.tt-subject-card-modal {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 10020 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 18px !important;
+  background: rgba(15, 23, 42, .38) !important;
+}
+.tt-subject-card-dialog {
+  width: min(1480px, 92vw) !important;
+  height: min(760px, 82vh) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 18px !important;
+  background: #ffffff !important;
+  box-shadow: 0 28px 90px rgba(15, 23, 42, .28) !important;
+}
+.tt-subject-card-dialog-head {
+  flex: 0 0 auto !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 14px !important;
+  padding: 12px 16px !important;
+  border-bottom: 1px solid #e2e8f0 !important;
+  background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%) !important;
+}
+.tt-subject-card-dialog-head strong {
+  display: block !important;
+  font-size: 15px !important;
+  font-weight: 950 !important;
+  color: #0f172a !important;
+}
+.tt-subject-card-dialog-head span {
+  display: block !important;
+  margin-top: 2px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #64748b !important;
+}
+.tt-subject-card-dialog-close {
+  width: 30px !important;
+  height: 30px !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #64748b !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+}
+.tt-subject-card-dialog-close:hover {
+  background: #fee2e2 !important;
+  color: #dc2626 !important;
+  border-color: #fecaca !important;
+}
+.tt-subject-card-dialog-body {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+  padding: 12px 14px 16px !important;
+  background: #f8fafc !important;
+}
+.tt-subject-modal-body-inner .tt-card-toolbar.is-modal {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 3 !important;
+  margin: 0 0 8px !important;
+  border: 1px solid #dbe4f0 !important;
+  background: rgba(255, 255, 255, .96) !important;
+  backdrop-filter: blur(8px) !important;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .06) !important;
+}
+.tt-subject-modal-note {
+  margin: 0 0 8px !important;
+  padding: 7px 10px !important;
+  border: 1px solid #dbeafe !important;
+  border-radius: 10px !important;
+  background: #eff6ff !important;
+  color: #1e3a8a !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+.tt-subject-card-search {
+  flex: 1 1 180px !important;
+  min-width: 160px !important;
+  max-width: 280px !important;
+  height: 30px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 0 8px !important;
+  border: 1px solid #dbe4f0 !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  color: #334155 !important;
+}
+.tt-subject-card-search input {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  height: 24px !important;
+  border: 0 !important;
+  outline: none !important;
+  background: transparent !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  color: #0f172a !important;
+}
+.tt-subject-modal-body-inner .tt-sc-cards {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)) !important;
+  gap: 7px !important;
+}
+.tt-subject-modal-body-inner .tt-subject-card {
+  min-height: 46px !important;
+}
+.tt-card-status-section.is-search-empty {
+  opacity: .45 !important;
+}
+.tt-card-status-section.is-search-empty .tt-panel-section-title::after {
+  content: " · 검색 결과 없음" !important;
+  color: #94a3b8 !important;
+  font-weight: 800 !important;
+}
+@media (max-width: 900px) {
+  .tt-subject-card-dialog { width: 96vw !important; height: 86vh !important; }
+  .tt-subject-modal-body-inner .tt-sc-cards { grid-template-columns: repeat(auto-fill, minmax(125px, 1fr)) !important; }
+  .tt-subject-card-search { flex-basis: 100% !important; max-width: none !important; }
+}
