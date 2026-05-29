@@ -50,6 +50,7 @@ export function createTimetableSidebarHandlers(deps) {
   let subjectCardModalBody = null;
   let subjectCardModalQuery = "";
   let subjectCardEditorSelectedId = "";
+  let subjectCardEditorScrollState = { body: 0, list: 0 };
 
   function renderSubjectPanel() {
     renderSubjectPanelInto($("ttSubjectsContent"), { modal: false });
@@ -194,8 +195,10 @@ export function createTimetableSidebarHandlers(deps) {
     subjectCardModal.focus?.();
   }
 
-  function renderSubjectCardEditor(container) {
+  function renderSubjectCardEditor(container, options = {}) {
     if (!container) return;
+    const { preserveScroll = true } = options;
+    const previousScroll = preserveScroll ? captureSubjectCardEditorScroll(container) : { body: 0, list: 0 };
     container.innerHTML = "";
 
     const allCards = getTtCards() || [];
@@ -223,6 +226,27 @@ export function createTimetableSidebarHandlers(deps) {
 
     layout.append(left, center, right);
     container.appendChild(layout);
+    restoreSubjectCardEditorScroll(container, previousScroll);
+  }
+
+  function captureSubjectCardEditorScroll(container) {
+    return {
+      body: container?.scrollTop || 0,
+      list: container?.querySelector(".tt-subject-editor-card-list")?.scrollTop || subjectCardEditorScrollState.list || 0,
+    };
+  }
+
+  function restoreSubjectCardEditorScroll(container, state = {}) {
+    subjectCardEditorScrollState = {
+      body: Number(state.body) || 0,
+      list: Number(state.list) || 0,
+    };
+    requestAnimationFrame(() => {
+      if (!container?.isConnected) return;
+      const list = container.querySelector(".tt-subject-editor-card-list");
+      if (list) list.scrollTop = subjectCardEditorScrollState.list;
+      container.scrollTop = subjectCardEditorScrollState.body;
+    });
   }
 
   function buildSubjectEditorListPane(cards, totalCount) {
@@ -307,8 +331,9 @@ export function createTimetableSidebarHandlers(deps) {
         <em>${escapeEditorHtml(labels)}</em>
       `;
       item.addEventListener("click", () => {
+        subjectCardEditorScrollState = captureSubjectCardEditorScroll(subjectCardModalBody);
         subjectCardEditorSelectedId = card.id;
-        renderSubjectCardEditor(subjectCardModalBody);
+        renderSubjectCardEditor(subjectCardModalBody, { preserveScroll: true });
       });
       list.appendChild(item);
     });
