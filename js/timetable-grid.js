@@ -172,7 +172,8 @@ function renderGradeGrid(wrap, ctx) {
 
 function renderTeacherGrid(wrap, ctx) {
   const periods = ctx.periods;
-  const currentTeacher = ctx.currentTeacher;
+  const selectedTeachers = splitTeacherNames(ctx.currentTeacher || "");
+  const selectedTeacherSet = new Set(selectedTeachers);
   const classes = getAllClasses();
   if (!classes.length) {
     wrap.appendChild(Object.assign(document.createElement("div"), {
@@ -182,13 +183,29 @@ function renderTeacherGrid(wrap, ctx) {
     return;
   }
 
+  if (!selectedTeachers.length) {
+    wrap.appendChild(Object.assign(document.createElement("div"), {
+      className: "tt-empty",
+      textContent: "교사를 한 명 이상 선택하세요.",
+    }));
+    return;
+  }
+
+  const selectedSummary = document.createElement("div");
+  selectedSummary.className = "tt-teacher-selected-summary";
+  selectedSummary.textContent = selectedTeachers.length === 1
+    ? `${selectedTeachers[0]} 교사 시간표`
+    : `선택 교사 ${selectedTeachers.length}명: ${selectedTeachers.join(", ")}`;
+  selectedSummary.style.cssText = "font-size:11px;font-weight:800;color:#334155;margin:0 0 4px;padding:3px 6px;border:1px solid #dbe4f0;border-radius:8px;background:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+  wrap.appendChild(selectedSummary);
+
   const numDays = DAYS.length;
   const numPer = periods.length;
   const dayIndexes = Array.from({ length: numDays }, (_, i) => i);
 
   const table = document.createElement("table");
   table.className = "tt-table tt-all-class-table tt-teacher-class-table";
-  table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
+  table.style.cssText = "table-layout:fixed;width:100%;height:calc(100% - 24px);min-width:0;border-collapse:separate;border-spacing:0";
 
   const rowCount = Math.max(1, classes.length);
   wrap.style.setProperty("--num-rows", String(rowCount));
@@ -279,7 +296,7 @@ function renderTeacherGrid(wrap, ctx) {
           const names = Array.isArray(e.teacherNames) && e.teacherNames.length
             ? e.teacherNames
             : splitTeacherNames(e.teacherName);
-          return names.includes(currentTeacher) && e.day === day && e.period === period && entryMatchesClass(e, cls);
+          return names.some(t => selectedTeacherSet.has(t)) && e.day === day && e.period === period && entryMatchesClass(e, cls);
         });
 
         if (slotEntries.length) {

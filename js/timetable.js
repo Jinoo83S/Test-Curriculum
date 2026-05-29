@@ -54,6 +54,7 @@ const constraints = () => ttDomain().teacherConstraints;
 // ── Module state ──────────────────────────────────────────────────
 let currentView    = "all";
 let currentGrade   = "7학년";
+// 교사별 보기에서는 여러 교사를 쉼표로 묶어 저장합니다. (예: "김예리,박예지")
 let currentTeacher = "";
 let currentRoom    = "";
 let dragData       = null;
@@ -383,6 +384,23 @@ function getEffectiveAssignedRoomId(teacher) {
 function getAllTimetableTeachers() {
   return constraintsPanelApi?.getAllTimetableTeachers() || [];
 }
+
+function getSelectedTeacherNames() {
+  return splitTeacherNames(currentTeacher).filter(Boolean);
+}
+
+function setSelectedTeacherNames(names = []) {
+  currentTeacher = [...new Set((names || []).map(clean).filter(Boolean))].join(",");
+}
+
+function entryHasAnySelectedTeacher(entry, selectedTeachers = getSelectedTeacherNames()) {
+  if (!selectedTeachers.length) return false;
+  const names = Array.isArray(entry?.teacherNames) && entry.teacherNames.length
+    ? entry.teacherNames
+    : splitTeacherNames(entry?.teacherName || "");
+  return names.some(t => selectedTeachers.includes(t));
+}
+
 
 function renderConstraintsPanel() {
   return constraintsPanelApi?.renderConstraintsPanel();
@@ -1324,13 +1342,28 @@ function renderViewSelectors() {
     GRADE_KEYS.forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = `${gradeDisplay(g)}학년`; if (g === currentGrade) o.selected = true; gradeEl.appendChild(o); });
     gradeEl.onchange = e => { currentGrade = e.target.value; renderAll(); };
   }
-  // Teacher selector
+  // Teacher selector: multiple teachers can be selected in teacher view.
   if (teacherEl) {
     teacherEl.innerHTML = "";
+    teacherEl.multiple = true;
     const allTeachers = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))].sort((a,b) => a.localeCompare(b,"ko"));
-    if (!currentTeacher && allTeachers.length) currentTeacher = allTeachers[0];
-    allTeachers.forEach(t => { const o = document.createElement("option"); o.value = t; o.textContent = t; if (t === currentTeacher) o.selected = true; teacherEl.appendChild(o); });
-    teacherEl.onchange = e => { currentTeacher = e.target.value; renderAll(); };
+    let selectedTeachers = getSelectedTeacherNames().filter(t => allTeachers.includes(t));
+    if (!selectedTeachers.length && allTeachers.length) selectedTeachers = [allTeachers[0]];
+    setSelectedTeacherNames(selectedTeachers);
+    teacherEl.size = Math.min(Math.max(allTeachers.length, 1), 6);
+    teacherEl.title = "교사별 보기: Ctrl/Shift 또는 드래그로 여러 교사를 선택할 수 있습니다.";
+    teacherEl.classList.toggle("tt-teacher-multi-select", currentView === "teacher");
+    allTeachers.forEach(t => {
+      const o = document.createElement("option");
+      o.value = t;
+      o.textContent = t;
+      if (selectedTeachers.includes(t)) o.selected = true;
+      teacherEl.appendChild(o);
+    });
+    teacherEl.onchange = e => {
+      setSelectedTeacherNames([...e.target.selectedOptions].map(o => o.value));
+      renderAll();
+    };
   }
   // Room selector
   if (roomEl) {
@@ -1591,9 +1624,10 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
     label = `${currentGrade} 시간표`;
     keepFn = e => e.pinned || !entryHasGrade(e, currentGrade);
   } else if (currentView === "teacher") {
-    if (!currentTeacher) { alert("교사를 선택하세요."); return; }
-    label = `${currentTeacher} 교사 배정`;
-    keepFn = e => e.pinned || !splitTeacherNames(e.teacherName).includes(currentTeacher);
+    const selectedTeachers = getSelectedTeacherNames();
+    if (!selectedTeachers.length) { alert("교사를 선택하세요."); return; }
+    label = selectedTeachers.length === 1 ? `${selectedTeachers[0]} 교사 배정` : `${selectedTeachers.length}명 교사 배정`;
+    keepFn = e => e.pinned || !entryHasAnySelectedTeacher(e, selectedTeachers);
   } else if (currentView === "room") {
     if (!currentRoom) { alert("교실을 선택하세요."); return; }
     const roomName = getRooms().find(r => r.id === currentRoom)?.name || currentRoom;
