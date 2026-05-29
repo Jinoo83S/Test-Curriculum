@@ -58,6 +58,7 @@ let currentGrade   = "7학년";
 let currentTeacher = "";
 let currentRoom    = "";
 let teacherPickerOutsideHandlerInstalled = false;
+let roomPickerOutsideHandlerInstalled = false;
 let dragData       = null;
 const TT_DRAG_MIME = "application/x-his-timetable-drag";
 
@@ -409,6 +410,25 @@ function getTeacherSelectorOptions() {
   ].map(clean).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
 }
 
+function getRoomSelectorOptions() {
+  return getRooms()
+    .map(r => ({ id: r.id, name: r.name || r.id }))
+    .filter(r => r.id)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), "ko", { numeric: true }));
+}
+
+function getSelectedRoomIds() {
+  return String(currentRoom || "").split(",").map(clean).filter(Boolean);
+}
+
+function setSelectedRoomIds(ids = []) {
+  currentRoom = [...new Set((ids || []).map(clean).filter(Boolean))].join(",");
+}
+
+function getFirstSelectedRoomId() {
+  return getSelectedRoomIds()[0] || "";
+}
+
 function ensureTeacherPickerElement(teacherEl) {
   if (!teacherEl) return null;
   let picker = $("ttTeacherPicker");
@@ -504,6 +524,118 @@ function renderTeacherMultiPicker(picker, allTeachers = [], selectedTeachers = [
     const q = clean(search.value).toLowerCase();
     list.querySelectorAll(".tt-teacher-picker-row").forEach(row => {
       row.hidden = q && !row.dataset.teacherName.includes(q);
+    });
+  });
+
+  trigger.addEventListener("pointerdown", e => e.stopPropagation());
+  trigger.addEventListener("click", e => {
+    e.preventDefault();
+    picker.classList.toggle("is-open");
+    if (picker.classList.contains("is-open")) setTimeout(() => search.focus(), 0);
+  });
+  panel.addEventListener("pointerdown", e => e.stopPropagation());
+
+  panel.append(head, search, list, actions);
+  picker.append(trigger, panel);
+}
+
+function ensureRoomPickerElement(roomEl) {
+  if (!roomEl) return null;
+  let picker = $("ttRoomPicker");
+  if (!picker) {
+    picker = document.createElement("div");
+    picker.id = "ttRoomPicker";
+    picker.className = "tt-teacher-picker tt-room-picker hidden";
+    roomEl.insertAdjacentElement("afterend", picker);
+  }
+
+  if (!roomPickerOutsideHandlerInstalled) {
+    roomPickerOutsideHandlerInstalled = true;
+    document.addEventListener("pointerdown", e => {
+      const el = $("ttRoomPicker");
+      if (!el || el.classList.contains("hidden")) return;
+      if (!el.contains(e.target)) el.classList.remove("is-open");
+    });
+  }
+  return picker;
+}
+
+function renderRoomMultiPicker(picker, rooms = [], selectedRoomIds = []) {
+  if (!picker) return;
+  picker.innerHTML = "";
+
+  const validIds = new Set(rooms.map(r => r.id));
+  const selected = selectedRoomIds.filter(id => validIds.has(id));
+  const selectedSet = new Set(selected);
+  const roomNameById = new Map(rooms.map(r => [r.id, r.name || r.id]));
+  const label = selected.length ? `교실 ${selected.length}개` : "교실 선택";
+  const namesText = selected.length
+    ? selected.map(id => roomNameById.get(id) || id).join(", ")
+    : "선택된 교실이 없습니다";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "tt-teacher-picker-trigger tt-room-picker-trigger";
+  trigger.innerHTML = `
+    <span class="tt-teacher-picker-label">${escapeHtml(label)}</span>
+    <span class="tt-teacher-picker-names">${escapeHtml(namesText)}</span>
+    <span class="tt-teacher-picker-caret">⌄</span>`;
+
+  const panel = document.createElement("div");
+  panel.className = "tt-teacher-picker-panel tt-room-picker-panel";
+
+  const head = document.createElement("div");
+  head.className = "tt-teacher-picker-head";
+  head.innerHTML = `<strong>교실 선택</strong><span>${rooms.length}개</span>`;
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "tt-teacher-picker-search";
+  search.placeholder = "교실 검색";
+
+  const list = document.createElement("div");
+  list.className = "tt-teacher-picker-list tt-room-picker-list";
+  rooms.forEach(room => {
+    const row = document.createElement("label");
+    row.className = "tt-teacher-picker-row tt-room-picker-row";
+    row.dataset.roomName = String(room.name || room.id).toLowerCase();
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = room.id;
+    cb.checked = selectedSet.has(room.id);
+
+    const text = document.createElement("span");
+    text.textContent = room.name || room.id;
+    row.append(cb, text);
+    list.appendChild(row);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "tt-teacher-picker-actions";
+  const allBtn = makeBtn("전체", "tt-teacher-picker-mini", () => {
+    list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+  });
+  const clearBtn = makeBtn("해제", "tt-teacher-picker-mini", () => {
+    list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+  });
+  const cancelBtn = makeBtn("닫기", "tt-teacher-picker-mini", () => picker.classList.remove("is-open"));
+  const applyBtn = makeBtn("적용", "tt-teacher-picker-apply", () => {
+    const picked = [...list.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value);
+    if (!picked.length) {
+      alert("교실을 한 개 이상 선택해 주세요.");
+      return;
+    }
+    setSelectedRoomIds(picked);
+    picker.classList.remove("is-open");
+    renderAll();
+  });
+  actions.append(allBtn, clearBtn, cancelBtn, applyBtn);
+
+  search.addEventListener("input", () => {
+    const q = clean(search.value).toLowerCase();
+    list.querySelectorAll(".tt-room-picker-row").forEach(row => {
+      row.hidden = q && !row.dataset.roomName.includes(q);
     });
   });
 
@@ -1308,6 +1440,14 @@ function buildEntryCard(entry, opts = {}) {
   const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher2";
   teacherEl.textContent = [...new Set(teachers)].slice(0, 2).join(", ") || "";
   row2.appendChild(teacherEl);
+  if (entry.roomId) {
+    const roomBadge = document.createElement("span");
+    roomBadge.className = "tt-entry-room2";
+    roomBadge.textContent = getRoomDisplayName(entry.roomId);
+    roomBadge.title = `교실: ${getRoomDisplayName(entry.roomId)}`;
+    roomBadge.style.cssText = "flex:0 1 auto;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(5.5px,0.48vw,7px);font-weight:900;line-height:1;padding:1px 3px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid rgba(100,116,139,.18);color:inherit;opacity:.9";
+    row2.appendChild(roomBadge);
+  }
   if (entry.pinned) {
     const pin = document.createElement("span"); pin.className = "tt-entry-pin2"; pin.textContent = "📌";
     row2.appendChild(pin);
@@ -1481,19 +1621,33 @@ function renderViewSelectors() {
     });
     renderTeacherMultiPicker(teacherPicker, allTeachers, selectedTeachers);
   }
-  // Room selector
+  // Room selector: use the same compact custom multi-select picker as teacher view.
+  let roomPicker = null;
   if (roomEl) {
     roomEl.innerHTML = "";
     const rooms = getRooms();
-    if (!currentRoom && rooms.length) currentRoom = rooms[0].id;
-    rooms.forEach(r => { const o = document.createElement("option"); o.value = r.id; o.textContent = r.name; if (r.id === currentRoom) o.selected = true; roomEl.appendChild(o); });
-    roomEl.onchange = e => { currentRoom = e.target.value; renderAll(); };
+    const validRoomIds = new Set(rooms.map(r => r.id));
+    let selectedRoomIds = getSelectedRoomIds().filter(id => validRoomIds.has(id));
+    if (!selectedRoomIds.length && rooms.length) selectedRoomIds = [rooms[0].id];
+    setSelectedRoomIds(selectedRoomIds);
+    rooms.forEach(r => {
+      const o = document.createElement("option");
+      o.value = r.id;
+      o.textContent = r.name;
+      if (selectedRoomIds.includes(r.id)) o.selected = true;
+      roomEl.appendChild(o);
+    });
+    roomEl.onchange = e => { setSelectedRoomIds([e.target.value]); renderAll(); };
+    roomEl.classList.add("hidden");
+    roomPicker = ensureRoomPickerElement(roomEl);
+    renderRoomMultiPicker(roomPicker, getRoomSelectorOptions(), getSelectedRoomIds());
   }
   // Show/hide
   gradeEl?.classList.toggle("hidden", currentView !== "grade" && currentView !== "class");
   teacherEl?.classList.add("hidden");
   $("ttTeacherPicker")?.classList.toggle("hidden", currentView !== "teacher");
-  roomEl?.classList.toggle("hidden", currentView !== "room");
+  roomEl?.classList.add("hidden");
+  roomPicker?.classList.toggle("hidden", currentView !== "room");
   // In all-grades view, hide the subject panel (it's grade-specific)
   const panelEl = document.querySelector(".tt-panel");
 }
@@ -1746,10 +1900,12 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
     label = selectedTeachers.length === 1 ? `${selectedTeachers[0]} 교사 배정` : `${selectedTeachers.length}명 교사 배정`;
     keepFn = e => e.pinned || !entryHasAnySelectedTeacher(e, selectedTeachers);
   } else if (currentView === "room") {
-    if (!currentRoom) { alert("교실을 선택하세요."); return; }
-    const roomName = getRooms().find(r => r.id === currentRoom)?.name || currentRoom;
-    label = `${roomName} 교실 배정`;
-    keepFn = e => e.pinned || e.roomId !== currentRoom;
+    const roomIds = getSelectedRoomIds();
+    if (!roomIds.length) { alert("교실을 선택하세요."); return; }
+    const roomNames = roomIds.map(id => getRooms().find(r => r.id === id)?.name || id);
+    label = roomIds.length === 1 ? `${roomNames[0]} 교실 배정` : `선택 교실 ${roomIds.length}개 배정`;
+    const roomIdSet = new Set(roomIds);
+    keepFn = e => e.pinned || !roomIdSet.has(e.roomId);
   }
   if (!keepFn) return;
   if (!confirm(`"${label}"을 초기화할까요?

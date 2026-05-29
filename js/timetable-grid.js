@@ -96,11 +96,30 @@ function renderClassGrid(wrap, ctx) {
   if (!gradeSections.length) gradeSections.push(0);
 
   const table = document.createElement("table");
-  table.className = "tt-table tt-class-table";
+  table.className = "tt-table tt-class-table tt-percent-grid-table";
+  table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
+  wrap.style.setProperty("--tt-class-col-count", String(DAYS.length * gradeSections.length));
+  wrap.style.setProperty("--tt-class-row-count", String(Math.max(1, periods.length)));
+
+  const rowHeaderWidth = 28;
+  const rowHeight = `calc((100% - var(--tt-class-header-height, 44px)) / ${Math.max(1, periods.length)})`;
+  const colgroup = document.createElement("colgroup");
+  const hdrCol = document.createElement("col");
+  hdrCol.style.width = `${rowHeaderWidth}px`;
+  colgroup.appendChild(hdrCol);
+  const cellWidth = `calc((100% - ${rowHeaderWidth}px) / ${DAYS.length * gradeSections.length})`;
+  for (let i = 0; i < DAYS.length * gradeSections.length; i++) {
+    const col = document.createElement("col");
+    col.style.width = cellWidth;
+    colgroup.appendChild(col);
+  }
+  table.appendChild(colgroup);
+
   const thead = document.createElement("thead");
   const hr = document.createElement("tr");
   const corner = document.createElement("th");
   corner.className = "tt-corner";
+  corner.style.cssText = `width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px`;
   corner.innerHTML = `<div class="tt-corner-label">교시</div>`;
   hr.appendChild(corner);
 
@@ -109,6 +128,7 @@ function renderClassGrid(wrap, ctx) {
     th.className = "tt-day-header";
     th.colSpan = gradeSections.length;
     th.textContent = d;
+    th.style.cssText = "font-size:clamp(8px,0.8vw,12px);padding:2px;border-left:3px solid #64748b;border-right:4px solid #334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
     hr.appendChild(th);
   });
   thead.appendChild(hr);
@@ -120,6 +140,7 @@ function renderClassGrid(wrap, ctx) {
       const th = document.createElement("th");
       th.className = "tt-section-sub-hdr";
       th.textContent = sectionLabel(sec);
+      th.style.cssText = "font-size:clamp(7px,0.65vw,9px);padding:1px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       hr2.appendChild(th);
     });
   });
@@ -127,15 +148,22 @@ function renderClassGrid(wrap, ctx) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  tbody.style.height = "calc(100% - var(--tt-class-header-height, 44px))";
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
-    tr.appendChild(makePeriodLabelCell(label, period, ctx.updatePeriodLabel));
+    tr.style.height = rowHeight;
+    tr.style.minHeight = rowHeight;
+    tr.style.maxHeight = rowHeight;
+    const periodCell = makePeriodLabelCell(label, period, ctx.updatePeriodLabel);
+    periodCell.style.cssText += `;width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight}`;
+    tr.appendChild(periodCell);
 
     DAYS.forEach((_, day) => {
       gradeSections.forEach(sec => {
         const td = document.createElement("td");
-        td.className = "tt-cell";
+        td.className = "tt-cell tt-percent-grid-cell";
         td.setAttribute("data-day", day);
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};min-width:0;position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
 
         const clsInfo = gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || {
@@ -324,7 +352,10 @@ function renderTeacherGrid(wrap, ctx) {
 function renderRoomGrid(wrap, ctx) {
   const periods = ctx.periods;
   const rooms = typeof ctx.getRooms === "function" ? ctx.getRooms() : [];
-  const selectedRoom = rooms.find(r => r.id === ctx.currentRoom) || null;
+  const selectedRoomIds = String(ctx.currentRoom || "").split(",").map(v => v.trim()).filter(Boolean);
+  const selectedRoomSet = new Set(selectedRoomIds);
+  const selectedRooms = selectedRoomIds.map(id => rooms.find(r => r.id === id)).filter(Boolean);
+  const primaryRoomId = selectedRoomIds[0] || "";
   const classes = getAllClasses();
   if (!classes.length) {
     wrap.appendChild(Object.assign(document.createElement("div"), {
@@ -334,17 +365,19 @@ function renderRoomGrid(wrap, ctx) {
     return;
   }
 
-  if (!ctx.currentRoom) {
+  if (!selectedRoomIds.length) {
     wrap.appendChild(Object.assign(document.createElement("div"), {
       className: "tt-empty",
-      textContent: "교실을 선택하세요.",
+      textContent: "교실을 한 개 이상 선택하세요.",
     }));
     return;
   }
 
   const selectedSummary = document.createElement("div");
   selectedSummary.className = "tt-teacher-selected-summary tt-room-selected-summary";
-  selectedSummary.textContent = `${selectedRoom?.name || ctx.currentRoom} 교실 시간표`;
+  selectedSummary.textContent = selectedRooms.length === 1
+    ? `${selectedRooms[0].name || selectedRooms[0].id} 교실 시간표`
+    : `선택 교실 ${selectedRoomIds.length}개: ${selectedRoomIds.map(id => rooms.find(r => r.id === id)?.name || id).join(", ")}`;
   selectedSummary.style.cssText = "font-size:11px;font-weight:800;color:#334155;margin:0 0 4px;padding:3px 6px;border:1px solid #dbe4f0;border-radius:8px;background:#f8fafc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
   wrap.appendChild(selectedSummary);
 
@@ -443,13 +476,13 @@ function renderRoomGrid(wrap, ctx) {
           ...dragData,
           sectionIdx: cls.sectionIdx,
           gradeKey: cls.gradeKey,
-          roomId: ctx.currentRoom,
-          fixedRoomId: ctx.currentRoom,
+          roomId: primaryRoomId,
+          fixedRoomId: primaryRoomId,
           roomRule: "fixed",
           roomPinned: true,
         }));
 
-        const slotEntries = ctx.entries.filter(e => e.roomId === ctx.currentRoom && e.day === day && e.period === period && entryMatchesClass(e, cls));
+        const slotEntries = ctx.entries.filter(e => selectedRoomSet.has(e.roomId) && e.day === day && e.period === period && entryMatchesClass(e, cls));
 
         if (slotEntries.length) {
           const cg = document.createElement("div");
@@ -599,31 +632,57 @@ function renderAllClassesGrid(wrap, ctx) {
 
 function buildGrid(periods, days, wrap, getEntries, ctx, cardOpts = {}) {
   const table = document.createElement("table");
-  table.className = "tt-table";
+  table.className = "tt-table tt-grade-percent-table";
+  table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
+
+  const rowHeaderWidth = 28;
+  const rowHeight = `calc((100% - var(--tt-grade-header-height, 24px)) / ${Math.max(1, periods.length)})`;
+  wrap.style.setProperty("--tt-grade-row-count", String(Math.max(1, periods.length)));
+  const colgroup = document.createElement("colgroup");
+  const hdrCol = document.createElement("col");
+  hdrCol.style.width = `${rowHeaderWidth}px`;
+  colgroup.appendChild(hdrCol);
+  const cellWidth = `calc((100% - ${rowHeaderWidth}px) / ${Math.max(1, days.length)})`;
+  days.forEach(() => {
+    const col = document.createElement("col");
+    col.style.width = cellWidth;
+    colgroup.appendChild(col);
+  });
+  table.appendChild(colgroup);
+
   const thead = document.createElement("thead");
   const hrow = document.createElement("tr");
   const corner = document.createElement("th");
   corner.className = "tt-corner";
+  corner.style.cssText = `width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px`;
   corner.innerHTML = `<div class="tt-corner-label">교시</div>`;
   hrow.appendChild(corner);
   days.forEach(d => {
     const th = document.createElement("th");
     th.className = "tt-day-header";
     th.textContent = d;
+    th.style.cssText = "font-size:clamp(8px,0.8vw,12px);padding:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
     hrow.appendChild(th);
   });
   thead.appendChild(hrow);
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
+  tbody.style.height = "calc(100% - var(--tt-grade-header-height, 24px))";
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
-    tr.appendChild(makePeriodLabelCell(label, period, ctx.updatePeriodLabel));
+    tr.style.height = rowHeight;
+    tr.style.minHeight = rowHeight;
+    tr.style.maxHeight = rowHeight;
+    const periodCell = makePeriodLabelCell(label, period, ctx.updatePeriodLabel);
+    periodCell.style.cssText += `;width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight}`;
+    tr.appendChild(periodCell);
 
     days.forEach((_, day) => {
       const td = document.createElement("td");
-      td.className = "tt-cell";
+      td.className = "tt-cell tt-grade-percent-cell";
       td.setAttribute("data-day", day);
+      td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};min-width:0;position:relative`;
       const slotEntries = getEntries(day, period);
       attachDropHandlers(td, day, period, ctx);
       appendSlotContents(td, slotEntries, ctx, { ...cardOpts, compact: true });
