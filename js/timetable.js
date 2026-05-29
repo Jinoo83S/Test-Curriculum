@@ -1441,7 +1441,7 @@ function buildEntryCard(entry, opts = {}) {
   const titleEl = document.createElement("div");
   titleEl.className = "tt-entry-title";
   titleEl.textContent = title;
-  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;";
+  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:visible;white-space:normal;word-break:keep-all;text-overflow:clip;";
   row1.appendChild(titleEl);
 
   if (isMulti) {
@@ -1468,7 +1468,7 @@ function buildEntryCard(entry, opts = {}) {
   teacherEl.className = "tt-entry-teacher2";
   teacherEl.textContent = [...new Set(teachers)].slice(0, 2).join(", ") || "";
   teacherEl.title = [...new Set(teachers)].join(", ");
-  teacherEl.style.cssText = "width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6.5px,0.58vw,8.5px);font-weight:800;line-height:1.05;opacity:.82;";
+  teacherEl.style.cssText = "width:100%;min-width:0;overflow:visible;text-overflow:clip;white-space:normal;word-break:keep-all;font-size:clamp(6.5px,0.58vw,8.5px);font-weight:800;line-height:1.05;opacity:.82;";
   row2.appendChild(teacherEl);
 
   const row3 = document.createElement("div");
@@ -1479,7 +1479,7 @@ function buildEntryCard(entry, opts = {}) {
     roomBadge.className = "tt-entry-room2";
     roomBadge.textContent = getRoomDisplayName(entry.roomId);
     roomBadge.title = `교실: ${getRoomDisplayName(entry.roomId)}`;
-    roomBadge.style.cssText = "display:block;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6px,0.54vw,8px);font-weight:900;line-height:1.05;opacity:.92;";
+    roomBadge.style.cssText = "display:block;width:100%;min-width:0;overflow:visible;text-overflow:clip;white-space:normal;word-break:keep-all;font-size:clamp(6px,0.54vw,8px);font-weight:900;line-height:1.05;opacity:.92;";
     row3.appendChild(roomBadge);
   }
 
@@ -1609,7 +1609,7 @@ const ttSidebarHandlers = createTimetableSidebarHandlers({
   getTtCards, getTtCardById, refreshTtCardData,
   getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
   getSubjectsForGrade, getUnitForTemplate, getUnitDisplayTitle, getUnitGradeKeys, getUnitTeachers,
-  getCreditsForTemplate, getTeachersForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
+  getCreditsForTemplate, getTeachersForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
   getGradeColor, gradeDisplay, sectionLabel,
   showSidebarCardDetail, showEntryDetailByUnit,
   renderAll: () => renderAll(),

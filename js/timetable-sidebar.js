@@ -14,7 +14,7 @@ export function createTimetableSidebarHandlers(deps) {
     getTtCards, refreshTtCardData,
     getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
     getSubjectsForGrade, getUnitForTemplate, getUnitGradeKeys, getUnitTeachers,
-    getCreditsForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
+    getCreditsForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
     getGradeColor, gradeDisplay, sectionLabel,
     showSidebarCardDetail, showEntryDetailByUnit,
     renderAll, setDragData,
@@ -26,7 +26,9 @@ export function createTimetableSidebarHandlers(deps) {
 
   const TT_DRAG_MIME = "application/x-his-timetable-drag";
   const GRADE_FILTER_STORAGE_KEY = "his_timetable_grade_filter";
+  const CARD_SORT_STORAGE_KEY = "his_timetable_card_sort";
   let activeGradeFilter = loadGradeFilter();
+  let activeCardSort = loadCardSort();
 
   function beginSidebarDrag(event, card, data, effect = "copy") {
     setDragging(data);
@@ -73,7 +75,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const ttcards = appState.timetable?.ttcards || [];
     const filteredTtcards = filterTtCardsByGrade(ttcards);
-    toolbar.append(actionGroup, buildGradeFilterControls(ttcards), buildClassCountSummary(ttcards));
+    toolbar.append(actionGroup, buildCardSortControls(), buildGradeFilterControls(ttcards), buildClassCountSummary(ttcards));
     panel.appendChild(toolbar);
 
     if (ttcards.length > 0) {
@@ -111,7 +113,7 @@ export function createTimetableSidebarHandlers(deps) {
       const classLabels = compactClassLabelGroups(
         detailItems.flatMap(item => classLabelsFromDetailItem(item))
       );
-      const card = buildSidebarCard({ title, teachers, gradeKeys, classLabels, credits, assigned, isDone, gradeColor, groupName: grp.name, detailItems });
+      const card = buildSidebarCard({ title, teachers, gradeKeys, classLabels, credits, assigned, isDone, gradeColor, groupName: grp.name, detailItems, sortGroup: getSortGroupForCards(grpCards, grp.name), sortRoom: collectRoomNamesForEntries(relatedEntries).join(", ") });
       card.dataset.groupId = grp.id;
       card.style.outline = "1.5px solid " + gradeColor.border;
       if (!isDone) {
@@ -135,6 +137,10 @@ export function createTimetableSidebarHandlers(deps) {
         (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e, c.gradeKey) && (e.sectionIdx ?? 0) === c.sectionIdx)
       ).length;
       const isDone = credits > 0 && assigned >= credits;
+      const relatedEntries = entries().filter(e =>
+        (e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)) ||
+        (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e, c.gradeKey) && (e.sectionIdx ?? 0) === c.sectionIdx)
+      );
       const card = buildSidebarCard({
         title: desc.title,
         teachers: getTeachersForTtCard(c),
@@ -145,7 +151,9 @@ export function createTimetableSidebarHandlers(deps) {
         isDone,
         gradeColor,
         sectionIdx: c.sectionIdx,
-        detailItems: [desc]
+        detailItems: [desc],
+        sortGroup: getSortGroupForCards([c], desc.title),
+        sortRoom: collectRoomNamesForEntries(relatedEntries).join(", ")
       });
       card.dataset.templateId = c.templateId;
       card.dataset.ttcardId = c.id;
@@ -191,7 +199,8 @@ export function createTimetableSidebarHandlers(deps) {
             credits,
             assigned,
             isDone,
-            gradeColor: getGradeColor(gradeKeys[0] || gradeKey)
+            gradeColor: getGradeColor(gradeKeys[0] || gradeKey),
+            sortGroup: group?.name || getUnitDisplayTitleSafe(unit)
           });
           card.addEventListener("click", () => showEntryDetailByUnit(unit, group, gradeKeys));
           if (!isDone) {
@@ -214,7 +223,7 @@ export function createTimetableSidebarHandlers(deps) {
             const isDone = credits > 0 && assigned >= credits;
             const gradeColor = getGradeColor(gradeKey);
             const title = sections > 1 ? `${getTemplateCardTitle(tpl)} ${sectionLabel(sec)}` : getTemplateCardTitle(tpl);
-            const card = buildSidebarCard({ title, teachers, gradeKeys: [gradeKey], classLabels: compactClassLabelGroups([formatFullClassLabel(gradeKey, sectionLabel(sec))]), credits, assigned, isDone, gradeColor });
+            const card = buildSidebarCard({ title, teachers, gradeKeys: [gradeKey], classLabels: compactClassLabelGroups([formatFullClassLabel(gradeKey, sectionLabel(sec))]), credits, assigned, isDone, gradeColor, sortGroup: getTemplateMetaValue({ gradeKey, templateId: tpl.id }, getGroupNameForTemplate) || getTemplateMetaValue({ gradeKey, templateId: tpl.id }, getTrackForTemplate) || getTemplateMetaValue({ gradeKey, templateId: tpl.id }, getCategoryForTemplate) || title });
             if (!isDone) {
               card.addEventListener("dragstart", ev => {
                 beginSidebarDrag(ev, card, { kind: "subject", templateId: tpl.id, sectionIdx: sec, gradeKey });
@@ -332,6 +341,109 @@ export function createTimetableSidebarHandlers(deps) {
     } catch (err) {
       // ignore storage errors
     }
+  }
+
+  function buildCardSortControls() {
+    const wrap = document.createElement("label");
+    wrap.className = "tt-card-sort-control";
+    wrap.style.cssText = "display:flex;align-items:center;gap:5px;height:30px;padding:0 8px;border:1px solid #dbe4f0;border-radius:10px;background:#fff;font-size:11px;font-weight:900;color:#334155;white-space:nowrap;";
+
+    const label = document.createElement("span");
+    label.textContent = "정렬";
+    label.className = "tt-toolbar-label";
+
+    const select = document.createElement("select");
+    select.className = "tt-card-sort-select";
+    select.style.cssText = "height:24px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;padding:0 22px 0 7px;font-size:11px;font-weight:900;color:#0f172a;";
+    [
+      ["name", "가나다 순"],
+      ["group", "구분 순"],
+      ["teacher", "교사 순"],
+      ["room", "교실 순"],
+    ].forEach(([value, text]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      if (activeCardSort === value) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.addEventListener("change", () => {
+      activeCardSort = select.value || "name";
+      saveCardSort(activeCardSort);
+      renderSubjectPanel();
+    });
+
+    wrap.append(label, select);
+    return wrap;
+  }
+
+  function sortSidebarCards(cards) {
+    const key = activeCardSort || "name";
+    const field = key === "teacher" ? "sortTeacher" : key === "group" ? "sortGroup" : key === "room" ? "sortRoom" : "sortName";
+    return [...(cards || [])].sort((a, b) => {
+      const av = a?.dataset?.[field] || "";
+      const bv = b?.dataset?.[field] || "";
+      const primary = av.localeCompare(bv, "ko", { numeric: true, sensitivity: "base" });
+      if (primary !== 0) return primary;
+      return (a?.dataset?.sortName || "").localeCompare(b?.dataset?.sortName || "", "ko", { numeric: true, sensitivity: "base" });
+    });
+  }
+
+  function loadCardSort() {
+    try {
+      const value = localStorage.getItem(CARD_SORT_STORAGE_KEY) || "name";
+      return ["name", "group", "teacher", "room"].includes(value) ? value : "name";
+    } catch (err) {
+      return "name";
+    }
+  }
+
+  function saveCardSort(value) {
+    try {
+      localStorage.setItem(CARD_SORT_STORAGE_KEY, value || "name");
+    } catch (err) {
+      // ignore storage errors
+    }
+  }
+
+  function normalizeSortText(value) {
+    return String(value || "").trim().replace(/^\[|\]$/g, "").toLocaleLowerCase("ko");
+  }
+
+  function guessGroupFromTitle(title) {
+    const text = String(title || "").trim();
+    const m = text.match(/^\[?\d{1,2}-([^\]\s]+)\]?/);
+    if (m) return m[1];
+    return text.split(/[\s/·,]+/)[0] || text;
+  }
+
+  function getTemplateMetaValue(card, getter) {
+    if (!card || typeof getter !== "function") return "";
+    try { return getter(card.gradeKey, card.templateId) || getter(card.templateId) || ""; }
+    catch (err) { return ""; }
+  }
+
+  function getSortGroupForCards(cards, fallback = "") {
+    const values = unique((cards || []).flatMap(card => [
+      getTemplateMetaValue(card, getGroupNameForTemplate),
+      getTemplateMetaValue(card, getTrackForTemplate),
+      getTemplateMetaValue(card, getCategoryForTemplate),
+    ]).filter(Boolean));
+    return values.join(" / ") || fallback;
+  }
+
+  function roomNameById(roomId) {
+    if (!roomId) return "";
+    const room = (appState.rooms?.rooms || []).find(r => r.id === roomId);
+    return room?.name || roomId;
+  }
+
+  function collectRoomNamesForEntries(list) {
+    return unique((list || []).map(e => roomNameById(e.roomId)).filter(Boolean));
+  }
+
+  function collectRoomNamesForDetailItems(items) {
+    return unique((items || []).map(item => roomNameById(item.fixedRoomId || item.roomId)).filter(Boolean));
   }
 
   function buildCreditDiagnosticButton(ttcards) {
@@ -522,20 +634,26 @@ export function createTimetableSidebarHandlers(deps) {
       .join(" / ") || "묶음수업";
   }
 
-  function buildSidebarCard({ title, teachers, gradeKeys, classLabels = [], credits, assigned, isDone, gradeColor, sectionIdx, groupName, detailItems = [] }) {
+  function buildSidebarCard({ title, teachers, gradeKeys, classLabels = [], credits, assigned, isDone, gradeColor, sectionIdx, groupName, detailItems = [], sortGroup = "", sortRoom = "" }) {
     const card = document.createElement("div");
     card.className = "tt-subject-card tt-sc-compact" + (isDone ? " tt-subject-done" : "");
     card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
     card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
     card.draggable = canEdit() && !isDone;
+    const displayTitle = groupName || title;
+    const uniqueTeachers = [...new Set(teachers || [])];
+    card.dataset.sortName = normalizeSortText(displayTitle);
+    card.dataset.sortTeacher = normalizeSortText(uniqueTeachers.join(", "));
+    card.dataset.sortGroup = normalizeSortText(sortGroup || groupName || guessGroupFromTitle(displayTitle));
+    card.dataset.sortRoom = normalizeSortText(sortRoom || collectRoomNamesForDetailItems(detailItems).join(", "));
 
     const row1 = document.createElement("div");
     row1.className = "tt-sc-row1";
-    const displayTitle = groupName || title;
     const nameEl = document.createElement("div");
     nameEl.className = "tt-sc-name";
     nameEl.textContent = displayTitle;
     nameEl.title = displayTitle;
+    nameEl.style.textOverflow = "clip";
     const badge = document.createElement("span");
     badge.className = "tt-sc-badge";
     badge.textContent = `${assigned}/${credits}`;
@@ -545,11 +663,11 @@ export function createTimetableSidebarHandlers(deps) {
 
     const row2 = document.createElement("div");
     row2.className = "tt-sc-row2";
-    const uniqueTeachers = [...new Set(teachers || [])];
     const tchEl = document.createElement("div");
     tchEl.className = "tt-sc-teacher";
     tchEl.textContent = uniqueTeachers.join(", ") || "-";
     tchEl.title = uniqueTeachers.join(", ");
+    tchEl.style.textOverflow = "clip";
     const chipWrap = document.createElement("div");
     chipWrap.className = "tt-sc-grade-chips";
     const displayChips = classLabels?.length ? classLabels : compactClassLabelGroups((gradeKeys || []).map(g => `${gradeDisplay(g)}${sectionIdx != null ? sectionLabel(sectionIdx) : ""}`));
@@ -578,17 +696,23 @@ export function createTimetableSidebarHandlers(deps) {
       panel.appendChild(Object.assign(document.createElement("div"), { className: "tt-empty", textContent: emptyMsg }));
       return;
     }
-    const wrapper = document.createElement("div");
-    wrapper.className = "tt-sc-cards";
-    if (available.length) {
-      panel.appendChild(Object.assign(document.createElement("div"), { className: "tt-panel-section-title", textContent: `배치 필요 (${available.length})` }));
-      available.forEach(c => wrapper.appendChild(c));
-    }
-    if (done.length) {
-      wrapper.appendChild(Object.assign(document.createElement("div"), { className: "tt-panel-section-title tt-panel-section-done", textContent: `배치 완료 (${done.length})` }));
-      done.forEach(c => wrapper.appendChild(c));
-    }
-    panel.appendChild(wrapper);
+
+    const appendSection = (title, cards, extraClass = "") => {
+      if (!cards.length) return;
+      const section = document.createElement("section");
+      section.className = `tt-card-status-section ${extraClass}`.trim();
+      const head = document.createElement("div");
+      head.className = "tt-panel-section-title" + (extraClass ? " tt-panel-section-done" : "");
+      head.textContent = title;
+      const wrapper = document.createElement("div");
+      wrapper.className = "tt-sc-cards";
+      sortSidebarCards(cards).forEach(c => wrapper.appendChild(c));
+      section.append(head, wrapper);
+      panel.appendChild(section);
+    };
+
+    appendSection(`배치 필요 (${available.length})`, available);
+    appendSection(`배치 완료 (${done.length})`, done, "is-done");
   }
 
   return { renderSubjectPanel };

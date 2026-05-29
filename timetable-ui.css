@@ -685,3 +685,60 @@ button.tt-grade-filter-btn.active {
   .tt-teacher-picker-panel { width: 280px !important; }
   .tt-teacher-picker-list { grid-template-columns: 1fr !important; }
 }
+
+/* 시간표 하단 과목 카드 정렬/상태 구분 및 말줄임표 제거 */
+.tt-card-sort-control {
+  flex: 0 0 auto !important;
+}
+.tt-card-sort-select {
+  max-width: 92px !important;
+}
+.tt-card-status-section {
+  margin-top: 8px !important;
+  padding-top: 2px !important;
+}
+.tt-card-status-section + .tt-card-status-section {
+  margin-top: 12px !important;
+  padding-top: 10px !important;
+  border-top: 1px dashed #cbd5e1 !important;
+}
+.tt-card-status-section.is-done {
+  opacity: .94 !important;
+}
+.tt-card-status-section > .tt-panel-section-title {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 20px !important;
+  margin: 0 0 5px !important;
+  padding: 2px 8px !important;
+  border-radius: 999px !important;
+  background: #eef6ff !important;
+  color: #1e3a8a !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+}
+.tt-card-status-section.is-done > .tt-panel-section-title {
+  background: #ecfdf5 !important;
+  color: #166534 !important;
+}
+.tt-sc-name,
+.tt-sc-teacher,
+.tt-entry-teacher2,
+.tt-entry-room2 {
+  text-overflow: clip !important;
+}
+.tt-sc-name,
+.tt-sc-teacher {
+  white-space: normal !important;
+  overflow: visible !important;
+  word-break: keep-all !important;
+}
+.tt-entry-title {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+  word-break: keep-all !important;
+  display: block !important;
+  -webkit-line-clamp: unset !important;
+  line-clamp: unset !important;
+}
