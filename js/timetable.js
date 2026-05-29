@@ -57,6 +57,7 @@ let currentGrade   = "7학년";
 // 교사별 보기에서는 여러 교사를 쉼표로 묶어 저장합니다. (예: "김예리,박예지")
 let currentTeacher = "";
 let currentRoom    = "";
+let teacherPickerOutsideHandlerInstalled = false;
 let dragData       = null;
 const TT_DRAG_MIME = "application/x-his-timetable-drag";
 
@@ -401,6 +402,122 @@ function entryHasAnySelectedTeacher(entry, selectedTeachers = getSelectedTeacher
   return names.some(t => selectedTeachers.includes(t));
 }
 
+function getTeacherSelectorOptions() {
+  return [...new Set([
+    ...getAllTimetableTeachers(),
+    ...entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean),
+  ].map(clean).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function ensureTeacherPickerElement(teacherEl) {
+  if (!teacherEl) return null;
+  let picker = $("ttTeacherPicker");
+  if (!picker) {
+    picker = document.createElement("div");
+    picker.id = "ttTeacherPicker";
+    picker.className = "tt-teacher-picker hidden";
+    teacherEl.insertAdjacentElement("afterend", picker);
+  }
+
+  if (!teacherPickerOutsideHandlerInstalled) {
+    teacherPickerOutsideHandlerInstalled = true;
+    document.addEventListener("pointerdown", e => {
+      const el = $("ttTeacherPicker");
+      if (!el || el.classList.contains("hidden")) return;
+      if (!el.contains(e.target)) el.classList.remove("is-open");
+    });
+  }
+  return picker;
+}
+
+function renderTeacherMultiPicker(picker, allTeachers = [], selectedTeachers = []) {
+  if (!picker) return;
+  picker.innerHTML = "";
+
+  const selected = selectedTeachers.filter(t => allTeachers.includes(t));
+  const selectedSet = new Set(selected);
+  const label = selected.length
+    ? `교사 ${selected.length}명`
+    : "교사 선택";
+  const namesText = selected.length ? selected.join(", ") : "선택된 교사가 없습니다";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "tt-teacher-picker-trigger";
+  trigger.innerHTML = `
+    <span class="tt-teacher-picker-label">${escapeHtml(label)}</span>
+    <span class="tt-teacher-picker-names">${escapeHtml(namesText)}</span>
+    <span class="tt-teacher-picker-caret">⌄</span>`;
+
+  const panel = document.createElement("div");
+  panel.className = "tt-teacher-picker-panel";
+
+  const head = document.createElement("div");
+  head.className = "tt-teacher-picker-head";
+  head.innerHTML = `<strong>교사 선택</strong><span>${allTeachers.length}명</span>`;
+
+  const search = document.createElement("input");
+  search.type = "search";
+  search.className = "tt-teacher-picker-search";
+  search.placeholder = "교사 검색";
+
+  const list = document.createElement("div");
+  list.className = "tt-teacher-picker-list";
+  allTeachers.forEach(name => {
+    const row = document.createElement("label");
+    row.className = "tt-teacher-picker-row";
+    row.dataset.teacherName = name.toLowerCase();
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = name;
+    cb.checked = selectedSet.has(name);
+
+    const text = document.createElement("span");
+    text.textContent = name;
+    row.append(cb, text);
+    list.appendChild(row);
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "tt-teacher-picker-actions";
+  const allBtn = makeBtn("전체", "tt-teacher-picker-mini", () => {
+    list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+  });
+  const clearBtn = makeBtn("해제", "tt-teacher-picker-mini", () => {
+    list.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+  });
+  const cancelBtn = makeBtn("닫기", "tt-teacher-picker-mini", () => picker.classList.remove("is-open"));
+  const applyBtn = makeBtn("적용", "tt-teacher-picker-apply", () => {
+    const picked = [...list.querySelectorAll('input[type="checkbox"]:checked')].map(cb => cb.value);
+    if (!picked.length) {
+      alert("교사를 한 명 이상 선택해 주세요.");
+      return;
+    }
+    setSelectedTeacherNames(picked);
+    picker.classList.remove("is-open");
+    renderAll();
+  });
+  actions.append(allBtn, clearBtn, cancelBtn, applyBtn);
+
+  search.addEventListener("input", () => {
+    const q = clean(search.value).toLowerCase();
+    list.querySelectorAll(".tt-teacher-picker-row").forEach(row => {
+      row.hidden = q && !row.dataset.teacherName.includes(q);
+    });
+  });
+
+  trigger.addEventListener("pointerdown", e => e.stopPropagation());
+  trigger.addEventListener("click", e => {
+    e.preventDefault();
+    picker.classList.toggle("is-open");
+    if (picker.classList.contains("is-open")) setTimeout(() => search.focus(), 0);
+  });
+  panel.addEventListener("pointerdown", e => e.stopPropagation());
+
+  panel.append(head, search, list, actions);
+  picker.append(trigger, panel);
+}
 
 function renderConstraintsPanel() {
   return constraintsPanelApi?.renderConstraintsPanel();
@@ -1342,17 +1459,19 @@ function renderViewSelectors() {
     GRADE_KEYS.forEach(g => { const o = document.createElement("option"); o.value = g; o.textContent = `${gradeDisplay(g)}학년`; if (g === currentGrade) o.selected = true; gradeEl.appendChild(o); });
     gradeEl.onchange = e => { currentGrade = e.target.value; renderAll(); };
   }
-  // Teacher selector: multiple teachers can be selected in teacher view.
+  // Teacher selector: use a compact custom multi-select picker instead of a native multi-select box.
+  let teacherPicker = null;
   if (teacherEl) {
     teacherEl.innerHTML = "";
     teacherEl.multiple = true;
-    const allTeachers = [...new Set(entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean))].sort((a,b) => a.localeCompare(b,"ko"));
+    teacherEl.classList.add("hidden");
+    teacherPicker = ensureTeacherPickerElement(teacherEl);
+
+    const allTeachers = getTeacherSelectorOptions();
     let selectedTeachers = getSelectedTeacherNames().filter(t => allTeachers.includes(t));
     if (!selectedTeachers.length && allTeachers.length) selectedTeachers = [allTeachers[0]];
     setSelectedTeacherNames(selectedTeachers);
-    teacherEl.size = Math.min(Math.max(allTeachers.length, 1), 6);
-    teacherEl.title = "교사별 보기: Ctrl/Shift 또는 드래그로 여러 교사를 선택할 수 있습니다.";
-    teacherEl.classList.toggle("tt-teacher-multi-select", currentView === "teacher");
+
     allTeachers.forEach(t => {
       const o = document.createElement("option");
       o.value = t;
@@ -1360,10 +1479,7 @@ function renderViewSelectors() {
       if (selectedTeachers.includes(t)) o.selected = true;
       teacherEl.appendChild(o);
     });
-    teacherEl.onchange = e => {
-      setSelectedTeacherNames([...e.target.selectedOptions].map(o => o.value));
-      renderAll();
-    };
+    renderTeacherMultiPicker(teacherPicker, allTeachers, selectedTeachers);
   }
   // Room selector
   if (roomEl) {
@@ -1375,7 +1491,8 @@ function renderViewSelectors() {
   }
   // Show/hide
   gradeEl?.classList.toggle("hidden", currentView !== "grade" && currentView !== "class");
-  teacherEl?.classList.toggle("hidden", currentView !== "teacher");
+  teacherEl?.classList.add("hidden");
+  $("ttTeacherPicker")?.classList.toggle("hidden", currentView !== "teacher");
   roomEl?.classList.toggle("hidden", currentView !== "room");
   // In all-grades view, hide the subject panel (it's grade-specific)
   const panelEl = document.querySelector(".tt-panel");
