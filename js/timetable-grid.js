@@ -173,20 +173,30 @@ function renderGradeGrid(wrap, ctx) {
 function renderTeacherGrid(wrap, ctx) {
   const periods = ctx.periods;
   const currentTeacher = ctx.currentTeacher;
+  const classes = getAllClasses();
+  if (!classes.length) {
+    wrap.appendChild(Object.assign(document.createElement("div"), {
+      className: "tt-empty",
+      textContent: "시간표 카드를 생성하거나 학생 명단에서 반을 추가하세요.",
+    }));
+    return;
+  }
+
   const numDays = DAYS.length;
   const numPer = periods.length;
   const dayIndexes = Array.from({ length: numDays }, (_, i) => i);
 
   const table = document.createElement("table");
-  table.className = "tt-table tt-all-class-table tt-teacher-row-table";
+  table.className = "tt-table tt-all-class-table tt-teacher-class-table";
   table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
 
-  wrap.style.setProperty("--num-rows", "1");
-  const rowHeight = "calc(100% - var(--tt-all-header-height, 30px))";
+  const rowCount = Math.max(1, classes.length);
+  wrap.style.setProperty("--num-rows", String(rowCount));
+  const rowHeight = `calc((100% - var(--tt-all-header-height, 30px)) / ${rowCount})`;
   wrap.style.setProperty("--tt-all-row-height", rowHeight);
 
   const colgroup = document.createElement("colgroup");
-  const rowHeaderWidth = 78;
+  const rowHeaderWidth = 28;
   const hdrCol = document.createElement("col");
   hdrCol.style.width = `${rowHeaderWidth}px`;
   colgroup.appendChild(hdrCol);
@@ -203,8 +213,9 @@ function renderTeacherGrid(wrap, ctx) {
   const corner = document.createElement("th");
   corner.className = "tt-all-corner";
   corner.rowSpan = 2;
-  corner.innerHTML = `<span style="font-size:clamp(7px,0.7vw,10px)">교사</span>`;
+  corner.innerHTML = `<span style="font-size:clamp(7px,0.7vw,10px)">반</span>`;
   hr1.appendChild(corner);
+
   dayIndexes.forEach(d => {
     const th = document.createElement("th");
     th.className = "tt-day-header";
@@ -233,49 +244,62 @@ function renderTeacherGrid(wrap, ctx) {
 
   const tbody = document.createElement("tbody");
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
-  const tr = document.createElement("tr");
-  tr.style.height = rowHeight;
-  tr.style.minHeight = rowHeight;
-  tr.style.maxHeight = rowHeight;
+  let prevGrade = null;
 
-  const rowHdr = document.createElement("td");
-  rowHdr.className = "tt-all-row-hdr tt-teacher-row-hdr";
-  rowHdr.style.cssText = "background:#eef6ff;color:#173b68;border-left:2px solid #2563eb;overflow:hidden;font-size:clamp(8px,0.75vw,11px);width:78px;min-width:78px;max-width:78px;padding:2px 4px;line-height:1.15";
-  rowHdr.innerHTML = `<b style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${currentTeacher || "교사"}</b><span style="font-size:clamp(6px,0.6vw,8px);color:#64748b">교사별</span>`;
-  tr.appendChild(rowHdr);
+  classes.forEach(cls => {
+    const tr = document.createElement("tr");
+    tr.style.height = rowHeight;
+    tr.style.minHeight = rowHeight;
+    tr.style.maxHeight = rowHeight;
+    tr.dataset.gradeKey = cls.gradeKey;
+    tr.dataset.sectionIdx = String(cls.sectionIdx);
+    if (cls.gradeKey !== prevGrade) {
+      tr.className = "tt-all-grade-boundary";
+      prevGrade = cls.gradeKey;
+    }
 
-  dayIndexes.forEach(day => {
-    periods.forEach((_, period) => {
-      const td = document.createElement("td");
-      const isDayStart = period === 0;
-      const isDayEnd = period === periods.length - 1;
-      td.className = "tt-cell tt-all-cell tt-teacher-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
-      td.setAttribute("data-day", day);
-      td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};position:relative`;
-      attachDropHandlers(td, day, period, ctx);
+    const rowHdr = document.createElement("td");
+    rowHdr.className = "tt-all-row-hdr tt-teacher-class-row-hdr";
+    const gc = ctx.getGradeColor(cls.gradeKey);
+    rowHdr.style.cssText = `background:${gc.bg};color:${gc.text};border-left:2px solid ${gc.border};overflow:hidden;font-size:clamp(6px,0.6vw,8px);width:28px;min-width:28px;max-width:28px`;
+    rowHdr.innerHTML = `<b style="display:block;font-size:clamp(7px,0.7vw,9px);line-height:1.05">${gradeDisplay(cls.gradeKey)}</b><span style="font-size:clamp(6px,0.6vw,8px);line-height:1.05">${cls.section}</span>`;
+    tr.appendChild(rowHdr);
 
-      const slotEntries = ctx.entries.filter(e => {
-        const names = Array.isArray(e.teacherNames) && e.teacherNames.length
-          ? e.teacherNames
-          : splitTeacherNames(e.teacherName);
-        return names.includes(currentTeacher) && e.day === day && e.period === period;
+    dayIndexes.forEach(day => {
+      periods.forEach((_, period) => {
+        const td = document.createElement("td");
+        const isDayStart = period === 0;
+        const isDayEnd = period === periods.length - 1;
+        td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.setAttribute("data-day", day);
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};position:relative`;
+        attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
+
+        const slotEntries = ctx.entries.filter(e => {
+          const names = Array.isArray(e.teacherNames) && e.teacherNames.length
+            ? e.teacherNames
+            : splitTeacherNames(e.teacherName);
+          return names.includes(currentTeacher) && e.day === day && e.period === period && entryMatchesClass(e, cls);
+        });
+
+        if (slotEntries.length) {
+          const cg = document.createElement("div");
+          cg.className = "tt-cell-card-grid";
+          cg.style.height = "100%";
+          cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
+          slotEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true })));
+          td.appendChild(cg);
+        } else {
+          const ph = document.createElement("div");
+          ph.className = "tt-cell-ph";
+          td.appendChild(ph);
+        }
+        tr.appendChild(td);
       });
-      if (slotEntries.length) {
-        const cg = document.createElement("div");
-        cg.className = "tt-cell-card-grid";
-        cg.style.height = "100%";
-        cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
-        slotEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true, showGrade: true })));
-        td.appendChild(cg);
-      } else {
-        const ph = document.createElement("div");
-        ph.className = "tt-cell-ph";
-        td.appendChild(ph);
-      }
-      tr.appendChild(td);
     });
+    tbody.appendChild(tr);
   });
-  tbody.appendChild(tr);
+
   table.appendChild(tbody);
   wrap.appendChild(table);
 }
