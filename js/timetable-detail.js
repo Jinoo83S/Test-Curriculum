@@ -4,7 +4,7 @@
 import { appState, scheduleSave } from "./state.js";
 import { canEdit } from "./auth.js";
 import { getRooms } from "./rooms.js";
-import { sectionLabel, gradeDisplay, clean } from "./utils.js";
+import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
@@ -480,7 +480,102 @@ export function createTimetableDetailHandlers(ctx) {
       return hr;
     }
 
+    function applyRoomFromContext(roomId) {
+      if (!canEdit()) return;
+      const e = entries().find(x => x.id === entry.id);
+      if (!e) return;
+      if (e.roomId === roomId) return;
+      ctx.captureTimetableUndo?.("우클릭 교실 변경");
+      e.roomId = roomId || null;
+      scheduleSave("timetable");
+      ctx.recomputeConflicts?.();
+      ctx.renderAll?.();
+    }
+
+    function getAvailableRoomsForEntry(entry) {
+      const occupied = new Set(entries()
+        .filter(e => e.id !== entry.id && e.day === entry.day && e.period === entry.period && e.roomId)
+        .map(e => e.roomId));
+      const currentRoomId = clean(entry.roomId || "");
+      return getRooms()
+        .filter(room => room?.id && !occupied.has(room.id) && room.id !== currentRoomId)
+        .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko", { numeric: true }));
+    }
+
+    function roomChangeMenuItem() {
+      const rooms = getAvailableRoomsForEntry(entry);
+      const item = document.createElement("div");
+      item.style.cssText = "position:relative;padding:8px 14px;cursor:pointer;color:#1e293b;display:flex;align-items:center;gap:8px;white-space:nowrap";
+      item.innerHTML = `<span>🏫 교실 변경</span><span style="margin-left:auto;color:#64748b;font-size:11px">▶</span>`;
+
+      const sub = document.createElement("div");
+      sub.style.cssText = [
+        "position:absolute",
+        "left:100%",
+        "top:-4px",
+        "display:none",
+        "min-width:180px",
+        "max-height:320px",
+        "overflow-y:auto",
+        "background:white",
+        "border:1px solid #e2e8f0",
+        "border-radius:8px",
+        "box-shadow:0 8px 24px rgba(15,23,42,.18)",
+        "z-index:9999",
+        "padding:4px 0"
+      ].join(";");
+
+      const header = document.createElement("div");
+      header.style.cssText = "padding:6px 10px;font-size:10px;font-weight:900;color:#64748b;border-bottom:1px solid #f1f5f9;background:#f8fafc";
+      header.textContent = rooms.length ? "이 시간에 비어있는 교실" : "비어있는 교실 없음";
+      sub.appendChild(header);
+
+      if (!rooms.length) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "padding:8px 10px;color:#9ca3af;font-size:12px";
+        empty.textContent = "선택 가능한 교실이 없습니다.";
+        sub.appendChild(empty);
+      } else {
+        rooms.forEach(room => {
+          const btn = document.createElement("div");
+          btn.style.cssText = "padding:8px 10px;cursor:pointer;color:#1e293b;font-size:12px;display:flex;justify-content:space-between;gap:8px;align-items:center";
+          const meta = [room.type, room.capacity ? `${room.capacity}명` : ""].filter(Boolean).join(" · ");
+          btn.innerHTML = `<strong style="font-size:12px">${escapeHtml(room.name || room.id)}</strong>${meta ? `<span style="font-size:10px;color:#94a3b8">${escapeHtml(meta)}</span>` : ""}`;
+          btn.onmouseenter = () => { btn.style.background = "#eff6ff"; };
+          btn.onmouseleave = () => { btn.style.background = ""; };
+          btn.onclick = ev => {
+            ev.stopPropagation();
+            menu.remove();
+            applyRoomFromContext(room.id);
+          };
+          sub.appendChild(btn);
+        });
+      }
+
+      item.appendChild(sub);
+      item.onmouseenter = () => {
+        item.style.background = "#f8fafc";
+        sub.style.display = "block";
+        requestAnimationFrame(() => {
+          const r = sub.getBoundingClientRect();
+          if (r.right > window.innerWidth) {
+            sub.style.left = "auto";
+            sub.style.right = "100%";
+          }
+          if (r.bottom > window.innerHeight) {
+            sub.style.top = `${Math.min(0, window.innerHeight - r.bottom - 8)}px`;
+          }
+        });
+      };
+      item.onmouseleave = () => {
+        item.style.background = "";
+        sub.style.display = "none";
+      };
+      return item;
+    }
+
     menu.appendChild(menuItem("📋 수업 정보 편집", () => showEntryDetail(entry)));
+    menu.appendChild(roomChangeMenuItem());
     menu.appendChild(menuItem("📅 배정 현황 보기", () => showSubjectAssignmentHistory(entry)));
     menu.appendChild(menuItem("🔍 하단 카드에서 찾기", () => highlightSidebarCard(entry)));
     menu.appendChild(sep());
