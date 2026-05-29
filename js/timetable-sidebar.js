@@ -17,7 +17,7 @@ export function createTimetableSidebarHandlers(deps) {
     getCreditsForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
     getGradeColor, gradeDisplay, sectionLabel,
     showSidebarCardDetail, showEntryDetailByUnit,
-    renderAll, setDragData,
+    renderAll, setDragData, scheduleSave = () => {},
   } = deps;
 
   function setDragging(value) {
@@ -49,6 +49,7 @@ export function createTimetableSidebarHandlers(deps) {
   let subjectCardModal = null;
   let subjectCardModalBody = null;
   let subjectCardModalQuery = "";
+  let subjectCardEditorSelectedId = "";
 
   function renderSubjectPanel() {
     renderSubjectPanelInto($("ttSubjectsContent"), { modal: false });
@@ -57,7 +58,7 @@ export function createTimetableSidebarHandlers(deps) {
   function refreshSubjectViews() {
     renderSubjectPanelInto($("ttSubjectsContent"), { modal: false });
     if (subjectCardModalBody && subjectCardModal?.isConnected) {
-      renderSubjectPanelInto(subjectCardModalBody, { modal: true });
+      renderSubjectCardEditor(subjectCardModalBody);
     }
   }
 
@@ -93,7 +94,7 @@ export function createTimetableSidebarHandlers(deps) {
       const popupBtn = makeBtn("🗂 팝업", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
         openSubjectCardModal();
       });
-      popupBtn.title = "넓은 팝업창에서 과목 카드를 검색·정렬·확인합니다.";
+      popupBtn.title = "넓은 팝업창에서 과목 카드별 저장 데이터를 편집합니다.";
       actionGroup.append(popupBtn);
     }
 
@@ -167,7 +168,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const header = document.createElement("div");
     header.className = "tt-subject-card-dialog-head";
-    header.innerHTML = `<div><strong>과목 카드 팝업 편집</strong><span>정렬, 학년 필터, 배치 필요/완료 상태를 넓은 화면에서 확인합니다.</span></div>`;
+    header.innerHTML = `<div><strong>과목 카드 팝업 편집</strong><span>저장된 시간표 카드 JSON 값을 카드별로 확인하고 수정합니다.</span></div>`;
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
@@ -189,8 +190,267 @@ export function createTimetableSidebarHandlers(deps) {
     });
     // 교사 조건 팝업처럼 작업용 창으로 사용하므로 바깥 클릭으로는 닫지 않습니다.
 
-    renderSubjectPanelInto(subjectCardModalBody, { modal: true });
+    renderSubjectCardEditor(subjectCardModalBody);
     subjectCardModal.focus?.();
+  }
+
+  function renderSubjectCardEditor(container) {
+    if (!container) return;
+    container.innerHTML = "";
+
+    const allCards = getTtCards() || [];
+    const query = String(subjectCardModalQuery || "").trim().toLocaleLowerCase("ko");
+    let list = allCards.filter(card => cardMatchesActiveGradeFilter(card));
+    if (query) {
+      list = list.filter(card => getSubjectCardSearchText(card).includes(query));
+    }
+    list = sortEditableTtCards(list);
+
+    if (!subjectCardEditorSelectedId || !allCards.some(card => card.id === subjectCardEditorSelectedId)) {
+      subjectCardEditorSelectedId = list[0]?.id || allCards[0]?.id || "";
+    }
+    if (list.length && !list.some(card => card.id === subjectCardEditorSelectedId)) {
+      subjectCardEditorSelectedId = list[0].id;
+    }
+
+    const layout = document.createElement("div");
+    layout.className = "tt-subject-editor-layout";
+
+    const left = buildSubjectEditorListPane(list, allCards.length);
+    const card = getTtCardById(subjectCardEditorSelectedId) || list[0] || allCards[0] || null;
+    const center = buildSubjectEditorFormPane(card);
+    const right = buildSubjectEditorJsonPane(card);
+
+    layout.append(left, center, right);
+    container.appendChild(layout);
+  }
+
+  function buildSubjectEditorListPane(cards, totalCount) {
+    const pane = document.createElement("aside");
+    pane.className = "tt-subject-editor-list-pane";
+
+    const toolbar = document.createElement("div");
+    toolbar.className = "tt-subject-editor-list-toolbar";
+
+    const search = document.createElement("input");
+    search.type = "search";
+    search.placeholder = "과목·교사·반 검색";
+    search.value = subjectCardModalQuery;
+    search.addEventListener("input", () => {
+      subjectCardModalQuery = search.value || "";
+      renderSubjectCardEditor(subjectCardModalBody);
+    });
+
+    const sort = document.createElement("select");
+    [
+      ["name", "가나다"],
+      ["group", "구분"],
+      ["teacher", "교사"],
+      ["room", "교실"],
+    ].forEach(([value, text]) => {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = text;
+      if (activeCardSort === value) opt.selected = true;
+      sort.appendChild(opt);
+    });
+    sort.addEventListener("change", () => {
+      activeCardSort = sort.value || "name";
+      saveCardSort(activeCardSort);
+      renderSubjectCardEditor(subjectCardModalBody);
+    });
+
+    toolbar.append(search, sort);
+    pane.appendChild(toolbar);
+
+    const gradeBar = document.createElement("div");
+    gradeBar.className = "tt-subject-editor-gradebar";
+    const summary = getClassCreditSummary(getTtCards());
+    const options = [{ value: "all", label: `전체 ${totalCount}` }, ...getAvailableGradeFilterOptions(summary).map(opt => ({ value: opt.value, label: `${opt.label} ${opt.countText || ""}`.trim() }))];
+    options.forEach(opt => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = opt.label;
+      btn.className = activeGradeFilter === opt.value ? "active" : "";
+      btn.addEventListener("click", () => {
+        activeGradeFilter = opt.value;
+        saveGradeFilter(activeGradeFilter);
+        renderSubjectCardEditor(subjectCardModalBody);
+        renderSubjectPanel();
+      });
+      gradeBar.appendChild(btn);
+    });
+    pane.appendChild(gradeBar);
+
+    const count = document.createElement("div");
+    count.className = "tt-subject-editor-count";
+    count.textContent = `카드 ${cards.length}개 / 전체 ${totalCount}개`;
+    pane.appendChild(count);
+
+    const list = document.createElement("div");
+    list.className = "tt-subject-editor-card-list";
+    if (!cards.length) {
+      const empty = document.createElement("div");
+      empty.className = "tt-subject-editor-empty";
+      empty.textContent = "조건에 맞는 카드가 없습니다.";
+      list.appendChild(empty);
+    }
+    cards.forEach(card => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "tt-subject-editor-card-item" + (card.id === subjectCardEditorSelectedId ? " active" : "");
+      const teachers = getEditableCardTeachers(card).join(", ") || "-";
+      const labels = getClassLabelsForTtCard(card).join(", ") || `${gradeDisplay(card.gradeKey)}${sectionLabel(card.sectionIdx ?? 0)}`;
+      item.innerHTML = `
+        <strong>${escapeEditorHtml(getEditableCardTitle(card))}</strong>
+        <span>${escapeEditorHtml(teachers)}</span>
+        <em>${escapeEditorHtml(labels)}</em>
+      `;
+      item.addEventListener("click", () => {
+        subjectCardEditorSelectedId = card.id;
+        renderSubjectCardEditor(subjectCardModalBody);
+      });
+      list.appendChild(item);
+    });
+    pane.appendChild(list);
+    return pane;
+  }
+
+  function buildSubjectEditorFormPane(card) {
+    const pane = document.createElement("section");
+    pane.className = "tt-subject-editor-form-pane";
+    if (!card) {
+      pane.innerHTML = `<div class="tt-subject-editor-empty">편집할 과목 카드가 없습니다.</div>`;
+      return pane;
+    }
+
+    const title = document.createElement("div");
+    title.className = "tt-subject-editor-pane-title";
+    title.innerHTML = `<strong>${escapeEditorHtml(getEditableCardTitle(card))}</strong><span>${escapeEditorHtml(card.id || "")}</span>`;
+    pane.appendChild(title);
+
+    const form = document.createElement("div");
+    form.className = "tt-subject-editor-form";
+
+    const subject = makeEditorInput("과목명", card.subject || "", "text");
+    const label = makeEditorInput("카드 라벨", card.label || "", "text", "비워두면 과목명을 사용합니다.");
+    const teacher = makeEditorInput("담당 교사", card.teacherName || getEditableCardTeachers(card).join(", "), "text", "여러 명은 쉼표로 구분합니다.");
+    const credits = makeEditorInput("시수", card.credits ?? "", "number");
+    credits.input.step = "0.5";
+    credits.input.min = "0";
+
+    const metaRow = document.createElement("div");
+    metaRow.className = "tt-subject-editor-grid-3";
+    const category = makeEditorInput("영역", card.category || "", "text");
+    const track = makeEditorInput("트랙", card.track || "", "text");
+    const group = makeEditorInput("구분", card.group || "", "text");
+    metaRow.append(category.wrap, track.wrap, group.wrap);
+
+    const classLabels = makeEditorTextarea("대상 학급", (card.classLabels || []).join(", "), "예: 9A, 9B / 쉼표 또는 줄바꿈 구분");
+    const classKeys = makeEditorTextarea("classKeys", (card.classKeys || []).join(", "), "고급 항목: 9:A 형식. 비워두면 대상 학급에서 자동 생성합니다.");
+    const studentKeys = makeEditorTextarea("studentKeys", (card.studentKeys || []).join("
+"), "고급 항목: 수강명단 기준 학생 key. 직접 수정은 신중히 진행하세요.");
+
+    const roomRow = document.createElement("div");
+    roomRow.className = "tt-subject-editor-grid-2";
+    const roomRule = makeEditorSelect("교실 규칙", [
+      ["auto", "자동 추천"],
+      ["teacher", "교사 담당교실"],
+      ["homeroom", "홈룸"],
+      ["fixed", "고정 교실"],
+      ["none", "교실 없음"],
+    ], card.roomRule || "auto");
+    const fixedRoom = makeRoomSelect("고정 교실", card.fixedRoomId || "");
+    roomRow.append(roomRule.wrap, fixedRoom.wrap);
+
+    const flags = document.createElement("label");
+    flags.className = "tt-subject-editor-check";
+    const isWhole = document.createElement("input");
+    isWhole.type = "checkbox";
+    isWhole.checked = !!card.isWholeGrade;
+    flags.append(isWhole, document.createTextNode(" 전체 학년/전체 반 수업으로 처리"));
+
+    form.append(subject.wrap, label.wrap, teacher.wrap, credits.wrap, metaRow, classLabels.wrap, classKeys.wrap, studentKeys.wrap, roomRow, flags);
+
+    const actions = document.createElement("div");
+    actions.className = "tt-subject-editor-actions";
+    const saveBtn = makeBtn("저장", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
+      if (!canEdit()) return;
+      saveSubjectCardFromForm(card.id, {
+        subject: subject.input.value,
+        label: label.input.value,
+        teacherName: teacher.input.value,
+        credits: credits.input.value,
+        category: category.input.value,
+        track: track.input.value,
+        group: group.input.value,
+        classLabels: classLabels.input.value,
+        classKeys: classKeys.input.value,
+        studentKeys: studentKeys.input.value,
+        roomRule: roomRule.input.value,
+        fixedRoomId: fixedRoom.input.value,
+        isWholeGrade: isWhole.checked,
+      });
+    });
+    saveBtn.disabled = !canEdit();
+
+    const detailBtn = makeBtn("상세보기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+      const desc = describeTtCard(card);
+      showSidebarCardDetail({
+        title: desc.title,
+        teachers: getEditableCardTeachers(card),
+        gradeKeys: [card.gradeKey],
+        credits: getCreditsForTtCard(card),
+        assigned: countAssignedForCard(card),
+        isDone: false,
+        sectionIdx: card.sectionIdx,
+        detailItems: [desc],
+      });
+    });
+    actions.append(saveBtn, detailBtn);
+
+    pane.append(form, actions);
+    return pane;
+  }
+
+  function buildSubjectEditorJsonPane(card) {
+    const pane = document.createElement("section");
+    pane.className = "tt-subject-editor-json-pane";
+    if (!card) return pane;
+
+    const groupNames = getGroupsForCardId(card.id).map(g => g.name || g.id);
+    const info = document.createElement("div");
+    info.className = "tt-subject-editor-json-info";
+    info.innerHTML = `
+      <strong>저장 JSON</strong>
+      <span>그룹: ${escapeEditorHtml(groupNames.join(", ") || "없음")}</span>
+      <span>배정: ${countAssignedForCard(card)} / ${escapeEditorHtml(String(getCreditsForTtCard(card) || card.credits || 0))}</span>
+    `;
+
+    const ta = document.createElement("textarea");
+    ta.spellcheck = false;
+    ta.value = JSON.stringify(card, null, 2);
+
+    const msg = document.createElement("div");
+    msg.className = "tt-subject-editor-json-message";
+    msg.textContent = "JSON을 직접 수정할 경우 id는 유지됩니다.";
+
+    const apply = makeBtn("JSON 적용", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+      if (!canEdit()) return;
+      try {
+        const parsed = JSON.parse(ta.value || "{}");
+        applySubjectCardJson(card.id, parsed);
+        msg.textContent = "JSON을 적용했습니다.";
+        msg.className = "tt-subject-editor-json-message ok";
+      } catch (err) {
+        msg.textContent = "JSON 형식 오류: " + (err?.message || err);
+        msg.className = "tt-subject-editor-json-message error";
+      }
+    });
+    apply.disabled = !canEdit();
+
+    pane.append(info, ta, apply, msg);
+    return pane;
   }
 
   function closeSubjectCardModal() {
@@ -198,6 +458,192 @@ export function createTimetableSidebarHandlers(deps) {
     subjectCardModal.remove();
     subjectCardModal = null;
     subjectCardModalBody = null;
+  }
+
+  function makeEditorInput(label, value, type = "text", hint = "") {
+    const wrap = document.createElement("label");
+    wrap.className = "tt-subject-editor-field";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input = document.createElement("input");
+    input.type = type;
+    input.value = value ?? "";
+    wrap.append(span, input);
+    if (hint) {
+      const small = document.createElement("em");
+      small.textContent = hint;
+      wrap.appendChild(small);
+    }
+    return { wrap, input };
+  }
+
+  function makeEditorTextarea(label, value, hint = "") {
+    const wrap = document.createElement("label");
+    wrap.className = "tt-subject-editor-field";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input = document.createElement("textarea");
+    input.value = value ?? "";
+    wrap.append(span, input);
+    if (hint) {
+      const small = document.createElement("em");
+      small.textContent = hint;
+      wrap.appendChild(small);
+    }
+    return { wrap, input };
+  }
+
+  function makeEditorSelect(label, options, value) {
+    const wrap = document.createElement("label");
+    wrap.className = "tt-subject-editor-field";
+    const span = document.createElement("span");
+    span.textContent = label;
+    const input = document.createElement("select");
+    (options || []).forEach(([v, text]) => {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = text;
+      if (String(value ?? "") === String(v)) opt.selected = true;
+      input.appendChild(opt);
+    });
+    wrap.append(span, input);
+    return { wrap, input };
+  }
+
+  function makeRoomSelect(label, value) {
+    const rooms = appState.rooms?.rooms || [];
+    const options = [["", "선택 안 함"], ...rooms.map(r => [r.id, r.name || r.id])];
+    return makeEditorSelect(label, options, value || "");
+  }
+
+  function saveSubjectCardFromForm(cardId, values) {
+    const card = getTtCardById(cardId);
+    if (!card) return;
+    const classLabels = parseEditorList(values.classLabels);
+    const classKeys = parseEditorList(values.classKeys);
+    const studentKeys = parseEditorList(values.studentKeys);
+    card.subject = String(values.subject || "").trim() || card.subject || "";
+    card.label = String(values.label || "").trim();
+    card.teacherName = String(values.teacherName || "").trim();
+    card.teachers = splitEditorTeachers(card.teacherName);
+    card.credits = parseFloat(values.credits) || 0;
+    card.category = String(values.category || "").trim();
+    card.track = String(values.track || "").trim();
+    card.group = String(values.group || "").trim();
+    card.classLabels = classLabels;
+    card.classKeys = classKeys.length ? classKeys : classLabels.map(label => classLabelToKey(label, card.gradeKey)).filter(Boolean);
+    card.studentKeys = studentKeys;
+    card.roomRule = values.roomRule || "auto";
+    card.fixedRoomId = values.roomRule === "fixed" ? (values.fixedRoomId || null) : (values.fixedRoomId || null);
+    card.isWholeGrade = !!values.isWholeGrade;
+    card.manualEdited = true;
+    card.editedAt = new Date().toISOString();
+    scheduleSave("timetable");
+    renderAll();
+    refreshSubjectViews();
+  }
+
+  function applySubjectCardJson(cardId, parsed) {
+    const card = getTtCardById(cardId);
+    if (!card || !parsed || typeof parsed !== "object") return;
+    const keepId = card.id;
+    Object.keys(card).forEach(key => delete card[key]);
+    Object.assign(card, parsed, { id: keepId, manualEdited: true, editedAt: new Date().toISOString() });
+    if (card.teacherName && !Array.isArray(card.teachers)) card.teachers = splitEditorTeachers(card.teacherName);
+    if (Array.isArray(card.teachers) && !card.teacherName) card.teacherName = card.teachers.join(", ");
+    scheduleSave("timetable");
+    renderAll();
+    refreshSubjectViews();
+  }
+
+  function parseEditorList(value) {
+    return String(value || "")
+      .split(/[,，\n]+/)
+      .map(v => v.trim())
+      .filter(Boolean);
+  }
+
+  function splitEditorTeachers(value) {
+    return String(value || "")
+      .split(/[,，·/]+/)
+      .map(v => v.trim())
+      .filter(Boolean);
+  }
+
+  function classLabelToKey(label, fallbackGradeKey = "") {
+    const compact = String(label || "").replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    const m = compact.match(/^(\d{1,2})([A-Z가-힣0-9]+)$/);
+    if (m) return `${Number(m[1])}:${m[2]}`;
+    const grade = gradeDisplay(fallbackGradeKey || "").replace(/[^0-9]/g, "");
+    return grade && compact ? `${Number(grade)}:${compact.replace(/^\d{1,2}/, "")}` : "";
+  }
+
+  function getEditableCardTitle(card) {
+    return card?.label || card?.subject || getTemplateCardTitle(getTemplateById(card?.templateId)) || "(제목 없음)";
+  }
+
+  function getEditableCardTeachers(card) {
+    if (Array.isArray(card?.teachers) && card.teachers.length) return card.teachers.filter(Boolean);
+    return splitEditorTeachers(card?.teacherName || "");
+  }
+
+  function getSubjectCardSearchText(card) {
+    return String([
+      getEditableCardTitle(card),
+      getEditableCardTeachers(card).join(" "),
+      gradeDisplay(card?.gradeKey),
+      sectionLabel(card?.sectionIdx ?? 0),
+      (card?.classLabels || []).join(" "),
+      card?.category,
+      card?.track,
+      card?.group,
+      roomNameById(card?.fixedRoomId),
+    ].filter(Boolean).join(" ")).toLocaleLowerCase("ko");
+  }
+
+  function sortEditableTtCards(cards) {
+    const field = activeCardSort === "teacher" ? "teacher" : activeCardSort === "group" ? "group" : activeCardSort === "room" ? "room" : "name";
+    return [...(cards || [])].sort((a, b) => {
+      const av = editableSortValue(a, field);
+      const bv = editableSortValue(b, field);
+      const primary = av.localeCompare(bv, "ko", { numeric: true, sensitivity: "base" });
+      if (primary !== 0) return primary;
+      return editableSortValue(a, "name").localeCompare(editableSortValue(b, "name"), "ko", { numeric: true, sensitivity: "base" });
+    });
+  }
+
+  function editableSortValue(card, field) {
+    if (field === "teacher") return normalizeSortText(getEditableCardTeachers(card).join(", "));
+    if (field === "group") return normalizeSortText(card?.group || card?.track || card?.category || "");
+    if (field === "room") return normalizeSortText(roomNameById(card?.fixedRoomId) || "");
+    return normalizeSortText(getEditableCardTitle(card));
+  }
+
+  function countAssignedForCard(card) {
+    if (!card) return 0;
+    return entries().filter(e =>
+      e.ttcardId === card.id ||
+      (e.ttcardIds || []).includes(card.id) ||
+      (entryTemplateIds(e).includes(card.templateId) && entryHasGrade(e, card.gradeKey) && (e.sectionIdx ?? 0) === (card.sectionIdx ?? 0))
+    ).length;
+  }
+
+  function getGroupsForCardId(cardId) {
+    if (!cardId) return [];
+    return (appState.timetable?.ttcardGroups || []).filter(group =>
+      (group.poolCardIds || []).includes(cardId) ||
+      (group.excludedCardIds || []).includes(cardId) ||
+      (group.units || []).some(unit => (unit.ttcardIds || []).includes(cardId))
+    );
+  }
+
+  function escapeEditorHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
   }
 
   function renderSubjectPanelTtCards(panel, allTtcards) {
