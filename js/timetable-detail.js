@@ -461,7 +461,7 @@ export function createTimetableDetailHandlers(ctx) {
     document.getElementById("tt-context-menu")?.remove();
     const menu = document.createElement("div");
     menu.id = "tt-context-menu";
-    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);z-index:9998;min-width:180px;overflow:hidden;font-size:12px`;
+    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;background:white;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15);z-index:9998;min-width:180px;overflow:visible;font-size:12px`;
 
     function menuItem(label, action, opts = {}) {
       const btn = document.createElement("div");
@@ -567,7 +567,17 @@ export function createTimetableDetailHandlers(ctx) {
           }
         });
       };
-      item.onmouseleave = () => {
+      sub.onmouseenter = () => {
+        item.style.background = "#f8fafc";
+        sub.style.display = "block";
+      };
+      sub.onmouseleave = () => {
+        item.style.background = "";
+        sub.style.display = "none";
+      };
+      item.onmouseleave = ev => {
+        const to = ev.relatedTarget;
+        if (to && sub.contains(to)) return;
         item.style.background = "";
         sub.style.display = "none";
       };
