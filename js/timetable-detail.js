@@ -11,114 +11,27 @@ import {
 } from "./timetable-data.js";
 import { getTtCardById } from "./ttcards.js";
 
-let detailModalSeq = 0;
-let detailModalTopZ = 10000;
-
-function bringModalToFront(modal) {
-  if (!modal) return;
-  modal.style.zIndex = String(++detailModalTopZ);
+function removeExistingModal() {
+  const existing = document.getElementById("tt-entry-detail-modal");
+  if (existing) existing.remove();
 }
 
-function clampModalPosition(modal) {
-  if (!modal) return;
-  const rect = modal.getBoundingClientRect();
-  const margin = 8;
-  const maxLeft = Math.max(margin, window.innerWidth - rect.width - margin);
-  const maxTop = Math.max(margin, window.innerHeight - rect.height - margin);
-  const left = Math.min(Math.max(parseFloat(modal.style.left) || margin, margin), maxLeft);
-  const top = Math.min(Math.max(parseFloat(modal.style.top) || margin, margin), maxTop);
-  modal.style.left = `${left}px`;
-  modal.style.top = `${top}px`;
-}
-
-function makeModal({ maxWidth = 440, minWidth = 300, title = "상세보기" } = {}) {
-  const seq = detailModalSeq++;
+function makeModal({ maxWidth = 440, minWidth = 300 } = {}) {
+  removeExistingModal();
   const modal = document.createElement("div");
-  modal.id = `tt-entry-detail-modal-${Date.now()}-${seq}`;
-  modal.className = "tt-entry-detail-floating-modal";
-  modal.style.cssText = [
-    "position:fixed",
-    `left:${Math.max(12, Math.round((window.innerWidth - maxWidth) / 2) + seq * 28)}px`,
-    `top:${Math.max(12, 34 + seq * 24)}px`,
-    "width:max-content",
-    "max-width:calc(100vw - 24px)",
-    "z-index:" + (++detailModalTopZ),
-    "background:transparent",
-    "pointer-events:auto"
-  ].join(";");
+  modal.id = "tt-entry-detail-modal";
+  modal.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;display:flex;align-items:center;justify-content:center";
 
   const box = document.createElement("div");
-  box.style.cssText = [
-    "background:white",
-    "border:1px solid #dbe4f0",
-    "border-radius:12px",
-    "padding:34px 20px 18px",
-    `min-width:${minWidth}px`,
-    `max-width:min(${maxWidth}px,calc(100vw - 24px))`,
-    "max-height:calc(100vh - 32px)",
-    "overflow-y:auto",
-    "box-shadow:0 18px 55px rgba(15,23,42,.28)",
-    "font-size:13px",
-    "position:relative"
-  ].join(";");
-
-  const dragHandle = document.createElement("div");
-  dragHandle.className = "tt-detail-drag-handle";
-  dragHandle.style.cssText = [
-    "position:absolute",
-    "left:0",
-    "right:0",
-    "top:0",
-    "height:26px",
-    "display:flex",
-    "align-items:center",
-    "padding:0 38px 0 12px",
-    "border-bottom:1px solid #eef2f7",
-    "border-radius:12px 12px 0 0",
-    "background:linear-gradient(180deg,#f8fbff,#f1f5f9)",
-    "color:#64748b",
-    "font-size:11px",
-    "font-weight:900",
-    "cursor:move",
-    "user-select:none",
-    "box-sizing:border-box"
-  ].join(";");
-  dragHandle.textContent = title;
+  box.style.cssText = `background:white;border-radius:10px;padding:18px 20px;min-width:${minWidth}px;max-width:${maxWidth}px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);font-size:13px;position:relative`;
 
   const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.style.cssText = "position:absolute;top:4px;right:8px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1;z-index:2";
+  closeBtn.style.cssText = "position:absolute;top:10px;right:12px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1";
   closeBtn.textContent = "×";
   closeBtn.onclick = () => modal.remove();
 
-  let dragState = null;
-  dragHandle.addEventListener("pointerdown", ev => {
-    ev.preventDefault();
-    bringModalToFront(modal);
-    const rect = modal.getBoundingClientRect();
-    dragState = { offsetX: ev.clientX - rect.left, offsetY: ev.clientY - rect.top };
-    dragHandle.setPointerCapture?.(ev.pointerId);
-  });
-  dragHandle.addEventListener("pointermove", ev => {
-    if (!dragState) return;
-    modal.style.left = `${ev.clientX - dragState.offsetX}px`;
-    modal.style.top = `${ev.clientY - dragState.offsetY}px`;
-  });
-  const endDrag = ev => {
-    if (!dragState) return;
-    dragState = null;
-    try { dragHandle.releasePointerCapture?.(ev.pointerId); } catch (_) {}
-    clampModalPosition(modal);
-  };
-  dragHandle.addEventListener("pointerup", endDrag);
-  dragHandle.addEventListener("pointercancel", endDrag);
-
-  modal.addEventListener("pointerdown", () => bringModalToFront(modal));
-  window.addEventListener("resize", () => clampModalPosition(modal), { passive: true });
-
-  box.append(dragHandle, closeBtn);
   modal.appendChild(box);
-  requestAnimationFrame(() => clampModalPosition(modal));
+  modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
   return { modal, box, closeBtn };
 }
 
@@ -365,7 +278,7 @@ export function createTimetableDetailHandlers(ctx) {
   const currentGrade = () => ctx.currentGrade();
 
   function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, detailItems = [] }) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 460, minWidth: 300, title: "과목카드 상세" });
+    const { modal, box, closeBtn } = makeModal({ maxWidth: 460, minWidth: 300 });
 
     const firstGrade = gradeKeys[0] || currentGrade();
     const gc = ctx.getGradeColor(firstGrade);
@@ -450,10 +363,10 @@ export function createTimetableDetailHandlers(ctx) {
   }
 
   function showEntryDetailByUnit(unit, group, gradeKeys) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 340, minWidth: 260, title: "묶음수업 상세" });
-    box.insertAdjacentHTML("beforeend", `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${getUnitDisplayTitle(unit)}</div>
+    const { modal, box, closeBtn } = makeModal({ maxWidth: 340, minWidth: 260 });
+    box.innerHTML = `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${getUnitDisplayTitle(unit)}</div>
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">그룹: ${group?.name || "-"}</div>
-      <div style="display:flex;gap:4px;flex-wrap:wrap">${gradeKeys.map(g => `<span style="background:${ctx.getGradeColor(g).border};color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">${gradeDisplay(g)}</span>`).join("")}</div>`);
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${gradeKeys.map(g => `<span style="background:${ctx.getGradeColor(g).border};color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">${gradeDisplay(g)}</span>`).join("")}</div>`;
     box.appendChild(closeBtn);
     document.body.appendChild(modal);
   }
@@ -513,7 +426,7 @@ export function createTimetableDetailHandlers(ctx) {
   }
 
   function showSubjectAssignmentHistory(entry) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 440, minWidth: 300, title: "배정 현황" });
+    const { modal, box, closeBtn } = makeModal({ maxWidth: 440, minWidth: 300 });
     const gradeKeys = entryGradeKeys(entry);
     const gc = ctx.getGradeColor(gradeKeys[0] || currentGrade());
     box.style.borderTop = `4px solid ${gc.border}`;
@@ -590,7 +503,7 @@ export function createTimetableDetailHandlers(ctx) {
   }
 
   function showEntryDetail(entry) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 400, minWidth: 300, title: "배치 상세" });
+    const { modal, box, closeBtn } = makeModal({ maxWidth: 400, minWidth: 300 });
     const gradeKeys = entryGradeKeys(entry);
     const gc = ctx.getGradeColor(gradeKeys[0] || currentGrade());
     box.style.borderTop = `4px solid ${gc.border}`;
@@ -652,11 +565,19 @@ export function createTimetableDetailHandlers(ctx) {
       ).size;
       makeRow("시수/배정", `${assignedSlots} / ${groupCredits} 차시`);
     } else if (tplId) {
-      const credits = (() => {
+      const directCardIds = [entry.ttcardId, ...(entry.ttcardIds || [])].filter(Boolean);
+      const firstCard = directCardIds.length ? getTtCardById(directCardIds[0]) : null;
+      const credits = firstCard?.credits ?? (() => {
         const row = (appState.curriculum.gradeBoards[gradeKeys[0] || currentGrade()] || []).find(r => r.sem1TemplateId === tplId || r.sem2TemplateId === tplId);
         return row?.credits ?? "-";
       })();
-      const assigned = entries().filter(e => (e.templateId === tplId || e.templateIds?.includes(tplId)) && e.gradeKey === (gradeKeys[0] || currentGrade())).length;
+      const assigned = directCardIds.length
+        ? entries().filter(e => directCardIds.some(id => e.ttcardId === id || (e.ttcardIds || []).includes(id))).length
+        : entries().filter(e =>
+            (e.templateId === tplId || e.templateIds?.includes(tplId)) &&
+            e.gradeKey === (gradeKeys[0] || currentGrade()) &&
+            (e.sectionIdx ?? 0) === (entry.sectionIdx ?? 0)
+          ).length;
       makeRow("시수/배정", `${assigned} / ${credits} 차시`);
     }
 

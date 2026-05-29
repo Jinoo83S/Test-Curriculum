@@ -101,11 +101,9 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         if (sameUnit(a, b)) continue;
 
         // Same concurrent group → intentionally same-time parallel/level-split lessons.
-        // Example: 한국어 일부 학생 + 국어 A 나머지 학생 must be together.
-        // Do not flag teacher/student/room conflicts inside the same concurrent group;
-        // incomplete same-time composition is handled separately by syncRequired.
+        // It may share the same time, but it must still obey teacher/room conflicts.
+        // Only same unit is treated as a truly co-located single lesson.
         const sameConcurrentGroup = sameGroup(a, b) && isConcurrent(a) && isConcurrent(b);
-        if (sameConcurrentGroup) continue;
 
         // Teacher conflict (always applies — teachers can't be in two places)
         if (a.teacherName && b.teacherName) {
@@ -147,7 +145,11 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
           (protectedA.size && !audienceA.classKeys.size && intersects(protectedA, audienceGrades(audienceB, b))) ||
           (protectedB.size && !audienceB.classKeys.size && intersects(protectedB, audienceGrades(audienceA, a)));
 
-        if (actualAudienceOverlap || protectedFallbackOverlap) {
+        // Concurrent split lessons in the same group may intentionally share the same class label.
+        // When both sides have roster snapshots, allow the same slot only if actual student sets do not overlap.
+        const concurrentRosterSplitOk = sameConcurrentGroup && audienceA.studentKeys?.size && audienceB.studentKeys?.size && !intersects(audienceA.studentKeys, audienceB.studentKeys);
+
+        if ((actualAudienceOverlap || protectedFallbackOverlap) && !concurrentRosterSplitOk) {
           result.get(a.id).add("student");
           result.get(b.id).add("student");
         }

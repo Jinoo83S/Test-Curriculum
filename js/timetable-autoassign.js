@@ -67,6 +67,65 @@ export function createAutoAssignAll(deps) {
     });
   }
 
+  function sameUnitPlacement(a = {}, b = {}) {
+    return !!(a.unitId && b.unitId && a.unitId === b.unitId);
+  }
+
+  function roomConflictsInSlot(candidate = {}, slot = {}, placed = []) {
+    const roomId = candidate.roomId;
+    if (!roomId) return false;
+    const slotEntries = [...entries(), ...placed].filter(e => e.day === slot.day && e.period === slot.period);
+    return slotEntries.some(e => e.roomId === roomId && !sameUnitPlacement(candidate, e));
+  }
+
+  function getRoomCapacity(room = {}) {
+    const n = Number(room.capacity);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  function getAudienceSizeForRoom(data = {}) {
+    const direct = Array.isArray(data.audienceStudentKeys) ? data.audienceStudentKeys.length : 0;
+    if (direct) return direct;
+    const audience = audienceForPlacement?.(data);
+    return audience?.studentKeys?.size || 0;
+  }
+
+  function sortRoomCandidatesFor(data = {}) {
+    const size = getAudienceSizeForRoom(data);
+    return [...(appState.rooms?.rooms || [])]
+      .filter(room => room?.id)
+      .map((room, idx) => ({ room, idx }))
+      .sort((a, b) => {
+        const ag = a.room.type === "일반" ? 0 : 1;
+        const bg = b.room.type === "일반" ? 0 : 1;
+        if (ag !== bg) return ag - bg;
+        const ac = getRoomCapacity(a.room);
+        const bc = getRoomCapacity(b.room);
+        const aFit = !size || !ac || ac >= size ? 0 : 1;
+        const bFit = !size || !bc || bc >= size ? 0 : 1;
+        if (aFit !== bFit) return aFit - bFit;
+        if (ac !== bc) return ac - bc;
+        return String(a.room.name || "").localeCompare(String(b.room.name || ""), "ko", { numeric: true }) || a.idx - b.idx;
+      })
+      .map(x => x.room);
+  }
+
+  function applyAutoRoomToEntryData(data = {}, slot = data, placed = []) {
+    const entryData = applyDefaultRoomToEntryData({ ...data });
+    if (!entryData.roomId) return entryData;
+    if (!roomConflictsInSlot(entryData, slot, placed)) return entryData;
+
+    const rule = String(entryData.roomRule || "auto").trim();
+    if (entryData.roomPinned || rule === "fixed") return entryData;
+
+    for (const room of sortRoomCandidatesFor(entryData)) {
+      if (!room.id || room.id === entryData.roomId) continue;
+      const test = { ...entryData, roomId: room.id };
+      if (!roomConflictsInSlot(test, slot, placed)) return test;
+    }
+    return entryData;
+  }
+
   function checkPlacementValid(item, slot, placed, options = {}) {
     const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
     const existing = [...entries(), ...placed];
@@ -80,14 +139,9 @@ export function createAutoAssignAll(deps) {
     // auto-assigner place it in that group's same-time slot by coincidence.
     if (slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e))) return false;
 
-    // 1. Teacher conflict. Same concurrent group is an intentional same-time bundle
-    //    (for example Korean + Korean A split by roster), so internal teacher/student/room
-    //    conflicts inside that group must not block placement.
+    // 1. Teacher conflict. Same concurrent group can share the time,
+    //    but it cannot make one teacher teach two different entries.
     for (const e of slotEnts) {
-      const sameGrp = sameActiveGroup(item, e);
-      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
-      if (conc) continue;
-
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
       if (teachers.some(t => et.includes(t))) {
         if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
@@ -143,17 +197,10 @@ export function createAutoAssignAll(deps) {
       if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
     }
     // 6. Room conflict: 실제로 배정될 교실 기준으로 검사합니다.
-    // 같은 시간대의 다른 과목은 각각 교실을 가져야 하며,
-    // 같은 동시배정 그룹인 경우에만 의도적 교실 공유를 허용합니다.
-    const candidateRoomId = applyDefaultRoomToEntryData({ ...item, ...slot })?.roomId || null;
-    if (respectAssignedRoom && candidateRoomId) {
-      const roomBusy = slotEnts.some(e => {
-        if (e.roomId !== candidateRoomId) return false;
-        const sameGrp = sameActiveGroup(item, e);
-        return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
-      });
-      if (roomBusy) return false;
-    }
+    // 같은 시간대의 다른 과목은 각각 다른 교실을 가져야 합니다.
+    // 자동 추천 교실이 이미 사용 중이면 빈 일반교실을 보조 추천합니다.
+    const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    if (respectAssignedRoom && roomConflictsInSlot(candidateRoomData, slot, placed)) return false;
 
     // 7. 교사 담당교실 기준 추가 방어 검사입니다.
     for (const teacher of teachers) {
@@ -161,10 +208,9 @@ export function createAutoAssignAll(deps) {
       if (respectAssignedRoom && roomId) {
         const roomBusy = existing.some(e => {
           if (!(e.day===slot.day && e.period===slot.period && e.roomId===roomId)) return false;
-          const sameGrp = sameActiveGroup(item, e);
-          return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
+          return !sameUnitPlacement(item, e);
         });
-        if (roomBusy) return false;
+        if (roomBusy && candidateRoomData.roomId === roomId) return false;
       }
     }
     return true;
@@ -223,11 +269,11 @@ export function createAutoAssignAll(deps) {
     return candidates[0]?.slot || null;
   }
 
-  function makeAutoEntry(item, slot) {
+  function makeAutoEntry(item, slot, placed = []) {
     if (!item || !slot) return null;
     return normalizeTimetableEntry({
       id: uid("ent"),
-      ...applyDefaultRoomToEntryData({ ...item, ...slot })
+      ...applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed)
     });
   }
 
@@ -258,16 +304,9 @@ export function createAutoAssignAll(deps) {
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
     const itemAudience = audienceForPlacement(item);
 
-    // 마지막 보정 단계에서도 교실 규칙은 완화하지 않습니다.
-    const candidateRoomId = applyDefaultRoomToEntryData({ ...item, ...slot })?.roomId || null;
-    if (candidateRoomId) {
-      const roomBlocked = slotEnts.some(e => {
-        if (e.roomId !== candidateRoomId) return false;
-        const sameGrp = sameActiveGroup(item, e);
-        return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
-      });
-      if (roomBlocked) return Infinity;
-    }
+    // 마지막 보정 단계에서도 교실 중복은 허용하지 않습니다.
+    const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    if (roomConflictsInSlot(candidateRoomData, slot, placed)) return Infinity;
 
     let score = slotEnts.length * 10 + existing.filter(e => e.period === slot.period).length * 0.25;
 
@@ -277,15 +316,16 @@ export function createAutoAssignAll(deps) {
 
       const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
-      if (conc) continue;
 
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
       if (teachers.some(t => et.includes(t))) return Infinity;
 
-      const conflict = audiencesConflict(itemAudience, audienceForPlacement(e));
-      // 보정 배치에서도 같은 학생/같은 학급의 수업 중복은 절대 만들지 않습니다.
-      // 빈칸이 있는데 같은 반에 두 과목이 겹쳐 들어가는 현상을 막습니다.
-      if (conflict) return Infinity;
+      const eAudience = audienceForPlacement(e);
+      const conflict = audiencesConflict(itemAudience, eAudience);
+      // 보정 배치에서도 같은 학생의 수업 중복은 절대 만들지 않습니다.
+      // 단, 같은 동시배정 그룹 안에서 양쪽 모두 수강명단이 있고 실제 학생이 겹치지 않으면 허용합니다.
+      const rosterSplitOk = conc && itemAudience.studentKeys.size && eAudience.studentKeys.size && ![...itemAudience.studentKeys].some(k => eAudience.studentKeys.has(k));
+      if (conflict && !rosterSplitOk) return Infinity;
       if (e.roomId) {
         const assignedRooms = teachers.map(getEffectiveAssignedRoomId).filter(Boolean);
         if (assignedRooms.includes(e.roomId)) score += 250;
@@ -315,10 +355,9 @@ export function createAutoAssignAll(deps) {
       if (roomId) {
         const roomBusy = slotEnts.some(e => {
           if (e.roomId !== roomId) return false;
-          const sameGrp = sameActiveGroup(item, e);
-          return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
+          return !sameUnitPlacement(item, e);
         });
-        if (roomBusy) return Infinity;
+        if (roomBusy && candidateRoomData.roomId === roomId) return Infinity;
       }
     }
 
@@ -428,7 +467,7 @@ export function createAutoAssignAll(deps) {
         if (!item) return;
         placed.push(normalizeTimetableEntry({
           id: uid("ent"),
-          ...applyDefaultRoomToEntryData({ ...item, ...slot })
+          ...applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed)
         }));
         added += 1;
       });
@@ -437,7 +476,7 @@ export function createAutoAssignAll(deps) {
 
     const item = makePlacementFromGroupItem(group, groupItem);
     if (!item) return false;
-    placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
+    placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed) }));
     return true;
   }
 
@@ -832,7 +871,7 @@ export function createAutoAssignAll(deps) {
               const item = makePlacementFromGroupItem(group, groupItem);
               const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
               if (slot) {
-                const entry = makeAutoEntry(item, slot);
+                const entry = makeAutoEntry(item, slot, placed);
                 if (entry) placed.push(entry);
               } else {
                 failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item, { groupId: group.id }));
@@ -873,7 +912,7 @@ export function createAutoAssignAll(deps) {
               }
               break;
             }
-            const entry = makeAutoEntry(item, slot);
+            const entry = makeAutoEntry(item, slot, placed);
             if (entry) placed.push(entry);
             placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
           }
@@ -923,7 +962,7 @@ export function createAutoAssignAll(deps) {
         continue;
       }
       const slot = findLeastBadSlot(item, baseSlots, bestPlaced);
-      const entry = slot ? makeAutoEntry(item, slot) : null;
+      const entry = slot ? makeAutoEntry(item, slot, bestPlaced) : null;
       if (entry) {
         entry.autoForced = true;
         bestPlaced.push(entry);
