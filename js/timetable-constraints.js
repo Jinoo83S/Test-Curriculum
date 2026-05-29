@@ -40,8 +40,9 @@ export function createTimetableConstraintsHandlers({
   function getEffectiveAssignedRoomId(teacher) {
     const c = constraints()[teacher];
     if (!c) return null;
-    // 기본 교실 규칙: 교사 담당교실을 우선 사용하고, 없을 때만 홈룸을 사용합니다.
-    // 기존 useHomeRoom 값이 true로 남아 있어도 assignedRoomId가 있으면 담당교실이 우선입니다.
+
+    // 기본 교실 규칙은 "교사 담당교실, 없으면 홈룸"입니다.
+    // 기존 데이터에 useHomeRoom=true가 남아 있어도 assignedRoomId가 있으면 담당교실을 우선합니다.
     return c.assignedRoomId || c.homeRoomId || null;
   }
 

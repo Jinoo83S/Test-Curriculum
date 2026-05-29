@@ -444,9 +444,11 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
   if (rule === "teacher") return getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
 
-  // auto 기본값: 명시 고정교실 → 교사 담당교실 → 홈룸.
-  // 교실 규칙을 별도로 지정하지 않은 수업은 교사 담당교실을 먼저 사용하고,
-  // 담당교실이 없을 때만 해당 수업 대상 학급의 홈룸으로 내려갑니다.
+  // auto 기본 교실 규칙:
+  // 1) 카드/수업에 명시된 고정교실
+  // 2) 교사 담당교실
+  // 3) 해당 학급 홈룸
+  // 교사 담당교실이 없는 경우에만 홈룸으로 내려갑니다.
   const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
   return fixedRoomId || teacherRoomId || getHomeRoomIdForPlacementData(data) || null;
 }
@@ -750,55 +752,17 @@ function setLunchConfig(afterPeriod, show) {
 }
 
 // ── Data helpers ──────────────────────────────────────────────────
-function buildGroupPlacementDataList(group, day, period) {
-  const cards = getGroupCards(group);
-  if (!cards.length) return [];
-
-  const dataList = [];
-  const usedCardIds = new Set();
-
-  // “묶음수업”으로 명시된 unit은 하나의 수업으로 유지합니다.
-  // unit에 들어가지 않은 그룹 카드는 같은 시간대에 배정되더라도 서로 다른 과목으로 보고
-  // 카드별 entry를 만들어 각각 교실을 배정합니다.
-  (group.units || []).forEach(unit => {
-    const unitCards = (unit.ttcardIds || [])
-      .map(id => cards.find(card => card.id === id))
-      .filter(Boolean);
-    if (!unitCards.length) return;
-    unitCards.forEach(card => usedCardIds.add(card.id));
-    const data = buildEntryDataFromTtCards(unitCards, { day, period, groupId: group.id, unitId: unit.id });
-    if (data) dataList.push(data);
-  });
-
-  cards
-    .filter(card => !usedCardIds.has(card.id))
-    .forEach(card => {
-      const data = buildEntryDataFromTtCards([card], { day, period, groupId: group.id });
-      if (data) dataList.push(data);
-    });
-
-  // 이전 데이터 호환: unit/pool 분리가 불가능한 경우에만 aggregate entry로 fallback합니다.
-  if (!dataList.length) {
-    const data = buildEntryDataFromTtCards(cards, { day, period, groupId: group.id });
-    if (data) dataList.push(data);
-  }
-  return dataList;
-}
-
 function placeGroupAt(groupId, day, period) {
   const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === groupId);
   if (!grp) return false;
 
-  const entryDataList = buildGroupPlacementDataList(grp, day, period);
-  const newEntries = entryDataList
-    .map(data => normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) }))
-    .filter(e => e.templateId);
-  if (!newEntries.length) return false;
-
-  captureTimetableUndo("그룹 수업 추가");
-  entries().push(...newEntries);
-  scheduleSave("timetable");
-  return true;
+  // 그룹카드는 화면에서 하나의 카드로 보이므로, 배치도 하나의 aggregate entry로 저장합니다.
+  // 이렇게 해야 7AB/8AB/9AB 같은 그룹에서 특정 반(예: 8B)이 누락되지 않고
+  // 상세정보·전체반 시간표·자동배치가 같은 기준(ttcardIds 전체)을 보게 됩니다.
+  const cards = getGroupCards(grp);
+  const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id });
+  if (!data) return false;
+  return !!addEntry(data);
 }
 
 // ── Unit helpers ──────────────────────────────────────────────────

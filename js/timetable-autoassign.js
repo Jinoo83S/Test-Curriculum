@@ -142,9 +142,9 @@ export function createAutoAssignAll(deps) {
       const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
       if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
     }
-    // 6. Room conflict: 실제 배정될 교실 기준으로 중복을 막습니다.
-    // 같은 시간대의 서로 다른 과목은 각각 교실을 가져야 하며,
-    // 같은 동시배정 그룹인 경우에만 의도적 공유를 허용합니다.
+    // 6. Room conflict: 실제로 배정될 교실 기준으로 검사합니다.
+    // 같은 시간대의 다른 과목은 각각 교실을 가져야 하며,
+    // 같은 동시배정 그룹인 경우에만 의도적 교실 공유를 허용합니다.
     const candidateRoomId = applyDefaultRoomToEntryData({ ...item, ...slot })?.roomId || null;
     if (respectAssignedRoom && candidateRoomId) {
       const roomBusy = slotEnts.some(e => {
@@ -155,7 +155,7 @@ export function createAutoAssignAll(deps) {
       if (roomBusy) return false;
     }
 
-    // 7. 교사 담당교실도 추가 안전장치로 확인합니다.
+    // 7. 교사 담당교실 기준 추가 방어 검사입니다.
     for (const teacher of teachers) {
       const roomId = getEffectiveAssignedRoomId(teacher);
       if (respectAssignedRoom && roomId) {
@@ -257,10 +257,19 @@ export function createAutoAssignAll(deps) {
     const dayEnts = existing.filter(e => e.day === slot.day);
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
     const itemAudience = audienceForPlacement(item);
-    const candidateRoomId = applyDefaultRoomToEntryData({ ...item, ...slot })?.roomId || null;
-    let score = slotEnts.length * 10 + existing.filter(e => e.period === slot.period).length * 0.25;
 
-    if (candidateRoomId && slotEnts.some(e => e.roomId === candidateRoomId)) score += 900;
+    // 마지막 보정 단계에서도 교실 규칙은 완화하지 않습니다.
+    const candidateRoomId = applyDefaultRoomToEntryData({ ...item, ...slot })?.roomId || null;
+    if (candidateRoomId) {
+      const roomBlocked = slotEnts.some(e => {
+        if (e.roomId !== candidateRoomId) return false;
+        const sameGrp = sameActiveGroup(item, e);
+        return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
+      });
+      if (roomBlocked) return Infinity;
+    }
+
+    let score = slotEnts.length * 10 + existing.filter(e => e.period === slot.period).length * 0.25;
 
     for (const e of slotEnts) {
       const sameUnit = item.unitId && e.unitId && item.unitId === e.unitId;
@@ -302,8 +311,12 @@ export function createAutoAssignAll(deps) {
 
       const roomId = getEffectiveAssignedRoomId(teacher);
       if (roomId) {
-        const roomBusy = slotEnts.some(e => e.roomId === roomId);
-        if (roomBusy) score += 250;
+        const roomBusy = slotEnts.some(e => {
+          if (e.roomId !== roomId) return false;
+          const sameGrp = sameActiveGroup(item, e);
+          return !(sameGrp && isConcurrentItem(item) && isConcurrentItem(e));
+        });
+        if (roomBusy) return Infinity;
       }
     }
 
@@ -372,48 +385,57 @@ export function createAutoAssignAll(deps) {
     return slots.size;
   }
 
-  function buildGroupAutoEntryDataList(group, groupItem, slot) {
-    const cards = groupItem?.ttcards || [];
-    if (!cards.length) return [];
+  function getGroupRoomBatches(group, cards = []) {
+    const validCards = (cards || []).filter(Boolean);
+    if (validCards.length <= 1) return validCards.length ? [validCards] : [];
 
-    const dataList = [];
+    const units = group?.units || [];
     const usedCardIds = new Set();
+    const batches = [];
 
-    // “묶음수업”으로 지정된 unit은 하나의 entry로 유지합니다.
-    // unit 밖의 그룹 카드는 같은 시간대 병렬 과목으로 보고 카드별 entry를 만들어
-    // 각 과목이 교사 담당교실/홈룸 기준으로 별도 교실을 갖게 합니다.
-    (group.units || []).forEach(unit => {
-      const unitCards = (unit.ttcardIds || [])
-        .map(id => cards.find(card => card.id === id))
-        .filter(Boolean);
+    units.forEach(unit => {
+      const ids = new Set(unit.ttcardIds || []);
+      const unitCards = validCards.filter(card => ids.has(card.id));
       if (!unitCards.length) return;
       unitCards.forEach(card => usedCardIds.add(card.id));
-      const data = makePlacementFromGroupItem(group, { ...groupItem, unit, ttcards: unitCards });
-      if (data) dataList.push(data);
+      // 같은 수업 묶음(unit)은 하나의 배치로 유지합니다.
+      batches.push(unitCards);
     });
 
-    cards
-      .filter(card => !usedCardIds.has(card.id))
-      .forEach(card => {
-        const data = makePlacementFromGroupItem(group, { ...groupItem, unit: null, ttcards: [card] });
-        if (data) dataList.push(data);
-      });
+    validCards.forEach(card => {
+      if (usedCardIds.has(card.id)) return;
+      // 같은 수업 묶음이 아닌 병렬 과목은 카드별로 분리합니다.
+      batches.push([card]);
+    });
 
-    if (!dataList.length) {
-      const data = makePlacementFromGroupItem(group, groupItem);
-      if (data) dataList.push(data);
-    }
-
-    return dataList.map(data => ({ ...data, ...slot }));
+    return batches;
   }
 
   function placeAutoGroupSlot(group, activeItems, slot, placed) {
-    const entryDataList = (activeItems || []).flatMap(groupItem => buildGroupAutoEntryDataList(group, groupItem, slot));
-    const newEntries = entryDataList
-      .map(data => normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) }))
-      .filter(e => e.templateId);
-    if (!newEntries.length) return false;
-    placed.push(...newEntries);
+    // Current group manager stores a visible group as one aggregate item.
+    // 다만 같은 수업 묶음(unit)이 아닌 여러 과목은 과목별 entry로 분리해
+    // 각 과목이 자신의 교사 담당교실/홈룸을 따로 받을 수 있게 합니다.
+    const groupItem = activeItems[0];
+    if (!groupItem) return false;
+
+    const batches = getGroupRoomBatches(group, groupItem.ttcards || []);
+    if (batches.length > 1) {
+      let added = 0;
+      batches.forEach(cards => {
+        const item = makePlacementFromGroupItem(group, { ...groupItem, ttcards: cards });
+        if (!item) return;
+        placed.push(normalizeTimetableEntry({
+          id: uid("ent"),
+          ...applyDefaultRoomToEntryData({ ...item, ...slot })
+        }));
+        added += 1;
+      });
+      return added > 0;
+    }
+
+    const item = makePlacementFromGroupItem(group, groupItem);
+    if (!item) return false;
+    placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData({ ...item, ...slot }) }));
     return true;
   }
 
@@ -721,10 +743,9 @@ export function createAutoAssignAll(deps) {
     });
 
     const stages = [
-      { name:"strict", label:"교사 제약 포함", attempts:30, options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true  } },
-      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:24, options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true  } },
-      { name:"relaxedRoom", label:"교실 규칙 유지 · 추가 탐색", attempts:16, options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true  } },
-      { name:"relaxedUnavailable", label:"교사 불가시간 완화 · 교실 규칙 유지", attempts:10, options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true  } },
+      { name:"strict", label:"교사 제약 포함", attempts:30, options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true } },
+      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:24, options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true } },
+      { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:10, options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true } },
     ];
 
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
