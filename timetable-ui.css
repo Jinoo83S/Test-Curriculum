@@ -172,59 +172,96 @@ button.his-ui-icon-btn {
 .tt-card-toolbar,
 .his-card-toolbar {
   display: grid !important;
-  grid-template-columns: auto minmax(210px, 1fr) minmax(280px, 1.8fr) !important;
+  grid-template-columns: minmax(230px, 17%) minmax(120px, 8%) minmax(260px, 25%) minmax(360px, 1fr) !important;
   align-items: center !important;
-  gap: 10px !important;
-  padding: 10px 12px !important;
-  margin: 4px 6px 10px !important;
+  gap: 6px !important;
+  padding: 6px 8px !important;
+  margin: 3px 6px 7px !important;
   border: 1px solid #e2e8f0 !important;
-  border-radius: 14px !important;
+  border-radius: 12px !important;
   background: #ffffff !important;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, .05) !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .05) !important;
 }
+.tt-card-toolbar > * { min-width: 0 !important; }
 .tt-card-toolbar-actions {
   display: flex !important;
   align-items: center !important;
-  gap: 7px !important;
-  flex-wrap: wrap !important;
+  gap: 4px !important;
+  flex-wrap: nowrap !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
 }
-.tt-card-toolbar .tt-toolbar-action { height: 30px !important; }
+.tt-card-toolbar .tt-toolbar-action,
+.tt-card-toolbar .his-ui-btn {
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 0 8px !important;
+  border-radius: 9px !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+}
+.tt-card-sort-control {
+  height: 26px !important;
+  min-height: 26px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 0 6px !important;
+  gap: 4px !important;
+  border-radius: 9px !important;
+  font-size: 11px !important;
+  overflow: hidden !important;
+}
+.tt-card-sort-control .tt-toolbar-label { margin-right: 0 !important; }
+.tt-card-sort-select {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 22px !important;
+  border-radius: 7px !important;
+  padding: 0 18px 0 6px !important;
+  font-size: 11px !important;
+}
 .tt-grade-filter,
 .tt-class-count-summary {
   display: flex !important;
   align-items: center !important;
-  gap: 6px !important;
-  min-height: 34px !important;
-  padding: 6px 8px !important;
+  gap: 4px !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  padding: 2px 6px !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
   border: 1px solid #e2e8f0 !important;
-  border-radius: 12px !important;
+  border-radius: 10px !important;
   background: #f8fafc !important;
   white-space: nowrap !important;
+  scrollbar-width: thin !important;
 }
+.tt-class-count-summary { justify-content: flex-start !important; }
 .tt-toolbar-label {
   flex: 0 0 auto !important;
   color: #334155 !important;
-  font-size: 11px !important;
+  font-size: 10px !important;
   font-weight: 900 !important;
-  margin-right: 2px !important;
+  margin-right: 1px !important;
 }
 .tt-grade-filter-btn,
 .tt-credit-chip {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  height: 22px !important;
-  min-width: 34px !important;
-  padding: 0 9px !important;
+  height: 20px !important;
+  min-width: 30px !important;
+  padding: 0 7px !important;
   border-radius: 999px !important;
   border: 1px solid var(--tt-chip-border, #bfdbfe) !important;
   background: var(--tt-chip-bg, #eff6ff) !important;
   color: var(--tt-chip-text, #1d4ed8) !important;
-  font-size: 11px !important;
+  font-size: 10.5px !important;
   font-weight: 900 !important;
   box-shadow: 0 1px 1px rgba(15,23,42,.04) !important;
+  flex: 0 0 auto !important;
 }
 button.tt-grade-filter-btn {
   cursor: pointer !important;
@@ -236,10 +273,12 @@ button.tt-grade-filter-btn.active {
   border-color: #2563eb !important;
   color: #fff !important;
 }
-.tt-summary-empty { color: #94a3b8 !important; font-size: 11px !important; font-weight: 700 !important; }
-@media (max-width: 1250px) {
+.tt-summary-empty { color: #94a3b8 !important; font-size: 10.5px !important; font-weight: 700 !important; }
+@media (max-width: 1200px) {
   .tt-card-toolbar,
-  .his-card-toolbar { grid-template-columns: 1fr !important; }
+  .his-card-toolbar {
+    grid-template-columns: minmax(230px, 1fr) minmax(260px, 1fr) !important;
+  }
 }
 
 /* ───────────────────────────────────────────────
