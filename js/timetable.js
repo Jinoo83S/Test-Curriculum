@@ -37,7 +37,7 @@ import {
 import { createAutoAssignAll } from "./timetable-autoassign.js";
 import { renderTimetableGrid } from "./timetable-grid.js";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
-import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
+import { createTimetableConstraintsHandlers } from "./timetable-constraints.js?v=teacher_constraints_modal";
 import { createTimetableLogHandlers } from "./timetable-log.js";
 import { createTimetableSidebarHandlers } from "./timetable-sidebar.js";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
