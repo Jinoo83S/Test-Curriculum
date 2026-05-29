@@ -1450,6 +1450,12 @@ function renderAll() {
     subscribeOptionalTimetableDomains();
     renderRoomsView(roomsEl, renderAll, {
       teacherNames: getAllTimetableTeachers(),
+      entries: entries(),
+      periodLabels: ttConfig().periodLabels,
+      periodCount: ttConfig().periodCount,
+      dayLabels: ["월", "화", "수", "목", "금"],
+      getEntryTitle: entryTitle,
+      getEntryClassSummary,
       onTeacherRoomChange: (roomId, teacherName) => {
         captureTimetableUndo("교실 담당 교사 수정");
         syncTeacherHomeRoomFromRoom(roomId, teacherName);

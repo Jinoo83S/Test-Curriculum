@@ -328,6 +328,276 @@ function appendRoomPasteArea(container, onUpdate, options) {
 }
 
 
+function roomStatusDayLabels(options = {}) {
+  return Array.isArray(options.dayLabels) && options.dayLabels.length
+    ? options.dayLabels
+    : ["월", "화", "수", "목", "금"];
+}
+
+function roomStatusPeriodLabels(options = {}) {
+  const fromOptions = Array.isArray(options.periodLabels) ? options.periodLabels : [];
+  const cfg = appState.timetable?.config || {};
+  const fromConfig = Array.isArray(cfg.periodLabels) ? cfg.periodLabels : [];
+  const maxEntryPeriod = Array.isArray(options.entries)
+    ? Math.max(-1, ...options.entries.map(e => Number(e?.period)).filter(Number.isInteger))
+    : -1;
+  const count = Math.max(
+    1,
+    Number(options.periodCount) || 0,
+    Number(cfg.periodCount) || 0,
+    fromOptions.length,
+    fromConfig.length,
+    maxEntryPeriod + 1
+  );
+  return Array.from({ length: count }, (_, i) => fromOptions[i] || fromConfig[i] || `${i + 1}교시`);
+}
+
+function safeEntryTitle(entry = {}, options = {}) {
+  if (typeof options.getEntryTitle === "function") {
+    try { return clean(options.getEntryTitle(entry)); } catch (_) {}
+  }
+  return clean(entry.subject || entry.label || entry.name || entry.title || entry.templateName || entry.templateId || "수업");
+}
+
+function safeEntryClassSummary(entry = {}, options = {}) {
+  if (typeof options.getEntryClassSummary === "function") {
+    try { return clean(options.getEntryClassSummary(entry)); } catch (_) {}
+  }
+  const grades = Array.isArray(entry.gradeKeys) && entry.gradeKeys.length ? entry.gradeKeys : [entry.gradeKey].filter(Boolean);
+  return grades.map(g => clean(g).replace("학년", "")).filter(Boolean).join(", ") || "-";
+}
+
+function safeEntryTeachers(entry = {}) {
+  return clean(entry.teacherName || "");
+}
+
+function getRoomNameForStatus(roomId) {
+  if (!roomId) return "교실 미배정";
+  return getRoomById(roomId)?.name || roomId;
+}
+
+function isValidTimetableEntryForRoomStatus(entry = {}) {
+  return Number.isInteger(Number(entry.day)) && Number.isInteger(Number(entry.period));
+}
+
+function getRoomStatusEntries(options = {}) {
+  return (Array.isArray(options.entries) ? options.entries : [])
+    .filter(isValidTimetableEntryForRoomStatus)
+    .map(e => ({ ...e, day: Number(e.day), period: Number(e.period) }));
+}
+
+function countRoomOverlaps(entries = []) {
+  const map = new Map();
+  entries.filter(e => e.roomId).forEach(e => {
+    const key = `${e.roomId}:${e.day}:${e.period}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(e);
+  });
+  return [...map.values()].filter(list => list.length > 1).length;
+}
+
+function ensureRoomAssignmentStatusStyles() {
+  if (typeof document === "undefined" || document.getElementById("roomAssignmentStatusStyle")) return;
+  const style = document.createElement("style");
+  style.id = "roomAssignmentStatusStyle";
+  style.textContent = `
+    .room-assignment-status{margin:12px 0 14px;border:1px solid #dbe4f0;border-radius:18px;background:#fff;box-shadow:0 10px 24px rgba(15,23,42,.06);overflow:hidden;}
+    .room-assignment-status-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px;background:linear-gradient(135deg,#f8fbff,#eef6ff);border-bottom:1px solid #e6edf7;}
+    .room-assignment-status-title{display:flex;flex-direction:column;gap:3px;min-width:180px;}
+    .room-assignment-status-title strong{font-size:15px;font-weight:900;color:#102a43;}
+    .room-assignment-status-title span{font-size:12px;color:#64748b;line-height:1.45;}
+    .room-assignment-status-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+    .room-assignment-status-controls select{height:34px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;padding:0 10px;font-size:13px;font-weight:800;color:#334155;}
+    .room-assignment-stats{display:flex;gap:6px;flex-wrap:wrap;padding:10px 16px 0;}
+    .room-assignment-stat{display:inline-flex;align-items:center;gap:5px;border:1px solid #e2e8f0;border-radius:999px;background:#f8fafc;padding:5px 9px;font-size:12px;font-weight:800;color:#475569;}
+    .room-assignment-stat b{color:#0f172a;}
+    .room-assignment-stat.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412;}
+    .room-assignment-status-body{padding:12px 16px 16px;}
+    .room-status-grid{display:grid;grid-template-columns:58px repeat(var(--room-status-days), minmax(118px,1fr));gap:4px;min-width:760px;}
+    .room-status-scroll{overflow:auto;padding-bottom:4px;}
+    .room-status-cell,.room-status-head,.room-status-period{border:1px solid #dbe4f0;border-radius:10px;background:#fff;min-height:58px;padding:7px;box-sizing:border-box;}
+    .room-status-head,.room-status-period{min-height:34px;display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#334155;font-size:12px;font-weight:900;}
+    .room-status-corner{min-height:34px;background:#eaf1fb;}
+    .room-status-cell{display:flex;flex-direction:column;gap:5px;}
+    .room-status-cell.is-empty{align-items:center;justify-content:center;background:#fbfdff;color:#94a3b8;font-size:12px;font-weight:800;}
+    .room-status-assignment{display:block;border:1px solid #dbeafe;border-left:4px solid #2563eb;border-radius:8px;background:#eff6ff;padding:5px 6px;min-width:0;}
+    .room-status-assignment.overlap{border-color:#fecaca;border-left-color:#dc2626;background:#fff1f2;}
+    .room-status-assignment.unassigned{border-color:#fed7aa;border-left-color:#f97316;background:#fff7ed;}
+    .room-status-assignment strong{display:block;font-size:11px;font-weight:900;color:#1e3a8a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .room-status-assignment.overlap strong{color:#991b1b;}
+    .room-status-assignment.unassigned strong{color:#9a3412;}
+    .room-status-assignment span{display:block;margin-top:2px;font-size:10px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .room-status-more{font-size:11px;font-weight:900;color:#475569;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:4px 6px;text-align:center;}
+    .room-status-empty-note{border:1px dashed #cbd5e1;border-radius:12px;padding:14px;text-align:center;color:#64748b;background:#f8fafc;font-size:13px;font-weight:800;}
+  `;
+  document.head.appendChild(style);
+}
+
+function appendAssignmentChip(cell, entry, options, context = {}) {
+  const chip = document.createElement("div");
+  chip.className = "room-status-assignment";
+  if (!entry.roomId) chip.classList.add("unassigned");
+  if (context.overlap) chip.classList.add("overlap");
+
+  const roomName = context.showRoomName !== false ? getRoomNameForStatus(entry.roomId) : safeEntryTitle(entry, options);
+  const title = context.showRoomName !== false ? safeEntryTitle(entry, options) : safeEntryClassSummary(entry, options);
+  const teacher = safeEntryTeachers(entry);
+  const classText = safeEntryClassSummary(entry, options);
+
+  const strong = document.createElement("strong");
+  strong.textContent = roomName;
+  const line1 = document.createElement("span");
+  line1.textContent = context.showRoomName !== false ? `${title} · ${classText}` : title;
+  chip.append(strong, line1);
+  if (teacher) {
+    const line2 = document.createElement("span");
+    line2.textContent = teacher;
+    chip.appendChild(line2);
+  }
+  cell.appendChild(chip);
+}
+
+function appendRoomAssignmentStatus(container, options = {}) {
+  if (!Array.isArray(options.entries)) return;
+  ensureRoomAssignmentStatusStyles();
+
+  const dayLabels = roomStatusDayLabels(options);
+  const periodLabels = roomStatusPeriodLabels(options);
+  const allEntries = getRoomStatusEntries(options);
+  const assignedEntries = allEntries.filter(e => e.roomId);
+  const unassignedEntries = allEntries.filter(e => !e.roomId);
+  const overlapCount = countRoomOverlaps(allEntries);
+  const activeRoomIds = new Set(assignedEntries.map(e => e.roomId).filter(Boolean));
+
+  const section = document.createElement("section");
+  section.className = "room-assignment-status";
+
+  const head = document.createElement("div");
+  head.className = "room-assignment-status-head";
+  const title = document.createElement("div");
+  title.className = "room-assignment-status-title";
+  title.innerHTML = `<span class="his-room-card-kicker">Timetable</span><strong>요일/시간별 배정 현황</strong><span>교실별 사용 시간, 미배정 수업, 중복 배정을 한눈에 확인합니다.</span>`;
+
+  const controls = document.createElement("div");
+  controls.className = "room-assignment-status-controls";
+  const roomSelect = document.createElement("select");
+  const allOpt = document.createElement("option");
+  allOpt.value = "__all__";
+  allOpt.textContent = "전체 교실";
+  roomSelect.appendChild(allOpt);
+  const unassignedOpt = document.createElement("option");
+  unassignedOpt.value = "__unassigned__";
+  unassignedOpt.textContent = `교실 미배정 ${unassignedEntries.length}`;
+  roomSelect.appendChild(unassignedOpt);
+  getRooms().forEach(room => {
+    const opt = document.createElement("option");
+    opt.value = room.id;
+    const used = assignedEntries.filter(e => e.roomId === room.id).length;
+    opt.textContent = `${room.name || room.id} · ${used}건`;
+    roomSelect.appendChild(opt);
+  });
+  controls.appendChild(roomSelect);
+  head.append(title, controls);
+  section.appendChild(head);
+
+  const stats = document.createElement("div");
+  stats.className = "room-assignment-stats";
+  const statItems = [
+    ["등록 교실", getRooms().length, ""],
+    ["사용 교실", activeRoomIds.size, ""],
+    ["교실 배정", assignedEntries.length, ""],
+    ["미배정", unassignedEntries.length, unassignedEntries.length ? "warn" : ""],
+    ["중복 슬롯", overlapCount, overlapCount ? "warn" : ""],
+  ];
+  statItems.forEach(([label, value, cls]) => {
+    const item = document.createElement("span");
+    item.className = `room-assignment-stat ${cls || ""}`.trim();
+    item.innerHTML = `${label} <b>${value}</b>`;
+    stats.appendChild(item);
+  });
+  section.appendChild(stats);
+
+  const body = document.createElement("div");
+  body.className = "room-assignment-status-body";
+  section.appendChild(body);
+
+  const renderBody = () => {
+    body.innerHTML = "";
+    const selectedRoomId = roomSelect.value;
+    const scroll = document.createElement("div");
+    scroll.className = "room-status-scroll";
+    const grid = document.createElement("div");
+    grid.className = "room-status-grid";
+    grid.style.setProperty("--room-status-days", String(dayLabels.length));
+
+    const corner = document.createElement("div");
+    corner.className = "room-status-head room-status-corner";
+    corner.textContent = "교시";
+    grid.appendChild(corner);
+    dayLabels.forEach(day => {
+      const h = document.createElement("div");
+      h.className = "room-status-head";
+      h.textContent = day;
+      grid.appendChild(h);
+    });
+
+    const overlapKeyCount = new Map();
+    allEntries.filter(e => e.roomId).forEach(e => {
+      const key = `${e.roomId}:${e.day}:${e.period}`;
+      overlapKeyCount.set(key, (overlapKeyCount.get(key) || 0) + 1);
+    });
+
+    periodLabels.forEach((periodLabel, periodIdx) => {
+      const p = document.createElement("div");
+      p.className = "room-status-period";
+      p.textContent = periodLabel || `${periodIdx + 1}교시`;
+      grid.appendChild(p);
+
+      dayLabels.forEach((_, dayIdx) => {
+        const cell = document.createElement("div");
+        cell.className = "room-status-cell";
+        let slotEntries = allEntries.filter(e => e.day === dayIdx && e.period === periodIdx);
+        if (selectedRoomId === "__unassigned__") slotEntries = slotEntries.filter(e => !e.roomId);
+        else if (selectedRoomId !== "__all__") slotEntries = slotEntries.filter(e => e.roomId === selectedRoomId);
+        else slotEntries = slotEntries.filter(e => e.roomId);
+
+        if (!slotEntries.length) {
+          cell.classList.add("is-empty");
+          cell.textContent = selectedRoomId === "__all__" ? "사용 없음" : "비어 있음";
+        } else {
+          slotEntries.slice(0, 5).forEach(entry => {
+            const overlap = !!entry.roomId && (overlapKeyCount.get(`${entry.roomId}:${entry.day}:${entry.period}`) || 0) > 1;
+            appendAssignmentChip(cell, entry, options, { overlap, showRoomName: selectedRoomId === "__all__" });
+          });
+          if (slotEntries.length > 5) {
+            const more = document.createElement("div");
+            more.className = "room-status-more";
+            more.textContent = `외 ${slotEntries.length - 5}건`;
+            cell.appendChild(more);
+          }
+        }
+        grid.appendChild(cell);
+      });
+    });
+
+    if (!allEntries.length) {
+      const empty = document.createElement("div");
+      empty.className = "room-status-empty-note";
+      empty.textContent = "아직 시간표 배정 데이터가 없습니다.";
+      body.appendChild(empty);
+      return;
+    }
+
+    scroll.appendChild(grid);
+    body.appendChild(scroll);
+  };
+
+  roomSelect.addEventListener("change", renderBody);
+  renderBody();
+  container.appendChild(section);
+}
+
+
 export function addRoom(data = {}) {
   if (!canEdit()) return null;
   const r = normalizeRoom({ ...data, id: uid("room") });
@@ -391,6 +661,8 @@ export function renderRoomsView(container, onUpdate, options = {}) {
   appendRoomTypeManager(toolsRow, onUpdate, options);
   appendRoomPasteArea(toolsRow, onUpdate, options);
   container.appendChild(toolsRow);
+
+  appendRoomAssignmentStatus(container, options);
 
   if (!getRooms().length) {
     const e = document.createElement("div"); e.className = "tt-empty";
