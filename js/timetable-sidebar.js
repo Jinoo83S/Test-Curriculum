@@ -348,8 +348,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const classLabels = makeEditorTextarea("대상 학급", (card.classLabels || []).join(", "), "예: 9A, 9B / 쉼표 또는 줄바꿈 구분");
     const classKeys = makeEditorTextarea("classKeys", (card.classKeys || []).join(", "), "고급 항목: 9:A 형식. 비워두면 대상 학급에서 자동 생성합니다.");
-    const studentKeys = makeEditorTextarea("studentKeys", (card.studentKeys || []).join("
-"), "고급 항목: 수강명단 기준 학생 key. 직접 수정은 신중히 진행하세요.");
+    const studentKeys = makeEditorTextarea("studentKeys", (card.studentKeys || []).join("\n"), "고급 항목: 수강명단 기준 학생 key. 직접 수정은 신중히 진행하세요.");
 
     const roomRow = document.createElement("div");
     roomRow.className = "tt-subject-editor-grid-2";
