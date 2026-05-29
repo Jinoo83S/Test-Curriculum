@@ -1426,34 +1426,63 @@ function buildEntryCard(entry, opts = {}) {
     card.dataset.multi = grpEntries.length;
   }
 
-  // Row1: 과목명 + 멀티카드 카운터
-  const row1 = document.createElement("div"); row1.className = "tt-entry-row1";
-  const titleEl = document.createElement("div"); titleEl.className = "tt-entry-title"; titleEl.textContent = title;
+  // 카드 레이아웃: 1행 과목명+핀, 2행 교사, 3행 교실
+  card.style.display = "flex";
+  card.style.flexDirection = "column";
+  card.style.justifyContent = "center";
+  card.style.textAlign = "center";
+  card.style.padding = compact ? "2px 4px" : "4px 6px";
+
+  const row1 = document.createElement("div");
+  row1.className = "tt-entry-row1 tt-entry-subject-row";
+  row1.style.cssText = "position:relative;display:flex;align-items:flex-start;justify-content:center;width:100%;min-height:0;padding-right:14px;box-sizing:border-box;";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "tt-entry-title";
+  titleEl.textContent = title;
+  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;";
   row1.appendChild(titleEl);
+
   if (isMulti) {
-    const cnt = document.createElement("span"); cnt.className = "tt-entry-multi-cnt";
-    cnt.textContent = `×${grpEntries.length}`; row1.appendChild(cnt);
+    const cnt = document.createElement("span");
+    cnt.className = "tt-entry-multi-cnt";
+    cnt.textContent = `×${grpEntries.length}`;
+    cnt.style.cssText = "position:absolute;right:13px;top:0;font-size:clamp(6px,0.55vw,8px);font-weight:900;line-height:1;opacity:.85;";
+    row1.appendChild(cnt);
   }
 
-  // Row2: 교사명 + 고정 핀
-  const row2 = document.createElement("div"); row2.className = "tt-entry-row2";
-  const teacherEl = document.createElement("div"); teacherEl.className = "tt-entry-teacher2";
+  if (entry.pinned) {
+    const pin = document.createElement("span");
+    pin.className = "tt-entry-pin2";
+    pin.textContent = "📌";
+    pin.title = "고정된 수업";
+    pin.style.cssText = "position:absolute;right:0;top:-1px;font-size:clamp(8px,0.7vw,11px);line-height:1;";
+    row1.appendChild(pin);
+  }
+
+  const row2 = document.createElement("div");
+  row2.className = "tt-entry-row2 tt-entry-teacher-row";
+  row2.style.cssText = "display:block;width:100%;min-width:0;margin-top:1px;text-align:center;line-height:1.05;";
+  const teacherEl = document.createElement("div");
+  teacherEl.className = "tt-entry-teacher2";
   teacherEl.textContent = [...new Set(teachers)].slice(0, 2).join(", ") || "";
+  teacherEl.title = [...new Set(teachers)].join(", ");
+  teacherEl.style.cssText = "width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6.5px,0.58vw,8.5px);font-weight:800;line-height:1.05;opacity:.82;";
   row2.appendChild(teacherEl);
+
+  const row3 = document.createElement("div");
+  row3.className = "tt-entry-room-row";
+  row3.style.cssText = "display:block;width:100%;min-width:0;margin-top:1px;text-align:center;line-height:1.05;";
   if (entry.roomId) {
-    const roomBadge = document.createElement("span");
+    const roomBadge = document.createElement("div");
     roomBadge.className = "tt-entry-room2";
     roomBadge.textContent = getRoomDisplayName(entry.roomId);
     roomBadge.title = `교실: ${getRoomDisplayName(entry.roomId)}`;
-    roomBadge.style.cssText = "flex:0 1 auto;max-width:42%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(5.5px,0.48vw,7px);font-weight:900;line-height:1;padding:1px 3px;border-radius:999px;background:rgba(255,255,255,.72);border:1px solid rgba(100,116,139,.18);color:inherit;opacity:.9";
-    row2.appendChild(roomBadge);
-  }
-  if (entry.pinned) {
-    const pin = document.createElement("span"); pin.className = "tt-entry-pin2"; pin.textContent = "📌";
-    row2.appendChild(pin);
+    roomBadge.style.cssText = "display:block;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6px,0.54vw,8px);font-weight:900;line-height:1.05;opacity:.92;";
+    row3.appendChild(roomBadge);
   }
 
-  card.append(row1, row2);
+  card.append(row1, row2, row3);
   if (hasConflict) applyConflictVisuals(card, conflictTypes, conflicts);
 
   // Click → detail modal (all info)

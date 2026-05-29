@@ -98,11 +98,13 @@ function renderClassGrid(wrap, ctx) {
   const table = document.createElement("table");
   table.className = "tt-table tt-class-table tt-percent-grid-table";
   table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
+  table.style.setProperty("--tt-period-row-count", String(Math.max(1, periods.length)));
   wrap.style.setProperty("--tt-class-col-count", String(DAYS.length * gradeSections.length));
   wrap.style.setProperty("--tt-class-row-count", String(Math.max(1, periods.length)));
 
   const rowHeaderWidth = 28;
-  const rowHeight = `calc((100% - var(--tt-class-header-height, 44px)) / ${Math.max(1, periods.length)})`;
+  const classHeaderHeightPx = 36;
+  const rowHeight = `calc((100% - ${classHeaderHeightPx}px) / ${Math.max(1, periods.length)})`;
   const colgroup = document.createElement("colgroup");
   const hdrCol = document.createElement("col");
   hdrCol.style.width = `${rowHeaderWidth}px`;
@@ -117,6 +119,7 @@ function renderClassGrid(wrap, ctx) {
 
   const thead = document.createElement("thead");
   const hr = document.createElement("tr");
+  hr.style.height = "22px";
   const corner = document.createElement("th");
   corner.className = "tt-corner";
   corner.style.cssText = `width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px`;
@@ -134,6 +137,7 @@ function renderClassGrid(wrap, ctx) {
   thead.appendChild(hr);
 
   const hr2 = document.createElement("tr");
+  hr2.style.height = "14px";
   hr2.appendChild(document.createElement("th"));
   DAYS.forEach(() => {
     gradeSections.forEach(sec => {
@@ -148,14 +152,12 @@ function renderClassGrid(wrap, ctx) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  tbody.style.height = "calc(100% - var(--tt-class-header-height, 44px))";
+  tbody.style.height = `calc(100% - ${classHeaderHeightPx}px)`;
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
-    tr.style.minHeight = rowHeight;
-    tr.style.maxHeight = rowHeight;
     const periodCell = makePeriodLabelCell(label, period, ctx.updatePeriodLabel);
-    periodCell.style.cssText += `;width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight}`;
+    periodCell.style.cssText += `;width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px;height:${rowHeight}`;
     tr.appendChild(periodCell);
 
     DAYS.forEach((_, day) => {
@@ -163,7 +165,7 @@ function renderClassGrid(wrap, ctx) {
         const td = document.createElement("td");
         td.className = "tt-cell tt-percent-grid-cell";
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};min-width:0;position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
 
         const clsInfo = gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || {
@@ -294,8 +296,6 @@ function renderTeacherGrid(wrap, ctx) {
   classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
-    tr.style.minHeight = rowHeight;
-    tr.style.maxHeight = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
     tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) {
@@ -317,7 +317,7 @@ function renderTeacherGrid(wrap, ctx) {
         const isDayEnd = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         const slotEntries = ctx.entries.filter(e => {
@@ -448,8 +448,6 @@ function renderRoomGrid(wrap, ctx) {
   classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
-    tr.style.minHeight = rowHeight;
-    tr.style.maxHeight = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
     tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) {
@@ -471,7 +469,7 @@ function renderRoomGrid(wrap, ctx) {
         const isDayEnd = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell tt-room-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({
           ...dragData,
           sectionIdx: cls.sectionIdx,
@@ -582,8 +580,6 @@ function renderAllClassesGrid(wrap, ctx) {
   classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
-    tr.style.minHeight = rowHeight;
-    tr.style.maxHeight = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
     tr.dataset.sectionIdx = String(cls.sectionIdx);
     if (cls.gradeKey !== prevGrade) {
@@ -605,7 +601,7 @@ function renderAllClassesGrid(wrap, ctx) {
         const isDayEnd = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
@@ -634,9 +630,11 @@ function buildGrid(periods, days, wrap, getEntries, ctx, cardOpts = {}) {
   const table = document.createElement("table");
   table.className = "tt-table tt-grade-percent-table";
   table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
+  table.style.setProperty("--tt-period-row-count", String(Math.max(1, periods.length)));
 
   const rowHeaderWidth = 28;
-  const rowHeight = `calc((100% - var(--tt-grade-header-height, 24px)) / ${Math.max(1, periods.length)})`;
+  const gradeHeaderHeightPx = 24;
+  const rowHeight = `calc((100% - ${gradeHeaderHeightPx}px) / ${Math.max(1, periods.length)})`;
   wrap.style.setProperty("--tt-grade-row-count", String(Math.max(1, periods.length)));
   const colgroup = document.createElement("colgroup");
   const hdrCol = document.createElement("col");
@@ -652,6 +650,7 @@ function buildGrid(periods, days, wrap, getEntries, ctx, cardOpts = {}) {
 
   const thead = document.createElement("thead");
   const hrow = document.createElement("tr");
+  hrow.style.height = `${gradeHeaderHeightPx}px`;
   const corner = document.createElement("th");
   corner.className = "tt-corner";
   corner.style.cssText = `width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px`;
@@ -668,21 +667,19 @@ function buildGrid(periods, days, wrap, getEntries, ctx, cardOpts = {}) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  tbody.style.height = "calc(100% - var(--tt-grade-header-height, 24px))";
+  tbody.style.height = `calc(100% - ${gradeHeaderHeightPx}px)`;
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
-    tr.style.minHeight = rowHeight;
-    tr.style.maxHeight = rowHeight;
     const periodCell = makePeriodLabelCell(label, period, ctx.updatePeriodLabel);
-    periodCell.style.cssText += `;width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight}`;
+    periodCell.style.cssText += `;width:${rowHeaderWidth}px;min-width:${rowHeaderWidth}px;max-width:${rowHeaderWidth}px;height:${rowHeight}`;
     tr.appendChild(periodCell);
 
     days.forEach((_, day) => {
       const td = document.createElement("td");
       td.className = "tt-cell tt-grade-percent-cell";
       td.setAttribute("data-day", day);
-      td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-height:${rowHeight};max-height:${rowHeight};min-width:0;position:relative`;
+      td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
       const slotEntries = getEntries(day, period);
       attachDropHandlers(td, day, period, ctx);
       appendSlotContents(td, slotEntries, ctx, { ...cardOpts, compact: true });
