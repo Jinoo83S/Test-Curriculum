@@ -926,7 +926,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=subject_card_editor_fix"/>
+<link rel="stylesheet" href="timetable-ui.css?v=print_export_r1"/>
 
 </head>
 <body>
@@ -941,7 +941,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <span class="tt-auth-status" id="ttAuthStatus">로그인 확인 중…</span>
     <button id="ttLoginBtn" class="hidden">Google 로그인</button>
     <button id="ttLogoutBtn" class="hidden">로그아웃</button>
-    <button id="ttExportBtn">📥 엑셀</button>
+    <button id="ttExportBtn">🖨 출력</button>
     <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
     <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
     <button id="ttSaveBtn" class="tt-save-btn">💾 저장</button>
@@ -998,7 +998,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script type="module" src="js/local-dev.js?v=room_missing_conflict_r1"></script>
-<script type="module" src="js/timetable.js?v=subject_card_editor_scroll_fix"></script>
+<script type="module" src="js/timetable.js?v=print_export_r1"></script>
 <script>
 /* ── Tab switching ── */
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
@@ -1609,7 +1609,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=subject_card_editor_fix";
+  var href = "timetable-ui.css?v=print_export_r1";
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

@@ -43,7 +43,7 @@ import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=subject
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { exportTimetableXlsx } from "./timetable-export.js";
+import { openTimetableExportDialog } from "./timetable-export.js";
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
@@ -1840,10 +1840,11 @@ const authUi = createTimetableAuthUi({
 const setAuthCheckingUI = authUi.setAuthCheckingUI;
 const updateAuthUI = authUi.updateAuthUI;
 
-// ── Excel Export ──────────────────────────────────────────────────
-function exportXlsx() {
-  exportTimetableXlsx({
+// ── Print / Export ────────────────────────────────────────────────
+function openExportDialog() {
+  openTimetableExportDialog({
     GRADE_KEYS,
+    appState,
     entries,
     ttConfig,
     splitTeacherNames,
@@ -1852,6 +1853,10 @@ function exportXlsx() {
     entryGradeKeys,
     gradeDisplay,
     getRooms,
+    getAllClasses,
+    getAllTimetableTeachers,
+    entryMatchesClass,
+    audienceForPlacement,
   });
 }
 
@@ -1913,7 +1918,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
 $("ttLoginBtn")?.addEventListener("click", login);
 $("ttLogoutBtn")?.addEventListener("click", logout);
-$("ttExportBtn")?.addEventListener("click", exportXlsx);
+$("ttExportBtn")?.addEventListener("click", openExportDialog);
 $("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); await savePendingNow(); alert("저장되었습니다."); });
 $("ttClearGradeBtn")?.addEventListener("click", () => {
   if (!canEdit()) return;
