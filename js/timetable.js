@@ -1926,9 +1926,25 @@ function previewEntriesConflictWithSlot(previewEntries = [], slotEntries = [], m
         result.room = true;
       }
 
+      const existingAudience = audienceForPlacement(existing);
       const sameConcurrentGroup = candidate.groupId && existing.groupId && candidate.groupId === existing.groupId;
       const sameUnit = candidate.unitId && existing.unitId && candidate.unitId === existing.unitId;
-      if (!sameConcurrentGroup && !sameUnit && audiencesConflict(candidateAudience, audienceForPlacement(existing))) {
+
+      // 묶음수업(unit)은 한 수업으로 보는 의도적 동시배정이므로 학생 충돌에서 제외합니다.
+      if (sameUnit) return;
+
+      if (sameConcurrentGroup) {
+        // 같은 동시배정 그룹은 같은 반이어도 세부 수강명단이 갈라져 있으면 충돌이 아닙니다.
+        // 다만 실제 studentKeys가 겹치면 같은 학생이 두 과목을 동시에 듣는 것이므로 충돌로 표시합니다.
+        const candidateStudents = candidateAudience?.studentKeys || new Set();
+        const existingStudents = existingAudience?.studentKeys || new Set();
+        if (candidateStudents.size && existingStudents.size && setsIntersect(candidateStudents, existingStudents)) {
+          result.student = true;
+        }
+        return;
+      }
+
+      if (audiencesConflict(candidateAudience, existingAudience)) {
         result.student = true;
       }
     });
