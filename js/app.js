@@ -359,7 +359,38 @@ function renderSidebar() {
   renderOptionChips(groupOptionList, "group");
 }
 
+function syncTemplateManagerUiFromControls() {
+  // 표 렌더링 전에는 실제 화면 컨트롤 값을 기준으로 필터 상태를 맞춥니다.
+  // Local Dev 초기화/데이터 삭제 후 이전 검색·필터 값이 메모리에 남아 있으면
+  // 입력창은 비어 있어도 "검색 조건에 맞는 과목카드가 없습니다"로 보일 수 있습니다.
+  const validLevels = new Set(["전체", "중등", "고등"]);
+  const validLangs  = new Set(["all", "Korean", "English", "Both"]);
+  const validSplits = new Set(["all", "split", "same"]);
+  const validSorts  = new Set(["ko-asc", "ko-desc", "en-asc", "language", "group"]);
+
+  if (tplMgrSearch) managerUi.search = tplMgrSearch.value || "";
+  if (tplMgrLevel) managerUi.level = validLevels.has(tplMgrLevel.value) ? tplMgrLevel.value : "전체";
+  if (tplMgrLang)  managerUi.language = validLangs.has(tplMgrLang.value) ? tplMgrLang.value : "all";
+  if (tplMgrSplit) managerUi.split = validSplits.has(tplMgrSplit.value) ? tplMgrSplit.value : "all";
+  if (tplMgrSort)  managerUi.sort = validSorts.has(tplMgrSort.value) ? tplMgrSort.value : "ko-asc";
+}
+
+function resetTemplateManagerFilters() {
+  managerUi.search = "";
+  managerUi.level = "전체";
+  managerUi.language = "all";
+  managerUi.split = "all";
+  managerUi.sort = "ko-asc";
+  if (tplMgrSearch) tplMgrSearch.value = "";
+  if (tplMgrLevel) tplMgrLevel.value = "전체";
+  if (tplMgrLang) tplMgrLang.value = "all";
+  if (tplMgrSplit) tplMgrSplit.value = "all";
+  if (tplMgrSort) tplMgrSort.value = "ko-asc";
+  clearStableOrder();
+}
+
 function renderTemplateManagerView() {
+  syncTemplateManagerUiFromControls();
   renderTemplateManagerLevelTabs();
   renderTemplateManagerTable(tplMgrTableWrap, tplMgrCount);
 }
@@ -1110,9 +1141,11 @@ tplPasteBtn?.addEventListener("click", () => {
   const added = addParsedTemplates(parsed);
   if (tplPasteArea) tplPasteArea.value = "";
   document.getElementById("tplMgrPasteDetails")?.removeAttribute("open");
+  // 붙여넣기 직후에는 이전 검색/필터가 남아 새 카드가 안 보이지 않도록 전체 보기로 돌립니다.
+  resetTemplateManagerFilters();
   renderTemplateManagerView();
   renderSidebar();
-  alert(`${added}개 과목카드가 추가되었습니다.`);
+  alert(`${added}개 과목카드가 추가되었습니다.\n표에 보이지 않으면 검색/필터가 전체로 초기화되었는지 확인해 주세요.`);
 });
 tplPasteClearBtn?.addEventListener("click", () => { if (tplPasteArea) tplPasteArea.value = ""; });
 
