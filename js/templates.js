@@ -511,11 +511,67 @@ export function getFilteredTemplates() {
   return filtered;
 }
 
+function getTemplateDuplicateTeacherKey(item) {
+  const baseTeacher = clean(item.teacher);
+  if (baseTeacher) return splitTeacherNames(baseTeacher).join(",");
+  const s1 = clean(item.sem1Teacher);
+  const s2 = clean(item.sem2Teacher);
+  if (s1 && s2 && s1 !== s2) return uniqueOrdered([s1, s2].flatMap(splitTeacherNames)).join(",");
+  return splitTeacherNames(s1 || s2 || "").join(",");
+}
+
+function getTemplateDuplicateNameKey(item) {
+  return clean(item.nameKo) || clean(item.sem1NameKo) || clean(item.sem2NameKo) || clean(item.nameEn);
+}
+
+function getTemplateDuplicateLevelKey(item) {
+  return deriveSchoolLevelFromCurriculum(item.id) || item.schoolLevel || "공통";
+}
+
+function getTemplateDuplicateGradeKey(item) {
+  const grades = getTemplateAppliedGrades(item.id).map(g => clean(g)).filter(Boolean);
+  return grades.length ? grades.join(",") : "학년없음";
+}
+
+function getTemplateDuplicateKey(item) {
+  const level = getTemplateDuplicateLevelKey(item);
+  const grade = getTemplateDuplicateGradeKey(item);
+  const nameKo = getTemplateDuplicateNameKey(item);
+  const teacher = getTemplateDuplicateTeacherKey(item);
+  if (!level || !grade || !nameKo || !teacher) return "";
+  return [level, grade, nameKo, teacher].map(v => clean(v).toLowerCase()).join("||");
+}
+
+function buildTemplateDuplicateInfo() {
+  const buckets = new Map();
+  templates().forEach(item => {
+    const key = getTemplateDuplicateKey(item);
+    if (!key) return;
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(item);
+  });
+  const info = new Map();
+  buckets.forEach((items, key) => {
+    if (items.length < 2) return;
+    const sample = items[0];
+    const label = `${getTemplateDuplicateLevelKey(sample)} / ${getTemplateDuplicateGradeKey(sample)} / ${getTemplateDuplicateNameKey(sample)} / ${getTemplateDuplicateTeacherKey(sample)}`;
+    items.forEach(item => info.set(item.id, { key, count: items.length, label, items }));
+  });
+  return info;
+}
+
 export function renderTemplateManagerTable(wrap, countEl) {
   syncSchoolLevels();
   updateTeacherDatalist();
   const rows = getFilteredTemplates();
-  if (countEl) countEl.textContent = `${rows.length} / ${tDomain().templates.length}개 표시`;
+  const duplicateInfo = buildTemplateDuplicateInfo();
+  const visibleDuplicateCount = rows.filter(item => duplicateInfo.has(item.id)).length;
+  const duplicateGroupCount = new Set([...duplicateInfo.values()].map(d => d.key)).size;
+  if (countEl) {
+    const dupText = duplicateGroupCount ? ` · 중복 ${duplicateGroupCount}건 / ${visibleDuplicateCount}개 표시` : " · 중복 없음";
+    countEl.textContent = `${rows.length} / ${tDomain().templates.length}개 표시${dupText}`;
+    countEl.classList.toggle("has-template-duplicates", !!duplicateGroupCount);
+  }
   if (!rows.length) { wrap.innerHTML = '<div class="manager-empty">검색 조건에 맞는 과목카드가 없습니다.</div>'; return; }
 
   const buildGroupOpts = selId => ['<option value="">없음</option>'].concat(groups().map(g => `<option value="${escapeHtml(g.id)}" ${selId===g.id?"selected":""}>${escapeHtml(g.name)}</option>`)).join("");
@@ -535,14 +591,19 @@ export function renderTemplateManagerTable(wrap, countEl) {
     const derivedLevel = deriveSchoolLevelFromCurriculum(item.id);
     const effectiveLevel = derivedLevel || item.schoolLevel || "공통";
     const gradeChips = grades.length ? grades.map(g => `<span class="usage-chip">${g}</span>`).join("") : '<span style="color:#9ca3af;font-size:10px">-</span>';
+    const dup = duplicateInfo.get(item.id);
+    const dupTitle = dup ? `중복 검토: ${dup.label} (${dup.count}개)` : "";
+    const dupRowClass = dup ? " template-duplicate-row" : "";
+    const dupCellClass = dup ? " template-duplicate-cell" : "";
+    const dupBadge = dup ? `<span class="template-duplicate-badge" title="${escapeHtml(dupTitle)}">중복 ${dup.count}</span>` : "";
     const levelDerivedMark = derivedLevel ? ' title="커리큘럼 배치에서 자동 연동"' : ' title="수동 설정"';
-    return `<tr data-template-id="${item.id}">
+    return `<tr data-template-id="${item.id}" class="${dupRowClass.trim()}" ${dup ? `title="${escapeHtml(dupTitle)}" data-duplicate-key="${escapeHtml(dup.key)}"` : ""}>
       <td class="col-delete"><button type="button" class="row-delete-btn-inline" data-action="delete-template">삭제</button></td>
-      <td class="col-usage usage-cell">${gradeChips}</td>
-      <td class="col-schoollevel"><select data-field="schoolLevel"${levelDerivedMark} class="${derivedLevel ? "level-select-derived" : ""}">${["중등","고등","공통"].map(l=>`<option value="${l}" ${effectiveLevel===l?"selected":""}>${l}</option>`).join("")}</select></td>
-      <td><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" /></td>
+      <td class="col-usage usage-cell${dupCellClass}">${gradeChips}</td>
+      <td class="col-schoollevel${dupCellClass}"><select data-field="schoolLevel"${levelDerivedMark} class="${derivedLevel ? "level-select-derived" : ""}">${["중등","고등","공통"].map(l=>`<option value="${l}" ${effectiveLevel===l?"selected":""}>${l}</option>`).join("")}</select></td>
+      <td class="tpl-name-ko-cell${dupCellClass}"><input type="text" data-field="nameKo" value="${escapeHtml(item.nameKo)}" />${dupBadge}</td>
       <td><input type="text" data-field="nameEn" value="${escapeHtml(item.nameEn)}" /></td>
-      <td>${tInput("teacher", item.teacher)}</td>
+      <td class="tpl-teacher-cell${dupCellClass}">${tInput("teacher", item.teacher)}</td>
       <td class="col-language"><select data-field="language">${["Korean","English","Both"].map(l=>`<option value="${l}" ${item.language===l?"selected":""}>${l}</option>`).join("")}</select></td>
       <td class="col-group"><select data-field="calcGroupId">${buildGroupOpts(item.calcGroupId||"")}</select></td>
       <td class="col-toggle toggle-cell"><input type="checkbox" data-field="useSemesterOverrides" ${item.useSemesterOverrides?"checked":""} /></td>

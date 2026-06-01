@@ -25,10 +25,10 @@ import {
   setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js";
+} from "./templates.js?v=template_duplicate_grade_highlight";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "curr_topbar_status";
+const APP_MODULE_VERSION = "template_duplicate_grade_highlight";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
