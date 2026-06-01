@@ -206,13 +206,25 @@
 <div class="paste-area-wrap tpl-paste-body">
 <div class="paste-label">
             열 구성 <span class="paste-hint">
-<strong>한글이름</strong> [영어이름] [교사] [언어: Korean·English·Both] [구분: 중등·고등·공통]
-               ·  학기분리 추가: [1학기한글] [1학기영어] [1학기교사] [2학기한글] [2학기영어] [2학기교사]
+<strong>기본 5열</strong>: 한글이름 · 영어이름 · 교사 · 언어(Korean/English/Both) · 구분(중등/고등/공통)
+              <br/>
+<strong>학기분리 11열</strong>: 기본 5열 뒤에 1학기한글 · 1학기영어 · 1학기교사 · 2학기한글 · 2학기영어 · 2학기교사 순서로 추가합니다.
             </span>
 </div>
+<div class="tpl-paste-example">
+<div class="tpl-paste-example-title">붙여넣기 예시</div>
+<pre>기본 카드:
+수학	Mathematics	백예지	Korean	중등
+체육	Physical Education	이강평	Both	공통
+
+학기분리 카드:
+사회	Social Studies	Adam	English	중등	세계역사의 이해	Introductory World History	유진하	세계역사의 이해	Introductory World History	유진하
+영어	English Language Arts	Henry	English	중등	영어 A	English A	Henry	영어 B	English B	Cristina</pre>
+<div class="tpl-paste-example-help">엑셀에서 위 순서대로 열을 만든 뒤 행 전체를 복사해 붙여넣으면 됩니다. 학기분리 열 중 일부가 비어 있으면 기본 과목명/교사 값으로 자동 보완됩니다.</div>
+</div>
 <textarea class="excel-paste-area" id="tplPasteArea" placeholder="엑셀에서 복사 후 붙여넣기 (Ctrl+V)
-예) 수학	Mathematics	백예지	Korean	중등
-체육	Physical Education	이강평	Both	공통" rows="5"></textarea>
+기본 예) 수학	Mathematics	백예지	Korean	중등
+학기분리 예) 영어	English Language Arts	Henry	English	중등	영어 A	English A	Henry	영어 B	English B	Cristina" rows="7"></textarea>
 <div class="paste-actions">
 <button class="primary-btn" id="tplPasteBtn" type="button">과목카드 추가</button>
 <button class="secondary-btn" id="tplPasteClearBtn" type="button">지우기</button>
