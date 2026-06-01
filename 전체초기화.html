@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIS 전체 데이터 초기화</title>
+  <style>
+    :root { --navy:#173b68; --line:#d9e2ef; --bg:#f5f7fb; --danger:#dc2626; --ok:#15803d; --muted:#64748b; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:#162033; font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    header { height:54px; background:var(--navy); color:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 18px; }
+    header h1 { margin:0; font-size:18px; font-weight:900; }
+    header .right { display:flex; align-items:center; gap:8px; }
+    main { max-width:1080px; margin:22px auto; padding:0 18px; }
+    .card { background:#fff; border:1px solid var(--line); border-radius:18px; box-shadow:0 12px 28px rgba(15,23,42,.06); padding:18px; margin-bottom:14px; }
+    .card h2 { margin:0 0 8px; font-size:17px; color:#0f2946; }
+    p { line-height:1.6; margin:6px 0; }
+    .muted { color:var(--muted); font-size:13px; }
+    .danger-text { color:var(--danger); font-weight:900; }
+    .ok-text { color:var(--ok); font-weight:900; }
+    button { height:34px; border-radius:10px; border:1px solid #cbd5e1; background:#fff; font-weight:900; padding:0 12px; cursor:pointer; }
+    button.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+    button.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:12px; }
+    input[type=text] { height:34px; border:1px solid #cbd5e1; border-radius:10px; padding:0 10px; min-width:220px; font-weight:700; }
+    label { display:flex; gap:8px; align-items:center; font-weight:800; }
+    table { width:100%; border-collapse:collapse; font-size:13px; margin-top:10px; }
+    th,td { border:1px solid #e2e8f0; padding:7px 9px; text-align:left; }
+    th { background:#f1f5f9; color:#334155; }
+    .pill { display:inline-flex; align-items:center; justify-content:center; min-width:34px; padding:3px 8px; border-radius:999px; font-size:12px; font-weight:900; background:#e0f2fe; color:#075985; }
+    .log { background:#0f172a; color:#e2e8f0; border-radius:14px; padding:12px; min-height:160px; max-height:330px; overflow:auto; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; white-space:pre-wrap; }
+    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+    @media (max-width:800px) { .grid { grid-template-columns:1fr; } header { height:auto; padding:10px 14px; align-items:flex-start; flex-direction:column; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>HIS 전체 데이터 초기화</h1>
+  <div class="right">
+    <span id="authStatus">로그인 확인 중…</span>
+    <button id="loginBtn" class="primary" type="button">Google 로그인</button>
+    <button id="logoutBtn" type="button" hidden>로그아웃</button>
+    <a href="index.html" style="color:#dbeafe;font-weight:900;text-decoration:none;">커리큘럼으로 돌아가기</a>
+  </div>
+</header>
+<main>
+  <section class="card">
+    <h2>온라인 Firestore 전체 초기화 도구</h2>
+    <p class="danger-text">이 도구는 보드만 초기화하지 않고, 온라인 Firestore에 저장된 커리큘럼/과목카드/학급/학생/수강명단/교사/교실/시간표 데이터를 모두 삭제합니다.</p>
+    <p class="muted">실행 전 반드시 시간표 화면의 <b>Firestore 진단</b> 또는 기존 백업 기능으로 JSON 백업을 먼저 받아두세요. 삭제 후 복구는 백업 파일 없이는 어렵습니다.</p>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>삭제 대상</h2>
+      <table>
+        <thead><tr><th>구분</th><th>경로</th><th>설명</th></tr></thead>
+        <tbody>
+          <tr><td>단일 문서</td><td>boards/curriculum</td><td>커리큘럼 보드</td></tr>
+          <tr><td>단일 문서</td><td>boards/templates</td><td>과목 원본 카드</td></tr>
+          <tr><td>단일 문서</td><td>boards/teachers</td><td>교사 데이터</td></tr>
+          <tr><td>단일 문서</td><td>boards/rooms</td><td>교실 데이터</td></tr>
+          <tr><td>레거시 문서</td><td>boards/classes / rosters / timetable / main</td><td>이전 저장 구조 호환 데이터</td></tr>
+          <tr><td>분리 컬렉션</td><td>boards/_split/classes</td><td>학급/학생</td></tr>
+          <tr><td>분리 컬렉션</td><td>boards/_split/rosters</td><td>수강명단</td></tr>
+          <tr><td>분리 컬렉션</td><td>boards/_split/timetableEntries</td><td>배치 시간표</td></tr>
+          <tr><td>분리 컬렉션</td><td>boards/_split/ttcards</td><td>시간표 카드</td></tr>
+          <tr><td>분리 문서</td><td>boards/_split/timetableMeta/main</td><td>시간표 설정/교사조건/그룹</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>실행</h2>
+      <p>1. 로그인 후 <b>삭제 대상 확인</b>을 먼저 누르세요.</p>
+      <p>2. 확인 문구에 <b>전체초기화</b>를 입력해야 삭제 버튼이 활성화됩니다.</p>
+      <div class="row">
+        <button id="previewBtn" type="button">삭제 대상 확인</button>
+        <input id="confirmText" type="text" placeholder="전체초기화 입력" />
+      </div>
+      <div class="row">
+        <label><input id="confirmCheck" type="checkbox" /> 백업을 완료했고 온라인 데이터를 모두 삭제하는 것을 이해했습니다.</label>
+      </div>
+      <div class="row">
+        <button id="resetBtn" class="danger" type="button" disabled>온라인 전체 초기화 실행</button>
+        <button id="localClearBtn" type="button">이 브라우저 로컬 캐시도 초기화</button>
+      </div>
+      <p class="muted">초기화 후 기존 앱 화면은 반드시 새로고침하세요. 가능하면 Ctrl+F5로 강력 새로고침을 권장합니다.</p>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>현재 상태</h2>
+    <div id="summary"></div>
+  </section>
+
+  <section class="card">
+    <h2>작업 로그</h2>
+    <div id="log" class="log">대기 중입니다.</div>
+  </section>
+</main>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import {
+    initializeFirestore, persistentLocalCache,
+    doc, collection, getDocs, getDoc, writeBatch, deleteDoc
+  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
+    authDomain: "his-curriculum-8e737.firebaseapp.com",
+    projectId: "his-curriculum-8e737",
+    storageBucket: "his-curriculum-8e737.firebasestorage.app",
+    messagingSenderId: "1091130688532",
+    appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  const db = initializeFirestore(app, { cache: persistentLocalCache() });
+
+  const $ = id => document.getElementById(id);
+  const logEl = $("log");
+  const summaryEl = $("summary");
+  let currentUser = null;
+  let running = false;
+
+  const singleDocs = [
+    ["curriculum", doc(db, "boards", "curriculum")],
+    ["templates", doc(db, "boards", "templates")],
+    ["classes legacy", doc(db, "boards", "classes")],
+    ["teachers", doc(db, "boards", "teachers")],
+    ["rosters legacy", doc(db, "boards", "rosters")],
+    ["rooms", doc(db, "boards", "rooms")],
+    ["timetable legacy", doc(db, "boards", "timetable")],
+    ["legacy main", doc(db, "boards", "main")],
+    ["timetable meta", doc(db, "boards", "_split", "timetableMeta", "main")],
+  ];
+
+  const collectionsToDelete = [
+    ["split/classes", collection(db, "boards", "_split", "classes")],
+    ["split/rosters", collection(db, "boards", "_split", "rosters")],
+    ["split/timetableEntries", collection(db, "boards", "_split", "timetableEntries")],
+    ["split/ttcards", collection(db, "boards", "_split", "ttcards")],
+  ];
+
+  function appendLog(msg) {
+    const time = new Date().toLocaleTimeString();
+    logEl.textContent += `\n[${time}] ${msg}`;
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function setBusy(busy) {
+    running = busy;
+    $("previewBtn").disabled = busy || !currentUser;
+    $("resetBtn").disabled = busy || !canReset();
+    $("localClearBtn").disabled = busy;
+  }
+
+  function canReset() {
+    return !!currentUser && $("confirmText").value.trim() === "전체초기화" && $("confirmCheck").checked;
+  }
+
+  function refreshResetState() {
+    if (running) return;
+    $("resetBtn").disabled = !canReset();
+  }
+
+  async function countDoc(label, ref) {
+    const snap = await getDoc(ref);
+    return { label, count: snap.exists() ? 1 : 0 };
+  }
+
+  async function countCollection(label, collRef) {
+    const snap = await getDocs(collRef);
+    return { label, count: snap.size };
+  }
+
+  async function preview() {
+    if (!currentUser) { alert("먼저 로그인하세요."); return; }
+    setBusy(true);
+    logEl.textContent = "삭제 대상 확인 중입니다...";
+    try {
+      const docCounts = [];
+      for (const [label, ref] of singleDocs) {
+        const row = await countDoc(label, ref);
+        docCounts.push(row);
+        appendLog(`${label}: ${row.count}개`);
+      }
+      const collCounts = [];
+      for (const [label, ref] of collectionsToDelete) {
+        const row = await countCollection(label, ref);
+        collCounts.push(row);
+        appendLog(`${label}: ${row.count}개`);
+      }
+      const total = [...docCounts, ...collCounts].reduce((sum, r) => sum + r.count, 0);
+      summaryEl.innerHTML = `
+        <p><span class="pill">총 ${total}개</span> 삭제 대상이 확인되었습니다.</p>
+        <table><thead><tr><th>대상</th><th>개수</th></tr></thead><tbody>
+          ${[...docCounts, ...collCounts].map(r => `<tr><td>${r.label}</td><td>${r.count}</td></tr>`).join("")}
+        </tbody></table>`;
+      appendLog("확인 완료. 백업 후 확인 문구를 입력하면 초기화를 실행할 수 있습니다.");
+    } catch (e) {
+      console.error(e);
+      appendLog(`오류: ${e?.message || e}`);
+      alert("삭제 대상 확인 중 오류가 발생했습니다. 콘솔을 확인해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteCollectionAll(label, collRef) {
+    const snap = await getDocs(collRef);
+    if (snap.empty) {
+      appendLog(`${label}: 삭제할 문서 없음`);
+      return 0;
+    }
+    let deleted = 0;
+    const docs = snap.docs;
+    const CHUNK = 450;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      deleted += docs.slice(i, i + CHUNK).length;
+      appendLog(`${label}: ${deleted}/${docs.length}개 삭제`);
+    }
+    return deleted;
+  }
+
+  async function resetAll() {
+    if (!canReset()) { alert("확인 문구와 체크박스를 확인해 주세요."); return; }
+    if (!confirm("정말 온라인 Firestore 전체 데이터를 삭제할까요?\n이 작업은 되돌릴 수 없습니다.")) return;
+    setBusy(true);
+    logEl.textContent = "온라인 전체 초기화를 시작합니다...";
+    let deletedDocs = 0;
+    try {
+      for (const [label, collRef] of collectionsToDelete) {
+        deletedDocs += await deleteCollectionAll(label, collRef);
+      }
+      for (const [label, ref] of singleDocs) {
+        try {
+          await deleteDoc(ref);
+          deletedDocs += 1;
+          appendLog(`${label}: 삭제 요청 완료`);
+        } catch (e) {
+          appendLog(`${label}: 삭제 중 오류 - ${e?.message || e}`);
+          throw e;
+        }
+      }
+      clearBrowserState(false);
+      appendLog(`완료: 총 ${deletedDocs}개 삭제 요청을 처리했습니다.`);
+      summaryEl.innerHTML = `<p class="ok-text">온라인 전체 초기화가 완료되었습니다. 기존 앱 화면을 Ctrl+F5로 새로고침한 뒤 테스트를 시작하세요.</p>`;
+      alert("온라인 전체 초기화가 완료되었습니다. 앱 화면을 강력 새로고침하세요.");
+    } catch (e) {
+      console.error(e);
+      appendLog(`오류: ${e?.message || e}`);
+      alert("초기화 중 오류가 발생했습니다. 콘솔과 로그를 확인해 주세요.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function clearBrowserState(showAlert = true) {
+    const keys = [
+      "his_local_dev_state_v1",
+      "his_split_confirmed_v1",
+      "his_auto_save_v1",
+      "his_firestore_usage_v1",
+      "his_local_dev_mode_v1"
+    ];
+    keys.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+    appendLog("이 브라우저의 HIS 로컬 캐시 키를 정리했습니다.");
+    if (showAlert) alert("이 브라우저의 HIS 로컬 캐시를 정리했습니다. 페이지를 새로고침하세요.");
+  }
+
+  $("loginBtn").addEventListener("click", () => signInWithPopup(auth, provider));
+  $("logoutBtn").addEventListener("click", () => signOut(auth));
+  $("previewBtn").addEventListener("click", preview);
+  $("resetBtn").addEventListener("click", resetAll);
+  $("localClearBtn").addEventListener("click", () => clearBrowserState(true));
+  $("confirmText").addEventListener("input", refreshResetState);
+  $("confirmCheck").addEventListener("change", refreshResetState);
+
+  onAuthStateChanged(auth, user => {
+    currentUser = user || null;
+    $("authStatus").textContent = user ? `${user.displayName || user.email} 로그인됨` : "로그인 필요";
+    $("loginBtn").hidden = !!user;
+    $("logoutBtn").hidden = !user;
+    $("previewBtn").disabled = !user;
+    refreshResetState();
+    if (user) appendLog(`${user.email || user.displayName} 로그인 확인`);
+  });
+</script>
+</body>
+</html>
