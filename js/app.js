@@ -11,7 +11,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js?v=board_drag_live_refresh";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -1039,9 +1039,15 @@ setOnTemplateChange(() => {
   if (activeMainView === "teachers") void renderTeacherPanel();
 });
 
-// Req 4: sidebar grade chips update on board drag-drop
+// Curriculum board mutations must be reflected immediately.
+// Saving is asynchronous; without this local render, drag/drop changes are only visible
+// after Firestore/localStorage pushes a later update or after manual refresh.
 setOnCurriculumChange(() => {
+  invalidateTabs();
   renderSidebar();
+  if (activeMainView === "board") renderBoardTab();
+  if (activeMainView === "manager") renderTemplateManagerView();
+  if (activeMainView === "results") void renderResultsPanel();
 });
 
 setAuthCheckingUI();

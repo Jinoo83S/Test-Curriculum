@@ -524,8 +524,8 @@ function createMergedDropCell(grade, rowData, templateId) {
     if (drag.kind === "template") { placeBothSems(drag.templateId, grade, rowData.id); return; }
     if (drag.kind === "placed") {
       const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId); if (!dRow) return;
-      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); } }
-      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); }
+      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); _onCurriculumChange(); } }
+      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); _onCurriculumChange(); }
     }
   });
   return cell;
@@ -668,6 +668,7 @@ export function renderOptionChips(container, type) {
       const [moved] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, moved);
       scheduleSave("curriculum");
+      _onCurriculumChange();
       renderOptionChips(container, type); // re-render with new order
     });
 
