@@ -27,6 +27,8 @@ function makePeriodLabelCell(label, period, updatePeriodLabel) {
 }
 
 function attachDropHandlers(td, day, period, ctx, patchDragData = null) {
+  td.dataset.day = String(day);
+  td.dataset.period = String(period);
   td.addEventListener("dragover", e => {
     if (!canEdit()) return;
     e.preventDefault();
@@ -143,6 +145,8 @@ function renderClassGrid(wrap, ctx) {
     gradeSections.forEach(sec => {
       const th = document.createElement("th");
       th.className = "tt-section-sub-hdr";
+      th.dataset.gradeKey = currentGrade;
+      th.dataset.sectionIdx = String(sec);
       th.textContent = sectionLabel(sec);
       th.style.cssText = "font-size:clamp(7px,0.65vw,9px);padding:1px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       hr2.appendChild(th);
@@ -164,6 +168,8 @@ function renderClassGrid(wrap, ctx) {
       gradeSections.forEach(sec => {
         const td = document.createElement("td");
         td.className = "tt-cell tt-percent-grid-cell";
+        td.dataset.gradeKey = currentGrade;
+        td.dataset.sectionIdx = String(sec);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
@@ -281,6 +287,7 @@ function renderTeacherGrid(wrap, ctx) {
       const th = document.createElement("th");
       th.className = "tt-period-sub-hdr" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
       th.dataset.day = String(day);
+      th.dataset.period = String(p);
       th.textContent = lbl;
       th.style.cssText = "font-size:clamp(7px,0.65vw,9px);padding:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       hr2.appendChild(th);
@@ -316,6 +323,8 @@ function renderTeacherGrid(wrap, ctx) {
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.dataset.gradeKey = cls.gradeKey;
+        td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
@@ -433,6 +442,7 @@ function renderRoomGrid(wrap, ctx) {
       const th = document.createElement("th");
       th.className = "tt-period-sub-hdr" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
       th.dataset.day = String(day);
+      th.dataset.period = String(p);
       th.textContent = lbl;
       th.style.cssText = "font-size:clamp(7px,0.65vw,9px);padding:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       hr2.appendChild(th);
@@ -468,6 +478,8 @@ function renderRoomGrid(wrap, ctx) {
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell tt-room-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.dataset.gradeKey = cls.gradeKey;
+        td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({
@@ -566,6 +578,7 @@ function renderAllClassesGrid(wrap, ctx) {
       const th = document.createElement("th");
       th.className = "tt-period-sub-hdr" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
       th.dataset.day = String(day);
+      th.dataset.period = String(p);
       th.textContent = lbl;
       th.style.cssText = "font-size:clamp(7px,0.65vw,9px);padding:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
       hr2.appendChild(th);
@@ -600,6 +613,8 @@ function renderAllClassesGrid(wrap, ctx) {
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
         td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.dataset.gradeKey = cls.gradeKey;
+        td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
@@ -678,6 +693,7 @@ function buildGrid(periods, days, wrap, getEntries, ctx, cardOpts = {}) {
     days.forEach((_, day) => {
       const td = document.createElement("td");
       td.className = "tt-cell tt-grade-percent-cell";
+      if (ctx.currentGrade) td.dataset.gradeKey = ctx.currentGrade;
       td.setAttribute("data-day", day);
       td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
       const slotEntries = getEntries(day, period);

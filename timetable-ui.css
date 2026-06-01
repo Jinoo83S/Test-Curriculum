@@ -1432,3 +1432,59 @@ button.tt-grade-filter-btn.active {
   .tt-export-body { grid-template-columns: 1fr; }
   .tt-export-picker select { min-height: 190px; }
 }
+
+/* Drag conflict preview: highlights conflict time/class headers while dragging cards */
+.tt-cell.tt-drag-preview-ok {
+  box-shadow: inset 0 0 0 1px rgba(34,197,94,.22);
+  background-image: linear-gradient(rgba(34,197,94,.045), rgba(34,197,94,.045));
+}
+.tt-cell.tt-drag-preview-student {
+  box-shadow: inset 0 0 0 2px rgba(239,68,68,.8) !important;
+  background-image: linear-gradient(rgba(239,68,68,.13), rgba(239,68,68,.13)) !important;
+}
+.tt-cell.tt-drag-preview-teacher {
+  box-shadow: inset 0 0 0 2px rgba(245,158,11,.78) !important;
+  background-image: linear-gradient(rgba(245,158,11,.13), rgba(245,158,11,.13)) !important;
+}
+.tt-cell.tt-drag-preview-room {
+  box-shadow: inset 0 0 0 2px rgba(234,179,8,.78) !important;
+  background-image: linear-gradient(rgba(234,179,8,.13), rgba(234,179,8,.13)) !important;
+}
+.tt-all-row-hdr.tt-drag-preview-row-student,
+.tt-period-label.tt-drag-preview-row-student,
+.tt-section-sub-hdr.tt-drag-preview-row-student {
+  background:#fee2e2 !important;
+  color:#991b1b !important;
+  box-shadow: inset 0 0 0 2px #ef4444 !important;
+}
+.tt-all-row-hdr.tt-drag-preview-row-teacher,
+.tt-period-label.tt-drag-preview-row-teacher {
+  background:#ffedd5 !important;
+  color:#9a3412 !important;
+  box-shadow: inset 0 0 0 2px #f97316 !important;
+}
+.tt-all-row-hdr.tt-drag-preview-row-room,
+.tt-period-label.tt-drag-preview-row-room {
+  background:#fef9c3 !important;
+  color:#854d0e !important;
+  box-shadow: inset 0 0 0 2px #eab308 !important;
+}
+.tt-period-sub-hdr.tt-drag-preview-slot-student {
+  background:#fee2e2 !important;
+  color:#991b1b !important;
+  box-shadow: inset 0 -2px 0 #ef4444 !important;
+}
+.tt-period-sub-hdr.tt-drag-preview-slot-teacher {
+  background:#ffedd5 !important;
+  color:#9a3412 !important;
+  box-shadow: inset 0 -2px 0 #f97316 !important;
+}
+.tt-period-sub-hdr.tt-drag-preview-slot-room {
+  background:#fef9c3 !important;
+  color:#854d0e !important;
+  box-shadow: inset 0 -2px 0 #eab308 !important;
+}
+.tt-entry-card.tt-drag-teacher-busy {
+  outline:2px dashed #f97316 !important;
+  outline-offset:-2px;
+}
