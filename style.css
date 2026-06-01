@@ -7673,3 +7673,28 @@ a.topbar-nav-link.active,
     padding-bottom: 2px !important;
   }
 }
+
+
+/* ================================================================
+   FINAL · Topbar state cleanup
+   - Auto-save state appears only once through the toggle button.
+   - saveStatusEl is used only for transient save messages.
+   - In developer OFF mode, local/online switch is hidden.
+   ================================================================ */
+.save-status[hidden] {
+  display: none !important;
+}
+html.his-dev-tools-off .top-mode-switch,
+body.his-dev-tools-off .top-mode-switch {
+  display: none !important;
+}
+html.his-dev-tools-off .save-mode-toggle,
+body.his-dev-tools-off .save-mode-toggle,
+html.his-dev-tools-off .manual-save-btn,
+body.his-dev-tools-off .manual-save-btn,
+html.his-dev-tools-off .auth-status,
+body.his-dev-tools-off .auth-status,
+html.his-dev-tools-off .developer-toggle-btn,
+body.his-dev-tools-off .developer-toggle-btn {
+  display: inline-flex !important;
+}

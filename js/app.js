@@ -810,6 +810,9 @@ function updateSaveControlButtons() {
 
 function setPersistentSaveModeStatus() {
   if (!saveStatusEl) return;
+  // 자동저장 ON/OFF는 saveModeBtn 한 곳에서만 표시합니다.
+  // saveStatusEl은 저장 중/저장됨/오류 같은 일시 상태 표시용으로만 사용합니다.
+  saveStatusEl.hidden = true;
   if (isAutoSaveEnabled()) {
     saveStatusEl.textContent = "자동저장 ON";
     saveStatusEl.className = "save-status save-status-auto-on";
@@ -993,20 +996,25 @@ setOnSaveStatus((status, detail) => {
   updateSaveControlButtons();
 
   if (status === "saving") {
+    saveStatusEl.hidden = false;
     saveStatusEl.textContent = "저장 대기 중…"; saveStatusEl.className = "save-status saving";
   } else if (status === "dirty") {
+    saveStatusEl.hidden = false;
     const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
     saveStatusEl.textContent = `변경 ${count}개 저장 대기`;
     saveStatusEl.className = "save-status saving";
   } else if (status === "saved") {
+    saveStatusEl.hidden = false;
     saveStatusEl.textContent = "저장됨"; saveStatusEl.className = "save-status saved";
     saveStatusTimer = setTimeout(() => { setPersistentSaveModeStatus(); updateSaveControlButtons(); }, 2500);
   } else if (status === "skipped") {
+    saveStatusEl.hidden = false;
     saveStatusEl.textContent = "변경 없음"; saveStatusEl.className = "save-status saved";
     saveStatusTimer = setTimeout(() => { setPersistentSaveModeStatus(); updateSaveControlButtons(); }, 1500);
   } else if (status === "mode") {
     setPersistentSaveModeStatus();
   } else {
+    saveStatusEl.hidden = false;
     saveStatusEl.textContent = "저장 실패"; saveStatusEl.className = "save-status error";
   }
 });
