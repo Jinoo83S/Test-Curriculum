@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS 세부 구성</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=curr_topbar_status" />
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-section="setup" data-initial-view="subjectsetup">
@@ -23,7 +23,7 @@
     <a href="timetable.html" class="topbar-nav-btn topbar-nav-link">⏰ 시간표</a>
   </nav>
   <div class="topbar-right">
-    <div class="top-mode-switch" aria-label="개발 모드 전환">
+    <div class="top-mode-switch" aria-label="저장 위치 모드 전환">
       <button id="topLocalModeBtn" class="secondary-btn top-mode-btn" type="button">로컬 모드</button>
       <button id="topOnlineModeBtn" class="secondary-btn top-mode-btn" type="button">온라인 모드</button>
     </div>
@@ -58,6 +58,6 @@
   </section>
 </main>
 <script type="module" src="js/local-dev.js?v=20260528_usage_monitor"></script>
-<script type="module" src="js/app.js?v=20260528_usage_monitor"></script>
+<script type="module" src="js/app.js?v=curr_topbar_status"></script>
 </body>
 </html>

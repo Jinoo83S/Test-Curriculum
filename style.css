@@ -7163,3 +7163,212 @@ button.his-ui-btn {
   line-height: 1.45;
   color: #64748b;
 }
+
+/* ================================================================
+   Curriculum topbar status UI · match timetable editor visibility
+   ================================================================ */
+.topbar {
+  background: #1e3a5f !important;
+  color: #fff !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,.22) !important;
+  min-height: 44px !important;
+  padding: 5px 10px !important;
+  gap: 8px !important;
+}
+.topbar-left h1 {
+  font-size: 15px !important;
+  line-height: 1.05 !important;
+  white-space: nowrap !important;
+}
+.subtitle {
+  font-size: 10px !important;
+  color: #93c5fd !important;
+}
+.topbar-nav {
+  gap: 4px !important;
+  justify-content: flex-start !important;
+}
+.topbar-nav-btn,
+a.topbar-nav-link {
+  height: 28px !important;
+  padding: 4px 10px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255,255,255,.24) !important;
+  background: rgba(255,255,255,.10) !important;
+  color: rgba(255,255,255,.84) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  line-height: 1 !important;
+}
+.topbar-nav-btn:hover,
+a.topbar-nav-link:hover {
+  background: rgba(255,255,255,.22) !important;
+  color: #fff !important;
+}
+.topbar-nav-btn.active,
+a.topbar-nav-link.active {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-color: #60a5fa !important;
+}
+.topbar-right {
+  gap: 5px !important;
+  align-items: center !important;
+}
+.topbar-right button,
+.topbar-right .secondary-btn,
+.topbar-right .primary-btn,
+.topbar-right .danger-btn,
+.local-dev-menu > summary {
+  height: 28px !important;
+  padding: 4px 9px !important;
+  border-radius: 8px !important;
+  font-size: 12px !important;
+  font-weight: 850 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  border: 1px solid rgba(255,255,255,.28) !important;
+  box-shadow: none !important;
+}
+.topbar-right .secondary-btn {
+  background: rgba(255,255,255,.10) !important;
+  color: #e5edff !important;
+}
+.topbar-right .secondary-btn:hover {
+  background: rgba(255,255,255,.22) !important;
+  color: #fff !important;
+}
+.topbar-right .primary-btn {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-color: #60a5fa !important;
+}
+.topbar-right .danger-btn {
+  background: rgba(220,38,38,.22) !important;
+  color: #fecaca !important;
+  border-color: rgba(252,165,165,.55) !important;
+}
+.top-mode-switch {
+  height: 30px !important;
+  padding: 2px !important;
+  gap: 2px !important;
+  border-radius: 999px !important;
+  background: rgba(15,23,42,.24) !important;
+  border: 1px solid rgba(255,255,255,.24) !important;
+}
+.top-mode-switch .top-mode-btn {
+  height: 24px !important;
+  padding: 3px 9px !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: #cbd5e1 !important;
+  border-color: transparent !important;
+}
+.top-mode-switch .top-mode-btn.mode-local-active,
+.top-mode-switch .top-mode-btn.mode-active:not(.mode-online-active) {
+  background: #fbbf24 !important;
+  color: #451a03 !important;
+  border-color: #fcd34d !important;
+}
+.top-mode-switch .top-mode-btn.mode-online-active {
+  background: #22c55e !important;
+  color: #052e16 !important;
+  border-color: #86efac !important;
+}
+.developer-toggle-btn {
+  border-radius: 999px !important;
+  font-weight: 900 !important;
+}
+.developer-toggle-btn.developer-on,
+.developer-toggle-btn.mode-active {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #fbbf24 !important;
+}
+.developer-toggle-btn.developer-off:not(.mode-active) {
+  background: #334155 !important;
+  color: #cbd5e1 !important;
+  border-color: #64748b !important;
+}
+.save-mode-toggle.save-mode-on {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #86efac !important;
+}
+.save-mode-toggle.save-mode-off {
+  background: #334155 !important;
+  color: #fef3c7 !important;
+  border-color: #f59e0b !important;
+}
+.manual-save-btn {
+  background: #2563eb !important;
+  color: #fff !important;
+  border-color: #60a5fa !important;
+}
+.manual-save-btn.manual-save-pending {
+  animation: manualSavePulse 1.2s ease-in-out infinite;
+}
+@keyframes manualSavePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(96,165,250,.25); }
+  50% { box-shadow: 0 0 0 3px rgba(96,165,250,.16); }
+}
+.auth-status,
+.save-status {
+  height: 28px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  padding: 3px 9px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 850 !important;
+  white-space: nowrap !important;
+  max-width: none !important;
+  text-overflow: clip !important;
+  overflow: visible !important;
+}
+.auth-status {
+  color: #bfdbfe !important;
+  background: rgba(255,255,255,.10) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+}
+.save-status {
+  color: #dbeafe !important;
+  background: rgba(255,255,255,.10) !important;
+  border: 1px solid rgba(255,255,255,.18) !important;
+}
+.save-status.save-status-auto-on,
+.save-status.saved {
+  color: #166534 !important;
+  background: #dcfce7 !important;
+  border-color: #86efac !important;
+}
+.save-status.save-status-auto-off,
+.save-status.saving {
+  color: #92400e !important;
+  background: #fef3c7 !important;
+  border-color: #fbbf24 !important;
+}
+.save-status.error {
+  color: #991b1b !important;
+  background: #fee2e2 !important;
+  border-color: #fecaca !important;
+}
+/* 개발자 OFF여도 운영 상태 확인에 필요한 항목은 숨기지 않습니다. */
+.his-dev-tools-off .top-mode-switch,
+.his-dev-tools-off .save-status,
+.his-dev-tools-off .save-mode-toggle,
+.his-dev-tools-off .manual-save-btn {
+  display: inline-flex !important;
+}
+/* 개발자 OFF일 때는 진단/DB/사용량 같은 개발 도구만 숨깁니다. */
+.his-dev-tools-off .local-dev-menu,
+.his-dev-tools-off .firestore-diagnostic-btn,
+.his-dev-tools-off .data-cleanup-btn,
+.his-dev-tools-off .firestore-usage-btn {
+  display: none !important;
+}
+@media (max-width: 1279px) {
+  .topbar { padding: 5px 8px !important; }
+  .topbar-right { overflow-x: auto; flex-wrap: nowrap !important; justify-content: flex-start !important; }
+  .topbar-nav { overflow-x: auto; }
+}

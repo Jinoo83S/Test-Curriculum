@@ -117,6 +117,8 @@ function applyDeveloperToolsVisibility() {
   if (btn) {
     btn.textContent = enabled ? "개발자 ON" : "개발자 OFF";
     btn.classList.toggle("mode-active", enabled);
+    btn.classList.toggle("developer-on", enabled);
+    btn.classList.toggle("developer-off", !enabled);
     btn.setAttribute("aria-pressed", enabled ? "true" : "false");
     btn.onclick = (event) => {
       event.preventDefault();
@@ -186,7 +188,10 @@ function setupTopModeSwitchButtons() {
     document.body.classList.toggle("his-online-mode", !isLocal);
   }
 
+  localBtn.textContent = "로컬 모드";
+  onlineBtn.textContent = "온라인 모드";
   localBtn.classList.toggle("mode-active", isLocal);
+  localBtn.classList.toggle("mode-local-active", isLocal);
   localBtn.classList.remove("mode-online-active");
   localBtn.setAttribute("aria-pressed", isLocal ? "true" : "false");
   localBtn.title = isLocal

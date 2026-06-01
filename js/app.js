@@ -28,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "20260528_usage_monitor";
+const APP_MODULE_VERSION = "curr_topbar_status";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -790,16 +790,32 @@ let saveModeBtn = null;
 let savePendingBtn = null;
 
 function updateSaveControlButtons() {
+  const autoSave = isAutoSaveEnabled();
   if (saveModeBtn) {
-    saveModeBtn.textContent = isAutoSaveEnabled() ? "자동저장 ON" : "자동저장 OFF";
-    saveModeBtn.title = isAutoSaveEnabled()
-      ? "클릭하면 개발용 수동 저장 모드로 전환됩니다."
-      : "클릭하면 자동 저장을 다시 켭니다.";
+    saveModeBtn.textContent = autoSave ? "자동저장 ON" : "자동저장 OFF";
+    saveModeBtn.title = autoSave
+      ? "현재 자동저장 중입니다. 클릭하면 수동 저장 모드로 전환됩니다."
+      : "현재 수동 저장 모드입니다. 클릭하면 자동저장을 다시 켭니다.";
+    saveModeBtn.classList.toggle("save-mode-on", autoSave);
+    saveModeBtn.classList.toggle("save-mode-off", !autoSave);
+    saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
   }
   if (savePendingBtn) {
     const dirty = getDirtyDomains();
-    savePendingBtn.hidden = dirty.length === 0;
+    savePendingBtn.hidden = dirty.length === 0 || autoSave;
     savePendingBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "수동 저장";
+    savePendingBtn.classList.toggle("manual-save-pending", dirty.length > 0);
+  }
+}
+
+function setPersistentSaveModeStatus() {
+  if (!saveStatusEl) return;
+  if (isAutoSaveEnabled()) {
+    saveStatusEl.textContent = "자동저장 ON";
+    saveStatusEl.className = "save-status save-status-auto-on";
+  } else {
+    saveStatusEl.textContent = "수동 저장 모드";
+    saveStatusEl.className = "save-status save-status-auto-off";
   }
 }
 
@@ -947,8 +963,7 @@ function setupSaveQuotaControls() {
 
   saveModeBtn = document.createElement("button");
   saveModeBtn.type = "button";
-  saveModeBtn.className = "secondary-btn dev-tool-control";
-  saveModeBtn.style.padding = "6px 10px";
+  saveModeBtn.className = "secondary-btn save-mode-toggle";
   saveModeBtn.addEventListener("click", async () => {
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
@@ -958,8 +973,7 @@ function setupSaveQuotaControls() {
 
   savePendingBtn = document.createElement("button");
   savePendingBtn.type = "button";
-  savePendingBtn.className = "primary-btn dev-tool-control";
-  savePendingBtn.style.padding = "6px 10px";
+  savePendingBtn.className = "primary-btn manual-save-btn";
   savePendingBtn.addEventListener("click", async () => {
     await savePendingNow();
     updateSaveControlButtons();
@@ -968,6 +982,7 @@ function setupSaveQuotaControls() {
   saveStatusEl.insertAdjacentElement("afterend", savePendingBtn);
   saveStatusEl.insertAdjacentElement("afterend", saveModeBtn);
   updateSaveControlButtons();
+  setPersistentSaveModeStatus();
 }
 
 setupSaveQuotaControls();
@@ -978,22 +993,21 @@ setOnSaveStatus((status, detail) => {
   updateSaveControlButtons();
 
   if (status === "saving") {
-    saveStatusEl.textContent = "💾 저장 대기 중…"; saveStatusEl.className = "save-status saving";
+    saveStatusEl.textContent = "저장 대기 중…"; saveStatusEl.className = "save-status saving";
   } else if (status === "dirty") {
     const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
-    saveStatusEl.textContent = `✍️ 변경사항 ${count}개 저장 대기`;
+    saveStatusEl.textContent = `변경 ${count}개 저장 대기`;
     saveStatusEl.className = "save-status saving";
   } else if (status === "saved") {
-    saveStatusEl.textContent = "✅ 저장됨"; saveStatusEl.className = "save-status saved";
-    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 2500);
+    saveStatusEl.textContent = "저장됨"; saveStatusEl.className = "save-status saved";
+    saveStatusTimer = setTimeout(() => { setPersistentSaveModeStatus(); updateSaveControlButtons(); }, 2500);
   } else if (status === "skipped") {
-    saveStatusEl.textContent = "✅ 변경 없음"; saveStatusEl.className = "save-status saved";
-    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 1500);
+    saveStatusEl.textContent = "변경 없음"; saveStatusEl.className = "save-status saved";
+    saveStatusTimer = setTimeout(() => { setPersistentSaveModeStatus(); updateSaveControlButtons(); }, 1500);
   } else if (status === "mode") {
-    saveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드";
-    saveStatusEl.className = "save-status";
+    setPersistentSaveModeStatus();
   } else {
-    saveStatusEl.textContent = "⚠️ 저장 실패 (네트워크 또는 권한 확인)"; saveStatusEl.className = "save-status error";
+    saveStatusEl.textContent = "저장 실패"; saveStatusEl.className = "save-status error";
   }
 });
 
