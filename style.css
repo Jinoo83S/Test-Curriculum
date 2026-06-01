@@ -7372,3 +7372,304 @@ a.topbar-nav-link.active {
   .topbar-right { overflow-x: auto; flex-wrap: nowrap !important; justify-content: flex-start !important; }
   .topbar-nav { overflow-x: auto; }
 }
+
+
+/* ================================================================
+   FINAL · Curriculum topbar matches timetable editor topbar
+   - Standard buttons use timetable square-rounded style
+   - Mode/developer/save statuses remain distinguishable even when dev off
+   ================================================================ */
+.topbar {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  padding: 0 14px !important;
+  height: auto !important;
+  min-height: 44px !important;
+  background: #1e3a5f !important;
+  color: #ffffff !important;
+  flex-shrink: 0 !important;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25) !important;
+  flex-wrap: wrap !important;
+}
+.topbar-left {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
+}
+.topbar-left h1 {
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.05 !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  white-space: nowrap !important;
+}
+.subtitle {
+  margin: 2px 0 0 !important;
+  color: #93c5fd !important;
+  font-size: 10px !important;
+  line-height: 1 !important;
+}
+.topbar-nav {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  scrollbar-width: thin !important;
+}
+.topbar-right {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin-left: auto !important;
+  min-width: 0 !important;
+  flex: 1 1 auto !important;
+  flex-wrap: wrap !important;
+  justify-content: flex-end !important;
+}
+.topbar-right > *,
+.topbar-nav > * {
+  flex: 0 0 auto !important;
+}
+.topbar-nav-btn,
+a.topbar-nav-link,
+.topbar-right button,
+.topbar-right .secondary-btn,
+.topbar-right .primary-btn,
+.topbar-right .danger-btn,
+.local-dev-menu > summary {
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 4px 10px !important;
+  border: 1px solid rgba(255,255,255,.30) !important;
+  border-radius: 6px !important;
+  background: rgba(255,255,255,.10) !important;
+  color: #ffffff !important;
+  cursor: pointer !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  box-shadow: none !important;
+  transition: background .1s ease, border-color .1s ease !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+}
+.topbar-nav-btn:hover,
+a.topbar-nav-link:hover,
+.topbar-right button:hover,
+.topbar-right .secondary-btn:hover,
+.local-dev-menu > summary:hover {
+  background: rgba(255,255,255,.22) !important;
+  color: #ffffff !important;
+}
+.topbar-nav-btn.active,
+a.topbar-nav-link.active,
+.topbar-right .primary-btn,
+.manual-save-btn {
+  background: #2563eb !important;
+  color: #ffffff !important;
+  border-color: #2563eb !important;
+}
+.topbar-right .primary-btn:hover,
+.manual-save-btn:hover {
+  background: #1d4ed8 !important;
+  border-color: #1d4ed8 !important;
+}
+.topbar-right .danger-btn {
+  background: rgba(220,38,38,.20) !important;
+  color: #fecaca !important;
+  border-color: rgba(252,165,165,.50) !important;
+}
+.topbar-right .danger-btn:hover {
+  background: rgba(220,38,38,.35) !important;
+  color: #ffffff !important;
+}
+.auth-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #93c5fd !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  white-space: nowrap !important;
+}
+.top-mode-switch {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  height: 30px !important;
+  padding: 2px !important;
+  border: 1px solid rgba(255,255,255,.22) !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.10) !important;
+  flex: 0 0 auto !important;
+}
+.top-mode-switch .top-mode-btn {
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 4px 9px !important;
+  border-radius: 999px !important;
+  background: rgba(255,255,255,.16) !important;
+  color: #dbeafe !important;
+  border: 1px solid transparent !important;
+  white-space: nowrap !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+}
+.top-mode-switch .top-mode-btn:hover {
+  background: rgba(255,255,255,.28) !important;
+  color: #ffffff !important;
+}
+.top-mode-switch .top-mode-btn.mode-local-active,
+.top-mode-switch .top-mode-btn.mode-active:not(.mode-online-active) {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #fde68a !important;
+}
+.top-mode-switch .top-mode-btn.mode-online-active {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #86efac !important;
+}
+.local-dev-menu,
+.tt-local-dev-menu {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+}
+.local-dev-menu > summary,
+.tt-local-dev-menu > summary,
+.developer-toggle-btn.developer-on,
+.developer-toggle-btn.mode-active {
+  list-style: none !important;
+  border-radius: 999px !important;
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #fde68a !important;
+  font-weight: 900 !important;
+}
+.local-dev-menu > summary::-webkit-details-marker,
+.tt-local-dev-menu > summary::-webkit-details-marker { display: none !important; }
+.local-dev-menu > summary::after,
+.tt-local-dev-menu > summary::after { content: " ▾" !important; font-size: 10px !important; }
+.local-dev-menu[open] > summary::after,
+.tt-local-dev-menu[open] > summary::after { content: " ▴" !important; }
+.developer-toggle-btn.developer-off:not(.mode-active) {
+  border-radius: 6px !important;
+  background: rgba(255,255,255,.10) !important;
+  color: #e5edff !important;
+  border-color: rgba(255,255,255,.30) !important;
+}
+.save-mode-toggle.save-mode-on,
+.save-status.save-status-auto-on,
+.save-status.saved,
+.save-status.auto-on,
+.save-status[data-auto-save="on"] {
+  background: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #86efac !important;
+  border-radius: 999px !important;
+  font-weight: 900 !important;
+}
+.save-mode-toggle.save-mode-off,
+.save-status.save-status-auto-off,
+.save-status.saving,
+.save-status.auto-off,
+.save-status[data-auto-save="off"] {
+  background: #334155 !important;
+  color: #fef3c7 !important;
+  border-color: #f59e0b !important;
+  border-radius: 999px !important;
+  font-weight: 900 !important;
+}
+.save-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  min-height: 28px !important;
+  height: 28px !important;
+  padding: 4px 10px !important;
+  border: 1px solid rgba(255,255,255,.30) !important;
+  border-radius: 6px !important;
+  background: rgba(255,255,255,.10) !important;
+  color: #ffffff !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+}
+.save-status.error {
+  color: #fecaca !important;
+  background: rgba(220,38,38,.20) !important;
+  border-color: rgba(252,165,165,.50) !important;
+}
+.local-dev-menu-panel {
+  position: absolute !important;
+  right: 0 !important;
+  top: calc(100% + 6px) !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+  min-width: 150px !important;
+  padding: 8px !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  border: 1px solid #dbe2ef !important;
+  box-shadow: 0 12px 28px rgba(15,23,42,.22) !important;
+}
+.local-dev-menu-panel button {
+  width: 100% !important;
+  justify-content: center !important;
+  white-space: nowrap !important;
+  color: #111827 !important;
+  background: #e5e7eb !important;
+  border-color: #d1d5db !important;
+}
+/* 개발자 OFF여도 운영 상태 확인 항목은 계속 보입니다. */
+.his-dev-tools-off .top-mode-switch,
+.his-dev-tools-off .save-status,
+.his-dev-tools-off .save-mode-toggle,
+.his-dev-tools-off .manual-save-btn,
+.his-dev-tools-off .auth-status,
+.his-dev-tools-off .developer-toggle-btn {
+  display: inline-flex !important;
+}
+/* 개발자 OFF에서는 개발 도구만 숨깁니다. */
+.his-dev-tools-off .local-dev-menu,
+.his-dev-tools-off .firestore-diagnostic-btn,
+.his-dev-tools-off .data-cleanup-btn,
+.his-dev-tools-off .firestore-usage-btn,
+.his-dev-tools-off .dev-tool-control {
+  display: none !important;
+}
+@media (max-width: 960px) {
+  .topbar-right {
+    flex-basis: 100% !important;
+    justify-content: flex-start !important;
+    padding-top: 3px !important;
+    border-top: 1px solid rgba(255,255,255,.10) !important;
+  }
+}
+@media (max-width: 640px) {
+  .topbar-right {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    padding-bottom: 2px !important;
+  }
+}
