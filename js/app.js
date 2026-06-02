@@ -28,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "compound_subject_card";
+const APP_MODULE_VERSION = "roster_common_auto";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.

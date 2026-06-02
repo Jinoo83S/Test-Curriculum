@@ -2,7 +2,7 @@
 // rosters.js · Subject-Student Roster Mutations + View Rendering
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { makeBtn, sectionLabel, gradeDisplay } from "./utils.js";
+import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave } from "./state.js";
 import { getClasses, getClassById } from "./students.js";
@@ -149,6 +149,84 @@ function getPlacedTemplates(gf) {
   return ordered;
 }
 
+function isGenderSplitTemplate(tpl) {
+  const text = [
+    tpl?.nameKo, tpl?.nameEn,
+    tpl?.sem1NameKo, tpl?.sem1NameEn,
+    tpl?.sem2NameKo, tpl?.sem2NameEn,
+  ].map(clean).join(" ");
+  return /\[(남|여|M|F)\]/i.test(text);
+}
+
+function getCurriculumCommonAutoTargets() {
+  const targets = [];
+  const seen = new Set();
+  getActiveRosterGrades().forEach(grade => {
+    const gradeClasses = getClasses()
+      .filter(c => c.grade === grade)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+    const gradeClassCount = gradeClasses.length;
+    if (!gradeClassCount) return;
+
+    (appState.curriculum?.gradeBoards?.[grade] || []).forEach(row => {
+      if (clean(row.category) !== "교과") return;
+      if (clean(row.track) !== "공통") return;
+      [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(templateId => {
+        const key = `${grade}::${templateId}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const tpl = getTemplateById(templateId);
+        if (!tpl || isGenderSplitTemplate(tpl)) return;
+        const subjectClassCount = getClassCount(templateId);
+        if (subjectClassCount !== gradeClassCount) return;
+        targets.push({ grade, templateId, tpl, classes: gradeClasses });
+      });
+    });
+  });
+  return targets;
+}
+
+function applyCommonAutoRosters(container) {
+  if (!canEdit()) return;
+  const targets = getCurriculumCommonAutoTargets();
+  if (!targets.length) {
+    alert("자동 구성할 공통 과목이 없습니다.
+조건: 교과/공통, [남]/[여] 제외, 과목 반수 = 학년 반수");
+    return;
+  }
+
+  const preview = targets.slice(0, 12).map(t => `${gradeDisplay(t.grade)} ${getTemplateCardTitle(t.tpl)} (${t.classes.length}개 반)`).join("
+");
+  const more = targets.length > 12 ? `
+... 외 ${targets.length - 12}개` : "";
+  if (!confirm(`공통 과목 ${targets.length}개를 자동 구성합니다.
+
+${preview}${more}
+
+각 과목의 A/B/C 반에 해당 학급 전체 학생을 추가합니다. 계속할까요?`)) return;
+
+  let subjectCount = 0;
+  let entryCount = 0;
+  targets.forEach(({ grade, templateId, classes }) => {
+    if (!rosters()[templateId]) rosters()[templateId] = [];
+    const targetClassIds = new Set(classes.map(c => c.id));
+    // 현재 학년의 대상 반은 기존 배정을 지우고 A/B/C 반 기준으로 다시 채웁니다.
+    rosters()[templateId] = (rosters()[templateId] || []).filter(e => !targetClassIds.has(e.classId));
+    classes.forEach((cls, sectionIdx) => {
+      (cls.students || []).forEach(stu => {
+        rosters()[templateId].push({ classId: cls.id, studentId: stu.id, sectionIdx });
+        entryCount += 1;
+      });
+    });
+    subjectCount += 1;
+  });
+
+  scheduleSave("rosters");
+  renderRosterView(container);
+  alert(`공통 자동구성 완료
+과목 ${subjectCount}개 / 학생 배정 ${entryCount}건`);
+}
+
 // ── Main Render ───────────────────────────────────────────────────
 export function renderRosterView(container) {
   // Preserve both panel scroll positions across re-renders
@@ -163,7 +241,11 @@ export function renderRosterView(container) {
   }
   const hdr = document.createElement("div"); hdr.className = "roster-top-compact";
   const title = document.createElement("h2"); title.textContent = "수강 명단";
-  hdr.append(title, renderRosterLevelTabs(container));
+  const levelTabs = renderRosterLevelTabs(container);
+  const commonAutoBtn = makeBtn("공통 자동구성", "primary-btn compact-btn roster-common-auto-btn", () => applyCommonAutoRosters(container));
+  commonAutoBtn.disabled = !canEdit();
+  commonAutoBtn.title = "교과/공통 과목 중 [남]/[여] 과목을 제외하고, 과목 반수와 학년 반수가 같은 과목을 A/B/C 반 전체로 자동 구성합니다.";
+  hdr.append(title, levelTabs, commonAutoBtn);
   container.appendChild(hdr);
   const layout = document.createElement("div"); layout.className = "roster-layout";
 
