@@ -198,11 +198,68 @@ function getRowTemplateGroupId(row) {
   return gids.length === 1 ? gids[0] : null;
 }
 
+function getRowSubjectTitles(row) {
+  const titles = [];
+  ["sem1", "sem2"].forEach(semKey => {
+    const tid = row?.[`${semKey}TemplateId`];
+    if (!tid) return;
+    const tpl = getTemplateById(tid);
+    if (!tpl) return;
+    const data = getSemesterTemplateData(tpl, semKey) || tpl;
+    const ko = clean(data.nameKo || tpl.nameKo || "");
+    const en = clean(data.nameEn || tpl.nameEn || "");
+    titles.push(ko || en);
+  });
+  return uniqueOrdered(titles.filter(Boolean));
+}
+
+function normalizeGenderSplitTitle(title) {
+  let t = clean(title || "");
+  if (!t) return "";
+  t = t.replace(/^\s*[\[\(]\s*(남|여|남자|여자|남학생|여학생|M|F|Male|Female)\s*[\]\)]\s*/i, "");
+  t = t.replace(/^\s*(남|여|남자|여자|남학생|여학생|M|F|Male|Female)\s*[\]\)\.\-_:：]*\s*/i, "");
+  return clean(t);
+}
+
+function isGenderSplitRow(row) {
+  return getRowSubjectTitles(row).some(title => /^\s*[\[\(]?\s*(남|여|남자|여자|남학생|여학생|M|F|Male|Female)\s*[\]\)\.\-_:：]?\s*/i.test(title));
+}
+
+function getGenderSplitCountKey(row) {
+  if (!isGenderSplitRow(row)) return null;
+  const titles = getRowSubjectTitles(row).map(normalizeGenderSplitTitle).filter(Boolean);
+  if (!titles.length) return null;
+  // 같은 학년/범주/구분/교과군/기준 과목명/시수의 성별 분반은 1과목·1시수로 계산합니다.
+  return [
+    clean(row.category),
+    clean(row.track),
+    clean(row.group),
+    titles.join("|"),
+    String(parseCreditValue(row.credits))
+  ].join("::");
+}
+
+function summarizeRowsWithGenderSplit(rows, { useCreditValue = true } = {}) {
+  const map = new Map();
+  const singles = [];
+  (rows || []).forEach(r => {
+    const key = getGenderSplitCountKey(r);
+    if (!key) { singles.push(r); return; }
+    (map.get(key) || map.set(key, []).get(key)).push(r);
+  });
+  const grouped = Array.from(map.values());
+  const totalCourses = singles.length + grouped.length;
+  const singleCredits = useCreditValue ? singles.reduce((s, r) => s + parseCreditValue(r.credits), 0) : singles.length;
+  const groupedCredits = useCreditValue ? grouped.reduce((s, grs) => s + getRepresentativeTrackCredit(grs), 0) : grouped.length;
+  return { totalCourses, totalCredits: singleCredits + groupedCredits };
+}
+
 function summarizeCategoryRows(category, rows) {
   const active = (rows || []).filter(r => r.sem1TemplateId || r.sem2TemplateId);
   if (clean(category) === "창체") {
     const totalHours = active.reduce((s, r) => s + parseCreditValue(r.credits), 0);
-    return { totalCourses: active.length, totalCredits: active.length, totalHours };
+    const g = summarizeRowsWithGenderSplit(active, { useCreditValue: false });
+    return { totalCourses: g.totalCourses, totalCredits: g.totalCredits, totalHours };
   }
   if (clean(category) === "교과") {
     const cRows = active.filter(r => clean(r.track) === "공통");
@@ -210,13 +267,15 @@ function summarizeCategoryRows(category, rows) {
     const cgMap = new Map(); const cUng = [];
     cRows.forEach(r => { const gid = getRowTemplateGroupId(r); gid ? (cgMap.has(gid) ? cgMap.get(gid).push(r) : cgMap.set(gid, [r])) : cUng.push(r); });
     const gtMap = new Map(); ncRows.forEach(r => { const k = clean(r.track) || r.id; (gtMap.get(k) || gtMap.set(k, []).get(k)).push(r); });
-    const totalCourses = cUng.length + cgMap.size + gtMap.size;
-    const cc  = cUng.reduce((s, r) => s + parseCreditValue(r.credits), 0);
+    const commonUng = summarizeRowsWithGenderSplit(cUng, { useCreditValue: true });
+    const totalCourses = commonUng.totalCourses + cgMap.size + gtMap.size;
+    const cc  = commonUng.totalCredits;
     const cgc = Array.from(cgMap.entries()).reduce((s, [gid, grs]) => { const g = getTemplateGroupById(gid); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); }, 0);
     const gtc = Array.from(gtMap.values()).reduce((s, grs) => { const tgids = uniqueOrdered(grs.map(getRowTemplateGroupId).filter(Boolean)); if (tgids.length === 1) { const g = getTemplateGroupById(tgids[0]); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); } return s + getRepresentativeTrackCredit(grs); }, 0);
     return { totalCourses, totalCredits: cc + cgc + gtc };
   }
-  return { totalCourses: active.length, totalCredits: active.length, totalHours: active.reduce((s, r) => s + parseCreditValue(r.credits), 0) };
+  const g = summarizeRowsWithGenderSplit(active, { useCreditValue: false });
+  return { totalCourses: g.totalCourses, totalCredits: g.totalCredits, totalHours: active.reduce((s, r) => s + parseCreditValue(r.credits), 0) };
 }
 
 function getCategorySummary(grade, category) { return summarizeCategoryRows(category, (curriculum().gradeBoards[grade] || []).filter(r => r.category === category)); }
