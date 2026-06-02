@@ -42,6 +42,7 @@ export function updateRowField(grade, rowId, field, value) {
   row[field] = value;
   enforceChanCheCredit(row);
   scheduleSave("curriculum");
+  _onCurriculumChange();
 }
 
 export function addRow(grade) {
@@ -52,6 +53,7 @@ export function addRow(grade) {
   enforceChanCheCredit(newRow);
   rows.push(newRow);
   scheduleSave("curriculum");
+  _onCurriculumChange();
 }
 
 /** 이전 버전 호환용: 창체 credits 값은 실제 시간 수이므로 더 이상 일괄 1로 변경하지 않습니다. */
@@ -94,6 +96,7 @@ export function deleteRow(grade, rowId) {
   curriculum().gradeBoards[grade] = curriculum().gradeBoards[grade].filter(r => r.id !== rowId);
   if (!curriculum().gradeBoards[grade].length) curriculum().gradeBoards[grade].push(createRow(opts()));
   scheduleSave("curriculum");
+  _onCurriculumChange();
 }
 
 // ── Options Mutations ─────────────────────────────────────────────
@@ -101,21 +104,21 @@ export function addOption(type, value) {
   if (!canEdit()) return;
   const v = clean(value); if (!v) return;
   if (opts()[type].includes(v)) { alert("이미 있는 옵션입니다."); return; }
-  opts()[type].push(v); ensureConsistency("curriculum"); scheduleSave("curriculum");
+  opts()[type].push(v); ensureConsistency("curriculum"); scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function removeOption(type, value) {
   if (!canEdit()) return;
   if (opts()[type].length <= 1) { alert("최소 1개의 옵션은 남겨두어야 합니다."); return; }
   if (!confirm(`"${value}" 옵션을 삭제할까요?`)) return;
-  opts()[type] = opts()[type].filter(v => v !== value); ensureConsistency("curriculum"); scheduleSave("curriculum");
+  opts()[type] = opts()[type].filter(v => v !== value); ensureConsistency("curriculum"); scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function moveOption(type, index, dir) {
   if (!canEdit()) return;
   const arr = opts()[type]; const ni = index + dir;
   if (ni < 0 || ni >= arr.length) return;
-  [arr[index], arr[ni]] = [arr[ni], arr[index]]; scheduleSave("curriculum");
+  [arr[index], arr[ni]] = [arr[ni], arr[index]]; scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 // ── Drag & Drop Mutations ─────────────────────────────────────────
@@ -540,8 +543,8 @@ function createMergedDropCell(grade, rowData, templateId) {
     if (drag.kind === "template") { placeBothSems(drag.templateId, grade, rowData.id); return; }
     if (drag.kind === "placed") {
       const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId); if (!dRow) return;
-      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); } }
-      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); }
+      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); _onCurriculumChange(); } }
+      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); _onCurriculumChange(); }
     }
   });
   return cell;
@@ -684,6 +687,7 @@ export function renderOptionChips(container, type) {
       const [moved] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, moved);
       scheduleSave("curriculum");
+      _onCurriculumChange();
       renderOptionChips(container, type); // re-render with new order
     });
 

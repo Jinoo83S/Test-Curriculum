@@ -11,7 +11,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } from "./curriculum.js?v=sidebar_template_popup_editor_fix";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } from "./curriculum.js?v=board_realtime_refresh_fix";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -989,7 +989,12 @@ setOnTemplateChange(() => {
 
 // Req 4: sidebar grade chips update on board drag-drop
 setOnCurriculumChange(() => {
+  // Curriculum board mutations such as drag/drop, row add/delete, and clear are saved immediately.
+  // The board uses DOM cache, so the cache must be invalidated before re-rendering.
+  invalidateTabs();
   renderSidebar();
+  if (activeMainView === "board") renderBoardTab();
+  if (activeMainView === "results") void renderResultsPanel();
 });
 
 setAuthCheckingUI();
