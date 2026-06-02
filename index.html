@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS Curriculum</title>
-  <link rel="stylesheet" href="style.css?v=template_duplicate_grade_highlight" />
+  <link rel="stylesheet" href="style.css?v=curr_topbar_state_cleanup" />
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-section="curriculum" data-initial-view="board">
@@ -31,8 +31,7 @@
     <span id="authStatus" class="auth-status">로그인 확인 중…</span>
     <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
     <button id="loginBtn" class="primary-btn hidden" type="button">Google 로그인</button>
-    <button id="logoutBtn" class="secondary-btn hidden" type="button">로그아웃</button>
-    <button id="resetBoardBtn" class="danger-btn" type="button">보드 초기화</button>
+        <button id="resetBoardBtn" class="danger-btn" type="button">보드 초기화</button>
   </div>
 </header>
 <div id="subNavBar" class="sub-nav-bar">
@@ -244,6 +243,6 @@
   </section>
 </main>
 <script type="module" src="js/local-dev.js?v=20260528_usage_monitor"></script>
-<script type="module" src="js/app.js?v=board_drag_live_refresh"></script>
+<script type="module" src="js/app.js?v=curr_rowadd_auth_single"></script>
 </body>
 </html>

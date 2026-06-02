@@ -11,7 +11,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js?v=board_drag_live_refresh";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js?v=curr_rowadd_auth_single";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -25,10 +25,10 @@ import {
   setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js?v=template_duplicate_grade_highlight";
+} from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "template_duplicate_grade_highlight";
+const APP_MODULE_VERSION = "curr_rowadd_auth_single";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -696,11 +696,23 @@ function updateAuthUI(user) {
   writeRecentAuthSession(user);
   if (user) {
     authStatusEl && (authStatusEl.textContent = `${user.displayName || user.email || "사용자"} 로그인됨`);
-    loginBtn?.classList.add("hidden"); logoutBtn?.classList.remove("hidden");
+    if (loginBtn) {
+      loginBtn.textContent = "로그아웃";
+      loginBtn.classList.remove("hidden", "primary-btn");
+      loginBtn.classList.add("secondary-btn");
+      loginBtn.title = "현재 계정에서 로그아웃합니다.";
+    }
+    logoutBtn?.classList.add("hidden");
     document.getElementById("loginOverlay")?.classList.add("hidden");
   } else {
     authStatusEl && (authStatusEl.textContent = "로그인이 필요합니다");
-    loginBtn?.classList.remove("hidden"); logoutBtn?.classList.add("hidden");
+    if (loginBtn) {
+      loginBtn.textContent = "Google 로그인";
+      loginBtn.classList.remove("hidden", "secondary-btn");
+      loginBtn.classList.add("primary-btn");
+      loginBtn.title = "Google 계정으로 로그인합니다.";
+    }
+    logoutBtn?.classList.add("hidden");
     document.getElementById("loginOverlay")?.classList.remove("hidden");
   }
 }
@@ -1040,8 +1052,8 @@ setOnTemplateChange(() => {
 });
 
 // Curriculum board mutations must be reflected immediately.
-// Saving is asynchronous; without this local render, drag/drop changes are only visible
-// after Firestore/localStorage pushes a later update or after manual refresh.
+// Saving is asynchronous; without this local render, row additions and drag/drop changes
+// can look unchanged until a manual refresh.
 setOnCurriculumChange(() => {
   invalidateTabs();
   renderSidebar();
@@ -1077,7 +1089,10 @@ onAuth(async (user) => {
 // ================================================================
 
 // ── Auth ──────────────────────────────────────────────────────────
-loginBtn?.addEventListener("click", login);
+loginBtn?.addEventListener("click", () => {
+  if (auth.currentUser) logout();
+  else login();
+});
 logoutBtn?.addEventListener("click", logout);
 exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
 resetBoardBtn?.addEventListener("click", async () => {
