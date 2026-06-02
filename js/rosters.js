@@ -190,13 +190,11 @@ function applyCommonAutoRosters(container) {
   if (!canEdit()) return;
   const targets = getCurriculumCommonAutoTargets();
   if (!targets.length) {
-    alert("자동 구성할 공통 과목이 없습니다.
-조건: 교과/공통, [남]/[여] 제외, 과목 반수 = 학년 반수");
+    alert("자동 구성할 공통 과목이 없습니다.\n조건: 교과/공통, [남]/[여] 제외, 과목 반수 = 학년 반수");
     return;
   }
 
-  const preview = targets.slice(0, 12).map(t => `${gradeDisplay(t.grade)} ${getTemplateCardTitle(t.tpl)} (${t.classes.length}개 반)`).join("
-");
+  const preview = targets.slice(0, 12).map(t => `${gradeDisplay(t.grade)} ${getTemplateCardTitle(t.tpl)} (${t.classes.length}개 반)`).join("\n");
   const more = targets.length > 12 ? `
 ... 외 ${targets.length - 12}개` : "";
   if (!confirm(`공통 과목 ${targets.length}개를 자동 구성합니다.
@@ -223,8 +221,7 @@ ${preview}${more}
 
   scheduleSave("rosters");
   renderRosterView(container);
-  alert(`공통 자동구성 완료
-과목 ${subjectCount}개 / 학생 배정 ${entryCount}건`);
+  alert(`공통 자동구성 완료\n과목 ${subjectCount}개 / 학생 배정 ${entryCount}건`);
 }
 
 // ── Main Render ───────────────────────────────────────────────────
