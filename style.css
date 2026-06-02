@@ -7731,3 +7731,46 @@ body.his-dev-tools-off .developer-toggle-btn {
   color: #166534 !important;
   border: 1px solid #bbf7d0 !important;
 }
+
+
+/* 사이드바 과목카드: 추가/수정은 팝업으로 통일 */
+.subject-card-heading-row {
+  align-items: center;
+  gap: 8px;
+}
+.subject-card-heading-row .sidebar-btn-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.sidebar-add-template-btn {
+  min-height: 26px !important;
+  height: 26px !important;
+  padding: 0 8px !important;
+  border-radius: 8px !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  white-space: nowrap !important;
+}
+.sidebar-card-editor-hint {
+  margin: 8px 0 0;
+  padding: 8px 9px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.sidebar-card-editor-hint strong {
+  color: #1d4ed8;
+  font-weight: 900;
+}
+.tpl-popup-backdrop {
+  z-index: 10050;
+}
+.tpl-popup-modal {
+  width: min(920px, 92vw);
+}

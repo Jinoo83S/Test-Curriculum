@@ -4,7 +4,7 @@
 import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js";
 import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag } from "./state.js";
+import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate } from "./state.js";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -42,7 +42,6 @@ export function updateRowField(grade, rowId, field, value) {
   row[field] = value;
   enforceChanCheCredit(row);
   scheduleSave("curriculum");
-  _onCurriculumChange();
 }
 
 export function addRow(grade) {
@@ -52,9 +51,7 @@ export function addRow(grade) {
   const newRow = createRow(opts(), { category:last.category, track:last.track, group:last.group, credits:last.credits });
   enforceChanCheCredit(newRow);
   rows.push(newRow);
-  curriculum().gradeBoards[grade] = rows;
   scheduleSave("curriculum");
-  _onCurriculumChange();
 }
 
 /** 이전 버전 호환용: 창체 credits 값은 실제 시간 수이므로 더 이상 일괄 1로 변경하지 않습니다. */
@@ -97,7 +94,6 @@ export function deleteRow(grade, rowId) {
   curriculum().gradeBoards[grade] = curriculum().gradeBoards[grade].filter(r => r.id !== rowId);
   if (!curriculum().gradeBoards[grade].length) curriculum().gradeBoards[grade].push(createRow(opts()));
   scheduleSave("curriculum");
-  _onCurriculumChange();
 }
 
 // ── Options Mutations ─────────────────────────────────────────────
@@ -105,21 +101,21 @@ export function addOption(type, value) {
   if (!canEdit()) return;
   const v = clean(value); if (!v) return;
   if (opts()[type].includes(v)) { alert("이미 있는 옵션입니다."); return; }
-  opts()[type].push(v); ensureConsistency("curriculum"); scheduleSave("curriculum"); _onCurriculumChange();
+  opts()[type].push(v); ensureConsistency("curriculum"); scheduleSave("curriculum");
 }
 
 export function removeOption(type, value) {
   if (!canEdit()) return;
   if (opts()[type].length <= 1) { alert("최소 1개의 옵션은 남겨두어야 합니다."); return; }
   if (!confirm(`"${value}" 옵션을 삭제할까요?`)) return;
-  opts()[type] = opts()[type].filter(v => v !== value); ensureConsistency("curriculum"); scheduleSave("curriculum"); _onCurriculumChange();
+  opts()[type] = opts()[type].filter(v => v !== value); ensureConsistency("curriculum"); scheduleSave("curriculum");
 }
 
 export function moveOption(type, index, dir) {
   if (!canEdit()) return;
   const arr = opts()[type]; const ni = index + dir;
   if (ni < 0 || ni >= arr.length) return;
-  [arr[index], arr[ni]] = [arr[ni], arr[index]]; scheduleSave("curriculum"); _onCurriculumChange();
+  [arr[index], arr[ni]] = [arr[ni], arr[index]]; scheduleSave("curriculum");
 }
 
 // ── Drag & Drop Mutations ─────────────────────────────────────────
@@ -198,68 +194,11 @@ function getRowTemplateGroupId(row) {
   return gids.length === 1 ? gids[0] : null;
 }
 
-function getRowSubjectTitles(row) {
-  const titles = [];
-  ["sem1", "sem2"].forEach(semKey => {
-    const tid = row?.[`${semKey}TemplateId`];
-    if (!tid) return;
-    const tpl = getTemplateById(tid);
-    if (!tpl) return;
-    const data = getSemesterTemplateData(tpl, semKey) || tpl;
-    const ko = clean(data.nameKo || tpl.nameKo || "");
-    const en = clean(data.nameEn || tpl.nameEn || "");
-    titles.push(ko || en);
-  });
-  return uniqueOrdered(titles.filter(Boolean));
-}
-
-function normalizeGenderSplitTitle(title) {
-  let t = clean(title || "");
-  if (!t) return "";
-  t = t.replace(/^\s*[\[\(]\s*(남|여|남자|여자|남학생|여학생|M|F|Male|Female)\s*[\]\)]\s*/i, "");
-  t = t.replace(/^\s*(남|여|남자|여자|남학생|여학생|M|F|Male|Female)\s*[\]\)\.\-_:：]*\s*/i, "");
-  return clean(t);
-}
-
-function isGenderSplitRow(row) {
-  return getRowSubjectTitles(row).some(title => /^\s*[\[\(]?\s*(남|여|남자|여자|남학생|여학생|M|F|Male|Female)\s*[\]\)\.\-_:：]?\s*/i.test(title));
-}
-
-function getGenderSplitCountKey(row) {
-  if (!isGenderSplitRow(row)) return null;
-  const titles = getRowSubjectTitles(row).map(normalizeGenderSplitTitle).filter(Boolean);
-  if (!titles.length) return null;
-  // 같은 학년/범주/구분/교과군/기준 과목명/시수의 성별 분반은 1과목·1시수로 계산합니다.
-  return [
-    clean(row.category),
-    clean(row.track),
-    clean(row.group),
-    titles.join("|"),
-    String(parseCreditValue(row.credits))
-  ].join("::");
-}
-
-function summarizeRowsWithGenderSplit(rows, { useCreditValue = true } = {}) {
-  const map = new Map();
-  const singles = [];
-  (rows || []).forEach(r => {
-    const key = getGenderSplitCountKey(r);
-    if (!key) { singles.push(r); return; }
-    (map.get(key) || map.set(key, []).get(key)).push(r);
-  });
-  const grouped = Array.from(map.values());
-  const totalCourses = singles.length + grouped.length;
-  const singleCredits = useCreditValue ? singles.reduce((s, r) => s + parseCreditValue(r.credits), 0) : singles.length;
-  const groupedCredits = useCreditValue ? grouped.reduce((s, grs) => s + getRepresentativeTrackCredit(grs), 0) : grouped.length;
-  return { totalCourses, totalCredits: singleCredits + groupedCredits };
-}
-
 function summarizeCategoryRows(category, rows) {
   const active = (rows || []).filter(r => r.sem1TemplateId || r.sem2TemplateId);
   if (clean(category) === "창체") {
     const totalHours = active.reduce((s, r) => s + parseCreditValue(r.credits), 0);
-    const g = summarizeRowsWithGenderSplit(active, { useCreditValue: false });
-    return { totalCourses: g.totalCourses, totalCredits: g.totalCredits, totalHours };
+    return { totalCourses: active.length, totalCredits: active.length, totalHours };
   }
   if (clean(category) === "교과") {
     const cRows = active.filter(r => clean(r.track) === "공통");
@@ -267,15 +206,13 @@ function summarizeCategoryRows(category, rows) {
     const cgMap = new Map(); const cUng = [];
     cRows.forEach(r => { const gid = getRowTemplateGroupId(r); gid ? (cgMap.has(gid) ? cgMap.get(gid).push(r) : cgMap.set(gid, [r])) : cUng.push(r); });
     const gtMap = new Map(); ncRows.forEach(r => { const k = clean(r.track) || r.id; (gtMap.get(k) || gtMap.set(k, []).get(k)).push(r); });
-    const commonUng = summarizeRowsWithGenderSplit(cUng, { useCreditValue: true });
-    const totalCourses = commonUng.totalCourses + cgMap.size + gtMap.size;
-    const cc  = commonUng.totalCredits;
+    const totalCourses = cUng.length + cgMap.size + gtMap.size;
+    const cc  = cUng.reduce((s, r) => s + parseCreditValue(r.credits), 0);
     const cgc = Array.from(cgMap.entries()).reduce((s, [gid, grs]) => { const g = getTemplateGroupById(gid); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); }, 0);
     const gtc = Array.from(gtMap.values()).reduce((s, grs) => { const tgids = uniqueOrdered(grs.map(getRowTemplateGroupId).filter(Boolean)); if (tgids.length === 1) { const g = getTemplateGroupById(tgids[0]); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); } return s + getRepresentativeTrackCredit(grs); }, 0);
     return { totalCourses, totalCredits: cc + cgc + gtc };
   }
-  const g = summarizeRowsWithGenderSplit(active, { useCreditValue: false });
-  return { totalCourses: g.totalCourses, totalCredits: g.totalCredits, totalHours: active.reduce((s, r) => s + parseCreditValue(r.credits), 0) };
+  return { totalCourses: active.length, totalCredits: active.length, totalHours: active.reduce((s, r) => s + parseCreditValue(r.credits), 0) };
 }
 
 function getCategorySummary(grade, category) { return summarizeCategoryRows(category, (curriculum().gradeBoards[grade] || []).filter(r => r.category === category)); }
@@ -353,8 +290,12 @@ function createPopupSelect(value, options, disabled = false) {
   return select;
 }
 
-function showBoardTemplateDetail(templateId, grade, rowData, semKey) {
-  const item = getTemplateById(templateId);
+export function openTemplateCardPopup(templateId = null, context = {}) {
+  const { grade = "", rowData = null, semKey = "", mode = "edit" } = context || {};
+  const isNew = !templateId;
+  const item = isNew
+    ? normalizeTemplate({ id: uid("tpl"), language: "Korean", schoolLevel: "공통" })
+    : getTemplateById(templateId);
   if (!item) return;
 
   document.querySelector(".tpl-popup-backdrop")?.remove();
@@ -372,10 +313,15 @@ function showBoardTemplateDetail(templateId, grade, rowData, semKey) {
   const titleWrap = document.createElement("div");
   titleWrap.className = "tpl-popup-title-wrap";
   const h3 = document.createElement("h3");
-  h3.textContent = getTemplateCardTitle(item);
+  h3.textContent = isNew ? "새 과목카드 추가" : getTemplateCardTitle(item);
   const sub = document.createElement("p");
   const semLabel = semKey === "merged" ? "1·2학기 동일" : (SEMESTER_LABELS[semKey] || "");
-  sub.textContent = `${grade} · ${rowData?.category || "-"} / ${rowData?.track || "-"} / ${rowData?.group || "-"} · ${semLabel}`;
+  if (grade || rowData) {
+    sub.textContent = `${grade || "-"} · ${rowData?.category || "-"} / ${rowData?.track || "-"} / ${rowData?.group || "-"} · ${semLabel || "과목카드"}`;
+  } else {
+    const applied = getTemplateAppliedGrades(item.id).join(", ");
+    sub.textContent = isNew ? "사이드바에서 새 과목카드를 추가합니다." : `사이드바 과목카드 편집${applied ? ` · 적용 학년 ${applied}` : " · 미배정"}`;
+  }
   titleWrap.append(h3, sub);
   const closeBtn = makeBtn("×", "tpl-popup-close", () => backdrop.remove());
   header.append(titleWrap, closeBtn);
@@ -387,7 +333,7 @@ function showBoardTemplateDetail(templateId, grade, rowData, semKey) {
   baseSection.className = "tpl-popup-section";
   const baseTitle = document.createElement("div");
   baseTitle.className = "tpl-popup-section-title";
-  baseTitle.textContent = editable ? "과목카드 기본 정보 편집" : "과목카드 기본 정보";
+  baseTitle.textContent = editable ? (isNew ? "새 과목카드 정보 입력" : "과목카드 기본 정보 편집") : "과목카드 기본 정보";
   const baseGrid = document.createElement("div");
   baseGrid.className = "tpl-popup-grid";
 
@@ -451,10 +397,14 @@ function showBoardTemplateDetail(templateId, grade, rowData, semKey) {
   rowSection.className = "tpl-popup-section";
   const rowTitle = document.createElement("div");
   rowTitle.className = "tpl-popup-section-title";
-  rowTitle.textContent = "보드 배치 정보";
+  rowTitle.textContent = grade || rowData ? "보드 배치 정보" : "과목카드 적용 정보";
   const rowGrid = document.createElement("div");
   rowGrid.className = "tpl-popup-grid";
-  [["학년", grade], ["구분", rowData?.category], ["트랙", rowData?.track], ["그룹", rowData?.group], ["시수/시간", rowData?.credits]].forEach(([label, value]) => {
+  const appliedGrades = getTemplateAppliedGrades(item.id).join(", ") || "미배정";
+  const rowFields = grade || rowData
+    ? [["학년", grade], ["구분", rowData?.category], ["트랙", rowData?.track], ["그룹", rowData?.group], ["시수/시간", rowData?.credits]]
+    : [["적용 학년", appliedGrades], ["카드 ID", item.id], ["상태", isNew ? "신규" : "기존 카드"]];
+  rowFields.forEach(([label, value]) => {
     const input = createPopupInput(value || "-", true);
     rowGrid.appendChild(createPopupField(label, input));
   });
@@ -486,8 +436,11 @@ function showBoardTemplateDetail(templateId, grade, rowData, semKey) {
         alert("한글명 또는 영문명을 입력해 주세요.");
         return;
       }
+      if (isNew) {
+        appState.templates.templates.push(item);
+      }
       scheduleSave("templates");
-      document.dispatchEvent(new CustomEvent("his:template-updated", { detail: { templateId } }));
+      document.dispatchEvent(new CustomEvent("his:template-updated", { detail: { templateId: item.id, isNew } }));
       backdrop.remove();
     });
     footer.appendChild(saveBtn);
@@ -505,7 +458,7 @@ function attachExpandClick(card, meta, context = {}) {
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
     if (context.templateId) {
-      showBoardTemplateDetail(context.templateId, context.grade, context.rowData, context.semKey);
+      openTemplateCardPopup(context.templateId, { grade: context.grade, rowData: context.rowData, semKey: context.semKey });
       return;
     }
     if (!meta.children.length) return;
@@ -587,8 +540,8 @@ function createMergedDropCell(grade, rowData, templateId) {
     if (drag.kind === "template") { placeBothSems(drag.templateId, grade, rowData.id); return; }
     if (drag.kind === "placed") {
       const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId); if (!dRow) return;
-      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); _onCurriculumChange(); } }
-      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); _onCurriculumChange(); }
+      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); } }
+      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); }
     }
   });
   return cell;
@@ -731,7 +684,6 @@ export function renderOptionChips(container, type) {
       const [moved] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, moved);
       scheduleSave("curriculum");
-      _onCurriculumChange();
       renderOptionChips(container, type); // re-render with new order
     });
 

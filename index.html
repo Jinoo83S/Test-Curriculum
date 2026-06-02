@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS Curriculum</title>
-  <link rel="stylesheet" href="style.css?v=curr_sidebar_assign_divider_fullrow" />
+  <link rel="stylesheet" href="style.css?v=sidebar_template_popup_editor" />
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-section="curriculum" data-initial-view="board">
@@ -45,9 +45,10 @@
 <div class="sidebar-resizer" id="appSidebarResizer" style="position:absolute;right:-3px;top:0;bottom:0;width:8px;cursor:col-resize;z-index:10;background:transparent"></div>
 <!-- ── Subject cards ── -->
 <section class="panel">
-<div class="section-heading-row">
+<div class="section-heading-row subject-card-heading-row">
 <h2>과목 카드</h2>
 <div class="sidebar-btn-group">
+<button class="secondary-btn sidebar-add-template-btn" id="sidebarTemplateAddBtn" title="새 과목카드 추가" type="button">+ 추가</button>
 <button class="sidebar-toggle-inline" id="appSidebarToggle" title="사이드바 접기" type="button">◀</button>
 </div>
 </div>
@@ -60,50 +61,7 @@
 </div>
 <div class="template-list" id="templateList"></div>
 <div class="section-gap"></div>
-<!-- Add / Edit form -->
-<div class="form-grid" id="commonTemplateFields">
-<input id="templateNameKo" placeholder="한글 이름" type="text"/>
-<input id="templateNameEn" placeholder="영어 이름" type="text"/>
-<input id="templateTeacher" placeholder="교사 (여러 명: 쉼표 구분)" type="text"/>
-</div>
-<label class="semester-mode-toggle">
-<input id="templateSeparateSemesters" type="checkbox"/>
-<span>1·2학기 이름/교사가 다를 때 따로 입력</span>
-</label>
-<div class="semester-fields hidden" id="semesterTemplateFields">
-<div class="semester-field-card">
-<div class="semester-field-title">1학기</div>
-<div class="form-grid">
-<input id="templateSem1NameKo" placeholder="1학기 한글" type="text"/>
-<input id="templateSem1NameEn" placeholder="1학기 영어" type="text"/>
-<input id="templateSem1Teacher" placeholder="1학기 교사 (쉼표로 여러 명)" type="text"/>
-</div>
-</div>
-<div class="semester-field-card">
-<div class="semester-field-title">2학기</div>
-<div class="form-grid">
-<input id="templateSem2NameKo" placeholder="2학기 한글" type="text"/>
-<input id="templateSem2NameEn" placeholder="2학기 영어" type="text"/>
-<input id="templateSem2Teacher" placeholder="2학기 교사 (쉼표로 여러 명)" type="text"/>
-</div>
-</div>
-</div>
-<div class="form-grid-2col form-grid-tight">
-<select id="templateLanguage">
-<option value="Korean">Korean</option>
-<option value="English">English</option>
-<option value="Both">Both</option>
-</select>
-<div class="level-picker" id="templateSchoolLevelPicker">
-<button class="level-btn" data-level="중등" type="button">중등</button>
-<button class="level-btn active" data-level="공통" type="button">공통</button>
-<button class="level-btn" data-level="고등" type="button">고등</button>
-</div>
-</div>
-<div class="button-row">
-<button class="primary-btn" id="templateSubmitBtn" type="button">카드 추가</button>
-<button class="secondary-btn hidden" id="templateCancelBtn" type="button">수정 취소</button>
-</div>
+<div class="sidebar-card-editor-hint">과목카드 추가와 수정은 상단 <strong>+ 추가</strong> 또는 카드의 <strong>수정</strong> 버튼으로 팝업에서 진행합니다.</div>
 </section>
 <!-- ── Category/Track/Group options ── -->
 <section class="panel">
@@ -242,7 +200,7 @@
 </div>
   </section>
 </main>
-<script type="module" src="js/local-dev.js?v=20260528_usage_monitor"></script>
-<script type="module" src="js/app.js?v=ttcard_teacher_policy"></script>
+<script type="module" src="js/local-dev.js?v=sidebar_template_popup_editor"></script>
+<script type="module" src="js/app.js?v=sidebar_template_popup_editor"></script>
 </body>
 </html>

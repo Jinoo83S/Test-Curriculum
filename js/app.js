@@ -11,7 +11,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange } from "./curriculum.js?v=gender_split_count";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } from "./curriculum.js";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -28,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "ttcard_teacher_policy";
+const APP_MODULE_VERSION = "sidebar_template_popup_editor";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -55,6 +55,7 @@ const exportXlsxBtn    = document.getElementById("exportXlsxBtn");
 
 // ── DOM: Sidebar ──────────────────────────────────────────────────
 const templateListEl        = document.getElementById("templateList");
+const sidebarTemplateAddBtn = document.getElementById("sidebarTemplateAddBtn");
 const sidebarLevelFilter    = document.getElementById("sidebarSchoolLevelFilter");
 const categoryOptionList    = document.getElementById("categoryOptionList");
 const trackOptionList       = document.getElementById("trackOptionList");
@@ -344,7 +345,7 @@ function renderSidebar() {
   [templateTeacher, sem1Teacher, sem2Teacher].forEach(el => { if (el) el.setAttribute("list", "tpl-teacher-list"); });
   updateTeacherDatalist();
   renderTemplates(templateListEl, {
-    onEdit: (id) => fillTemplateForm(id),
+    onEdit: (id) => openTemplateCardPopup(id),
     // 과목 삭제는 수강명단/시간표 카드/시간표 배치까지 정리해야 하므로
     // 삭제 직전에 관련 도메인을 확실히 불러온 뒤 실행합니다.
     onDelete: async (id) => {
@@ -359,38 +360,7 @@ function renderSidebar() {
   renderOptionChips(groupOptionList, "group");
 }
 
-function syncTemplateManagerUiFromControls() {
-  // 표 렌더링 전에는 실제 화면 컨트롤 값을 기준으로 필터 상태를 맞춥니다.
-  // Local Dev 초기화/데이터 삭제 후 이전 검색·필터 값이 메모리에 남아 있으면
-  // 입력창은 비어 있어도 "검색 조건에 맞는 과목카드가 없습니다"로 보일 수 있습니다.
-  const validLevels = new Set(["전체", "중등", "고등"]);
-  const validLangs  = new Set(["all", "Korean", "English", "Both"]);
-  const validSplits = new Set(["all", "split", "same"]);
-  const validSorts  = new Set(["ko-asc", "ko-desc", "en-asc", "language", "group"]);
-
-  if (tplMgrSearch) managerUi.search = tplMgrSearch.value || "";
-  if (tplMgrLevel) managerUi.level = validLevels.has(tplMgrLevel.value) ? tplMgrLevel.value : "전체";
-  if (tplMgrLang)  managerUi.language = validLangs.has(tplMgrLang.value) ? tplMgrLang.value : "all";
-  if (tplMgrSplit) managerUi.split = validSplits.has(tplMgrSplit.value) ? tplMgrSplit.value : "all";
-  if (tplMgrSort)  managerUi.sort = validSorts.has(tplMgrSort.value) ? tplMgrSort.value : "ko-asc";
-}
-
-function resetTemplateManagerFilters() {
-  managerUi.search = "";
-  managerUi.level = "전체";
-  managerUi.language = "all";
-  managerUi.split = "all";
-  managerUi.sort = "ko-asc";
-  if (tplMgrSearch) tplMgrSearch.value = "";
-  if (tplMgrLevel) tplMgrLevel.value = "전체";
-  if (tplMgrLang) tplMgrLang.value = "all";
-  if (tplMgrSplit) tplMgrSplit.value = "all";
-  if (tplMgrSort) tplMgrSort.value = "ko-asc";
-  clearStableOrder();
-}
-
 function renderTemplateManagerView() {
-  syncTemplateManagerUiFromControls();
   renderTemplateManagerLevelTabs();
   renderTemplateManagerTable(tplMgrTableWrap, tplMgrCount);
 }
@@ -696,23 +666,11 @@ function updateAuthUI(user) {
   writeRecentAuthSession(user);
   if (user) {
     authStatusEl && (authStatusEl.textContent = `${user.displayName || user.email || "사용자"} 로그인됨`);
-    if (loginBtn) {
-      loginBtn.textContent = "로그아웃";
-      loginBtn.classList.remove("hidden", "primary-btn");
-      loginBtn.classList.add("secondary-btn");
-      loginBtn.title = "현재 계정에서 로그아웃합니다.";
-    }
-    logoutBtn?.classList.add("hidden");
+    loginBtn?.classList.add("hidden"); logoutBtn?.classList.remove("hidden");
     document.getElementById("loginOverlay")?.classList.add("hidden");
   } else {
     authStatusEl && (authStatusEl.textContent = "로그인이 필요합니다");
-    if (loginBtn) {
-      loginBtn.textContent = "Google 로그인";
-      loginBtn.classList.remove("hidden", "secondary-btn");
-      loginBtn.classList.add("primary-btn");
-      loginBtn.title = "Google 계정으로 로그인합니다.";
-    }
-    logoutBtn?.classList.add("hidden");
+    loginBtn?.classList.remove("hidden"); logoutBtn?.classList.add("hidden");
     document.getElementById("loginOverlay")?.classList.remove("hidden");
   }
 }
@@ -802,35 +760,16 @@ let saveModeBtn = null;
 let savePendingBtn = null;
 
 function updateSaveControlButtons() {
-  const autoSave = isAutoSaveEnabled();
   if (saveModeBtn) {
-    saveModeBtn.textContent = autoSave ? "자동저장 ON" : "자동저장 OFF";
-    saveModeBtn.title = autoSave
-      ? "현재 자동저장 중입니다. 클릭하면 수동 저장 모드로 전환됩니다."
-      : "현재 수동 저장 모드입니다. 클릭하면 자동저장을 다시 켭니다.";
-    saveModeBtn.classList.toggle("save-mode-on", autoSave);
-    saveModeBtn.classList.toggle("save-mode-off", !autoSave);
-    saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
+    saveModeBtn.textContent = isAutoSaveEnabled() ? "자동저장 ON" : "자동저장 OFF";
+    saveModeBtn.title = isAutoSaveEnabled()
+      ? "클릭하면 개발용 수동 저장 모드로 전환됩니다."
+      : "클릭하면 자동 저장을 다시 켭니다.";
   }
   if (savePendingBtn) {
     const dirty = getDirtyDomains();
-    savePendingBtn.hidden = dirty.length === 0 || autoSave;
+    savePendingBtn.hidden = dirty.length === 0;
     savePendingBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "수동 저장";
-    savePendingBtn.classList.toggle("manual-save-pending", dirty.length > 0);
-  }
-}
-
-function setPersistentSaveModeStatus() {
-  if (!saveStatusEl) return;
-  // 자동저장 ON/OFF는 saveModeBtn 한 곳에서만 표시합니다.
-  // saveStatusEl은 저장 중/저장됨/오류 같은 일시 상태 표시용으로만 사용합니다.
-  saveStatusEl.hidden = true;
-  if (isAutoSaveEnabled()) {
-    saveStatusEl.textContent = "자동저장 ON";
-    saveStatusEl.className = "save-status save-status-auto-on";
-  } else {
-    saveStatusEl.textContent = "수동 저장 모드";
-    saveStatusEl.className = "save-status save-status-auto-off";
   }
 }
 
@@ -978,7 +917,8 @@ function setupSaveQuotaControls() {
 
   saveModeBtn = document.createElement("button");
   saveModeBtn.type = "button";
-  saveModeBtn.className = "secondary-btn save-mode-toggle";
+  saveModeBtn.className = "secondary-btn dev-tool-control";
+  saveModeBtn.style.padding = "6px 10px";
   saveModeBtn.addEventListener("click", async () => {
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
@@ -988,7 +928,8 @@ function setupSaveQuotaControls() {
 
   savePendingBtn = document.createElement("button");
   savePendingBtn.type = "button";
-  savePendingBtn.className = "primary-btn manual-save-btn";
+  savePendingBtn.className = "primary-btn dev-tool-control";
+  savePendingBtn.style.padding = "6px 10px";
   savePendingBtn.addEventListener("click", async () => {
     await savePendingNow();
     updateSaveControlButtons();
@@ -997,7 +938,6 @@ function setupSaveQuotaControls() {
   saveStatusEl.insertAdjacentElement("afterend", savePendingBtn);
   saveStatusEl.insertAdjacentElement("afterend", saveModeBtn);
   updateSaveControlButtons();
-  setPersistentSaveModeStatus();
 }
 
 setupSaveQuotaControls();
@@ -1008,26 +948,22 @@ setOnSaveStatus((status, detail) => {
   updateSaveControlButtons();
 
   if (status === "saving") {
-    saveStatusEl.hidden = false;
-    saveStatusEl.textContent = "저장 대기 중…"; saveStatusEl.className = "save-status saving";
+    saveStatusEl.textContent = "💾 저장 대기 중…"; saveStatusEl.className = "save-status saving";
   } else if (status === "dirty") {
-    saveStatusEl.hidden = false;
     const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
-    saveStatusEl.textContent = `변경 ${count}개 저장 대기`;
+    saveStatusEl.textContent = `✍️ 변경사항 ${count}개 저장 대기`;
     saveStatusEl.className = "save-status saving";
   } else if (status === "saved") {
-    saveStatusEl.hidden = false;
-    saveStatusEl.textContent = "저장됨"; saveStatusEl.className = "save-status saved";
-    saveStatusTimer = setTimeout(() => { setPersistentSaveModeStatus(); updateSaveControlButtons(); }, 2500);
+    saveStatusEl.textContent = "✅ 저장됨"; saveStatusEl.className = "save-status saved";
+    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 2500);
   } else if (status === "skipped") {
-    saveStatusEl.hidden = false;
-    saveStatusEl.textContent = "변경 없음"; saveStatusEl.className = "save-status saved";
-    saveStatusTimer = setTimeout(() => { setPersistentSaveModeStatus(); updateSaveControlButtons(); }, 1500);
+    saveStatusEl.textContent = "✅ 변경 없음"; saveStatusEl.className = "save-status saved";
+    saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 1500);
   } else if (status === "mode") {
-    setPersistentSaveModeStatus();
+    saveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드";
+    saveStatusEl.className = "save-status";
   } else {
-    saveStatusEl.hidden = false;
-    saveStatusEl.textContent = "저장 실패"; saveStatusEl.className = "save-status error";
+    saveStatusEl.textContent = "⚠️ 저장 실패 (네트워크 또는 권한 확인)"; saveStatusEl.className = "save-status error";
   }
 });
 
@@ -1051,15 +987,9 @@ setOnTemplateChange(() => {
   if (activeMainView === "teachers") void renderTeacherPanel();
 });
 
-// Curriculum board mutations must be reflected immediately.
-// Saving is asynchronous; without this local render, row additions and drag/drop changes
-// can look unchanged until a manual refresh.
+// Req 4: sidebar grade chips update on board drag-drop
 setOnCurriculumChange(() => {
-  invalidateTabs();
   renderSidebar();
-  if (activeMainView === "board") renderBoardTab();
-  if (activeMainView === "manager") renderTemplateManagerView();
-  if (activeMainView === "results") void renderResultsPanel();
 });
 
 setAuthCheckingUI();
@@ -1089,10 +1019,7 @@ onAuth(async (user) => {
 // ================================================================
 
 // ── Auth ──────────────────────────────────────────────────────────
-loginBtn?.addEventListener("click", () => {
-  if (auth.currentUser) logout();
-  else login();
-});
+loginBtn?.addEventListener("click", login);
 logoutBtn?.addEventListener("click", logout);
 exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
 resetBoardBtn?.addEventListener("click", async () => {
@@ -1129,6 +1056,7 @@ groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); render
 
 // ── Sidebar level filter ──────────────────────────────────────────
 sidebarLevelFilter?.addEventListener("change", e => { setSidebarLevel(e.target.value); renderSidebar(); });
+sidebarTemplateAddBtn?.addEventListener("click", () => openTemplateCardPopup(null, { mode: "new" }));
 
 // ── Template form ─────────────────────────────────────────────────
 templateSubmitBtn?.addEventListener("click", submitTemplateForm);
@@ -1184,11 +1112,9 @@ tplPasteBtn?.addEventListener("click", () => {
   const added = addParsedTemplates(parsed);
   if (tplPasteArea) tplPasteArea.value = "";
   document.getElementById("tplMgrPasteDetails")?.removeAttribute("open");
-  // 붙여넣기 직후에는 이전 검색/필터가 남아 새 카드가 안 보이지 않도록 전체 보기로 돌립니다.
-  resetTemplateManagerFilters();
   renderTemplateManagerView();
   renderSidebar();
-  alert(`${added}개 과목카드가 추가되었습니다.\n표에 보이지 않으면 검색/필터가 전체로 초기화되었는지 확인해 주세요.`);
+  alert(`${added}개 과목카드가 추가되었습니다.`);
 });
 tplPasteClearBtn?.addEventListener("click", () => { if (tplPasteArea) tplPasteArea.value = ""; });
 
