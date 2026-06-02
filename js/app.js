@@ -760,16 +760,24 @@ let saveModeBtn = null;
 let savePendingBtn = null;
 
 function updateSaveControlButtons() {
+  const autoSave = isAutoSaveEnabled();
   if (saveModeBtn) {
-    saveModeBtn.textContent = isAutoSaveEnabled() ? "자동저장 ON" : "자동저장 OFF";
-    saveModeBtn.title = isAutoSaveEnabled()
-      ? "클릭하면 개발용 수동 저장 모드로 전환됩니다."
-      : "클릭하면 자동 저장을 다시 켭니다.";
+    saveModeBtn.textContent = autoSave ? "자동저장 ON" : "자동저장 OFF";
+    saveModeBtn.title = autoSave
+      ? "현재 자동저장 중입니다. 클릭하면 수동 저장 모드로 전환됩니다."
+      : "현재 수동 저장 모드입니다. 클릭하면 자동저장을 다시 켭니다.";
+    saveModeBtn.classList.toggle("save-mode-on", autoSave);
+    saveModeBtn.classList.toggle("save-mode-off", !autoSave);
+    saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
   }
   if (savePendingBtn) {
     const dirty = getDirtyDomains();
-    savePendingBtn.hidden = dirty.length === 0;
+    // 개발자 OFF 상태에서도 수동 저장 버튼은 숨기지 않습니다.
+    // 자동저장 ON이면 평상시에는 비활성 안내, 변경사항이 있으면 즉시 저장 버튼으로 동작합니다.
+    savePendingBtn.hidden = false;
+    savePendingBtn.disabled = dirty.length === 0;
     savePendingBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "수동 저장";
+    savePendingBtn.classList.toggle("manual-save-pending", dirty.length > 0);
   }
 }
 
@@ -917,8 +925,7 @@ function setupSaveQuotaControls() {
 
   saveModeBtn = document.createElement("button");
   saveModeBtn.type = "button";
-  saveModeBtn.className = "secondary-btn dev-tool-control";
-  saveModeBtn.style.padding = "6px 10px";
+  saveModeBtn.className = "secondary-btn save-mode-toggle";
   saveModeBtn.addEventListener("click", async () => {
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
@@ -928,8 +935,7 @@ function setupSaveQuotaControls() {
 
   savePendingBtn = document.createElement("button");
   savePendingBtn.type = "button";
-  savePendingBtn.className = "primary-btn dev-tool-control";
-  savePendingBtn.style.padding = "6px 10px";
+  savePendingBtn.className = "primary-btn manual-save-btn";
   savePendingBtn.addEventListener("click", async () => {
     await savePendingNow();
     updateSaveControlButtons();
