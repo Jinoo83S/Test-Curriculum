@@ -448,7 +448,9 @@ function ensureRoomAssignmentStatusStyles() {
     .room-editor-field input,.room-editor-field select{height:27px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;padding:0 7px;font-size:10.5px;color:#334155;box-sizing:border-box;width:100%;}
     .room-editor-field input:disabled,.room-editor-field select:disabled,.room-editor-name:disabled{background:#f8fafc;color:#94a3b8;}
     .rooms-editor-empty{margin:8px;border:1px dashed #cbd5e1;border-radius:9px;padding:10px;text-align:center;color:#64748b;background:#f8fafc;font-size:11px;font-weight:800;}
-    .rooms-view-panel .his-room-main-header,.rooms-view-panel .rooms-header{margin:0 0 4px !important;padding:4px 7px !important;border-radius:8px !important;gap:6px !important;min-height:34px !important;box-shadow:0 1px 3px rgba(15,23,42,.04) !important;}
+    .rooms-view-panel{align-content:start !important;align-items:start !important;grid-auto-rows:max-content !important;}
+    .rooms-view-panel .his-room-main-header,.rooms-view-panel .rooms-header{margin:0 0 4px !important;padding:4px 7px !important;border-radius:8px !important;gap:6px !important;min-height:0 !important;height:auto !important;max-height:none !important;box-shadow:0 1px 3px rgba(15,23,42,.04) !important;align-self:start !important;flex:0 0 auto !important;box-sizing:border-box !important;}
+    .rooms-view-panel .rooms-fullpage-header{height:38px !important;min-height:38px !important;max-height:38px !important;padding:4px 8px !important;margin:0 0 6px !important;overflow:hidden !important;}
     .rooms-view-panel .rooms-title-wrap{gap:0 !important;display:flex !important;flex-direction:column !important;justify-content:center !important;}
     .rooms-view-panel .his-room-card-kicker{font-size:8px !important;line-height:1 !important;font-weight:900 !important;margin:0 0 1px !important;letter-spacing:.035em !important;}
     .rooms-view-panel .rooms-title-wrap h3{font-size:12px !important;line-height:1.1 !important;margin:0 !important;}
@@ -884,9 +886,10 @@ function renderRoomsFullPageView(container, onUpdate, options = {}) {
 
   const hdr = document.createElement("div");
   hdr.className = "rooms-header his-room-main-header rooms-fullpage-header";
+  hdr.style.cssText = "height:38px!important;min-height:38px!important;max-height:38px!important;padding:4px 8px!important;margin:0 0 6px!important;align-self:start!important;flex:0 0 auto!important;box-sizing:border-box!important;overflow:hidden!important;";
   const titleWrap = document.createElement("div");
   titleWrap.className = "rooms-title-wrap";
-  titleWrap.innerHTML = `<span class="his-room-card-kicker">Room</span><h3>교실 관리</h3><p>교실 유형, 홈룸, 담당 교사, 수용인원을 관리합니다.</p>`;
+  titleWrap.innerHTML = `<span class="his-room-card-kicker">Room</span><h3>교실 관리</h3>`;
   const actions = document.createElement("div");
   actions.className = "rooms-header-actions";
   const addBtn = makeBtn("+ 교실 추가", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
