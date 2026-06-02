@@ -7699,54 +7699,35 @@ body.his-dev-tools-off .developer-toggle-btn {
   display: inline-flex !important;
 }
 
-
-/* 과목카드 표 편집: 구분/학년/한글 이름/교사 중복 하이라이트 */
-.manager-count.has-template-duplicates {
-  color: #b45309 !important;
-  background: #fffbeb !important;
-  border: 1px solid #fde68a !important;
-  border-radius: 999px !important;
-  padding: 3px 8px !important;
-}
-.manager-table tbody tr.template-duplicate-row td,
-.manager-table tbody tr.template-duplicate-row:nth-child(even) td {
-  background: #fff7ed !important;
-}
-.manager-table tbody tr.template-duplicate-row:hover td {
-  background: #ffedd5 !important;
-}
-.manager-table td.template-duplicate-cell {
-  position: relative !important;
-  background: #ffedd5 !important;
-  box-shadow: inset 0 0 0 2px #fb923c !important;
-}
-.manager-table td.template-duplicate-cell input,
-.manager-table td.template-duplicate-cell select {
-  border-color: #fb923c !important;
-  background: #fffaf2 !important;
-}
-.template-duplicate-badge {
-  position: absolute !important;
-  top: 2px !important;
-  right: 4px !important;
-  display: inline-flex !important;
+/* ── Curriculum sidebar: assigned/unassigned dividers span full row ──
+   미배정/배정됨 구분 라벨이 과목카드와 같은 1칸 크기로 보이지 않도록,
+   2열 카드 그리드 전체 폭을 차지하게 합니다. */
+.template-list > .template-assign-divider,
+.template-list .template-assign-divider {
+  grid-column: 1 / -1 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
   align-items: center !important;
-  height: 17px !important;
-  padding: 0 6px !important;
-  border-radius: 999px !important;
-  background: #f97316 !important;
-  color: #ffffff !important;
-  font-size: 9.5px !important;
+  justify-content: flex-start !important;
+  min-height: 24px !important;
+  padding: 5px 10px !important;
+  margin: 7px 0 4px !important;
+  border-radius: 9px !important;
+  font-size: 11px !important;
   font-weight: 900 !important;
-  pointer-events: none !important;
-  box-shadow: 0 1px 2px rgba(15,23,42,.15) !important;
+  letter-spacing: -0.01em !important;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .06) !important;
 }
-.manager-table td.tpl-name-ko-cell.template-duplicate-cell input {
-  padding-right: 58px !important;
-}
-
-.manager-table td.usage-cell.template-duplicate-cell .usage-chip {
-  border-color: #fb923c !important;
-  background: #fed7aa !important;
+.template-list > .template-assign-divider.unassigned-divider,
+.template-list .template-assign-divider.unassigned-divider {
+  background: #fff7ed !important;
   color: #9a3412 !important;
+  border: 1px solid #fed7aa !important;
+}
+.template-list > .template-assign-divider.assigned-divider,
+.template-list .template-assign-divider.assigned-divider {
+  background: #ecfdf5 !important;
+  color: #166534 !important;
+  border: 1px solid #bbf7d0 !important;
 }
