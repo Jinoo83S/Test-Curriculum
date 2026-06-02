@@ -24,7 +24,7 @@ export function getCategoryColor(category) {
 }
 
 // ── Template lookup (reads from templates domain) ─────────────────
-import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle } from "./templates.js";
+import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js";
 
 // ── Row Mutations ─────────────────────────────────────────────────
 /**
