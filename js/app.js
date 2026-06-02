@@ -28,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "sidebar_template_popup_editor";
+const APP_MODULE_VERSION = "topbar_auth_save_merged_rooms_restore";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -44,12 +44,13 @@ const loadRosters      = () => lazyImport("rosters", "./rosters.js");
 const loadResults      = () => lazyImport("results", "./results.js");
 const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
 const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
-const loadRooms        = () => lazyImport("rooms", "./rooms.js");
+const loadRooms        = () => lazyImport("rooms", "./rooms.js?v=rooms_fullpage_restore");
 
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");
 const loginBtn         = document.getElementById("loginBtn");
-const logoutBtn        = document.getElementById("logoutBtn");
+const logoutBtn        = document.getElementById("logoutBtn"); // legacy placeholder: previous pages may still contain it.
+let currentAuthUser = null;
 const resetBoardBtn    = document.getElementById("resetBoardBtn");
 const exportXlsxBtn    = document.getElementById("exportXlsxBtn");
 
@@ -655,22 +656,40 @@ function writeRecentAuthSession(user) {
 
 function setAuthCheckingUI() {
   const recent = readRecentAuthSession();
+  currentAuthUser = null;
   if (authStatusEl) authStatusEl.textContent = recent?.label ? `${recent.label} 로그인 확인 중…` : "로그인 확인 중…";
-  loginBtn?.classList.add("hidden");
+  if (loginBtn) {
+    loginBtn.textContent = "로그인 확인 중…";
+    loginBtn.disabled = true;
+    loginBtn.classList.remove("hidden");
+    loginBtn.classList.add("primary-btn");
+    loginBtn.classList.remove("secondary-btn");
+  }
+  // 이전 HTML에 남아 있는 로그아웃 버튼은 항상 숨깁니다. 로그인/로그아웃은 loginBtn 하나만 사용합니다.
   logoutBtn?.classList.add("hidden");
   document.getElementById("loginOverlay")?.classList.add("hidden");
 }
 
 function updateAuthUI(user) {
   authResolved = true;
+  currentAuthUser = user || null;
   writeRecentAuthSession(user);
+
+  if (loginBtn) {
+    loginBtn.disabled = false;
+    loginBtn.classList.remove("hidden");
+    loginBtn.textContent = user ? "로그아웃" : "Google 로그인";
+    loginBtn.title = user ? "현재 계정에서 로그아웃합니다." : "Google 계정으로 로그인합니다.";
+    loginBtn.classList.toggle("primary-btn", !user);
+    loginBtn.classList.toggle("secondary-btn", !!user);
+  }
+  logoutBtn?.classList.add("hidden");
+
   if (user) {
     authStatusEl && (authStatusEl.textContent = `${user.displayName || user.email || "사용자"} 로그인됨`);
-    loginBtn?.classList.add("hidden"); logoutBtn?.classList.remove("hidden");
     document.getElementById("loginOverlay")?.classList.add("hidden");
   } else {
     authStatusEl && (authStatusEl.textContent = "로그인이 필요합니다");
-    loginBtn?.classList.remove("hidden"); logoutBtn?.classList.add("hidden");
     document.getElementById("loginOverlay")?.classList.remove("hidden");
   }
 }
@@ -757,28 +776,31 @@ setOnUpdate(domain => {
 const saveStatusEl = document.getElementById("saveStatusEl");
 let saveStatusTimer = null;
 let saveModeBtn = null;
-let savePendingBtn = null;
 
 function updateSaveControlButtons() {
   const autoSave = isAutoSaveEnabled();
-  if (saveModeBtn) {
-    saveModeBtn.textContent = autoSave ? "자동저장 ON" : "자동저장 OFF";
-    saveModeBtn.title = autoSave
-      ? "현재 자동저장 중입니다. 클릭하면 수동 저장 모드로 전환됩니다."
-      : "현재 수동 저장 모드입니다. 클릭하면 자동저장을 다시 켭니다.";
-    saveModeBtn.classList.toggle("save-mode-on", autoSave);
-    saveModeBtn.classList.toggle("save-mode-off", !autoSave);
-    saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
+  const dirty = getDirtyDomains();
+  if (!saveModeBtn) return;
+
+  // 자동저장 상태와 수동 저장 상태를 버튼 하나로 통합합니다.
+  // 별도의 "수동 저장 모드" 문구나 두 번째 저장 버튼은 만들지 않습니다.
+  if (autoSave) {
+    saveModeBtn.textContent = dirty.length ? `자동저장 중(${dirty.length})` : "자동저장 ON";
+    saveModeBtn.title = dirty.length
+      ? "변경사항이 자동저장 대기 중입니다. 클릭하면 즉시 저장합니다."
+      : "현재 자동저장 중입니다. 클릭하면 자동저장을 끕니다.";
+    saveModeBtn.disabled = false;
+  } else {
+    saveModeBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "자동저장 OFF";
+    saveModeBtn.title = dirty.length
+      ? "자동저장이 꺼져 있습니다. 클릭하면 변경사항을 수동 저장합니다."
+      : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켭니다.";
+    saveModeBtn.disabled = false;
   }
-  if (savePendingBtn) {
-    const dirty = getDirtyDomains();
-    // 개발자 OFF 상태에서도 수동 저장 버튼은 숨기지 않습니다.
-    // 자동저장 ON이면 평상시에는 비활성 안내, 변경사항이 있으면 즉시 저장 버튼으로 동작합니다.
-    savePendingBtn.hidden = false;
-    savePendingBtn.disabled = dirty.length === 0;
-    savePendingBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "수동 저장";
-    savePendingBtn.classList.toggle("manual-save-pending", dirty.length > 0);
-  }
+  saveModeBtn.classList.toggle("save-mode-on", autoSave);
+  saveModeBtn.classList.toggle("save-mode-off", !autoSave);
+  saveModeBtn.classList.toggle("manual-save-pending", dirty.length > 0);
+  saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
 }
 
 function downloadJsonFile(filename, data) {
@@ -927,21 +949,17 @@ function setupSaveQuotaControls() {
   saveModeBtn.type = "button";
   saveModeBtn.className = "secondary-btn save-mode-toggle";
   saveModeBtn.addEventListener("click", async () => {
+    const dirty = getDirtyDomains();
+    if (dirty.length) {
+      await savePendingNow();
+      updateSaveControlButtons();
+      return;
+    }
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
     updateSaveControlButtons();
-    if (next && getDirtyDomains().length) await savePendingNow();
   });
 
-  savePendingBtn = document.createElement("button");
-  savePendingBtn.type = "button";
-  savePendingBtn.className = "primary-btn manual-save-btn";
-  savePendingBtn.addEventListener("click", async () => {
-    await savePendingNow();
-    updateSaveControlButtons();
-  });
-
-  saveStatusEl.insertAdjacentElement("afterend", savePendingBtn);
   saveStatusEl.insertAdjacentElement("afterend", saveModeBtn);
   updateSaveControlButtons();
 }
@@ -966,7 +984,7 @@ setOnSaveStatus((status, detail) => {
     saveStatusEl.textContent = "✅ 변경 없음"; saveStatusEl.className = "save-status saved";
     saveStatusTimer = setTimeout(() => { saveStatusEl.textContent = ""; saveStatusEl.className = "save-status"; updateSaveControlButtons(); }, 1500);
   } else if (status === "mode") {
-    saveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드";
+    saveStatusEl.textContent = "";
     saveStatusEl.className = "save-status";
   } else {
     saveStatusEl.textContent = "⚠️ 저장 실패 (네트워크 또는 권한 확인)"; saveStatusEl.className = "save-status error";
@@ -1030,7 +1048,10 @@ onAuth(async (user) => {
 // ================================================================
 
 // ── Auth ──────────────────────────────────────────────────────────
-loginBtn?.addEventListener("click", login);
+loginBtn?.addEventListener("click", () => {
+  if (currentAuthUser) logout();
+  else login();
+});
 logoutBtn?.addEventListener("click", logout);
 exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
 resetBoardBtn?.addEventListener("click", async () => {
