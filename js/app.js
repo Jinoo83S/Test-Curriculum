@@ -11,7 +11,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } from "./curriculum.js?v=board_realtime_refresh_fix";
+import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } from "./curriculum.js?v=compound_subject_card";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -28,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "topbar_auth_save_merged_rooms_restore";
+const APP_MODULE_VERSION = "compound_subject_card";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -610,7 +610,11 @@ function submitTemplateForm() {
     alert("한글 이름 또는 영어 이름을 입력해 주세요."); return;
   }
   const prev = getTemplateById(data.id);
-  if (prev) data.calcGroupId = prev.calcGroupId || null;
+  if (prev) {
+    data.calcGroupId = prev.calcGroupId || null;
+    data.isCompound = !!prev.isCompound;
+    data.compoundParts = Array.isArray(prev.compoundParts) ? prev.compoundParts : [];
+  }
   const tpls = appState.templates.templates;
   const idx = tpls.findIndex(t => t.id === data.id);
   if (idx >= 0) tpls[idx] = data; else tpls.push(data);

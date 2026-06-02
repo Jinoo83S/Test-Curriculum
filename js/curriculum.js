@@ -42,7 +42,6 @@ export function updateRowField(grade, rowId, field, value) {
   row[field] = value;
   enforceChanCheCredit(row);
   scheduleSave("curriculum");
-  _onCurriculumChange();
 }
 
 export function addRow(grade) {
@@ -53,7 +52,6 @@ export function addRow(grade) {
   enforceChanCheCredit(newRow);
   rows.push(newRow);
   scheduleSave("curriculum");
-  _onCurriculumChange();
 }
 
 /** 이전 버전 호환용: 창체 credits 값은 실제 시간 수이므로 더 이상 일괄 1로 변경하지 않습니다. */
@@ -96,7 +94,6 @@ export function deleteRow(grade, rowId) {
   curriculum().gradeBoards[grade] = curriculum().gradeBoards[grade].filter(r => r.id !== rowId);
   if (!curriculum().gradeBoards[grade].length) curriculum().gradeBoards[grade].push(createRow(opts()));
   scheduleSave("curriculum");
-  _onCurriculumChange();
 }
 
 // ── Options Mutations ─────────────────────────────────────────────
@@ -104,21 +101,21 @@ export function addOption(type, value) {
   if (!canEdit()) return;
   const v = clean(value); if (!v) return;
   if (opts()[type].includes(v)) { alert("이미 있는 옵션입니다."); return; }
-  opts()[type].push(v); ensureConsistency("curriculum"); scheduleSave("curriculum"); _onCurriculumChange();
+  opts()[type].push(v); ensureConsistency("curriculum"); scheduleSave("curriculum");
 }
 
 export function removeOption(type, value) {
   if (!canEdit()) return;
   if (opts()[type].length <= 1) { alert("최소 1개의 옵션은 남겨두어야 합니다."); return; }
   if (!confirm(`"${value}" 옵션을 삭제할까요?`)) return;
-  opts()[type] = opts()[type].filter(v => v !== value); ensureConsistency("curriculum"); scheduleSave("curriculum"); _onCurriculumChange();
+  opts()[type] = opts()[type].filter(v => v !== value); ensureConsistency("curriculum"); scheduleSave("curriculum");
 }
 
 export function moveOption(type, index, dir) {
   if (!canEdit()) return;
   const arr = opts()[type]; const ni = index + dir;
   if (ni < 0 || ni >= arr.length) return;
-  [arr[index], arr[ni]] = [arr[ni], arr[index]]; scheduleSave("curriculum"); _onCurriculumChange();
+  [arr[index], arr[ni]] = [arr[ni], arr[index]]; scheduleSave("curriculum");
 }
 
 // ── Drag & Drop Mutations ─────────────────────────────────────────
@@ -396,6 +393,85 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
   );
   sepSection.append(sepTitle, semGrid);
 
+  const compoundSection = document.createElement("div");
+  compoundSection.className = "tpl-popup-section";
+  const compoundTitle = document.createElement("label");
+  compoundTitle.className = "tpl-popup-section-title tpl-popup-check-title";
+  const compoundCheck = document.createElement("input");
+  compoundCheck.type = "checkbox";
+  compoundCheck.checked = !!item.isCompound || (Array.isArray(item.compoundParts) && item.compoundParts.length > 0);
+  compoundCheck.disabled = !editable;
+  const compoundText = document.createElement("span");
+  compoundText.textContent = "복합 과목 카드로 사용";
+  compoundTitle.append(compoundCheck, compoundText);
+
+  const compoundHint = document.createElement("div");
+  compoundHint.style.cssText = "font-size:11px;line-height:1.5;color:#64748b;margin:-4px 0 8px";
+  compoundHint.textContent = "하나의 커리큘럼 과목/수강명단을 여러 실제 시간표 카드로 나누어 생성합니다. 예: 심화물리(2) 2시수 + 미적분(2) 2시수.";
+
+  const compoundRows = document.createElement("div");
+  compoundRows.style.cssText = "display:flex;flex-direction:column;gap:6px";
+  const compoundAddBtn = makeBtn("+ 구성 추가", "secondary-btn compact-btn", () => {
+    addCompoundPartRow({ id:uid("part"), nameKo:"", nameEn:"", teacher:"", credits:"" });
+    refreshCompoundDisabled();
+  });
+  compoundAddBtn.disabled = !editable || !compoundCheck.checked;
+
+  const getInitialCompoundParts = () => {
+    const parts = Array.isArray(item.compoundParts) ? item.compoundParts : [];
+    return parts.length ? parts : [];
+  };
+
+  function addCompoundPartRow(part = {}) {
+    const row = document.createElement("div");
+    row.className = "tpl-compound-part-row";
+    row.dataset.partId = clean(part.id) || uid("part");
+    row.style.cssText = "display:grid;grid-template-columns:1.1fr 1.1fr 1fr 80px 32px;gap:6px;align-items:center";
+    const pKo = createPopupInput(part.nameKo || "", !editable || !compoundCheck.checked);
+    const pEn = createPopupInput(part.nameEn || "", !editable || !compoundCheck.checked);
+    const pTeacher = createPopupInput(part.teacher || "", !editable || !compoundCheck.checked);
+    pTeacher.setAttribute("list", "tpl-teacher-list");
+    const pCredits = createPopupInput(part.credits || "", !editable || !compoundCheck.checked);
+    pCredits.type = "number";
+    pCredits.min = "0";
+    pCredits.step = "0.5";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "×";
+    del.title = "구성 삭제";
+    del.className = "danger-btn compact-btn";
+    del.style.cssText = "height:30px;min-width:30px;padding:0";
+    del.disabled = !editable || !compoundCheck.checked;
+    del.addEventListener("click", () => row.remove());
+    [pKo, pEn, pTeacher, pCredits].forEach(inp => { inp.style.height = "30px"; });
+    pKo.placeholder = "한글명";
+    pEn.placeholder = "영문명";
+    pTeacher.placeholder = "교사";
+    pCredits.placeholder = "시수";
+    row.append(pKo, pEn, pTeacher, pCredits, del);
+    compoundRows.appendChild(row);
+  }
+
+  function refreshCompoundDisabled() {
+    const disabled = !editable || !compoundCheck.checked;
+    compoundRows.style.opacity = compoundCheck.checked ? "1" : "0.45";
+    compoundAddBtn.disabled = disabled;
+    compoundRows.querySelectorAll("input,button").forEach(el => { el.disabled = disabled; });
+    if (compoundCheck.checked && !compoundRows.children.length) {
+      addCompoundPartRow({ id:uid("part"), nameKo:"", nameEn:"", teacher:"", credits:"" });
+      addCompoundPartRow({ id:uid("part"), nameKo:"", nameEn:"", teacher:"", credits:"" });
+    }
+  }
+
+  getInitialCompoundParts().forEach(addCompoundPartRow);
+  compoundCheck.addEventListener("change", refreshCompoundDisabled);
+  refreshCompoundDisabled();
+
+  const compoundHeader = document.createElement("div");
+  compoundHeader.style.cssText = "display:grid;grid-template-columns:1.1fr 1.1fr 1fr 80px 32px;gap:6px;font-size:10px;font-weight:900;color:#64748b;margin-bottom:4px";
+  ["구성 한글명", "구성 영문명", "교사", "시수", ""].forEach(t => { const el=document.createElement("div"); el.textContent=t; compoundHeader.appendChild(el); });
+  compoundSection.append(compoundTitle, compoundHint, compoundHeader, compoundRows, compoundAddBtn);
+
   const rowSection = document.createElement("div");
   rowSection.className = "tpl-popup-section";
   const rowTitle = document.createElement("div");
@@ -413,7 +489,7 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
   });
   rowSection.append(rowTitle, rowGrid);
 
-  body.append(baseSection, sepSection, rowSection);
+  body.append(baseSection, sepSection, compoundSection, rowSection);
 
   const footer = document.createElement("div");
   footer.className = "tpl-popup-footer";
@@ -434,10 +510,35 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
       item.sem2NameKo = sem2NameKo.value.trim();
       item.sem2NameEn = sem2NameEn.value.trim();
       item.sem2Teacher = sem2Teacher.value.trim();
+      item.isCompound = !!compoundCheck.checked;
+      item.compoundParts = Array.from(compoundRows.querySelectorAll(".tpl-compound-part-row")).map(row => {
+        const inputs = row.querySelectorAll("input");
+        return {
+          id: row.dataset.partId || uid("part"),
+          nameKo: inputs[0]?.value.trim() || "",
+          nameEn: inputs[1]?.value.trim() || "",
+          teacher: inputs[2]?.value.trim() || "",
+          credits: inputs[3]?.value.trim() || ""
+        };
+      }).filter(part => part.nameKo || part.nameEn || part.teacher || part.credits);
+      if (!item.isCompound) item.compoundParts = [];
 
       if (!item.nameKo && !item.nameEn && !(item.useSemesterOverrides && (item.sem1NameKo || item.sem1NameEn))) {
         alert("한글명 또는 영문명을 입력해 주세요.");
         return;
+      }
+      if (item.isCompound) {
+        const validParts = item.compoundParts.filter(part => (part.nameKo || part.nameEn) && part.teacher && parseCreditValue(part.credits) > 0);
+        if (validParts.length < 2) {
+          alert("복합 과목은 과목명, 교사, 시수가 입력된 구성 과목이 2개 이상 필요합니다.");
+          return;
+        }
+        item.compoundParts = validParts;
+        const expected = parseCreditValue(rowData?.credits);
+        const actual = validParts.reduce((sum, part) => sum + parseCreditValue(part.credits), 0);
+        if (expected > 0 && actual > 0 && Math.abs(expected - actual) > 0.001) {
+          if (!confirm(`복합 과목 구성 시수 합계(${actual})가 보드 시수(${expected})와 다릅니다. 그대로 저장할까요?`)) return;
+        }
       }
       if (isNew) {
         appState.templates.templates.push(item);
@@ -543,8 +644,8 @@ function createMergedDropCell(grade, rowData, templateId) {
     if (drag.kind === "template") { placeBothSems(drag.templateId, grade, rowData.id); return; }
     if (drag.kind === "placed") {
       const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId); if (!dRow) return;
-      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); _onCurriculumChange(); } }
-      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); _onCurriculumChange(); }
+      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); } }
+      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); }
     }
   });
   return cell;
@@ -687,7 +788,6 @@ export function renderOptionChips(container, type) {
       const [moved] = arr.splice(fromIdx, 1);
       arr.splice(toIdx, 0, moved);
       scheduleSave("curriculum");
-      _onCurriculumChange();
       renderOptionChips(container, type); // re-render with new order
     });
 

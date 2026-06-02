@@ -400,13 +400,27 @@ export function normalizeTemplate(item = {}) {
   const s1ko=clean(item.sem1NameKo), s1en=clean(item.sem1NameEn), s1te=clean(item.sem1Teacher);
   const s2ko=clean(item.sem2NameKo), s2en=clean(item.sem2NameEn), s2te=clean(item.sem2Teacher);
   const useSemesterOverrides = Boolean(item.useSemesterOverrides || s1ko || s1en || s1te || s2ko || s2en || s2te);
+  const compoundParts = Array.isArray(item.compoundParts)
+    ? item.compoundParts.map((part, idx) => ({
+        id: clean(part?.id) || uid("part"),
+        nameKo: clean(part?.nameKo),
+        nameEn: clean(part?.nameEn),
+        teacher: clean(part?.teacher),
+        credits: clean(part?.credits) || (idx === 0 ? "" : "")
+      })).filter(part => part.nameKo || part.nameEn || part.teacher || part.credits)
+    : [];
+  const isCompound = !!item.isCompound || compoundParts.length > 0;
   return {
     id: item.id || uid("tpl"), language, useSemesterOverrides,
     nameKo: clean(item.nameKo), nameEn: clean(item.nameEn), teacher: clean(item.teacher),
     sem1NameKo:s1ko, sem1NameEn:s1en, sem1Teacher:s1te,
     sem2NameKo:s2ko, sem2NameEn:s2en, sem2Teacher:s2te,
     calcGroupId: clean(item.calcGroupId) || null,
-    schoolLevel: ["중등","고등","공통"].includes(item.schoolLevel) ? item.schoolLevel : "공통"
+    schoolLevel: ["중등","고등","공통"].includes(item.schoolLevel) ? item.schoolLevel : "공통",
+    // 복합 과목: 하나의 커리큘럼 카드/수강명단을 여러 실제 시간표 카드로 분할 생성합니다.
+    // 예: 심화물리(2) 2시수 + 미적분(2) 2시수 = 선택5 1과목 4시수
+    isCompound,
+    compoundParts
   };
 }
 
@@ -563,6 +577,13 @@ export function normalizeTtCard(item = {}) {
     fixedRoomId: clean(item.fixedRoomId) || null,
     generatedAt: clean(item.generatedAt),
     manualEdited: !!item.manualEdited,
+
+    // 복합 과목 카드에서 파생된 실제 배치 카드 정보입니다.
+    compoundParentTemplateId: clean(item.compoundParentTemplateId) || null,
+    compoundPartId: clean(item.compoundPartId) || null,
+    compoundPartIndex: Number.isInteger(item.compoundPartIndex) ? item.compoundPartIndex : null,
+    compoundPartCount: Number.isInteger(item.compoundPartCount) ? item.compoundPartCount : 0,
+    compoundTotalCredits: num(item.compoundTotalCredits),
   };
 }
 export function normalizeTimetableConstraint(c = {}) {

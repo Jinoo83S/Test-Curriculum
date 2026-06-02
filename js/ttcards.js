@@ -84,6 +84,30 @@ function resolveGeneratedTeachers({ templateTeacherName = "", classLabels = [] }
   }
   return { teacherName: "", teachers: [], source: "none" };
 }
+function normalizeCompoundParts(tpl) {
+  if (!tpl || !tpl.isCompound || !Array.isArray(tpl.compoundParts)) return [];
+  return tpl.compoundParts
+    .map((part, idx) => ({
+      id: clean(part?.id) || `part${idx + 1}`,
+      nameKo: clean(part?.nameKo),
+      nameEn: clean(part?.nameEn),
+      teacher: clean(part?.teacher),
+      credits: parseFloat(part?.credits) || 0,
+      index: idx
+    }))
+    .filter(part => part.nameKo || part.nameEn || part.teacher || part.credits > 0);
+}
+function isCompoundTemplate(tpl) {
+  return normalizeCompoundParts(tpl).length > 0;
+}
+function getCompoundPartTitle(part, fallbackTitle = "") {
+  return clean(part?.nameKo) || clean(part?.nameEn) || fallbackTitle || "복합 과목";
+}
+function getCompoundPartTeacherInfo(part) {
+  const names = splitTeacherNames(part?.teacher);
+  return { teacherName: names.join(", "), teachers: names, source: "compound" };
+}
+
 function shouldSkipTimetableCardRow(row) {
   if (!row) return true;
   // 창체 입력값이 0인 항목은 커리큘럼 결과표에는 남기되, 시간표 카드에서는 제외합니다.
@@ -183,22 +207,28 @@ function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
   });
   return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[] };
 }
-function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing = null }) {
+function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing = null, compoundPart = null, compoundPartIndex = null, compoundPartCount = 0, compoundTotalCredits = 0 }) {
   const tpl = getTemplateById(templateId);
   const row = getCurriculumRowForCard(gradeKey, templateId);
   const audience = resolveCardAudience({ templateId, gradeKey, sectionIdx });
-  const teacherInfo = resolveGeneratedTeachers({
-    templateTeacherName: tpl ? getTemplateTeacherSummary(tpl) : (existing?.teacherName || ""),
-    classLabels: audience.classLabels.length ? audience.classLabels : (existing?.classLabels || []),
-  });
+  const baseTitle = tpl ? getTemplateCardTitle(tpl) : (existing?.subject || "(삭제된 과목)");
+  const isCompoundPart = !!compoundPart;
+  const partTeacherInfo = isCompoundPart ? getCompoundPartTeacherInfo(compoundPart) : null;
+  const teacherInfo = isCompoundPart
+    ? partTeacherInfo
+    : resolveGeneratedTeachers({
+        templateTeacherName: tpl ? getTemplateTeacherSummary(tpl) : (existing?.teacherName || ""),
+        classLabels: audience.classLabels.length ? audience.classLabels : (existing?.classLabels || []),
+      });
+  const partCredits = isCompoundPart ? (parseFloat(compoundPart.credits) || 0) : null;
   const generated = normalizeTtCard({
     id, templateId, gradeKey, sectionIdx,
     label: existing?.label || "",
-    subject: tpl ? getTemplateCardTitle(tpl) : (existing?.subject || "(삭제된 과목)"),
-    subjectEn: tpl?.nameEn || existing?.subjectEn || "",
+    subject: isCompoundPart ? getCompoundPartTitle(compoundPart, baseTitle) : baseTitle,
+    subjectEn: isCompoundPart ? (clean(compoundPart.nameEn) || clean(compoundPart.nameKo) || existing?.subjectEn || "") : (tpl?.nameEn || existing?.subjectEn || ""),
     teacherName: teacherInfo.teacherName,
     teachers: teacherInfo.teachers,
-    credits: row ? getEffectiveCredit(row) : (existing?.credits || 0),
+    credits: isCompoundPart ? partCredits : (row ? getEffectiveCredit(row) : (existing?.credits || 0)),
     category: row?.category || existing?.category || "",
     track: row?.track || existing?.track || "",
     group: row?.group || existing?.group || "",
@@ -208,27 +238,56 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     isWholeGrade: row ? isWholeGradeRow(row, tpl) : !!existing?.isWholeGrade,
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,
+    compoundParentTemplateId: isCompoundPart ? templateId : null,
+    compoundPartId: isCompoundPart ? compoundPart.id : null,
+    compoundPartIndex: isCompoundPart ? compoundPartIndex : null,
+    compoundPartCount: isCompoundPart ? compoundPartCount : 0,
+    compoundTotalCredits: isCompoundPart ? compoundTotalCredits : 0,
   });
   if (existing?.manualEdited) {
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
+    // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
     ["label","teacherName","teachers","credits","classKeys","classLabels","studentKeys","isWholeGrade"].forEach(k => {
-      if (k === "credits" && isChanCheCategory(generated.category)) return;
+      if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
   }
   return generated;
 }
+
+function buildGeneratedCardsForTemplate({ templateId, gradeKey, sectionIdx, existing = new Map() }) {
+  const tpl = getTemplateById(templateId);
+  const parts = normalizeCompoundParts(tpl);
+  if (!parts.length) {
+    const id = makeTtcId(templateId, gradeKey, sectionIdx);
+    return [buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing: existing.get(id) || null })];
+  }
+  const total = parts.reduce((sum, part) => sum + (parseFloat(part.credits) || 0), 0);
+  return parts.map((part, idx) => {
+    const id = makeTtcId(templateId, gradeKey, sectionIdx, part.id || `part${idx + 1}`);
+    return buildPersistedTtCard({
+      id, templateId, gradeKey, sectionIdx, existing: existing.get(id) || null,
+      compoundPart: part, compoundPartIndex: idx, compoundPartCount: parts.length, compoundTotalCredits: total
+    });
+  });
+}
+
 export function refreshTtCardData() {
   if (!canEdit()) return 0;
   const existing = new Map(getTtCards().map(c => [c.id, c]));
   let count = 0;
   const nextCards = [];
+  const seenSource = new Set();
   getTtCards().forEach(c => {
+    const sourceKey = `${c.templateId}::${c.gradeKey}::${c.sectionIdx ?? 0}`;
+    if (seenSource.has(sourceKey)) return;
+    seenSource.add(sourceKey);
     const row = getCurriculumRowForCard(c.gradeKey, c.templateId);
     if (shouldSkipTimetableCardRow(row)) return;
-    count++;
-    nextCards.push(buildPersistedTtCard({ id:c.id, templateId:c.templateId, gradeKey:c.gradeKey, sectionIdx:c.sectionIdx ?? 0, existing: existing.get(c.id) || c }));
+    const built = buildGeneratedCardsForTemplate({ templateId:c.templateId, gradeKey:c.gradeKey, sectionIdx:c.sectionIdx ?? 0, existing });
+    count += built.length;
+    nextCards.push(...built);
   });
   appState.timetable.ttcards = nextCards;
   scheduleSave("timetable");
@@ -278,6 +337,9 @@ function getTtCardSourceSnapshot(card) {
   const semesterMode = tpl?.useSemesterOverrides
     ? `학기분리 · 1학기 ${clean(tpl.sem1NameKo) || clean(tpl.nameKo) || "-"} / 2학기 ${clean(tpl.sem2NameKo) || clean(tpl.nameKo) || "-"}`
     : "통합";
+  const compoundSummary = isCompoundTemplate(tpl)
+    ? normalizeCompoundParts(tpl).map(p => `${getCompoundPartTitle(p)} ${p.credits || 0}시수`).join(" + ")
+    : "";
   return {
     templateId: card?.templateId || "",
     title: tpl ? getTemplateCardTitle(tpl) : "(삭제된 과목카드)",
@@ -292,6 +354,7 @@ function getTtCardSourceSnapshot(card) {
     track: row?.track || "",
     group: row?.group || "",
     credits: clean(row?.credits),
+    compoundSummary,
   };
 }
 
@@ -351,6 +414,7 @@ function createSourceCardBox(card) {
     ["교사", src.teacher],
     ["언어", src.language],
     ["학기", src.semesterMode],
+    ["복합", src.compoundSummary || "-"],
     ["기준반", src.gradeSection],
     ["반수", `${src.classCount}반`],
     ["분류", [src.category, src.track, src.group].filter(Boolean).join(" / ")],
@@ -369,6 +433,7 @@ function createGeneratedCardBox(card) {
     ["학생Key", `${Array.isArray(card.studentKeys) ? card.studentKeys.length : 0}개`],
     ["교사", card.teacherName || arrText(card.teachers)],
     ["시수", String(card.credits ?? "")],
+    ["복합", card.compoundPartId ? `${(card.compoundPartIndex ?? 0) + 1}/${card.compoundPartCount || "?"} · 전체 ${card.compoundTotalCredits || "?"}시수` : "-"],
     ["전체", card.isWholeGrade ? "전체 학년 점유" : "지정 반만 점유"],
     ["상태", card.manualEdited ? "수동 수정됨" : "원본 기준"],
     ["생성", card.generatedAt ? card.generatedAt.replace("T", " ").slice(0, 16) : ""],
@@ -385,8 +450,8 @@ export function getTtCardLabel(card) {
 }
 
 /** Stable deterministic ID so group references survive regeneration */
-export const makeTtcId = (templateId, gradeKey, sectionIdx) =>
-  `ttc_${templateId}_${gradeKey}_${sectionIdx}`;
+export const makeTtcId = (templateId, gradeKey, sectionIdx, partId = "") =>
+  partId ? `ttc_${templateId}_${gradeKey}_${sectionIdx}_part_${partId}` : `ttc_${templateId}_${gradeKey}_${sectionIdx}`;
 
 function getTtCardCredits(card) {
   const row = (appState.curriculum.gradeBoards[card.gradeKey] || [])
@@ -409,13 +474,12 @@ export function generateTtCards() {
         if (seenTpl.has(tplId)) return; seenTpl.add(tplId);
         const cc = Math.max(1, getClassCount(tplId));
         for (let i = 0; i < cc; i++) {
-          const stableId = makeTtcId(tplId, gradeKey, i);
-          if (seen.has(stableId)) continue;
-          seen.add(stableId);
-          cards.push(buildPersistedTtCard({
-            id: stableId, templateId: tplId, gradeKey, sectionIdx: i,
-            existing: existing.get(stableId) || null
-          }));
+          const built = buildGeneratedCardsForTemplate({ templateId: tplId, gradeKey, sectionIdx: i, existing });
+          built.forEach(card => {
+            if (seen.has(card.id)) return;
+            seen.add(card.id);
+            cards.push(card);
+          });
         }
       });
     });
