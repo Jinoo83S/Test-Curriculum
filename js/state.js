@@ -593,6 +593,15 @@ function normalizePeriodLabels(rawLabels, periodCount) {
   return labels.map((label, i) => label || `${i + 1}교시`);
 }
 
+function normalizeTtCardTeacherOptions(raw = {}) {
+  const allowedModes = new Set(["homeroom", "representative", "none"]);
+  const mode = allowedModes.has(clean(raw.mode)) ? clean(raw.mode) : "none";
+  return {
+    mode,
+    representativeTeacher: clean(raw.representativeTeacher)
+  };
+}
+
 function normalizeTimetableDomain(raw = {}) {
   const pc = Math.max(1, Math.min(12, parseInt(raw.config?.periodCount) || 8));
   const pl = normalizePeriodLabels(raw.config?.periodLabels, pc);
@@ -620,7 +629,10 @@ function normalizeTimetableDomain(raw = {}) {
     ttcardGroups: Array.isArray(raw.ttcardGroups)
       ? raw.ttcardGroups.map(normalizeTemplateGroup).filter(g => g.name)
       : (Array.isArray(raw.templateGroups) ? raw.templateGroups.map(normalizeTemplateGroup).filter(g => g.name) : []),
-    teacherConstraints: constraints
+    teacherConstraints: constraints,
+    // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
+    // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
+    ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})
   };
 }
 

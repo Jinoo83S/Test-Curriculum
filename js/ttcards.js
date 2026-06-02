@@ -2,13 +2,94 @@
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
 import {
-  getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary,
+  getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
 } from "./templates.js";
 import { getClassCount } from "./rosters.js";
+
+const TTCARD_TEACHER_MODES = new Set(["homeroom", "representative", "none"]);
+const TTCARD_TEACHER_MODE_LABELS = {
+  homeroom: "담임 배정",
+  representative: "대표 교사 배정",
+  none: "교사 없음 허용",
+};
+function normalizeTeacherOptionMode(mode) {
+  const v = clean(mode);
+  return TTCARD_TEACHER_MODES.has(v) ? v : "none";
+}
+function getTtCardTeacherOptions() {
+  const raw = appState.timetable?.ttcardTeacherOptions || {};
+  return {
+    mode: normalizeTeacherOptionMode(raw.mode),
+    representativeTeacher: clean(raw.representativeTeacher),
+  };
+}
+function setTtCardTeacherOptions(patch = {}) {
+  if (!appState.timetable) appState.timetable = {};
+  appState.timetable.ttcardTeacherOptions = {
+    ...getTtCardTeacherOptions(),
+    ...patch,
+  };
+  appState.timetable.ttcardTeacherOptions.mode = normalizeTeacherOptionMode(appState.timetable.ttcardTeacherOptions.mode);
+  appState.timetable.ttcardTeacherOptions.representativeTeacher = clean(appState.timetable.ttcardTeacherOptions.representativeTeacher);
+  scheduleSave("timetable");
+}
+function normalizeClassLabel(label) {
+  return clean(label).replace(/\s+/g, "").toUpperCase();
+}
+function uniqueNames(list = []) {
+  const seen = new Set();
+  return (list || []).map(clean).filter(Boolean).filter(name => {
+    const key = name.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function getAllTeacherNames() {
+  const fromTeacherTable = (appState.teachers?.teachers || []).map(t => t.name);
+  const fromTemplates = (appState.templates?.templates || [])
+    .flatMap(tpl => [
+      ...splitTeacherNames(tpl.teacher),
+      ...splitTeacherNames(tpl.sem1Teacher),
+      ...splitTeacherNames(tpl.sem2Teacher),
+    ]);
+  return uniqueNames([...fromTeacherTable, ...fromTemplates]).sort((a, b) => a.localeCompare(b, "ko"));
+}
+function getHomeroomTeachersForClassLabels(classLabels = []) {
+  const labels = new Set((classLabels || []).map(normalizeClassLabel).filter(Boolean));
+  if (!labels.size) return [];
+  return uniqueNames((appState.teachers?.teachers || [])
+    .filter(t => labels.has(normalizeClassLabel(t.note)))
+    .map(t => t.name));
+}
+function resolveGeneratedTeachers({ templateTeacherName = "", classLabels = [] } = {}) {
+  const templateTeachers = splitTeacherNames(templateTeacherName);
+  if (templateTeachers.length) {
+    return { teacherName: templateTeachers.join(", "), teachers: templateTeachers, source: "template" };
+  }
+
+  const opts = getTtCardTeacherOptions();
+  if (opts.mode === "homeroom") {
+    const homeroomTeachers = getHomeroomTeachersForClassLabels(classLabels);
+    if (homeroomTeachers.length) {
+      return { teacherName: homeroomTeachers.join(", "), teachers: homeroomTeachers, source: "homeroom" };
+    }
+  }
+  if (opts.mode === "representative" && opts.representativeTeacher) {
+    return { teacherName: opts.representativeTeacher, teachers: [opts.representativeTeacher], source: "representative" };
+  }
+  return { teacherName: "", teachers: [], source: "none" };
+}
+function shouldSkipTimetableCardRow(row) {
+  if (!row) return true;
+  // 창체 입력값이 0인 항목은 커리큘럼 결과표에는 남기되, 시간표 카드에서는 제외합니다.
+  if (isChanCheCategory(row.category) && parseCreditValue(row.credits) <= 0) return true;
+  return false;
+}
 
 function getSectionLabelFromRoster(card) {
   const rosterEntries = (appState.rosters?.rosters?.[card.templateId] || [])
@@ -106,14 +187,17 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
   const tpl = getTemplateById(templateId);
   const row = getCurriculumRowForCard(gradeKey, templateId);
   const audience = resolveCardAudience({ templateId, gradeKey, sectionIdx });
-  const teacherName = tpl ? getTemplateTeacherSummary(tpl) : (existing?.teacherName || "");
+  const teacherInfo = resolveGeneratedTeachers({
+    templateTeacherName: tpl ? getTemplateTeacherSummary(tpl) : (existing?.teacherName || ""),
+    classLabels: audience.classLabels.length ? audience.classLabels : (existing?.classLabels || []),
+  });
   const generated = normalizeTtCard({
     id, templateId, gradeKey, sectionIdx,
     label: existing?.label || "",
     subject: tpl ? getTemplateCardTitle(tpl) : (existing?.subject || "(삭제된 과목)"),
     subjectEn: tpl?.nameEn || existing?.subjectEn || "",
-    teacherName,
-    teachers: teacherName.split(/[,，·]/).map(x => x.trim()).filter(Boolean),
+    teacherName: teacherInfo.teacherName,
+    teachers: teacherInfo.teachers,
     credits: row ? getEffectiveCredit(row) : (existing?.credits || 0),
     category: row?.category || existing?.category || "",
     track: row?.track || existing?.track || "",
@@ -139,10 +223,14 @@ export function refreshTtCardData() {
   if (!canEdit()) return 0;
   const existing = new Map(getTtCards().map(c => [c.id, c]));
   let count = 0;
-  appState.timetable.ttcards = getTtCards().map(c => {
+  const nextCards = [];
+  getTtCards().forEach(c => {
+    const row = getCurriculumRowForCard(c.gradeKey, c.templateId);
+    if (shouldSkipTimetableCardRow(row)) return;
     count++;
-    return buildPersistedTtCard({ id:c.id, templateId:c.templateId, gradeKey:c.gradeKey, sectionIdx:c.sectionIdx ?? 0, existing: existing.get(c.id) || c });
+    nextCards.push(buildPersistedTtCard({ id:c.id, templateId:c.templateId, gradeKey:c.gradeKey, sectionIdx:c.sectionIdx ?? 0, existing: existing.get(c.id) || c }));
   });
+  appState.timetable.ttcards = nextCards;
   scheduleSave("timetable");
   return count;
 }
@@ -316,6 +404,7 @@ export function generateTtCards() {
     const board   = appState.curriculum.gradeBoards[gradeKey] || [];
     const seenTpl = new Set();
     board.forEach(row => {
+      if (shouldSkipTimetableCardRow(row)) return;
       [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
         if (seenTpl.has(tplId)) return; seenTpl.add(tplId);
         const cc = Math.max(1, getClassCount(tplId));
@@ -370,6 +459,80 @@ export function renderTtCardsView(container) {
   btnWrap.append(genBtn, refreshBtn, clearBtn);
   hdr.append(left, btnWrap);
   container.appendChild(hdr);
+  container.appendChild(renderTtCardTeacherOptionsPanel(container));
+
+function renderTtCardTeacherOptionsPanel(container) {
+  const opts = getTtCardTeacherOptions();
+  const panel = document.createElement("div");
+  panel.className = "ttc-generation-options";
+  panel.style.cssText = [
+    "margin:8px 0 12px",
+    "padding:10px 12px",
+    "border:1px solid #dbe4f0",
+    "border-radius:12px",
+    "background:#f8fbff",
+    "display:grid",
+    "grid-template-columns:minmax(160px,220px) minmax(180px,260px) 1fr",
+    "gap:10px",
+    "align-items:end"
+  ].join(";");
+
+  const modeWrap = document.createElement("label");
+  modeWrap.style.cssText = "display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:900;color:#334155";
+  const modeLabel = document.createElement("span");
+  modeLabel.textContent = "교사 없는 카드 처리";
+  const modeSel = document.createElement("select");
+  modeSel.style.cssText = "height:30px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;background:#fff;font-weight:800";
+  ["homeroom", "representative", "none"].forEach(mode => {
+    const o = document.createElement("option");
+    o.value = mode;
+    o.textContent = TTCARD_TEACHER_MODE_LABELS[mode];
+    if (mode === opts.mode) o.selected = true;
+    modeSel.appendChild(o);
+  });
+  modeWrap.append(modeLabel, modeSel);
+
+  const repWrap = document.createElement("label");
+  repWrap.style.cssText = "display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:900;color:#334155";
+  const repLabel = document.createElement("span");
+  repLabel.textContent = "대표 교사";
+  const repSel = document.createElement("select");
+  repSel.style.cssText = "height:30px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;background:#fff;font-weight:800";
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "선택 안 함";
+  repSel.appendChild(empty);
+  getAllTeacherNames().forEach(name => {
+    const o = document.createElement("option");
+    o.value = name;
+    o.textContent = name;
+    if (name === opts.representativeTeacher) o.selected = true;
+    repSel.appendChild(o);
+  });
+  repWrap.append(repLabel, repSel);
+
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:11px;line-height:1.45;color:#64748b;font-weight:750";
+  const refreshHint = () => {
+    repSel.disabled = modeSel.value !== "representative";
+    hint.textContent = modeSel.value === "homeroom"
+      ? "템플릿 담당교사가 비어 있으면 대상 반 표시(예: 7A, 8B)와 교사 관리의 담임 메모를 매칭해 자동 배정합니다."
+      : modeSel.value === "representative"
+        ? "템플릿 담당교사가 비어 있으면 선택한 대표 교사 1명으로 카드가 생성됩니다."
+        : "템플릿 담당교사가 비어 있어도 카드의 담당 교사를 비워 둡니다.";
+  };
+  refreshHint();
+  modeSel.addEventListener("change", () => {
+    setTtCardTeacherOptions({ mode: modeSel.value });
+    refreshHint();
+  });
+  repSel.addEventListener("change", () => {
+    setTtCardTeacherOptions({ representativeTeacher: repSel.value });
+  });
+
+  panel.append(modeWrap, repWrap, hint);
+  return panel;
+}
 
   const cards = getTtCards();
   if (!cards.length) {
