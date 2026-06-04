@@ -1203,6 +1203,10 @@ export function createTimetableSidebarHandlers(deps) {
     const rosterCount = getDiagnosticRosterCountForGrade(rosters[template?.id] || [], gradeKey);
     const meta = rosterMeta?.[template?.id] || {};
     const missingExcluded = !!meta.missingExcluded;
+    const subjectClassCount = getDiagnosticSubjectClassCount(meta, actualCards, gradeKey);
+    const actualClassCount = getDiagnosticActualClassCount(actualCards);
+    const compoundPartCount = isCompound ? Math.max(1, template.compoundParts.length) : 1;
+    const expectedCardCount = isZeroCreative ? 0 : Math.max(1, subjectClassCount || 1) * compoundPartCount;
     const actualCreditTotal = actualCards.reduce((sum, card) => sum + (Number(card.credits) || 0), 0);
     const actualCardCount = actualCards.length;
     const actualStudentCount = uniqueDiagnosticValues(actualCards.flatMap(card => card.studentKeys || [])).length;
@@ -1224,17 +1228,20 @@ export function createTimetableSidebarHandlers(deps) {
     } else if (isCompound) {
       const partCredits = template.compoundParts.reduce((sum, part) => sum + (Number(part.credits) || 0), 0);
       const expectedParts = template.compoundParts.length;
+      const expectedTotalCredits = partCredits * Math.max(1, subjectClassCount || 1);
       const hasAllParts = expectedParts > 0 && new Set(actualCards.map(card => card.compoundPartId).filter(Boolean)).size >= expectedParts;
       if (!actualCardCount) {
         level = "error"; status = "missing-ttcard"; note = "복합과목인데 시간표 구성 카드가 없습니다.";
-      } else if (!hasAllParts || Math.abs(actualCreditTotal - partCredits) > 0.001) {
-        level = "warn"; status = "compound-check"; note = `복합과목 구성 확인 필요 · 기대 ${expectedParts}개/${formatDiagnosticNumber(partCredits)}시수, 실제 ${actualCardCount}개/${formatDiagnosticNumber(actualCreditTotal)}시수`;
+      } else if (!hasAllParts || actualCardCount !== expectedCardCount || Math.abs(actualCreditTotal - expectedTotalCredits) > 0.001) {
+        level = "warn"; status = "compound-check"; note = `복합과목 구성 확인 필요 · 과목 반수 ${subjectClassCount || "?"}, 기대 카드 ${expectedCardCount}개/${formatDiagnosticNumber(expectedTotalCredits)}시수, 실제 카드 ${actualCardCount}개/${formatDiagnosticNumber(actualCreditTotal)}시수`;
       } else {
-        level = "info"; status = "compound"; note = "복합과목 분할 생성 정상";
+        level = "info"; status = "compound"; note = `복합과목 분할 생성 정상 · 과목 반수 ${subjectClassCount || actualClassCount || 1}`;
       }
       transformNote = `복합과목 ${formatDiagnosticNumber(rawCredits)}시수 → ${template.compoundParts.map(p => `${p.nameKo || p.nameEn || "구성"} ${formatDiagnosticNumber(Number(p.credits)||0)}`).join(" + ")}`;
     } else if (!actualCardCount) {
       level = "error"; status = "missing-ttcard"; note = "커리큘럼에는 있으나 시간표카드가 없습니다.";
+    } else if (subjectClassCount && actualCardCount !== expectedCardCount) {
+      level = "warn"; status = "class-card-mismatch"; note = `과목 반수와 시간표카드 수가 맞지 않습니다 · 과목 반수 ${subjectClassCount}, 기대 카드 ${expectedCardCount}개, 실제 카드 ${actualCardCount}개`;
     } else if (isCreative && actualCards.some(card => (Number(card.credits) || 0) !== 1)) {
       level = "warn"; status = "creative-credit"; note = "창체 시간표카드는 1시수여야 합니다.";
       transformNote = `창체 ${formatDiagnosticNumber(rawCredits)}시간 → 시간표 1시수`;
@@ -1264,6 +1271,9 @@ export function createTimetableSidebarHandlers(deps) {
       studentCount: actualStudentCount,
       rosterCount,
       classCountMeta: meta?.classCount || "",
+      subjectClassCount,
+      actualClassCount,
+      expectedCardCount,
       expectedCardMode,
       note,
       transformNote,
@@ -1326,9 +1336,9 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildCurriculumIssueTable(items) {
     if (!items.length) return makeCurriculumDiagEmpty("확인 필요한 항목이 없습니다.");
-    return buildCurriculumDiagTable(["상태", "학년", "구분", "과목", "커리큘럼", "카드", "학생", "내용"], items.map(item => [
+    return buildCurriculumDiagTable(["상태", "학년", "구분", "과목", "반수", "커리큘럼", "카드", "학생", "내용"], items.map(item => [
       levelBadgeHtml(item.level), item.gradeKey || "-", [item.track, item.group].filter(Boolean).join(" / ") || "-", item.title,
-      formatDiagnosticNumber(item.curriculumCredits), `${item.actualCardCount || 0}개 / ${formatDiagnosticNumber(item.actualCredits || 0)}시수`, item.studentCount ?? item.rosterCount ?? "-", item.note || ""
+      formatDiagnosticClassCountCell(item), formatDiagnosticNumber(item.curriculumCredits), `${item.actualCardCount || 0}/${item.expectedCardCount || 0}개 · ${formatDiagnosticNumber(item.actualCredits || 0)}시수`, item.studentCount ?? item.rosterCount ?? "-", item.note || ""
     ]), true);
   }
 
@@ -1343,9 +1353,10 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildCurriculumFullTable(items) {
     if (!items.length) return makeCurriculumDiagEmpty("진단할 커리큘럼 행이 없습니다.");
-    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "원본", "시간표", "카드", "학생", "메모"], items.map(item => [
+    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "과목 반수", "실제 반수", "원본", "시간표", "카드", "학생", "메모"], items.map(item => [
       levelBadgeHtml(item.level), item.gradeKey, item.category, item.track, item.group, item.title,
-      formatDiagnosticNumber(item.curriculumCredits), formatDiagnosticNumber(item.expectedCredits), item.actualCardCount, item.studentCount, item.note
+      item.subjectClassCount || "-", item.actualClassCount || "-",
+      formatDiagnosticNumber(item.curriculumCredits), formatDiagnosticNumber(item.expectedCredits), `${item.actualCardCount || 0}/${item.expectedCardCount || 0}`, item.studentCount, item.note
     ]), true);
   }
 
@@ -1416,13 +1427,46 @@ export function createTimetableSidebarHandlers(deps) {
     lines.push("");
     lines.push("[확인 필요]");
     if (!model.issues.length) lines.push("- 없음");
-    model.issues.forEach(item => lines.push(`- [${item.level}] ${item.gradeKey} / ${item.track || ""} / ${item.group || ""} / ${item.title}: ${item.note}`));
+    model.issues.forEach(item => lines.push(`- [${item.level}] ${item.gradeKey} / ${item.track || ""} / ${item.group || ""} / ${item.title}: ${item.note} (과목 반수 ${item.subjectClassCount || "-"}, 실제 반수 ${item.actualClassCount || "-"}, 카드 ${item.actualCardCount || 0}/${item.expectedCardCount || 0})`));
     lines.push("");
     lines.push("[의도된 변환/예외]");
     const transforms = model.transforms.filter(item => item.transformNote || item.level === "info");
     if (!transforms.length) lines.push("- 없음");
     transforms.forEach(item => lines.push(`- ${item.gradeKey} / ${item.title}: ${item.transformNote || item.note}`));
     return lines.join("\n");
+  }
+
+  function getDiagnosticSubjectClassCount(meta, actualCards = [], gradeKey = "") {
+    const fromMeta = Number(meta?.classCount);
+    if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+    const actual = getDiagnosticActualClassCount(actualCards);
+    if (actual > 0) return actual;
+    const gradeClassCount = getDiagnosticClasses().filter(cls => cls.grade === gradeKey || cls.grade === gradeDisplay(gradeKey)).length;
+    return gradeClassCount || 0;
+  }
+
+  function getDiagnosticActualClassCount(actualCards = []) {
+    const keys = new Set();
+    (actualCards || []).forEach(card => {
+      if (card.sectionIdx !== undefined && card.sectionIdx !== null) {
+        keys.add(`section:${card.gradeKey || ""}:${card.sectionIdx}`);
+        return;
+      }
+      const classKeys = Array.isArray(card.classKeys) ? card.classKeys.filter(Boolean) : [];
+      if (classKeys.length) {
+        keys.add(`classes:${classKeys.slice().sort().join("|")}`);
+        return;
+      }
+      const classLabels = Array.isArray(card.classLabels) ? card.classLabels.filter(Boolean) : [];
+      if (classLabels.length) keys.add(`labels:${classLabels.slice().sort().join("|")}`);
+    });
+    return keys.size;
+  }
+
+  function formatDiagnosticClassCountCell(item) {
+    const expected = item?.subjectClassCount || "-";
+    const actual = item?.actualClassCount || "-";
+    return `${expected} / ${actual}`;
   }
 
   function getDiagnosticClasses() {
