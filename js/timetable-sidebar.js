@@ -11,7 +11,7 @@ export function createTimetableSidebarHandlers(deps) {
   const {
     GRADE_KEYS, appState, entries, $, makeBtn, canEdit,
     getTemplateById, getTemplateCardTitle,
-    getTtCards, getTtCardById, refreshTtCardData,
+    getTtCards, refreshTtCardData,
     getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
     getSubjectsForGrade, getUnitForTemplate, getUnitGradeKeys, getUnitTeachers,
     getCreditsForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
@@ -50,7 +50,6 @@ export function createTimetableSidebarHandlers(deps) {
   let subjectCardModalBody = null;
   let subjectCardModalQuery = "";
   let subjectCardEditorSelectedId = "";
-  let subjectCardEditorScrollState = { body: 0, list: 0 };
 
   function renderSubjectPanel() {
     renderSubjectPanelInto($("ttSubjectsContent"), { modal: false });
@@ -75,8 +74,13 @@ export function createTimetableSidebarHandlers(deps) {
     actionGroup.className = "tt-card-toolbar-actions";
 
     const loadBtn = makeBtn("📥 불러오기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
+      let n = getTtCards().length;
+      if (n === 0 && canEdit()) {
+        n = refreshTtCardData();
+        renderAll();
+      }
       refreshSubjectViews();
-      alert(`저장된 시간표 카드 ${getTtCards().length}개를 불러왔습니다.`);
+      alert(`저장된 시간표 카드 ${n}개를 불러왔습니다.`);
     });
 
     const refreshBtn = makeBtn("🔄 갱신", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
@@ -92,7 +96,7 @@ export function createTimetableSidebarHandlers(deps) {
     actionGroup.append(loadBtn, refreshBtn, diagBtn);
 
     if (!modal) {
-      const popupBtn = makeBtn("🗂 편집", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
+      const popupBtn = makeBtn("🗂 팝업", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
         openSubjectCardModal();
       });
       popupBtn.title = "넓은 팝업창에서 과목 카드별 저장 데이터를 편집합니다.";
@@ -156,7 +160,7 @@ export function createTimetableSidebarHandlers(deps) {
     if (subjectCardModal?.isConnected) {
       subjectCardModal.classList.remove("hidden");
       subjectCardModal.focus?.();
-      renderSubjectCardEditor(subjectCardModalBody);
+      renderSubjectPanelInto(subjectCardModalBody, { modal: true });
       return;
     }
 
@@ -169,7 +173,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const header = document.createElement("div");
     header.className = "tt-subject-card-dialog-head";
-    header.innerHTML = `<div><strong>과목 카드 편집</strong><span>저장된 시간표 카드 JSON 값을 카드별로 확인하고 수정합니다.</span></div>`;
+    header.innerHTML = `<div><strong>과목 카드 팝업 편집</strong><span>저장된 시간표 카드 JSON 값을 카드별로 확인하고 수정합니다.</span></div>`;
 
     const closeBtn = document.createElement("button");
     closeBtn.type = "button";
@@ -195,10 +199,8 @@ export function createTimetableSidebarHandlers(deps) {
     subjectCardModal.focus?.();
   }
 
-  function renderSubjectCardEditor(container, options = {}) {
+  function renderSubjectCardEditor(container) {
     if (!container) return;
-    const { preserveScroll = true } = options;
-    const previousScroll = preserveScroll ? captureSubjectCardEditorScroll(container) : { body: 0, list: 0 };
     container.innerHTML = "";
 
     const allCards = getTtCards() || [];
@@ -226,27 +228,6 @@ export function createTimetableSidebarHandlers(deps) {
 
     layout.append(left, center, right);
     container.appendChild(layout);
-    restoreSubjectCardEditorScroll(container, previousScroll);
-  }
-
-  function captureSubjectCardEditorScroll(container) {
-    return {
-      body: container?.scrollTop || 0,
-      list: container?.querySelector(".tt-subject-editor-card-list")?.scrollTop || subjectCardEditorScrollState.list || 0,
-    };
-  }
-
-  function restoreSubjectCardEditorScroll(container, state = {}) {
-    subjectCardEditorScrollState = {
-      body: Number(state.body) || 0,
-      list: Number(state.list) || 0,
-    };
-    requestAnimationFrame(() => {
-      if (!container?.isConnected) return;
-      const list = container.querySelector(".tt-subject-editor-card-list");
-      if (list) list.scrollTop = subjectCardEditorScrollState.list;
-      container.scrollTop = subjectCardEditorScrollState.body;
-    });
   }
 
   function buildSubjectEditorListPane(cards, totalCount) {
@@ -331,9 +312,8 @@ export function createTimetableSidebarHandlers(deps) {
         <em>${escapeEditorHtml(labels)}</em>
       `;
       item.addEventListener("click", () => {
-        subjectCardEditorScrollState = captureSubjectCardEditorScroll(subjectCardModalBody);
         subjectCardEditorSelectedId = card.id;
-        renderSubjectCardEditor(subjectCardModalBody, { preserveScroll: true });
+        renderSubjectCardEditor(subjectCardModalBody);
       });
       list.appendChild(item);
     });

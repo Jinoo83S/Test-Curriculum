@@ -273,25 +273,65 @@ function buildGeneratedCardsForTemplate({ templateId, gradeKey, sectionIdx, exis
   });
 }
 
+function buildAllGeneratedTtCards(existing = new Map()) {
+  const cards = [];
+  const seen = new Set();
+  GRADE_KEYS.forEach(gradeKey => {
+    const board = appState.curriculum?.gradeBoards?.[gradeKey] || [];
+    const seenTpl = new Set();
+    board.forEach(row => {
+      if (shouldSkipTimetableCardRow(row)) return;
+      [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
+        if (seenTpl.has(tplId)) return;
+        seenTpl.add(tplId);
+        const cc = Math.max(1, getClassCount(tplId));
+        for (let i = 0; i < cc; i++) {
+          const built = buildGeneratedCardsForTemplate({ templateId: tplId, gradeKey, sectionIdx: i, existing });
+          built.forEach(card => {
+            if (seen.has(card.id)) return;
+            seen.add(card.id);
+            cards.push(card);
+          });
+        }
+      });
+    });
+  });
+  return cards;
+}
+
+function countTimetableSourceRows() {
+  let count = 0;
+  GRADE_KEYS.forEach(gradeKey => {
+    const board = appState.curriculum?.gradeBoards?.[gradeKey] || [];
+    board.forEach(row => {
+      if (shouldSkipTimetableCardRow(row)) return;
+      if (row.sem1TemplateId || row.sem2TemplateId) count += 1;
+    });
+  });
+  return count;
+}
+
 export function refreshTtCardData() {
   if (!canEdit()) return 0;
-  const existing = new Map(getTtCards().map(c => [c.id, c]));
-  let count = 0;
-  const nextCards = [];
-  const seenSource = new Set();
-  getTtCards().forEach(c => {
-    const sourceKey = `${c.templateId}::${c.gradeKey}::${c.sectionIdx ?? 0}`;
-    if (seenSource.has(sourceKey)) return;
-    seenSource.add(sourceKey);
-    const row = getCurriculumRowForCard(c.gradeKey, c.templateId);
-    if (shouldSkipTimetableCardRow(row)) return;
-    const built = buildGeneratedCardsForTemplate({ templateId:c.templateId, gradeKey:c.gradeKey, sectionIdx:c.sectionIdx ?? 0, existing });
-    count += built.length;
-    nextCards.push(...built);
-  });
+
+  // 기존 방식은 현재 화면에 존재하는 ttcards만 기준으로 재생성했습니다.
+  // 그래서 진단 후 갱신 시점에 ttcards가 비어 있거나 일부 참조가 깨져 있으면
+  // 빈 배열을 그대로 저장해 모든 시간표 카드가 삭제될 수 있었습니다.
+  // 갱신은 항상 커리큘럼 보드를 원본으로 삼고, 기존 카드의 수동 수정값만 병합합니다.
+  const before = getTtCards();
+  const existing = new Map(before.map(c => [c.id, c]));
+  const nextCards = buildAllGeneratedTtCards(existing);
+
+  // 커리큘럼 원본이 있는데도 생성 결과가 0이면 저장하지 않습니다.
+  // 잘못된 갱신 버튼 한 번으로 DB의 카드 배열이 빈 값으로 덮이는 것을 막는 안전장치입니다.
+  if (!nextCards.length && countTimetableSourceRows() > 0) {
+    console.error("[TTCARDS] 카드 갱신 중단: 커리큘럼 원본은 있으나 생성 결과가 0개입니다.");
+    return before.length;
+  }
+
   appState.timetable.ttcards = nextCards;
   scheduleSave("timetable");
-  return count;
+  return nextCards.length;
 }
 export function clearTtCards() {
   if (!canEdit()) return 0;
@@ -463,27 +503,7 @@ function getTtCardCredits(card) {
 export function generateTtCards() {
   if (!canEdit()) return 0;
   const existing = new Map(getTtCards().map(c => [c.id, c]));
-  const cards = [];
-  const seen  = new Set();
-  GRADE_KEYS.forEach(gradeKey => {
-    const board   = appState.curriculum.gradeBoards[gradeKey] || [];
-    const seenTpl = new Set();
-    board.forEach(row => {
-      if (shouldSkipTimetableCardRow(row)) return;
-      [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
-        if (seenTpl.has(tplId)) return; seenTpl.add(tplId);
-        const cc = Math.max(1, getClassCount(tplId));
-        for (let i = 0; i < cc; i++) {
-          const built = buildGeneratedCardsForTemplate({ templateId: tplId, gradeKey, sectionIdx: i, existing });
-          built.forEach(card => {
-            if (seen.has(card.id)) return;
-            seen.add(card.id);
-            cards.push(card);
-          });
-        }
-      });
-    });
-  });
+  const cards = buildAllGeneratedTtCards(existing);
   appState.timetable.ttcards = cards;
   scheduleSave("timetable");
   return cards.length;
