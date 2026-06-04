@@ -311,23 +311,38 @@ function countTimetableSourceRows() {
   return count;
 }
 
+function isTtCardSourceReady() {
+  const gradeBoards = appState.curriculum?.gradeBoards;
+  const hasCurriculum = !!gradeBoards && GRADE_KEYS.some(g => Array.isArray(gradeBoards[g]) && gradeBoards[g].length > 0);
+  const hasTemplates = Array.isArray(appState.templates?.templates) && appState.templates.templates.length > 0;
+  const hasClasses = Array.isArray(appState.classes?.classes) && appState.classes.classes.length > 0;
+  const hasRosters = !!appState.rosters?.rosters && typeof appState.rosters.rosters === "object";
+  return hasCurriculum && hasTemplates && hasClasses && hasRosters;
+}
+
+function guardGeneratedCards(cards, previousCount = 0, action = "refresh") {
+  const sourceRows = countTimetableSourceRows();
+  if (!isTtCardSourceReady()) {
+    console.warn(`[TTCARDS] ${action} 중단: curriculum/templates/classes/rosters 원본 데이터가 아직 로딩되지 않았습니다.`);
+    return { ok: false, code: "source-not-ready", count: previousCount };
+  }
+  if (!cards.length && sourceRows > 0) {
+    console.error(`[TTCARDS] ${action} 중단: 커리큘럼 원본 ${sourceRows}행이 있으나 생성 결과가 0개입니다.`);
+    return { ok: false, code: "empty-generated", count: previousCount };
+  }
+  return { ok: true, code: "ok", count: cards.length };
+}
+
 export function refreshTtCardData() {
   if (!canEdit()) return 0;
 
-  // 기존 방식은 현재 화면에 존재하는 ttcards만 기준으로 재생성했습니다.
-  // 그래서 진단 후 갱신 시점에 ttcards가 비어 있거나 일부 참조가 깨져 있으면
-  // 빈 배열을 그대로 저장해 모든 시간표 카드가 삭제될 수 있었습니다.
-  // 갱신은 항상 커리큘럼 보드를 원본으로 삼고, 기존 카드의 수동 수정값만 병합합니다.
+  // 갱신은 항상 커리큘럼 보드 + 과목카드 + 수강명단 원본을 기준으로 재생성합니다.
+  // 원본 도메인이 아직 로딩되지 않은 상태에서는 절대 빈 배열을 저장하지 않습니다.
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
   const nextCards = buildAllGeneratedTtCards(existing);
-
-  // 커리큘럼 원본이 있는데도 생성 결과가 0이면 저장하지 않습니다.
-  // 잘못된 갱신 버튼 한 번으로 DB의 카드 배열이 빈 값으로 덮이는 것을 막는 안전장치입니다.
-  if (!nextCards.length && countTimetableSourceRows() > 0) {
-    console.error("[TTCARDS] 카드 갱신 중단: 커리큘럼 원본은 있으나 생성 결과가 0개입니다.");
-    return before.length;
-  }
+  const guard = guardGeneratedCards(nextCards, before.length, "refresh");
+  if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
 
   appState.timetable.ttcards = nextCards;
   scheduleSave("timetable");
@@ -502,8 +517,11 @@ function getTtCardCredits(card) {
 // ── Generation ────────────────────────────────────────────────────
 export function generateTtCards() {
   if (!canEdit()) return 0;
-  const existing = new Map(getTtCards().map(c => [c.id, c]));
+  const before = getTtCards();
+  const existing = new Map(before.map(c => [c.id, c]));
   const cards = buildAllGeneratedTtCards(existing);
+  const guard = guardGeneratedCards(cards, before.length, "generate");
+  if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
   appState.timetable.ttcards = cards;
   scheduleSave("timetable");
   return cards.length;
@@ -525,11 +543,19 @@ export function renderTtCardsView(container) {
     if (!canEdit()) return;
     if (getTtCards().length > 0 && !confirm("현재 카드 데이터를 기준으로 다시 생성합니다.\n수동 수정된 값은 유지됩니다. 계속할까요?")) return;
     const n = generateTtCards();
+    if (n < 0) {
+      alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     alert(`${n}개 시간표 카드 데이터가 생성되었습니다.`);
     renderTtCardsView(container);
   });
   const refreshBtn = makeBtn("🔄 카드 데이터 새로고침", "secondary-btn", () => {
     const n = refreshTtCardData();
+    if (n < 0) {
+      alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
     alert(`${n}개 카드 데이터를 갱신했습니다.`);
     renderTtCardsView(container);
   });

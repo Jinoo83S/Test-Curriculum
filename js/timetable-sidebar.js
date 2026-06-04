@@ -77,6 +77,10 @@ export function createTimetableSidebarHandlers(deps) {
       let n = getTtCards().length;
       if (n === 0 && canEdit()) {
         n = refreshTtCardData();
+        if (n < 0) {
+          alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+          return;
+        }
         renderAll();
       }
       refreshSubjectViews();
@@ -86,6 +90,10 @@ export function createTimetableSidebarHandlers(deps) {
     const refreshBtn = makeBtn("🔄 갱신", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
       if (!canEdit()) return;
       const n = refreshTtCardData();
+      if (n < 0) {
+        alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
       alert(`${n}개 카드 데이터를 갱신했습니다.`);
       renderAll();
       refreshSubjectViews();

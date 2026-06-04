@@ -12,7 +12,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
-import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js?v=ttcard_refresh_guard";
+import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js?v=ttcard_refresh_source_guard";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js?v=compound_subject_slot_guard";
 import {
@@ -39,7 +39,7 @@ import { renderTimetableGrid } from "./timetable-grid.js";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=ttcard_refresh_guard";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=ttcard_refresh_source_guard";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
@@ -61,6 +61,19 @@ let teacherPickerOutsideHandlerInstalled = false;
 let roomPickerOutsideHandlerInstalled = false;
 let dragData       = null;
 const TT_DRAG_MIME = "application/x-his-timetable-drag";
+
+// 시간표 카드 갱신/불러오기는 curriculum + templates + rosters 원본이 모두 필요합니다.
+// state.js의 TIMETABLE_CORE_DOMAINS가 가볍게 유지되어 있어도, 시간표 페이지에서는
+// 원본 도메인을 함께 구독해야 삭제된 카드가 원본 기준으로 재생성됩니다.
+const TIMETABLE_REBUILD_DOMAINS = ["curriculum", "templates", "teachers", "classes", "rosters", "rooms", "timetable"];
+const TIMETABLE_PAGE_DOMAINS = [...new Set([
+  ...TIMETABLE_CORE_DOMAINS,
+  ...TIMETABLE_OPTIONAL_DOMAINS,
+  ...TIMETABLE_REBUILD_DOMAINS,
+])];
+function subscribeTimetablePageDomains() {
+  subscribeDomains(TIMETABLE_PAGE_DOMAINS);
+}
 
 function writeDragDataToEvent(ev, data, effect = "move") {
   if (!ev?.dataTransfer || !data) return;
@@ -97,10 +110,9 @@ let getConflictCounts = () => ({ counts: {}, totalAffected: 0 });
 let renderLogPanel = () => {};
 
 function subscribeOptionalTimetableDomains() {
-  // 하단바의 교실 관리/교사 조건은 시간표 본문 데이터와 함께 동작합니다.
-  // rooms만 단독 구독하면 초기 로딩 타이밍에 따라 교실 수정이 저장되지 않는 경우가 있어
-  // 시간표 핵심 도메인과 optional 도메인을 함께 유지합니다.
-  subscribeDomains([...new Set([...TIMETABLE_CORE_DOMAINS, ...TIMETABLE_OPTIONAL_DOMAINS])]);
+  // 하단바/과목카드/진단/갱신은 시간표 원본 도메인 전체가 필요합니다.
+  // 특히 curriculum이 구독되지 않으면 카드 갱신이 0개로 끝납니다.
+  subscribeTimetablePageDomains();
 }
 
 function isVisible(el) {
@@ -1902,8 +1914,8 @@ onAuth(async (user) => {
     } catch (e) {
       console.warn("Migration skipped; continuing timetable load.", e);
     } finally {
-      // 시간표 하단바의 교실 관리가 즉시 수정·저장될 수 있도록 rooms도 함께 구독합니다.
-      subscribeDomains([...new Set([...TIMETABLE_CORE_DOMAINS, ...TIMETABLE_OPTIONAL_DOMAINS])]);
+      // 시간표 하단바의 교실 관리와 카드 재생성을 위해 원본 도메인 전체를 구독합니다.
+      subscribeTimetablePageDomains();
     }
   } else {
     unsubscribeAll(); renderAll();
