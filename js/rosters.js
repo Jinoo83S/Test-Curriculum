@@ -281,7 +281,17 @@ function getRosterCompletionStats(items) {
   return { total, missing, complete: total > 0 && missing === 0 };
 }
 function getRosterTrackStudentStats(track, items) {
-  const gradeKeys = [...new Set((items || []).map(it => it.gradeKey).filter(Boolean))];
+  const normalizedItems = [];
+  const seenItemKeys = new Set();
+  (items || []).forEach(({ tpl, gradeKey }) => {
+    if (!tpl || !gradeKey) return;
+    const key = `${gradeKey}::${tpl.id}`;
+    if (seenItemKeys.has(key)) return;
+    seenItemKeys.add(key);
+    normalizedItems.push({ tpl, gradeKey });
+  });
+
+  const gradeKeys = [...new Set(normalizedItems.map(it => it.gradeKey))];
   const isCommonTrack = clean(track) === "공통";
   let expected = 0;
   let assigned = 0;
@@ -289,28 +299,29 @@ function getRosterTrackStudentStats(track, items) {
   if (isCommonTrack) {
     // 공통 과목은 과목별로 해당 학년 학생이 모두 들어갔는지 확인합니다.
     // [남]/[여] 과목은 전체 학년 학생 수가 아니라 해당 성별 학생 수를 기준으로 완료를 판단합니다.
-    (items || []).forEach(({ tpl, gradeKey }) => {
-      if (!tpl || !gradeKey || isMissingRosterExcluded(tpl.id)) return;
+    normalizedItems.forEach(({ tpl, gradeKey }) => {
+      if (isMissingRosterExcluded(tpl.id)) return;
       const expectedIds = getExpectedStudentIdsForTemplateGrade(tpl, gradeKey);
       expected += expectedIds.size;
       assigned += countAssignedExpectedStudents(tpl.id, gradeKey, expectedIds);
     });
   } else {
-    // 선택/배정 과목은 같은 구분 안에 배정된 학생 수의 합산 기준으로 판단합니다.
-    // 예: 국어 43명 + 한국어 1명 = 44명이면 해당 학년 44명 배정 완료로 봅니다.
+    // 선택/배정 과목은 "해당 구분 안에 실제 배정된 인원 합계"로 완료를 판단합니다.
+    // 예: 국어 42명 + 한국어 1명 = 43명이면, 7학년 전체 43명 기준 완료입니다.
+    // 주의: 여기서는 고유 학생 수가 아니라 좌측 과목 카드에 표시되는 수강 인원 합계를 사용합니다.
     gradeKeys.forEach(gradeKey => {
-      const gradeStudentIds = getGradeStudentIds(gradeKey);
-      expected += gradeStudentIds.size;
+      const expectedForGrade = getGradeStudents(gradeKey).length;
+      expected += expectedForGrade;
+
       let gradeAssigned = 0;
-      const countedTplIds = new Set();
-      (items || []).forEach(({ tpl }) => {
-        if (!tpl || isMissingRosterExcluded(tpl.id) || countedTplIds.has(tpl.id)) return;
-        countedTplIds.add(tpl.id);
-        getRoster(tpl.id, gradeKey).forEach(entry => {
-          if (gradeStudentIds.has(entry.studentId)) gradeAssigned += 1;
+      normalizedItems
+        .filter(item => item.gradeKey === gradeKey)
+        .forEach(({ tpl }) => {
+          if (!tpl || isMissingRosterExcluded(tpl.id)) return;
+          gradeAssigned += getRosterCountForGrade(tpl.id, gradeKey);
         });
-      });
-      assigned += Math.min(gradeAssigned, gradeStudentIds.size);
+
+      assigned += Math.min(gradeAssigned, expectedForGrade);
     });
   }
 
