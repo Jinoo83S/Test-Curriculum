@@ -309,6 +309,8 @@ function getRosterTrackStudentStats(track, items) {
     // 선택/배정 과목은 "해당 구분 안에 실제 배정된 인원 합계"로 완료를 판단합니다.
     // 예: 국어 42명 + 한국어 1명 = 43명이면, 7학년 전체 43명 기준 완료입니다.
     // 주의: 여기서는 고유 학생 수가 아니라 좌측 과목 카드에 표시되는 수강 인원 합계를 사용합니다.
+    // 단, `미지정 제외`는 수강명단이 실제로 0명인 과목만 완료 기준에서 제외합니다.
+    // 한국어처럼 미지정 제외 상태가 남아 있어도 1명 이상 배정되어 있으면 그 인원은 합산해야 합니다.
     gradeKeys.forEach(gradeKey => {
       const expectedForGrade = getGradeStudents(gradeKey).length;
       expected += expectedForGrade;
@@ -317,8 +319,10 @@ function getRosterTrackStudentStats(track, items) {
       normalizedItems
         .filter(item => item.gradeKey === gradeKey)
         .forEach(({ tpl }) => {
-          if (!tpl || isMissingRosterExcluded(tpl.id)) return;
-          gradeAssigned += getRosterCountForGrade(tpl.id, gradeKey);
+          if (!tpl) return;
+          const rosterCount = getRosterCountForGrade(tpl.id, gradeKey);
+          if (rosterCount <= 0 && isMissingRosterExcluded(tpl.id)) return;
+          gradeAssigned += rosterCount;
         });
 
       assigned += Math.min(gradeAssigned, expectedForGrade);
