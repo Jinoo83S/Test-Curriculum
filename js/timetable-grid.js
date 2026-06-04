@@ -244,7 +244,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
   const panel = document.createElement("aside");
   panel.className = "tt-all-detail-panel";
   const close = () => { backdrop.remove(); panel.remove(); };
-  backdrop.addEventListener("click", close);
+  // 배경 클릭으로 닫히지 않도록 유지합니다. 닫기는 X 버튼에서만 수행합니다.
 
   const header = document.createElement("div");
   header.className = "tt-all-detail-panel-header";
