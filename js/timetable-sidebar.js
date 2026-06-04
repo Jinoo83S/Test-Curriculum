@@ -1090,6 +1090,21 @@ export function createTimetableSidebarHandlers(deps) {
     lines.push(`- 총 필요 시수 기준 합계: ${formatCreditValue(summary.total || 0)}시수`);
     lines.push("");
 
+    const capacityRows = buildGradeCapacityRows(summary, ttcards || []);
+    lines.push("[시간표 전체 용량 비교]");
+    lines.push(`- 설정: 월~금 ${getConfiguredPeriodCount()}교시 = 학급당 ${getWeeklySlotCapacityPerClass()}칸`);
+    if (!capacityRows.length) {
+      lines.push("- 비교할 학년 데이터가 없습니다.");
+    } else {
+      capacityRows.forEach(row => {
+        const diffText = row.perClassDiff >= 0
+          ? `학급당 여유 ${formatCreditValue(row.perClassDiff)}칸`
+          : `학급당 초과 ${formatCreditValue(Math.abs(row.perClassDiff))}칸`;
+        lines.push(`- ${row.gradeLabel}: ${row.classCount}개 반 / 카드 ${row.cardCount}개 / 그룹 ${row.groupCount}개 / 필요 ${formatCreditValue(row.requiredMin)}~${formatCreditValue(row.requiredMax)}시수 / ${diffText}`);
+      });
+    }
+    lines.push("");
+
     lines.push("[학년별 요약]");
     if (!gradeSummaries.length) {
       lines.push("- 진단할 학급별 시수 데이터가 없습니다.");
@@ -1284,6 +1299,9 @@ export function createTimetableSidebarHandlers(deps) {
     const rows = summary.classes || [];
     const gradeSummaries = summary.gradeSummaries || [];
     const unbalanced = gradeSummaries.filter(gs => !gs.isBalanced);
+    const capacityRows = buildGradeCapacityRows(summary, ttcards || []);
+    const capacityPerClass = getWeeklySlotCapacityPerClass();
+    const periodCount = getConfiguredPeriodCount();
 
     const overview = document.createElement("div");
     Object.assign(overview.style, {
@@ -1297,7 +1315,32 @@ export function createTimetableSidebarHandlers(deps) {
     );
     wrap.appendChild(overview);
 
-    const gradeSection = buildDiagSection("1. 학년별 균형 요약", "학년 안에서 학급별 필요 시수가 같은지 먼저 확인합니다.");
+    const capacitySection = buildDiagSection("1. 시간표 전체 용량 비교", `현재 설정은 월~금 ${periodCount}교시입니다. 학급당 가능한 시간표 칸은 ${capacityPerClass}칸이며, 학년별 필요 시수·카드 수와 비교합니다.`);
+    const capacityTable = buildDiagTable(["학년", "반 수", "카드/그룹", "필요 시수", "학급당 용량", "판정"]);
+    if (!capacityRows.length) {
+      appendDiagEmptyRow(capacityTable, 6, "비교할 학년 데이터가 없습니다.");
+    } else {
+      capacityRows.forEach(row => {
+        const diffText = row.perClassDiff >= 0
+          ? `여유 ${formatCreditValue(row.perClassDiff)}칸`
+          : `초과 ${formatCreditValue(Math.abs(row.perClassDiff))}칸`;
+        const statusText = row.perClassDiff >= 0 ? diffText : diffText;
+        const tr = document.createElement("tr");
+        tr.append(
+          buildDiagTd(row.gradeLabel, { strong: true }),
+          buildDiagTd(`${row.classCount}개 반`),
+          buildDiagTd(`카드 ${row.cardCount}개 · 그룹 ${row.groupCount}개`),
+          buildDiagTd(`${formatCreditValue(row.requiredMin)}~${formatCreditValue(row.requiredMax)}시수 / 학년합계 ${formatCreditValue(row.requiredTotal)}시수`),
+          buildDiagTd(`${capacityPerClass}칸/반 · ${row.gradeCapacity}칸/학년`),
+          buildDiagTd(statusText, { badge: row.perClassDiff >= 0 ? "ok" : "warn" })
+        );
+        capacityTable.querySelector("tbody").appendChild(tr);
+      });
+    }
+    capacitySection.appendChild(capacityTable);
+    wrap.appendChild(capacitySection);
+
+    const gradeSection = buildDiagSection("2. 학년별 균형 요약", "학년 안에서 학급별 필요 시수가 같은지 먼저 확인합니다.");
     const gradeTable = buildDiagTable(["학년", "상태", "범위", "학급별 시수"]);
     if (!gradeSummaries.length) {
       appendDiagEmptyRow(gradeTable, 4, "진단할 학급별 시수 데이터가 없습니다.");
@@ -1317,7 +1360,7 @@ export function createTimetableSidebarHandlers(deps) {
     gradeSection.appendChild(gradeTable);
     wrap.appendChild(gradeSection);
 
-    const causeSection = buildDiagSection("2. 차이 원인 후보", "시수가 부족한 학급만 모아서 어떤 카드가 계산에 들어갔는지 보여줍니다.");
+    const causeSection = buildDiagSection("3. 차이 원인 후보", "시수가 부족한 학급만 모아서 어떤 카드가 계산에 들어갔는지 보여줍니다.");
     if (!unbalanced.length) {
       causeSection.appendChild(buildDiagNotice("학급별 필요 시수가 모두 균형 상태입니다.", "ok"));
     } else {
@@ -1353,7 +1396,7 @@ export function createTimetableSidebarHandlers(deps) {
     }
     wrap.appendChild(causeSection);
 
-    const classSection = buildDiagSection("3. 학급별 상세 내역", "각 학급의 총 시수에 어떤 개별 카드와 그룹 카드가 더해졌는지 확인합니다.");
+    const classSection = buildDiagSection("4. 학급별 상세 내역", "각 학급의 총 시수에 어떤 개별 카드와 그룹 카드가 더해졌는지 확인합니다.");
     if (!rows.length) {
       classSection.appendChild(buildDiagNotice("내역 없음", "muted"));
     } else {
@@ -1371,7 +1414,7 @@ export function createTimetableSidebarHandlers(deps) {
     }
     wrap.appendChild(classSection);
 
-    const groupSection = buildDiagSection("4. 그룹별 계산 참고", "동시배정 그룹 안에 들어간 카드와 대상 학급입니다.");
+    const groupSection = buildDiagSection("5. 그룹별 계산 참고", "동시배정 그룹 안에 들어간 카드와 대상 학급입니다.");
     if (!groups.length) {
       groupSection.appendChild(buildDiagNotice("그룹 없음", "muted"));
     } else {
@@ -1402,6 +1445,77 @@ export function createTimetableSidebarHandlers(deps) {
     wrap.appendChild(groupSection);
 
     return wrap;
+  }
+
+  function getConfiguredPeriodCount() {
+    const count = Number(appState.timetable?.config?.periodCount || 0);
+    return count > 0 ? count : 7;
+  }
+
+  function getConfiguredDayCount() {
+    return 5;
+  }
+
+  function getWeeklySlotCapacityPerClass() {
+    return getConfiguredDayCount() * getConfiguredPeriodCount();
+  }
+
+  function normalizeDiagnosticGradeLabel(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    if (/학년$/.test(raw)) return raw;
+    return `${raw}학년`;
+  }
+
+  function diagnosticGradeNumber(value) {
+    const m = String(value || "").match(/\d+/);
+    return m ? Number(m[0]) : 999;
+  }
+
+  function getGradeClassCount(gradeLabel) {
+    return (appState.classes?.classes || []).filter(cls => String(cls.grade || "").trim() === gradeLabel).length;
+  }
+
+  function cardHasDiagnosticGrade(card, gradeLabel) {
+    if (!card || !gradeLabel) return false;
+    if (String(card.gradeKey || "").trim() === gradeLabel) return true;
+    const labels = getClassLabelsForTtCard(card) || [];
+    return labels.some(label => String(label || "").trim().startsWith(gradeLabel.replace("학년", "")) || String(label || "").trim().startsWith(gradeLabel));
+  }
+
+  function groupHasDiagnosticGrade(group, gradeLabel) {
+    return (getGroupCards(group) || []).some(card => cardHasDiagnosticGrade(card, gradeLabel));
+  }
+
+  function buildGradeCapacityRows(summary = {}, ttcards = []) {
+    const gradeSummaries = summary.gradeSummaries || [];
+    const groups = appState.timetable?.ttcardGroups || [];
+    const capacityPerClass = getWeeklySlotCapacityPerClass();
+    return gradeSummaries.map(gs => {
+      const gradeLabel = normalizeDiagnosticGradeLabel(gs.grade);
+      const rows = gs.rows || [];
+      const classCount = getGradeClassCount(gradeLabel) || rows.length || 0;
+      const requiredValues = rows.map(row => Number(row.credits) || 0);
+      const requiredMin = requiredValues.length ? Math.min(...requiredValues) : 0;
+      const requiredMax = requiredValues.length ? Math.max(...requiredValues) : 0;
+      const requiredTotal = requiredValues.reduce((sum, value) => sum + value, 0);
+      const cardCount = (ttcards || []).filter(card => cardHasDiagnosticGrade(card, gradeLabel)).length;
+      const groupCount = groups.filter(group => groupHasDiagnosticGrade(group, gradeLabel)).length;
+      const gradeCapacity = capacityPerClass * classCount;
+      return {
+        grade: gs.grade,
+        gradeLabel,
+        classCount,
+        cardCount,
+        groupCount,
+        requiredMin,
+        requiredMax,
+        requiredTotal,
+        capacityPerClass,
+        gradeCapacity,
+        perClassDiff: capacityPerClass - requiredMax,
+      };
+    }).sort((a, b) => diagnosticGradeNumber(a.gradeLabel) - diagnosticGradeNumber(b.gradeLabel));
   }
 
   function buildDiagStatCard(label, value) {
