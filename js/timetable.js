@@ -39,7 +39,7 @@ import { renderTimetableGrid } from "./timetable-grid.js";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=ttcard_refresh_source_guard";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=credit_diagnostic_modal_detail";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";

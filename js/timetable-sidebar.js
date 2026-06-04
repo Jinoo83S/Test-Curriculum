@@ -1070,22 +1070,204 @@ export function createTimetableSidebarHandlers(deps) {
 
   function showClassCreditDiagnostics(ttcards) {
     const summary = getClassCreditSummary(ttcards);
+    const report = buildClassCreditDiagnosticReport(summary, ttcards || []);
+    openCreditDiagnosticDialog(report);
+  }
+
+  function buildClassCreditDiagnosticReport(summary, ttcards) {
     const lines = [];
-    lines.push("학급별 필요 시수 진단");
+    const groups = appState.timetable?.ttcardGroups || [];
+    const rows = summary.classes || [];
+    const gradeSummaries = summary.gradeSummaries || [];
+
+    lines.push("학급별 필요 시수 상세 진단");
+    lines.push(`생성 시각: ${new Date().toLocaleString("ko-KR")}`);
     lines.push("");
-    (summary.gradeSummaries || []).forEach(gs => {
-      const label = gs.isBalanced
-        ? `${gs.grade}학년: ${formatCreditValue(gs.value)}시수 균형`
-        : `${gs.grade}학년: ${formatCreditValue(gs.min)}~${formatCreditValue(gs.max)}시수 차이 있음`;
-      lines.push(label);
+    lines.push("[전체 요약]");
+    lines.push(`- 시간표 카드: ${(ttcards || []).length}개`);
+    lines.push(`- 동시배정/그룹: ${groups.length}개`);
+    lines.push(`- 진단 대상 학급: ${rows.length}개`);
+    lines.push(`- 총 필요 시수 기준 합계: ${formatCreditValue(summary.total || 0)}시수`);
+    lines.push("");
+
+    lines.push("[학년별 요약]");
+    if (!gradeSummaries.length) {
+      lines.push("- 진단할 학급별 시수 데이터가 없습니다.");
+    }
+    gradeSummaries.forEach(gs => {
+      const diff = (Number(gs.max) || 0) - (Number(gs.min) || 0);
+      const status = gs.isBalanced ? "균형" : `차이 ${formatCreditValue(diff)}시수`;
+      lines.push(`- ${gs.grade}학년: ${formatCreditValue(gs.min)}~${formatCreditValue(gs.max)}시수 / ${status}`);
       (gs.rows || []).forEach(row => {
-        lines.push(`- ${row.label}: ${formatCreditValue(row.credits)}시수`);
+        const lack = (Number(gs.max) || 0) - (Number(row.credits) || 0);
+        lines.push(`  · ${row.label}: ${formatCreditValue(row.credits)}시수${lack > 0 ? ` / 기준보다 ${formatCreditValue(lack)}시수 적음` : ""}`);
       });
+    });
+    lines.push("");
+
+    const unbalanced = gradeSummaries.filter(gs => !gs.isBalanced);
+    lines.push("[차이 원인 후보]");
+    if (!unbalanced.length) {
+      lines.push("- 학급별 필요 시수가 모두 균형 상태입니다.");
+    } else {
+      unbalanced.forEach(gs => {
+        lines.push(`${gs.grade}학년`);
+        const max = Number(gs.max) || 0;
+        (gs.rows || []).forEach(row => {
+          const lack = max - (Number(row.credits) || 0);
+          if (lack <= 0) return;
+          lines.push(`- ${row.label}: ${formatCreditValue(row.credits)}시수 / ${formatCreditValue(lack)}시수 부족`);
+          appendContributionList(lines, row.contributions || [], { indent: "  ", limit: 999 });
+        });
+      });
+    }
+    lines.push("");
+
+    lines.push("[학급별 상세 내역]");
+    if (!rows.length) {
+      lines.push("- 내역 없음");
+    }
+    rows.forEach(row => {
+      lines.push(`${row.label} · 총 ${formatCreditValue(row.credits)}시수`);
+      appendContributionList(lines, row.contributions || [], { indent: "  ", limit: 999 });
       lines.push("");
     });
-    lines.push("차이 원인 후보");
-    lines.push(...(summary.diagnostics || []));
-    alert(lines.join("\n"));
+
+    lines.push("[그룹별 계산 참고]");
+    if (!groups.length) {
+      lines.push("- 그룹 없음");
+    } else {
+      groups.forEach(group => {
+        const cards = getGroupCards(group) || [];
+        const groupTitle = group.name || group.title || group.id || "그룹";
+        lines.push(`- ${groupTitle}: ${cards.length}개 카드`);
+        cards.forEach(card => {
+          const title = getCardDiagnosticTitle(card);
+          const classes = getClassLabelsForTtCard(card).join(", ") || "학급 없음";
+          const teachers = (getTeachersForTtCard(card) || []).join(", ") || card.teacherName || "교사 없음";
+          lines.push(`  · ${title} / ${formatCreditValue(getCreditsForTtCard(card))}시수 / ${teachers} / ${classes}`);
+        });
+      });
+    }
+
+    return lines.join("\n");
+  }
+
+  function appendContributionList(lines, contributions, { indent = "", limit = 999 } = {}) {
+    if (!contributions.length) {
+      lines.push(`${indent}- 세부 내역 없음`);
+      return;
+    }
+    contributions.slice(0, limit).forEach(c => {
+      const kind = c.kind === "group" ? `[그룹] ${c.groupName || "그룹"}` : "[개별]";
+      const title = c.title || c.cardId || "시간표 카드";
+      lines.push(`${indent}- ${kind} ${title}: ${formatCreditValue(c.credits)}시수`);
+    });
+    if (contributions.length > limit) {
+      lines.push(`${indent}- ... 외 ${contributions.length - limit}개`);
+    }
+  }
+
+  function getCardDiagnosticTitle(card) {
+    if (!card) return "?";
+    try {
+      return describeTtCard?.(card)?.title || card.subject || card.label || card.nameKo || card.id || "시간표 카드";
+    } catch (err) {
+      return card.subject || card.label || card.nameKo || card.id || "시간표 카드";
+    }
+  }
+
+  function openCreditDiagnosticDialog(reportText) {
+    const old = document.querySelector(".tt-credit-diagnostic-modal");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.className = "tt-credit-diagnostic-modal";
+    Object.assign(overlay.style, {
+      position: "fixed", inset: "0", zIndex: "99999",
+      background: "rgba(15,23,42,0.38)", display: "flex",
+      alignItems: "center", justifyContent: "center", padding: "24px"
+    });
+
+    const box = document.createElement("div");
+    Object.assign(box.style, {
+      width: "min(1120px, 96vw)", height: "min(760px, 90vh)",
+      background: "#fff", borderRadius: "14px", border: "1px solid #d8e1ef",
+      boxShadow: "0 24px 70px rgba(15,23,42,.28)", display: "flex",
+      flexDirection: "column", overflow: "hidden"
+    });
+
+    const header = document.createElement("div");
+    Object.assign(header.style, {
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "14px 18px", borderBottom: "1px solid #e5eaf3", background: "#f8fbff"
+    });
+
+    const title = document.createElement("div");
+    title.innerHTML = '<strong>학급별 필요 시수 상세 진단</strong><div style="font-size:12px;color:#64748b;margin-top:3px">전체 내역이 잘리지 않도록 팝업으로 표시합니다. 복사하거나 txt로 저장할 수 있습니다.</div>';
+    header.appendChild(title);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "his-ui-btn his-ui-btn-secondary his-ui-btn-compact";
+    copyBtn.textContent = "복사";
+    copyBtn.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(reportText);
+        copyBtn.textContent = "복사됨";
+        setTimeout(() => { copyBtn.textContent = "복사"; }, 1200);
+      } catch (err) {
+        textarea.select();
+        document.execCommand("copy");
+      }
+    };
+
+    const downloadBtn = document.createElement("button");
+    downloadBtn.type = "button";
+    downloadBtn.className = "his-ui-btn his-ui-btn-primary his-ui-btn-compact";
+    downloadBtn.textContent = "TXT 저장";
+    downloadBtn.onclick = () => {
+      const blob = new Blob([reportText], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "시간표_시수진단.txt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+    };
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "his-ui-btn his-ui-btn-ghost his-ui-btn-compact";
+    closeBtn.textContent = "닫기";
+    closeBtn.onclick = () => overlay.remove();
+
+    actions.append(copyBtn, downloadBtn, closeBtn);
+    header.appendChild(actions);
+
+    const textarea = document.createElement("textarea");
+    textarea.value = reportText;
+    textarea.readOnly = true;
+    Object.assign(textarea.style, {
+      flex: "1", resize: "none", border: "0", outline: "none",
+      padding: "16px 18px", font: "12px/1.55 Consolas, Monaco, 'D2Coding', monospace",
+      whiteSpace: "pre", color: "#0f172a", background: "#fff"
+    });
+
+    box.append(header, textarea);
+    overlay.appendChild(box);
+    overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+    document.addEventListener("keydown", function onKey(e) {
+      if (e.key === "Escape" && overlay.isConnected) { overlay.remove(); document.removeEventListener("keydown", onKey); }
+    });
+    document.body.appendChild(overlay);
+    textarea.focus();
   }
 
   function formatCreditValue(value) {
