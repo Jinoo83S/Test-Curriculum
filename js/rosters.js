@@ -239,12 +239,41 @@ function getRosterCountForGrade(templateId, gradeKey) {
 function isRosterMissingForGrade(templateId, gradeKey) {
   return getRosterCountForGrade(templateId, gradeKey) <= 0 && !isMissingRosterExcluded(templateId);
 }
-function getGradeStudentIds(gradeKey) {
-  const ids = new Set();
+function getGradeStudents(gradeKey) {
+  const students = [];
   getClasses().filter(c => c.grade === gradeKey).forEach(cls => {
-    (cls.students || []).forEach(stu => ids.add(stu.id));
+    (cls.students || []).forEach(stu => students.push({ ...stu, classId: cls.id }));
+  });
+  return students;
+}
+function getGradeStudentIds(gradeKey) {
+  return new Set(getGradeStudents(gradeKey).map(stu => stu.id));
+}
+function getGenderTargetForTemplate(tpl) {
+  const text = [
+    tpl?.nameKo, tpl?.nameEn,
+    tpl?.sem1NameKo, tpl?.sem1NameEn,
+    tpl?.sem2NameKo, tpl?.sem2NameEn,
+  ].map(clean).join(" ");
+  if (/\[(남|M)\]/i.test(text)) return "남";
+  if (/\[(여|F)\]/i.test(text)) return "여";
+  return "";
+}
+function getExpectedStudentIdsForTemplateGrade(tpl, gradeKey) {
+  const targetGender = getGenderTargetForTemplate(tpl);
+  const ids = new Set();
+  getGradeStudents(gradeKey).forEach(stu => {
+    if (targetGender && clean(stu.gender) !== targetGender) return;
+    ids.add(stu.id);
   });
   return ids;
+}
+function countAssignedExpectedStudents(templateId, gradeKey, expectedIds) {
+  const assignedIds = new Set();
+  getRoster(templateId, gradeKey).forEach(entry => {
+    if (expectedIds.has(entry.studentId)) assignedIds.add(entry.studentId);
+  });
+  return assignedIds.size;
 }
 function getRosterCompletionStats(items) {
   const total = items.length;
@@ -258,23 +287,22 @@ function getRosterTrackStudentStats(track, items) {
   let assigned = 0;
 
   if (isCommonTrack) {
+    // 공통 과목은 과목별로 해당 학년 학생이 모두 들어갔는지 확인합니다.
+    // [남]/[여] 과목은 전체 학년 학생 수가 아니라 해당 성별 학생 수를 기준으로 완료를 판단합니다.
     (items || []).forEach(({ tpl, gradeKey }) => {
       if (!tpl || !gradeKey || isMissingRosterExcluded(tpl.id)) return;
-      const gradeStudentIds = getGradeStudentIds(gradeKey);
-      expected += gradeStudentIds.size;
-      const assignedIds = new Set();
-      getRoster(tpl.id, gradeKey).forEach(entry => {
-        if (gradeStudentIds.has(entry.studentId)) assignedIds.add(entry.studentId);
-      });
-      assigned += assignedIds.size;
+      const expectedIds = getExpectedStudentIdsForTemplateGrade(tpl, gradeKey);
+      expected += expectedIds.size;
+      assigned += countAssignedExpectedStudents(tpl.id, gradeKey, expectedIds);
     });
   } else {
+    // 선택/배정 과목은 같은 구분 안에서 학년 전체 학생이 하나 이상의 경쟁 과목에 배정되었는지 확인합니다.
     gradeKeys.forEach(gradeKey => {
       const gradeStudentIds = getGradeStudentIds(gradeKey);
       expected += gradeStudentIds.size;
       const assignedIds = new Set();
       (items || []).forEach(({ tpl }) => {
-        if (!tpl) return;
+        if (!tpl || isMissingRosterExcluded(tpl.id)) return;
         getRoster(tpl.id, gradeKey).forEach(entry => {
           if (gradeStudentIds.has(entry.studentId)) assignedIds.add(entry.studentId);
         });
@@ -357,7 +385,7 @@ function createRosterTrackHeader(track, items) {
     status = makeStatusPill(`미완료 ${stats.assigned}/${stats.expected}명`, "warn");
   }
   status.title = stats.isCommonTrack
-    ? "공통 구분은 과목별 배정 학생 수 합계가 기준입니다."
+    ? "공통 구분은 과목별 학생 수 기준입니다. [남]/[여] 과목은 해당 성별 학생 수로 완료를 판단합니다."
     : "선택/배정 구분은 같은 구분 안에 배정된 고유 학생 수가 기준입니다.";
   grpHdr.appendChild(status);
   return grpHdr;
