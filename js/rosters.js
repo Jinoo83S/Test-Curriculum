@@ -690,20 +690,41 @@ function renderRosterDetail(panel, container) {
   }
   const getCompetingLabel = studentId => [...(competingMap.get(studentId) || [])].join(", ");
   const isAlreadyInCurrentRoster = (classId, studentId) => roster.some(e => e.classId === classId && e.studentId === studentId);
+  const getCompetingConflicts = entries => (entries || []).filter(e => competingMap.has(e.studentId) && !isAlreadyInCurrentRoster(e.classId, e.studentId));
+  const removeFromCompetingRosters = conflicts => {
+    if (!conflicts?.length || competingTplIds.size <= 0) return 0;
+    const conflictKeys = new Set(conflicts.map(e => `${e.classId}::${e.studentId}`));
+    let removedCount = 0;
+    competingTplIds.forEach(tid => {
+      const before = rosters()[tid] || [];
+      if (!before.length) return;
+      const after = before.filter(entry => {
+        const shouldRemove = conflictKeys.has(`${entry.classId}::${entry.studentId}`);
+        if (shouldRemove) removedCount += 1;
+        return !shouldRemove;
+      });
+      if (after.length !== before.length) rosters()[tid] = after;
+    });
+    if (removedCount > 0) scheduleSave("rosters");
+    return removedCount;
+  };
   const confirmCompetingAssignments = (entries, actionLabel = "추가") => {
-    const conflicts = (entries || []).filter(e => competingMap.has(e.studentId) && !isAlreadyInCurrentRoster(e.classId, e.studentId));
-    if (!conflicts.length) return true;
+    const conflicts = getCompetingConflicts(entries);
+    if (!conflicts.length) return { ok: true, conflicts: [] };
     const sample = conflicts.slice(0, 12).map(e => {
       const cls = getClassById(e.classId);
       const stu = cls?.students?.find(s => s.id === e.studentId);
       return `- ${cls ? `${gradeDisplay(cls.grade)} ${cls.name}` : ""} ${stu?.name || "(이름없음)"} → ${getCompetingLabel(e.studentId)}`;
     }).join("\n");
     const more = conflicts.length > 12 ? `\n... 외 ${conflicts.length - 12}명` : "";
-    return confirm(`이미 같은 구분의 경쟁 과목에 배정된 학생이 ${conflicts.length}명 있습니다.\n\n${sample}${more}\n\n그래도 현재 과목에 ${actionLabel}할까요?`);
+    const ok = confirm(`이미 같은 구분의 경쟁 과목에 배정된 학생이 ${conflicts.length}명 있습니다.\n\n${sample}${more}\n\n확인을 누르면 기존 경쟁 과목 수강명단에서 제거하고 현재 과목에 ${actionLabel}합니다.`);
+    return { ok, conflicts };
   };
   const addEntriesWithCompetitionWarning = (entries, actionLabel = "추가") => {
     if (!canEdit()) return;
-    if (!confirmCompetingAssignments(entries, actionLabel)) return;
+    const result = confirmCompetingAssignments(entries, actionLabel);
+    if (!result.ok) return;
+    removeFromCompetingRosters(result.conflicts);
     entries.forEach(({ classId, studentId }) => addToRoster(selectedRosterTemplateId, classId, studentId, multi ? selectedSection : 0));
     renderRosterView(container);
   };
