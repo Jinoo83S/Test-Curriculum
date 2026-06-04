@@ -11,7 +11,7 @@ export function createAutoAssignAll(deps) {
     GRADE_KEYS, canEdit, appState, scheduleSave, normalizeTimetableEntry,
     uid, sectionLabel, gradeDisplay, splitTeacherNames,
     getTemplateById, getTemplateCardTitle, getTtCardById,
-    describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade,
+    describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
     entries, ttDomain, ttConfig, constraints,
     buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
     audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
@@ -57,6 +57,53 @@ export function createAutoAssignAll(deps) {
     const aIds = new Set(groupIdsForPlacement(a));
     if (!aIds.size) return false;
     return groupIdsForPlacement(b).some(id => aIds.has(id));
+  }
+
+  function compoundRefForCard(card) {
+    if (!card || !card.compoundParentTemplateId || !card.compoundPartId) return null;
+    const grade = card.gradeKey || "";
+    const section = (card.sectionIdx ?? 0);
+    return {
+      key: `${grade}::${section}::${card.compoundParentTemplateId}`,
+      partId: card.compoundPartId,
+      cardId: card.id
+    };
+  }
+
+  function compoundRefsForPlacement(x = {}) {
+    const refs = [];
+    ttCardIdsFromPlacement(x).forEach(cardId => {
+      const ref = compoundRefForCard(getTtCardById(cardId));
+      if (ref) refs.push(ref);
+    });
+    if (!refs.length && x.compoundParentTemplateId && x.compoundPartId) {
+      refs.push({
+        key: `${x.gradeKey || ""}::${x.sectionIdx ?? 0}::${x.compoundParentTemplateId}`,
+        partId: x.compoundPartId,
+        cardId: x.ttcardId || ""
+      });
+    }
+    return refs;
+  }
+
+  function hasInternalCompoundSiblingConflict(x = {}) {
+    const seen = new Map();
+    for (const ref of compoundRefsForPlacement(x)) {
+      if (!ref?.key) continue;
+      const prev = seen.get(ref.key);
+      if (prev && (prev.partId !== ref.partId || prev.cardId !== ref.cardId)) return true;
+      seen.set(ref.key, ref);
+    }
+    return false;
+  }
+
+  function hasCompoundSiblingConflict(a = {}, b = {}) {
+    const refsA = compoundRefsForPlacement(a);
+    const refsB = compoundRefsForPlacement(b);
+    if (!refsA.length || !refsB.length) return false;
+    return refsA.some(ra => refsB.some(rb =>
+      ra.key && rb.key && ra.key === rb.key && (ra.partId !== rb.partId || ra.cardId !== rb.cardId)
+    ));
   }
 
   /** Check if a placement item/entry belongs to a concurrent group */
@@ -143,6 +190,11 @@ export function createAutoAssignAll(deps) {
     // 0-1. If a card was explicitly removed from an auto group, do not let the
     // auto-assigner place it in that group's same-time slot by coincidence.
     if (slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e))) return false;
+
+    // 0-2. 복합 과목 구성 카드(예: 미적분(2)/심화물리(2))는
+    // 같은 대표 과목의 서로 다른 구성끼리 같은 시간에 들어가면 안 됩니다.
+    if (hasInternalCompoundSiblingConflict(item)) return false;
+    if (slotEnts.some(e => hasCompoundSiblingConflict(item, e))) return false;
 
     // 1. Teacher conflict. Same concurrent group can share the time,
     //    but it cannot make one teacher teach two different entries.
@@ -305,6 +357,8 @@ export function createAutoAssignAll(deps) {
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
     if (slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e))) return Infinity;
+    if (hasInternalCompoundSiblingConflict(item)) return Infinity;
+    if (slotEnts.some(e => hasCompoundSiblingConflict(item, e))) return Infinity;
     const dayEnts = existing.filter(e => e.day === slot.day);
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
     const itemAudience = audienceForPlacement(item);
@@ -429,6 +483,55 @@ export function createAutoAssignAll(deps) {
       if (e.groupId === group.id || cardMatch || unitMatch) slots.add(`${e.day}:${e.period}`);
     });
     return slots.size;
+  }
+
+  function getCompoundKeyForCard(card) {
+    const ref = compoundRefForCard(card);
+    return ref?.key || "";
+  }
+
+  function getCardsForGroupOccurrence(cards = [], occurrenceIndex = 0) {
+    const normalCards = [];
+    const compoundBuckets = new Map();
+
+    (cards || []).filter(Boolean).forEach(card => {
+      const key = getCompoundKeyForCard(card);
+      if (!key) {
+        if (occurrenceIndex < Math.max(0, Number(getCreditsForTtCard(card)) || 0)) normalCards.push(card);
+        return;
+      }
+      if (!compoundBuckets.has(key)) compoundBuckets.set(key, []);
+      compoundBuckets.get(key).push(card);
+    });
+
+    const selectedCompoundCards = [];
+    compoundBuckets.forEach(bucket => {
+      const ordered = [...bucket].sort((a, b) => {
+        const ai = Number.isInteger(a.compoundPartIndex) ? a.compoundPartIndex : 999;
+        const bi = Number.isInteger(b.compoundPartIndex) ? b.compoundPartIndex : 999;
+        if (ai !== bi) return ai - bi;
+        return String(a.subject || a.id || "").localeCompare(String(b.subject || b.id || ""), "ko", { numeric: true });
+      });
+      const ranges = ordered.map(card => ({ card, credits: Math.max(0, Number(getCreditsForTtCard(card)) || 0) }))
+        .filter(x => x.credits > 0);
+      const total = ranges.reduce((sum, x) => sum + x.credits, 0);
+      if (!total) return;
+      let cursor = occurrenceIndex % total;
+      for (const item of ranges) {
+        if (cursor < item.credits) {
+          selectedCompoundCards.push(item.card);
+          return;
+        }
+        cursor -= item.credits;
+      }
+    });
+
+    return [...normalCards, ...selectedCompoundCards];
+  }
+
+  function getGroupItemForOccurrence(groupItem = {}, occurrenceIndex = 0) {
+    const filteredCards = getCardsForGroupOccurrence(groupItem.ttcards || [], occurrenceIndex);
+    return { ...groupItem, ttcards: filteredCards };
   }
 
   function getGroupRoomBatches(group, cards = []) {
@@ -843,7 +946,10 @@ export function createAutoAssignAll(deps) {
               failed: failed.length,
               currentCard: group.name || "그룹 수업"
             });
-            const activeItems = unitItems.filter(u => slot_i < u.credits);
+            const activeItems = unitItems
+              .filter(u => slot_i < u.credits)
+              .map(u => getGroupItemForOccurrence(u, slot_i))
+              .filter(u => (u.ttcards || []).length);
             if (!activeItems.length) continue;
             const probeItem = makePlacementFromGroupItem(group, activeItems[0]);
             const foundSlot = probeItem ? findBestAutoSlot(probeItem, baseSlots, placed, stage.options) : null;
@@ -873,7 +979,9 @@ export function createAutoAssignAll(deps) {
                 failed: failed.length,
                 currentCard: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"}`
               });
-              const item = makePlacementFromGroupItem(group, groupItem);
+              const occurrenceGroupItem = getGroupItemForOccurrence(groupItem, i);
+              if (!(occurrenceGroupItem.ttcards || []).length) continue;
+              const item = makePlacementFromGroupItem(group, occurrenceGroupItem);
               const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
               if (slot) {
                 const entry = makeAutoEntry(item, slot, placed);

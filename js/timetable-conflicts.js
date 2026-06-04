@@ -85,11 +85,42 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     catch (err) { console.warn("Protected grade resolver failed:", err); return new Set(); }
   };
 
+  const compoundRefsFor = entry => {
+    if (typeof options.getCompoundPartRefs !== "function") return [];
+    try {
+      return (options.getCompoundPartRefs(entry) || [])
+        .filter(ref => ref && ref.key && ref.partId);
+    } catch (err) {
+      console.warn("Compound subject resolver failed:", err);
+      return [];
+    }
+  };
+  const hasInternalCompoundConflict = entry => {
+    const seen = new Map();
+    for (const ref of compoundRefsFor(entry)) {
+      const prev = seen.get(ref.key);
+      if (prev && (prev.partId !== ref.partId || prev.cardId !== ref.cardId)) return true;
+      seen.set(ref.key, ref);
+    }
+    return false;
+  };
+  const hasCompoundSiblingConflict = (a, b) => {
+    const refsA = compoundRefsFor(a);
+    const refsB = compoundRefsFor(b);
+    if (!refsA.length || !refsB.length) return false;
+    return refsA.some(ra => refsB.some(rb =>
+      ra.key === rb.key && (ra.partId !== rb.partId || ra.cardId !== rb.cardId)
+    ));
+  };
+
   // Room is required for scheduled lessons unless explicitly set to no-room.
   // Treat missing room as a first-class conflict so it appears in cards, detail popups and logs.
   entries.forEach(e => {
     const rule = String(e.roomRule || "auto").trim();
     if (!e.roomId && rule !== "none") result.get(e.id)?.add("roomMissing");
+    // 같은 대표 복합과목의 서로 다른 구성 카드가 하나의 aggregate entry 안에 같이 있으면
+    // 실제로는 같은 학생이 같은 시간에 두 수업을 듣는 상태이므로 학생 충돌로 표시합니다.
+    if (hasInternalCompoundConflict(e)) result.get(e.id)?.add("student");
   });
 
   const bySlot = new Map();
@@ -111,6 +142,13 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         // It may share the same time, but it must still obey teacher/room conflicts.
         // Only same unit is treated as a truly co-located single lesson.
         const sameConcurrentGroup = sameGroup(a, b) && isConcurrent(a) && isConcurrent(b);
+
+        // 복합 과목 구성 카드끼리는 같은 그룹에 속해 있어도 동시에 배치하면 안 됩니다.
+        // 예: 선택5의 미적분(2) / 심화물리(2)는 같은 학생이 나누어 듣는 수업입니다.
+        if (hasCompoundSiblingConflict(a, b)) {
+          result.get(a.id).add("student");
+          result.get(b.id).add("student");
+        }
 
         // Teacher conflict (always applies — teachers can't be in two places)
         if (a.teacherName && b.teacherName) {
@@ -198,9 +236,25 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     });
 
     if (expectedCardIds.length) {
+      const plainExpectedIds = [];
+      const compoundExpectedKeys = new Map(); // compoundKey → Set<cardId alternatives>
+      expectedCardIds.forEach(id => {
+        const refs = compoundRefsFor({ ttcardId: id });
+        if (!refs.length) {
+          plainExpectedIds.push(id);
+          return;
+        }
+        refs.forEach(ref => {
+          if (!compoundExpectedKeys.has(ref.key)) compoundExpectedKeys.set(ref.key, new Set());
+          compoundExpectedKeys.get(ref.key).add(id);
+        });
+      });
+
       slotMap.forEach(slotEntries => {
         const covered = new Set(slotEntries.flatMap(entryCardIds));
-        const isComplete = expectedCardIds.every(id => covered.has(id));
+        const plainComplete = plainExpectedIds.every(id => covered.has(id));
+        const compoundComplete = [...compoundExpectedKeys.values()].every(ids => [...ids].some(id => covered.has(id)));
+        const isComplete = plainComplete && compoundComplete;
         if (!isComplete) slotEntries.forEach(e => result.get(e.id).add("syncRequired"));
       });
       return;

@@ -14,7 +14,7 @@ import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./temp
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
-import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js";
+import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js?v=compound_subject_slot_guard";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -34,16 +34,16 @@ import {
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js";
-import { createAutoAssignAll } from "./timetable-autoassign.js";
+import { createAutoAssignAll } from "./timetable-autoassign.js?v=compound_subject_slot_guard";
 import { renderTimetableGrid } from "./timetable-grid.js";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
-import { createTimetableConstraintsHandlers } from "./timetable-constraints.js?v=teacher_constraints_modal";
+import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=subject_card_editor_scroll_fix";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js";
+import { exportTimetableXlsx } from "./timetable-export.js";
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
@@ -1109,7 +1109,10 @@ function recomputeConflicts() {
     appState.timetable.ttcardGroups,
     [],
     audienceForPlacement,
-    { getProtectedGrades: protectedGradesForEntry }
+    {
+      getProtectedGrades: protectedGradesForEntry,
+      getCompoundPartRefs: compoundPartRefsForPlacement
+    }
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
 }
@@ -1135,6 +1138,27 @@ function renderGrid() {
 // ── Common entry helpers ──────────────────────────────────────────
 function ttCardIdsFromPlacement(x = {}) {
   return occTtCardIdsFromPlacement(x);
+}
+
+function compoundPartRefsForPlacement(x = {}) {
+  const refs = [];
+  ttCardIdsFromPlacement(x).forEach(cardId => {
+    const card = getTtCardById(cardId);
+    if (!card?.compoundParentTemplateId || !card?.compoundPartId) return;
+    refs.push({
+      key: `${card.gradeKey || ""}::${card.sectionIdx ?? 0}::${card.compoundParentTemplateId}`,
+      partId: card.compoundPartId,
+      cardId: card.id
+    });
+  });
+  if (!refs.length && x.compoundParentTemplateId && x.compoundPartId) {
+    refs.push({
+      key: `${x.gradeKey || ""}::${x.sectionIdx ?? 0}::${x.compoundParentTemplateId}`,
+      partId: x.compoundPartId,
+      cardId: x.ttcardId || ""
+    });
+  }
+  return refs;
 }
 
 function audienceForPlacement(x = {}) {
@@ -1441,7 +1465,7 @@ function buildEntryCard(entry, opts = {}) {
   const titleEl = document.createElement("div");
   titleEl.className = "tt-entry-title";
   titleEl.textContent = title;
-  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:hidden;white-space:nowrap;word-break:normal;text-overflow:clip;";
+  titleEl.style.cssText = "width:100%;min-width:0;text-align:center;font-weight:900;font-size:clamp(8px,0.72vw,11px);line-height:1.08;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;line-clamp:2;-webkit-box-orient:vertical;";
   row1.appendChild(titleEl);
 
   if (isMulti) {
@@ -1468,7 +1492,7 @@ function buildEntryCard(entry, opts = {}) {
   teacherEl.className = "tt-entry-teacher2";
   teacherEl.textContent = [...new Set(teachers)].slice(0, 2).join(", ") || "";
   teacherEl.title = [...new Set(teachers)].join(", ");
-  teacherEl.style.cssText = "width:100%;min-width:0;overflow:visible;text-overflow:clip;white-space:normal;word-break:keep-all;font-size:clamp(6.5px,0.58vw,8.5px);font-weight:800;line-height:1.05;opacity:.82;";
+  teacherEl.style.cssText = "width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6.5px,0.58vw,8.5px);font-weight:800;line-height:1.05;opacity:.82;";
   row2.appendChild(teacherEl);
 
   const row3 = document.createElement("div");
@@ -1479,7 +1503,7 @@ function buildEntryCard(entry, opts = {}) {
     roomBadge.className = "tt-entry-room2";
     roomBadge.textContent = getRoomDisplayName(entry.roomId);
     roomBadge.title = `교실: ${getRoomDisplayName(entry.roomId)}`;
-    roomBadge.style.cssText = "display:block;width:100%;min-width:0;overflow:visible;text-overflow:clip;white-space:normal;word-break:keep-all;font-size:clamp(6px,0.54vw,8px);font-weight:900;line-height:1.05;opacity:.92;";
+    roomBadge.style.cssText = "display:block;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6px,0.54vw,8px);font-weight:900;line-height:1.05;opacity:.92;";
     row3.appendChild(roomBadge);
   }
 
@@ -1604,20 +1628,16 @@ function handleDrop(data, day, period) {
 
 // ── Subject panel ─────────────────────────────────────────────────
 const ttSidebarHandlers = createTimetableSidebarHandlers({
-  GRADE_KEYS, appState, entries, $, makeBtn, canEdit, clean, scheduleSave,
+  GRADE_KEYS, appState, entries, $, makeBtn, canEdit, clean,
   getTemplateById, getTemplateCardTitle,
   getTtCards, getTtCardById, refreshTtCardData,
   getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
   getSubjectsForGrade, getUnitForTemplate, getUnitDisplayTitle, getUnitGradeKeys, getUnitTeachers,
-  getCreditsForTemplate, getTeachersForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
+  getCreditsForTemplate, getTeachersForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
   getGradeColor, gradeDisplay, sectionLabel,
   showSidebarCardDetail, showEntryDetailByUnit,
   renderAll: () => renderAll(),
-  setDragData: value => {
-    dragData = value;
-    if (value) applyDragHighlight(value);
-    else clearDragHighlight();
-  },
+  setDragData: value => { dragData = value; },
 });
 
 function renderSubjectPanel() {
@@ -1754,7 +1774,7 @@ export const autoAssignAll = createAutoAssignAll({
   GRADE_KEYS, canEdit, appState, scheduleSave, normalizeTimetableEntry,
   uid, sectionLabel, gradeDisplay, splitTeacherNames,
   getTemplateById, getTemplateCardTitle, getTtCardById,
-  describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade,
+  describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
   entries, ttDomain, ttConfig, constraints,
   buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
   audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
@@ -1806,241 +1826,32 @@ function renderAll() {
   if (isVisible(logsEl)) renderLogPanel();
 }
 
-/** Called on dragstart: highlight target slots/headers that would conflict */
-function normalizePreviewSection(value, fallback = 0) {
-  const n = parseInt(value, 10);
-  return Number.isFinite(n) ? n : (parseInt(fallback, 10) || 0);
-}
-
-function getDragPreviewTargetFromCell(cell) {
-  const row = cell?.closest?.("tr");
-  const day = parseInt(cell?.dataset?.day, 10);
-  const period = parseInt(cell?.dataset?.period, 10);
-  const gradeKey = clean(cell?.dataset?.gradeKey || row?.dataset?.gradeKey || currentGrade || "");
-  const sectionIdx = normalizePreviewSection(cell?.dataset?.sectionIdx ?? row?.dataset?.sectionIdx, 0);
-  return { day, period, gradeKey, sectionIdx };
-}
-
-function getMovingEntryGroupForDrag(data = {}) {
-  if (data.kind !== "entry" || !data.entryId) return [];
-  const base = entries().find(e => e.id === data.entryId);
-  if (!base) return [];
-  const siblingEntries = (base.groupId || base.unitId) ? entries().filter(x =>
-    x.id !== base.id && !x.pinned &&
-    ((base.groupId && x.groupId === base.groupId) || (base.unitId && x.unitId === base.unitId)) &&
-    x.day === base.day && x.period === base.period
-  ) : [];
-  return [base, ...siblingEntries];
-}
-
-function resolveDragPreviewEntries(data = {}, target = {}) {
-  const day = target.day;
-  const period = target.period;
-  if (!Number.isInteger(day) || !Number.isInteger(period)) return [];
-
-  if (data.kind === "entry" && data.entryId) {
-    return getMovingEntryGroupForDrag(data).map(src => {
-      const next = {
-        ...src,
-        day,
-        period,
-        gradeKey: target.gradeKey || src.gradeKey,
-        sectionIdx: target.sectionIdx ?? src.sectionIdx ?? 0,
-      };
-      return applyDefaultRoomToEntryData(next);
-    });
-  }
-
-  if (data.kind === "group" && data.groupId) {
-    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === data.groupId);
-    const cards = grp ? getGroupCards(grp) : [];
-    const entryData = cards.length ? buildEntryDataFromTtCards(cards, { day, period, groupId: data.groupId }) : null;
-    return entryData ? [applyDefaultRoomToEntryData(entryData)] : [];
-  }
-
-  if (data.unitId && data.groupId) {
-    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === data.groupId);
-    const unit = grp?.units?.find(u => u.id === data.unitId);
-    const cards = (unit?.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
-    const entryData = cards.length ? buildEntryDataFromTtCards(cards, { day, period, groupId: data.groupId, unitId: data.unitId }) : null;
-    return entryData ? [applyDefaultRoomToEntryData(entryData)] : [];
-  }
-
-  if (data.ttcardId) {
-    const card = getTtCardById(data.ttcardId);
-    const entryData = card ? buildEntryDataFromTtCards([card], { day, period, groupId: data.groupId || null }) : null;
-    return entryData ? [applyDefaultRoomToEntryData(entryData)] : [];
-  }
-
-  if (data.templateId) {
-    const templateId = data.templateId;
-    const unitInfo = getUnitForTemplate(templateId);
-    if (unitInfo) {
-      const { group, unit } = unitInfo;
-      const gradeKeys = getUnitGradeKeys(unit);
-      const teachers = getUnitTeachers(unit).join(",");
-      return [applyDefaultRoomToEntryData({
-        day, period,
-        sectionIdx: target.sectionIdx ?? data.sectionIdx ?? 0,
-        unitId: unit.id,
-        groupId: group.id,
-        templateIds: unit.templateIds,
-        gradeKeys,
-        templateId: unit.templateIds[0] || templateId,
-        gradeKey: gradeKeys[0] || target.gradeKey || data.gradeKey || currentGrade,
-        teacherName: teachers,
-        roomId: null,
-      })];
-    }
-    const teacherName = getTeachersForTemplate(templateId)[0] || "";
-    return [applyDefaultRoomToEntryData({
-      day, period,
-      templateId,
-      sectionIdx: target.sectionIdx ?? data.sectionIdx ?? 0,
-      teacherName,
-      roomId: null,
-      gradeKey: target.gradeKey || data.gradeKey || currentGrade,
-    })];
-  }
-
-  return [];
-}
-
-function previewEntriesConflictWithSlot(previewEntries = [], slotEntries = [], movingIds = new Set()) {
-  const result = { teacher: false, room: false, student: false, any: false };
-
-  previewEntries.forEach(candidate => {
-    const candidateTeachers = splitTeacherNames(candidate.teacherName || "").filter(Boolean);
-    const candidateRoomId = candidate.roomId || null;
-    const candidateAudience = audienceForPlacement(candidate);
-
-    slotEntries.forEach(existing => {
-      if (!existing || movingIds.has(existing.id)) return;
-
-      const existingTeachers = splitTeacherNames(existing.teacherName || "").filter(Boolean);
-      if (candidateTeachers.length && existingTeachers.length && candidateTeachers.some(t => existingTeachers.includes(t))) {
-        result.teacher = true;
-      }
-
-      if (candidateRoomId && existing.roomId && candidateRoomId === existing.roomId) {
-        result.room = true;
-      }
-
-      const existingAudience = audienceForPlacement(existing);
-      const sameConcurrentGroup = candidate.groupId && existing.groupId && candidate.groupId === existing.groupId;
-      const sameUnit = candidate.unitId && existing.unitId && candidate.unitId === existing.unitId;
-
-      // 묶음수업(unit)은 한 수업으로 보는 의도적 동시배정이므로 학생 충돌에서 제외합니다.
-      if (sameUnit) return;
-
-      if (sameConcurrentGroup) {
-        // 같은 동시배정 그룹은 같은 반이어도 세부 수강명단이 갈라져 있으면 충돌이 아닙니다.
-        // 다만 실제 studentKeys가 겹치면 같은 학생이 두 과목을 동시에 듣는 것이므로 충돌로 표시합니다.
-        const candidateStudents = candidateAudience?.studentKeys || new Set();
-        const existingStudents = existingAudience?.studentKeys || new Set();
-        if (candidateStudents.size && existingStudents.size && setsIntersect(candidateStudents, existingStudents)) {
-          result.student = true;
-        }
-        return;
-      }
-
-      if (audiencesConflict(candidateAudience, existingAudience)) {
-        result.student = true;
-      }
-    });
-  });
-
-  result.any = result.teacher || result.room || result.student;
-  return result;
-}
-
-function highlightDragPreviewHeaderForCell(cell, result) {
-  if (!cell || !result?.any) return;
-  const row = cell.closest("tr");
-  if (result.student) row?.querySelector(".tt-all-row-hdr,.tt-period-label")?.classList.add("tt-drag-preview-row-student");
-  if (result.teacher) row?.querySelector(".tt-all-row-hdr,.tt-period-label")?.classList.add("tt-drag-preview-row-teacher");
-  if (result.room) row?.querySelector(".tt-all-row-hdr,.tt-period-label")?.classList.add("tt-drag-preview-row-room");
-
-  const day = cell.dataset.day;
-  const period = cell.dataset.period;
-  document.querySelectorAll(".tt-period-sub-hdr").forEach(hdr => {
-    if (hdr.dataset.day === day && hdr.dataset.period === period) {
-      hdr.classList.add(result.student ? "tt-drag-preview-slot-student" : result.teacher ? "tt-drag-preview-slot-teacher" : "tt-drag-preview-slot-room");
-    }
-  });
-  document.querySelectorAll(".tt-section-sub-hdr").forEach(hdr => {
-    const cellGrade = cell.dataset.gradeKey || row?.dataset.gradeKey || "";
-    const cellSec = cell.dataset.sectionIdx || row?.dataset.sectionIdx || "";
-    if (cellGrade && hdr.dataset.gradeKey === cellGrade && hdr.dataset.sectionIdx === cellSec && result.student) {
-      hdr.classList.add("tt-drag-preview-row-student");
-    }
-  });
-}
-
+/** Called on dragstart: highlight relevant cells / sidebar cards */
 function applyDragHighlight(data) {
-  clearDragHighlight();
-  if (!data || !canEdit()) return;
+  if (!data || data.kind !== "subject") return;
+  const teacherNames = splitTeacherNames(data.teacherName || "").filter(Boolean);
+  const gradeKey = data.gradeKey;
+  const sectionIdx = data.sectionIdx ?? 0;
 
-  const movingIds = new Set(getMovingEntryGroupForDrag(data).map(e => e.id));
-  const allCells = [...document.querySelectorAll(".tt-cell")];
-
-  allCells.forEach(cell => {
-    const target = getDragPreviewTargetFromCell(cell);
-    if (!Number.isInteger(target.day) || !Number.isInteger(target.period)) return;
-
-    const previewEntries = resolveDragPreviewEntries(data, target);
-    if (!previewEntries.length) return;
-
-    const slotEntries = entries().filter(e => e.day === target.day && e.period === target.period);
-    const result = previewEntriesConflictWithSlot(previewEntries, slotEntries, movingIds);
-
-    cell.classList.toggle("tt-drag-preview-ok", !result.any);
-    cell.classList.toggle("tt-drag-preview-student", result.student);
-    cell.classList.toggle("tt-drag-preview-teacher", !result.student && result.teacher);
-    cell.classList.toggle("tt-drag-preview-room", !result.student && !result.teacher && result.room);
-    highlightDragPreviewHeaderForCell(cell, result);
-  });
-
-  const previewForBusy = resolveDragPreviewEntries(data, { day: 0, period: 0, gradeKey: data.gradeKey || currentGrade, sectionIdx: data.sectionIdx ?? 0 });
-  const teacherNames = [...new Set(previewForBusy.flatMap(e => splitTeacherNames(e.teacherName || "")).filter(Boolean))];
+  // Highlight existing entries that share teacher (teacher busy indicator)
+  document.querySelectorAll(".tt-entry-card").forEach(c => c.classList.remove("tt-drag-teacher-busy"));
   if (teacherNames.length) {
     entries().forEach(e => {
-      if (teacherNames.some(t => splitTeacherNames(e.teacherName || "").includes(t))) {
+      if (teacherNames.some(t => splitTeacherNames(e.teacherName||"").includes(t))) {
         document.querySelectorAll(`.tt-entry-card[data-entry-id="${e.id}"]`).forEach(c => c.classList.add("tt-drag-teacher-busy"));
       }
     });
   }
+  // Highlight grade rows in all-classes view
+  document.querySelectorAll(".tt-all-row-hdr").forEach(hdr => {
+    const match = gradeKey && hdr.closest("tr")?.dataset.gradeKey === gradeKey;
+    hdr.closest("tr")?.classList.toggle("tt-drag-grade-highlight", !!match);
+  });
 }
 
 function clearDragHighlight() {
-  document.querySelectorAll([
-    ".tt-drag-teacher-busy",
-    ".tt-drag-grade-highlight",
-    ".tt-drag-preview-ok",
-    ".tt-drag-preview-student",
-    ".tt-drag-preview-teacher",
-    ".tt-drag-preview-room",
-    ".tt-drag-preview-row-student",
-    ".tt-drag-preview-row-teacher",
-    ".tt-drag-preview-row-room",
-    ".tt-drag-preview-slot-student",
-    ".tt-drag-preview-slot-teacher",
-    ".tt-drag-preview-slot-room"
-  ].join(",")).forEach(el => {
-    el.classList.remove(
-      "tt-drag-teacher-busy",
-      "tt-drag-grade-highlight",
-      "tt-drag-preview-ok",
-      "tt-drag-preview-student",
-      "tt-drag-preview-teacher",
-      "tt-drag-preview-room",
-      "tt-drag-preview-row-student",
-      "tt-drag-preview-row-teacher",
-      "tt-drag-preview-row-room",
-      "tt-drag-preview-slot-student",
-      "tt-drag-preview-slot-teacher",
-      "tt-drag-preview-slot-room"
-    );
+  document.querySelectorAll(".tt-drag-teacher-busy,.tt-drag-grade-highlight").forEach(el => {
+    el.classList.remove("tt-drag-teacher-busy","tt-drag-grade-highlight");
   });
 }
 
@@ -2053,11 +1864,10 @@ const authUi = createTimetableAuthUi({
 const setAuthCheckingUI = authUi.setAuthCheckingUI;
 const updateAuthUI = authUi.updateAuthUI;
 
-// ── Print / Export ────────────────────────────────────────────────
-function openExportDialog() {
-  openTimetableExportDialog({
+// ── Excel Export ──────────────────────────────────────────────────
+function exportXlsx() {
+  exportTimetableXlsx({
     GRADE_KEYS,
-    appState,
     entries,
     ttConfig,
     splitTeacherNames,
@@ -2066,10 +1876,6 @@ function openExportDialog() {
     entryGradeKeys,
     gradeDisplay,
     getRooms,
-    getAllClasses,
-    getAllTimetableTeachers,
-    entryMatchesClass,
-    audienceForPlacement,
   });
 }
 
@@ -2131,7 +1937,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
 $("ttLoginBtn")?.addEventListener("click", login);
 $("ttLogoutBtn")?.addEventListener("click", logout);
-$("ttExportBtn")?.addEventListener("click", openExportDialog);
+$("ttExportBtn")?.addEventListener("click", exportXlsx);
 $("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); await savePendingNow(); alert("저장되었습니다."); });
 $("ttClearGradeBtn")?.addEventListener("click", () => {
   if (!canEdit()) return;
