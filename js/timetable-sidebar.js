@@ -101,7 +101,8 @@ export function createTimetableSidebarHandlers(deps) {
     refreshBtn.disabled = !canEdit();
 
     const diagBtn = buildCreditDiagnosticButton(appState.timetable?.ttcards || []);
-    actionGroup.append(loadBtn, refreshBtn, diagBtn);
+    const compareBtn = buildCurriculumTimetableDiagnosticButton();
+    actionGroup.append(loadBtn, refreshBtn, diagBtn, compareBtn);
 
     if (!modal) {
       const popupBtn = makeBtn("🗂 팝업", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
@@ -1016,6 +1017,464 @@ export function createTimetableSidebarHandlers(deps) {
 
   function collectRoomNamesForDetailItems(items) {
     return unique((items || []).map(item => roomNameById(item.fixedRoomId || item.roomId)).filter(Boolean));
+  }
+
+
+
+  // ─────────────────────────────────────────────────────────────
+  // Curriculum ↔ Timetable Read-only Diagnostic
+  // ─────────────────────────────────────────────────────────────
+  function buildCurriculumTimetableDiagnosticButton() {
+    const btn = makeBtn("🧭 커리큘럼 대조", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
+      openCurriculumTimetableDiagnosticDialog();
+    });
+    btn.title = "커리큘럼 보드 → 수강명단 → 시간표카드 → 배치까지 변환 상태를 읽기 전용으로 점검합니다.";
+    return btn;
+  }
+
+  function openCurriculumTimetableDiagnosticDialog() {
+    const model = buildCurriculumTimetableDiagnosticModel();
+    const overlay = document.createElement("div");
+    overlay.className = "tt-curriculum-diagnostic-modal";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2600;background:rgba(15,23,42,.38);display:flex;align-items:center;justify-content:center;padding:22px;";
+
+    const dialog = document.createElement("div");
+    dialog.className = "tt-curriculum-diagnostic-dialog";
+    dialog.style.cssText = "width:min(1280px,96vw);height:min(820px,92vh);background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden;border:1px solid #dbe5f2;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;";
+    header.innerHTML = `<div><div style="font-weight:900;font-size:18px;color:#0f172a;">커리큘럼-시간표 대조 진단</div><div style="margin-top:3px;font-size:12px;color:#64748b;">읽기 전용 · 커리큘럼 보드, 수강명단, 시간표카드, 실제 배치의 차이를 비교합니다.</div></div>`;
+
+    const headerActions = document.createElement("div");
+    headerActions.style.cssText = "display:flex;gap:8px;align-items:center;";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "his-ui-btn his-ui-btn-secondary his-ui-btn-compact";
+    copyBtn.textContent = "복사";
+    copyBtn.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(buildCurriculumDiagnosticText(model));
+        copyBtn.textContent = "복사됨";
+        setTimeout(() => copyBtn.textContent = "복사", 1200);
+      } catch (_) {
+        alert("클립보드 복사에 실패했습니다. TXT 저장을 사용해 주세요.");
+      }
+    });
+    const txtBtn = document.createElement("button");
+    txtBtn.type = "button";
+    txtBtn.className = "his-ui-btn his-ui-btn-secondary his-ui-btn-compact";
+    txtBtn.textContent = "TXT 저장";
+    txtBtn.addEventListener("click", () => {
+      const blob = new Blob([buildCurriculumDiagnosticText(model)], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "커리큘럼_시간표_대조진단.txt";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "tt-subject-card-dialog-close";
+    closeBtn.textContent = "×";
+    closeBtn.title = "닫기";
+    closeBtn.addEventListener("click", () => overlay.remove());
+    headerActions.append(copyBtn, txtBtn, closeBtn);
+    header.appendChild(headerActions);
+
+    const body = document.createElement("div");
+    body.style.cssText = "flex:1;overflow:auto;padding:16px 18px 22px;background:#ffffff;";
+    body.appendChild(buildCurriculumDiagnosticPrettyView(model));
+
+    dialog.append(header, body);
+    overlay.appendChild(dialog);
+    overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") overlay.remove(); });
+    document.body.appendChild(overlay);
+    overlay.tabIndex = -1;
+    overlay.focus?.();
+  }
+
+  function buildCurriculumTimetableDiagnosticModel() {
+    const gradeBoards = appState.curriculum?.gradeBoards || {};
+    const templates = appState.templates?.templates || [];
+    const templateMap = new Map(templates.map(t => [t.id, t]));
+    const rosters = appState.rosters?.rosters || {};
+    const rosterMeta = appState.rosters?.rosterMeta || {};
+    const cards = getTtCards() || [];
+    const groups = appState.timetable?.ttcardGroups || [];
+    const actualEntries = entries() || [];
+    const classes = getDiagnosticClasses();
+    const cardsByTemplateGrade = new Map();
+    cards.forEach(card => {
+      const key = diagnosticKey(card.templateId || card.compoundParentTemplateId, card.gradeKey);
+      if (!cardsByTemplateGrade.has(key)) cardsByTemplateGrade.set(key, []);
+      cardsByTemplateGrade.get(key).push(card);
+    });
+
+    const rows = [];
+    const issues = [];
+    const transforms = [];
+    const gradeMap = new Map();
+    const seenTemplateGrades = new Set();
+
+    GRADE_KEYS.forEach(gradeKey => {
+      const boardRows = gradeBoards[gradeKey] || [];
+      const gradeClasses = classes.filter(cls => cls.grade === gradeKey || cls.grade === gradeDisplay(gradeKey));
+      const gradeSummary = ensureGradeSummary(gradeMap, gradeKey, gradeClasses.length);
+      boardRows.forEach((row, rowIndex) => {
+        const templateIds = uniqueDiagnosticValues([row.sem1TemplateId, row.sem2TemplateId].filter(Boolean));
+        if (!templateIds.length) {
+          const item = makeCurriculumDiagRow({ gradeKey, row, rowIndex, status: "error", note: "커리큘럼 행에 과목카드가 연결되어 있지 않습니다.", template: null, actualCards: [] });
+          rows.push(item); issues.push(item); updateGradeCounters(gradeSummary, item); return;
+        }
+        templateIds.forEach(templateId => {
+          seenTemplateGrades.add(diagnosticKey(templateId, gradeKey));
+          const template = templateMap.get(templateId);
+          const actualCards = cardsByTemplateGrade.get(diagnosticKey(templateId, gradeKey)) || [];
+          const item = makeCurriculumDiagRow({ gradeKey, row, rowIndex, template, actualCards, rosters, rosterMeta, groups, actualEntries });
+          rows.push(item);
+          updateGradeCounters(gradeSummary, item);
+          if (item.level === "error" || item.level === "warn") issues.push(item);
+          if (item.level === "info" || item.transformNote) transforms.push(item);
+        });
+      });
+    });
+
+    const orphanCards = cards.filter(card => !seenTemplateGrades.has(diagnosticKey(card.templateId || card.compoundParentTemplateId, card.gradeKey)));
+    orphanCards.forEach(card => {
+      const item = {
+        level: "warn",
+        status: "orphan-card",
+        gradeKey: card.gradeKey || "",
+        track: card.track || "",
+        group: card.group || "",
+        title: card.subject || card.label || card.templateId || "(제목 없음)",
+        curriculumCredits: 0,
+        expectedCredits: 0,
+        actualCredits: Number(card.credits) || 0,
+        actualCardCount: 1,
+        studentCount: (card.studentKeys || []).length,
+        note: "시간표카드는 있으나 현재 커리큘럼 행과 직접 연결되지 않습니다.",
+        actualCards: [card],
+      };
+      issues.push(item);
+      const gs = ensureGradeSummary(gradeMap, card.gradeKey || "기타", 0);
+      gs.orphanCards += 1;
+    });
+
+    const gradeSummaries = [...gradeMap.values()].sort((a, b) => gradeOrderValue(a.gradeKey) - gradeOrderValue(b.gradeKey));
+    const levelCounts = rows.reduce((acc, row) => { acc[row.level] = (acc[row.level] || 0) + 1; return acc; }, { ok: 0, info: 0, warn: 0, error: 0 });
+    orphanCards.forEach(() => levelCounts.warn = (levelCounts.warn || 0) + 1);
+
+    return {
+      generatedAt: new Date().toLocaleString("ko-KR"),
+      totals: {
+        curriculumRows: rows.length,
+        templateCount: templates.length,
+        rosterSubjectCount: Object.keys(rosters).length,
+        ttcardCount: cards.length,
+        groupCount: groups.length,
+        entryCount: actualEntries.length,
+        issueCount: issues.length,
+        transformCount: transforms.length,
+        levelCounts,
+      },
+      gradeSummaries,
+      rows,
+      issues,
+      transforms,
+      orphanCards,
+      groups,
+    };
+  }
+
+  function makeCurriculumDiagRow({ gradeKey, row, rowIndex, template, actualCards = [], rosters = {}, rosterMeta = {}, groups = [], actualEntries = [] }) {
+    const rawCredits = toDiagnosticNumber(row?.credits, 0);
+    const title = template ? getTemplateCardTitle(template) : row?.sem1TemplateId || row?.sem2TemplateId || "(템플릿 없음)";
+    const category = row?.category || "";
+    const track = row?.track || "";
+    const group = row?.group || "";
+    const isZeroCreative = category === "창체" && rawCredits <= 0;
+    const isCreative = category === "창체";
+    const isCompound = !!template?.isCompound && Array.isArray(template?.compoundParts) && template.compoundParts.length > 0;
+    const rosterCount = getDiagnosticRosterCountForGrade(rosters[template?.id] || [], gradeKey);
+    const meta = rosterMeta?.[template?.id] || {};
+    const missingExcluded = !!meta.missingExcluded;
+    const actualCreditTotal = actualCards.reduce((sum, card) => sum + (Number(card.credits) || 0), 0);
+    const actualCardCount = actualCards.length;
+    const actualStudentCount = uniqueDiagnosticValues(actualCards.flatMap(card => card.studentKeys || [])).length;
+    const expectedCredits = isZeroCreative ? 0 : isCreative ? 1 : rawCredits;
+    const expectedCardMode = isZeroCreative ? "제외" : isCompound ? "복합 분할" : isCreative ? "창체 1시수" : "일반";
+
+    let level = "ok";
+    let status = "normal";
+    let note = "정상";
+    let transformNote = "";
+
+    if (!template) {
+      level = "error"; status = "missing-template"; note = "연결된 과목카드 템플릿을 찾지 못했습니다.";
+    } else if (isZeroCreative) {
+      level = actualCardCount ? "warn" : "info";
+      status = actualCardCount ? "excluded-but-card-exists" : "excluded";
+      note = actualCardCount ? "0시간 창체인데 시간표카드가 존재합니다." : "0시간 창체로 시간표카드 생성 제외됨.";
+      transformNote = "창체 0시간 → 시간표 제외";
+    } else if (isCompound) {
+      const partCredits = template.compoundParts.reduce((sum, part) => sum + (Number(part.credits) || 0), 0);
+      const expectedParts = template.compoundParts.length;
+      const hasAllParts = expectedParts > 0 && new Set(actualCards.map(card => card.compoundPartId).filter(Boolean)).size >= expectedParts;
+      if (!actualCardCount) {
+        level = "error"; status = "missing-ttcard"; note = "복합과목인데 시간표 구성 카드가 없습니다.";
+      } else if (!hasAllParts || Math.abs(actualCreditTotal - partCredits) > 0.001) {
+        level = "warn"; status = "compound-check"; note = `복합과목 구성 확인 필요 · 기대 ${expectedParts}개/${formatDiagnosticNumber(partCredits)}시수, 실제 ${actualCardCount}개/${formatDiagnosticNumber(actualCreditTotal)}시수`;
+      } else {
+        level = "info"; status = "compound"; note = "복합과목 분할 생성 정상";
+      }
+      transformNote = `복합과목 ${formatDiagnosticNumber(rawCredits)}시수 → ${template.compoundParts.map(p => `${p.nameKo || p.nameEn || "구성"} ${formatDiagnosticNumber(Number(p.credits)||0)}`).join(" + ")}`;
+    } else if (!actualCardCount) {
+      level = "error"; status = "missing-ttcard"; note = "커리큘럼에는 있으나 시간표카드가 없습니다.";
+    } else if (isCreative && actualCards.some(card => (Number(card.credits) || 0) !== 1)) {
+      level = "warn"; status = "creative-credit"; note = "창체 시간표카드는 1시수여야 합니다.";
+      transformNote = `창체 ${formatDiagnosticNumber(rawCredits)}시간 → 시간표 1시수`;
+    } else if (Math.max(...actualCards.map(card => Number(card.credits) || 0), 0) !== expectedCredits && !isCreative) {
+      level = "warn"; status = "credit-mismatch"; note = `시수 확인 필요 · 커리큘럼 ${formatDiagnosticNumber(rawCredits)}, 시간표카드 ${actualCards.map(c => formatDiagnosticNumber(Number(c.credits)||0)).join("/")}`;
+    } else if (isCreative) {
+      level = "info"; status = "creative-transform"; note = "창체 시간→시간표 1시수 변환 정상";
+      transformNote = `창체 ${formatDiagnosticNumber(rawCredits)}시간 → 시간표 1시수`;
+    }
+
+    if (missingExcluded && rosterCount > 0 && level === "ok") {
+      level = "info";
+      status = "missing-excluded-with-students";
+      note = "미지정 제외 표시가 있으나 실제 수강생이 있어 시간표카드에 포함됩니다.";
+    }
+
+    const groupHitCount = groups.filter(g => (g.poolCardIds || []).some(id => actualCards.some(c => c.id === id)) || (g.excludedCardIds || []).some(id => actualCards.some(c => c.id === id))).length;
+    const assignedCount = actualEntries.filter(e => actualCards.some(c => e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id))).length;
+
+    return {
+      level, status, gradeKey, rowIndex, category, track, group, title,
+      templateId: template?.id || row?.sem1TemplateId || row?.sem2TemplateId || "",
+      curriculumCredits: rawCredits,
+      expectedCredits,
+      actualCredits: actualCreditTotal,
+      actualCardCount,
+      studentCount: actualStudentCount,
+      rosterCount,
+      classCountMeta: meta?.classCount || "",
+      expectedCardMode,
+      note,
+      transformNote,
+      groupHitCount,
+      assignedCount,
+      actualCards,
+      compoundParts: template?.compoundParts || [],
+    };
+  }
+
+  function buildCurriculumDiagnosticPrettyView(model) {
+    const root = document.createElement("div");
+    root.style.cssText = "display:flex;flex-direction:column;gap:16px;color:#0f172a;";
+
+    const summary = document.createElement("div");
+    summary.style.cssText = "display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;";
+    [
+      ["커리큘럼 행", model.totals.curriculumRows],
+      ["수강명단 과목", model.totals.rosterSubjectCount],
+      ["시간표카드", model.totals.ttcardCount],
+      ["그룹", model.totals.groupCount],
+      ["배치", model.totals.entryCount],
+      ["확인 필요", model.totals.issueCount],
+    ].forEach(([label, value]) => summary.appendChild(makeCurriculumDiagStat(label, value)));
+    root.appendChild(summary);
+
+    root.appendChild(makeCurriculumDiagSection("학년별 요약", buildCurriculumGradeSummaryTable(model.gradeSummaries), "커리큘럼 원본과 시간표카드 생성 결과를 학년별로 비교합니다."));
+    root.appendChild(makeCurriculumDiagSection("확인 필요", buildCurriculumIssueTable(model.issues), "빨강은 오류, 노랑은 확인 필요입니다. 의도된 예외는 파랑/회색으로 표시됩니다."));
+    root.appendChild(makeCurriculumDiagSection("의도된 변환/예외", buildCurriculumTransformTable(model.transforms), "창체 16시간→1시수, 0시간 제외, 복합과목 분할 등 의도된 차이를 따로 보여줍니다."));
+    root.appendChild(makeCurriculumDiagSection("전체 상세", buildCurriculumFullTable(model.rows), "필요할 때만 펼쳐 확인하세요.", true));
+    return root;
+  }
+
+  function makeCurriculumDiagStat(label, value) {
+    const card = document.createElement("div");
+    card.style.cssText = "border:1px solid #dbe5f2;border-radius:12px;background:#f8fafc;padding:12px;min-height:60px;";
+    card.innerHTML = `<div style="font-size:12px;color:#64748b;font-weight:800;">${escapeEditorHtml(label)}</div><div style="font-size:22px;font-weight:900;margin-top:4px;color:#0f172a;">${escapeEditorHtml(String(value))}</div>`;
+    return card;
+  }
+
+  function makeCurriculumDiagSection(title, content, desc = "", collapsed = false) {
+    const details = document.createElement("details");
+    details.open = !collapsed;
+    details.style.cssText = "border:1px solid #dbe5f2;border-radius:14px;overflow:hidden;background:#fff;";
+    const summary = document.createElement("summary");
+    summary.style.cssText = "cursor:pointer;list-style:none;padding:12px 14px;background:#f1f5f9;border-bottom:1px solid #e2e8f0;";
+    summary.innerHTML = `<div style="font-weight:900;font-size:15px;">${escapeEditorHtml(title)}</div>${desc ? `<div style="font-size:12px;color:#64748b;margin-top:2px;">${escapeEditorHtml(desc)}</div>` : ""}`;
+    const body = document.createElement("div");
+    body.style.cssText = "padding:12px;overflow:auto;";
+    body.appendChild(content);
+    details.append(summary, body);
+    return details;
+  }
+
+  function buildCurriculumGradeSummaryTable(items) {
+    return buildCurriculumDiagTable(["학년", "반", "커리큘럼", "시간표카드", "정상", "변환", "확인", "오류", "고아카드"], items.map(gs => [
+      gs.gradeKey, gs.classCount, gs.curriculumRows, gs.ttcardCount, gs.ok, gs.info, gs.warn, gs.error, gs.orphanCards || 0
+    ]));
+  }
+
+  function buildCurriculumIssueTable(items) {
+    if (!items.length) return makeCurriculumDiagEmpty("확인 필요한 항목이 없습니다.");
+    return buildCurriculumDiagTable(["상태", "학년", "구분", "과목", "커리큘럼", "카드", "학생", "내용"], items.map(item => [
+      levelBadgeHtml(item.level), item.gradeKey || "-", [item.track, item.group].filter(Boolean).join(" / ") || "-", item.title,
+      formatDiagnosticNumber(item.curriculumCredits), `${item.actualCardCount || 0}개 / ${formatDiagnosticNumber(item.actualCredits || 0)}시수`, item.studentCount ?? item.rosterCount ?? "-", item.note || ""
+    ]), true);
+  }
+
+  function buildCurriculumTransformTable(items) {
+    const list = items.filter(item => item.transformNote || item.level === "info");
+    if (!list.length) return makeCurriculumDiagEmpty("표시할 변환/예외 항목이 없습니다.");
+    return buildCurriculumDiagTable(["종류", "학년", "구분", "과목", "변환 내용", "카드"], list.map(item => [
+      levelBadgeHtml(item.level), item.gradeKey, [item.track, item.group].filter(Boolean).join(" / ") || "-", item.title,
+      item.transformNote || item.note || "", `${item.actualCardCount || 0}개`
+    ]), true);
+  }
+
+  function buildCurriculumFullTable(items) {
+    if (!items.length) return makeCurriculumDiagEmpty("진단할 커리큘럼 행이 없습니다.");
+    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "원본", "시간표", "카드", "학생", "메모"], items.map(item => [
+      levelBadgeHtml(item.level), item.gradeKey, item.category, item.track, item.group, item.title,
+      formatDiagnosticNumber(item.curriculumCredits), formatDiagnosticNumber(item.expectedCredits), item.actualCardCount, item.studentCount, item.note
+    ]), true);
+  }
+
+  function buildCurriculumDiagTable(headers, rows, htmlCells = false) {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "overflow:auto;max-width:100%;";
+    const table = document.createElement("table");
+    table.style.cssText = "width:100%;border-collapse:collapse;font-size:12px;min-width:760px;";
+    const thead = document.createElement("thead");
+    const tr = document.createElement("tr");
+    headers.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      th.style.cssText = "position:sticky;top:0;background:#eaf1fb;border:1px solid #d4e0ee;padding:7px 8px;text-align:left;font-weight:900;color:#1e3a5f;white-space:nowrap;";
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+    const tbody = document.createElement("tbody");
+    rows.forEach(row => {
+      const tr = document.createElement("tr");
+      row.forEach(cell => {
+        const td = document.createElement("td");
+        td.style.cssText = "border:1px solid #e2e8f0;padding:7px 8px;vertical-align:top;line-height:1.35;";
+        if (htmlCells && typeof cell === "string" && cell.startsWith("<")) td.innerHTML = cell;
+        else td.textContent = String(cell ?? "");
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+    table.append(thead, tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function makeCurriculumDiagEmpty(text) {
+    const div = document.createElement("div");
+    div.style.cssText = "padding:18px;border:1px dashed #cbd5e1;border-radius:10px;background:#f8fafc;color:#64748b;text-align:center;font-weight:700;";
+    div.textContent = text;
+    return div;
+  }
+
+  function levelBadgeHtml(level) {
+    const map = {
+      ok: ["정상", "#dcfce7", "#166534"],
+      info: ["변환", "#dbeafe", "#1d4ed8"],
+      warn: ["확인", "#fef3c7", "#92400e"],
+      error: ["오류", "#fee2e2", "#b91c1c"],
+    };
+    const [text, bg, color] = map[level] || map.ok;
+    return `<span style="display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;background:${bg};color:${color};font-weight:900;font-size:11px;white-space:nowrap;">${text}</span>`;
+  }
+
+  function buildCurriculumDiagnosticText(model) {
+    const lines = [];
+    lines.push("커리큘럼-시간표 대조 진단");
+    lines.push(`생성: ${model.generatedAt}`);
+    lines.push("");
+    lines.push("[전체 요약]");
+    lines.push(`- 커리큘럼 행: ${model.totals.curriculumRows}`);
+    lines.push(`- 수강명단 과목: ${model.totals.rosterSubjectCount}`);
+    lines.push(`- 시간표카드: ${model.totals.ttcardCount}`);
+    lines.push(`- 그룹: ${model.totals.groupCount}`);
+    lines.push(`- 배치: ${model.totals.entryCount}`);
+    lines.push(`- 확인 필요: ${model.totals.issueCount}`);
+    lines.push("");
+    lines.push("[학년별 요약]");
+    model.gradeSummaries.forEach(gs => lines.push(`- ${gs.gradeKey}: 반 ${gs.classCount}, 커리큘럼 ${gs.curriculumRows}, 카드 ${gs.ttcardCount}, 정상 ${gs.ok}, 변환 ${gs.info}, 확인 ${gs.warn}, 오류 ${gs.error}, 고아카드 ${gs.orphanCards || 0}`));
+    lines.push("");
+    lines.push("[확인 필요]");
+    if (!model.issues.length) lines.push("- 없음");
+    model.issues.forEach(item => lines.push(`- [${item.level}] ${item.gradeKey} / ${item.track || ""} / ${item.group || ""} / ${item.title}: ${item.note}`));
+    lines.push("");
+    lines.push("[의도된 변환/예외]");
+    const transforms = model.transforms.filter(item => item.transformNote || item.level === "info");
+    if (!transforms.length) lines.push("- 없음");
+    transforms.forEach(item => lines.push(`- ${item.gradeKey} / ${item.title}: ${item.transformNote || item.note}`));
+    return lines.join("\n");
+  }
+
+  function getDiagnosticClasses() {
+    const list = appState.classes?.classes;
+    return Array.isArray(list) ? list : [];
+  }
+
+  function getDiagnosticRosterCountForGrade(rosterRows, gradeKey) {
+    const classIds = new Set(getDiagnosticClasses().filter(cls => cls.grade === gradeKey || cls.grade === gradeDisplay(gradeKey)).map(cls => cls.id));
+    const ids = new Set();
+    (rosterRows || []).forEach(row => {
+      if (!classIds.has(row.classId)) return;
+      ids.add(row.studentId || `${row.classId}:${row.studentKey || ""}`);
+    });
+    return ids.size;
+  }
+
+  function ensureGradeSummary(map, gradeKey, classCount = 0) {
+    if (!map.has(gradeKey)) map.set(gradeKey, { gradeKey, classCount, curriculumRows: 0, ttcardCount: 0, ok: 0, info: 0, warn: 0, error: 0, orphanCards: 0 });
+    const item = map.get(gradeKey);
+    if (classCount && !item.classCount) item.classCount = classCount;
+    return item;
+  }
+
+  function updateGradeCounters(summary, item) {
+    summary.curriculumRows += 1;
+    summary.ttcardCount += item.actualCardCount || 0;
+    summary[item.level] = (summary[item.level] || 0) + 1;
+  }
+
+  function diagnosticKey(templateId, gradeKey) {
+    return `${templateId || ""}::${gradeKey || ""}`;
+  }
+
+  function uniqueDiagnosticValues(values) {
+    return [...new Set((values || []).filter(v => v !== null && v !== undefined && String(v) !== ""))];
+  }
+
+  function toDiagnosticNumber(value, fallback = 0) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function formatDiagnosticNumber(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value ?? "");
+    return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10);
+  }
+
+  function gradeOrderValue(gradeKey) {
+    const n = Number(String(gradeKey || "").match(/\d+/)?.[0] || 999);
+    return Number.isFinite(n) ? n : 999;
   }
 
   function buildCreditDiagnosticButton(ttcards) {
