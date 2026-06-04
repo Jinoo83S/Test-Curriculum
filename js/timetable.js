@@ -35,7 +35,7 @@ import {
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js";
 import { createAutoAssignAll } from "./timetable-autoassign.js?v=compound_subject_slot_guard";
-import { renderTimetableGrid } from "./timetable-grid.js?v=all_summary_group_panel";
+import { renderTimetableGrid } from "./timetable-grid.js?v=all_summary_panel_nonblocking";
 import { createTimetableDetailHandlers } from "./timetable-detail.js";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
