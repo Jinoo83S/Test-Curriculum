@@ -428,15 +428,31 @@ function renderRosterDetail(panel, container) {
   panel.appendChild(secTitle);
   const displayRoster = multi && selectedSection >= 0 ? getRosterSection(selectedRosterTemplateId, selectedSection) : roster;
 
+  const enrolledSlot = document.createElement("div");
+  enrolledSlot.className = "roster-enrolled-slot";
+  enrolledSlot.style.height = "244px";
+  enrolledSlot.style.minHeight = "244px";
+  enrolledSlot.style.maxHeight = "244px";
+  enrolledSlot.style.overflowY = "auto";
+  enrolledSlot.style.overflowX = "hidden";
+  enrolledSlot.style.boxSizing = "border-box";
+
   if (!displayRoster.length) {
     const e = document.createElement("div");
     e.className = "roster-enrolled-empty" + (rosterMissing ? " roster-enrolled-empty-warning" : "");
+    e.style.height = "100%";
+    e.style.display = "flex";
+    e.style.alignItems = "center";
+    e.style.justifyContent = "center";
+    e.style.boxSizing = "border-box";
     e.textContent = rosterMissing
       ? "수강명단이 0명입니다. 아래 학생 목록에서 수강 학생을 추가해 주세요."
       : missingExcluded ? "이 과목은 명단 미지정 검사에서 제외되어 있습니다." : "아직 수강 학생이 없습니다.";
-    panel.appendChild(e);
+    enrolledSlot.appendChild(e);
   } else {
     const wrap = document.createElement("div"); wrap.className = "roster-enrolled-wrap";
+    wrap.style.maxHeight = "none";
+    wrap.style.overflow = "visible";
     const table = document.createElement("table"); table.className = "roster-table";
     const showSec = multi && selectedSection === -1;
     table.innerHTML = `<thead><tr><th>번호</th>${showSec ? "<th>반</th>" : ""}<th>학년</th><th>반</th><th>이름</th><th>성별</th><th>삭제</th></tr></thead>`;
@@ -449,8 +465,9 @@ function renderRosterDetail(panel, container) {
       const delTd = document.createElement("td"); const delBtn = makeBtn("×", "stu-del-btn", () => { removeFromRoster(selectedRosterTemplateId, entry.classId, entry.studentId); renderRosterView(container); });
       delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd); tbody.appendChild(tr);
     });
-    table.appendChild(tbody); wrap.appendChild(table); panel.appendChild(wrap);
+    table.appendChild(tbody); wrap.appendChild(table); enrolledSlot.appendChild(wrap);
   }
+  panel.appendChild(enrolledSlot);
 
   // No add area in "전체" tab
   if (multi && selectedSection === -1) return;

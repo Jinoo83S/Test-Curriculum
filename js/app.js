@@ -40,7 +40,7 @@ function lazyImport(key, path) {
 }
 const loadStudents     = () => lazyImport("students", "./students.js");
 const loadTeachers     = () => lazyImport("teachers", "./teachers.js");
-const loadRosters      = () => lazyImport("rosters", "./rosters.js");
+const loadRosters      = () => lazyImport("rosters", "./rosters.js?v=roster_enrolled_fixed_height");
 const loadResults      = () => lazyImport("results", "./results.js");
 const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
 const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
