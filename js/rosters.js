@@ -296,18 +296,21 @@ function getRosterTrackStudentStats(track, items) {
       assigned += countAssignedExpectedStudents(tpl.id, gradeKey, expectedIds);
     });
   } else {
-    // 선택/배정 과목은 같은 구분 안에서 학년 전체 학생이 하나 이상의 경쟁 과목에 배정되었는지 확인합니다.
+    // 선택/배정 과목은 같은 구분 안에 배정된 학생 수의 합산 기준으로 판단합니다.
+    // 예: 국어 43명 + 한국어 1명 = 44명이면 해당 학년 44명 배정 완료로 봅니다.
     gradeKeys.forEach(gradeKey => {
       const gradeStudentIds = getGradeStudentIds(gradeKey);
       expected += gradeStudentIds.size;
-      const assignedIds = new Set();
+      let gradeAssigned = 0;
+      const countedTplIds = new Set();
       (items || []).forEach(({ tpl }) => {
-        if (!tpl || isMissingRosterExcluded(tpl.id)) return;
+        if (!tpl || isMissingRosterExcluded(tpl.id) || countedTplIds.has(tpl.id)) return;
+        countedTplIds.add(tpl.id);
         getRoster(tpl.id, gradeKey).forEach(entry => {
-          if (gradeStudentIds.has(entry.studentId)) assignedIds.add(entry.studentId);
+          if (gradeStudentIds.has(entry.studentId)) gradeAssigned += 1;
         });
       });
-      assigned += assignedIds.size;
+      assigned += Math.min(gradeAssigned, gradeStudentIds.size);
     });
   }
 
@@ -386,7 +389,7 @@ function createRosterTrackHeader(track, items) {
   }
   status.title = stats.isCommonTrack
     ? "공통 구분은 과목별 학생 수 기준입니다. [남]/[여] 과목은 해당 성별 학생 수로 완료를 판단합니다."
-    : "선택/배정 구분은 같은 구분 안에 배정된 고유 학생 수가 기준입니다.";
+    : "선택/배정 구분은 같은 구분 안에 배정된 학생 수 합산 기준입니다.";
   grpHdr.appendChild(status);
   return grpHdr;
 }
