@@ -239,10 +239,52 @@ function getRosterCountForGrade(templateId, gradeKey) {
 function isRosterMissingForGrade(templateId, gradeKey) {
   return getRosterCountForGrade(templateId, gradeKey) <= 0 && !isMissingRosterExcluded(templateId);
 }
+function getGradeStudentIds(gradeKey) {
+  const ids = new Set();
+  getClasses().filter(c => c.grade === gradeKey).forEach(cls => {
+    (cls.students || []).forEach(stu => ids.add(stu.id));
+  });
+  return ids;
+}
 function getRosterCompletionStats(items) {
   const total = items.length;
   const missing = items.filter(({ tpl, gradeKey }) => isRosterMissingForGrade(tpl.id, gradeKey)).length;
   return { total, missing, complete: total > 0 && missing === 0 };
+}
+function getRosterTrackStudentStats(track, items) {
+  const gradeKeys = [...new Set((items || []).map(it => it.gradeKey).filter(Boolean))];
+  const isCommonTrack = clean(track) === "공통";
+  let expected = 0;
+  let assigned = 0;
+
+  if (isCommonTrack) {
+    (items || []).forEach(({ tpl, gradeKey }) => {
+      if (!tpl || !gradeKey || isMissingRosterExcluded(tpl.id)) return;
+      const gradeStudentIds = getGradeStudentIds(gradeKey);
+      expected += gradeStudentIds.size;
+      const assignedIds = new Set();
+      getRoster(tpl.id, gradeKey).forEach(entry => {
+        if (gradeStudentIds.has(entry.studentId)) assignedIds.add(entry.studentId);
+      });
+      assigned += assignedIds.size;
+    });
+  } else {
+    gradeKeys.forEach(gradeKey => {
+      const gradeStudentIds = getGradeStudentIds(gradeKey);
+      expected += gradeStudentIds.size;
+      const assignedIds = new Set();
+      (items || []).forEach(({ tpl }) => {
+        if (!tpl) return;
+        getRoster(tpl.id, gradeKey).forEach(entry => {
+          if (gradeStudentIds.has(entry.studentId)) assignedIds.add(entry.studentId);
+        });
+      });
+      assigned += assignedIds.size;
+    });
+  }
+
+  const missing = Math.max(0, expected - assigned);
+  return { expected, assigned, missing, complete: expected > 0 && missing === 0, isCommonTrack };
 }
 function makeStatusPill(text, kind) {
   const pill = document.createElement("span");
@@ -294,7 +336,7 @@ function createRosterGradeHeader(grade, items) {
   return hdr;
 }
 function createRosterTrackHeader(track, items) {
-  const stats = getRosterCompletionStats(items);
+  const stats = getRosterTrackStudentStats(track, items);
   const grpHdr = document.createElement("div");
   grpHdr.className = "roster-group-hdr";
   grpHdr.style.display = "flex";
@@ -306,10 +348,17 @@ function createRosterTrackHeader(track, items) {
   badge.className = "roster-track-badge";
   badge.textContent = track;
   grpHdr.appendChild(badge);
-  const status = stats.missing > 0
-    ? makeStatusPill(`미완료 ${stats.missing}/${stats.total}`, "warn")
-    : makeStatusPill("완료", "ok");
-  status.title = "수강 학생 수가 0명이면 미완료로 표시합니다. 미지정 제외 과목은 완료로 봅니다.";
+  let status;
+  if (stats.expected <= 0) {
+    status = makeStatusPill("확인 필요", "neutral");
+  } else if (stats.complete) {
+    status = makeStatusPill("완료", "ok");
+  } else {
+    status = makeStatusPill(`미완료 ${stats.assigned}/${stats.expected}명`, "warn");
+  }
+  status.title = stats.isCommonTrack
+    ? "공통 구분은 과목별 배정 학생 수 합계가 기준입니다."
+    : "선택/배정 구분은 같은 구분 안에 배정된 고유 학생 수가 기준입니다.";
   grpHdr.appendChild(status);
   return grpHdr;
 }
@@ -582,31 +631,51 @@ function renderRosterDetail(panel, container) {
   // No add area in "전체" tab
   if (multi && selectedSection === -1) return;
 
-  // Build competing template IDs (same track+grade, not this template)
+  // Build competing template IDs (same grade + same track, not this template)
   const competingTplIds = new Set();
-  for (const grade of getActiveRosterGrades()) {
+  const competingGrades = detailGradeKey ? [detailGradeKey] : getActiveRosterGrades();
+  competingGrades.forEach(grade => {
     const board = appState.curriculum.gradeBoards[grade] || [];
     const selectedRow = board.find(r => r.sem1TemplateId === selectedRosterTemplateId || r.sem2TemplateId === selectedRosterTemplateId);
-    if (!selectedRow || selectedRow.track === "공통") continue;
+    if (!selectedRow || clean(selectedRow.track) === "공통") return;
     board.forEach(row => {
-      if (row.track !== selectedRow.track) return;
+      if (clean(row.track) !== clean(selectedRow.track)) return;
       [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tid => {
         if (tid !== selectedRosterTemplateId) competingTplIds.add(tid);
       });
     });
-  }
-  // Map: studentId → competing template name (for tooltip)
-  const competingMap = new Map(); // studentId → tplName
+  });
+  // Map: studentId → competing template names (for tooltip + warning)
+  const competingMap = new Map(); // studentId → Set<tplName>
   if (competingTplIds.size > 0) {
     competingTplIds.forEach(tid => {
       const tpl = getTemplateById(tid); if (!tpl) return;
-      const competingRoster = filterRosterEntriesByActiveLevel(getRoster(tid));
+      const competingRoster = detailGradeKey ? getRoster(tid, detailGradeKey) : filterRosterEntriesByActiveLevel(getRoster(tid));
       competingRoster.forEach(entry => {
-        if (!competingMap.has(entry.studentId))
-          competingMap.set(entry.studentId, getTemplateCardTitle(tpl));
+        if (!competingMap.has(entry.studentId)) competingMap.set(entry.studentId, new Set());
+        competingMap.get(entry.studentId).add(getTemplateCardTitle(tpl));
       });
     });
   }
+  const getCompetingLabel = studentId => [...(competingMap.get(studentId) || [])].join(", ");
+  const isAlreadyInCurrentRoster = (classId, studentId) => roster.some(e => e.classId === classId && e.studentId === studentId);
+  const confirmCompetingAssignments = (entries, actionLabel = "추가") => {
+    const conflicts = (entries || []).filter(e => competingMap.has(e.studentId) && !isAlreadyInCurrentRoster(e.classId, e.studentId));
+    if (!conflicts.length) return true;
+    const sample = conflicts.slice(0, 12).map(e => {
+      const cls = getClassById(e.classId);
+      const stu = cls?.students?.find(s => s.id === e.studentId);
+      return `- ${cls ? `${gradeDisplay(cls.grade)} ${cls.name}` : ""} ${stu?.name || "(이름없음)"} → ${getCompetingLabel(e.studentId)}`;
+    }).join("\n");
+    const more = conflicts.length > 12 ? `\n... 외 ${conflicts.length - 12}명` : "";
+    return confirm(`이미 같은 구분의 경쟁 과목에 배정된 학생이 ${conflicts.length}명 있습니다.\n\n${sample}${more}\n\n그래도 현재 과목에 ${actionLabel}할까요?`);
+  };
+  const addEntriesWithCompetitionWarning = (entries, actionLabel = "추가") => {
+    if (!canEdit()) return;
+    if (!confirmCompetingAssignments(entries, actionLabel)) return;
+    entries.forEach(({ classId, studentId }) => addToRoster(selectedRosterTemplateId, classId, studentId, multi ? selectedSection : 0));
+    renderRosterView(container);
+  };
 
   // Add area
   const addTitle = document.createElement("div"); addTitle.className = "roster-section-title";
@@ -619,8 +688,7 @@ function renderRosterDetail(panel, container) {
   const classSel  = buildFilterSelect("반", classOpts, filterClass, v => { filterClass = v; renderRosterView(container); });
   const genderSel = buildFilterSelect("성별", ["전체","남","여"], filterGender, v => { filterGender = v; renderRosterView(container); });
   const addAllBtn = makeBtn("필터 전체 추가", "primary-btn compact-btn", () => {
-    getFilteredStudentEntries().forEach(({ classId, studentId }) => addToRoster(selectedRosterTemplateId, classId, studentId, multi ? selectedSection : 0));
-    renderRosterView(container);
+    addEntriesWithCompetitionWarning(getFilteredStudentEntries(), "추가");
   });
   addAllBtn.disabled = !canEdit();
   filterBar.append(gradeSel, classSel, genderSel, addAllBtn); panel.appendChild(filterBar);
@@ -645,7 +713,9 @@ function renderRosterDetail(panel, container) {
       const clsCard = document.createElement("div"); clsCard.className = "roster-class-card";
       const clsHdr  = document.createElement("div"); clsHdr.className  = "roster-class-header";
       const label   = document.createElement("span"); label.className = "roster-class-label"; label.textContent = `${gradeDisplay(cls.grade)} ${cls.name}`;
-      const allBtn  = makeBtn("전체 추가", "secondary-btn compact-btn", () => { fstu.forEach(s => addToRoster(selectedRosterTemplateId, cls.id, s.id, multi ? selectedSection : 0)); renderRosterView(container); });
+      const allBtn  = makeBtn("전체 추가", "secondary-btn compact-btn", () => {
+        addEntriesWithCompetitionWarning(fstu.map(s => ({ classId: cls.id, studentId: s.id })), "추가");
+      });
       allBtn.disabled = !canEdit();
       const noCompBtn = makeBtn("경쟁 제외 추가", "roster-nocompete-btn compact-btn", () => {
         fstu_noCompeting.forEach(s => addToRoster(selectedRosterTemplateId, cls.id, s.id, multi ? selectedSection : 0));
@@ -665,12 +735,15 @@ function renderRosterDetail(panel, container) {
         stuBtn.className = "roster-stu-chip" + (inThis ? " enrolled" : "") + (inOther ? " in-other-section" : "") + (inCompeting && !inThis ? " in-competing" : "");
         stuBtn.textContent = s.name || "(이름없음)";
         if (inOther) stuBtn.title = `현재 ${sectionLabel(curSec)} → 클릭시 ${sectionLabel(selectedSection)}으로 이동`;
-        else if (inCompeting && !inThis) stuBtn.title = `${competingMap.get(s.id)} 수강 중`;
+        else if (inCompeting && !inThis) stuBtn.title = `${getCompetingLabel(s.id)} 수강 중`;
         stuBtn.disabled = !canEdit();
         stuBtn.addEventListener("click", () => {
-          if (inThis) removeFromRoster(selectedRosterTemplateId, cls.id, s.id);
-          else        addToRoster(selectedRosterTemplateId, cls.id, s.id, multi ? selectedSection : 0);
-          renderRosterView(container);
+          if (inThis) {
+            removeFromRoster(selectedRosterTemplateId, cls.id, s.id);
+            renderRosterView(container);
+          } else {
+            addEntriesWithCompetitionWarning([{ classId: cls.id, studentId: s.id }], "추가");
+          }
         });
         stuList.appendChild(stuBtn);
       });

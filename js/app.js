@@ -28,7 +28,7 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "roster_grade_track_status";
+const APP_MODULE_VERSION = "roster_compete_student_status";
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
@@ -40,7 +40,7 @@ function lazyImport(key, path) {
 }
 const loadStudents     = () => lazyImport("students", "./students.js");
 const loadTeachers     = () => lazyImport("teachers", "./teachers.js");
-const loadRosters      = () => lazyImport("rosters", "./rosters.js?v=roster_grade_track_status");
+const loadRosters      = () => lazyImport("rosters", "./rosters.js?v=roster_compete_student_status");
 const loadResults      = () => lazyImport("results", "./results.js");
 const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
 const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
