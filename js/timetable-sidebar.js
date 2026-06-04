@@ -11,7 +11,7 @@ export function createTimetableSidebarHandlers(deps) {
   const {
     GRADE_KEYS, appState, entries, $, makeBtn, canEdit,
     getTemplateById, getTemplateCardTitle,
-    getTtCards, refreshTtCardData,
+    getTtCards, getTtCardById, refreshTtCardData,
     getGroupCards, getCreditsForTtCard, getTeachersForTtCard, getTtCardClassLabels, describeTtCard, calculateClassCreditSummary,
     getSubjectsForGrade, getUnitForTemplate, getUnitGradeKeys, getUnitTeachers,
     getCreditsForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
@@ -1071,7 +1071,7 @@ export function createTimetableSidebarHandlers(deps) {
   function showClassCreditDiagnostics(ttcards) {
     const summary = getClassCreditSummary(ttcards);
     const report = buildClassCreditDiagnosticReport(summary, ttcards || []);
-    openCreditDiagnosticDialog(report);
+    openCreditDiagnosticDialog(report, summary, ttcards || []);
   }
 
   function buildClassCreditDiagnosticReport(summary, ttcards) {
@@ -1177,7 +1177,7 @@ export function createTimetableSidebarHandlers(deps) {
     }
   }
 
-  function openCreditDiagnosticDialog(reportText) {
+  function openCreditDiagnosticDialog(reportText, summary = {}, ttcards = []) {
     const old = document.querySelector(".tt-credit-diagnostic-modal");
     if (old) old.remove();
 
@@ -1185,31 +1185,36 @@ export function createTimetableSidebarHandlers(deps) {
     overlay.className = "tt-credit-diagnostic-modal";
     Object.assign(overlay.style, {
       position: "fixed", inset: "0", zIndex: "99999",
-      background: "rgba(15,23,42,0.38)", display: "flex",
-      alignItems: "center", justifyContent: "center", padding: "24px"
+      background: "rgba(15,23,42,0.42)", display: "flex",
+      alignItems: "center", justifyContent: "center", padding: "22px"
     });
 
     const box = document.createElement("div");
     Object.assign(box.style, {
-      width: "min(1120px, 96vw)", height: "min(760px, 90vh)",
-      background: "#fff", borderRadius: "14px", border: "1px solid #d8e1ef",
-      boxShadow: "0 24px 70px rgba(15,23,42,.28)", display: "flex",
+      width: "min(1180px, 97vw)", height: "min(820px, 92vh)",
+      background: "#fff", borderRadius: "16px", border: "1px solid #d8e1ef",
+      boxShadow: "0 24px 70px rgba(15,23,42,.30)", display: "flex",
       flexDirection: "column", overflow: "hidden"
     });
 
     const header = document.createElement("div");
     Object.assign(header.style, {
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "14px 18px", borderBottom: "1px solid #e5eaf3", background: "#f8fbff"
+      display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+      padding: "13px 18px", borderBottom: "1px solid #e5eaf3", background: "#f8fbff"
     });
 
     const title = document.createElement("div");
-    title.innerHTML = '<strong>학급별 필요 시수 상세 진단</strong><div style="font-size:12px;color:#64748b;margin-top:3px">전체 내역이 잘리지 않도록 팝업으로 표시합니다. 복사하거나 txt로 저장할 수 있습니다.</div>';
+    const titleMain = document.createElement("strong");
+    titleMain.textContent = "학급별 필요 시수 상세 진단";
+    titleMain.style.fontSize = "15px";
+    const titleSub = document.createElement("div");
+    titleSub.textContent = "요약 → 차이 원인 → 학급별 상세 → 그룹별 참고 순서로 확인합니다.";
+    Object.assign(titleSub.style, { fontSize: "12px", color: "#64748b", marginTop: "3px" });
+    title.append(titleMain, titleSub);
     header.appendChild(title);
 
     const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.gap = "8px";
+    Object.assign(actions.style, { display: "flex", gap: "8px", flexShrink: "0" });
 
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
@@ -1221,8 +1226,12 @@ export function createTimetableSidebarHandlers(deps) {
         copyBtn.textContent = "복사됨";
         setTimeout(() => { copyBtn.textContent = "복사"; }, 1200);
       } catch (err) {
-        textarea.select();
+        const tmp = document.createElement("textarea");
+        tmp.value = reportText;
+        document.body.appendChild(tmp);
+        tmp.select();
         document.execCommand("copy");
+        tmp.remove();
       }
     };
 
@@ -1251,23 +1260,258 @@ export function createTimetableSidebarHandlers(deps) {
     actions.append(copyBtn, downloadBtn, closeBtn);
     header.appendChild(actions);
 
-    const textarea = document.createElement("textarea");
-    textarea.value = reportText;
-    textarea.readOnly = true;
-    Object.assign(textarea.style, {
-      flex: "1", resize: "none", border: "0", outline: "none",
-      padding: "16px 18px", font: "12px/1.55 Consolas, Monaco, 'D2Coding', monospace",
-      whiteSpace: "pre", color: "#0f172a", background: "#fff"
+    const body = document.createElement("div");
+    Object.assign(body.style, {
+      flex: "1", overflow: "auto", padding: "16px 18px 22px",
+      background: "#f3f7fc", color: "#0f172a", fontSize: "13px"
     });
+    body.appendChild(buildCreditDiagnosticPrettyView(summary, ttcards));
 
-    box.append(header, textarea);
+    box.append(header, body);
     overlay.appendChild(box);
     overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
     document.addEventListener("keydown", function onKey(e) {
       if (e.key === "Escape" && overlay.isConnected) { overlay.remove(); document.removeEventListener("keydown", onKey); }
     });
     document.body.appendChild(overlay);
-    textarea.focus();
+  }
+
+  function buildCreditDiagnosticPrettyView(summary = {}, ttcards = []) {
+    const wrap = document.createElement("div");
+    Object.assign(wrap.style, { display: "flex", flexDirection: "column", gap: "14px" });
+
+    const groups = appState.timetable?.ttcardGroups || [];
+    const rows = summary.classes || [];
+    const gradeSummaries = summary.gradeSummaries || [];
+    const unbalanced = gradeSummaries.filter(gs => !gs.isBalanced);
+
+    const overview = document.createElement("div");
+    Object.assign(overview.style, {
+      display: "grid", gridTemplateColumns: "repeat(4, minmax(120px, 1fr))", gap: "10px"
+    });
+    overview.append(
+      buildDiagStatCard("시간표 카드", `${(ttcards || []).length}개`),
+      buildDiagStatCard("동시배정/그룹", `${groups.length}개`),
+      buildDiagStatCard("진단 학급", `${rows.length}개`),
+      buildDiagStatCard("총 필요 시수", `${formatCreditValue(summary.total || 0)}시수`)
+    );
+    wrap.appendChild(overview);
+
+    const gradeSection = buildDiagSection("1. 학년별 균형 요약", "학년 안에서 학급별 필요 시수가 같은지 먼저 확인합니다.");
+    const gradeTable = buildDiagTable(["학년", "상태", "범위", "학급별 시수"]);
+    if (!gradeSummaries.length) {
+      appendDiagEmptyRow(gradeTable, 4, "진단할 학급별 시수 데이터가 없습니다.");
+    } else {
+      gradeSummaries.forEach(gs => {
+        const tr = document.createElement("tr");
+        const diff = (Number(gs.max) || 0) - (Number(gs.min) || 0);
+        tr.append(
+          buildDiagTd(`${gs.grade}학년`, { strong: true }),
+          buildDiagTd(gs.isBalanced ? "완료" : `차이 ${formatCreditValue(diff)}시수`, { badge: gs.isBalanced ? "ok" : "warn" }),
+          buildDiagTd(`${formatCreditValue(gs.min)} ~ ${formatCreditValue(gs.max)}시수`),
+          buildDiagTd((gs.rows || []).map(row => `${row.label} ${formatCreditValue(row.credits)}`).join(" · ") || "-")
+        );
+        gradeTable.querySelector("tbody").appendChild(tr);
+      });
+    }
+    gradeSection.appendChild(gradeTable);
+    wrap.appendChild(gradeSection);
+
+    const causeSection = buildDiagSection("2. 차이 원인 후보", "시수가 부족한 학급만 모아서 어떤 카드가 계산에 들어갔는지 보여줍니다.");
+    if (!unbalanced.length) {
+      causeSection.appendChild(buildDiagNotice("학급별 필요 시수가 모두 균형 상태입니다.", "ok"));
+    } else {
+      unbalanced.forEach(gs => {
+        const gradeBox = document.createElement("div");
+        Object.assign(gradeBox.style, {
+          border: "1px solid #dbe5f2", borderRadius: "12px", background: "#fff", overflow: "hidden", marginTop: "10px"
+        });
+        const head = document.createElement("div");
+        head.textContent = `${gs.grade}학년`;
+        Object.assign(head.style, { padding: "9px 12px", fontWeight: "800", background: "#eef5ff", borderBottom: "1px solid #dbe5f2" });
+        gradeBox.appendChild(head);
+
+        const list = document.createElement("div");
+        Object.assign(list.style, { display: "flex", flexDirection: "column", gap: "8px", padding: "10px" });
+        const max = Number(gs.max) || 0;
+        (gs.rows || []).forEach(row => {
+          const lack = max - (Number(row.credits) || 0);
+          if (lack <= 0) return;
+          const item = document.createElement("details");
+          item.open = true;
+          Object.assign(item.style, { border: "1px solid #e2e8f0", borderRadius: "10px", background: "#fafcff" });
+          const summaryEl = document.createElement("summary");
+          summaryEl.textContent = `${row.label}: ${formatCreditValue(row.credits)}시수 · ${formatCreditValue(lack)}시수 부족`;
+          Object.assign(summaryEl.style, { cursor: "pointer", padding: "8px 10px", fontWeight: "700", color: "#9a3412" });
+          item.appendChild(summaryEl);
+          item.appendChild(buildContributionTable(row.contributions || []));
+          list.appendChild(item);
+        });
+        gradeBox.appendChild(list);
+        causeSection.appendChild(gradeBox);
+      });
+    }
+    wrap.appendChild(causeSection);
+
+    const classSection = buildDiagSection("3. 학급별 상세 내역", "각 학급의 총 시수에 어떤 개별 카드와 그룹 카드가 더해졌는지 확인합니다.");
+    if (!rows.length) {
+      classSection.appendChild(buildDiagNotice("내역 없음", "muted"));
+    } else {
+      rows.forEach(row => {
+        const details = document.createElement("details");
+        details.open = false;
+        Object.assign(details.style, { marginTop: "8px", border: "1px solid #dbe5f2", borderRadius: "10px", background: "#fff", overflow: "hidden" });
+        const summaryEl = document.createElement("summary");
+        summaryEl.textContent = `${row.label} · 총 ${formatCreditValue(row.credits)}시수 · ${row.contributions?.length || 0}개 항목`;
+        Object.assign(summaryEl.style, { cursor: "pointer", padding: "9px 11px", fontWeight: "800" });
+        details.appendChild(summaryEl);
+        details.appendChild(buildContributionTable(row.contributions || []));
+        classSection.appendChild(details);
+      });
+    }
+    wrap.appendChild(classSection);
+
+    const groupSection = buildDiagSection("4. 그룹별 계산 참고", "동시배정 그룹 안에 들어간 카드와 대상 학급입니다.");
+    if (!groups.length) {
+      groupSection.appendChild(buildDiagNotice("그룹 없음", "muted"));
+    } else {
+      groups.forEach(group => {
+        const cards = getGroupCards(group) || [];
+        const details = document.createElement("details");
+        details.open = false;
+        Object.assign(details.style, { marginTop: "8px", border: "1px solid #dbe5f2", borderRadius: "10px", background: "#fff", overflow: "hidden" });
+        const summaryEl = document.createElement("summary");
+        summaryEl.textContent = `${group.name || group.title || group.id || "그룹"} · ${cards.length}개 카드`;
+        Object.assign(summaryEl.style, { cursor: "pointer", padding: "9px 11px", fontWeight: "800" });
+        details.appendChild(summaryEl);
+        const table = buildDiagTable(["과목", "시수", "교사", "대상 학급"]);
+        cards.forEach(card => {
+          const tr = document.createElement("tr");
+          tr.append(
+            buildDiagTd(getCardDiagnosticTitle(card), { strong: true }),
+            buildDiagTd(`${formatCreditValue(getCreditsForTtCard(card))}`),
+            buildDiagTd((getTeachersForTtCard(card) || []).join(", ") || card.teacherName || "교사 없음"),
+            buildDiagTd(getClassLabelsForTtCard(card).join(", ") || "학급 없음")
+          );
+          table.querySelector("tbody").appendChild(tr);
+        });
+        details.appendChild(table);
+        groupSection.appendChild(details);
+      });
+    }
+    wrap.appendChild(groupSection);
+
+    return wrap;
+  }
+
+  function buildDiagStatCard(label, value) {
+    const card = document.createElement("div");
+    Object.assign(card.style, { background: "#fff", border: "1px solid #dbe5f2", borderRadius: "12px", padding: "11px 13px" });
+    const l = document.createElement("div");
+    l.textContent = label;
+    Object.assign(l.style, { color: "#64748b", fontSize: "12px", marginBottom: "4px" });
+    const v = document.createElement("div");
+    v.textContent = value;
+    Object.assign(v.style, { fontWeight: "900", fontSize: "18px", color: "#0f172a" });
+    card.append(l, v);
+    return card;
+  }
+
+  function buildDiagSection(title, description = "") {
+    const section = document.createElement("section");
+    Object.assign(section.style, { background: "#fff", border: "1px solid #dbe5f2", borderRadius: "14px", padding: "14px" });
+    const h = document.createElement("div");
+    h.textContent = title;
+    Object.assign(h.style, { fontWeight: "900", fontSize: "15px", marginBottom: "3px" });
+    section.appendChild(h);
+    if (description) {
+      const d = document.createElement("div");
+      d.textContent = description;
+      Object.assign(d.style, { color: "#64748b", fontSize: "12px", marginBottom: "10px" });
+      section.appendChild(d);
+    }
+    return section;
+  }
+
+  function buildDiagTable(headers) {
+    const table = document.createElement("table");
+    Object.assign(table.style, { width: "100%", borderCollapse: "collapse", tableLayout: "fixed", fontSize: "12px" });
+    const thead = document.createElement("thead");
+    const tr = document.createElement("tr");
+    headers.forEach(h => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      Object.assign(th.style, {
+        textAlign: "left", padding: "8px 9px", background: "#eaf2ff",
+        borderBottom: "1px solid #cbd8ea", color: "#1e3a5f", fontWeight: "800"
+      });
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+    const tbody = document.createElement("tbody");
+    table.append(thead, tbody);
+    return table;
+  }
+
+  function buildDiagTd(text, opts = {}) {
+    const td = document.createElement("td");
+    td.textContent = text == null || text === "" ? "-" : String(text);
+    Object.assign(td.style, { padding: "7px 9px", borderBottom: "1px solid #eef2f7", verticalAlign: "top", wordBreak: "keep-all" });
+    if (opts.strong) td.style.fontWeight = "800";
+    if (opts.badge) {
+      const value = td.textContent;
+      td.textContent = "";
+      const badge = document.createElement("span");
+      badge.textContent = value;
+      Object.assign(badge.style, {
+        display: "inline-flex", alignItems: "center", borderRadius: "999px", padding: "3px 8px",
+        fontWeight: "800", fontSize: "11px",
+        background: opts.badge === "ok" ? "#dcfce7" : "#ffedd5",
+        color: opts.badge === "ok" ? "#166534" : "#9a3412"
+      });
+      td.appendChild(badge);
+    }
+    return td;
+  }
+
+  function appendDiagEmptyRow(table, colspan, text) {
+    const tr = document.createElement("tr");
+    const td = buildDiagTd(text || "내역 없음");
+    td.colSpan = colspan;
+    td.style.textAlign = "center";
+    td.style.color = "#64748b";
+    tr.appendChild(td);
+    table.querySelector("tbody").appendChild(tr);
+  }
+
+  function buildContributionTable(contributions) {
+    const table = buildDiagTable(["구분", "과목/그룹", "시수"]);
+    if (!contributions.length) {
+      appendDiagEmptyRow(table, 3, "세부 내역 없음");
+      return table;
+    }
+    contributions.forEach(c => {
+      const tr = document.createElement("tr");
+      tr.append(
+        buildDiagTd(c.kind === "group" ? `그룹 · ${c.groupName || "그룹"}` : "개별"),
+        buildDiagTd(c.title || c.cardId || "시간표 카드", { strong: true }),
+        buildDiagTd(`${formatCreditValue(c.credits)}시수`)
+      );
+      table.querySelector("tbody").appendChild(tr);
+    });
+    return table;
+  }
+
+  function buildDiagNotice(text, type = "muted") {
+    const div = document.createElement("div");
+    div.textContent = text;
+    Object.assign(div.style, {
+      borderRadius: "10px", padding: "10px 12px", fontSize: "13px",
+      background: type === "ok" ? "#ecfdf5" : "#f8fafc",
+      color: type === "ok" ? "#166534" : "#64748b",
+      border: type === "ok" ? "1px solid #bbf7d0" : "1px solid #e2e8f0"
+    });
+    return div;
   }
 
   function formatCreditValue(value) {
