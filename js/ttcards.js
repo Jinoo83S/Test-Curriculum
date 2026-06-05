@@ -174,10 +174,33 @@ function isWholeGradeRow(row, tpl) {
   return isChanCheCategory(row?.category) || isProtectedWholeGradeLabel(row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn);
 }
 function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
-  const rosterEntries = (appState.rosters?.rosters?.[templateId] || [])
-    .filter(e => (e.sectionIdx ?? 0) === (sectionIdx ?? 0));
   const classes = appState.classes?.classes || [];
   const classKeys = new Set(), classLabels = new Set(), studentKeys = new Set();
+  const row = getCurriculumRowForCard(gradeKey, templateId);
+  const tpl = getTemplateById(templateId);
+  const whole = isWholeGradeRow(row, tpl);
+  const gradeClasses = getGradeClasses(gradeKey);
+
+  // 창체·채플·자율·동아리처럼 실제 운영상 학년 전체가 동시에 점유되는 카드는
+  // 수강명단이 일부 반(A반 등)만 들어 있어도 학년 전체 반을 우선 대상에 넣습니다.
+  // 이렇게 해야 전체보기/충돌검사/시수진단이 "A반 카드"로 오인하지 않습니다.
+  if (whole) {
+    gradeClasses.forEach(cls => {
+      const sec = cls.name || sectionLabel(sectionIdx ?? 0);
+      const key = classKeyOf(gradeKey, sec);
+      const label = classLabelOf(gradeKey, sec);
+      if (key) classKeys.add(key);
+      if (label) classLabels.add(label);
+      (cls.students || []).forEach(stu => {
+        const sid = stu?.id || stu?.studentId || stu?.name || "";
+        if (sid) studentKeys.add(`${cls.id || key}:${sid}`);
+      });
+    });
+    return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[...studentKeys] };
+  }
+
+  const rosterEntries = (appState.rosters?.rosters?.[templateId] || [])
+    .filter(e => (e.sectionIdx ?? 0) === (sectionIdx ?? 0));
 
   rosterEntries.forEach(re => {
     const cls = classes.find(c => c.id === re.classId);
@@ -191,13 +214,7 @@ function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
   });
   if (classKeys.size) return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[...studentKeys] };
 
-  const row = getCurriculumRowForCard(gradeKey, templateId);
-  const tpl = getTemplateById(templateId);
-  const whole = isWholeGradeRow(row, tpl);
-  const gradeClasses = getGradeClasses(gradeKey);
-  const targetClasses = whole
-    ? gradeClasses
-    : [gradeClasses[sectionIdx] || { grade: gradeKey, name: sectionLabel(sectionIdx ?? 0) }];
+  const targetClasses = [gradeClasses[sectionIdx] || { grade: gradeKey, name: sectionLabel(sectionIdx ?? 0) }];
   targetClasses.forEach(cls => {
     const sec = cls.name || sectionLabel(sectionIdx ?? 0);
     const key = classKeyOf(gradeKey, sec);

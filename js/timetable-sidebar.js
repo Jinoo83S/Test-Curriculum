@@ -1213,7 +1213,8 @@ export function createTimetableSidebarHandlers(deps) {
     const rosterCount = getDiagnosticRosterCountForGrade(rosters[template?.id] || [], gradeKey);
     const meta = rosterMeta?.[template?.id] || {};
     const missingExcluded = !!meta.missingExcluded;
-    const isWholeGrade = isCreative || actualCards.some(card => !!card.isWholeGrade);
+    const isWholeGrade = isDiagnosticWholeGradeItem(row, template) || isCreative || actualCards.some(card => !!card.isWholeGrade);
+    const groupInfo = getDiagnosticGroupInfo(actualCards, groups);
 
     // 과목 반수는 "실제 수업 섹션 수" 기준으로 계산합니다.
     // 전체학년 카드가 7A/7B를 모두 덮더라도 카드는 1개가 정상일 수 있으므로,
@@ -1300,7 +1301,15 @@ export function createTimetableSidebarHandlers(deps) {
       }
     }
 
-    const groupHitCount = groups.filter(g => (g.poolCardIds || []).some(id => actualCards.some(c => c.id === id)) || (g.excludedCardIds || []).some(id => actualCards.some(c => c.id === id))).length;
+    if (actualCardCount && actualStudentCount === 0 && groupInfo.count > 0 && (level === "ok" || level === "warn")) {
+      level = "info";
+      status = "group-placeholder";
+      note = `수강생 0명 카드이지만 ${groupInfo.summary}에 포함되어 있어 의도적 묶음 유지 카드로 봅니다.`;
+      reason = `동시수업 그룹(${groupInfo.summary})의 시간표 슬롯을 유지하기 위한 카드입니다.`;
+      transformNote = "수강생 0명 카드 → 동시수업 그룹 유지용으로 인정";
+    }
+
+    const groupHitCount = groupInfo.count;
     const assignedCount = actualEntries.filter(e => actualCards.some(c => e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id))).length;
 
     return {
@@ -1326,6 +1335,7 @@ export function createTimetableSidebarHandlers(deps) {
       reason,
       transformNote,
       groupHitCount,
+      groupNames: groupInfo.names,
       assignedCount,
       actualCards,
       compoundParts: template?.compoundParts || [],
@@ -1489,14 +1499,15 @@ export function createTimetableSidebarHandlers(deps) {
   }
 
   function getDiagnosticSubjectClassCount(meta, actualCards = [], gradeKey = "", isWholeGrade = false) {
+    // 전체학년/창체/채플/자율/동아리는 대상 학급이 여러 개여도
+    // 시간표카드 생성 단위는 1개 섹션이 정상입니다.
+    if (isWholeGrade) return 1;
+
     const fromMeta = Number(meta?.classCount);
     if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
 
     const sectionCount = getDiagnosticActualClassCount(actualCards);
     if (sectionCount > 0) return sectionCount;
-
-    // 전체학년/창체는 대상 학급이 여러 개여도 시간표카드는 보통 1개가 정상입니다.
-    if (isWholeGrade) return 1;
 
     // 카드 생성 로직도 classCount가 비어 있으면 최소 1개 섹션을 만듭니다.
     return 1;
@@ -1549,6 +1560,32 @@ export function createTimetableSidebarHandlers(deps) {
       .map((cls, idx) => formatFullClassLabel(gradeKey, cls.name || sectionLabel(idx)))
       .filter(Boolean);
     return unique(labels.map(normalizeClassLabel).filter(Boolean)).sort(compareClassLabels);
+  }
+
+
+  function isDiagnosticWholeGradeItem(row = null, template = null) {
+    if ((row?.category || "") === "창체") return true;
+    const text = [row?.category, row?.track, row?.group, template?.nameKo, template?.nameEn, template?.sem1NameKo, template?.sem1NameEn, template?.sem2NameKo, template?.sem2NameEn]
+      .map(v => String(v ?? "").trim()).filter(Boolean).join(" ");
+    return /(창체|채플|chapel|자율|동아리|전체|전학년|whole\s*grade|all\s*grade)/i.test(text);
+  }
+
+  function getDiagnosticGroupInfo(actualCards = [], groups = []) {
+    const cardIds = new Set((actualCards || []).map(c => c.id).filter(Boolean));
+    const names = [];
+    let count = 0;
+    (groups || []).forEach(g => {
+      let hit = false;
+      if ((g.poolCardIds || []).some(id => cardIds.has(id))) hit = true;
+      if ((g.excludedCardIds || []).some(id => cardIds.has(id))) hit = true;
+      if ((g.units || []).some(u => (u.ttcardIds || []).some(id => cardIds.has(id)))) hit = true;
+      if (hit) {
+        count += 1;
+        names.push(g.name || g.id || "묶음");
+      }
+    });
+    const uniqueNames = uniqueDiagnosticValues(names);
+    return { count, names: uniqueNames, summary: uniqueNames.join(", ") || `${count}개 묶음` };
   }
 
   function getDiagnosticCardMismatchReason({ actualCards = [], expectedCardCount = 0, compoundParts = [], subjectClassCount = 0, isCompound = false } = {}) {
