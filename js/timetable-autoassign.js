@@ -855,6 +855,150 @@ export function createAutoAssignAll(deps) {
     return { valid: reasons.size === 0, reasons: [...reasons.values()] };
   }
 
+  function reasonCodesFromResult(result) {
+    return new Set((result?.reasons || []).map(r => r.code || r.label).filter(Boolean));
+  }
+
+  function countSlotsIfIgnoringReasons(item, baseSlots = [], placed = [], options = {}, ignoredCodes = []) {
+    const ignore = new Set(ignoredCodes || []);
+    let count = 0;
+    for (const slot of baseSlots) {
+      const result = analyzePlacementSlot(item, slot, placed, options);
+      if (result.valid) {
+        count += 1;
+        continue;
+      }
+      const codes = reasonCodesFromResult(result);
+      if (codes.size && [...codes].every(code => ignore.has(code))) count += 1;
+    }
+    return count;
+  }
+
+  function buildRelaxationSuggestions(diag = {}, item, baseSlots = [], placed = [], options = {}) {
+    if (!item) return [];
+    const topReasonCodes = new Set((diag.topReasons || []).map(r => r.code || r.label).filter(Boolean));
+    const teacherNames = getTeachersForAutoItem(item);
+    const restrictedTeachers = getRestrictedTeachersForAutoItem(item);
+    const teacherText = restrictedTeachers.length ? restrictedTeachers.join(', ') : teacherNames.join(', ');
+    const currentValid = Number(diag.validSlots || 0);
+
+    const candidates = [
+      {
+        codes: ['teacherUnavailable'],
+        title: '교사 불가시간 일부 조정',
+        detail: `${teacherText || '담당 교사'}의 불가시간 중 실제로 열 수 있는 1~2칸을 가능 시간으로 바꾸면 배치 여지가 생길 수 있습니다.`,
+        priority: 1
+      },
+      {
+        codes: ['teacherWeekLimit'],
+        title: '교사 주 최대시수 상향',
+        detail: `${teacherText || '담당 교사'}의 주 최대시수를 1~2시수 높이거나 해당 수업을 다른 교사에게 분산하는 방안입니다.`,
+        priority: 1
+      },
+      {
+        codes: ['teacherDayLimit'],
+        title: '교사 하루 최대시수 완화',
+        detail: `${teacherText || '담당 교사'}의 특정 요일 하루 최대시수를 1시수 늘리거나 다른 요일로 고정 수업을 이동해 보세요.`,
+        priority: 1
+      },
+      {
+        codes: ['teacherConsecutive'],
+        title: '교사 연속수업 제한 완화',
+        detail: `${teacherText || '담당 교사'}의 최대 연속수업 제한을 1교시 완화하거나 앞뒤 수업 중 하나를 다른 시간으로 이동하는 방안입니다.`,
+        priority: 1
+      },
+      {
+        codes: ['roomConflict', 'teacherRoomBusy'],
+        title: '교실 조건 완화',
+        detail: '고정 교실을 해제하거나 대체 교실을 추가하면 배치 가능한 시간이 늘어날 수 있습니다.',
+        priority: 2
+      },
+      {
+        codes: ['protectedSlot'],
+        title: '고정/보호 수업 일부 해제',
+        detail: '해당 학급·교사·교실을 막고 있는 고정 수업 1개를 이동하거나 잠금 해제 후 다시 자동배치해 보세요.',
+        priority: 3
+      },
+      {
+        codes: ['studentConflict'],
+        title: '학급/학생 충돌 수업 이동',
+        detail: '같은 반 또는 같은 학생군이 이미 점유한 시간 때문에 막힌 경우입니다. 해당 시간대의 기존 수업을 먼저 이동하면 해결될 수 있습니다.',
+        priority: 3
+      },
+      {
+        codes: ['groupExclusion'],
+        title: '그룹 제외 카드 설정 확인',
+        detail: '자동 그룹에서 제외된 카드가 같은 시간에 배치되며 충돌합니다. 그룹 포함/제외 설정을 다시 확인해 주세요.',
+        priority: 2
+      },
+      {
+        codes: ['compoundSibling', 'compoundInternal'],
+        title: '복합과목 파트 배치 방식 조정',
+        detail: '복합과목의 파트가 같은 시간에 겹치지 않도록 파트별 고정 시간을 나누거나 수동 배치 후 고정해 주세요.',
+        priority: 2
+      },
+      {
+        codes: ['duplicate'],
+        title: '중복 카드 정리',
+        detail: '같은 카드가 이미 같은 시간에 배치되어 있습니다. 카드 데이터 갱신 또는 중복 배치 삭제 후 다시 시도해 주세요.',
+        priority: 1
+      },
+      {
+        codes: ['teacherUnavailable', 'teacherWeekLimit', 'teacherDayLimit', 'teacherConsecutive'],
+        title: '교사 제약 조건 전체 재검토',
+        detail: `${teacherText || '담당 교사'}의 가능시간·주 최대·하루 최대·연속수업 제한을 함께 조정해야 할 가능성이 큽니다.`,
+        priority: 4
+      },
+      {
+        codes: ['protectedSlot', 'studentConflict'],
+        title: '고정 수업과 학급 충돌 함께 조정',
+        detail: '고정된 채플·자율·동아리 또는 기존 수업이 학급 슬롯을 막고 있습니다. 고정 수업 1개를 옮긴 뒤 미배치만 자동배치해 보세요.',
+        priority: 5
+      }
+    ];
+
+    const suggestions = [];
+    for (const cand of candidates) {
+      if (!cand.codes.some(code => topReasonCodes.has(code))) continue;
+      const availableAfter = countSlotsIfIgnoringReasons(item, baseSlots, placed, options, cand.codes);
+      if (availableAfter <= currentValid) continue;
+      suggestions.push({
+        ...cand,
+        availableAfter,
+        gain: availableAfter - currentValid,
+        summary: `${cand.title}: ${availableAfter}칸 가능`
+      });
+    }
+
+    if (!suggestions.length && currentValid > 0) {
+      suggestions.push({
+        codes: ['searchOrder'],
+        title: '배치 강도 상향',
+        detail: '가능한 후보 시간이 남아 있습니다. 자동배치 옵션에서 정교한 배치 또는 현재 배치 유지 + 미배치만 배치를 다시 실행해 보세요.',
+        availableAfter: currentValid,
+        gain: 0,
+        priority: 9,
+        summary: `배치 강도 상향: 후보 ${currentValid}칸`
+      });
+    }
+
+    if (!suggestions.length) {
+      suggestions.push({
+        codes: ['manualReview'],
+        title: '수동 고정 후 재시도',
+        detail: '단일 조건 완화만으로는 후보 시간이 열리지 않습니다. 관련 교사/학급의 수업 1~2개를 수동 이동·고정한 뒤 미배치만 자동배치해 주세요.',
+        availableAfter: 0,
+        gain: 0,
+        priority: 10,
+        summary: '수동 고정 후 재시도'
+      });
+    }
+
+    return suggestions
+      .sort((a, b) => a.priority - b.priority || b.gain - a.gain || b.availableAfter - a.availableAfter)
+      .slice(0, 3);
+  }
+
   function summarizeFailedPlacement(failedItem, baseSlots = [], placed = [], options = {}) {
     const item = failedItem?.item;
     const name = failedItem?.name || getAutoItemName(item);
@@ -881,7 +1025,7 @@ export function createAutoAssignAll(deps) {
     const reasonText = topReasons.length
       ? topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ")
       : (validSlots ? "후보 시간은 있으나 보정 단계에서 다른 카드와 충돌" : "후보 시간 없음");
-    return {
+    const diag = {
       name,
       groupName: failedItem?.groupId ? (ttGroups().find(g => g.id === failedItem.groupId)?.name || "") : "",
       teachers,
@@ -891,6 +1035,9 @@ export function createAutoAssignAll(deps) {
       topReasons,
       summary: `가능 ${validSlots}/${baseSlots.length}칸 · ${reasonText}`
     };
+    diag.suggestions = buildRelaxationSuggestions(diag, item, baseSlots, placed, options);
+    diag.suggestionSummary = (diag.suggestions || []).map(s => s.summary || s.title).join(' / ');
+    return diag;
   }
 
   function buildFailureDiagnostics(failedItems = [], baseSlots = [], placed = [], options = {}) {
@@ -919,6 +1066,20 @@ export function createAutoAssignAll(deps) {
       });
       acc.topReasons = [...mergedReasons.values()].sort((a, b) => b.count - a.count).slice(0, 5);
       acc.summary = `가능 ${acc.validSlots}/${acc.totalSlots}칸 · ${acc.topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ") || "후보 시간 없음"}`;
+      const mergedSuggestions = new Map((acc.suggestions || []).map(s => [s.title, s]));
+      (diag.suggestions || []).forEach(sug => {
+        if (!mergedSuggestions.has(sug.title)) mergedSuggestions.set(sug.title, sug);
+        else {
+          const cur = mergedSuggestions.get(sug.title);
+          cur.availableAfter = Math.max(Number(cur.availableAfter || 0), Number(sug.availableAfter || 0));
+          cur.gain = Math.max(Number(cur.gain || 0), Number(sug.gain || 0));
+          cur.summary = `${cur.title}: ${cur.availableAfter}칸 가능`;
+        }
+      });
+      acc.suggestions = [...mergedSuggestions.values()]
+        .sort((a, b) => Number(a.priority || 9) - Number(b.priority || 9) || Number(b.gain || 0) - Number(a.gain || 0) || Number(b.availableAfter || 0) - Number(a.availableAfter || 0))
+        .slice(0, 3);
+      acc.suggestionSummary = (acc.suggestions || []).map(s => s.summary || s.title).join(' / ');
     });
     return [...byName.values()].sort((a, b) => a.validSlots - b.validSlots || b.occurrences - a.occurrences || String(a.name).localeCompare(String(b.name), "ko"));
   }
@@ -926,11 +1087,14 @@ export function createAutoAssignAll(deps) {
   function diagnosticsToHtml(diagnostics = [], limit = 8) {
     if (!diagnostics.length) return "";
     const esc = s => String(s ?? "").replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]));
-    return `<div class="tt-auto-progress-failed"><b>미배치 원인 후보</b><ul>${diagnostics.slice(0, limit).map(d => {
+    return `<div class="tt-auto-progress-failed"><b>미배치 원인 후보와 완화 제안</b><ul>${diagnostics.slice(0, limit).map(d => {
       const reason = d.topReasons?.[0];
       const sample = reason?.samples?.[0] ? ` · 예: ${reason.samples[0]}` : "";
       const teacher = d.restrictedTeachers?.length ? ` · 제약교사: ${d.restrictedTeachers.join(", ")}` : "";
-      return `<li>${esc(d.name)}${d.occurrences > 1 ? ` ×${d.occurrences}` : ""} — ${esc(d.summary)}${esc(teacher)}${esc(sample)}</li>`;
+      const suggestionHtml = Array.isArray(d.suggestions) && d.suggestions.length
+        ? `<div class="tt-auto-relax-suggestions"><b>풀어볼 조건</b><ol>${d.suggestions.slice(0, 3).map(s => `<li><span>${esc(s.title)}</span><em>${esc(s.detail)}${Number(s.availableAfter || 0) ? ` · 완화 시 ${Number(s.availableAfter || 0)}칸 가능` : ""}</em></li>`).join("")}</ol></div>`
+        : "";
+      return `<li>${esc(d.name)}${d.occurrences > 1 ? ` ×${d.occurrences}` : ""} — ${esc(d.summary)}${esc(teacher)}${esc(sample)}${suggestionHtml}</li>`;
     }).join("")}${diagnostics.length > limit ? `<li>외 ${diagnostics.length - limit}개</li>` : ""}</ul></div>`;
   }
 
@@ -2597,7 +2761,7 @@ export function createAutoAssignAll(deps) {
       failedCount: names.length,
       failedNames: names,
       failedDiagnostics,
-      failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}`),
+      failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
       forcedNames: [...new Set(forcedPlaced.map(f => f.name))],
       durationMs: Date.now() - autoStartedAt,
       conflictTotal: conflictSummary.totalAffected,
@@ -2680,7 +2844,7 @@ export function createAutoAssignAll(deps) {
       const moreFailed = names.length > 12 ? `<li>외 ${names.length - 12}개</li>` : "";
       detailLines.push(`<div class="tt-auto-progress-failed"><b>남은 카드</b><ul>${failedList}${moreFailed}</ul></div>`);
       detailLines.push(diagnosticsToHtml(failedDiagnostics, 8));
-      detailLines.push(`남은 카드는 아래 원인 후보를 우선 확인해 주세요. 제약교사 조건, 반/학생 충돌, 교실 충돌, 고정 슬롯이 주요 원인일 수 있습니다.`);
+      detailLines.push(`남은 카드는 원인 후보와 함께 표시된 <b>풀어볼 조건</b>부터 조정해 주세요. 교사 제약, 고정 수업, 교실 조건 중 최소 변경으로 열리는 후보 시간을 우선 제안합니다.`);
     }
     detailLines.push(`자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.`);
 

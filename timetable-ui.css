@@ -2084,3 +2084,65 @@ button.tt-grade-filter-btn.active {
   cursor:not-allowed;
   transform:none;
 }
+
+/* 자동배치 미배치 조건 완화 제안 */
+.tt-auto-relax-suggestions {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+.tt-auto-relax-suggestions > b {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 900;
+}
+.tt-auto-relax-suggestions ol {
+  margin: 0 0 0 18px;
+  padding: 0;
+}
+.tt-auto-relax-suggestions li {
+  margin: 4px 0;
+}
+.tt-auto-relax-suggestions span {
+  font-weight: 800;
+}
+.tt-auto-relax-suggestions em {
+  display: block;
+  margin-top: 2px;
+  color: #9a3412;
+  font-style: normal;
+  font-size: 12px;
+}
+.tt-log-relax-suggestions {
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  background: #fff7ed;
+}
+.tt-log-subtitle.tiny {
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: #9a3412;
+}
+.tt-log-relax-suggestions ol {
+  margin: 0 0 0 18px;
+  padding: 0;
+  color: #7c2d12;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.tt-log-relax-suggestions li {
+  margin: 4px 0;
+}
+.tt-log-relax-suggestions li b {
+  margin-right: 4px;
+}
+.tt-log-relax-suggestions li span {
+  display: block;
+  color: #9a3412;
+}
