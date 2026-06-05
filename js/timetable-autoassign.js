@@ -72,6 +72,54 @@ export function createAutoAssignAll(deps) {
     return list.length ? `제약교사: ${list.join(", ")}` : "";
   };
 
+  // ── Auto-assign scoring preferences ────────────────────────────
+  // 자동배치 품질 기준은 학교 운영 상황에 따라 달라지므로, 옵션 팝업에서
+  // 중요도를 조절할 수 있도록 숫자 가중치로 통일합니다.
+  const DEFAULT_SCORE_WEIGHTS = Object.freeze({
+    latePeriod: 2,          // 7교시/후반 교시 회피
+    teacherGap: 2,          // 교사 공강 최소화
+    sameSubjectDay: 2,      // 같은 과목 하루 반복 회피
+    teacherConsecutive: 2,  // 교사 연속수업 부담
+    classConsecutive: 1,    // 학급 연속수업 부담
+    majorMorning: 1         // 주요과목 오전/중반 우선
+  });
+
+  const SCORE_PRESETS = Object.freeze({
+    balanced:       { latePeriod:2, teacherGap:2, sameSubjectDay:2, teacherConsecutive:2, classConsecutive:1, majorMorning:1 },
+    avoidLate:      { latePeriod:3, teacherGap:1, sameSubjectDay:2, teacherConsecutive:2, classConsecutive:1, majorMorning:2 },
+    teacherFriendly:{ latePeriod:1, teacherGap:3, sameSubjectDay:1, teacherConsecutive:3, classConsecutive:1, majorMorning:1 },
+    studentFriendly:{ latePeriod:2, teacherGap:1, sameSubjectDay:3, teacherConsecutive:1, classConsecutive:3, majorMorning:2 },
+    majorMorning:   { latePeriod:2, teacherGap:1, sameSubjectDay:2, teacherConsecutive:1, classConsecutive:2, majorMorning:3 }
+  });
+
+  function clampWeight(value, fallback = 1) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(3, Math.round(n)));
+  }
+
+  function normalizeScoreWeights(weights = {}) {
+    const src = { ...DEFAULT_SCORE_WEIGHTS, ...(weights || {}) };
+    return {
+      latePeriod: clampWeight(src.latePeriod, DEFAULT_SCORE_WEIGHTS.latePeriod),
+      teacherGap: clampWeight(src.teacherGap, DEFAULT_SCORE_WEIGHTS.teacherGap),
+      sameSubjectDay: clampWeight(src.sameSubjectDay, DEFAULT_SCORE_WEIGHTS.sameSubjectDay),
+      teacherConsecutive: clampWeight(src.teacherConsecutive, DEFAULT_SCORE_WEIGHTS.teacherConsecutive),
+      classConsecutive: clampWeight(src.classConsecutive, DEFAULT_SCORE_WEIGHTS.classConsecutive),
+      majorMorning: clampWeight(src.majorMorning, DEFAULT_SCORE_WEIGHTS.majorMorning),
+    };
+  }
+
+  function scoreOptionsFromAssignOptions(options = {}) {
+    return normalizeScoreWeights(options.scoringWeights || options.scoreWeights || DEFAULT_SCORE_WEIGHTS);
+  }
+
+  function describeScoreWeights(weights = {}) {
+    const w = normalizeScoreWeights(weights);
+    const label = n => ["끔", "낮음", "보통", "높음"][clampWeight(n, 0)] || "보통";
+    return `7교시 ${label(w.latePeriod)} · 교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)} · 학급연속 ${label(w.classConsecutive)} · 주요과목 ${label(w.majorMorning)}`;
+  }
+
 
   // ── Teacher constraint load helpers ─────────────────────────────
   // 자동배치 후보 시간 계산에서는 교사 시수를 "entry 수"가 아니라
@@ -126,6 +174,15 @@ export function createAutoAssignAll(deps) {
       maxC = Math.max(maxC, cur);
     }
     return maxC;
+  }
+
+  function teacherGapCountAfterAdding(teacher, existing = [], day, period) {
+    const periods = getTeacherDayPeriods(teacher, existing, day);
+    if (!periods.includes(period)) periods.push(period);
+    const unique = [...new Set(periods)].sort((a, b) => a - b);
+    if (unique.length <= 1) return 0;
+    const span = unique[unique.length - 1] - unique[0] + 1;
+    return Math.max(0, span - unique.length);
   }
 
   function getTeacherLimitState(teacher, slot, existing = []) {
@@ -978,14 +1035,32 @@ export function createAutoAssignAll(deps) {
     return item.gradeKey ? `${base} ${gradeDisplay(item.gradeKey)}${sectionLabel(item.sectionIdx ?? 0)}` : base;
   }
 
+  function normalizeSubjectTextForScoring(x = {}) {
+    const parts = [
+      x.subject, x.name, x.title, x.nameKo, x.nameEn, x.groupName,
+      x.templateId ? getTemplateCardTitle(getTemplateById(x.templateId)) : ""
+    ];
+    ttCardIdsFromPlacement(x).forEach(id => {
+      const card = getTtCardById(id);
+      if (card) parts.push(card.subject, card.name, card.title, card.nameKo, card.nameEn, describeTtCard(card).title);
+    });
+    return parts.map(v => String(v || "")).join(" ").toLowerCase();
+  }
+
+  function isMajorSubjectForScoring(x = {}) {
+    const text = normalizeSubjectTextForScoring(x);
+    return /국어|한국어|korean|영어|english|수학|math|algebra|calculus|geometry|statistics|과학|science|physics|chemistry|biology|사회|history|social/.test(text);
+  }
+
   function getAutoItemDifficulty(item) {
     const audience = audienceForPlacement(item);
     const teacherCount = splitTeacherNames(item.teacherName).filter(Boolean).length;
     return teacherCount * 20 + audience.studentKeys.size + audience.classKeys.size * 5;
   }
 
-  function scoreAutoSlot(item, slot, placed) {
+  function scoreAutoSlot(item, slot, placed, checkOptions = {}) {
     const existing = [...entries(), ...placed];
+    const weights = normalizeScoreWeights(checkOptions.scoringWeights);
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
     const exclusionPenalty = slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e)) ? 100000 : 0;
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
@@ -993,16 +1068,51 @@ export function createAutoAssignAll(deps) {
     const teacherLoad = teachers.reduce((sum, t) => sum + getTeacherDayLoad(t, existing, slot.day), 0);
     const teacherLimitLoad = teachers.reduce((sum, t) => sum + teacherLimitPenalty(t, slot, existing), 0);
     const audience = audienceForPlacement(item);
+    const classKeys = [...(audience.classKeys || [])];
     const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
     const samePeriodLoad = existing.filter(e => e.period === slot.period).length;
-    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
+
+    let preferencePenalty = 0;
+
+    // 7교시 또는 후반 교시를 강하게 피해야 할 때 사용합니다.
+    if (slot.period >= 6) preferencePenalty += 22 * weights.latePeriod;
+    else if (slot.period === 5) preferencePenalty += 7 * weights.latePeriod;
+
+    // 주요과목은 가능하면 오전/중반에 먼저 놓습니다. 절대 조건은 아니므로 점수만 조정합니다.
+    if (isMajorSubjectForScoring(item)) {
+      if (slot.period >= 4) preferencePenalty += (slot.period - 3) * 7 * weights.majorMorning;
+      else if (slot.period <= 2) preferencePenalty -= 3 * weights.majorMorning;
+    }
+
+    const itemSubject = entrySubjectKeyForScoring(item);
+    for (const cls of classKeys) {
+      const sameSubjectToday = dayEnts.some(e =>
+        entryClassKeysForScoring(e).includes(cls) && entrySubjectKeyForScoring(e) === itemSubject
+      );
+      if (sameSubjectToday) preferencePenalty += 26 * weights.sameSubjectDay;
+
+      const dayPeriods = dayEnts
+        .filter(e => entryClassKeysForScoring(e).includes(cls))
+        .map(e => e.period);
+      const nextMax = maxConsecutiveFromPeriods([...dayPeriods, slot.period]);
+      if (nextMax >= 5) preferencePenalty += (nextMax - 4) * 12 * weights.classConsecutive;
+    }
+
+    for (const teacher of teachers) {
+      const gaps = teacherGapCountAfterAdding(teacher, existing, slot.day, slot.period);
+      preferencePenalty += gaps * 4 * weights.teacherGap;
+      const nextMax = maxConsecutiveAfterAdding(teacher, existing, slot.day, slot.period);
+      if (nextMax >= 4) preferencePenalty += (nextMax - 3) * 12 * weights.teacherConsecutive;
+    }
+
+    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 6 + preferencePenalty + samePeriodLoad * 0.15 + Math.random();
   }
 
   function findBestAutoSlot(item, baseSlots, placed, checkOptions) {
     const candidates = [];
     for (const slot of shuffle([...baseSlots])) {
       if (checkPlacementValid(item, slot, placed, checkOptions)) {
-        candidates.push({ slot, score: scoreAutoSlot(item, slot, placed) });
+        candidates.push({ slot, score: scoreAutoSlot(item, slot, placed, checkOptions) });
       }
     }
     candidates.sort((a, b) => a.score - b.score);
@@ -1030,7 +1140,7 @@ export function createAutoAssignAll(deps) {
     );
   }
 
-  function forcedSlotScore(item, slot, placed = []) {
+  function forcedSlotScore(item, slot, placed = [], options = {}) {
     // 마지막 보정 단계용 점수입니다.
     // 원칙적으로 충돌 없는 슬롯을 찾고, 불가피할 때만 최소 충돌 슬롯에 배치합니다.
     // 단, 고정/보호 슬롯 침범과 동일 카드 동일 시간 중복은 끝까지 막습니다.
@@ -1050,7 +1160,11 @@ export function createAutoAssignAll(deps) {
     const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
     if (roomConflictsInSlot(candidateRoomData, slot, placed)) return Infinity;
 
+    const weights = normalizeScoreWeights(options.scoringWeights);
     let score = slotEnts.length * 10 + existing.filter(e => e.period === slot.period).length * 0.25;
+    if (slot.period >= 6) score += 10 * weights.latePeriod;
+    else if (slot.period === 5) score += 3 * weights.latePeriod;
+    if (isMajorSubjectForScoring(item) && slot.period >= 4) score += (slot.period - 3) * 5 * weights.majorMorning;
 
     for (const e of slotEnts) {
       const sameUnit = item.unitId && e.unitId && item.unitId === e.unitId;
@@ -1110,10 +1224,10 @@ export function createAutoAssignAll(deps) {
     return score + Math.random();
   }
 
-  function findLeastBadSlot(item, baseSlots, placed = []) {
+  function findLeastBadSlot(item, baseSlots, placed = [], options = {}) {
     const candidates = [];
     for (const slot of shuffle([...baseSlots])) {
-      const score = forcedSlotScore(item, slot, placed);
+      const score = forcedSlotScore(item, slot, placed, options);
       if (Number.isFinite(score)) candidates.push({ slot, score });
     }
     candidates.sort((a, b) => a.score - b.score);
@@ -1162,8 +1276,9 @@ export function createAutoAssignAll(deps) {
     return best;
   }
 
-  function scoreScheduleQuality(movable = []) {
+  function scoreScheduleQuality(movable = [], options = {}) {
     const all = [...entries(), ...(movable || [])];
+    const weights = scoreOptionsFromAssignOptions(options);
     let score = 0;
 
     const classDaySubject = new Map();
@@ -1186,10 +1301,14 @@ export function createAutoAssignAll(deps) {
         classDaySubject.set(subjectDayKey, (classDaySubject.get(subjectDayKey) || 0) + 1);
 
         if (period >= 6) {
-          score += 12;
+          score += 12 * weights.latePeriod;
           classLateCount.set(cls, (classLateCount.get(cls) || 0) + 1);
         } else if (period === 5) {
-          score += 3;
+          score += 3 * weights.latePeriod;
+        }
+        if (isMajorSubjectForScoring(entry)) {
+          if (period >= 4) score += (period - 3) * 6 * weights.majorMorning;
+          else if (period <= 2) score -= 2 * weights.majorMorning;
         }
       });
 
@@ -1201,13 +1320,13 @@ export function createAutoAssignAll(deps) {
     });
 
     classDaySubject.forEach(count => {
-      if (count > 1) score += (count - 1) * 28;
+      if (count > 1) score += (count - 1) * 28 * weights.sameSubjectDay;
     });
 
     classDayPeriods.forEach(periods => {
       const unique = [...new Set(periods)].sort((a, b) => a - b);
       const maxC = maxConsecutiveFromPeriods(unique);
-      if (maxC >= 5) score += (maxC - 4) * 12;
+      if (maxC >= 5) score += (maxC - 4) * 12 * weights.classConsecutive;
     });
 
     classLateCount.forEach(count => {
@@ -1224,10 +1343,10 @@ export function createAutoAssignAll(deps) {
       const c = constraints()?.[teacher] || {};
       const limitC = Number(c.maxConsecutive) || 0;
 
-      score += gaps * 5;
-      if (unique.length >= 6) score += (unique.length - 5) * 8;
-      if (limitC > 0 && maxC > limitC) score += (maxC - limitC) * 40;
-      else if (maxC >= 4) score += (maxC - 3) * 14;
+      score += gaps * 5 * weights.teacherGap;
+      if (unique.length >= 6) score += (unique.length - 5) * 8 * weights.teacherGap;
+      if (limitC > 0 && maxC > limitC) score += (maxC - limitC) * 40 * weights.teacherConsecutive;
+      else if (maxC >= 4) score += (maxC - 3) * 14 * weights.teacherConsecutive;
     });
 
     return score;
@@ -1270,7 +1389,7 @@ export function createAutoAssignAll(deps) {
     const limit = options.runAttempts === "deep" ? 360 : (options.runAttempts === "fast" ? 90 : 190);
     let attempts = 0;
     let improved = 0;
-    let bestScore = scoreScheduleQuality(current);
+    let bestScore = scoreScheduleQuality(current, options);
 
     const orderedSlots = [...baseSlots].sort((a, b) => {
       // 7교시를 무조건 금지하지는 않지만, 개선 후보에서는 앞쪽 교시를 먼저 검토합니다.
@@ -1296,7 +1415,7 @@ export function createAutoAssignAll(deps) {
           const moved = makeMovedBlockEntries(block, slot, baseWithout);
           if (!moved) continue;
           const candidate = [...baseWithout, ...moved];
-          const candScore = scoreScheduleQuality(candidate);
+          const candScore = scoreScheduleQuality(candidate, options);
           if (candScore + 0.01 < bestScore) {
             current.length = 0;
             current.push(...candidate);
@@ -1310,7 +1429,7 @@ export function createAutoAssignAll(deps) {
           await progressUpdater({
             percent: 92,
             step: "자동배치 후처리",
-            detail: `7교시 몰림, 같은 과목 몰림, 교사 공강을 줄이는 교환 후보를 검토하고 있습니다. 개선 ${improved}건`,
+            detail: `설정한 점수 기준으로 후보를 검토하고 있습니다. 개선 ${improved}건`,
             placed: current.length,
             best: current.length,
             failed: 0,
@@ -1696,7 +1815,9 @@ export function createAutoAssignAll(deps) {
     selectedGrades: [],
     keepPinned: true,
     keepManual: true,
-    runAttempts: "balanced"    // fast | balanced | deep
+    runAttempts: "balanced",    // fast | balanced | deep
+    scoringProfile: "balanced",
+    scoringWeights: { ...DEFAULT_SCORE_WEIGHTS }
   };
 
   function gradeSetFromList(list = []) {
@@ -1799,6 +1920,8 @@ export function createAutoAssignAll(deps) {
   function openAutoAssignOptionsDialog(activeGrades = [], defaultOptions = {}) {
     const grades = activeGrades.length ? activeGrades : GRADE_KEYS;
     const defaults = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, ...defaultOptions };
+    const defaultWeights = normalizeScoreWeights(defaults.scoringWeights || SCORE_PRESETS[defaults.scoringProfile] || DEFAULT_SCORE_WEIGHTS);
+    const weightLabel = v => ["끔", "낮음", "보통", "높음"][clampWeight(v, 0)] || "보통";
     return new Promise(resolve => {
       const old = document.getElementById("ttAutoAssignOptionsOverlay");
       old?.remove();
@@ -1853,6 +1976,35 @@ export function createAutoAssignAll(deps) {
                 <option value="deep" ${defaults.runAttempts === "deep" ? "selected" : ""}>정교한 배치</option>
               </select>
             </section>
+            <section class="tt-auto-option-section tt-auto-score-section">
+              <div class="tt-auto-option-title-row">
+                <h4>점수 기준</h4>
+                <select id="ttAutoScorePreset" class="tt-auto-select tt-auto-score-preset">
+                  <option value="balanced" ${defaults.scoringProfile === "balanced" ? "selected" : ""}>균형</option>
+                  <option value="avoidLate" ${defaults.scoringProfile === "avoidLate" ? "selected" : ""}>7교시 회피 우선</option>
+                  <option value="teacherFriendly" ${defaults.scoringProfile === "teacherFriendly" ? "selected" : ""}>교사 공강/연속 최소화</option>
+                  <option value="studentFriendly" ${defaults.scoringProfile === "studentFriendly" ? "selected" : ""}>학생 과목 몰림 최소화</option>
+                  <option value="majorMorning" ${defaults.scoringProfile === "majorMorning" ? "selected" : ""}>주요과목 오전 우선</option>
+                  <option value="custom" ${defaults.scoringProfile === "custom" ? "selected" : ""}>직접 설정</option>
+                </select>
+              </div>
+              <div class="tt-auto-weight-grid">
+                ${[
+                  ["latePeriod", "7교시 회피", "후반 교시, 특히 7교시 배치를 줄입니다."],
+                  ["teacherGap", "교사 공강 최소화", "교사의 하루 수업 간 빈 시간을 줄입니다."],
+                  ["sameSubjectDay", "같은 과목 몰림 회피", "한 반에 같은 과목이 하루에 반복되는 것을 줄입니다."],
+                  ["teacherConsecutive", "교사 연속수업 완화", "교사의 긴 연속수업을 줄입니다."],
+                  ["classConsecutive", "학급 연속수업 완화", "한 반의 긴 연속수업 부담을 줄입니다."],
+                  ["majorMorning", "주요과목 오전 우선", "국영수·사회·과학을 오전/중반에 더 우선합니다."],
+                ].map(([key, label, help]) => `
+                  <label class="tt-auto-weight-row" data-weight-key="${key}">
+                    <span><b>${label}</b><em>${help}</em></span>
+                    <input type="range" min="0" max="3" step="1" value="${defaultWeights[key]}" data-weight="${key}">
+                    <strong data-weight-label="${key}">${weightLabel(defaultWeights[key])}</strong>
+                  </label>`).join("")}
+              </div>
+              <p class="tt-auto-option-help">점수 기준은 절대 조건이 아니라 자동배치가 여러 후보 중 더 나은 시간을 고르는 기준입니다.</p>
+            </section>
           </div>
           <div class="tt-auto-options-foot">
             <button type="button" class="tt-auto-options-cancel">취소</button>
@@ -1871,6 +2023,33 @@ export function createAutoAssignAll(deps) {
       overlay.querySelector('[data-action="clear-grades"]')?.addEventListener("click", () => {
         overlay.querySelectorAll('.tt-auto-grade-chip input[type="checkbox"]').forEach(cb => { cb.checked = false; });
       });
+
+      const setWeightInputs = (weights, profile = "custom") => {
+        const normalized = normalizeScoreWeights(weights);
+        Object.entries(normalized).forEach(([key, value]) => {
+          const input = overlay.querySelector(`[data-weight="${key}"]`);
+          const label = overlay.querySelector(`[data-weight-label="${key}"]`);
+          if (input) input.value = String(value);
+          if (label) label.textContent = weightLabel(value);
+        });
+        const preset = overlay.querySelector("#ttAutoScorePreset");
+        if (preset) preset.value = profile;
+      };
+
+      overlay.querySelector("#ttAutoScorePreset")?.addEventListener("change", e => {
+        const profile = e.target.value || "balanced";
+        if (profile !== "custom" && SCORE_PRESETS[profile]) setWeightInputs(SCORE_PRESETS[profile], profile);
+      });
+      overlay.querySelectorAll('[data-weight]').forEach(input => {
+        input.addEventListener("input", () => {
+          const key = input.dataset.weight;
+          const label = overlay.querySelector(`[data-weight-label="${key}"]`);
+          if (label) label.textContent = weightLabel(input.value);
+          const preset = overlay.querySelector("#ttAutoScorePreset");
+          if (preset) preset.value = "custom";
+        });
+      });
+
       overlay.querySelector('.tt-auto-options-start')?.addEventListener("click", () => {
         const selectedGrades = [...overlay.querySelectorAll('.tt-auto-grade-chip input[type="checkbox"]:checked')].map(cb => cb.value);
         if (!selectedGrades.length) {
@@ -1878,12 +2057,17 @@ export function createAutoAssignAll(deps) {
           return;
         }
         const placementMode = overlay.querySelector('input[name="ttAutoPlacementMode"]:checked')?.value || "reset";
+        const scoringWeights = normalizeScoreWeights(Object.fromEntries(
+          [...overlay.querySelectorAll('[data-weight]')].map(input => [input.dataset.weight, input.value])
+        ));
         close({
           placementMode,
           selectedGrades,
           keepPinned: overlay.querySelector("#ttAutoKeepPinned")?.checked !== false,
           keepManual: overlay.querySelector("#ttAutoKeepManual")?.checked !== false,
-          runAttempts: overlay.querySelector("#ttAutoRunAttempts")?.value || "balanced"
+          runAttempts: overlay.querySelector("#ttAutoRunAttempts")?.value || "balanced",
+          scoringProfile: overlay.querySelector("#ttAutoScorePreset")?.value || "balanced",
+          scoringWeights
         });
       });
     });
@@ -1908,6 +2092,7 @@ export function createAutoAssignAll(deps) {
 
     const options = await openAutoAssignOptionsDialog(availableGrades, AUTO_ASSIGN_DEFAULT_OPTIONS);
     if (!options) return;
+    options.scoringWeights = scoreOptionsFromAssignOptions(options);
 
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
@@ -1942,6 +2127,7 @@ export function createAutoAssignAll(deps) {
       `고정/보호 슬롯: ${protectedSummary.slots}칸`,
       `잠금 카드 유지: ${options.keepPinned !== false ? "예" : "아니오"}`,
       `수동 카드 유지: ${options.keepManual !== false ? "예" : "아니오"}`,
+      `점수 기준: ${describeScoreWeights(options.scoringWeights)}`,
       "",
       "계속할까요?"
     ].join("\n");
@@ -2004,8 +2190,8 @@ export function createAutoAssignAll(deps) {
       step: "배치 대상 분석",
       detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
       log: restrictedTeacherNames.length
-        ? `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")}`
-        : `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 그룹 수업은 동시배정 단위로 계산합니다.`
+        ? `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")} · ${describeScoreWeights(options.scoringWeights)}`
+        : `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 그룹 수업은 동시배정 단위로 계산합니다. · ${describeScoreWeights(options.scoringWeights)}`
     }, true);
 
     const requiredByKey = new Map();
@@ -2023,9 +2209,9 @@ export function createAutoAssignAll(deps) {
 
     const attemptPlan = attemptsForMode(options.runAttempts);
     const stages = [
-      { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true } },
-      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true } },
-      { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:attemptPlan[2], options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true } },
+      { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
+      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
+      { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:attemptPlan[2], options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
     ];
 
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
@@ -2281,7 +2467,7 @@ export function createAutoAssignAll(deps) {
         stillFailed.push(failedItem);
         continue;
       }
-      const slot = findLeastBadSlot(item, baseSlots, bestPlaced);
+      const slot = findLeastBadSlot(item, baseSlots, bestPlaced, options);
       const entry = slot ? makeAutoEntry(item, slot, bestPlaced) : null;
       if (entry) {
         entry.autoForced = true;
@@ -2305,7 +2491,7 @@ export function createAutoAssignAll(deps) {
     await updateProgress({
       percent: 91,
       step: "자동배치 후처리",
-      detail: "배치된 수업을 안전하게 재배치해 7교시 몰림, 같은 과목 몰림, 교사 공강을 줄입니다.",
+      detail: `배치된 수업을 안전하게 재배치해 설정한 점수 기준을 개선합니다. (${describeScoreWeights(options.scoringWeights)})`,
       placed: bestPlaced.length,
       best: bestPlaced.length,
       failed: bestFailed.length,
@@ -2370,6 +2556,9 @@ export function createAutoAssignAll(deps) {
       postProcessImprovedCount: improvement.improvedCount,
       postProcessAttempts: improvement.attempts,
       postProcessQualityScore: improvement.qualityScore,
+      scoringProfile: options.scoringProfile || "balanced",
+      scoringWeights: options.scoringWeights,
+      scoringSummary: describeScoreWeights(options.scoringWeights),
       failedCount: names.length,
       failedNames: names,
       failedDiagnostics,
