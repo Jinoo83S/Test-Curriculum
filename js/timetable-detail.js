@@ -589,7 +589,16 @@ export function createTimetableDetailHandlers(ctx) {
     menu.appendChild(menuItem("📅 배정 현황 보기", () => showSubjectAssignmentHistory(entry)));
     menu.appendChild(menuItem("🔍 하단 카드에서 찾기", () => highlightSidebarCard(entry)));
     menu.appendChild(sep());
-    menu.appendChild(menuItem(entry.pinned ? "📌 고정 해제" : "📍 이 시간에 고정", () => {
+    const pinBlockEntries = ctx.getEntryPinBlockEntries?.(entry) || [entry];
+    const allPinned = pinBlockEntries.length && pinBlockEntries.every(e => e.pinned);
+    const pinLabel = pinBlockEntries.length > 1
+      ? (allPinned ? `📌 묶음 고정 해제 (${pinBlockEntries.length})` : `📍 이 묶음 시간에 고정 (${pinBlockEntries.length})`)
+      : (entry.pinned ? "📌 고정 해제" : "📍 이 시간에 고정");
+    menu.appendChild(menuItem(pinLabel, () => {
+      if (typeof ctx.toggleEntryPinnedBlock === "function") {
+        ctx.toggleEntryPinnedBlock(entry);
+        return;
+      }
       const e = entries().find(x => x.id === entry.id);
       if (e) {
         ctx.captureTimetableUndo("수업 고정 변경");

@@ -34,11 +34,11 @@ import {
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js?v=credit_diag_dedupe_r1";
-import { createAutoAssignAll } from "./timetable-autoassign.js?v=auto_postprocess_r1";
+import { createAutoAssignAll } from "./timetable-autoassign.js?v=fixed_lessons_r1";
 import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
-import { createTimetableDetailHandlers } from "./timetable-detail.js?v=context_menu_top";
+import { createTimetableDetailHandlers } from "./timetable-detail.js?v=fixed_lessons_r1";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
-import { createTimetableLogHandlers } from "./timetable-log.js?v=auto_postprocess_r1";
+import { createTimetableLogHandlers } from "./timetable-log.js?v=fixed_lessons_r1";
 import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=auto_postprocess_r1";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
@@ -1412,6 +1412,197 @@ function getEntryClassSummary(entry) {
 }
 
 
+// ── Fixed lesson manager ────────────────────────────────────────
+// 자동배치 전에 채플/자율활동/동아리처럼 반드시 특정 시간에 있어야 하는
+// 수업을 "고정"해 두면, 자동배치 초기화/탐색/후처리 단계가 해당 슬롯을 침범하지 않습니다.
+const FIXED_DAY_LABELS = ["월", "화", "수", "목", "금"];
+
+function fixedSlotLabel(entry = {}) {
+  const day = FIXED_DAY_LABELS[entry.day] ?? "?";
+  const period = ttConfig().periodLabels?.[entry.period] || `${Number(entry.period || 0) + 1}교시`;
+  return `${day} ${period}`;
+}
+
+function entryPinBlockKey(entry = {}) {
+  const day = Number.isInteger(entry.day) ? entry.day : "?";
+  const period = Number.isInteger(entry.period) ? entry.period : "?";
+  if (entry.groupId) return `group:${entry.groupId}:${day}:${period}`;
+  if (entry.unitId) return `unit:${entry.unitId}:${day}:${period}`;
+  return `entry:${entry.id}`;
+}
+
+function getEntryPinBlockEntries(entry = {}) {
+  const key = entryPinBlockKey(entry);
+  if (!entry?.id) return [];
+  if (key.startsWith("entry:")) return entries().filter(e => e.id === entry.id);
+  if (entry.groupId) return entries().filter(e => e.groupId === entry.groupId && e.day === entry.day && e.period === entry.period);
+  if (entry.unitId) return entries().filter(e => e.unitId === entry.unitId && e.day === entry.day && e.period === entry.period);
+  return entries().filter(e => e.id === entry.id);
+}
+
+function setEntryPinBlockPinned(entry, value = true, { rerender = true, label = "수업 고정 변경" } = {}) {
+  if (!canEdit() || !entry) return 0;
+  const block = getEntryPinBlockEntries(entry);
+  if (!block.length) return 0;
+  const next = !!value;
+  if (block.every(e => !!e.pinned === next)) return 0;
+  captureTimetableUndo(label);
+  block.forEach(e => { e.pinned = next; });
+  scheduleSave("timetable");
+  recomputeConflicts();
+  if (rerender) renderAll();
+  return block.length;
+}
+
+function toggleEntryPinnedBlock(entry) {
+  const block = getEntryPinBlockEntries(entry);
+  const allPinned = block.length && block.every(e => e.pinned);
+  return setEntryPinBlockPinned(entry, !allPinned, { label: allPinned ? "수업 고정 해제" : "수업 고정" });
+}
+
+function getFixedBlockTitle(block = []) {
+  const first = block[0] || {};
+  const groupName = clean(first.groupName || ((appState.timetable?.ttcardGroups || []).find(g => g.id === first.groupId)?.name));
+  const title = groupName || entryTitle(first) || "수업";
+  const classes = [...new Set(block.map(e => getEntryClassSummary(e)).filter(Boolean))].join(" / ");
+  return { title, classes };
+}
+
+function getPlacedEntryBlocks() {
+  const map = new Map();
+  entries()
+    .filter(e => Number.isInteger(e.day) && Number.isInteger(e.period))
+    .forEach(e => {
+      const key = entryPinBlockKey(e);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(e);
+    });
+  return [...map.values()].sort((a, b) => {
+    const ea = a[0] || {}, eb = b[0] || {};
+    return (ea.day - eb.day) || (ea.period - eb.period) || getFixedBlockTitle(a).title.localeCompare(getFixedBlockTitle(b).title, "ko", { numeric: true });
+  });
+}
+
+function setPinnedForBlocks(blocks = [], value = true, label = "고정 수업 일괄 변경") {
+  if (!canEdit()) return;
+  const targets = (blocks || []).flat().filter(Boolean);
+  if (!targets.length) return;
+  const next = !!value;
+  if (targets.every(e => !!e.pinned === next)) return;
+  captureTimetableUndo(label);
+  targets.forEach(e => { e.pinned = next; });
+  scheduleSave("timetable");
+  recomputeConflicts();
+  renderAll();
+}
+
+function openFixedLessonManager() {
+  const old = document.getElementById("ttFixedLessonsOverlay");
+  old?.remove();
+
+  const blocks = getPlacedEntryBlocks();
+  const pinnedBlocks = blocks.filter(block => block.some(e => e.pinned));
+  const autoFixedRe = /(채플|자율|동아리|진로|성품|리더십|선교적|Chapel|Activity|Club|Vision|Leadership)/i;
+
+  const overlay = document.createElement("div");
+  overlay.id = "ttFixedLessonsOverlay";
+  overlay.className = "tt-fixed-overlay";
+  overlay.innerHTML = `
+    <div class="tt-fixed-modal" role="dialog" aria-modal="true" aria-labelledby="ttFixedLessonsTitle">
+      <div class="tt-fixed-head">
+        <div>
+          <p class="tt-fixed-kicker">자동배치 사전 설정</p>
+          <h3 id="ttFixedLessonsTitle">고정 수업 관리</h3>
+          <p>특정 시간에 반드시 유지할 수업을 고정하면 자동배치가 해당 수업과 시간대를 보호합니다.</p>
+        </div>
+        <button type="button" class="tt-fixed-close" aria-label="닫기">×</button>
+      </div>
+      <div class="tt-fixed-summary">
+        <span>배치된 수업 묶음 <b>${blocks.length}</b>개</span>
+        <span>고정됨 <b>${pinnedBlocks.length}</b>개</span>
+        <span>고정 수업은 초기화·자동배치·후처리에서 보호</span>
+      </div>
+      <div class="tt-fixed-actions">
+        <button type="button" data-action="pin-activities">채플·자율·동아리 자동 고정</button>
+        <button type="button" data-action="pin-all">현재 배치 모두 고정</button>
+        <button type="button" data-action="unpin-all">고정 모두 해제</button>
+      </div>
+      <div class="tt-fixed-list">
+        ${blocks.length ? blocks.map((block, idx) => {
+          const first = block[0] || {};
+          const { title, classes } = getFixedBlockTitle(block);
+          const allPinned = block.every(e => e.pinned);
+          const somePinned = block.some(e => e.pinned);
+          const teachers = [...new Set(block.flatMap(e => splitTeacherNames(e.teacherName || "")))].filter(Boolean).join(", ");
+          const roomNames = [...new Set(block.map(e => e.roomId ? getRoomDisplayName(e.roomId) : "").filter(Boolean))].join(", ");
+          const type = first.groupId ? "그룹" : first.unitId ? "묶음" : "개별";
+          return `<div class="tt-fixed-row ${allPinned ? "is-pinned" : somePinned ? "is-partial" : ""}" data-idx="${idx}">
+            <div class="tt-fixed-row-main">
+              <div class="tt-fixed-row-title"><span>${escapeHtml(title)}</span><em>${escapeHtml(type)}</em></div>
+              <div class="tt-fixed-row-meta">
+                <span>${escapeHtml(fixedSlotLabel(first))}</span>
+                <span>${escapeHtml(classes || "대상 반 없음")}</span>
+                ${teachers ? `<span>${escapeHtml(teachers)}</span>` : ""}
+                ${roomNames ? `<span>${escapeHtml(roomNames)}</span>` : ""}
+                <span>${block.length}개 카드</span>
+              </div>
+            </div>
+            <button type="button" class="tt-fixed-toggle" data-idx="${idx}">${allPinned ? "고정 해제" : somePinned ? "부분 고정 → 전체 고정" : "고정"}</button>
+          </div>`;
+        }).join("") : `<div class="tt-fixed-empty">아직 시간표에 배치된 수업이 없습니다. 먼저 하단 과목카드를 시간표에 올려 주세요.</div>`}
+      </div>
+      <div class="tt-fixed-foot">
+        <button type="button" class="tt-fixed-close2">닫기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector(".tt-fixed-close")?.addEventListener("click", close);
+  overlay.querySelector(".tt-fixed-close2")?.addEventListener("click", close);
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+
+  overlay.querySelectorAll(".tt-fixed-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const block = blocks[Number(btn.dataset.idx)] || [];
+      if (!block.length) return;
+      const allPinned = block.every(e => e.pinned);
+      setPinnedForBlocks([block], !allPinned, allPinned ? "고정 수업 해제" : "고정 수업 지정");
+      close();
+      openFixedLessonManager();
+    });
+  });
+
+  overlay.querySelector('[data-action="pin-activities"]')?.addEventListener("click", () => {
+    const targets = blocks.filter(block => {
+      const { title } = getFixedBlockTitle(block);
+      const text = [title, ...block.map(e => entryTitle(e)), ...block.map(e => e.groupName || "")].join(" ");
+      return autoFixedRe.test(text);
+    });
+    if (!targets.length) { alert("자동으로 찾을 수 있는 채플·자율·동아리 계열 수업이 없습니다."); return; }
+    setPinnedForBlocks(targets, true, "채플·자율·동아리 고정");
+    close();
+    openFixedLessonManager();
+  });
+
+  overlay.querySelector('[data-action="pin-all"]')?.addEventListener("click", () => {
+    if (!blocks.length) return;
+    if (!confirm("현재 배치된 모든 수업을 고정할까요? 자동배치가 거의 모든 기존 배치를 유지하게 됩니다.")) return;
+    setPinnedForBlocks(blocks, true, "현재 배치 전체 고정");
+    close();
+    openFixedLessonManager();
+  });
+
+  overlay.querySelector('[data-action="unpin-all"]')?.addEventListener("click", () => {
+    if (!pinnedBlocks.length) return;
+    if (!confirm("모든 고정 표시를 해제할까요?")) return;
+    setPinnedForBlocks(blocks, false, "고정 수업 전체 해제");
+    close();
+    openFixedLessonManager();
+  });
+}
+
+
 const ttDetailHandlers = createTimetableDetailHandlers({
   entries,
   ttConfig,
@@ -1431,6 +1622,8 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   setTtCardRoomPreference,
   applyRoomRuleToEntry,
   getRoomDisplayName,
+  getEntryPinBlockEntries,
+  toggleEntryPinnedBlock,
 });
 
 const {
@@ -1989,6 +2182,7 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   ttDomain().entries = entries().filter(keepFn);
   scheduleSave("timetable"); recomputeConflicts(); renderAll();
 });
+$("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 
 

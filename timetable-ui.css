@@ -1894,3 +1894,48 @@ button.tt-grade-filter-btn.active {
   .tt-auto-options-foot { flex-direction: column-reverse; }
   .tt-auto-options-foot button { width: 100%; }
 }
+
+/* Step 7 · fixed lesson manager */
+.tt-fixed-btn{
+  border:1px solid #fed7aa!important;
+  background:#fff7ed!important;
+  color:#9a3412!important;
+  font-weight:900!important;
+  border-radius:10px!important;
+  padding:7px 10px!important;
+  box-shadow:0 1px 2px rgba(154,52,18,.08)!important;
+}
+.tt-fixed-btn:hover{background:#ffedd5!important;border-color:#fdba74!important;}
+.tt-fixed-overlay{
+  position:fixed;inset:0;z-index:2147483600;display:flex;align-items:center;justify-content:center;
+  background:rgba(15,23,42,.54);backdrop-filter:blur(3px);padding:22px;box-sizing:border-box;
+}
+.tt-fixed-modal{
+  width:min(900px,96vw);max-height:min(780px,92vh);display:flex;flex-direction:column;overflow:hidden;
+  background:#fff;border:1px solid #e2e8f0;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.28);
+}
+.tt-fixed-head{display:flex;justify-content:space-between;gap:16px;padding:18px 20px 14px;border-bottom:1px solid #e2e8f0;background:linear-gradient(135deg,#fff7ed,#ffffff 56%);}
+.tt-fixed-kicker{margin:0 0 4px;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#ea580c;}
+.tt-fixed-head h3{margin:0;color:#0f172a;font-size:20px;line-height:1.2;}
+.tt-fixed-head p{margin:6px 0 0;color:#64748b;font-size:12.5px;line-height:1.45;}
+.tt-fixed-close{width:32px;height:32px;border:0;border-radius:10px;background:#fff7ed;color:#9a3412;font-size:22px;line-height:1;cursor:pointer;}
+.tt-fixed-summary{display:flex;gap:8px;flex-wrap:wrap;padding:10px 20px;border-bottom:1px solid #f1f5f9;background:#fff;}
+.tt-fixed-summary span{display:inline-flex;align-items:center;gap:4px;border:1px solid #e2e8f0;border-radius:999px;background:#f8fafc;color:#475569;font-size:11.5px;font-weight:800;padding:5px 9px;}
+.tt-fixed-summary b{color:#0f172a;}
+.tt-fixed-actions{display:flex;gap:8px;flex-wrap:wrap;padding:10px 20px;border-bottom:1px solid #f1f5f9;background:#fffaf5;}
+.tt-fixed-actions button,.tt-fixed-toggle,.tt-fixed-close2{border:1px solid #e2e8f0;background:#fff;color:#334155;border-radius:10px;font-size:12px;font-weight:900;padding:7px 10px;cursor:pointer;}
+.tt-fixed-actions button:hover,.tt-fixed-toggle:hover,.tt-fixed-close2:hover{background:#f8fafc;border-color:#cbd5e1;}
+.tt-fixed-list{overflow:auto;padding:12px 20px;display:flex;flex-direction:column;gap:8px;background:#f8fafc;}
+.tt-fixed-row{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #e2e8f0;background:#fff;border-radius:14px;padding:10px 12px;box-shadow:0 1px 2px rgba(15,23,42,.04);}
+.tt-fixed-row.is-pinned{border-color:#f59e0b;background:#fffbeb;box-shadow:0 0 0 1px rgba(245,158,11,.12) inset;}
+.tt-fixed-row.is-partial{border-color:#fbbf24;background:#fff7ed;}
+.tt-fixed-row-main{min-width:0;flex:1;}
+.tt-fixed-row-title{display:flex;align-items:center;gap:8px;min-width:0;}
+.tt-fixed-row-title span{font-size:13px;font-weight:950;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tt-fixed-row-title em{font-style:normal;font-size:10px;font-weight:900;color:#9a3412;background:#ffedd5;border-radius:999px;padding:2px 6px;white-space:nowrap;}
+.tt-fixed-row-meta{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;}
+.tt-fixed-row-meta span{font-size:10.5px;font-weight:800;color:#64748b;background:#f1f5f9;border-radius:999px;padding:2px 6px;}
+.tt-fixed-row.is-pinned .tt-fixed-toggle{background:#92400e;border-color:#92400e;color:#fff;}
+.tt-fixed-empty{padding:28px;text-align:center;color:#94a3b8;font-size:13px;font-weight:800;}
+.tt-fixed-foot{display:flex;justify-content:flex-end;padding:12px 20px;border-top:1px solid #e2e8f0;background:#fff;}
+@media (max-width:760px){.tt-fixed-row{align-items:stretch;flex-direction:column}.tt-fixed-toggle{width:100%}.tt-fixed-head{padding:15px}.tt-fixed-list,.tt-fixed-actions,.tt-fixed-summary,.tt-fixed-foot{padding-left:14px;padding-right:14px}}
