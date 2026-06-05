@@ -21,6 +21,57 @@ export function createAutoAssignAll(deps) {
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
 
+  // ── Restricted-teacher helpers ─────────────────────────────────
+  // 시간강사/육아단축/제한근무 교사는 자동배치에서 고정 수업 다음 우선순위로 다룹니다.
+  const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
+  const normalizeWorkType = value => RESTRICTED_WORK_TYPES.has(String(value || "")) ? String(value || "") : (String(value || "") === "fulltime" ? "fulltime" : "fulltime");
+  const isRestrictedTeacher = teacher => {
+    const name = String(teacher || "").trim();
+    if (!name) return false;
+    const c = constraints()?.[name];
+    if (!c) return false;
+    return c.isRestrictedWork === true || RESTRICTED_WORK_TYPES.has(normalizeWorkType(c.workType));
+  };
+  const getTeacherNamesFromCards = cards => [...new Set((cards || []).flatMap(card => [
+    ...(Array.isArray(card?.teachers) ? card.teachers : []),
+    ...splitTeacherNames(card?.teacherName || "")
+  ]).map(t => String(t || "").trim()).filter(Boolean))];
+  const getTeachersForAutoItem = item => {
+    const names = [
+      ...(Array.isArray(item?.teachers) ? item.teachers : []),
+      ...splitTeacherNames(item?.teacherName || item?.teachers || ""),
+      ...getTeacherNamesFromCards(item?.ttcards || [])
+    ];
+    return [...new Set(names.map(t => String(t || "").trim()).filter(Boolean))];
+  };
+  const getRestrictedTeachersForAutoItem = item => getTeachersForAutoItem(item).filter(isRestrictedTeacher);
+  const annotateRestrictedAutoItem = item => {
+    const restrictedTeachers = getRestrictedTeachersForAutoItem(item);
+    return {
+      ...item,
+      hasRestrictedTeacher: restrictedTeachers.length > 0,
+      restrictedTeachers,
+      // 0은 고정/잠금, 1은 제약근무 교사, 2는 일반 자동배치 대상입니다.
+      priorityTier: restrictedTeachers.length > 0 ? 1 : 2
+    };
+  };
+  const annotateRestrictedGroupBlock = block => {
+    const unitItems = (block?.unitItems || []).map(annotateRestrictedAutoItem);
+    const restrictedTeachers = [...new Set(unitItems.flatMap(u => u.restrictedTeachers || []))];
+    return {
+      ...block,
+      unitItems,
+      hasRestrictedTeacher: restrictedTeachers.length > 0,
+      restrictedTeachers,
+      priorityTier: restrictedTeachers.length > 0 ? 1 : 2
+    };
+  };
+  const comparePriority = (a, b) => (Number(a?.priorityTier ?? 2) - Number(b?.priorityTier ?? 2));
+  const describeRestrictedTeachers = names => {
+    const list = [...new Set((names || []).filter(Boolean))];
+    return list.length ? `제약교사: ${list.join(", ")}` : "";
+  };
+
   const groupContainsCardId = (group, cardId, { includeExcluded = false } = {}) => {
     if (!group || !cardId) return false;
     if (!includeExcluded && (group.excludedCardIds || []).includes(cardId)) return false;
@@ -235,7 +286,9 @@ export function createAutoAssignAll(deps) {
     for (const teacher of teachers) {
       const c = constraints()[teacher];
       // Unavailable slot check
-      if (respectUnavailable && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
+      // 제약근무 교사의 불가시간은 완화 단계에서도 절대 조건으로 유지합니다.
+      const restrictedTeacher = isRestrictedTeacher(teacher);
+      if ((respectUnavailable || restrictedTeacher) && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
       const count = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
       const max = Number(c?.maxPerDay) || 0;
       if (respectSoftLimits && max > 0 && count >= max) return false;
@@ -393,7 +446,11 @@ export function createAutoAssignAll(deps) {
 
     for (const teacher of teachers) {
       const c = constraints()[teacher];
-      if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) score += 500;
+      // 최종 보정 단계에서도 제약근무 교사의 불가시간은 침범하지 않습니다.
+      if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) {
+        if (isRestrictedTeacher(teacher)) return Infinity;
+        score += 500;
+      }
       const dayLoad = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
       const max = Number(c?.maxPerDay) || 0;
       if (max > 0 && dayLoad >= max) score += 150 + (dayLoad - max + 1) * 30;
@@ -807,7 +864,15 @@ export function createAutoAssignAll(deps) {
     // 커리큘럼/템플릿 실시간 의존성을 끊었기 때문에, 자동배치 대상도
     // appState.curriculum.gradeBoards가 아니라 시간표 사전작업에서 생성된
     // timetable.ttcards / timetable.ttcardGroups 스냅샷 기준으로 판단합니다.
-    const { standalone, groupBlocks } = buildSchedulableItems();
+    const rawItems = buildSchedulableItems();
+    const standalone = (rawItems.standalone || []).map(annotateRestrictedAutoItem);
+    const groupBlocks = (rawItems.groupBlocks || []).map(annotateRestrictedGroupBlock);
+    const restrictedStandaloneCount = standalone.filter(item => item.hasRestrictedTeacher).length;
+    const restrictedGroupCount = groupBlocks.filter(block => block.hasRestrictedTeacher).length;
+    const restrictedTeacherNames = [...new Set([
+      ...standalone.flatMap(item => item.restrictedTeachers || []),
+      ...groupBlocks.flatMap(block => block.restrictedTeachers || [])
+    ])];
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
     const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
       const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
@@ -874,8 +939,10 @@ export function createAutoAssignAll(deps) {
     await updateProgress({
       percent: 10,
       step: "배치 대상 분석",
-      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다.`,
-      log: "그룹 수업은 동시배정 단위로 계산합니다."
+      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
+      log: restrictedTeacherNames.length
+        ? `고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")}`
+        : "그룹 수업은 동시배정 단위로 계산합니다."
     }, true);
 
     const requiredByKey = new Map();
@@ -923,113 +990,146 @@ export function createAutoAssignAll(deps) {
         }, true);
         const placed = [], failed = [];
 
-        // ── Place concurrent groups first: one independent occurrence per 시수 ──
+        // ── Sort schedulable units by priority ───────────────────────
+        // 1) 고정 수업은 위에서 이미 pinnedEntries로 보호
+        // 2) 제약근무 교사 포함 수업은 일반 그룹/일반 카드보다 먼저 배치
+        // 3) 같은 우선순위 안에서는 후보가 어려운 큰 그룹·다교사 수업을 먼저 배치
         const orderedGroups = shuffle([...groupBlocks]).sort((a, b) => {
-          const ac = Math.max(...a.unitItems.map(u => u.credits));
-          const bc = Math.max(...b.unitItems.map(u => u.credits));
+          const ac = Math.max(0, ...a.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
+          const bc = Math.max(0, ...b.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
+          const ap = comparePriority(a, b);
+          if (ap !== 0) return ap;
+          const art = (b.restrictedTeachers || []).length - (a.restrictedTeachers || []).length;
+          if (art !== 0) return art;
           return bc - ac;
         });
 
-        for (const { group, unitItems } of orderedGroups) {
-          if (!(group.isConcurrent || group.groupType === "concurrent")) continue;
-          const maxCredits = Math.max(0, ...(unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
-          const alreadyPinned = countPinnedGroupSlots(group, unitItems, pinnedEntries);
-          const needSlots = Math.max(0, maxCredits - alreadyPinned);
+        const orderedKeys = shuffle([...requiredByKey.keys()]).sort((a, b) => {
+          const ia = itemByKey.get(a);
+          const ib = itemByKey.get(b);
+          const ap = comparePriority(ia, ib);
+          if (ap !== 0) return ap;
+          const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
+          if (art !== 0) return art;
+          return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
+        });
+        const restrictedGroupBlocks = orderedGroups.filter(block => block.hasRestrictedTeacher);
+        const normalGroupBlocks = orderedGroups.filter(block => !block.hasRestrictedTeacher);
+        const restrictedKeys = orderedKeys.filter(key => itemByKey.get(key)?.hasRestrictedTeacher);
+        const normalKeys = orderedKeys.filter(key => !itemByKey.get(key)?.hasRestrictedTeacher);
+        const placedByKey = new Map();
 
-          for (let slot_i = 0; slot_i < needSlots; slot_i++) {
-            await yieldAutoAssign({
-              percent: stagePercent,
-              step: `그룹 수업 배치 · ${stage.label}`,
-              detail: `${group.name || "그룹"} ${slot_i + 1} / ${needSlots}회차를 배치하고 있습니다.`,
-              placed: placed.length,
-              best: Math.max(0, bestScore),
-              failed: failed.length,
-              currentCard: group.name || "그룹 수업"
-            });
-            const activeItems = unitItems
-              .filter(u => slot_i < u.credits)
-              .map(u => getGroupItemForOccurrence(u, slot_i))
-              .filter(u => (u.ttcards || []).length);
-            if (!activeItems.length) continue;
-            const probeItem = makePlacementFromGroupItem(group, activeItems[0]);
-            const foundSlot = probeItem ? findBestAutoSlot(probeItem, baseSlots, placed, stage.options) : null;
-            if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed)) {
-              continue;
-            }
-            activeItems.forEach(groupItem => {
-              const item = makePlacementFromGroupItem(group, groupItem);
-              failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item, { groupId: group.id }));
-            });
-          }
-        }
+        const placeGroups = async (blocks, phaseLabel) => {
+          // ── Place concurrent groups first: one independent occurrence per 시수 ──
+          for (const { group, unitItems, restrictedTeachers = [] } of blocks) {
+            if (!(group.isConcurrent || group.groupType === "concurrent")) continue;
+            const maxCredits = Math.max(0, ...(unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
+            const alreadyPinned = countPinnedGroupSlots(group, unitItems, pinnedEntries);
+            const needSlots = Math.max(0, maxCredits - alreadyPinned);
 
-        // ── Place non-concurrent groups independently (legacy safety) ─────────
-        for (const { group, unitItems } of orderedGroups) {
-          if (group.isConcurrent || group.groupType === "concurrent") continue;
-          for (const groupItem of unitItems) {
-            const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
-            const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
-            for (let i = 0; i < needSlots; i++) {
+            for (let slot_i = 0; slot_i < needSlots; slot_i++) {
               await yieldAutoAssign({
                 percent: stagePercent,
-                step: `그룹 카드 배치 · ${stage.label}`,
-                detail: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"} 배치 중`,
+                step: `${phaseLabel} · ${stage.label}`,
+                detail: `${group.name || "그룹"} ${slot_i + 1} / ${needSlots}회차를 배치하고 있습니다.${restrictedTeachers.length ? ` (${describeRestrictedTeachers(restrictedTeachers)})` : ""}`,
                 placed: placed.length,
                 best: Math.max(0, bestScore),
                 failed: failed.length,
-                currentCard: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"}`
+                currentCard: group.name || "그룹 수업"
               });
-              const occurrenceGroupItem = getGroupItemForOccurrence(groupItem, i);
-              if (!(occurrenceGroupItem.ttcards || []).length) continue;
-              const item = makePlacementFromGroupItem(group, occurrenceGroupItem);
-              const slot = item ? findBestAutoSlot(item, baseSlots, placed, stage.options) : null;
-              if (slot) {
-                const entry = makeAutoEntry(item, slot, placed);
-                if (entry) placed.push(entry);
-              } else {
-                failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item, { groupId: group.id }));
+              const activeItems = unitItems
+                .filter(u => slot_i < u.credits)
+                .map(u => getGroupItemForOccurrence(u, slot_i))
+                .filter(u => (u.ttcards || []).length);
+              if (!activeItems.length) continue;
+              // 동시배정 그룹은 한 회차에 여러 과목/교사가 함께 움직일 수 있으므로,
+              // 첫 카드만으로 후보 시간을 검사하면 제약교사 조건을 놓칠 수 있습니다.
+              // 해당 회차의 모든 활성 카드를 합친 probe로 교사·학생·교실 제약을 함께 검사합니다.
+              const probeCards = activeItems.flatMap(u => u.ttcards || []);
+              const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
+              const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
+              const foundSlot = probe ? findBestAutoSlot(probe, baseSlots, placed, stage.options) : null;
+              if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed)) {
+                continue;
+              }
+              activeItems.forEach(groupItem => {
+                const item = makePlacementFromGroupItem(group, groupItem);
+                failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item ? annotateRestrictedAutoItem(item) : item, { groupId: group.id }));
+              });
+            }
+          }
+
+          // ── Place non-concurrent groups independently (legacy safety) ─────────
+          for (const { group, unitItems, restrictedTeachers = [] } of blocks) {
+            if (group.isConcurrent || group.groupType === "concurrent") continue;
+            for (const groupItem of unitItems) {
+              const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
+              const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
+              for (let i = 0; i < needSlots; i++) {
+                await yieldAutoAssign({
+                  percent: stagePercent,
+                  step: `${phaseLabel} · ${stage.label}`,
+                  detail: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"} 배치 중${restrictedTeachers.length ? ` (${describeRestrictedTeachers(restrictedTeachers)})` : ""}`,
+                  placed: placed.length,
+                  best: Math.max(0, bestScore),
+                  failed: failed.length,
+                  currentCard: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"}`
+                });
+                const occurrenceGroupItem = getGroupItemForOccurrence(groupItem, i);
+                if (!(occurrenceGroupItem.ttcards || []).length) continue;
+                const item = makePlacementFromGroupItem(group, occurrenceGroupItem);
+                const checkedItem = item ? annotateRestrictedAutoItem(item) : null;
+                const slot = checkedItem ? findBestAutoSlot(checkedItem, baseSlots, placed, stage.options) : null;
+                if (slot) {
+                  const entry = makeAutoEntry(checkedItem, slot, placed);
+                  if (entry) placed.push(entry);
+                } else {
+                  failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, checkedItem, { groupId: group.id }));
+                }
               }
             }
           }
-        }
+        };
 
-        // ── Place standalone cards: required count minus already pinned count ──
-        const placedByKey = new Map();
-        const orderedKeys = shuffle([...requiredByKey.keys()]).sort((a, b) => {
-          return getAutoItemDifficulty(itemByKey.get(b)) - getAutoItemDifficulty(itemByKey.get(a));
-        });
-
-        for (const key of orderedKeys) {
-          const item = itemByKey.get(key);
-          const required = requiredByKey.get(key) || 0;
-          const pinned = pinnedByKey.get(key) || 0;
-          while (pinned + (placedByKey.get(key) || 0) < required) {
-            await yieldAutoAssign({
-              percent: stagePercent,
-              step: `일반 카드 배치 · ${stage.label}`,
-              detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.`,
-              placed: placed.length,
-              best: Math.max(0, bestScore),
-              failed: failed.length,
-              currentCard: getAutoItemName(item)
-            });
-            const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
-            if (!slot) {
-              // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
-              // break하면, 마지막 보정 단계가 1시수만 복구하고 나머지는 계속 하단에 남습니다.
-              // 현재 남은 필요 시수만큼 failed를 기록해 final repair가 전부 처리하게 합니다.
-              const already = pinned + (placedByKey.get(key) || 0);
-              const remaining = Math.max(1, required - already);
-              for (let miss = 0; miss < remaining; miss++) {
-                failed.push(makeFailedPlacement(getAutoItemName(item), item, { occurrence: already + miss + 1, required }));
+        const placeStandaloneKeys = async (keys, phaseLabel) => {
+          for (const key of keys) {
+            const item = itemByKey.get(key);
+            const required = requiredByKey.get(key) || 0;
+            const pinned = pinnedByKey.get(key) || 0;
+            while (pinned + (placedByKey.get(key) || 0) < required) {
+              await yieldAutoAssign({
+                percent: stagePercent,
+                step: `${phaseLabel} · ${stage.label}`,
+                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
+                placed: placed.length,
+                best: Math.max(0, bestScore),
+                failed: failed.length,
+                currentCard: getAutoItemName(item)
+              });
+              const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
+              if (!slot) {
+                // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
+                // break하면, 마지막 보정 단계가 1시수만 복구하고 나머지는 계속 하단에 남습니다.
+                // 현재 남은 필요 시수만큼 failed를 기록해 final repair가 전부 처리하게 합니다.
+                const already = pinned + (placedByKey.get(key) || 0);
+                const remaining = Math.max(1, required - already);
+                for (let miss = 0; miss < remaining; miss++) {
+                  failed.push(makeFailedPlacement(getAutoItemName(item), item, { occurrence: already + miss + 1, required }));
+                }
+                break;
               }
-              break;
+              const entry = makeAutoEntry(item, slot, placed);
+              if (entry) placed.push(entry);
+              placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
             }
-            const entry = makeAutoEntry(item, slot, placed);
-            if (entry) placed.push(entry);
-            placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
           }
-        }
+        };
+
+        // 고정 수업 다음: 제약근무 교사 포함 수업을 먼저 배치합니다.
+        await placeGroups(restrictedGroupBlocks, "제약교사 그룹 우선 배치");
+        await placeStandaloneKeys(restrictedKeys, "제약교사 일반 카드 우선 배치");
+        await placeGroups(normalGroupBlocks, "그룹 수업 배치");
+        await placeStandaloneKeys(normalKeys, "일반 카드 배치");
 
         if (placed.length > bestScore || (placed.length === bestScore && failed.length < bestFailed.length)) {
           bestScore  = placed.length;
@@ -1131,7 +1231,11 @@ export function createAutoAssignAll(deps) {
       conflictTotal: conflictSummary.totalAffected,
       conflictCounts: conflictSummary.counts,
       missingRoomCount: missingRoomEntries.length,
-      missingRoomNames
+      missingRoomNames,
+      restrictedTeacherCount: restrictedTeacherNames.length,
+      restrictedTeacherNames,
+      restrictedStandaloneCount,
+      restrictedGroupCount
     };
     setLastAutoAssignReport(report);
     addTimetableLog(
@@ -1155,6 +1259,7 @@ export function createAutoAssignAll(deps) {
       `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
       `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
       `<b>적용 방식</b> ${bestStage.label}`,
+      restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
     if (forcedPlaced.length) {
@@ -1182,7 +1287,7 @@ export function createAutoAssignAll(deps) {
       title: names.length ? "자동배치 부분 완료" : "자동배치 완료",
       subtitle: names.length ? "일부 카드는 직접 확인이 필요합니다." : "모든 대상 슬롯을 배치했습니다.",
       step: names.length ? "부분 완료" : "완료",
-      detailHtml: detailLines.map(line => `<div>${line}</div>`).join(""),
+      detailHtml: detailLines.filter(Boolean).map(line => `<div>${line}</div>`).join(""),
       placed: bestPlaced.length,
       best: bestPlaced.length,
       failed: names.length,
