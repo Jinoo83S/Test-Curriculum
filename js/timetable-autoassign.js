@@ -1124,6 +1124,206 @@ export function createAutoAssignAll(deps) {
     return GRADE_KEYS.filter(g => gradeSet.has(g));
   }
 
+
+  // ── Auto assignment option UI/helpers ──────────────────────────
+  const AUTO_ASSIGN_DEFAULT_OPTIONS = {
+    placementMode: "reset",   // reset | keep
+    selectedGrades: [],
+    keepPinned: true,
+    keepManual: true,
+    runAttempts: "balanced"    // fast | balanced | deep
+  };
+
+  function gradeSetFromList(list = []) {
+    const set = new Set((list || []).filter(g => GRADE_KEYS.includes(g)));
+    return set.size ? set : new Set(GRADE_KEYS);
+  }
+
+  function gradesForAutoItem(item = {}) {
+    const set = new Set();
+    const add = g => { if (g && GRADE_KEYS.includes(g)) set.add(g); };
+    add(item.gradeKey);
+    (item.gradeKeys || []).forEach(add);
+    (item.ttcards || []).forEach(card => {
+      add(card?.gradeKey);
+      (card?.gradeKeys || []).forEach(add);
+    });
+    (item.ttcardIds || []).forEach(id => {
+      const card = getTtCardById(id);
+      add(card?.gradeKey);
+      (card?.gradeKeys || []).forEach(add);
+    });
+    if (item.ttcardId) {
+      const card = getTtCardById(item.ttcardId);
+      add(card?.gradeKey);
+      (card?.gradeKeys || []).forEach(add);
+    }
+    return set;
+  }
+
+  function gradesForGroupBlock(block = {}) {
+    const set = new Set();
+    (block.unitItems || []).forEach(item => gradesForAutoItem(item).forEach(g => set.add(g)));
+    return set;
+  }
+
+  function intersectsGradeSet(itemGrades, selectedSet) {
+    if (!selectedSet || selectedSet.size >= GRADE_KEYS.length) return true;
+    for (const g of itemGrades || []) if (selectedSet.has(g)) return true;
+    return false;
+  }
+
+  function filterAutoTargetsByGrades(standalone = [], groupBlocks = [], selectedGrades = []) {
+    const selectedSet = gradeSetFromList(selectedGrades);
+    if (selectedSet.size >= GRADE_KEYS.length) return { standalone, groupBlocks };
+    return {
+      standalone: standalone.filter(item => intersectsGradeSet(gradesForAutoItem(item), selectedSet)),
+      // 그룹은 쪼개지 않고 그룹 단위로 유지합니다. 선택 학년이 하나라도 포함되면 전체 그룹을 함께 배치합니다.
+      groupBlocks: groupBlocks.filter(block => intersectsGradeSet(gradesForGroupBlock(block), selectedSet))
+    };
+  }
+
+  function entryGradeSet(entry = {}) {
+    const set = new Set();
+    const add = g => { if (g && GRADE_KEYS.includes(g)) set.add(g); };
+    add(entry.gradeKey);
+    (entry.gradeKeys || []).forEach(add);
+    ttCardIdsFromPlacement(entry).forEach(id => {
+      const card = getTtCardById(id);
+      add(card?.gradeKey);
+      (card?.gradeKeys || []).forEach(add);
+    });
+    return set;
+  }
+
+  function entryTouchesSelectedGrades(entry, selectedGrades = []) {
+    const selectedSet = gradeSetFromList(selectedGrades);
+    if (selectedSet.size >= GRADE_KEYS.length) return true;
+    return intersectsGradeSet(entryGradeSet(entry), selectedSet);
+  }
+
+  function entryUsesManualCard(entry = {}) {
+    if (entry.isManual) return true;
+    return ttCardIdsFromPlacement(entry).some(id => getTtCardById(id)?.isManual);
+  }
+
+  function computeProtectedEntries(existingEntries = [], options = {}) {
+    const selectedGrades = options.selectedGrades?.length ? options.selectedGrades : GRADE_KEYS;
+    if (options.placementMode === "keep") return [...existingEntries];
+
+    return (existingEntries || []).filter(entry => {
+      const touches = entryTouchesSelectedGrades(entry, selectedGrades);
+      if (!touches) return true;
+      if (options.keepPinned !== false && entry.pinned) return true;
+      if (options.keepManual !== false && entryUsesManualCard(entry)) return true;
+      return false;
+    });
+  }
+
+  function attemptsForMode(mode) {
+    const value = String(mode || "balanced");
+    if (value === "fast") return [18, 12, 6];
+    if (value === "deep") return [54, 36, 16];
+    return [30, 24, 10];
+  }
+
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[<>&"]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[ch]));
+  }
+
+  function openAutoAssignOptionsDialog(activeGrades = [], defaultOptions = {}) {
+    const grades = activeGrades.length ? activeGrades : GRADE_KEYS;
+    const defaults = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, ...defaultOptions };
+    return new Promise(resolve => {
+      const old = document.getElementById("ttAutoAssignOptionsOverlay");
+      old?.remove();
+      const overlay = document.createElement("div");
+      overlay.id = "ttAutoAssignOptionsOverlay";
+      overlay.className = "tt-auto-options-overlay";
+      overlay.innerHTML = `
+        <div class="tt-auto-options-modal" role="dialog" aria-modal="true" aria-labelledby="ttAutoAssignOptionsTitle">
+          <div class="tt-auto-options-head">
+            <div>
+              <p class="tt-auto-options-kicker">자동 배치 옵션</p>
+              <h3 id="ttAutoAssignOptionsTitle">배치 범위와 보호 대상을 선택하세요</h3>
+            </div>
+            <button type="button" class="tt-auto-options-close" aria-label="닫기">×</button>
+          </div>
+          <div class="tt-auto-options-body">
+            <section class="tt-auto-option-section">
+              <h4>배치 방식</h4>
+              <label class="tt-auto-radio-card">
+                <input type="radio" name="ttAutoPlacementMode" value="reset" ${defaults.placementMode !== "keep" ? "checked" : ""}>
+                <span><b>선택 범위 초기화 후 자동 배치</b><em>선택한 학년에 걸린 기존 배치를 지우고 다시 배치합니다.</em></span>
+              </label>
+              <label class="tt-auto-radio-card">
+                <input type="radio" name="ttAutoPlacementMode" value="keep" ${defaults.placementMode === "keep" ? "checked" : ""}>
+                <span><b>현재 배치 유지 + 미배치만 자동 배치</b><em>현재 시간표를 보호하고 부족한 카드만 추가로 찾습니다.</em></span>
+              </label>
+            </section>
+            <section class="tt-auto-option-section">
+              <div class="tt-auto-option-title-row">
+                <h4>대상 학년</h4>
+                <div class="tt-auto-option-mini-actions">
+                  <button type="button" data-action="all-grades">전체</button>
+                  <button type="button" data-action="clear-grades">해제</button>
+                </div>
+              </div>
+              <div class="tt-auto-grade-grid">
+                ${grades.map(g => `<label class="tt-auto-grade-chip"><input type="checkbox" value="${escapeHtml(g)}" ${(!defaults.selectedGrades?.length || defaults.selectedGrades.includes(g)) ? "checked" : ""}><span>${escapeHtml(gradeDisplay(g))}</span></label>`).join("")}
+              </div>
+              <p class="tt-auto-option-help">여러 학년에 걸친 그룹 수업은 선택 학년이 포함되면 그룹 전체가 함께 배치됩니다.</p>
+            </section>
+            <section class="tt-auto-option-section">
+              <h4>보호 옵션</h4>
+              <label class="tt-auto-check-line"><input type="checkbox" id="ttAutoKeepPinned" ${defaults.keepPinned !== false ? "checked" : ""}> <span>잠금/고정 카드 유지</span></label>
+              <label class="tt-auto-check-line"><input type="checkbox" id="ttAutoKeepManual" ${defaults.keepManual !== false ? "checked" : ""}> <span>수동 생성 카드의 현재 배치 유지</span></label>
+              <p class="tt-auto-option-help">현재 배치 유지 모드에서는 모든 기존 배치가 보호되므로 위 보호 옵션은 자동으로 적용됩니다.</p>
+            </section>
+            <section class="tt-auto-option-section">
+              <h4>배치 강도</h4>
+              <select id="ttAutoRunAttempts" class="tt-auto-select">
+                <option value="fast" ${defaults.runAttempts === "fast" ? "selected" : ""}>빠른 배치</option>
+                <option value="balanced" ${defaults.runAttempts !== "fast" && defaults.runAttempts !== "deep" ? "selected" : ""}>균형 배치</option>
+                <option value="deep" ${defaults.runAttempts === "deep" ? "selected" : ""}>정교한 배치</option>
+              </select>
+            </section>
+          </div>
+          <div class="tt-auto-options-foot">
+            <button type="button" class="tt-auto-options-cancel">취소</button>
+            <button type="button" class="tt-auto-options-start">자동 배치 시작</button>
+          </div>
+        </div>`;
+      document.body.appendChild(overlay);
+
+      const close = (value) => { overlay.remove(); resolve(value); };
+      overlay.querySelector(".tt-auto-options-close")?.addEventListener("click", () => close(null));
+      overlay.querySelector(".tt-auto-options-cancel")?.addEventListener("click", () => close(null));
+      overlay.addEventListener("click", e => { if (e.target === overlay) close(null); });
+      overlay.querySelector('[data-action="all-grades"]')?.addEventListener("click", () => {
+        overlay.querySelectorAll('.tt-auto-grade-chip input[type="checkbox"]').forEach(cb => { cb.checked = true; });
+      });
+      overlay.querySelector('[data-action="clear-grades"]')?.addEventListener("click", () => {
+        overlay.querySelectorAll('.tt-auto-grade-chip input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+      });
+      overlay.querySelector('.tt-auto-options-start')?.addEventListener("click", () => {
+        const selectedGrades = [...overlay.querySelectorAll('.tt-auto-grade-chip input[type="checkbox"]:checked')].map(cb => cb.value);
+        if (!selectedGrades.length) {
+          alert("자동 배치할 학년을 하나 이상 선택해 주세요.");
+          return;
+        }
+        const placementMode = overlay.querySelector('input[name="ttAutoPlacementMode"]:checked')?.value || "reset";
+        close({
+          placementMode,
+          selectedGrades,
+          keepPinned: overlay.querySelector("#ttAutoKeepPinned")?.checked !== false,
+          keepManual: overlay.querySelector("#ttAutoKeepManual")?.checked !== false,
+          runAttempts: overlay.querySelector("#ttAutoRunAttempts")?.value || "balanced"
+        });
+      });
+    });
+  }
+
   async function autoAssignAll() {
     if (!canEdit()) return;
     if (autoAssignRunning) { alert("자동 배치가 이미 진행 중입니다."); return; }
@@ -1132,15 +1332,28 @@ export function createAutoAssignAll(deps) {
     // appState.curriculum.gradeBoards가 아니라 시간표 사전작업에서 생성된
     // timetable.ttcards / timetable.ttcardGroups 스냅샷 기준으로 판단합니다.
     const rawItems = buildSchedulableItems();
-    const standalone = (rawItems.standalone || []).map(annotateRestrictedAutoItem);
-    const groupBlocks = (rawItems.groupBlocks || []).map(annotateRestrictedGroupBlock);
+    let standalone = (rawItems.standalone || []).map(annotateRestrictedAutoItem);
+    let groupBlocks = (rawItems.groupBlocks || []).map(annotateRestrictedGroupBlock);
+    const availableGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
+
+    if (!availableGrades.length || (!standalone.length && !groupBlocks.length)) {
+      alert("시간표 사전작업에서 생성된 과목 카드가 없습니다.\n먼저 시간표 사전작업에서 카드를 생성하거나, 로컬 모드 전환 시 온라인 데이터를 복사해 주세요.");
+      return;
+    }
+
+    const options = await openAutoAssignOptionsDialog(availableGrades, AUTO_ASSIGN_DEFAULT_OPTIONS);
+    if (!options) return;
+
+    ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
+    const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
+    const protectedEntries = computeProtectedEntries(entries(), options);
+    const willClearCount = Math.max(0, entries().length - protectedEntries.length);
     const restrictedStandaloneCount = standalone.filter(item => item.hasRestrictedTeacher).length;
     const restrictedGroupCount = groupBlocks.filter(block => block.hasRestrictedTeacher).length;
     const restrictedTeacherNames = [...new Set([
       ...standalone.flatMap(item => item.restrictedTeachers || []),
       ...groupBlocks.flatMap(block => block.restrictedTeachers || [])
     ])];
-    const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
     const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
       const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
       const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
@@ -1150,11 +1363,22 @@ export function createAutoAssignAll(deps) {
     const autoItemCount = autoTargetSlots;
 
     if (!autoItemCount || !activeGrades.length) {
-      alert("시간표 사전작업에서 생성된 과목 카드가 없습니다.\n먼저 시간표 사전작업에서 카드를 생성하거나, 로컬 모드 전환 시 온라인 데이터를 복사해 주세요.");
+      alert("선택한 학년에 자동 배치할 과목 카드가 없습니다.");
       return;
     }
 
-    if (!confirm(`전체 학년 시간표를 자동 배치합니다.\n대상: ${activeGrades.map(gradeDisplay).join(", ")}\n\n기존 시간표가 모두 초기화됩니다. 계속할까요?`)) return;
+    const modeText = options.placementMode === "keep" ? "현재 배치 유지 + 미배치만 배치" : "선택 범위 초기화 후 배치";
+    const confirmText = [
+      `자동 배치를 시작합니다.`,
+      `대상: ${activeGrades.map(gradeDisplay).join(", ")}`,
+      `방식: ${modeText}`,
+      options.placementMode === "reset" ? `초기화 대상 배치: ${willClearCount}개` : `보호되는 기존 배치: ${protectedEntries.length}개`,
+      `잠금 카드 유지: ${options.keepPinned !== false ? "예" : "아니오"}`,
+      `수동 카드 유지: ${options.keepManual !== false ? "예" : "아니오"}`,
+      "",
+      "계속할까요?"
+    ].join("\n");
+    if (!confirm(confirmText)) return;
 
     autoAssignRunning = true;
     setAutoAssignBusy(true);
@@ -1186,13 +1410,17 @@ export function createAutoAssignAll(deps) {
     captureTimetableUndo("자동 배정");
     addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`);
 
-    // Preserve pinned entries only
-    const pinnedEntries = entries().filter(e => e.pinned);
-    ttDomain().entries = [...pinnedEntries];
+    // Preserve entries according to the selected auto-assign options.
+    // - reset: selected range is cleared, but locked/manual/out-of-range entries can be protected.
+    // - keep: all current entries stay as protected entries and only missing cards are added.
+    const pinnedEntries = [...protectedEntries];
+    ttDomain().entries = [...protectedEntries];
     await updateProgress({
       percent: 6,
-      step: "고정 수업 보호",
-      detail: `고정된 수업 ${pinnedEntries.length}개를 유지하고 나머지 자동배치 대상을 준비합니다.`,
+      step: options.placementMode === "keep" ? "기존 배치 유지" : "보호 수업 유지",
+      detail: options.placementMode === "keep"
+        ? `기존 배치 ${protectedEntries.length}개를 유지하고 미배치 대상만 준비합니다.`
+        : `보호된 배치 ${protectedEntries.length}개를 유지하고 ${willClearCount}개 배치를 초기화했습니다.`,
       placed: 0,
       best: 0,
       failed: 0
@@ -1225,10 +1453,11 @@ export function createAutoAssignAll(deps) {
       pinnedByKey.set(key, pinnedEntries.filter(e => entryMatchesAutoItem(e, item)).length);
     });
 
+    const attemptPlan = attemptsForMode(options.runAttempts);
     const stages = [
-      { name:"strict", label:"교사 제약 포함", attempts:30, options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true } },
-      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:24, options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true } },
-      { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:10, options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true } },
+      { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true } },
+      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true } },
+      { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:attemptPlan[2], options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true } },
     ];
 
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
@@ -1532,7 +1761,15 @@ export function createAutoAssignAll(deps) {
       stageName: bestStage.name,
       stageLabel: bestStage.label,
       totalTarget: autoTargetSlots,
-      pinnedCount: pinnedEntries.length,
+      pinnedCount: pinnedEntries.filter(e => e.pinned).length,
+      protectedCount: protectedEntries.length,
+      clearedCount: willClearCount,
+      placementMode: options.placementMode,
+      placementModeLabel: modeText,
+      selectedGrades: activeGrades.map(gradeDisplay).join(", "),
+      runAttempts: options.runAttempts,
+      keepPinned: options.keepPinned !== false,
+      keepManual: options.keepManual !== false,
       placedCount: bestPlaced.length,
       forcedCount: forcedPlaced.length,
       failedCount: names.length,
@@ -1554,7 +1791,7 @@ export function createAutoAssignAll(deps) {
     addTimetableLog(
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · 방식: ${bestStage.label}`
+      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
     );
     if (missingRoomEntries.length) {
       addTimetableLog(
@@ -1571,7 +1808,9 @@ export function createAutoAssignAll(deps) {
       `<b>미배치</b> ${names.length}개`,
       `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
       `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
-      `<b>적용 방식</b> ${bestStage.label}`,
+      `<b>배치 방식</b> ${modeText}`,
+      `<b>탐색 방식</b> ${bestStage.label}`,
+      `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
       restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
