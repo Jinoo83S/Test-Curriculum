@@ -132,6 +132,17 @@ function getSectionLabelFromRoster(card) {
 }
 export const getTtCards    = () => appState.timetable.ttcards || [];
 export const getTtCardById = id  => getTtCards().find(c => c.id === id) || null;
+function isManualTtCard(card) {
+  return !!card?.isManual || /^ttc_manual_/i.test(clean(card?.id)) || /^manual_/i.test(clean(card?.templateId));
+}
+function getManualTtCards(cards = getTtCards()) {
+  return (cards || []).filter(isManualTtCard);
+}
+function mergeGeneratedAndManualCards(generated = [], previous = getTtCards()) {
+  const generatedIds = new Set((generated || []).map(c => c.id));
+  const manual = getManualTtCards(previous).filter(c => c?.id && !generatedIds.has(c.id));
+  return [...generated, ...manual];
+}
 const grps = () => appState.timetable.ttcardGroups || [];
 function ensureTtCardGroups() {
   if (!Array.isArray(appState.timetable.ttcardGroups)) appState.timetable.ttcardGroups = [];
@@ -357,8 +368,9 @@ export function refreshTtCardData() {
   // 원본 도메인이 아직 로딩되지 않은 상태에서는 절대 빈 배열을 저장하지 않습니다.
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
-  const nextCards = buildAllGeneratedTtCards(existing);
-  const guard = guardGeneratedCards(nextCards, before.length, "refresh");
+  const generatedCards = buildAllGeneratedTtCards(existing);
+  const nextCards = mergeGeneratedAndManualCards(generatedCards, before);
+  const guard = guardGeneratedCards(generatedCards, before.length, "refresh");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
 
   appState.timetable.ttcards = nextCards;
@@ -403,6 +415,24 @@ function shortId(id) {
 }
 
 function getTtCardSourceSnapshot(card) {
+  if (isManualTtCard(card)) {
+    return {
+      templateId: card?.templateId || card?.id || "",
+      title: "수동 생성 카드",
+      nameEn: card?.subjectEn || "",
+      teacher: card?.teacherName || arrText(card?.teachers),
+      language: "",
+      schoolLevel: "",
+      semesterMode: "수동",
+      gradeSection: `${gradeDisplay(card?.gradeKey)}${arrText(card?.classLabels) ? ` · ${arrText(card?.classLabels)}` : ""}`,
+      classCount: Array.isArray(card?.classLabels) ? card.classLabels.length : 0,
+      category: card?.category || "교과",
+      track: card?.track || "수동",
+      group: card?.group || "수동",
+      credits: clean(card?.credits),
+      compoundSummary: "",
+    };
+  }
   const tpl = getTemplateById(card?.templateId);
   const row = getCurriculumRowForCard(card?.gradeKey, card?.templateId);
   const classCount = getClassCount(card?.templateId);
@@ -507,9 +537,9 @@ function createGeneratedCardBox(card) {
     ["시수", String(card.credits ?? "")],
     ["복합", card.compoundPartId ? `${(card.compoundPartIndex ?? 0) + 1}/${card.compoundPartCount || "?"} · 전체 ${card.compoundTotalCredits || "?"}시수` : "-"],
     ["전체", card.isWholeGrade ? "전체 학년 점유" : "지정 반만 점유"],
-    ["상태", card.manualEdited ? "수동 수정됨" : "원본 기준"],
+    ["상태", isManualTtCard(card) ? "수동 생성됨" : (card.manualEdited ? "수동 수정됨" : "원본 기준")],
     ["생성", card.generatedAt ? card.generatedAt.replace("T", " ").slice(0, 16) : ""],
-  ], { bg: card.manualEdited ? "#fff7ed" : "#f8fafc", warning: card.manualEdited });
+  ], { bg: (card.manualEdited || isManualTtCard(card)) ? "#fff7ed" : "#f8fafc", warning: card.manualEdited || isManualTtCard(card) });
 }
 
 // ── TtCard helpers ────────────────────────────────────────────────
@@ -536,8 +566,9 @@ export function generateTtCards() {
   if (!canEdit()) return 0;
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
-  const cards = buildAllGeneratedTtCards(existing);
-  const guard = guardGeneratedCards(cards, before.length, "generate");
+  const generated = buildAllGeneratedTtCards(existing);
+  const cards = mergeGeneratedAndManualCards(generated, before);
+  const guard = guardGeneratedCards(generated, before.length, "generate");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
   appState.timetable.ttcards = cards;
   scheduleSave("timetable");
@@ -696,7 +727,7 @@ function renderTtCardTeacherOptionsPanel(container) {
       <th style="width:150px">담당 교사 수정</th>
       <th style="width:80px">시수</th>
       <th style="width:100px">그룹</th>
-      <th style="width:70px">복원</th>
+      <th style="width:70px">복원/삭제</th>
     </tr></thead>`;
     const tbody = document.createElement("tbody");
     gc.forEach(card => {
@@ -724,7 +755,12 @@ function renderTtCardTeacherOptionsPanel(container) {
       teacherInp.addEventListener("change", e => { updateTtCardField(card.id, "teacherName", e.target.value); updateTtCardField(card.id, "teachers", e.target.value); renderTtCardsView(container); });
       const creditInp = document.createElement("input"); creditInp.type="number"; creditInp.min="0"; creditInp.step="0.5"; creditInp.value = card.credits || 0; creditInp.disabled = !canEdit();
       creditInp.addEventListener("change", e => { updateTtCardField(card.id, "credits", e.target.value); renderTtCardsView(container); });
-      const resetBtn = makeBtn("원본", "secondary-btn compact-btn", () => {
+      const resetBtn = makeBtn(isManualTtCard(card) ? "삭제" : "원본", isManualTtCard(card) ? "danger-btn compact-btn" : "secondary-btn compact-btn", () => {
+        if (isManualTtCard(card)) {
+          deleteCard(card);
+          renderTtCardsView(container);
+          return;
+        }
         const fresh = buildPersistedTtCard({ id:card.id, templateId:card.templateId, gradeKey:card.gradeKey, sectionIdx:card.sectionIdx ?? 0, existing:null });
         Object.assign(card, fresh, { manualEdited:false }); scheduleSave("timetable"); renderTtCardsView(container);
       });

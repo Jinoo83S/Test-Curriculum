@@ -577,6 +577,11 @@ export function normalizeTtCard(item = {}) {
     fixedRoomId: clean(item.fixedRoomId) || null,
     generatedAt: clean(item.generatedAt),
     manualEdited: !!item.manualEdited,
+    // 커리큘럼 원본 없이 시간표 편집 화면에서 직접 만든 보정 카드입니다.
+    // 카드 새로고침/재생성 시 삭제되지 않도록 별도 표시합니다.
+    isManual: !!item.isManual,
+    manualCreatedAt: clean(item.manualCreatedAt),
+    manualNote: clean(item.manualNote),
 
     // 복합 과목 카드에서 파생된 실제 배치 카드 정보입니다.
     compoundParentTemplateId: clean(item.compoundParentTemplateId) || null,

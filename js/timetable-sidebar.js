@@ -100,9 +100,15 @@ export function createTimetableSidebarHandlers(deps) {
     });
     refreshBtn.disabled = !canEdit();
 
+    const manualBtn = makeBtn("➕ 수동 카드", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action", () => {
+      openManualTtCardDialog();
+    });
+    manualBtn.title = "커리큘럼에 없는 보정용 시간표 카드를 직접 생성합니다.";
+    manualBtn.disabled = !canEdit();
+
     const diagBtn = buildCreditDiagnosticButton(appState.timetable?.ttcards || []);
     const compareBtn = buildCurriculumTimetableDiagnosticButton();
-    actionGroup.append(loadBtn, refreshBtn, diagBtn, compareBtn);
+    actionGroup.append(loadBtn, refreshBtn, manualBtn, diagBtn, compareBtn);
 
     if (!modal) {
       const popupBtn = makeBtn("🗂 팝업", "his-ui-btn his-ui-btn-primary his-ui-btn-compact tt-toolbar-action tt-subject-popup-open", () => {
@@ -133,6 +139,234 @@ export function createTimetableSidebarHandlers(deps) {
 
     renderSubjectPanelLegacy(panel);
     if (modal) applySubjectCardSearch(panel);
+  }
+
+  function getManualClassRowsForGrade(gradeKey) {
+    return (appState.classes?.classes || [])
+      .filter(cls => String(cls.grade || "").trim() === gradeKey)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko"));
+  }
+
+  function manualClassLabel(gradeKey, sectionName) {
+    const g = gradeDisplay(gradeKey);
+    const sec = String(sectionName || "").trim().toUpperCase();
+    return g && sec ? `${g}${sec}` : "";
+  }
+
+  function manualClassKeyFromLabel(label, fallbackGradeKey = "") {
+    const compact = String(label || "").replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    const m = compact.match(/^(\d{1,2})(.+)$/);
+    if (m) return `${Number(m[1])}:${m[2]}`;
+    const g = gradeDisplay(fallbackGradeKey);
+    return g && compact ? `${g}:${compact}` : "";
+  }
+
+  function splitManualTeacherNames(value) {
+    return unique(String(value || "").split(/[,，/+·&]|\band\b/gi).map(v => v.trim()).filter(Boolean));
+  }
+
+  function selectedManualAudience(gradeKey, selectedLabels = []) {
+    const labels = unique((selectedLabels || []).map(v => String(v || "").trim()).filter(Boolean));
+    const classKeys = unique(labels.map(label => manualClassKeyFromLabel(label, gradeKey)).filter(Boolean));
+    const studentKeys = [];
+    const selectedKeys = new Set(classKeys);
+    (appState.classes?.classes || []).forEach(cls => {
+      if (String(cls.grade || "").trim() !== gradeKey) return;
+      const key = manualClassKeyFromLabel(manualClassLabel(gradeKey, cls.name), gradeKey);
+      if (!selectedKeys.has(key)) return;
+      (cls.students || []).forEach(stu => {
+        const sid = stu?.id || stu?.studentId || stu?.name || "";
+        if (sid) studentKeys.push(`${cls.id || key}:${sid}`);
+      });
+    });
+    return { classLabels: labels, classKeys, studentKeys: unique(studentKeys) };
+  }
+
+  function openManualTtCardDialog() {
+    if (!canEdit()) return;
+    const overlay = document.createElement("div");
+    overlay.className = "tt-manual-card-modal";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:2700;background:rgba(15,23,42,.42);display:flex;align-items:center;justify-content:center;padding:20px;";
+
+    const dialog = document.createElement("div");
+    dialog.className = "tt-manual-card-dialog";
+    dialog.style.cssText = "width:min(720px,94vw);max-height:88vh;background:#fff;border-radius:16px;box-shadow:0 24px 70px rgba(15,23,42,.30);border:1px solid #dbe5f2;display:flex;flex-direction:column;overflow:hidden;";
+
+    const header = document.createElement("div");
+    header.style.cssText = "display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc;";
+    header.innerHTML = `<div><div style="font-size:17px;font-weight:900;color:#0f172a;">수동 시간표 카드 생성</div><div style="margin-top:3px;font-size:12px;color:#64748b;line-height:1.45;">커리큘럼에 없는 보정용 카드를 직접 만들 수 있습니다. 생성된 카드는 카드 새로고침/재생성 시에도 유지됩니다.</div></div>`;
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "tt-subject-card-dialog-close";
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", () => overlay.remove());
+    header.appendChild(closeBtn);
+
+    const body = document.createElement("div");
+    body.style.cssText = "padding:16px 18px;overflow:auto;display:grid;gap:12px;";
+
+    const field = (labelText, el, hint = "") => {
+      const wrap = document.createElement("label");
+      wrap.style.cssText = "display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:900;color:#334155;";
+      const label = document.createElement("span");
+      label.textContent = labelText;
+      wrap.append(label, el);
+      if (hint) {
+        const h = document.createElement("span");
+        h.textContent = hint;
+        h.style.cssText = "font-size:11px;font-weight:700;color:#64748b;line-height:1.35;";
+        wrap.appendChild(h);
+      }
+      return wrap;
+    };
+    const inputStyle = "height:34px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;background:#fff;font-size:13px;font-weight:800;color:#0f172a;";
+
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.placeholder = "예: 12학년 보정 수업";
+    titleInput.style.cssText = inputStyle;
+
+    const row1 = document.createElement("div");
+    row1.style.cssText = "display:grid;grid-template-columns:1.4fr .8fr .8fr;gap:10px;";
+    const gradeSel = document.createElement("select");
+    gradeSel.style.cssText = inputStyle;
+    GRADE_KEYS.forEach(g => {
+      const opt = document.createElement("option");
+      opt.value = g;
+      opt.textContent = `${gradeDisplay(g)}학년`;
+      if (g === "12학년") opt.selected = true;
+      gradeSel.appendChild(opt);
+    });
+    const creditInput = document.createElement("input");
+    creditInput.type = "number";
+    creditInput.min = "0.5";
+    creditInput.step = "0.5";
+    creditInput.value = "2";
+    creditInput.style.cssText = inputStyle;
+    const categorySel = document.createElement("select");
+    categorySel.style.cssText = inputStyle;
+    ["교과", "창체"].forEach(v => {
+      const opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      categorySel.appendChild(opt);
+    });
+    row1.append(field("학년", gradeSel), field("시수", creditInput), field("분류", categorySel));
+
+    const teacherInput = document.createElement("input");
+    teacherInput.type = "text";
+    teacherInput.placeholder = "예: 담임교사 또는 담당교사";
+    teacherInput.style.cssText = inputStyle;
+
+    const groupInput = document.createElement("input");
+    groupInput.type = "text";
+    groupInput.placeholder = "예: 수동보정, 선택7, 자율 등";
+    groupInput.value = "수동보정";
+    groupInput.style.cssText = inputStyle;
+
+    const wholeWrap = document.createElement("label");
+    wholeWrap.style.cssText = "display:flex;align-items:center;gap:8px;font-size:12px;font-weight:900;color:#334155;";
+    const wholeChk = document.createElement("input");
+    wholeChk.type = "checkbox";
+    wholeChk.checked = true;
+    wholeWrap.append(wholeChk, document.createTextNode("선택한 학년 전체반을 동시에 점유하는 카드로 생성"));
+
+    const classBox = document.createElement("div");
+    classBox.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;padding:10px;border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;";
+
+    const renderClassChecks = () => {
+      classBox.innerHTML = "";
+      const rows = getManualClassRowsForGrade(gradeSel.value);
+      if (!rows.length) {
+        const empty = document.createElement("div");
+        empty.style.cssText = "font-size:12px;color:#64748b;font-weight:800;";
+        empty.textContent = "해당 학년의 반 정보가 없습니다.";
+        classBox.appendChild(empty);
+        return;
+      }
+      rows.forEach(cls => {
+        const labelText = manualClassLabel(gradeSel.value, cls.name);
+        const chip = document.createElement("label");
+        chip.style.cssText = "display:flex;align-items:center;gap:5px;padding:6px 9px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;font-size:12px;font-weight:900;color:#0f172a;";
+        const chk = document.createElement("input");
+        chk.type = "checkbox";
+        chk.value = labelText;
+        chk.checked = true;
+        chip.append(chk, document.createTextNode(labelText));
+        classBox.appendChild(chip);
+      });
+    };
+    renderClassChecks();
+    gradeSel.addEventListener("change", renderClassChecks);
+
+    const note = document.createElement("div");
+    note.style.cssText = "padding:10px 12px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.45;font-weight:800;";
+    note.textContent = "예: 12학년이 2시수 부족하면 제목과 시수 2를 입력하고 12A·12B·12C를 선택해 생성한 뒤, 하단 카드에서 드래그하여 시간표에 배치하세요.";
+
+    body.append(
+      field("카드명", titleInput),
+      row1,
+      field("담당 교사", teacherInput, "비워두면 교사 충돌 검사에서는 교사 없음 카드로 처리됩니다."),
+      field("구분/그룹 표시", groupInput),
+      wholeWrap,
+      field("대상 반", classBox, "필요한 반만 체크할 수 있습니다. 전체반 수업은 모든 반을 선택하세요."),
+      note
+    );
+
+    const footer = document.createElement("div");
+    footer.style.cssText = "display:flex;justify-content:flex-end;gap:8px;padding:13px 18px;border-top:1px solid #e2e8f0;background:#f8fafc;";
+    const cancelBtn = makeBtn("취소", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => overlay.remove());
+    const createBtn = makeBtn("생성", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
+      const title = clean(titleInput.value);
+      const credits = parseFloat(creditInput.value);
+      if (!title) { alert("카드명을 입력해 주세요."); titleInput.focus(); return; }
+      if (!Number.isFinite(credits) || credits <= 0) { alert("시수를 0보다 크게 입력해 주세요."); creditInput.focus(); return; }
+      const selected = [...classBox.querySelectorAll('input[type="checkbox"]:checked')].map(chk => chk.value).filter(Boolean);
+      if (!selected.length) { alert("대상 반을 하나 이상 선택해 주세요."); return; }
+
+      const id = `ttc_manual_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const audience = selectedManualAudience(gradeSel.value, selected);
+      const teachers = splitManualTeacherNames(teacherInput.value);
+      const card = {
+        id,
+        templateId: `manual_${id}`,
+        gradeKey: gradeSel.value,
+        sectionIdx: 0,
+        label: title,
+        subject: title,
+        subjectEn: "",
+        teacherName: teachers.join(", "),
+        teachers,
+        credits,
+        category: categorySel.value || "교과",
+        track: "수동",
+        group: clean(groupInput.value) || "수동보정",
+        classKeys: audience.classKeys,
+        classLabels: audience.classLabels,
+        studentKeys: audience.studentKeys,
+        isWholeGrade: !!wholeChk.checked && audience.classLabels.length === getManualClassRowsForGrade(gradeSel.value).length,
+        roomRule: "auto",
+        fixedRoomId: null,
+        generatedAt: new Date().toISOString(),
+        manualEdited: true,
+        isManual: true,
+        manualCreatedAt: new Date().toISOString(),
+        manualNote: "시간표 편집 화면에서 수동 생성"
+      };
+      if (!Array.isArray(appState.timetable.ttcards)) appState.timetable.ttcards = [];
+      appState.timetable.ttcards.push(card);
+      scheduleSave("timetable");
+      overlay.remove();
+      renderAll();
+      refreshSubjectViews();
+    });
+    footer.append(cancelBtn, createBtn);
+
+    dialog.append(header, body, footer);
+    overlay.appendChild(dialog);
+    overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") overlay.remove(); });
+    document.body.appendChild(overlay);
+    titleInput.focus();
   }
 
   function buildSubjectCardSearchControl(panel) {

@@ -441,32 +441,101 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
 
   const cardClassPairs = (card) => getTtCardClassInfos(card).map(info => ({ info, key: classKey(info) })).filter(x => x.key);
 
-  (groups || []).forEach(group => {
-    const cards = getGroupCards(group);
-    if (!cards.length) return;
-    cards.forEach(c => groupedIds.add(c.id));
+  const compoundCreditKey = (card) => {
+    if (card?.compoundParentTemplateId) {
+      return `compound:${card.compoundParentTemplateId}:${card.gradeKey || ""}:${card.sectionIdx ?? 0}`;
+    }
+    return `card:${card?.id || ""}`;
+  };
 
-    // 동시배정 그룹은 구성 과목의 시수를 합산하지 않습니다.
-    // 같은 학급에 여러 구성 과목이 걸려 있으면 그 시간에는 동시에 1칸만 필요하므로
-    // 학급별 contribution은 최대 시수로 계산합니다.
+  const getCardsForGroupCreditOptions = (group) => {
+    const excluded = new Set(group?.excludedCardIds || []);
+    const unitCardIds = new Set((group?.units || []).flatMap(u => u.ttcardIds || []));
+    const options = [];
+
+    (group?.units || []).forEach(unit => {
+      const cards = (unit.ttcardIds || [])
+        .filter(id => id && !excluded.has(id))
+        .map(id => getTtCardById(id))
+        .filter(Boolean);
+      if (cards.length) options.push({ kind: "unit", unit, cards });
+    });
+
+    const poolBuckets = new Map();
+    (group?.poolCardIds || []).forEach(id => {
+      if (!id || excluded.has(id) || unitCardIds.has(id)) return;
+      const card = getTtCardById(id);
+      if (!card) return;
+      const key = card.compoundParentTemplateId
+        ? `compound:${card.compoundParentTemplateId}:${card.gradeKey || ""}:${card.sectionIdx ?? 0}`
+        : `card:${card.id}`;
+      if (!poolBuckets.has(key)) poolBuckets.set(key, []);
+      poolBuckets.get(key).push(card);
+    });
+    poolBuckets.forEach(cards => options.push({ kind: "pool-card", unit: null, cards }));
+
+    return options;
+  };
+
+  const optionCreditsByClass = (option) => {
     const byClass = new Map();
-    cards.forEach(card => {
+    (option.cards || []).forEach(card => {
       const credits = getCreditsForTtCard(card);
       cardClassPairs(card).forEach(({ key, info }) => {
-        const prev = byClass.get(key);
-        if (!prev || credits > prev.credits) {
-          byClass.set(key, { key, info, credits, card });
+        if (!byClass.has(key)) byClass.set(key, { key, info, buckets: new Map(), titles: [] });
+        const row = byClass.get(key);
+        const cKey = compoundCreditKey(card);
+        const bucket = row.buckets.get(cKey) || { credits: 0, cards: [] };
+        bucket.credits += credits;
+        bucket.cards.push(card);
+        row.buckets.set(cKey, bucket);
+        const title = getTtCardTitleSnapshot(card) || card.subject || card.label;
+        if (title) row.titles.push(title);
+      });
+    });
+
+    const out = [];
+    byClass.forEach(row => {
+      // 같은 복합과목의 구성 카드(예: 미적분 2 + 심화물리 2)는 합산합니다.
+      // 그 외 병렬 선택과목은 같은 시간대에서 한 학급을 한 번만 점유하므로 최대값으로 봅니다.
+      const bucketValues = [...row.buckets.values()].map(b => Number(b.credits) || 0).filter(v => v > 0);
+      const credits = bucketValues.length ? Math.max(...bucketValues) : 0;
+      out.push({
+        key: row.key,
+        info: row.info,
+        credits,
+        title: uniqueStrings(row.titles).join(" + ")
+      });
+    });
+    return out;
+  };
+
+  (groups || []).forEach(group => {
+    const options = getCardsForGroupCreditOptions(group);
+    const allGroupCards = options.flatMap(o => o.cards || []);
+    if (!allGroupCards.length) return;
+    allGroupCards.forEach(c => groupedIds.add(c.id));
+
+    // 그룹은 같은 시간대에 움직이는 선택/동시수업 단위입니다.
+    // 각 학급에는 그룹 안 옵션 중 실제 점유 시수가 가장 큰 값만 더합니다.
+    // 단, 복합과목의 구성 카드들은 compoundParentTemplateId 기준으로 먼저 합산합니다.
+    const byClass = new Map();
+    options.forEach(option => {
+      optionCreditsByClass(option).forEach(row => {
+        const prev = byClass.get(row.key);
+        if (!prev || row.credits > prev.credits) {
+          byClass.set(row.key, { ...row, option });
         }
       });
     });
 
-    byClass.forEach(({ key, info, credits, card }) => {
+    byClass.forEach(({ key, info, credits, title, option }) => {
       addContribution(key, info, credits, {
         kind: "group",
         groupId: group.id,
         groupName: group.name || "그룹",
-        cardId: card.id,
-        title: getTtCardTitleSnapshot(card) || card.subject || card.label || "그룹 카드"
+        unitId: option?.unit?.id || null,
+        title: title || group.name || "그룹 카드"
       });
     });
   });
@@ -498,12 +567,15 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
       const values = rows.map(r => r.credits);
       const min = Math.min(...values);
       const max = Math.max(...values);
-      return { grade, rows, min, max, value: max, isBalanced: min === max };
+      const total = values.reduce((sum, value) => sum + (Number(value) || 0), 0);
+      return { grade, rows, min, max, value: max, total, isBalanced: min === max };
     });
 
   result.classes = classes;
   result.gradeSummaries = gradeSummaries;
-  result.total = gradeSummaries.reduce((sum, g) => sum + (Number(g.value) || 0), 0);
+  // 전체 합계는 학년 대표값이 아니라 실제 학급별 점유 시수의 총합입니다.
+  // 예: 15개 반 × 35시수 = 525
+  result.total = classes.reduce((sum, row) => sum + (Number(row.credits) || 0), 0);
   result.diagnostics = buildClassCreditDiagnostics(classes, gradeSummaries);
   return result;
 }
