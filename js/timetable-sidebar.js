@@ -1158,6 +1158,15 @@ export function createTimetableSidebarHandlers(deps) {
         actualCardCount: 1,
         studentCount: (card.studentKeys || []).length,
         note: "시간표카드는 있으나 현재 커리큘럼 행과 직접 연결되지 않습니다.",
+        reason: "커리큘럼 보드의 해당 학년/과목카드 연결에서 찾지 못한 고아 카드입니다.",
+        subjectClassCount: 0,
+        actualClassCount: 1,
+        coveredClassCount: getDiagnosticCoveredClassLabels([card]).length || 1,
+        expectedCardCount: 0,
+        expectedClassLabels: [],
+        coveredClassLabels: getDiagnosticCoveredClassLabels([card]),
+        cardSectionLabels: getDiagnosticCardSectionLabels([card]),
+        targetClassLabelText: formatDiagnosticLabels(getDiagnosticCoveredClassLabels([card])),
         actualCards: [card],
       };
       issues.push(item);
@@ -1200,12 +1209,20 @@ export function createTimetableSidebarHandlers(deps) {
     const isZeroCreative = category === "창체" && rawCredits <= 0;
     const isCreative = category === "창체";
     const isCompound = !!template?.isCompound && Array.isArray(template?.compoundParts) && template.compoundParts.length > 0;
+    const compoundPartCount = isCompound ? Math.max(1, template.compoundParts.length) : 1;
     const rosterCount = getDiagnosticRosterCountForGrade(rosters[template?.id] || [], gradeKey);
     const meta = rosterMeta?.[template?.id] || {};
     const missingExcluded = !!meta.missingExcluded;
-    const subjectClassCount = getDiagnosticSubjectClassCount(meta, actualCards, gradeKey);
+    const isWholeGrade = isCreative || actualCards.some(card => !!card.isWholeGrade);
+
+    // 과목 반수는 "실제 수업 섹션 수" 기준으로 계산합니다.
+    // 전체학년 카드가 7A/7B를 모두 덮더라도 카드는 1개가 정상일 수 있으므로,
+    // 대상 학급 수와 카드 생성 반수를 분리해서 진단합니다.
+    const subjectClassCount = getDiagnosticSubjectClassCount(meta, actualCards, gradeKey, isWholeGrade);
     const actualClassCount = getDiagnosticActualClassCount(actualCards);
-    const compoundPartCount = isCompound ? Math.max(1, template.compoundParts.length) : 1;
+    const coveredClassLabels = getDiagnosticCoveredClassLabels(actualCards);
+    const expectedClassLabels = getDiagnosticExpectedClassLabels({ gradeKey, subjectClassCount, isWholeGrade, actualCards });
+    const cardSectionLabels = getDiagnosticCardSectionLabels(actualCards);
     const expectedCardCount = isZeroCreative ? 0 : Math.max(1, subjectClassCount || 1) * compoundPartCount;
     const actualCreditTotal = actualCards.reduce((sum, card) => sum + (Number(card.credits) || 0), 0);
     const actualCardCount = actualCards.length;
@@ -1217,6 +1234,7 @@ export function createTimetableSidebarHandlers(deps) {
     let status = "normal";
     let note = "정상";
     let transformNote = "";
+    let reason = "";
 
     if (!template) {
       level = "error"; status = "missing-template"; note = "연결된 과목카드 템플릿을 찾지 못했습니다.";
@@ -1224,6 +1242,7 @@ export function createTimetableSidebarHandlers(deps) {
       level = actualCardCount ? "warn" : "info";
       status = actualCardCount ? "excluded-but-card-exists" : "excluded";
       note = actualCardCount ? "0시간 창체인데 시간표카드가 존재합니다." : "0시간 창체로 시간표카드 생성 제외됨.";
+      reason = actualCardCount ? getDiagnosticCardMismatchReason({ actualCards, expectedCardCount, compoundParts: template?.compoundParts || [], subjectClassCount, isCompound }) : "생성 제외 조건이 정상 적용되었습니다.";
       transformNote = "창체 0시간 → 시간표 제외";
     } else if (isCompound) {
       const partCredits = template.compoundParts.reduce((sum, part) => sum + (Number(part.credits) || 0), 0);
@@ -1237,18 +1256,24 @@ export function createTimetableSidebarHandlers(deps) {
       } else {
         level = "info"; status = "compound"; note = `복합과목 분할 생성 정상 · 과목 반수 ${subjectClassCount || actualClassCount || 1}`;
       }
+      reason = getDiagnosticCardMismatchReason({ actualCards, expectedCardCount, compoundParts: template?.compoundParts || [], subjectClassCount, isCompound });
       transformNote = `복합과목 ${formatDiagnosticNumber(rawCredits)}시수 → ${template.compoundParts.map(p => `${p.nameKo || p.nameEn || "구성"} ${formatDiagnosticNumber(Number(p.credits)||0)}`).join(" + ")}`;
     } else if (!actualCardCount) {
       level = "error"; status = "missing-ttcard"; note = "커리큘럼에는 있으나 시간표카드가 없습니다.";
+      reason = getDiagnosticCardMismatchReason({ actualCards, expectedCardCount, compoundParts: [], subjectClassCount, isCompound });
     } else if (subjectClassCount && actualCardCount !== expectedCardCount) {
       level = "warn"; status = "class-card-mismatch"; note = `과목 반수와 시간표카드 수가 맞지 않습니다 · 과목 반수 ${subjectClassCount}, 기대 카드 ${expectedCardCount}개, 실제 카드 ${actualCardCount}개`;
+      reason = getDiagnosticCardMismatchReason({ actualCards, expectedCardCount, compoundParts: [], subjectClassCount, isCompound });
     } else if (isCreative && actualCards.some(card => (Number(card.credits) || 0) !== 1)) {
       level = "warn"; status = "creative-credit"; note = "창체 시간표카드는 1시수여야 합니다.";
+      reason = "창체 카드는 커리큘럼 입력 시간과 관계없이 시간표에서는 1시수 카드로 변환되어야 합니다.";
       transformNote = `창체 ${formatDiagnosticNumber(rawCredits)}시간 → 시간표 1시수`;
     } else if (Math.max(...actualCards.map(card => Number(card.credits) || 0), 0) !== expectedCredits && !isCreative) {
       level = "warn"; status = "credit-mismatch"; note = `시수 확인 필요 · 커리큘럼 ${formatDiagnosticNumber(rawCredits)}, 시간표카드 ${actualCards.map(c => formatDiagnosticNumber(Number(c.credits)||0)).join("/")}`;
+      reason = "시간표카드의 시수 스냅샷이 커리큘럼 원본 시수와 다릅니다. 카드 데이터 갱신 여부를 확인하세요.";
     } else if (isCreative) {
       level = "info"; status = "creative-transform"; note = "창체 시간→시간표 1시수 변환 정상";
+      reason = `전체학년/창체 대상 반: ${coveredClassLabels.join(", ") || expectedClassLabels.join(", ") || "-"}`;
       transformNote = `창체 ${formatDiagnosticNumber(rawCredits)}시간 → 시간표 1시수`;
     }
 
@@ -1256,6 +1281,23 @@ export function createTimetableSidebarHandlers(deps) {
       level = "info";
       status = "missing-excluded-with-students";
       note = "미지정 제외 표시가 있으나 실제 수강생이 있어 시간표카드에 포함됩니다.";
+      reason = "수강명단에 학생이 남아 있어 생성 제외가 아니라 정상 카드 생성 대상으로 판단했습니다.";
+    }
+
+    const structuralReason = getDiagnosticCardMismatchReason({ actualCards, expectedCardCount, compoundParts: template?.compoundParts || [], subjectClassCount, isCompound });
+    if (!reason && level === "ok" && structuralReason !== "카드 수와 섹션 구성이 기대값과 일치합니다.") {
+      level = "warn";
+      status = "section-mismatch";
+      note = "카드 반 구성을 확인해야 합니다.";
+      reason = structuralReason;
+    }
+
+    if (!reason) {
+      reason = structuralReason;
+      if (reason === "카드 수와 섹션 구성이 기대값과 일치합니다.") {
+        const labelText = coveredClassLabels.join(", ") || expectedClassLabels.join(", ");
+        reason = labelText ? `대상 반 ${labelText} 기준으로 일치합니다.` : reason;
+      }
     }
 
     const groupHitCount = groups.filter(g => (g.poolCardIds || []).some(id => actualCards.some(c => c.id === id)) || (g.excludedCardIds || []).some(id => actualCards.some(c => c.id === id))).length;
@@ -1273,9 +1315,15 @@ export function createTimetableSidebarHandlers(deps) {
       classCountMeta: meta?.classCount || "",
       subjectClassCount,
       actualClassCount,
+      coveredClassCount: coveredClassLabels.length,
+      expectedClassLabels,
+      coveredClassLabels,
+      cardSectionLabels,
+      targetClassLabelText: formatDiagnosticLabels(coveredClassLabels.length ? coveredClassLabels : expectedClassLabels),
       expectedCardCount,
       expectedCardMode,
       note,
+      reason,
       transformNote,
       groupHitCount,
       assignedCount,
@@ -1336,9 +1384,11 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildCurriculumIssueTable(items) {
     if (!items.length) return makeCurriculumDiagEmpty("확인 필요한 항목이 없습니다.");
-    return buildCurriculumDiagTable(["상태", "학년", "구분", "과목", "반수", "커리큘럼", "카드", "학생", "내용"], items.map(item => [
+    return buildCurriculumDiagTable(["상태", "학년", "구분", "과목", "반수", "대상 반", "커리큘럼", "카드", "학생", "원인/내용"], items.map(item => [
       levelBadgeHtml(item.level), item.gradeKey || "-", [item.track, item.group].filter(Boolean).join(" / ") || "-", item.title,
-      formatDiagnosticClassCountCell(item), formatDiagnosticNumber(item.curriculumCredits), `${item.actualCardCount || 0}/${item.expectedCardCount || 0}개 · ${formatDiagnosticNumber(item.actualCredits || 0)}시수`, item.studentCount ?? item.rosterCount ?? "-", item.note || ""
+      formatDiagnosticClassCountCell(item), item.targetClassLabelText || formatDiagnosticLabels(item.coveredClassLabels || item.expectedClassLabels || []),
+      formatDiagnosticNumber(item.curriculumCredits), `${item.actualCardCount || 0}/${item.expectedCardCount || 0}개 · ${formatDiagnosticNumber(item.actualCredits || 0)}시수`, item.studentCount ?? item.rosterCount ?? "-",
+      [item.reason, item.note].filter(Boolean).join("\n")
     ]), true);
   }
 
@@ -1353,10 +1403,12 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildCurriculumFullTable(items) {
     if (!items.length) return makeCurriculumDiagEmpty("진단할 커리큘럼 행이 없습니다.");
-    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "과목 반수", "실제 반수", "원본", "시간표", "카드", "학생", "메모"], items.map(item => [
+    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "대상 반", "카드 반", "과목 반수", "실제 섹션", "대상 학급", "원본", "시간표", "카드", "학생", "메모/원인"], items.map(item => [
       levelBadgeHtml(item.level), item.gradeKey, item.category, item.track, item.group, item.title,
-      item.subjectClassCount || "-", item.actualClassCount || "-",
-      formatDiagnosticNumber(item.curriculumCredits), formatDiagnosticNumber(item.expectedCredits), `${item.actualCardCount || 0}/${item.expectedCardCount || 0}`, item.studentCount, item.note
+      item.targetClassLabelText || formatDiagnosticLabels(item.coveredClassLabels || item.expectedClassLabels || []),
+      (item.cardSectionLabels || []).join(", ") || "-",
+      item.subjectClassCount || "-", item.actualClassCount || "-", item.coveredClassCount || "-",
+      formatDiagnosticNumber(item.curriculumCredits), formatDiagnosticNumber(item.expectedCredits), `${item.actualCardCount || 0}/${item.expectedCardCount || 0}`, item.studentCount, [item.note, item.reason].filter(Boolean).join("\n")
     ]), true);
   }
 
@@ -1364,7 +1416,7 @@ export function createTimetableSidebarHandlers(deps) {
     const wrap = document.createElement("div");
     wrap.style.cssText = "overflow:auto;max-width:100%;";
     const table = document.createElement("table");
-    table.style.cssText = "width:100%;border-collapse:collapse;font-size:12px;min-width:760px;";
+    table.style.cssText = "width:100%;border-collapse:collapse;font-size:12px;min-width:1080px;";
     const thead = document.createElement("thead");
     const tr = document.createElement("tr");
     headers.forEach(h => {
@@ -1379,7 +1431,7 @@ export function createTimetableSidebarHandlers(deps) {
       const tr = document.createElement("tr");
       row.forEach(cell => {
         const td = document.createElement("td");
-        td.style.cssText = "border:1px solid #e2e8f0;padding:7px 8px;vertical-align:top;line-height:1.35;";
+        td.style.cssText = "border:1px solid #e2e8f0;padding:7px 8px;vertical-align:top;line-height:1.35;white-space:pre-line;";
         if (htmlCells && typeof cell === "string" && cell.startsWith("<")) td.innerHTML = cell;
         else td.textContent = String(cell ?? "");
         tr.appendChild(td);
@@ -1427,7 +1479,7 @@ export function createTimetableSidebarHandlers(deps) {
     lines.push("");
     lines.push("[확인 필요]");
     if (!model.issues.length) lines.push("- 없음");
-    model.issues.forEach(item => lines.push(`- [${item.level}] ${item.gradeKey} / ${item.track || ""} / ${item.group || ""} / ${item.title}: ${item.note} (과목 반수 ${item.subjectClassCount || "-"}, 실제 반수 ${item.actualClassCount || "-"}, 카드 ${item.actualCardCount || 0}/${item.expectedCardCount || 0})`));
+    model.issues.forEach(item => lines.push(`- [${item.level}] ${item.gradeKey} / ${item.track || ""} / ${item.group || ""} / ${item.title}: ${item.note} (대상 반 ${item.targetClassLabelText || "-"}, 과목 반수 ${item.subjectClassCount || "-"}, 실제 섹션 ${item.actualClassCount || "-"}, 대상 학급 ${item.coveredClassCount || "-"}, 카드 ${item.actualCardCount || 0}/${item.expectedCardCount || 0}, 원인 ${item.reason || "-"})`));
     lines.push("");
     lines.push("[의도된 변환/예외]");
     const transforms = model.transforms.filter(item => item.transformNote || item.level === "info");
@@ -1436,37 +1488,124 @@ export function createTimetableSidebarHandlers(deps) {
     return lines.join("\n");
   }
 
-  function getDiagnosticSubjectClassCount(meta, actualCards = [], gradeKey = "") {
+  function getDiagnosticSubjectClassCount(meta, actualCards = [], gradeKey = "", isWholeGrade = false) {
     const fromMeta = Number(meta?.classCount);
     if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
-    const actual = getDiagnosticActualClassCount(actualCards);
-    if (actual > 0) return actual;
-    const gradeClassCount = getDiagnosticClasses().filter(cls => cls.grade === gradeKey || cls.grade === gradeDisplay(gradeKey)).length;
-    return gradeClassCount || 0;
+
+    const sectionCount = getDiagnosticActualClassCount(actualCards);
+    if (sectionCount > 0) return sectionCount;
+
+    // 전체학년/창체는 대상 학급이 여러 개여도 시간표카드는 보통 1개가 정상입니다.
+    if (isWholeGrade) return 1;
+
+    // 카드 생성 로직도 classCount가 비어 있으면 최소 1개 섹션을 만듭니다.
+    return 1;
   }
 
   function getDiagnosticActualClassCount(actualCards = []) {
+    return getDiagnosticSectionKeys(actualCards).length;
+  }
+
+  function getDiagnosticSectionKeys(actualCards = []) {
     const keys = new Set();
     (actualCards || []).forEach(card => {
       if (card.sectionIdx !== undefined && card.sectionIdx !== null) {
-        keys.add(`section:${card.gradeKey || ""}:${card.sectionIdx}`);
+        keys.add(String(card.sectionIdx));
         return;
       }
-      const classKeys = Array.isArray(card.classKeys) ? card.classKeys.filter(Boolean) : [];
-      if (classKeys.length) {
-        keys.add(`classes:${classKeys.slice().sort().join("|")}`);
-        return;
-      }
-      const classLabels = Array.isArray(card.classLabels) ? card.classLabels.filter(Boolean) : [];
-      if (classLabels.length) keys.add(`labels:${classLabels.slice().sort().join("|")}`);
+      const id = card.id || card.ttcardId || "";
+      const fallback = id.match(/::sec(\d+)/)?.[1] || id.match(/:(\d+)(?::|$)/)?.[1];
+      if (fallback !== undefined && fallback !== null && fallback !== "") keys.add(String(fallback));
     });
-    return keys.size;
+    return [...keys].sort((a, b) => (Number(a) || 0) - (Number(b) || 0));
+  }
+
+  function getDiagnosticCardSectionLabels(actualCards = []) {
+    return getDiagnosticSectionKeys(actualCards).map(sec => sectionLabel(Number(sec) || 0));
+  }
+
+  function getDiagnosticCoveredClassLabels(actualCards = []) {
+    const labels = [];
+    (actualCards || []).forEach(card => {
+      const cardLabels = getClassLabelsForTtCard(card);
+      if (cardLabels.length) labels.push(...cardLabels);
+      else labels.push(formatFullClassLabel(card.gradeKey, sectionLabel(card.sectionIdx ?? 0)));
+    });
+    return unique(labels.map(normalizeClassLabel).filter(Boolean)).sort(compareClassLabels);
+  }
+
+  function getDiagnosticExpectedClassLabels({ gradeKey = "", subjectClassCount = 0, isWholeGrade = false, actualCards = [] } = {}) {
+    const actualLabels = getDiagnosticCoveredClassLabels(actualCards);
+    if (actualLabels.length) return actualLabels;
+    const gradeLabels = getDiagnosticGradeClassLabels(gradeKey);
+    if (isWholeGrade && gradeLabels.length) return gradeLabels;
+    const count = Math.max(1, Number(subjectClassCount) || 1);
+    return Array.from({ length: count }, (_, idx) => formatFullClassLabel(gradeKey, sectionLabel(idx))).filter(Boolean);
+  }
+
+  function getDiagnosticGradeClassLabels(gradeKey = "") {
+    const labels = getDiagnosticClasses()
+      .filter(cls => cls.grade === gradeKey || cls.grade === gradeDisplay(gradeKey))
+      .map((cls, idx) => formatFullClassLabel(gradeKey, cls.name || sectionLabel(idx)))
+      .filter(Boolean);
+    return unique(labels.map(normalizeClassLabel).filter(Boolean)).sort(compareClassLabels);
+  }
+
+  function getDiagnosticCardMismatchReason({ actualCards = [], expectedCardCount = 0, compoundParts = [], subjectClassCount = 0, isCompound = false } = {}) {
+    const actualCardCount = actualCards.length;
+    const reasons = [];
+    if (actualCardCount < expectedCardCount) reasons.push(`카드 ${expectedCardCount - actualCardCount}개 부족`);
+    if (actualCardCount > expectedCardCount) reasons.push(`카드 ${actualCardCount - expectedCardCount}개 초과`);
+
+    const expectedSections = Math.max(1, Number(subjectClassCount) || 1);
+    const cardsBySection = new Map();
+    actualCards.forEach(card => {
+      const sec = String(card.sectionIdx ?? 0);
+      if (!cardsBySection.has(sec)) cardsBySection.set(sec, []);
+      cardsBySection.get(sec).push(card);
+    });
+    const missingSections = [];
+    for (let i = 0; i < expectedSections; i++) {
+      if (!cardsBySection.has(String(i))) missingSections.push(sectionLabel(i));
+    }
+    if (missingSections.length) reasons.push(`누락 반 ${missingSections.join(", ")}`);
+
+    const expectedPerSection = isCompound ? Math.max(1, compoundParts.length || 1) : 1;
+    const duplicateSections = [...cardsBySection.entries()]
+      .filter(([, list]) => list.length > expectedPerSection)
+      .map(([sec, list]) => `${sectionLabel(Number(sec) || 0)} ${list.length}개`);
+    if (duplicateSections.length) reasons.push(`중복/초과 반 ${duplicateSections.join(", ")}`);
+
+    if (isCompound && compoundParts.length) {
+      const expectedPartIds = compoundParts.map((part, idx) => String(part.id || `part${idx + 1}`));
+      const partNames = new Map(compoundParts.map((part, idx) => [String(part.id || `part${idx + 1}`), part.nameKo || part.nameEn || `구성${idx + 1}`]));
+      const sectionPartIssues = [];
+      for (let i = 0; i < expectedSections; i++) {
+        const sec = String(i);
+        const cards = cardsBySection.get(sec) || [];
+        const actualPartIds = new Set(cards.map(card => String(card.compoundPartId || "")).filter(Boolean));
+        const missingPartNames = expectedPartIds.filter(id => !actualPartIds.has(id)).map(id => partNames.get(id) || id);
+        if (missingPartNames.length) sectionPartIssues.push(`${sectionLabel(i)}: ${missingPartNames.join(", ")}`);
+      }
+      if (sectionPartIssues.length) reasons.push(`복합 구성 누락 ${sectionPartIssues.join(" / ")}`);
+    }
+
+    if (!actualCardCount && expectedCardCount > 0) reasons.push("시간표카드가 생성되지 않았습니다. 카드 데이터 갱신 또는 수강명단 반수 설정을 확인하세요.");
+    return reasons.length ? reasons.join(" · ") : "카드 수와 섹션 구성이 기대값과 일치합니다.";
   }
 
   function formatDiagnosticClassCountCell(item) {
     const expected = item?.subjectClassCount || "-";
-    const actual = item?.actualClassCount || "-";
-    return `${expected} / ${actual}`;
+    const actualSections = item?.actualClassCount || "-";
+    const covered = item?.coveredClassCount || "-";
+    return `${expected} / ${actualSections} / ${covered}`;
+  }
+
+  function formatDiagnosticLabels(labels = []) {
+    const list = unique((labels || []).map(normalizeClassLabel).filter(Boolean)).sort(compareClassLabels);
+    if (!list.length) return "-";
+    const compact = compactClassLabelGroups(list);
+    return compact.join(", ");
   }
 
   function getDiagnosticClasses() {
