@@ -7774,3 +7774,25 @@ body.his-dev-tools-off .developer-toggle-btn {
 .tpl-popup-modal {
   width: min(920px, 92vw);
 }
+
+/* v-credit-diag-ui-r1 fallback · 과목카드 상단바/시수 칩 */
+.tt-card-toolbar.his-card-toolbar {
+  display: grid !important;
+  grid-template-columns: auto minmax(150px, 210px) minmax(320px, 1fr) !important;
+  grid-template-areas: "actions sort filters" "summary summary summary" !important;
+  align-items: center !important;
+  column-gap: 10px !important;
+  row-gap: 7px !important;
+  padding: 8px 10px !important;
+  margin: 4px 8px 8px !important;
+  border-radius: 14px !important;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%) !important;
+}
+.tt-card-toolbar-actions { grid-area: actions !important; flex-wrap: wrap !important; gap: 5px !important; padding: 3px !important; border: 1px solid #e2e8f0 !important; border-radius: 12px !important; background: #f8fafc !important; }
+.tt-card-toolbar .tt-toolbar-action,.tt-card-toolbar .his-ui-btn.tt-toolbar-action { height: 28px !important; min-height: 28px !important; padding: 0 9px !important; border-radius: 9px !important; font-size: 11px !important; }
+.tt-card-toolbar .tt-card-sort-control { grid-area: sort !important; height: 34px !important; min-height: 34px !important; border-radius: 12px !important; }
+.tt-card-toolbar .tt-grade-filter-controls { grid-area: filters !important; width: 100% !important; border-radius: 12px !important; overflow-x: auto !important; flex-wrap: nowrap !important; }
+.tt-card-toolbar .tt-class-count-summary { grid-area: summary !important; width: 100% !important; justify-content: flex-start !important; flex-wrap: wrap !important; overflow-y: auto !important; overflow-x: hidden !important; max-height: 62px !important; border-radius: 12px !important; background: #fff !important; }
+.tt-credit-chip.is-lack { background: #fff7ed !important; border-color: #fdba74 !important; color: #9a3412 !important; }
+.tt-credit-chip.is-over { background: #fef2f2 !important; border-color: #fca5a5 !important; color: #991b1b !important; }
+@media (max-width:1280px){.tt-card-toolbar.his-card-toolbar{grid-template-columns:1fr!important;grid-template-areas:"actions" "sort" "filters" "search" "summary"!important;}}

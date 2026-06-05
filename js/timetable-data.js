@@ -412,8 +412,10 @@ export function entryMatchesClass(entry, cls) {
 
 
 export function calculateClassCreditSummary(ttcards = getTtCards(), groups = appState.timetable?.ttcardGroups || []) {
-  const result = { classes: [], gradeSummaries: [], total: 0, diagnostics: [] };
+  const result = { classes: [], gradeSummaries: [], total: 0, targetPerClass: 0, targetTotal: 0, diagnostics: [] };
   const groupedIds = new Set();
+  const groupedWholeKeys = new Set();
+  const countedWholeKeys = new Set();
   const classMap = new Map();
 
   const ensureClass = (key, info = {}) => {
@@ -448,6 +450,21 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
       return `compound:${card.compoundParentTemplateId}:${card.gradeKey || ""}:${card.sectionIdx ?? 0}`;
     }
     return `card:${card?.id || ""}`;
+  };
+
+  const wholeGradeCreditKey = (card) => {
+    if (!card) return "";
+    const label = [
+      card.subject, card.subjectEn, card.label,
+      card.category, card.track, card.group, card.nameKo, card.nameEn
+    ].map(clean).filter(Boolean).join(" ");
+    const isWhole = isWholeGradeTtCard(card)
+      || isChanCheCategory(card.category)
+      || isProtectedWholeGradeLabel(label);
+    if (!isWhole) return "";
+    const base = card.compoundParentTemplateId || card.templateId || clean(card.subject) || clean(card.label);
+    const grade = clean(card.gradeKey);
+    return grade && base ? `whole:${grade}:${base}` : "";
   };
 
   const getCardsForGroupCreditOptions = (group) => {
@@ -516,7 +533,11 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
     const options = getCardsForGroupCreditOptions(group);
     const allGroupCards = options.flatMap(o => o.cards || []);
     if (!allGroupCards.length) return;
-    allGroupCards.forEach(c => groupedIds.add(c.id));
+    allGroupCards.forEach(c => {
+      groupedIds.add(c.id);
+      const wholeKey = wholeGradeCreditKey(c);
+      if (wholeKey) groupedWholeKeys.add(wholeKey);
+    });
 
     // 그룹은 같은 시간대에 움직이는 선택/동시수업 단위입니다.
     // 각 학급에는 그룹 안 옵션 중 실제 점유 시수가 가장 큰 값만 더합니다.
@@ -544,6 +565,15 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
 
   (ttcards || []).forEach(card => {
     if (!card || groupedIds.has(card.id)) return;
+
+    // 창체·채플·동아리·자율활동처럼 전체 학년이 같은 시간에 듣는 카드는
+    // 데이터상 반별 카드(_0, _1, _2)가 남아 있어도 한 학년당 1회만 계산해야 합니다.
+    // 또한 그룹에 대표 카드(_0)만 들어가 있는 경우 같은 templateId/gradeKey의 나머지 반별 카드는
+    // 이미 그 그룹이 해당 학년 전체를 점유한 것으로 보아 개별 계산에서 제외합니다.
+    const wholeKey = wholeGradeCreditKey(card);
+    if (wholeKey && groupedWholeKeys.has(wholeKey)) return;
+    if (wholeKey && countedWholeKeys.has(wholeKey)) return;
+
     const credits = getCreditsForTtCard(card);
     cardClassPairs(card).forEach(({ key, info }) => {
       addContribution(key, info, credits, {
@@ -552,6 +582,7 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
         title: getTtCardTitleSnapshot(card) || card.subject || card.label || "시간표 카드"
       });
     });
+    if (wholeKey) countedWholeKeys.add(wholeKey);
   });
 
   const classes = [...classMap.values()].sort((a, b) => compareClassSummaryRows(a, b));
@@ -573,11 +604,24 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
       return { grade, rows, min, max, value: max, total, isBalanced: min === max };
     });
 
+  const targetPerClass = Math.max(0, parseInt(appState.timetable?.config?.periodCount, 10) || 7) * 5;
+  classes.forEach(row => {
+    row.targetCredits = targetPerClass;
+    row.diffFromTarget = (Number(row.credits) || 0) - targetPerClass;
+  });
+  gradeSummaries.forEach(gs => {
+    gs.targetCredits = targetPerClass;
+    gs.targetTotal = targetPerClass * (gs.rows?.length || 0);
+    gs.hasTargetIssue = (gs.rows || []).some(row => Number(row.diffFromTarget) !== 0);
+  });
+
   result.classes = classes;
   result.gradeSummaries = gradeSummaries;
   // 전체 합계는 학년 대표값이 아니라 실제 학급별 점유 시수의 총합입니다.
   // 예: 15개 반 × 35시수 = 525
   result.total = classes.reduce((sum, row) => sum + (Number(row.credits) || 0), 0);
+  result.targetPerClass = targetPerClass;
+  result.targetTotal = targetPerClass * classes.length;
   result.diagnostics = buildClassCreditDiagnostics(classes, gradeSummaries);
   return result;
 }
@@ -585,18 +629,23 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
 function buildClassCreditDiagnostics(classes, gradeSummaries) {
   const lines = [];
   gradeSummaries.forEach(gs => {
-    if (gs.isBalanced) return;
-    lines.push(`${gs.grade}학년: ${gs.min}~${gs.max}시수`);
-    const max = gs.max;
-    gs.rows.forEach(row => {
-      if (row.credits === max) return;
-      lines.push(`- ${row.label}: ${row.credits}시수 (기준보다 ${max - row.credits}시수 적음)`);
+    const target = Number(gs.targetCredits) || 0;
+    const issueRows = (gs.rows || []).filter(row => Number(row.diffFromTarget) !== 0);
+    if (gs.isBalanced && !issueRows.length) return;
+    const status = [];
+    if (!gs.isBalanced) status.push(`${gs.min}~${gs.max}시수`);
+    if (issueRows.length && target) status.push(`기준 ${target}시수와 차이`);
+    lines.push(`${gs.grade}학년: ${status.join(" / ")}`);
+    issueRows.forEach(row => {
+      const diff = Number(row.diffFromTarget) || 0;
+      const diffText = diff < 0 ? `${Math.abs(diff)}시수 부족` : `${diff}시수 초과`;
+      lines.push(`- ${row.label}: ${row.credits}시수 (${diffText})`);
       const titles = row.contributions.slice(0, 8).map(c => `  · ${c.kind === "group" ? `[그룹] ${c.groupName}` : c.title}: ${c.credits}시수`);
       lines.push(...titles);
       if (row.contributions.length > 8) lines.push(`  · ... 외 ${row.contributions.length - 8}개`);
     });
   });
-  if (!lines.length) lines.push("학급별 필요 시수가 균형 상태입니다.");
+  if (!lines.length) lines.push("모든 학급이 기준 시수와 일치합니다.");
   return lines;
 }
 

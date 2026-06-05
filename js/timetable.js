@@ -33,13 +33,13 @@ import {
   makePlacementFromGroupItem, entryMatchesClass, getUnitForTemplate, getUnitDisplayTitle,
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
-} from "./timetable-data.js";
+} from "./timetable-data.js?v=credit_diag_dedupe_r1";
 import { createAutoAssignAll } from "./timetable-autoassign.js?v=compound_subject_slot_guard";
 import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
 import { createTimetableDetailHandlers } from "./timetable-detail.js?v=context_menu_top";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=group_name_r1";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=credit_diag_ui_r1";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
