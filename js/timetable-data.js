@@ -336,7 +336,7 @@ export function describeTtCard(card) {
   };
 }
 
-export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, unitId = null } = {}) {
+export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, unitId = null, groupName = "" } = {}) {
   const validCards = (cards || []).filter(Boolean);
   if (!validCards.length) return null;
   const first = validCards[0];
@@ -348,6 +348,7 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
     sectionIdx: first.sectionIdx ?? 0,
     unitId,
     groupId,
+    groupName: clean(groupName),
     ttcardId: validCards.length === 1 ? first.id : null,
     ttcardIds: validCards.map(c => c.id),
     templateIds,
@@ -364,7 +365,8 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
 export function makePlacementFromGroupItem(group, groupItem) {
   return buildEntryDataFromTtCards(groupItem.ttcards || [], {
     groupId: group.id,
-    unitId: groupItem.unit?.id || null
+    unitId: groupItem.unit?.id || null,
+    groupName: group.name || ""
   });
 }
 
@@ -722,8 +724,10 @@ export function entryHasGrade(e, grade) {
 export function entryTitle(e) {
   const cards = getCardsForEntry(e);
 
-  // Group entry → 저장된 group name이 있으면 우선 사용, 없으면 카드 제목 스냅샷으로 표시합니다.
+  // Group entry → 배치 시점에 저장한 groupName과 현재 그룹명을 먼저 사용합니다.
+  // 전체보기/학급보기 모두 track(구분명)보다 실제 그룹명이 우선 표시되어야 합니다.
   if (e.groupId) {
+    if (clean(e.groupName)) return clean(e.groupName);
     const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === e.groupId);
     if (grp?.name) return grp.name;
     const titles = [...new Set(cards.map(c => getTtCardTitleSnapshot(c)).filter(Boolean))];

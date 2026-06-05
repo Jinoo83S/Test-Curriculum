@@ -925,7 +925,7 @@ export function createTimetableSidebarHandlers(deps) {
       card.style.outline = "1.5px solid " + gradeColor.border;
       if (!isDone) {
         card.addEventListener("dragstart", ev => {
-          beginSidebarDrag(ev, card, { kind: "group", groupId: grp.id, ttcardIds: grpCards.map(c => c.id), gradeKey: gradeKeys[0] });
+          beginSidebarDrag(ev, card, { kind: "group", groupId: grp.id, groupName: grp.name || "", ttcardIds: grpCards.map(c => c.id), gradeKey: gradeKeys[0] });
         });
         card.addEventListener("dragend", () => endSidebarDrag(card));
       }
@@ -1012,7 +1012,7 @@ export function createTimetableSidebarHandlers(deps) {
           card.addEventListener("click", () => showEntryDetailByUnit(unit, group, gradeKeys));
           if (!isDone) {
             card.addEventListener("dragstart", ev => {
-              beginSidebarDrag(ev, card, { kind: "subject", templateId: unit.templateIds[0], unitId: unit.id, groupId: group.id, sectionIdx: 0, gradeKey: gradeKeys[0] || gradeKey });
+              beginSidebarDrag(ev, card, { kind: "subject", templateId: unit.templateIds[0], unitId: unit.id, groupId: group.id, groupName: group?.name || "", sectionIdx: 0, gradeKey: gradeKeys[0] || gradeKey });
             });
             card.addEventListener("dragend", () => endSidebarDrag(card));
           }

@@ -35,11 +35,11 @@ import {
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js";
 import { createAutoAssignAll } from "./timetable-autoassign.js?v=compound_subject_slot_guard";
-import { renderTimetableGrid } from "./timetable-grid.js?v=all_summary_context_drag";
+import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
 import { createTimetableDetailHandlers } from "./timetable-detail.js?v=context_menu_top";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=manual_card_r1";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=group_name_r1";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
@@ -1040,7 +1040,7 @@ function placeGroupAt(groupId, day, period) {
   // 이렇게 해야 7AB/8AB/9AB 같은 그룹에서 특정 반(예: 8B)이 누락되지 않고
   // 상세정보·전체반 시간표·자동배치가 같은 기준(ttcardIds 전체)을 보게 됩니다.
   const cards = getGroupCards(grp);
-  const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id });
+  const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id, groupName: grp.name || "" });
   if (!data) return false;
   return !!addEntry(data);
 }
@@ -1150,6 +1150,7 @@ function renderGrid() {
     getEntryConflictSet,
     getRoomDisplayName,
     renderAll: () => renderAll(),
+    getGroupNameById: id => (appState.timetable.ttcardGroups || []).find(g => g.id === id)?.name || "",
   });
 }
 
@@ -1598,7 +1599,7 @@ function handleDrop(data, day, period) {
     const unit = grp?.units?.find(u => u.id === data.unitId);
     if (grp && unit) {
       const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
-      const entryData = buildEntryDataFromTtCards(ttcards, { day, period, groupId: grp.id, unitId: unit.id });
+      const entryData = buildEntryDataFromTtCards(ttcards, { day, period, groupId: grp.id, unitId: unit.id, groupName: grp.name || "" });
       if (entryData) {
         addEntry(entryData);
         recomputeConflicts(); renderAll(); return;
@@ -1610,7 +1611,7 @@ function handleDrop(data, day, period) {
   if (data.ttcardId) {
     const card = getTtCardById(data.ttcardId);
     if (card) {
-      const entryData = buildEntryDataFromTtCards([card], { day, period, groupId: data.groupId || null });
+      const entryData = buildEntryDataFromTtCards([card], { day, period, groupId: data.groupId || null, groupName: data.groupName || "" });
       if (entryData) {
         addEntry(entryData);
         recomputeConflicts(); renderAll(); return;

@@ -176,9 +176,15 @@ function buildEntryGroups(slotEntries = [], ctx = {}) {
   return [...map.values()].map(group => summarizeEntryGroup(group, ctx));
 }
 
+function getEntryGroupDisplayName(entry = {}, ctx = {}) {
+  if (!entry?.groupId) return "";
+  return cleanText(entry.groupName) || cleanText(ctx.getGroupNameById?.(entry.groupId)) || "";
+}
+
 function summarizeEntryGroup(group, ctx = {}) {
   const firstEntry = group.entries[0] || {};
   const firstCard = group.cards[0] || null;
+  const groupNames = localUnique(group.entries.map(e => getEntryGroupDisplayName(e, ctx)));
   const tracks = localUnique(group.cards.map(c => c.track).concat(group.entries.map(e => e.track)));
   const categories = localUnique(group.cards.map(c => c.category).concat(group.entries.map(e => e.category)));
   const teachers = localUnique(group.entries.flatMap(entryTeachers));
@@ -188,9 +194,9 @@ function summarizeEntryGroup(group, ctx = {}) {
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
 
-  let title = tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || entryTitleFallback(firstEntry);
+  let title = groupNames[0] || tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || entryTitleFallback(firstEntry);
   const subjectTitles = localUnique(group.cards.map(cardTitle));
-  const isSingleSubject = group.entries.length === 1 && group.cards.length <= 1;
+  const isSingleSubject = !groupNames.length && group.entries.length === 1 && group.cards.length <= 1;
   if (isSingleSubject) title = subjectTitles[0] || title;
 
   return {

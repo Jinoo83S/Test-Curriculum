@@ -534,6 +534,9 @@ export function normalizeTimetableEntry(e = {}) {
     // Unit fields (new - null for standalone entries)
     unitId:      clean(e.unitId)  || null,
     groupId:     clean(e.groupId) || null,
+    // 배치 시점의 그룹명 스냅샷입니다.
+    // 그룹명을 나중에 찾지 못하거나 전체보기 요약에서 track(구분명)이 우선 표시되는 문제를 막기 위해 보존합니다.
+    groupName:   clean(e.groupName || e.groupLabel || e.groupTitle),
     // ttcard fields
     ttcardId:    clean(e.ttcardId)  || null,
     ttcardIds:   Array.isArray(e.ttcardIds) ? e.ttcardIds.filter(Boolean) : [],
