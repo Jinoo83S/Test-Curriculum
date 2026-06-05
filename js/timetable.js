@@ -12,7 +12,7 @@ import { openDataCleanupDialog } from "./data-cleanup.js?v=remaining_cards_fix_r
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
-import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js?v=manual_card_r1";
+import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js?v=wholegrade_card_gen_r1";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
 import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js?v=compound_subject_slot_guard";
 import {

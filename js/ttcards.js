@@ -143,6 +143,62 @@ function mergeGeneratedAndManualCards(generated = [], previous = getTtCards()) {
   const manual = getManualTtCards(previous).filter(c => c?.id && !generatedIds.has(c.id));
   return [...generated, ...manual];
 }
+
+function pruneObsoleteGeneratedTtCardRefs(nextCards = [], previousCards = []) {
+  const validIds = new Set((nextCards || []).map(c => c?.id).filter(Boolean));
+  const obsoleteIds = new Set((previousCards || [])
+    .filter(c => c?.id && !validIds.has(c.id) && !isManualTtCard(c))
+    .map(c => c.id));
+  if (!obsoleteIds.size) return 0;
+
+  const keepValid = id => !!id && validIds.has(id) && !obsoleteIds.has(id);
+  let changed = 0;
+
+  (appState.timetable.ttcardGroups || []).forEach(group => {
+    const beforePool = (group.poolCardIds || []).length;
+    const beforeEx = (group.excludedCardIds || []).length;
+    group.poolCardIds = (group.poolCardIds || []).filter(keepValid);
+    group.excludedCardIds = (group.excludedCardIds || []).filter(keepValid);
+    if (beforePool !== group.poolCardIds.length || beforeEx !== group.excludedCardIds.length) changed += 1;
+
+    (group.units || []).forEach(unit => {
+      const before = (unit.ttcardIds || []).length;
+      unit.ttcardIds = (unit.ttcardIds || []).filter(keepValid);
+      if (before !== unit.ttcardIds.length) changed += 1;
+    });
+    group.units = (group.units || []).filter(unit =>
+      (unit.ttcardIds || []).length || (unit.templateIds || []).length || clean(unit.name)
+    );
+  });
+
+  const entries = appState.timetable.entries || [];
+  const nextEntries = [];
+  entries.forEach(entry => {
+    const next = { ...entry };
+    const originalIds = [...(next.ttcardIds || []), next.ttcardId].filter(Boolean);
+
+    if (next.ttcardId && obsoleteIds.has(next.ttcardId)) {
+      next.ttcardId = null;
+      changed += 1;
+    }
+    if (Array.isArray(next.ttcardIds)) {
+      const filtered = next.ttcardIds.filter(keepValid);
+      if (filtered.length !== next.ttcardIds.length) changed += 1;
+      next.ttcardIds = filtered;
+    }
+
+    const hadOnlyObsoleteCardRefs = originalIds.length > 0 && !next.ttcardId && !(next.ttcardIds || []).length;
+    if (hadOnlyObsoleteCardRefs) {
+      changed += 1;
+      return;
+    }
+    nextEntries.push(next);
+  });
+  if (nextEntries.length !== entries.length) changed += 1;
+  appState.timetable.entries = nextEntries;
+
+  return changed;
+}
 const grps = () => appState.timetable.ttcardGroups || [];
 function ensureTtCardGroups() {
   if (!Array.isArray(appState.timetable.ttcardGroups)) appState.timetable.ttcardGroups = [];
@@ -312,7 +368,15 @@ function buildAllGeneratedTtCards(existing = new Map()) {
       [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
         if (seenTpl.has(tplId)) return;
         seenTpl.add(tplId);
-        const cc = Math.max(1, getClassCount(tplId));
+
+        const tpl = getTemplateById(tplId);
+        const wholeGrade = isWholeGradeRow(row, tpl);
+        // 창체·채플·자율·동아리·진로 등 학년 전체가 같은 시간에 움직이는 과목은
+        // 수강명단/반수 기준으로 _0, _1, _2 카드를 만들지 않고 학년당 대표 카드 1개만 생성합니다.
+        // 대상 반 정보는 resolveCardAudience()가 해당 학년 전체 반으로 넣어주기 때문에
+        // 충돌 검사와 시수 계산은 여전히 모든 반을 점유하는 것으로 처리됩니다.
+        const cc = wholeGrade ? 1 : Math.max(1, getClassCount(tplId));
+
         for (let i = 0; i < cc; i++) {
           const built = buildGeneratedCardsForTemplate({ templateId: tplId, gradeKey, sectionIdx: i, existing });
           built.forEach(card => {
@@ -374,6 +438,7 @@ export function refreshTtCardData() {
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
 
   appState.timetable.ttcards = nextCards;
+  pruneObsoleteGeneratedTtCardRefs(nextCards, before);
   scheduleSave("timetable");
   return nextCards.length;
 }
@@ -571,6 +636,7 @@ export function generateTtCards() {
   const guard = guardGeneratedCards(generated, before.length, "generate");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
   appState.timetable.ttcards = cards;
+  pruneObsoleteGeneratedTtCardRefs(cards, before);
   scheduleSave("timetable");
   return cards.length;
 }
