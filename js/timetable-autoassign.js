@@ -361,6 +361,267 @@ export function createAutoAssignAll(deps) {
     return { slots: slots.size, pinned, manual, total: protectedEntries.length };
   }
 
+
+
+  // ── Auto-assign verification report helpers ────────────────────
+  // 자동배치 전/후 검증은 "카드 개수"가 아니라 실제 시간표의 학급별 점유 슬롯을 기준으로 봅니다.
+  function normalizeGradeNumber(value = "") {
+    const m = String(value || "").match(/\d{1,2}/);
+    return m ? String(Number(m[0])) : "";
+  }
+
+  function normalizeClassSection(value = "", fallbackIdx = 0) {
+    const raw = String(value || "").trim();
+    if (raw) return raw.replace(/\s+/g, "").replace(/학년/g, "").replace(/^\d{1,2}/, "").toUpperCase();
+    return sectionLabel(fallbackIdx);
+  }
+
+  function makeClassKeyForReport(gradeKey, section, sectionIdx = 0) {
+    const grade = normalizeGradeNumber(gradeKey);
+    const sec = normalizeClassSection(section, sectionIdx);
+    return grade && sec ? `${grade}:${sec}` : "";
+  }
+
+  function formatClassKeyForReport(key = "") {
+    const [grade, section] = String(key || "").split(":");
+    return grade && section ? `${grade}${section}` : (key || "?");
+  }
+
+  function getReportClassRows(scopeGrades = []) {
+    const scope = new Set((scopeGrades || []).map(g => String(g || "").trim()).filter(Boolean));
+    return (appState.classes?.classes || [])
+      .map((cls, idx) => {
+        const gradeKey = cls.grade || cls.gradeKey || "";
+        const section = cls.name || cls.section || sectionLabel(cls.sectionIdx ?? idx);
+        const key = makeClassKeyForReport(gradeKey, section, cls.sectionIdx ?? idx);
+        return { key, label: formatClassKeyForReport(key), gradeKey, section };
+      })
+      .filter(row => row.key && (!scope.size || scope.has(row.gradeKey)))
+      .sort((a, b) => {
+        const ga = Number(normalizeGradeNumber(a.gradeKey)) || 0;
+        const gb = Number(normalizeGradeNumber(b.gradeKey)) || 0;
+        if (ga !== gb) return ga - gb;
+        return String(a.section || "").localeCompare(String(b.section || ""), "ko", { numeric: true });
+      });
+  }
+
+  function classKeysFromAudienceForReport(entry = {}) {
+    const audience = audienceForPlacement(entry);
+    return [...(audience?.classKeys || new Set())]
+      .map(k => {
+        const raw = String(k || "").trim();
+        if (!raw) return "";
+        if (raw.includes(":")) {
+          const [g, s] = raw.split(":");
+          return makeClassKeyForReport(g, s);
+        }
+        const m = raw.replace(/\s+/g, "").replace(/학년/g, "").match(/^(\d{1,2})(.+)$/);
+        return m ? makeClassKeyForReport(m[1], m[2]) : raw;
+      })
+      .filter(Boolean);
+  }
+
+  function buildClassSlotValidation(allEntries = [], scopeGrades = []) {
+    const targetPerClass = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
+    const classRows = getReportClassRows(scopeGrades);
+    const slotMap = new Map(classRows.map(row => [row.key, new Set()]));
+    const contributionMap = new Map(classRows.map(row => [row.key, []]));
+
+    (allEntries || []).forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      classKeysFromAudienceForReport(entry).forEach(key => {
+        if (!slotMap.has(key)) return;
+        const slots = slotMap.get(key);
+        const before = slots.size;
+        slots.add(slotKey);
+        if (slots.size !== before) {
+          const list = contributionMap.get(key) || [];
+          if (list.length < 8) list.push(`${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
+          contributionMap.set(key, list);
+        }
+      });
+    });
+
+    const rows = classRows.map(row => {
+      const count = slotMap.get(row.key)?.size || 0;
+      const diff = count - targetPerClass;
+      return {
+        ...row,
+        count,
+        target: targetPerClass,
+        diff,
+        status: diff === 0 ? "ok" : (diff < 0 ? "short" : "over"),
+        samples: contributionMap.get(row.key) || []
+      };
+    });
+    const issues = rows.filter(row => row.diff !== 0);
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    const targetTotal = rows.length * targetPerClass;
+    return {
+      targetPerClass,
+      targetTotal,
+      total,
+      diff: total - targetTotal,
+      ok: issues.length === 0,
+      issueCount: issues.length,
+      rows,
+      issues,
+      summary: issues.length
+        ? `${rows.length}개 학급 중 ${issues.length}개 학급 시수 불일치 · 현재 ${total}/${targetTotal}시수`
+        : `${rows.length}개 학급 모두 ${targetPerClass}시수 충족 · 현재 ${total}/${targetTotal}시수`
+    };
+  }
+
+  function teacherUnavailableSetForReport(teacher) {
+    const c = constraints()?.[teacher] || {};
+    return new Set((Array.isArray(c.unavailableSlots) ? c.unavailableSlots : [])
+      .map(slot => `${slot.day}:${slot.period}`));
+  }
+
+  function teacherSlotsForReport(teacher, allEntries = []) {
+    const slots = new Set();
+    const byDay = new Map();
+    const unavailable = teacherUnavailableSetForReport(teacher);
+    const unavailableHits = [];
+    (allEntries || []).forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      if (!teacherEntryHasTeacher(entry, teacher)) return;
+      const key = `${entry.day}:${entry.period}`;
+      slots.add(key);
+      if (!byDay.has(entry.day)) byDay.set(entry.day, new Set());
+      byDay.get(entry.day).add(entry.period);
+      if (unavailable.has(key) && unavailableHits.length < 5) {
+        unavailableHits.push(`${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
+      }
+    });
+    return { slots, byDay, unavailableHits };
+  }
+
+  function maxConsecutiveFromPeriods(periods = []) {
+    const list = [...periods].map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+    let max = list.length ? 1 : 0;
+    let cur = list.length ? 1 : 0;
+    for (let i = 1; i < list.length; i++) {
+      cur = list[i] === list[i - 1] + 1 ? cur + 1 : 1;
+      max = Math.max(max, cur);
+    }
+    return max;
+  }
+
+  function buildRestrictedTeacherValidation(allEntries = []) {
+    const teacherNames = Object.keys(constraints() || {}).filter(isRestrictedTeacher).sort((a, b) => a.localeCompare(b, "ko"));
+    const rows = teacherNames.map(teacher => {
+      const c = constraints()?.[teacher] || {};
+      const { slots, byDay, unavailableHits } = teacherSlotsForReport(teacher, allEntries);
+      const maxPerWeek = Number(c.maxPerWeek) || 0;
+      const maxPerDay = Number(c.maxPerDay) || 0;
+      const maxConsecutive = Number(c.maxConsecutive) || 0;
+      const dayLoads = [...byDay.entries()].map(([day, set]) => ({ day, count: set.size, maxConsecutive: maxConsecutiveFromPeriods(set) }));
+      const dayOver = maxPerDay > 0 ? dayLoads.filter(d => d.count > maxPerDay) : [];
+      const consecutiveOver = maxConsecutive > 0 ? dayLoads.filter(d => d.maxConsecutive > maxConsecutive) : [];
+      const weekOver = maxPerWeek > 0 && slots.size > maxPerWeek;
+      const issueParts = [];
+      if (unavailableHits.length) issueParts.push(`불가시간 ${unavailableHits.length}건`);
+      if (weekOver) issueParts.push(`주 최대 ${slots.size}/${maxPerWeek}`);
+      if (dayOver.length) issueParts.push(`하루 최대 초과 ${dayOver.length}일`);
+      if (consecutiveOver.length) issueParts.push(`연속수업 초과 ${consecutiveOver.length}일`);
+      return {
+        teacher,
+        workType: c.workType || "restricted",
+        total: slots.size,
+        maxPerWeek,
+        maxPerDay,
+        maxConsecutive,
+        dayLoads,
+        unavailableHits,
+        issueParts,
+        ok: issueParts.length === 0
+      };
+    });
+    const issues = rows.filter(row => !row.ok);
+    return {
+      totalTeachers: rows.length,
+      issueCount: issues.length,
+      rows,
+      issues,
+      ok: issues.length === 0,
+      summary: rows.length
+        ? (issues.length ? `제약교사 ${rows.length}명 중 ${issues.length}명 조건 확인 필요` : `제약교사 ${rows.length}명 조건 충족`)
+        : "등록된 제약교사가 없습니다."
+    };
+  }
+
+  function buildProtectedIntrusionValidation(allEntries = [], protectedEntries = []) {
+    const protectedIds = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
+    if (!protectedIds.size) return { total: 0, samples: [], ok: true, summary: "보호 수업 없음" };
+    const protectedBySlot = new Map();
+    (protectedEntries || []).forEach(e => {
+      if (!Number.isInteger(e?.day) || !Number.isInteger(e?.period)) return;
+      const key = `${e.day}:${e.period}`;
+      if (!protectedBySlot.has(key)) protectedBySlot.set(key, []);
+      protectedBySlot.get(key).push(e);
+    });
+    const samples = [];
+    (allEntries || []).forEach(entry => {
+      if (!entry?.id || protectedIds.has(entry.id)) return;
+      if (!Number.isInteger(entry.day) || !Number.isInteger(entry.period)) return;
+      const fixedList = protectedBySlot.get(`${entry.day}:${entry.period}`) || [];
+      if (!fixedList.length) return;
+      const entryAudience = audienceForPlacement(entry);
+      const entryTeachers = new Set(teacherNamesForPlacement(entry));
+      const entryRoom = entry.roomId || "";
+      for (const fixed of fixedList) {
+        if (sameUnitPlacement(entry, fixed)) continue;
+        const fixedAudience = audienceForPlacement(fixed);
+        const fixedTeachers = teacherNamesForPlacement(fixed);
+        const fixedRooms = new Set([fixed.roomId, ...(fixed.roomIds || [])].filter(Boolean));
+        const hitAudience = audiencesConflict(entryAudience, fixedAudience);
+        const hitTeacher = fixedTeachers.some(t => entryTeachers.has(t));
+        const hitRoom = entryRoom && fixedRooms.has(entryRoom);
+        if (hitAudience || hitTeacher || hitRoom) {
+          if (samples.length < 8) samples.push(`${formatSlotLabel(entry)} · ${getAutoItemName(entry)} ↔ ${getAutoItemName(fixed)}`);
+          break;
+        }
+      }
+    });
+    return {
+      total: samples.length,
+      samples,
+      ok: samples.length === 0,
+      summary: samples.length ? `고정/보호 수업 침범 후보 ${samples.length}건` : "고정/보호 수업 침범 없음"
+    };
+  }
+
+  function buildScheduleVerificationReport(allEntries = [], options = {}) {
+    const classSlots = buildClassSlotValidation(allEntries, options.scopeGrades || []);
+    const restrictedTeachers = buildRestrictedTeacherValidation(allEntries);
+    const protectedIntrusions = buildProtectedIntrusionValidation(allEntries, options.protectedEntries || []);
+    const failedCount = Array.isArray(options.failedNames) ? options.failedNames.length : 0;
+    const missingRooms = (allEntries || []).filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
+    const ok = classSlots.ok && restrictedTeachers.ok && protectedIntrusions.ok && failedCount === 0 && missingRooms.length === 0;
+    const issueParts = [];
+    if (!classSlots.ok) issueParts.push(`학급 시수 ${classSlots.issueCount}개`);
+    if (!restrictedTeachers.ok) issueParts.push(`제약교사 ${restrictedTeachers.issueCount}명`);
+    if (!protectedIntrusions.ok) issueParts.push(`고정침범 ${protectedIntrusions.total}건`);
+    if (missingRooms.length) issueParts.push(`교실미배정 ${missingRooms.length}개`);
+    if (failedCount) issueParts.push(`미배치 ${failedCount}개`);
+    return {
+      ts: Date.now(),
+      ok,
+      summary: ok ? "검증 통과" : `검증 필요: ${issueParts.join(" · ")}`,
+      classSlots,
+      restrictedTeachers,
+      protectedIntrusions,
+      missingRoomCount: missingRooms.length,
+      missingRoomNames: [...new Set(missingRooms.map(e => getAutoItemName(e)))].slice(0, 20),
+      failedCount,
+      failedNames: options.failedNames || [],
+      failedDiagnostics: options.failedDiagnostics || []
+    };
+  }
+
+
   function getRoomCapacity(room = {}) {
     const n = Number(room.capacity);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -1715,6 +1976,7 @@ export function createAutoAssignAll(deps) {
     }, true);
     captureTimetableUndo("자동 배정");
     addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`);
+    const preValidation = buildScheduleVerificationReport(entries(), { scopeGrades: activeGrades });
 
     // Preserve entries according to the selected auto-assign options.
     // - reset: selected range is cleared, but locked/manual/out-of-range entries can be protected.
@@ -2070,11 +2332,19 @@ export function createAutoAssignAll(deps) {
 
     if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
 
+    const names = [...new Set(bestFailed.map(f => f.name))];
+    const finalEntriesForValidation = [...protectedEntries, ...bestPlaced];
+    const postValidation = buildScheduleVerificationReport(finalEntriesForValidation, {
+      scopeGrades: activeGrades,
+      protectedEntries,
+      failedNames: names,
+      failedDiagnostics
+    });
+
     bestPlaced.forEach(e => entries().push(e));
     scheduleSave("timetable");
     recomputeConflicts();
 
-    const names = [...new Set(bestFailed.map(f => f.name))];
     const missingRoomEntries = bestPlaced.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
     const missingRoomNames = [...new Set(missingRoomEntries.map(e => getAutoItemName(e)))];
     const conflictSummary = getConflictCounts();
@@ -2108,6 +2378,13 @@ export function createAutoAssignAll(deps) {
       durationMs: Date.now() - autoStartedAt,
       conflictTotal: conflictSummary.totalAffected,
       conflictCounts: conflictSummary.counts,
+      preValidation,
+      postValidation,
+      validationSummary: postValidation.summary,
+      validationOk: postValidation.ok,
+      classSlotIssueCount: postValidation.classSlots?.issueCount || 0,
+      restrictedTeacherIssueCount: postValidation.restrictedTeachers?.issueCount || 0,
+      protectedIntrusionCount: postValidation.protectedIntrusions?.total || 0,
       missingRoomCount: missingRoomEntries.length,
       missingRoomNames,
       restrictedTeacherCount: restrictedTeacherNames.length,
@@ -2137,6 +2414,8 @@ export function createAutoAssignAll(deps) {
       `<b>미배치</b> ${names.length}개`,
       `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
       `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
+      `<b>검증 결과</b> ${postValidation.ok ? "통과" : postValidation.summary}`,
+      `<b>학급 시수</b> ${postValidation.classSlots?.total ?? "-"}/${postValidation.classSlots?.targetTotal ?? "-"}시수`,
       `<b>배치 방식</b> ${modeText}`,
       `<b>탐색 방식</b> ${bestStage.label}`,
       `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
@@ -2144,6 +2423,20 @@ export function createAutoAssignAll(deps) {
       restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
+    if (!postValidation.ok) {
+      const issueRows = postValidation.classSlots?.issues || [];
+      const classList = issueRows.slice(0, 10)
+        .map(row => `<li>${formatClassKeyForReport(row.key)}: ${row.count}/${row.target}시수 (${row.diff < 0 ? Math.abs(row.diff) + " 부족" : row.diff + " 초과"})</li>`)
+        .join("");
+      const moreClass = issueRows.length > 10 ? `<li>외 ${issueRows.length - 10}개 학급</li>` : "";
+      const restrictedList = (postValidation.restrictedTeachers?.issues || []).slice(0, 8)
+        .map(row => `<li>${row.teacher}: ${row.issueParts.join(", ")}</li>`)
+        .join("");
+      const protectedList = (postValidation.protectedIntrusions?.samples || []).slice(0, 6)
+        .map(text => `<li>${String(text).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
+        .join("");
+      detailLines.push(`<div class="tt-auto-progress-failed"><b>검증 리포트</b><ul>${classList}${moreClass}${restrictedList}${protectedList}</ul></div>`);
+    }
     if (forcedPlaced.length) {
       detailLines.push(`⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`);
     }
@@ -2166,10 +2459,10 @@ export function createAutoAssignAll(deps) {
     detailLines.push(`자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.`);
 
     await progress.complete({
-      partial: !!names.length,
-      title: names.length ? "자동배치 부분 완료" : "자동배치 완료",
-      subtitle: names.length ? "일부 카드는 직접 확인이 필요합니다." : "모든 대상 슬롯을 배치했습니다.",
-      step: names.length ? "부분 완료" : "완료",
+      partial: !!names.length || !postValidation.ok,
+      title: names.length || !postValidation.ok ? "자동배치 확인 필요" : "자동배치 완료",
+      subtitle: names.length ? "일부 카드는 직접 확인이 필요합니다." : (!postValidation.ok ? "배치는 완료되었지만 검증 항목 확인이 필요합니다." : "모든 대상 슬롯을 배치했고 검증을 통과했습니다."),
+      step: names.length || !postValidation.ok ? "확인 필요" : "완료",
       detailHtml: detailLines.filter(Boolean).map(line => `<div>${line}</div>`).join(""),
       placed: bestPlaced.length,
       best: bestPlaced.length,

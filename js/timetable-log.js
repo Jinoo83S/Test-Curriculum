@@ -155,6 +155,40 @@ export function createTimetableLogHandlers({
         </div>`
       : "";
 
+
+
+    const validation = auto?.postValidation || null;
+    const validationHtml = validation
+      ? (() => {
+          const classIssues = validation.classSlots?.issues || [];
+          const restrictedIssues = validation.restrictedTeachers?.issues || [];
+          const protectedSamples = validation.protectedIntrusions?.samples || [];
+          const classRowsHtml = classIssues.length
+            ? `<div class="tt-log-validation-block"><div class="tt-log-subtitle">학급별 시수</div><ul>${classIssues.slice(0, 12).map(row => `<li><b>${escapeHtml(row.label || row.key)}</b> ${row.count}/${row.target}시수 <span class="tt-log-muted">${row.diff < 0 ? Math.abs(row.diff) + "시수 부족" : row.diff + "시수 초과"}</span></li>`).join("")}${classIssues.length > 12 ? `<li>외 ${classIssues.length - 12}개 학급</li>` : ""}</ul></div>`
+            : `<div class="tt-log-validation-block ok">학급별 시수 정상</div>`;
+          const restrictedHtml = restrictedIssues.length
+            ? `<div class="tt-log-validation-block"><div class="tt-log-subtitle">제약교사 조건</div><ul>${restrictedIssues.slice(0, 10).map(row => `<li><b>${escapeHtml(row.teacher)}</b> ${escapeHtml((row.issueParts || []).join(", "))}</li>`).join("")}${restrictedIssues.length > 10 ? `<li>외 ${restrictedIssues.length - 10}명</li>` : ""}</ul></div>`
+            : `<div class="tt-log-validation-block ok">제약교사 조건 정상</div>`;
+          const protectedHtml = protectedSamples.length
+            ? `<div class="tt-log-validation-block"><div class="tt-log-subtitle">고정/보호 수업 침범 후보</div><ul>${protectedSamples.slice(0, 8).map(text => `<li>${escapeHtml(text)}</li>`).join("")}${protectedSamples.length > 8 ? `<li>외 ${protectedSamples.length - 8}건</li>` : ""}</ul></div>`
+            : `<div class="tt-log-validation-block ok">고정/보호 수업 침범 없음</div>`;
+          const missingHtml = validation.missingRoomCount
+            ? `<div class="tt-log-validation-block"><div class="tt-log-subtitle">교실 미배정</div><ul>${(validation.missingRoomNames || []).slice(0, 10).map(name => `<li>${escapeHtml(name)}</li>`).join("")}${(validation.missingRoomNames || []).length > 10 ? `<li>외 ${(validation.missingRoomNames || []).length - 10}개</li>` : ""}</ul></div>`
+            : `<div class="tt-log-validation-block ok">교실 미배정 없음</div>`;
+          return `<div class="tt-log-validation">
+            <div class="tt-log-subtitle">자동배치 검증 리포트</div>
+            <div class="tt-log-validation-summary ${validation.ok ? "ok" : "warn"}">${escapeHtml(validation.summary || "-")}</div>
+            <dl class="tt-log-kv compact">
+              <dt>학급 시수</dt><dd>${validation.classSlots?.total ?? "-"}/${validation.classSlots?.targetTotal ?? "-"}</dd>
+              <dt>시수 불일치</dt><dd>${validation.classSlots?.issueCount ?? 0}개 학급</dd>
+              <dt>제약교사</dt><dd>${validation.restrictedTeachers?.issueCount ?? 0}/${validation.restrictedTeachers?.totalTeachers ?? 0}명 확인</dd>
+              <dt>고정침범</dt><dd>${validation.protectedIntrusions?.total ?? 0}건</dd>
+            </dl>
+            ${classRowsHtml}${restrictedHtml}${protectedHtml}${missingHtml}
+          </div>`;
+        })()
+      : "";
+
     const logItems = timetableLogs.length
       ? timetableLogs.slice(0, 25).map(log => `
         <div class="tt-log-item">
@@ -205,7 +239,9 @@ export function createTimetableLogHandlers({
                 <div class="tt-log-badges">
                   <span class="tt-log-badge ${auto.failedCount ? "warn" : "ok"}">${auto.failedCount ? "부분 완료" : "전체 완료"}</span>
                   ${(auto.conflictTotal || 0) > 0 ? `<span class="tt-log-badge danger">충돌 ${auto.conflictTotal}건</span>` : `<span class="tt-log-badge ok">충돌 없음</span>`}
+                  ${auto.validationOk === false ? `<span class="tt-log-badge warn">검증 필요</span>` : (auto.validationOk === true ? `<span class="tt-log-badge ok">검증 통과</span>` : "")}
                 </div>
+                ${validationHtml}
                 ${failedList}
                 ${failureDiagHtml}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}
             </div>
