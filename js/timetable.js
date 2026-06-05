@@ -34,7 +34,7 @@ import {
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js?v=auto_verify_r1";
-import { createAutoAssignAll } from "./timetable-autoassign.js?v=auto_score_r1";
+import { createAutoAssignAll } from "./timetable-autoassign.js?v=auto_compare_r1";
 import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
 import { createTimetableDetailHandlers } from "./timetable-detail.js?v=fixed_lessons_r2";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";

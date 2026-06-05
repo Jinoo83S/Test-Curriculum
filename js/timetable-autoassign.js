@@ -121,6 +121,17 @@ export function createAutoAssignAll(deps) {
   }
 
 
+  function cloneAutoAssignData(value) {
+    try { return structuredClone(value); }
+    catch (_) {
+      try { return JSON.parse(JSON.stringify(value ?? null)); }
+      catch (e) { return Array.isArray(value) ? [...value] : value; }
+    }
+  }
+
+  const safeAutoHtml = value => String(value ?? "").replace(/[<>&"]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"}[ch]));
+
+
   // ── Teacher constraint load helpers ─────────────────────────────
   // 자동배치 후보 시간 계산에서는 교사 시수를 "entry 수"가 아니라
   // "요일·교시 슬롯 수"로 계산해야 합니다. 같은 동시배정 unit 안에서
@@ -1743,8 +1754,30 @@ export function createAutoAssignAll(deps) {
         if (data.best !== undefined) stat("best", data.best);
         if (data.failed !== undefined) stat("failed", data.failed);
         if (data.currentCard !== undefined) currentEl.textContent = `현재 카드: ${data.currentCard || "-"}`;
+        actions?.querySelectorAll?.('[data-auto-extra-action="1"]')?.forEach(btn => btn.remove());
+        const extraActions = Array.isArray(data.actions) ? data.actions : [];
+        extraActions.forEach(action => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.dataset.autoExtraAction = "1";
+          btn.className = `tt-auto-progress-extra-action ${action.className || ""}`.trim();
+          btn.textContent = action.label || "실행";
+          btn.style.cssText = action.danger
+            ? "border:0;border-radius:10px;color:#fff;font-weight:900;padding:9px 16px;cursor:pointer;background:#b91c1c;"
+            : "border:0;border-radius:10px;color:#fff;font-weight:900;padding:9px 16px;cursor:pointer;background:#2563eb;";
+          btn.addEventListener("click", async () => {
+            try {
+              if (typeof action.onClick === "function") await action.onClick({ overlay, button: btn, close: removeOverlay });
+            } catch (e) {
+              console.error("Auto assign action failed:", e);
+              alert(e?.message || String(e));
+            }
+          });
+          actions?.insertBefore(btn, closeBtn);
+        });
+        closeBtn.textContent = data.closeLabel || "닫기";
         closeBtn.disabled = false;
-        closeBtn.focus();
+        (extraActions[0] ? actions?.querySelector('[data-auto-extra-action="1"]') : closeBtn)?.focus?.();
         await waitForBrowser();
       },
       async cancel(message = "사용자 요청으로 자동배치를 취소했습니다.") {
@@ -2138,6 +2171,8 @@ export function createAutoAssignAll(deps) {
     await waitForBrowser();
 
     const autoStartedAt = Date.now();
+    const rollbackEntriesSnapshot = cloneAutoAssignData(entries());
+    let rollbackConsumed = false;
     let autoAssignCancelled = false;
     const progress = createAutoAssignProgressDialog(autoTargetSlots, () => { autoAssignCancelled = true; });
     let lastProgressAt = 0;
@@ -2569,6 +2604,7 @@ export function createAutoAssignAll(deps) {
       conflictCounts: conflictSummary.counts,
       preValidation,
       postValidation,
+      comparisonSummary: `${preValidation.summary || "이전 상태"} → ${postValidation.summary || "결과 상태"}`,
       validationSummary: postValidation.summary,
       validationOk: postValidation.ok,
       classSlotIssueCount: postValidation.classSlots?.issueCount || 0,
@@ -2612,6 +2648,7 @@ export function createAutoAssignAll(deps) {
       restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
+    detailLines.push(buildAutoAssignComparisonHtml(preValidation, postValidation));
     if (!postValidation.ok) {
       const issueRows = postValidation.classSlots?.issues || [];
       const classList = issueRows.slice(0, 10)
@@ -2656,7 +2693,25 @@ export function createAutoAssignAll(deps) {
       placed: bestPlaced.length,
       best: bestPlaced.length,
       failed: names.length,
-      currentCard: "-"
+      currentCard: "-",
+      closeLabel: "적용하고 닫기",
+      actions: [{
+        label: "되돌리기",
+        danger: true,
+        onClick: async ({ close, button }) => {
+          if (rollbackConsumed) return;
+          if (!confirm("이번 자동배치 결과를 되돌리고, 자동배치 전 시간표로 복원할까요?")) return;
+          rollbackConsumed = true;
+          if (button) { button.disabled = true; button.textContent = "되돌리는 중..."; }
+          ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
+          scheduleSave("timetable");
+          recomputeConflicts();
+          renderAll();
+          addTimetableLog("undo", "자동배치 결과 되돌리기", "자동배치 전 시간표 상태로 복원했습니다.");
+          setLastAutoAssignReport({ ...report, rolledBack: true, rolledBackAt: Date.now() });
+          close?.();
+        }
+      }]
     });
     } catch (err) {
       if (err?.message === "__AUTO_ASSIGN_CANCELLED__") {
