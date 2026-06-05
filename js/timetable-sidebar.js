@@ -24,6 +24,8 @@ export function createTimetableSidebarHandlers(deps) {
     if (typeof setDragData === "function") setDragData(value);
   }
 
+  const clean = (value) => String(value ?? "").trim();
+
   const TT_DRAG_MIME = "application/x-his-timetable-drag";
   const GRADE_FILTER_STORAGE_KEY = "his_timetable_grade_filter";
   const CARD_SORT_STORAGE_KEY = "his_timetable_card_sort";
