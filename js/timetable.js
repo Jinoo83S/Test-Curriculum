@@ -34,11 +34,11 @@ import {
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js?v=credit_diag_dedupe_r1";
-import { createAutoAssignAll } from "./timetable-autoassign.js?v=fixed_lessons_r1";
+import { createAutoAssignAll } from "./timetable-autoassign.js?v=fixed_lessons_r2";
 import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
-import { createTimetableDetailHandlers } from "./timetable-detail.js?v=fixed_lessons_r1";
+import { createTimetableDetailHandlers } from "./timetable-detail.js?v=fixed_lessons_r2";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
-import { createTimetableLogHandlers } from "./timetable-log.js?v=fixed_lessons_r1";
+import { createTimetableLogHandlers } from "./timetable-log.js?v=fixed_lessons_r2";
 import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=auto_postprocess_r1";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";

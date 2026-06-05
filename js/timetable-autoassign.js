@@ -263,6 +263,104 @@ export function createAutoAssignAll(deps) {
     return slotEntries.some(e => e.roomId === roomId && !sameUnitPlacement(candidate, e));
   }
 
+
+  // ── Fixed/protected slot helpers ───────────────────────────────
+  // 자동배치에서는 entries()에 남겨 둔 항목이 곧 보호 대상입니다.
+  // 고정 수업·현재 배치 유지 모드·선택 학년 밖 수업·수동 카드가 여기에 들어갑니다.
+  // 일반 충돌 검사보다 앞에서 보호 슬롯을 강하게 제외해야, 채플/자율/동아리처럼
+  // 학생명단이 비어 있거나 교사가 없는 수업도 다른 수업 후보 시간으로 잡히지 않습니다.
+  function protectedEntriesInSlot(day, period) {
+    return entries().filter(e => e && e.day === day && e.period === period);
+  }
+
+  function setOverlaps(a = new Set(), b = new Set()) {
+    for (const v of a || []) if ((b || new Set()).has(v)) return true;
+    return false;
+  }
+
+  function teacherNamesForPlacement(x = {}) {
+    return [...new Set([
+      ...splitTeacherNames(x.teacherName || ""),
+      ...(Array.isArray(x.teachers) ? x.teachers : []),
+      ...getTeacherNamesFromCards((ttCardIdsFromPlacement(x) || []).map(id => getTtCardById(id)).filter(Boolean))
+    ].map(t => String(t || "").trim()).filter(Boolean))];
+  }
+
+  function slotLabelForProtected(day, period) {
+    return formatSlotLabel({ day, period });
+  }
+
+  function strongProtectedSlotConflict(candidate = {}, slot = {}, placed = []) {
+    if (!Number.isInteger(slot.day) || !Number.isInteger(slot.period)) return null;
+    const fixedEntries = protectedEntriesInSlot(slot.day, slot.period);
+    if (!fixedEntries.length) return null;
+
+    const candidateWithSlot = { ...candidate, ...slot };
+    const candidateAudience = audienceForPlacement(candidateWithSlot);
+    const candidateTeachers = teacherNamesForPlacement(candidateWithSlot);
+    const candidateTeacherSet = new Set(candidateTeachers);
+    const candidateRoomData = applyAutoRoomToEntryData(candidateWithSlot, slot, placed);
+
+    const protectedBlock = protectedSlotConflict?.(candidateWithSlot, slot.day, slot.period, { placed });
+    if (protectedBlock?.entry) {
+      return {
+        code: "protectedWholeGrade",
+        label: "고정 전체수업 시간",
+        detail: `${slotLabelForProtected(slot.day, slot.period)} · ${getAutoItemName(protectedBlock.entry)}`,
+        entry: protectedBlock.entry
+      };
+    }
+
+    for (const fixed of fixedEntries) {
+      if (!fixed || (candidateWithSlot.id && fixed.id === candidateWithSlot.id)) continue;
+      if (sameUnitPlacement(candidateWithSlot, fixed)) continue;
+
+      const fixedAudience = audienceForPlacement(fixed);
+      if (audiencesConflict(candidateAudience, fixedAudience)) {
+        return {
+          code: "protectedAudience",
+          label: "고정 수업 학급/학생 충돌",
+          detail: `${slotLabelForProtected(slot.day, slot.period)} · ${getAutoItemName(fixed)}`,
+          entry: fixed
+        };
+      }
+
+      const fixedTeachers = teacherNamesForPlacement(fixed);
+      if (candidateTeacherSet.size && fixedTeachers.some(t => candidateTeacherSet.has(t))) {
+        return {
+          code: "protectedTeacher",
+          label: "고정 수업 교사 충돌",
+          detail: `${slotLabelForProtected(slot.day, slot.period)} · ${fixedTeachers.filter(t => candidateTeacherSet.has(t)).join(", ")}`,
+          entry: fixed
+        };
+      }
+
+      const fixedRoomIds = new Set([fixed.roomId, ...(fixed.roomIds || [])].filter(Boolean));
+      if (candidateRoomData.roomId && fixedRoomIds.has(candidateRoomData.roomId)) {
+        const roomName = (appState.rooms?.rooms || []).find(r => r.id === candidateRoomData.roomId)?.name || candidateRoomData.roomId;
+        return {
+          code: "protectedRoom",
+          label: "고정 수업 교실 충돌",
+          detail: `${slotLabelForProtected(slot.day, slot.period)} · ${roomName}`,
+          entry: fixed
+        };
+      }
+    }
+    return null;
+  }
+
+  function protectedSlotSummary(protectedEntries = []) {
+    const slots = new Set();
+    let pinned = 0;
+    let manual = 0;
+    (protectedEntries || []).forEach(e => {
+      if (Number.isInteger(e.day) && Number.isInteger(e.period)) slots.add(`${e.day}:${e.period}`);
+      if (e.pinned) pinned += 1;
+      if (entryUsesManualCard(e)) manual += 1;
+    });
+    return { slots: slots.size, pinned, manual, total: protectedEntries.length };
+  }
+
   function getRoomCapacity(room = {}) {
     const n = Number(room.capacity);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -337,8 +435,9 @@ export function createAutoAssignAll(deps) {
     const teachers = getTeachersForAutoItem(item);
     const reasons = new Map();
 
-    if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) {
-      addReason(reasons, "protectedSlot", "고정/보호 수업 시간", `${formatSlotLabel(slot)} 보호 슬롯`);
+    const strongProtected = strongProtectedSlotConflict(item, slot, placed);
+    if (strongProtected) {
+      addReason(reasons, strongProtected.code || "protectedSlot", strongProtected.label || "고정/보호 수업 시간", strongProtected.detail || `${formatSlotLabel(slot)} 보호 슬롯`);
     }
 
     const exclusion = slotEnts.find(e => hasAutoGroupExclusionSlotConflict(item, e));
@@ -512,8 +611,11 @@ export function createAutoAssignAll(deps) {
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
     const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
 
-    // 0. Pinned whole-grade activities such as chapel/창체 protect their slot first.
-    if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) return false;
+    // 0. Pinned/fixed/protected entries protect their slot first.
+    // entries() contains protected entries during auto assignment.
+    // This stronger check blocks not only whole-grade activities but also manually fixed
+    // class/teacher/room slots before we spend time scoring candidates.
+    if (strongProtectedSlotConflict(item, slot, placed)) return false;
 
     // 0-1. If a card was explicitly removed from an auto group, do not let the
     // auto-assigner place it in that group's same-time slot by coincidence.
@@ -670,8 +772,8 @@ export function createAutoAssignAll(deps) {
   function forcedSlotScore(item, slot, placed = []) {
     // 마지막 보정 단계용 점수입니다.
     // 원칙적으로 충돌 없는 슬롯을 찾고, 불가피할 때만 최소 충돌 슬롯에 배치합니다.
-    // 단, 고정 채플/창체 등 보호 슬롯 침범과 동일 카드 동일 시간 중복은 끝까지 막습니다.
-    if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) return Infinity;
+    // 단, 고정/보호 슬롯 침범과 동일 카드 동일 시간 중복은 끝까지 막습니다.
+    if (strongProtectedSlotConflict(item, slot, placed)) return Infinity;
     if (exactDuplicateInSlot(item, slot, placed)) return Infinity;
 
     const existing = [...entries(), ...placed];
@@ -1088,7 +1190,7 @@ export function createAutoAssignAll(deps) {
     return batches;
   }
 
-  function placeAutoGroupSlot(group, activeItems, slot, placed) {
+  function placeAutoGroupSlot(group, activeItems, slot, placed, checkOptions = {}) {
     // Current group manager stores a visible group as one aggregate item.
     // 다만 같은 수업 묶음(unit)이 아닌 여러 과목은 과목별 entry로 분리해
     // 각 과목이 자신의 교사 담당교실/홈룸을 따로 받을 수 있게 합니다.
@@ -1096,23 +1198,21 @@ export function createAutoAssignAll(deps) {
     if (!groupItem) return false;
 
     const batches = getGroupRoomBatches(group, groupItem.ttcards || []);
-    if (batches.length > 1) {
-      let added = 0;
-      batches.forEach(cards => {
-        const item = makePlacementFromGroupItem(group, { ...groupItem, ttcards: cards });
-        if (!item) return;
-        placed.push(normalizeTimetableEntry({
-          id: uid("ent"),
-          ...applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed)
-        }));
-        added += 1;
-      });
-      return added > 0;
+    const pending = [];
+    for (const cards of batches.length ? batches : [groupItem.ttcards || []]) {
+      const item = makePlacementFromGroupItem(group, { ...groupItem, ttcards: cards });
+      if (!item) continue;
+      const checkedItem = annotateRestrictedAutoItem(item);
+      // probe 검사를 통과했더라도 실제 저장 entry가 과목별로 분리되면서
+      // 고정 수업/교실/교사 충돌이 생길 수 있으므로, 저장 직전에 한 번 더 검사합니다.
+      if (!checkPlacementValid(checkedItem, slot, [...placed, ...pending], checkOptions)) return false;
+      pending.push(normalizeTimetableEntry({
+        id: uid("ent"),
+        ...applyAutoRoomToEntryData({ ...checkedItem, ...slot }, slot, [...placed, ...pending])
+      }));
     }
-
-    const item = makePlacementFromGroupItem(group, groupItem);
-    if (!item) return false;
-    placed.push(normalizeTimetableEntry({ id: uid("ent"), ...applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed) }));
+    if (!pending.length) return false;
+    placed.push(...pending);
     return true;
   }
 
@@ -1551,6 +1651,7 @@ export function createAutoAssignAll(deps) {
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
     const protectedEntries = computeProtectedEntries(entries(), options);
+    const protectedSummary = protectedSlotSummary(protectedEntries);
     const willClearCount = Math.max(0, entries().length - protectedEntries.length);
     const restrictedStandaloneCount = standalone.filter(item => item.hasRestrictedTeacher).length;
     const restrictedGroupCount = groupBlocks.filter(block => block.hasRestrictedTeacher).length;
@@ -1577,6 +1678,7 @@ export function createAutoAssignAll(deps) {
       `대상: ${activeGrades.map(gradeDisplay).join(", ")}`,
       `방식: ${modeText}`,
       options.placementMode === "reset" ? `초기화 대상 배치: ${willClearCount}개` : `보호되는 기존 배치: ${protectedEntries.length}개`,
+      `고정/보호 슬롯: ${protectedSummary.slots}칸`,
       `잠금 카드 유지: ${options.keepPinned !== false ? "예" : "아니오"}`,
       `수동 카드 유지: ${options.keepManual !== false ? "예" : "아니오"}`,
       "",
@@ -1623,8 +1725,8 @@ export function createAutoAssignAll(deps) {
       percent: 6,
       step: options.placementMode === "keep" ? "기존 배치 유지" : "보호 수업 유지",
       detail: options.placementMode === "keep"
-        ? `기존 배치 ${protectedEntries.length}개를 유지하고 미배치 대상만 준비합니다.`
-        : `보호된 배치 ${protectedEntries.length}개를 유지하고 ${willClearCount}개 배치를 초기화했습니다.`,
+        ? `기존 배치 ${protectedEntries.length}개를 유지하고 미배치 대상만 준비합니다. 보호 슬롯 ${protectedSummary.slots}칸을 후보에서 제외합니다.`
+        : `보호된 배치 ${protectedEntries.length}개를 유지하고 ${willClearCount}개 배치를 초기화했습니다. 보호 슬롯 ${protectedSummary.slots}칸을 후보에서 제외합니다.`,
       placed: 0,
       best: 0,
       failed: 0
@@ -1640,8 +1742,8 @@ export function createAutoAssignAll(deps) {
       step: "배치 대상 분석",
       detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
       log: restrictedTeacherNames.length
-        ? `고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")}`
-        : "그룹 수업은 동시배정 단위로 계산합니다."
+        ? `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")}`
+        : `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 그룹 수업은 동시배정 단위로 계산합니다.`
     }, true);
 
     const requiredByKey = new Map();
@@ -1792,7 +1894,7 @@ export function createAutoAssignAll(deps) {
               const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
               const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
               const foundSlot = probe ? findBestAutoSlot(probe, baseSlots, placed, stage.options) : null;
-              if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed)) {
+              if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed, stage.options)) {
                 continue;
               }
               activeItems.forEach(groupItem => {
@@ -1984,6 +2086,8 @@ export function createAutoAssignAll(deps) {
       totalTarget: autoTargetSlots,
       pinnedCount: pinnedEntries.filter(e => e.pinned).length,
       protectedCount: protectedEntries.length,
+      protectedSlotCount: protectedSummary.slots,
+      protectedManualCount: protectedSummary.manual,
       clearedCount: willClearCount,
       placementMode: options.placementMode,
       placementModeLabel: modeText,
@@ -2036,6 +2140,7 @@ export function createAutoAssignAll(deps) {
       `<b>배치 방식</b> ${modeText}`,
       `<b>탐색 방식</b> ${bestStage.label}`,
       `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
+      `<b>고정/보호 슬롯 제외</b> ${protectedSummary.slots}칸`,
       restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
