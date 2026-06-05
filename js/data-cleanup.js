@@ -212,6 +212,30 @@ function buildClassCreditSnapshot(ttcards = appState.timetable?.ttcards || []) {
   return [...out.entries()].sort((a, b) => a[0].localeCompare(b[0], "ko", { numeric: true })).map(([label, credits]) => ({ label, credits }));
 }
 
+function normalizeEntryClassKey(v = "") {
+  const text = clean(v).replace(/학년/g, "").replace(/\s+/g, "").toUpperCase();
+  const m = text.match(/^(\d{1,2})[:\-_/ ]?([A-Z])$/);
+  return m ? `${Number(m[1])}${m[2]}` : "";
+}
+
+function buildActualEntrySlotSnapshot(entries = appState.timetable?.entries || []) {
+  const slotsByClass = new Map();
+  const add = (label, slot) => {
+    if (!label || !slot) return;
+    if (!slotsByClass.has(label)) slotsByClass.set(label, new Set());
+    slotsByClass.get(label).add(slot);
+  };
+  (entries || []).forEach(entry => {
+    const slot = `${entry.day}:${entry.period}`;
+    if (!Number.isInteger(entry.day) || !Number.isInteger(entry.period)) return;
+    const keys = Array.isArray(entry.audienceClassKeys) ? entry.audienceClassKeys : [];
+    keys.map(normalizeEntryClassKey).filter(Boolean).forEach(label => add(label, slot));
+  });
+  return [...slotsByClass.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], "ko", { numeric: true }))
+    .map(([label, set]) => ({ label, credits: set.size }));
+}
+
 export function previewDataCleanup() {
   const duplicateCards = findDuplicateWholeGradeCards();
   const roomMigrations = findRoomHomeRoomMigrations();
@@ -222,6 +246,7 @@ export function previewDataCleanup() {
     roomMigrations,
     beforeCreditSnapshot: buildClassCreditSnapshot(appState.timetable?.ttcards || []),
     afterCreditSnapshot: buildClassCreditSnapshot(afterCards),
+    actualEntrySnapshot: buildActualEntrySlotSnapshot(appState.timetable?.entries || []),
     totals: {
       duplicateCardCount: duplicateCards.length,
       roomMigrationCount: roomMigrations.length,
@@ -339,7 +364,15 @@ function renderPreviewBody(body, preview) {
   body.appendChild(summary);
 
   const creditBox = el("div", "cleanup-section");
-  creditBox.innerHTML = `<h4>학급별 필요 시수 예상</h4><p><b>정리 전</b> ${creditSnapshotText(preview.beforeCreditSnapshot)}</p><p><b>정리 후</b> ${creditSnapshotText(preview.afterCreditSnapshot)}</p>`;
+  creditBox.innerHTML = `
+    <h4>학급별 시수 참고</h4>
+    <p style="margin:0 0 6px;color:#64748b;font-size:12px;line-height:1.55;">
+      <b>실제 시간표 점유</b>는 현재 배치된 entry의 학급 슬롯만 계산합니다.
+      <b>카드 원시 합계</b>는 선택군/분반 후보를 모두 더한 참고값이므로 35시수 판단 기준으로 사용하지 않습니다.
+    </p>
+    <p><b>실제 시간표 점유</b> ${creditSnapshotText(preview.actualEntrySnapshot)}</p>
+    <p><b>카드 원시 합계 · 정리 전</b> ${creditSnapshotText(preview.beforeCreditSnapshot)}</p>
+    <p><b>카드 원시 합계 · 정리 후</b> ${creditSnapshotText(preview.afterCreditSnapshot)}</p>`;
   body.appendChild(creditBox);
 
   const dupBox = el("div", "cleanup-section");

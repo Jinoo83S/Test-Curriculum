@@ -24,13 +24,89 @@ export function createTimetableSidebarHandlers(deps) {
     if (typeof setDragData === "function") setDragData(value);
   }
 
-  const clean = (value) => String(value ?? "").trim();
-
   const TT_DRAG_MIME = "application/x-his-timetable-drag";
   const GRADE_FILTER_STORAGE_KEY = "his_timetable_grade_filter";
   const CARD_SORT_STORAGE_KEY = "his_timetable_card_sort";
   let activeGradeFilter = loadGradeFilter();
   let activeCardSort = loadCardSort();
+
+  function clean(value) {
+    return String(value ?? "").trim();
+  }
+
+  function sidebarCardEquivalenceKey(card) {
+    if (!card) return "";
+    const wholeLike = !!card.isWholeGrade || clean(card.category) === "창체";
+    if (!wholeLike || !clean(card.gradeKey) || !clean(card.templateId)) return "";
+    return [
+      clean(card.gradeKey),
+      clean(card.templateId),
+      clean(card.category),
+      clean(card.track),
+      clean(card.group),
+      String(Number(card.credits) || 0)
+    ].join("|");
+  }
+
+  function buildSidebarPlacementIndex(allTtcards = []) {
+    const cardById = new Map((allTtcards || []).map(c => [c.id, c]));
+    const eqToIds = new Map();
+    (allTtcards || []).forEach(card => {
+      const key = sidebarCardEquivalenceKey(card);
+      if (!key) return;
+      if (!eqToIds.has(key)) eqToIds.set(key, new Set());
+      eqToIds.get(key).add(card.id);
+    });
+
+    const placedIds = new Set();
+    const placedEqKeys = new Set();
+    entries().forEach(entry => {
+      const ids = [entry.ttcardId, ...(entry.ttcardIds || [])].filter(Boolean);
+      ids.forEach(id => {
+        placedIds.add(id);
+        const key = sidebarCardEquivalenceKey(cardById.get(id));
+        if (key) placedEqKeys.add(key);
+      });
+    });
+
+    const markEquivalentSeen = (card, seenIds) => {
+      if (!card || !seenIds) return;
+      seenIds.add(card.id);
+      const key = sidebarCardEquivalenceKey(card);
+      if (!key) return;
+      (eqToIds.get(key) || new Set()).forEach(id => seenIds.add(id));
+    };
+
+    const isCardPlaced = card => {
+      if (!card?.id) return false;
+      if (placedIds.has(card.id)) return true;
+      const key = sidebarCardEquivalenceKey(card);
+      return !!key && placedEqKeys.has(key);
+    };
+
+    const placedOccurrencesForCard = card => {
+      if (!card?.id) return 0;
+      const key = sidebarCardEquivalenceKey(card);
+      const slots = new Set();
+      entries().forEach(entry => {
+        const ids = [entry.ttcardId, ...(entry.ttcardIds || [])].filter(Boolean);
+        const direct = ids.includes(card.id);
+        const equivalent = key && ids.some(id => sidebarCardEquivalenceKey(cardById.get(id)) === key);
+        const fallback = entryTemplateIds(entry).includes(card.templateId) && entryHasGrade(entry, card.gradeKey) && (entry.sectionIdx ?? 0) === (card.sectionIdx ?? 0);
+        if (direct || equivalent || fallback) slots.add(`${entry.day}:${entry.period}`);
+      });
+      return slots.size;
+    };
+
+    return { placedIds, placedEqKeys, eqToIds, markEquivalentSeen, isCardPlaced, placedOccurrencesForCard };
+  }
+
+  function getSidebarCompletionCredits(card) {
+    if (!card) return 0;
+    const compoundTotal = Number(card.compoundTotalCredits);
+    if (card.compoundParentTemplateId && Number.isFinite(compoundTotal) && compoundTotal > 0) return compoundTotal;
+    return getCreditsForTtCard(card);
+  }
 
   function beginSidebarDrag(event, card, data, effect = "copy") {
     setDragging(data);
@@ -868,13 +944,10 @@ export function createTimetableSidebarHandlers(deps) {
     return normalizeSortText(getEditableCardTitle(card));
   }
 
-  function countAssignedForCard(card) {
+  function countAssignedForCard(card, placementIndex = null) {
     if (!card) return 0;
-    return entries().filter(e =>
-      e.ttcardId === card.id ||
-      (e.ttcardIds || []).includes(card.id) ||
-      (entryTemplateIds(e).includes(card.templateId) && entryHasGrade(e, card.gradeKey) && (e.sectionIdx ?? 0) === (card.sectionIdx ?? 0))
-    ).length;
+    const index = placementIndex || buildSidebarPlacementIndex(getTtCards());
+    return index.placedOccurrencesForCard(card);
   }
 
   function getGroupsForCardId(cardId) {
@@ -899,6 +972,7 @@ export function createTimetableSidebarHandlers(deps) {
     const availableCards = [];
     const doneCards = [];
     const seenIds = new Set();
+    const placementIndex = buildSidebarPlacementIndex(allTtcards);
     const grpList = appState.timetable.ttcardGroups || [];
 
     // ── Groups: one card per group ──────────────────────────────
@@ -906,14 +980,20 @@ export function createTimetableSidebarHandlers(deps) {
       const grpCards = getGroupCards(grp);
       if (!grpCards.length) return;
       if (!cardsMatchActiveGradeFilter(grpCards)) return;
-      grpCards.forEach(c => seenIds.add(c.id));
+      grpCards.forEach(c => placementIndex.markEquivalentSeen(c, seenIds));
 
       const gradeKeys = [...new Set(grpCards.map(c => c.gradeKey).filter(Boolean))];
-      const credits = Math.max(1, ...grpCards.map(getCreditsForTtCard).filter(v => v > 0));
+      const credits = Math.max(1, ...grpCards.map(getSidebarCompletionCredits).filter(v => v > 0));
       const teachers = [...new Set(grpCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))];
-      const relatedEntries = entries().filter(e =>
-        e.groupId === grp.id || grpCards.some(c => e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id))
-      );
+      const relatedEntries = entries().filter(e => {
+        if (e.groupId === grp.id) return true;
+        const ids = [e.ttcardId, ...(e.ttcardIds || [])].filter(Boolean);
+        return grpCards.some(c => {
+          if (ids.includes(c.id)) return true;
+          const key = sidebarCardEquivalenceKey(c);
+          return key && ids.some(id => sidebarCardEquivalenceKey(getTtCardById(id)) === key);
+        });
+      });
       const assigned = new Set(relatedEntries.map(e => `${e.day}:${e.period}`)).size;
       const isDone = credits > 0 && assigned >= credits;
       const gradeColor = getGradeColor(gradeKeys[0] || "7학년");
@@ -939,17 +1019,17 @@ export function createTimetableSidebarHandlers(deps) {
       if (seenIds.has(c.id)) return;
       if (!cardMatchesActiveGradeFilter(c)) return;
       const gradeColor = getGradeColor(c.gradeKey);
-      const credits = getCreditsForTtCard(c);
+      const credits = getSidebarCompletionCredits(c);
       const desc = describeTtCard(c);
-      const assigned = entries().filter(e =>
-        (e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)) ||
-        (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e, c.gradeKey) && (e.sectionIdx ?? 0) === c.sectionIdx)
-      ).length;
+      const assigned = countAssignedForCard(c, placementIndex);
       const isDone = credits > 0 && assigned >= credits;
-      const relatedEntries = entries().filter(e =>
-        (e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id)) ||
-        (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e, c.gradeKey) && (e.sectionIdx ?? 0) === c.sectionIdx)
-      );
+      const relatedEntries = entries().filter(e => {
+        const ids = [e.ttcardId, ...(e.ttcardIds || [])].filter(Boolean);
+        const key = sidebarCardEquivalenceKey(c);
+        return ids.includes(c.id) ||
+          (!!key && ids.some(id => sidebarCardEquivalenceKey(getTtCardById(id)) === key)) ||
+          (entryTemplateIds(e).includes(c.templateId) && entryHasGrade(e, c.gradeKey) && (e.sectionIdx ?? 0) === c.sectionIdx);
+      });
       const card = buildSidebarCard({
         title: desc.title,
         teachers: getTeachersForTtCard(c),
