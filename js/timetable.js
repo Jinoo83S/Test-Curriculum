@@ -883,6 +883,7 @@ function getConstraintConflictMessage(type, entry) {
   if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
   if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
   if (type === "maxPerDay") return `${teachers} 선생님의 일일 수업 수 제한을 초과했습니다.`;
+  if (type === "maxPerWeek") return `${teachers} 선생님의 주간 수업 수 제한을 초과했습니다.`;
   return "시간표 제약 조건을 확인해야 합니다.";
 }
 

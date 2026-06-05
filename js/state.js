@@ -594,13 +594,26 @@ export function normalizeTtCard(item = {}) {
     compoundTotalCredits: num(item.compoundTotalCredits),
   };
 }
+const TEACHER_WORK_TYPES = new Set(["fulltime", "parttime", "childcare", "restricted", "other"]);
+const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
+
 export function normalizeTimetableConstraint(c = {}) {
+  const workType = TEACHER_WORK_TYPES.has(clean(c.workType)) ? clean(c.workType) : "fulltime";
+  const maxPerWeek = Number.isInteger(c.maxPerWeek) && c.maxPerWeek > 0 ? c.maxPerWeek : 0;
   return {
     maxPerDay:      (Number.isInteger(c.maxPerDay)      && c.maxPerDay > 0)      ? c.maxPerDay      : 6,
     maxConsecutive: (Number.isInteger(c.maxConsecutive) && c.maxConsecutive > 0) ? c.maxConsecutive : 3,
+    // 주 최대 시수는 시간강사/육아단축 등 제한 근무 교사의 자동배치 우선순위와 충돌 진단에 사용합니다.
+    // 0은 제한 없음입니다.
+    maxPerWeek,
     unavailableSlots: Array.isArray(c.unavailableSlots)
       ? c.unavailableSlots.filter(s => Number.isInteger(s.day) && Number.isInteger(s.period))
       : [],
+    // 근무 유형: fulltime | parttime | childcare | restricted | other
+    workType,
+    // 과거/외부 데이터 호환용 플래그입니다. 실제 판단은 workType을 우선 사용합니다.
+    isRestrictedWork: c.isRestrictedWork === true || RESTRICTED_WORK_TYPES.has(workType),
+    constraintNote: clean(c.constraintNote),
     // assignedRoomId: 실제 자동배정 시 우선 배정할 교실
     assignedRoomId: clean(c.assignedRoomId) || null,
     // homeRoomId/useHomeRoom: 교사 조건 화면의 홈룸/본인 교실 기능

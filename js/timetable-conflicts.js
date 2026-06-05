@@ -268,20 +268,32 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 }
 
 /**
- * Returns Map<entryId, Set<"maxPerDay"|"maxConsecutive"|"unavailable">>
+ * Returns Map<entryId, Set<"maxPerDay"|"maxPerWeek"|"maxConsecutive"|"unavailable">>
  */
 export function detectConstraintViolations(entries, teacherConstraints = {}) {
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
-  // Build per-teacher, per-day entry lists
+  // Build per-teacher entry lists
+  const byTeacher = new Map();
   const byTeacherDay = new Map();
   entries.forEach(e => {
     splitTeacherNames(e.teacherName).filter(Boolean).forEach(teacher => {
+      if (!byTeacher.has(teacher)) byTeacher.set(teacher, []);
+      byTeacher.get(teacher).push(e);
       const k = `${teacher}:${e.day}`;
       if (!byTeacherDay.has(k)) byTeacherDay.set(k, []);
       byTeacherDay.get(k).push(e);
     });
+  });
+
+  // Max per week
+  byTeacher.forEach((teacherEntries, teacher) => {
+    const c = teacherConstraints[teacher];
+    const maxPerWeek = Number(c?.maxPerWeek) || 0;
+    if (maxPerWeek > 0 && teacherEntries.length > maxPerWeek) {
+      teacherEntries.forEach(e => result.get(e.id).add("maxPerWeek"));
+    }
   });
 
   byTeacherDay.forEach((dayEntries, key) => {
@@ -327,6 +339,7 @@ export function getConflictLabel(set) {
   if (set.has("roomMissing")) labels.push("교실 미배정");
   if (set.has("student")) labels.push("학생 중복");
   if (set.has("maxPerDay")) labels.push("일일 최대 초과");
+  if (set.has("maxPerWeek")) labels.push("주간 최대 초과");
   if (set.has("maxConsecutive")) labels.push("연속수업 초과");
   if (set.has("unavailable"))   labels.push("불가 시간대");
   if (set.has("syncRequired"))   labels.push("동시배정 불일치");

@@ -25,6 +25,18 @@ export function createTimetableConstraintsHandlers({
     return constraints()[teacher];
   }
 
+  const WORK_TYPE_OPTIONS = [
+    ["fulltime", "전임"],
+    ["parttime", "시간강사"],
+    ["childcare", "육아단축"],
+    ["restricted", "제한근무"],
+    ["other", "기타제약"],
+  ];
+  const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
+  const workTypeLabel = value => WORK_TYPE_OPTIONS.find(([key]) => key === value)?.[1] || "전임";
+  const normalizeWorkType = value => WORK_TYPE_OPTIONS.some(([key]) => key === value) ? value : "fulltime";
+  const isRestrictedWorkConstraint = c => !!(c && (c.isRestrictedWork || RESTRICTED_WORK_TYPES.has(normalizeWorkType(c.workType))));
+
   function getAllTimetableTeachers() {
     const fromCards = [...new Set(
       (appState.timetable?.ttcards || []).flatMap(c => [
@@ -443,7 +455,7 @@ export function createTimetableConstraintsHandlers({
     style.textContent = `
       .tt-con-launch-card{margin:10px 14px;padding:14px 16px;border:1px solid #dbe4f0;border-radius:14px;background:linear-gradient(180deg,#fff,#f8fbff);display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 8px 22px rgba(15,23,42,.06)}
       .tt-con-launch-card h3{margin:0 0 4px;font-size:14px;font-weight:900;color:#0f172a}.tt-con-launch-card p{margin:0;font-size:12px;color:#64748b}.tt-con-launch-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tt-con-launch-chip{font-size:11px;font-weight:800;border:1px solid #dbe4f0;border-radius:999px;padding:4px 8px;background:#fff;color:#334155}.tt-con-open-btn{height:32px;padding:0 14px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;font-size:12px;cursor:pointer;white-space:nowrap}.tt-con-open-btn:disabled{opacity:.45;cursor:not-allowed}
-      .ttc-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px}.ttc-modal{width:min(1480px,92vw);height:min(820px,82vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}.ttc-modal-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e2e8f0;background:#f8fbff}.ttc-modal-title{font-size:16px;font-weight:950;color:#0f172a}.ttc-modal-sub{font-size:11px;color:#64748b;margin-left:8px;font-weight:700}.ttc-close{width:30px;height:30px;border:0;border-radius:9px;background:#eef2f7;color:#64748b;font-size:18px;font-weight:900;cursor:pointer}.ttc-body{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(470px,1fr) 330px;gap:0}.ttc-left,.ttc-center,.ttc-right{min-height:0;overflow:auto}.ttc-left{border-right:1px solid #e2e8f0;background:#f8fafc;padding:12px}.ttc-center{padding:14px 16px;background:#fff}.ttc-right{border-left:1px solid #e2e8f0;background:#fbfdff;padding:14px}.ttc-search{width:100%;height:32px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px;font-weight:700;background:#fff}.ttc-filter-row{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px}.ttc-filter{height:24px;border:1px solid #dbe4f0;border-radius:999px;background:#fff;color:#475569;font-size:10.5px;font-weight:900;padding:0 8px;cursor:pointer}.ttc-filter.active{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-teacher-list{display:flex;flex-direction:column;gap:5px}.ttc-teacher-item{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;text-align:left;cursor:pointer}.ttc-teacher-item.active{border-color:#2563eb;background:#eff6ff}.ttc-teacher-name{font-size:12px;font-weight:950;color:#0f172a}.ttc-teacher-meta{margin-top:3px;font-size:10.5px;color:#64748b;display:flex;gap:6px;align-items:center}.ttc-warn{color:#b45309;font-weight:900}.ttc-ok{color:#15803d;font-weight:900}.ttc-section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ttc-section-title h4{margin:0;font-size:14px;font-weight:950;color:#0f172a}.ttc-section-title span{font-size:11px;color:#64748b;font-weight:800}.ttc-time-grid{display:grid;grid-template-columns:46px repeat(5,1fr);gap:6px}.ttc-time-cell,.ttc-time-head,.ttc-time-period{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}.ttc-time-head{background:#173b68;color:#fff}.ttc-time-period{background:#f1f5f9;color:#475569}.ttc-time-cell{border:1px solid #dbe4f0;background:#f8fafc;color:#94a3b8;cursor:pointer}.ttc-time-cell:hover{border-color:#60a5fa;background:#eff6ff}.ttc-time-cell.unavailable{border-color:#ef4444;background:#fee2e2;color:#b91c1c}.ttc-time-cell.busy{box-shadow:inset 0 -3px 0 #93c5fd}.ttc-legend{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}.ttc-legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-2px}.ttc-form-card{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:12px;margin-bottom:12px}.ttc-form-card h4{margin:0 0 10px;font-size:13px;font-weight:950;color:#0f172a}.ttc-field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.ttc-field label{font-size:11px;font-weight:900;color:#475569}.ttc-field input,.ttc-field select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px;font-size:12px;font-weight:750}.ttc-inline{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ttc-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:850;color:#334155;margin:4px 0 10px}.ttc-btn-row{display:flex;gap:6px;flex-wrap:wrap}.ttc-btn{height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-size:11.5px;font-weight:900;padding:0 10px;cursor:pointer}.ttc-btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-btn.ghost{background:#f8fafc}.ttc-btn.danger{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.ttc-btn:disabled,.ttc-time-cell:disabled{opacity:.45;cursor:not-allowed}.ttc-footer{border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}.ttc-bulk-title{font-size:12px;font-weight:950;color:#0f172a;margin-bottom:5px}.ttc-bulk-grid{display:grid;grid-template-columns:28px repeat(5,28px);gap:3px}.ttc-bulk-grid div,.ttc-bulk-grid button{height:24px;border-radius:6px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center}.ttc-bulk-grid div{background:#e2e8f0;color:#475569}.ttc-bulk-grid button{border:1px solid #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer}.ttc-bulk-grid button.selected{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-bulk-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ttc-mini-field{display:flex;flex-direction:column;gap:4px}.ttc-mini-field span{font-size:10px;font-weight:900;color:#64748b}.ttc-mini-field input{width:58px;height:28px;border:1px solid #cbd5e1;border-radius:8px;padding:0 7px;font-size:12px;font-weight:850}.ttc-empty{font-size:12px;color:#94a3b8;text-align:center;padding:28px 0}.ttc-assist{font-size:11px;color:#64748b;line-height:1.5;margin-top:6px}
+      .ttc-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px}.ttc-modal{width:min(1480px,92vw);height:min(820px,82vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}.ttc-modal-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e2e8f0;background:#f8fbff}.ttc-modal-title{font-size:16px;font-weight:950;color:#0f172a}.ttc-modal-sub{font-size:11px;color:#64748b;margin-left:8px;font-weight:700}.ttc-close{width:30px;height:30px;border:0;border-radius:9px;background:#eef2f7;color:#64748b;font-size:18px;font-weight:900;cursor:pointer}.ttc-body{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(470px,1fr) 330px;gap:0}.ttc-left,.ttc-center,.ttc-right{min-height:0;overflow:auto}.ttc-left{border-right:1px solid #e2e8f0;background:#f8fafc;padding:12px}.ttc-center{padding:14px 16px;background:#fff}.ttc-right{border-left:1px solid #e2e8f0;background:#fbfdff;padding:14px}.ttc-search{width:100%;height:32px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px;font-weight:700;background:#fff}.ttc-filter-row{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px}.ttc-filter{height:24px;border:1px solid #dbe4f0;border-radius:999px;background:#fff;color:#475569;font-size:10.5px;font-weight:900;padding:0 8px;cursor:pointer}.ttc-filter.active{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-teacher-list{display:flex;flex-direction:column;gap:5px}.ttc-teacher-item{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;text-align:left;cursor:pointer}.ttc-teacher-item.active{border-color:#2563eb;background:#eff6ff}.ttc-teacher-name{font-size:12px;font-weight:950;color:#0f172a}.ttc-teacher-meta{margin-top:3px;font-size:10.5px;color:#64748b;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ttc-work-chip{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:999px;border:1px solid #dbe4f0;background:#fff;color:#475569;font-size:9.5px;font-weight:950}.ttc-work-chip.restricted{background:#fff7ed;border-color:#fed7aa;color:#c2410c}.ttc-warn{color:#b45309;font-weight:900}.ttc-ok{color:#15803d;font-weight:900}.ttc-section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ttc-section-title h4{margin:0;font-size:14px;font-weight:950;color:#0f172a}.ttc-section-title span{font-size:11px;color:#64748b;font-weight:800}.ttc-time-grid{display:grid;grid-template-columns:46px repeat(5,1fr);gap:6px}.ttc-time-cell,.ttc-time-head,.ttc-time-period{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}.ttc-time-head{background:#173b68;color:#fff}.ttc-time-period{background:#f1f5f9;color:#475569}.ttc-time-cell{border:1px solid #dbe4f0;background:#f8fafc;color:#94a3b8;cursor:pointer}.ttc-time-cell:hover{border-color:#60a5fa;background:#eff6ff}.ttc-time-cell.unavailable{border-color:#ef4444;background:#fee2e2;color:#b91c1c}.ttc-time-cell.busy{box-shadow:inset 0 -3px 0 #93c5fd}.ttc-legend{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}.ttc-legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-2px}.ttc-form-card{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:12px;margin-bottom:12px}.ttc-form-card h4{margin:0 0 10px;font-size:13px;font-weight:950;color:#0f172a}.ttc-field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.ttc-field label{font-size:11px;font-weight:900;color:#475569}.ttc-field input,.ttc-field select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px;font-size:12px;font-weight:750}.ttc-inline{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ttc-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:850;color:#334155;margin:4px 0 10px}.ttc-btn-row{display:flex;gap:6px;flex-wrap:wrap}.ttc-btn{height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-size:11.5px;font-weight:900;padding:0 10px;cursor:pointer}.ttc-btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-btn.ghost{background:#f8fafc}.ttc-btn.danger{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.ttc-btn:disabled,.ttc-time-cell:disabled{opacity:.45;cursor:not-allowed}.ttc-footer{border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}.ttc-bulk-title{font-size:12px;font-weight:950;color:#0f172a;margin-bottom:5px}.ttc-bulk-grid{display:grid;grid-template-columns:28px repeat(5,28px);gap:3px}.ttc-bulk-grid div,.ttc-bulk-grid button{height:24px;border-radius:6px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center}.ttc-bulk-grid div{background:#e2e8f0;color:#475569}.ttc-bulk-grid button{border:1px solid #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer}.ttc-bulk-grid button.selected{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-bulk-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ttc-mini-field{display:flex;flex-direction:column;gap:4px}.ttc-mini-field span{font-size:10px;font-weight:900;color:#64748b}.ttc-mini-field input{width:58px;height:28px;border:1px solid #cbd5e1;border-radius:8px;padding:0 7px;font-size:12px;font-weight:850}.ttc-empty{font-size:12px;color:#94a3b8;text-align:center;padding:28px 0}.ttc-assist{font-size:11px;color:#64748b;line-height:1.5;margin-top:6px}.ttc-field textarea{min-height:58px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:8px 9px;font-size:12px;font-weight:700;line-height:1.35;resize:vertical}.ttc-field select option{font-weight:700}.ttc-field-help{font-size:10.5px;color:#64748b;line-height:1.4}.ttc-restricted-card{border-color:#fed7aa;background:#fffaf4}
       @media (max-width:1100px){.ttc-body{grid-template-columns:210px 1fr}.ttc-right{grid-column:1 / -1;border-left:0;border-top:1px solid #e2e8f0}.ttc-modal{height:90vh}.ttc-footer{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
@@ -452,12 +464,15 @@ export function createTimetableConstraintsHandlers({
   function getTeacherStats(teacher) {
     const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
     const roomId = getEffectiveAssignedRoomId(teacher);
+    const c = ensureConstraint(teacher);
+    const workType = normalizeWorkType(c.workType);
+    const isRestricted = isRestrictedWorkConstraint(c);
     const constraintMap = getConstraintMap();
     const hasViolation = [...constraintMap.entries()].some(([id, s]) => {
       const e = entries().find(x => x.id === id);
       return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size > 0;
     });
-    return { placed, roomId, hasViolation };
+    return { placed, roomId, hasViolation, workType, isRestricted, maxPerWeek: Number(c.maxPerWeek) || 0 };
   }
 
   function getFilteredConstraintTeachers(allTeachers) {
@@ -465,6 +480,7 @@ export function createTimetableConstraintsHandlers({
     return allTeachers.filter(t => {
       if (q && !t.toLowerCase().includes(q)) return false;
       const stat = getTeacherStats(t);
+      if (constraintModalState.filter === "restricted") return stat.isRestricted;
       if (constraintModalState.filter === "noRoom") return !stat.roomId;
       if (constraintModalState.filter === "violation") return stat.hasViolation;
       return true;
@@ -518,6 +534,7 @@ export function createTimetableConstraintsHandlers({
     filterRow.className = "ttc-filter-row";
     [
       ["all", "전체"],
+      ["restricted", "제약근무"],
       ["noRoom", "교실 미지정"],
       ["violation", "충돌"],
     ].forEach(([key, label]) => {
@@ -549,6 +566,8 @@ export function createTimetableConstraintsHandlers({
         <div class="ttc-teacher-meta">
           <span>${stat.placed ? `${stat.placed}시수` : "배정 없음"}</span>
           <span>${room ? escapeText(room.name) : "교실 없음"}</span>
+          <span class="ttc-work-chip${stat.isRestricted ? " restricted" : ""}">${escapeText(workTypeLabel(stat.workType))}</span>
+          ${stat.maxPerWeek ? `<span>주 ${stat.maxPerWeek}시수</span>` : ""}
           <span class="${stat.hasViolation ? "ttc-warn" : "ttc-ok"}">${stat.hasViolation ? "충돌" : "정상"}</span>
         </div>`;
       btn.addEventListener("click", () => {
@@ -625,29 +644,58 @@ export function createTimetableConstraintsHandlers({
   function renderTeacherSettings(container, teacher, rooms) {
     const c = ensureConstraint(teacher);
     const card = document.createElement("div");
-    card.className = "ttc-form-card";
+    card.className = "ttc-form-card" + (isRestrictedWorkConstraint(c) ? " ttc-restricted-card" : "");
     card.innerHTML = `<h4>선택 교사 설정</h4>`;
+
+    const workField = document.createElement("div");
+    workField.className = "ttc-field";
+    const workLabel = document.createElement("label");
+    workLabel.textContent = "근무 유형";
+    const workSel = document.createElement("select");
+    WORK_TYPE_OPTIONS.forEach(([key, label]) => {
+      const opt = document.createElement("option");
+      opt.value = key;
+      opt.textContent = label;
+      if (normalizeWorkType(c.workType) === key) opt.selected = true;
+      workSel.appendChild(opt);
+    });
+    workSel.disabled = !canEdit();
+    workSel.addEventListener("change", e => {
+      if (!canEdit()) return;
+      captureTimetableUndo("교사 근무 유형 수정");
+      c.workType = normalizeWorkType(e.target.value);
+      c.isRestrictedWork = RESTRICTED_WORK_TYPES.has(c.workType);
+      commitConstraintChange({ page: false, modal: true });
+    });
+    const workHelp = document.createElement("div");
+    workHelp.className = "ttc-field-help";
+    workHelp.textContent = "시간강사·육아단축·제한근무 교사는 자동배치에서 고정 수업 다음 우선 배치 대상으로 분류됩니다.";
+    workField.append(workLabel, workSel, workHelp);
+    card.appendChild(workField);
 
     const inline = document.createElement("div");
     inline.className = "ttc-inline";
     [
-      ["maxPerDay", "하루 최대", 6],
-      ["maxConsecutive", "최대 연속", 4],
-    ].forEach(([key, label, fallback]) => {
+      ["maxPerDay", "하루 최대", 6, 1],
+      ["maxConsecutive", "최대 연속", 4, 1],
+      ["maxPerWeek", "주 최대", 0, 0],
+    ].forEach(([key, label, fallback, min]) => {
       const field = document.createElement("div");
       field.className = "ttc-field";
       const lab = document.createElement("label");
       lab.textContent = label;
       const inp = document.createElement("input");
       inp.type = "number";
-      inp.min = "1";
-      inp.max = "12";
+      inp.min = String(min ?? 1);
+      inp.max = key === "maxPerWeek" ? "40" : "12";
       inp.value = c[key] ?? fallback;
       inp.disabled = !canEdit();
       inp.addEventListener("change", e => {
         if (!canEdit()) return;
         captureTimetableUndo("교사 조건 숫자 수정");
-        c[key] = parseInt(e.target.value, 10) || fallback;
+        const value = parseInt(e.target.value, 10);
+        if (key === "maxPerWeek") c[key] = Number.isFinite(value) && value > 0 ? value : 0;
+        else c[key] = Number.isFinite(value) && value > 0 ? value : fallback;
         commitConstraintChange({ page: false, modal: true });
       });
       field.append(lab, inp);
@@ -713,6 +761,23 @@ export function createTimetableConstraintsHandlers({
     });
     assignedField.append(assignedLabel, assignedSel);
     card.appendChild(assignedField);
+
+    const noteField = document.createElement("div");
+    noteField.className = "ttc-field";
+    const noteLabel = document.createElement("label");
+    noteLabel.textContent = "제약 메모";
+    const note = document.createElement("textarea");
+    note.placeholder = "예) 화요일 불가, 월·수 오전만 가능, 육아 단축근무 등";
+    note.value = c.constraintNote || "";
+    note.disabled = !canEdit();
+    note.addEventListener("change", e => {
+      if (!canEdit()) return;
+      captureTimetableUndo("교사 제약 메모 수정");
+      c.constraintNote = clean(e.target.value);
+      commitConstraintChange({ page: false, modal: true });
+    });
+    noteField.append(noteLabel, note);
+    card.appendChild(noteField);
 
     const row = document.createElement("div");
     row.className = "ttc-btn-row";
@@ -936,6 +1001,7 @@ export function createTimetableConstraintsHandlers({
       return;
     }
 
+    const restrictedCount = allTeachers.filter(t => getTeacherStats(t).isRestricted).length;
     const noRoomCount = allTeachers.filter(t => !getTeacherStats(t).roomId).length;
     const violationCount = allTeachers.filter(t => getTeacherStats(t).hasViolation).length;
     const expanded = document.createElement("div");
@@ -946,6 +1012,7 @@ export function createTimetableConstraintsHandlers({
         <p>하단바에서는 요약만 표시하고, 편집은 넓은 팝업창에서 진행합니다.</p>
         <div class="tt-con-launch-stats">
           <span class="tt-con-launch-chip">교사 ${allTeachers.length}명</span>
+          <span class="tt-con-launch-chip">제약근무 ${restrictedCount}명</span>
           <span class="tt-con-launch-chip">교실 미지정 ${noRoomCount}명</span>
           <span class="tt-con-launch-chip">충돌 ${violationCount}명</span>
         </div>

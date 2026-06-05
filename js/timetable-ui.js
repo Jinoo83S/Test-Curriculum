@@ -24,9 +24,10 @@ export const CONFLICT_DISPLAY = {
   unavailable:    { label:"불가시간", short:"불", color:"#475569" },
   maxConsecutive: { label:"연속초과", short:"연", color:"#ca8a04" },
   maxPerDay:      { label:"일일초과", short:"일", color:"#ca8a04" },
+  maxPerWeek:     { label:"주간초과", short:"주", color:"#ca8a04" },
 };
 
-export const CONFLICT_PRIORITY = ["teacher", "room", "roomMissing", "student", "syncRequired", "unavailable", "maxConsecutive", "maxPerDay"];
+export const CONFLICT_PRIORITY = ["teacher", "room", "roomMissing", "student", "syncRequired", "unavailable", "maxPerWeek", "maxConsecutive", "maxPerDay"];
 
 export function getOrderedConflictTypes(conflicts) {
   return CONFLICT_PRIORITY.filter(type => conflicts.has(type));
