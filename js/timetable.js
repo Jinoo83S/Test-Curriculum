@@ -35,8 +35,8 @@ import {
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
 } from "./timetable-data.js";
 import { createAutoAssignAll } from "./timetable-autoassign.js?v=compound_subject_slot_guard";
-import { renderTimetableGrid } from "./timetable-grid.js?v=all_summary_panel_nonblocking";
-import { createTimetableDetailHandlers } from "./timetable-detail.js";
+import { renderTimetableGrid } from "./timetable-grid.js?v=all_summary_context_drag";
+import { createTimetableDetailHandlers } from "./timetable-detail.js?v=context_menu_top";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js";
 import { createTimetableLogHandlers } from "./timetable-log.js";
 import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=curriculum_compare_class_count";
@@ -1140,11 +1140,13 @@ function renderGrid() {
     periods: ttConfig().periodLabels,
     entries: entries(),
     getDragData: () => dragData,
+    setDragData: value => { dragData = value; },
     handleDrop,
     updatePeriodLabel,
     buildEntryCard,
     getGradeColor,
     showEntryDetail,
+    showEntryContextMenu,
     getEntryConflictSet,
     getRoomDisplayName,
     renderAll: () => renderAll(),

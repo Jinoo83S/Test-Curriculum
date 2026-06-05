@@ -13,6 +13,7 @@ import {
 } from "./timetable-data.js";
 
 const DAYS = ["월", "화", "수", "목", "금"];
+const TT_DRAG_MIME = "application/x-his-timetable-drag";
 
 const ALL_VIEW_MODE_KEY = "his:timetable:allViewMode";
 let allSummaryStyleInjected = false;
@@ -204,6 +205,37 @@ function summarizeEntryGroup(group, ctx = {}) {
   };
 }
 
+
+function writeSummaryDragDataToEvent(ev, data, effect = "move") {
+  if (!ev?.dataTransfer || !data) return;
+  ev.dataTransfer.effectAllowed = effect;
+  const payload = JSON.stringify(data);
+  ev.dataTransfer.setData(TT_DRAG_MIME, payload);
+  ev.dataTransfer.setData("text/plain", payload);
+}
+
+function getSummaryMovableEntry(summary = {}) {
+  const list = safeArray(summary.entries).filter(Boolean);
+  if (list.length === 1) return list[0];
+  if (!list.length) return null;
+  const first = list[0];
+  const sameSlot = list.every(e => e.day === first.day && e.period === first.period);
+  const sameUnit = first.unitId && list.every(e => e.unitId === first.unitId);
+  const sameGroup = first.groupId && list.every(e => e.groupId === first.groupId);
+  return sameSlot && (sameUnit || sameGroup) ? first : null;
+}
+
+function summaryDragDataFromEntry(entry = {}) {
+  if (!entry?.id) return null;
+  return {
+    kind: "entry",
+    entryId: entry.id,
+    teacherName: entry.teacherName,
+    gradeKey: entry.gradeKey,
+    sectionIdx: entry.sectionIdx ?? 0,
+  };
+}
+
 function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   const card = document.createElement("div");
   card.className = "tt-all-summary-card" + (summary.conflictCount ? " tt-all-summary-problem" : "");
@@ -228,8 +260,37 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
     more.textContent = `×${subjectCount}`;
     card.appendChild(more);
   }
+  const movableEntry = getSummaryMovableEntry(summary);
+  const canMoveSummary = !!movableEntry && canEdit() && !movableEntry.pinned;
   if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · 클릭해서 상세 확인`;
+  else if (canMoveSummary) card.title = "클릭: 포함 과목 보기 · 우클릭: 배치 메뉴 · 드래그: 이동";
   else card.title = "클릭해서 포함 과목 보기";
+
+  card.draggable = canMoveSummary;
+  card.addEventListener("dragstart", ev => {
+    const entry = getSummaryMovableEntry(summary);
+    const data = summaryDragDataFromEntry(entry);
+    if (!data || !canEdit() || entry?.pinned) { ev.preventDefault(); return; }
+    ctx.setDragData?.(data);
+    writeSummaryDragDataToEvent(ev, data, "move");
+    card.classList.add("tt-dragging");
+  });
+  card.addEventListener("dragend", () => {
+    ctx.setDragData?.(null);
+    card.classList.remove("tt-dragging");
+  });
+
+  card.addEventListener("contextmenu", ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const entry = getSummaryMovableEntry(summary);
+    if (entry && typeof ctx.showEntryContextMenu === "function") {
+      ctx.showEntryContextMenu(entry, ev.clientX, ev.clientY);
+    } else {
+      openAllSummaryDetailPanel(summary, ctx);
+    }
+  });
+
   card.addEventListener("click", ev => {
     ev.stopPropagation();
     openAllSummaryDetailPanel(summary, ctx);
@@ -316,6 +377,27 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
     const classes = localUnique(cards.flatMap(c => safeArray(c.classLabels))).join(", ");
     meta.textContent = [teachers, rooms, students ? `${students}명` : "", classes].filter(Boolean).join(" · ");
     item.append(itemTitle, meta);
+    const detailDragData = summaryDragDataFromEntry(entry);
+    const canDragDetailItem = !!detailDragData && canEdit() && !entry.pinned;
+    item.draggable = canDragDetailItem;
+    item.title = canDragDetailItem ? "우클릭: 배치 메뉴 · 드래그: 이동" : (entry.pinned ? "고정된 수업입니다." : "배치 상세 항목");
+    item.addEventListener("dragstart", ev => {
+      if (!detailDragData || !canEdit() || entry.pinned) { ev.preventDefault(); return; }
+      ctx.setDragData?.(detailDragData);
+      writeSummaryDragDataToEvent(ev, detailDragData, "move");
+      item.classList.add("tt-dragging");
+    });
+    item.addEventListener("dragend", () => {
+      ctx.setDragData?.(null);
+      item.classList.remove("tt-dragging");
+    });
+    item.addEventListener("contextmenu", ev => {
+      if (typeof ctx.showEntryContextMenu !== "function") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      ctx.showEntryContextMenu(entry, ev.clientX, ev.clientY);
+    });
+
     if (ctx.showEntryDetail) {
       const actions = document.createElement("div");
       actions.className = "tt-all-detail-item-actions";
