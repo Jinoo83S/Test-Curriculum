@@ -2146,3 +2146,76 @@ button.tt-grade-filter-btn.active {
   display: block;
   color: #9a3412;
 }
+
+
+/* ────────────────────────────────────────────────────────────────
+   2026-06 · Timetable full-page scroll fix
+   하단 과목 패널을 크게 키워도 시간표 아래쪽을 페이지 스크롤로 편집할 수 있게 한다.
+   ──────────────────────────────────────────────────────────────── */
+html {
+  min-height: 100% !important;
+  height: auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+body {
+  min-height: 100vh !important;
+  height: auto !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.tt-topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1200 !important;
+}
+.tt-toolbar {
+  position: sticky !important;
+  top: 44px !important;
+  z-index: 1190 !important;
+}
+.tt-body {
+  flex: 0 0 auto !important;
+  min-height: min(540px, max(360px, calc(100vh - 190px))) !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+#ttGrid {
+  min-height: min(540px, max(360px, calc(100vh - 190px))) !important;
+  height: auto !important;
+  max-height: none !important;
+  overflow: auto !important;
+}
+.tt-bottom {
+  flex: 0 0 auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  height: var(--tt-bottom-current-height, 260px) !important;
+}
+.tt-bottom-scroll {
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+}
+.tt-bottom-resizer {
+  touch-action: none !important;
+}
+body.tt-resizing-bottom {
+  user-select: none !important;
+  cursor: row-resize !important;
+}
+body.tt-resizing-bottom * {
+  cursor: row-resize !important;
+}
+.tt-all-class-table tbody tr {
+  min-height: 26px !important;
+}
+@media (max-height: 760px) {
+  .tt-body,
+  #ttGrid {
+    min-height: 340px !important;
+  }
+}
