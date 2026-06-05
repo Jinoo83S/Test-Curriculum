@@ -198,6 +198,7 @@ export function createTimetableLogHandlers({
                   <dt>대상 슬롯</dt><dd>${auto.totalTarget ?? "-"}개</dd>
                   <dt>고정 유지</dt><dd>${auto.pinnedCount ?? 0}개</dd>
                   <dt>신규 배치</dt><dd>${auto.placedCount ?? 0}개</dd>
+                  <dt>후처리 개선</dt><dd>${auto.postProcessImprovedCount ?? 0}건</dd>
                   <dt>미배치</dt><dd>${auto.failedCount ?? 0}개</dd>
                   <dt>소요 시간</dt><dd>${auto.durationMs != null ? (auto.durationMs / 1000).toFixed(1) + "초" : "-"}</dd>
                 </dl>

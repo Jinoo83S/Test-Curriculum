@@ -757,6 +757,210 @@ export function createAutoAssignAll(deps) {
     return candidates[0]?.slot || null;
   }
 
+  // ── Post-placement improvement helpers ─────────────────────────
+  // 자동배치가 일단 성공한 뒤, 충돌을 만들지 않는 범위에서 7교시 몰림,
+  // 같은 과목 같은 날 반복, 교사 공강/연속수업 부담을 줄입니다.
+  function entryClassKeysForScoring(entry = {}) {
+    const audience = audienceForPlacement(entry);
+    const keys = new Set([...(audience?.classKeys || [])]);
+    if (!keys.size) {
+      (entry.classIds || []).forEach(id => id && keys.add(id));
+      (entry.targetClassIds || []).forEach(id => id && keys.add(id));
+      if (entry.classId) keys.add(entry.classId);
+      if (entry.gradeKey && Number.isInteger(entry.sectionIdx)) keys.add(`${entry.gradeKey}:${entry.sectionIdx}`);
+    }
+    return [...keys].filter(Boolean);
+  }
+
+  function entrySubjectKeyForScoring(entry = {}) {
+    const ids = ttCardIdsFromPlacement(entry);
+    if (ids.length) return ids.map(id => {
+      const card = getTtCardById(id);
+      return card?.templateId || card?.subject || id;
+    }).join("+");
+    return [entry.templateId || "", entry.compoundParentTemplateId || "", entry.subject || entry.name || entry.title || ""].filter(Boolean).join(":") || getAutoItemName(entry);
+  }
+
+  function getTeacherNamesForScoring(entry = {}) {
+    return [...new Set([
+      ...splitTeacherNames(entry.teacherName || ""),
+      ...(Array.isArray(entry.teachers) ? entry.teachers : [])
+    ].map(t => String(t || "").trim()).filter(Boolean))];
+  }
+
+  function maxConsecutiveFromPeriods(periods = []) {
+    const arr = [...new Set(periods)].sort((a, b) => a - b);
+    let best = arr.length ? 1 : 0;
+    let cur = arr.length ? 1 : 0;
+    for (let i = 1; i < arr.length; i++) {
+      cur = arr[i] === arr[i - 1] + 1 ? cur + 1 : 1;
+      best = Math.max(best, cur);
+    }
+    return best;
+  }
+
+  function scoreScheduleQuality(movable = []) {
+    const all = [...entries(), ...(movable || [])];
+    let score = 0;
+
+    const classDaySubject = new Map();
+    const classDayPeriods = new Map();
+    const classLateCount = new Map();
+    const teacherDayPeriods = new Map();
+
+    all.forEach(entry => {
+      if (!Number.isInteger(entry.day) || !Number.isInteger(entry.period)) return;
+      const period = entry.period;
+      const classKeys = entryClassKeysForScoring(entry);
+      const subjectKey = entrySubjectKeyForScoring(entry);
+
+      classKeys.forEach(cls => {
+        const dayKey = `${cls}:${entry.day}`;
+        if (!classDayPeriods.has(dayKey)) classDayPeriods.set(dayKey, []);
+        classDayPeriods.get(dayKey).push(period);
+
+        const subjectDayKey = `${cls}:${entry.day}:${subjectKey}`;
+        classDaySubject.set(subjectDayKey, (classDaySubject.get(subjectDayKey) || 0) + 1);
+
+        if (period >= 6) {
+          score += 12;
+          classLateCount.set(cls, (classLateCount.get(cls) || 0) + 1);
+        } else if (period === 5) {
+          score += 3;
+        }
+      });
+
+      getTeacherNamesForScoring(entry).forEach(teacher => {
+        const key = `${teacher}:${entry.day}`;
+        if (!teacherDayPeriods.has(key)) teacherDayPeriods.set(key, []);
+        teacherDayPeriods.get(key).push(period);
+      });
+    });
+
+    classDaySubject.forEach(count => {
+      if (count > 1) score += (count - 1) * 28;
+    });
+
+    classDayPeriods.forEach(periods => {
+      const unique = [...new Set(periods)].sort((a, b) => a - b);
+      const maxC = maxConsecutiveFromPeriods(unique);
+      if (maxC >= 5) score += (maxC - 4) * 12;
+    });
+
+    classLateCount.forEach(count => {
+      if (count > 4) score += (count - 4) * 5;
+    });
+
+    teacherDayPeriods.forEach((periods, key) => {
+      const unique = [...new Set(periods)].sort((a, b) => a - b);
+      if (!unique.length) return;
+      const span = unique[unique.length - 1] - unique[0] + 1;
+      const gaps = Math.max(0, span - unique.length);
+      const maxC = maxConsecutiveFromPeriods(unique);
+      const teacher = String(key).split(":")[0];
+      const c = constraints()?.[teacher] || {};
+      const limitC = Number(c.maxConsecutive) || 0;
+
+      score += gaps * 5;
+      if (unique.length >= 6) score += (unique.length - 5) * 8;
+      if (limitC > 0 && maxC > limitC) score += (maxC - limitC) * 40;
+      else if (maxC >= 4) score += (maxC - 3) * 14;
+    });
+
+    return score;
+  }
+
+  function getMovableBlocks(placed = []) {
+    const map = new Map();
+    (placed || []).forEach((entry, index) => {
+      const key = entry.groupId
+        ? `group:${entry.groupId}:${entry.day}:${entry.period}`
+        : (entry.unitId ? `unit:${entry.unitId}:${entry.day}:${entry.period}` : `entry:${entry.id || index}`);
+      if (!map.has(key)) map.set(key, { key, entries: [], indexes: [] });
+      map.get(key).entries.push(entry);
+      map.get(key).indexes.push(index);
+    });
+    return [...map.values()].filter(block => block.entries.length && Number.isInteger(block.entries[0].day) && Number.isInteger(block.entries[0].period));
+  }
+
+  function makeMovedBlockEntries(block, slot, placedWithoutBlock = []) {
+    const moved = [];
+    for (const original of block.entries) {
+      const candidateData = { ...original, day: slot.day, period: slot.period };
+      if (!checkPlacementValid(candidateData, slot, [...placedWithoutBlock, ...moved], {
+        respectSoftLimits: true,
+        respectUnavailable: true,
+        respectAssignedRoom: true
+      })) return null;
+      const normalized = normalizeTimetableEntry({
+        ...original,
+        ...applyAutoRoomToEntryData(candidateData, slot, [...placedWithoutBlock, ...moved]),
+        id: original.id
+      });
+      moved.push(normalized);
+    }
+    return moved;
+  }
+
+  async function improveAutoPlacement(placed = [], baseSlots = [], options = {}, progressUpdater = null) {
+    const current = [...placed];
+    const limit = options.runAttempts === "deep" ? 360 : (options.runAttempts === "fast" ? 90 : 190);
+    let attempts = 0;
+    let improved = 0;
+    let bestScore = scoreScheduleQuality(current);
+
+    const orderedSlots = [...baseSlots].sort((a, b) => {
+      // 7교시를 무조건 금지하지는 않지만, 개선 후보에서는 앞쪽 교시를 먼저 검토합니다.
+      if (a.period !== b.period) return a.period - b.period;
+      return a.day - b.day;
+    });
+
+    for (let pass = 0; pass < 3 && attempts < limit; pass++) {
+      let passImproved = false;
+      const blocks = shuffle(getMovableBlocks(current));
+      for (const block of blocks) {
+        if (attempts >= limit) break;
+        const origin = block.entries[0];
+        const originSlotKey = `${origin.day}:${origin.period}`;
+        const currentIds = new Set(block.entries.map(e => e.id));
+        const baseWithout = current.filter(e => !currentIds.has(e.id));
+
+        for (const slot of orderedSlots) {
+          if (attempts >= limit) break;
+          if (`${slot.day}:${slot.period}` === originSlotKey) continue;
+          attempts++;
+
+          const moved = makeMovedBlockEntries(block, slot, baseWithout);
+          if (!moved) continue;
+          const candidate = [...baseWithout, ...moved];
+          const candScore = scoreScheduleQuality(candidate);
+          if (candScore + 0.01 < bestScore) {
+            current.length = 0;
+            current.push(...candidate);
+            bestScore = candScore;
+            improved++;
+            passImproved = true;
+            break;
+          }
+        }
+        if (progressUpdater && attempts % 35 === 0) {
+          await progressUpdater({
+            percent: 92,
+            step: "자동배치 후처리",
+            detail: `7교시 몰림, 같은 과목 몰림, 교사 공강을 줄이는 교환 후보를 검토하고 있습니다. 개선 ${improved}건`,
+            placed: current.length,
+            best: current.length,
+            failed: 0,
+            currentCard: "후처리"
+          }, false);
+        }
+      }
+      if (!passImproved) break;
+    }
+
+    return { placed: current, improvedCount: improved, attempts, qualityScore: Math.round(bestScore * 10) / 10 };
+  }
+
   function makeFailedPlacement(name, item, meta = {}) {
     return { name: name || getAutoItemName(item), item, ...meta };
   }
@@ -1733,12 +1937,29 @@ export function createAutoAssignAll(deps) {
       }, true);
     }
     bestFailed = stillFailed;
+
+    await updateProgress({
+      percent: 91,
+      step: "자동배치 후처리",
+      detail: "배치된 수업을 안전하게 재배치해 7교시 몰림, 같은 과목 몰림, 교사 공강을 줄입니다.",
+      placed: bestPlaced.length,
+      best: bestPlaced.length,
+      failed: bestFailed.length,
+      currentCard: "후처리",
+      log: "자동배치 후처리 단계 시작"
+    }, true);
+
+    const improvement = await improveAutoPlacement(bestPlaced, baseSlots, options, updateProgress);
+    bestPlaced = improvement.placed;
+
     const failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
 
     await updateProgress({
       percent: 96,
       step: "결과 반영",
-      detail: "배치 결과를 시간표에 반영하고 충돌을 재계산합니다.",
+      detail: improvement.improvedCount
+        ? `후처리 개선 ${improvement.improvedCount}건을 반영하고 충돌을 재계산합니다.`
+        : "배치 결과를 시간표에 반영하고 충돌을 재계산합니다.",
       placed: bestPlaced.length,
       best: bestPlaced.length,
       failed: bestFailed.length,
@@ -1772,6 +1993,9 @@ export function createAutoAssignAll(deps) {
       keepManual: options.keepManual !== false,
       placedCount: bestPlaced.length,
       forcedCount: forcedPlaced.length,
+      postProcessImprovedCount: improvement.improvedCount,
+      postProcessAttempts: improvement.attempts,
+      postProcessQualityScore: improvement.qualityScore,
       failedCount: names.length,
       failedNames: names,
       failedDiagnostics,
@@ -1791,7 +2015,7 @@ export function createAutoAssignAll(deps) {
     addTimetableLog(
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
+      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
     );
     if (missingRoomEntries.length) {
       addTimetableLog(
@@ -1805,6 +2029,7 @@ export function createAutoAssignAll(deps) {
     const detailLines = [
       `<b>정상 배치</b> ${bestPlaced.length - forcedPlaced.length}개`,
       `<b>보정 배치</b> ${forcedPlaced.length}개`,
+      `<b>후처리 개선</b> ${improvement.improvedCount}건`,
       `<b>미배치</b> ${names.length}개`,
       `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
       `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
