@@ -72,6 +72,93 @@ export function createAutoAssignAll(deps) {
     return list.length ? `제약교사: ${list.join(", ")}` : "";
   };
 
+
+  // ── Teacher constraint load helpers ─────────────────────────────
+  // 자동배치 후보 시간 계산에서는 교사 시수를 "entry 수"가 아니라
+  // "요일·교시 슬롯 수"로 계산해야 합니다. 같은 동시배정 unit 안에서
+  // 여러 entry가 만들어져도 교사는 같은 시간 1시수만 담당한 것으로 봅니다.
+  const teacherEntryHasTeacher = (entry, teacher) => {
+    const name = String(teacher || "").trim();
+    if (!name || !entry) return false;
+    const names = [
+      ...splitTeacherNames(entry.teacherName || ""),
+      ...(Array.isArray(entry.teachers) ? entry.teachers : [])
+    ].map(t => String(t || "").trim()).filter(Boolean);
+    return names.includes(name);
+  };
+
+  const teacherSlotKey = (day, period) => `${day}:${period}`;
+
+  function getTeacherSlotSet(teacher, existing = [], dayFilter = null) {
+    const slots = new Set();
+    (existing || []).forEach(e => {
+      if (!teacherEntryHasTeacher(e, teacher)) return;
+      if (dayFilter != null && e.day !== dayFilter) return;
+      if (!Number.isInteger(e.day) || !Number.isInteger(e.period)) return;
+      slots.add(teacherSlotKey(e.day, e.period));
+    });
+    return slots;
+  }
+
+  function getTeacherWeekLoad(teacher, existing = []) {
+    return getTeacherSlotSet(teacher, existing).size;
+  }
+
+  function getTeacherDayLoad(teacher, existing = [], day) {
+    return getTeacherSlotSet(teacher, existing, day).size;
+  }
+
+  function getTeacherDayPeriods(teacher, existing = [], day) {
+    return [...getTeacherSlotSet(teacher, existing, day)]
+      .map(key => Number(String(key).split(":")[1]))
+      .filter(n => Number.isInteger(n))
+      .sort((a, b) => a - b);
+  }
+
+  function maxConsecutiveAfterAdding(teacher, existing = [], day, period) {
+    const periods = getTeacherDayPeriods(teacher, existing, day);
+    if (!periods.includes(period)) periods.push(period);
+    periods.sort((a, b) => a - b);
+    let maxC = periods.length ? 1 : 0;
+    let cur = periods.length ? 1 : 0;
+    for (let i = 1; i < periods.length; i++) {
+      cur = periods[i] === periods[i - 1] + 1 ? cur + 1 : 1;
+      maxC = Math.max(maxC, cur);
+    }
+    return maxC;
+  }
+
+  function getTeacherLimitState(teacher, slot, existing = []) {
+    const c = constraints()?.[teacher] || {};
+    const maxPerDay = Number(c.maxPerDay) || 0;
+    const maxConsecutive = Number(c.maxConsecutive) || 0;
+    const maxPerWeek = Number(c.maxPerWeek) || 0;
+    const dayLoad = getTeacherDayLoad(teacher, existing, slot.day);
+    const weekLoad = getTeacherWeekLoad(teacher, existing);
+    const nextConsecutive = maxConsecutiveAfterAdding(teacher, existing, slot.day, slot.period);
+    return {
+      constraint: c,
+      maxPerDay,
+      maxConsecutive,
+      maxPerWeek,
+      dayLoad,
+      weekLoad,
+      nextConsecutive,
+      wouldExceedDay: maxPerDay > 0 && dayLoad >= maxPerDay,
+      wouldExceedWeek: maxPerWeek > 0 && weekLoad >= maxPerWeek,
+      wouldExceedConsecutive: maxConsecutive > 0 && nextConsecutive > maxConsecutive,
+    };
+  }
+
+  function teacherLimitPenalty(teacher, slot, existing = []) {
+    const s = getTeacherLimitState(teacher, slot, existing);
+    let penalty = 0;
+    if (s.maxPerWeek > 0) penalty += (s.weekLoad / s.maxPerWeek) * 30;
+    if (s.maxPerDay > 0) penalty += (s.dayLoad / s.maxPerDay) * 25;
+    if (s.maxConsecutive > 0) penalty += Math.max(0, s.nextConsecutive - 1) * 12;
+    return penalty;
+  }
+
   const groupContainsCardId = (group, cardId, { includeExcluded = false } = {}) => {
     if (!group || !cardId) return false;
     if (!includeExcluded && (group.excludedCardIds || []).includes(cardId)) return false;
@@ -281,30 +368,19 @@ export function createAutoAssignAll(deps) {
       if (conflict) return false;
     }
 
-    // 4. Teacher max per day + unavailable slots
-    const dayEnts = existing.filter(e => e.day === slot.day);
+    // 4. Teacher unavailable / max per week / max per day / max consecutive
+    // 시간강사·육아단축 등 제약근무 교사는 완화 단계에서도 이 조건들을 절대 조건으로 봅니다.
     for (const teacher of teachers) {
-      const c = constraints()[teacher];
-      // Unavailable slot check
-      // 제약근무 교사의 불가시간은 완화 단계에서도 절대 조건으로 유지합니다.
+      const c = constraints()?.[teacher] || {};
       const restrictedTeacher = isRestrictedTeacher(teacher);
-      if ((respectUnavailable || restrictedTeacher) && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
-      const count = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
-      const max = Number(c?.maxPerDay) || 0;
-      if (respectSoftLimits && max > 0 && count >= max) return false;
-    }
+      const enforceLimits = respectSoftLimits || restrictedTeacher;
 
-    // 5. Teacher max consecutive
-    for (const teacher of teachers) {
-      const dayPeriods = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).map(e => e.period);
-      const all = [...dayPeriods, slot.period].sort((a,b) => a-b);
-      let maxC = 1, cur = 1;
-      for (let i = 1; i < all.length; i++) {
-        cur = all[i] === all[i-1]+1 ? cur+1 : 1;
-        maxC = Math.max(maxC, cur);
-      }
-      const maxConsecutive = Number(constraints()[teacher]?.maxConsecutive) || 0;
-      if (respectSoftLimits && maxConsecutive > 0 && maxC > maxConsecutive) return false;
+      if ((respectUnavailable || restrictedTeacher) && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return false;
+
+      const limit = getTeacherLimitState(teacher, slot, existing);
+      if (enforceLimits && limit.wouldExceedWeek) return false;
+      if (enforceLimits && limit.wouldExceedDay) return false;
+      if (enforceLimits && limit.wouldExceedConsecutive) return false;
     }
     // 6. Room conflict: 실제로 배정될 교실 기준으로 검사합니다.
     // 같은 시간대의 다른 과목은 각각 다른 교실을 가져야 합니다.
@@ -361,11 +437,12 @@ export function createAutoAssignAll(deps) {
     const exclusionPenalty = slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e)) ? 100000 : 0;
     const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
     const dayEnts = existing.filter(e => e.day === slot.day);
-    const teacherLoad = teachers.reduce((sum, t) => sum + dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(t)).length, 0);
+    const teacherLoad = teachers.reduce((sum, t) => sum + getTeacherDayLoad(t, existing, slot.day), 0);
+    const teacherLimitLoad = teachers.reduce((sum, t) => sum + teacherLimitPenalty(t, slot, existing), 0);
     const audience = audienceForPlacement(item);
     const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
     const samePeriodLoad = existing.filter(e => e.period === slot.period).length;
-    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
+    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 6 + samePeriodLoad * 0.15 + Math.random();
   }
 
   function findBestAutoSlot(item, baseSlots, placed, checkOptions) {
@@ -445,27 +522,27 @@ export function createAutoAssignAll(deps) {
     }
 
     for (const teacher of teachers) {
-      const c = constraints()[teacher];
-      // 최종 보정 단계에서도 제약근무 교사의 불가시간은 침범하지 않습니다.
+      const c = constraints()?.[teacher] || {};
+      const restrictedTeacher = isRestrictedTeacher(teacher);
+      // 최종 보정 단계에서도 제약근무 교사의 불가시간·주/일/연속 제한은 침범하지 않습니다.
       if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) {
-        if (isRestrictedTeacher(teacher)) return Infinity;
+        if (restrictedTeacher) return Infinity;
         score += 500;
       }
-      const dayLoad = dayEnts.filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
-      const max = Number(c?.maxPerDay) || 0;
-      if (max > 0 && dayLoad >= max) score += 150 + (dayLoad - max + 1) * 30;
 
-      const dayPeriods = dayEnts
-        .filter(e => splitTeacherNames(e.teacherName).includes(teacher))
-        .map(e => e.period);
-      const all = [...dayPeriods, slot.period].sort((a,b) => a-b);
-      let maxC = 1, cur = 1;
-      for (let i = 1; i < all.length; i++) {
-        cur = all[i] === all[i-1]+1 ? cur+1 : 1;
-        maxC = Math.max(maxC, cur);
+      const limit = getTeacherLimitState(teacher, slot, existing);
+      if (limit.wouldExceedWeek) {
+        if (restrictedTeacher) return Infinity;
+        score += 220 + (limit.weekLoad - limit.maxPerWeek + 1) * 45;
       }
-      const maxConsecutive = Number(c?.maxConsecutive) || 0;
-      if (maxConsecutive > 0 && maxC > maxConsecutive) score += 120 + (maxC - maxConsecutive) * 30;
+      if (limit.wouldExceedDay) {
+        if (restrictedTeacher) return Infinity;
+        score += 150 + (limit.dayLoad - limit.maxPerDay + 1) * 30;
+      }
+      if (limit.wouldExceedConsecutive) {
+        if (restrictedTeacher) return Infinity;
+        score += 120 + (limit.nextConsecutive - limit.maxConsecutive) * 30;
+      }
 
       const roomId = getEffectiveAssignedRoomId(teacher);
       if (roomId) {
@@ -993,7 +1070,44 @@ export function createAutoAssignAll(deps) {
         // ── Sort schedulable units by priority ───────────────────────
         // 1) 고정 수업은 위에서 이미 pinnedEntries로 보호
         // 2) 제약근무 교사 포함 수업은 일반 그룹/일반 카드보다 먼저 배치
-        // 3) 같은 우선순위 안에서는 후보가 어려운 큰 그룹·다교사 수업을 먼저 배치
+        // 3) 같은 우선순위 안에서는 "후보 시간이 적은 수업"을 먼저 배치합니다.
+        const candidateCountCache = new Map();
+        const candidateCountForItem = (item) => {
+          if (!item) return 9999;
+          const key = `${autoItemKey(item)}::${stage.name}`;
+          if (candidateCountCache.has(key)) return candidateCountCache.get(key);
+          let count = 0;
+          for (const slot of baseSlots) {
+            if (checkPlacementValid(item, slot, placed, stage.options)) count += 1;
+          }
+          candidateCountCache.set(key, count);
+          return count;
+        };
+        const candidateCountForGroupBlock = (block) => {
+          const group = block?.group;
+          const unitItems = block?.unitItems || [];
+          if (!group || !unitItems.length) return 9999;
+          const cacheKey = `group:${group.id || group.name || "?"}::${stage.name}`;
+          if (candidateCountCache.has(cacheKey)) return candidateCountCache.get(cacheKey);
+          let minCount = 9999;
+          const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
+          const samples = Math.max(1, Math.min(maxCredits || 1, 5));
+          for (let occurrence = 0; occurrence < samples; occurrence++) {
+            const activeItems = unitItems
+              .filter(u => occurrence < (Number(u.credits) || 0))
+              .map(u => getGroupItemForOccurrence(u, occurrence))
+              .filter(u => (u.ttcards || []).length);
+            if (!activeItems.length) continue;
+            const probeCards = activeItems.flatMap(u => u.ttcards || []);
+            const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
+            const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
+            if (!probe) continue;
+            minCount = Math.min(minCount, candidateCountForItem(probe));
+          }
+          candidateCountCache.set(cacheKey, minCount);
+          return minCount;
+        };
+
         const orderedGroups = shuffle([...groupBlocks]).sort((a, b) => {
           const ac = Math.max(0, ...a.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
           const bc = Math.max(0, ...b.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
@@ -1001,6 +1115,9 @@ export function createAutoAssignAll(deps) {
           if (ap !== 0) return ap;
           const art = (b.restrictedTeachers || []).length - (a.restrictedTeachers || []).length;
           if (art !== 0) return art;
+          const acand = candidateCountForGroupBlock(a);
+          const bcand = candidateCountForGroupBlock(b);
+          if (acand !== bcand) return acand - bcand;
           return bc - ac;
         });
 
@@ -1011,6 +1128,9 @@ export function createAutoAssignAll(deps) {
           if (ap !== 0) return ap;
           const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
           if (art !== 0) return art;
+          const acand = candidateCountForItem(ia);
+          const bcand = candidateCountForItem(ib);
+          if (acand !== bcand) return acand - bcand;
           return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
         });
         const restrictedGroupBlocks = orderedGroups.filter(block => block.hasRestrictedTeacher);
