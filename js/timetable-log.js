@@ -130,6 +130,31 @@ export function createTimetableLogHandlers({
       ? `<ul class="tt-log-failed-list">${auto.failedNames.slice(0, 20).map(name => `<li>${escapeHtml(name)}</li>`).join("")}${auto.failedNames.length > 20 ? `<li>외 ${auto.failedNames.length - 20}개</li>` : ""}</ul>`
       : "";
 
+    const failureDiagnostics = Array.isArray(auto?.failedDiagnostics) ? auto.failedDiagnostics : [];
+    const failureDiagHtml = failureDiagnostics.length
+      ? `<div class="tt-log-failure-diag">
+          <div class="tt-log-subtitle">미배치 원인 후보</div>
+          ${failureDiagnostics.slice(0, 12).map(d => {
+            const reasons = Array.isArray(d.topReasons) ? d.topReasons.slice(0, 3) : [];
+            const reasonHtml = reasons.length
+              ? `<ul>${reasons.map(r => {
+                  const samples = Array.isArray(r.samples) && r.samples.length ? ` <span class="tt-log-muted">예: ${escapeHtml(r.samples[0])}</span>` : "";
+                  return `<li>${escapeHtml(r.label || r.code || "원인")} ${Number(r.count || 0)}칸${samples}</li>`;
+                }).join("")}</ul>`
+              : `<div class="tt-log-muted">세부 원인을 확인하지 못했습니다.</div>`;
+            const restricted = Array.isArray(d.restrictedTeachers) && d.restrictedTeachers.length
+              ? `<span class="tt-log-badge warn">제약교사 ${escapeHtml(d.restrictedTeachers.join(", "))}</span>`
+              : "";
+            return `<div class="tt-log-diag-item">
+              <div class="tt-log-diag-title"><b>${escapeHtml(d.name || "미확인 카드")}</b>${d.occurrences > 1 ? ` <span class="tt-log-muted">×${d.occurrences}</span>` : ""}${restricted}</div>
+              <div class="tt-log-muted">${escapeHtml(d.summary || `가능 ${d.validSlots ?? 0}/${d.totalSlots ?? "?"}칸`)}</div>
+              ${reasonHtml}
+            </div>`;
+          }).join("")}
+          ${failureDiagnostics.length > 12 ? `<div class="tt-log-muted">외 ${failureDiagnostics.length - 12}개</div>` : ""}
+        </div>`
+      : "";
+
     const logItems = timetableLogs.length
       ? timetableLogs.slice(0, 25).map(log => `
         <div class="tt-log-item">
@@ -180,7 +205,8 @@ export function createTimetableLogHandlers({
                   <span class="tt-log-badge ${auto.failedCount ? "warn" : "ok"}">${auto.failedCount ? "부분 완료" : "전체 완료"}</span>
                   ${(auto.conflictTotal || 0) > 0 ? `<span class="tt-log-badge danger">충돌 ${auto.conflictTotal}건</span>` : `<span class="tt-log-badge ok">충돌 없음</span>`}
                 </div>
-                ${failedList}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}
+                ${failedList}
+                ${failureDiagHtml}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}
             </div>
           </section>
           <section class="tt-log-card">

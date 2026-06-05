@@ -1631,3 +1631,51 @@ button.tt-grade-filter-btn.active {
   }
   .tt-card-toolbar-actions { justify-content: flex-start !important; }
 }
+
+/* 자동배치 실패 진단 리포트 */
+.tt-log-failure-diag {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+.tt-log-subtitle {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 900;
+  color: #0f172a;
+}
+.tt-log-diag-item {
+  padding: 10px 0;
+  border-top: 1px dashed #cbd5e1;
+}
+.tt-log-diag-item:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+.tt-log-diag-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+  color: #1e293b;
+  font-size: 13px;
+}
+.tt-log-muted {
+  color: #64748b;
+  font-size: 12px;
+}
+.tt-log-diag-item ul {
+  margin: 6px 0 0 16px;
+  padding: 0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.tt-auto-progress-failed ul {
+  margin: 6px 0 0 18px;
+  padding: 0;
+  line-height: 1.55;
+}

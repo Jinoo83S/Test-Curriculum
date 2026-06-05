@@ -316,6 +316,196 @@ export function createAutoAssignAll(deps) {
     return entryData;
   }
 
+
+  function addReason(reasonMap, code, label, detail = "") {
+    if (!reasonMap.has(code)) reasonMap.set(code, { code, label, count: 0, samples: [] });
+    const item = reasonMap.get(code);
+    item.count += 1;
+    if (detail && item.samples.length < 3 && !item.samples.includes(detail)) item.samples.push(detail);
+  }
+
+  function formatSlotLabel(slot = {}) {
+    const dayLabels = ["월", "화", "수", "목", "금"];
+    const periodLabel = ttConfig().periodLabels?.[slot.period] || `${Number(slot.period || 0) + 1}교시`;
+    return `${dayLabels[slot.day] ?? "?"} ${periodLabel}`;
+  }
+
+  function analyzePlacementSlot(item, slot, placed, options = {}) {
+    const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
+    const existing = [...entries(), ...placed];
+    const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+    const teachers = getTeachersForAutoItem(item);
+    const reasons = new Map();
+
+    if (protectedSlotConflict?.(item, slot.day, slot.period, { placed })) {
+      addReason(reasons, "protectedSlot", "고정/보호 수업 시간", `${formatSlotLabel(slot)} 보호 슬롯`);
+    }
+
+    const exclusion = slotEnts.find(e => hasAutoGroupExclusionSlotConflict(item, e));
+    if (exclusion) {
+      addReason(reasons, "groupExclusion", "그룹 제외 카드와 같은 시간", `${formatSlotLabel(slot)} · ${getAutoItemName(exclusion)}`);
+    }
+
+    if (hasInternalCompoundSiblingConflict(item)) {
+      addReason(reasons, "compoundInternal", "복합과목 구성 충돌", "같은 복합과목의 다른 파트가 한 배치 안에 섞임");
+    }
+    const compoundOther = slotEnts.find(e => hasCompoundSiblingConflict(item, e));
+    if (compoundOther) {
+      addReason(reasons, "compoundSibling", "복합과목 파트 시간 중복", `${formatSlotLabel(slot)} · ${getAutoItemName(compoundOther)}`);
+    }
+
+    const itemCardIds = new Set(ttCardIdsFromPlacement(item));
+    const duplicate = itemCardIds.size
+      ? slotEnts.find(e => ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)))
+      : slotEnts.find(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0));
+    if (duplicate) {
+      addReason(reasons, "duplicate", "동일 카드 중복", `${formatSlotLabel(slot)}에 이미 같은 카드 배치`);
+    }
+
+    for (const e of slotEnts) {
+      const et = splitTeacherNames(e.teacherName || "").filter(Boolean);
+      const overlapTeacher = teachers.find(t => et.includes(t));
+      if (overlapTeacher && !(item.unitId && e.unitId && item.unitId === e.unitId)) {
+        addReason(reasons, "teacherConflict", "교사 시간 충돌", `${formatSlotLabel(slot)} · ${overlapTeacher} / ${getAutoItemName(e)}`);
+      }
+    }
+
+    const itemAudience = audienceForPlacement(item);
+    for (const e of slotEnts) {
+      if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
+      const sameGrp = sameActiveGroup(item, e);
+      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      const eAudience = audienceForPlacement(e);
+      const conflict = audiencesConflict(itemAudience, eAudience);
+      if (conc) {
+        if (itemAudience.studentKeys.size && eAudience.studentKeys.size && conflict) {
+          addReason(reasons, "studentConflict", "학생/반 시간 충돌", `${formatSlotLabel(slot)} · ${getAutoItemName(e)}`);
+        }
+        continue;
+      }
+      if (conflict) addReason(reasons, "studentConflict", "학생/반 시간 충돌", `${formatSlotLabel(slot)} · ${getAutoItemName(e)}`);
+    }
+
+    for (const teacher of teachers) {
+      const c = constraints()?.[teacher] || {};
+      const restrictedTeacher = isRestrictedTeacher(teacher);
+      const enforceLimits = respectSoftLimits || restrictedTeacher;
+
+      if ((respectUnavailable || restrictedTeacher) && c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) {
+        addReason(reasons, "teacherUnavailable", "교사 불가시간", `${formatSlotLabel(slot)} · ${teacher}`);
+      }
+
+      const limit = getTeacherLimitState(teacher, slot, existing);
+      if (enforceLimits && limit.wouldExceedWeek) {
+        addReason(reasons, "teacherWeekLimit", "교사 주 최대 시수 초과", `${teacher} · 주 ${limit.weekLoad}/${limit.maxPerWeek}시수 사용 중`);
+      }
+      if (enforceLimits && limit.wouldExceedDay) {
+        addReason(reasons, "teacherDayLimit", "교사 하루 최대 시수 초과", `${formatSlotLabel(slot)} · ${teacher} · 당일 ${limit.dayLoad}/${limit.maxPerDay}시수`);
+      }
+      if (enforceLimits && limit.wouldExceedConsecutive) {
+        addReason(reasons, "teacherConsecutive", "교사 연속수업 제한", `${formatSlotLabel(slot)} · ${teacher} · 연속 ${limit.nextConsecutive}시수`);
+      }
+    }
+
+    const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    if (respectAssignedRoom && roomConflictsInSlot(candidateRoomData, slot, placed)) {
+      const roomName = (appState.rooms?.rooms || []).find(r => r.id === candidateRoomData.roomId)?.name || candidateRoomData.roomId || "교실";
+      addReason(reasons, "roomConflict", "교실 시간 충돌", `${formatSlotLabel(slot)} · ${roomName}`);
+    }
+
+    for (const teacher of teachers) {
+      const roomId = getEffectiveAssignedRoomId(teacher);
+      if (respectAssignedRoom && roomId) {
+        const roomBusy = existing.some(e => e.day === slot.day && e.period === slot.period && e.roomId === roomId && !sameUnitPlacement(item, e));
+        if (roomBusy && candidateRoomData.roomId === roomId) {
+          const roomName = (appState.rooms?.rooms || []).find(r => r.id === roomId)?.name || roomId;
+          addReason(reasons, "teacherRoomBusy", "교사 담당교실 사용 중", `${formatSlotLabel(slot)} · ${teacher} / ${roomName}`);
+        }
+      }
+    }
+
+    return { valid: reasons.size === 0, reasons: [...reasons.values()] };
+  }
+
+  function summarizeFailedPlacement(failedItem, baseSlots = [], placed = [], options = {}) {
+    const item = failedItem?.item;
+    const name = failedItem?.name || getAutoItemName(item);
+    if (!item) {
+      return { name, validSlots: 0, totalSlots: baseSlots.length, topReasons: [{ label: "카드 정보 없음", count: 1, samples: [] }], summary: "배치 대상 카드 정보를 찾지 못했습니다." };
+    }
+    const reasonMap = new Map();
+    let validSlots = 0;
+    for (const slot of baseSlots) {
+      const result = analyzePlacementSlot(item, slot, placed, options);
+      if (result.valid) validSlots += 1;
+      result.reasons.forEach(r => {
+        if (!reasonMap.has(r.code)) reasonMap.set(r.code, { code: r.code, label: r.label, count: 0, samples: [] });
+        const dest = reasonMap.get(r.code);
+        dest.count += r.count;
+        (r.samples || []).forEach(sample => {
+          if (sample && dest.samples.length < 3 && !dest.samples.includes(sample)) dest.samples.push(sample);
+        });
+      });
+    }
+    const topReasons = [...reasonMap.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+    const teachers = getTeachersForAutoItem(item);
+    const restrictedTeachers = getRestrictedTeachersForAutoItem(item);
+    const reasonText = topReasons.length
+      ? topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ")
+      : (validSlots ? "후보 시간은 있으나 보정 단계에서 다른 카드와 충돌" : "후보 시간 없음");
+    return {
+      name,
+      groupName: failedItem?.groupId ? (ttGroups().find(g => g.id === failedItem.groupId)?.name || "") : "",
+      teachers,
+      restrictedTeachers,
+      validSlots,
+      totalSlots: baseSlots.length,
+      topReasons,
+      summary: `가능 ${validSlots}/${baseSlots.length}칸 · ${reasonText}`
+    };
+  }
+
+  function buildFailureDiagnostics(failedItems = [], baseSlots = [], placed = [], options = {}) {
+    const byName = new Map();
+    (failedItems || []).forEach(failedItem => {
+      const diag = summarizeFailedPlacement(failedItem, baseSlots, placed, options);
+      const key = diag.name || "미확인 카드";
+      if (!byName.has(key)) {
+        byName.set(key, { ...diag, occurrences: 0 });
+      }
+      const acc = byName.get(key);
+      acc.occurrences += 1;
+      // 여러 회차가 같은 이름으로 실패하면 가능한 시간은 가장 보수적으로 낮은 값을 표시합니다.
+      acc.validSlots = Math.min(acc.validSlots, diag.validSlots);
+      const mergedReasons = new Map((acc.topReasons || []).map(r => [r.code || r.label, { ...r, samples: [...(r.samples || [])] }]));
+      (diag.topReasons || []).forEach(r => {
+        const k = r.code || r.label;
+        if (!mergedReasons.has(k)) mergedReasons.set(k, { ...r, samples: [...(r.samples || [])] });
+        else {
+          const cur = mergedReasons.get(k);
+          cur.count += r.count;
+          (r.samples || []).forEach(sample => {
+            if (sample && cur.samples.length < 3 && !cur.samples.includes(sample)) cur.samples.push(sample);
+          });
+        }
+      });
+      acc.topReasons = [...mergedReasons.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+      acc.summary = `가능 ${acc.validSlots}/${acc.totalSlots}칸 · ${acc.topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ") || "후보 시간 없음"}`;
+    });
+    return [...byName.values()].sort((a, b) => a.validSlots - b.validSlots || b.occurrences - a.occurrences || String(a.name).localeCompare(String(b.name), "ko"));
+  }
+
+  function diagnosticsToHtml(diagnostics = [], limit = 8) {
+    if (!diagnostics.length) return "";
+    const esc = s => String(s ?? "").replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]));
+    return `<div class="tt-auto-progress-failed"><b>미배치 원인 후보</b><ul>${diagnostics.slice(0, limit).map(d => {
+      const reason = d.topReasons?.[0];
+      const sample = reason?.samples?.[0] ? ` · 예: ${reason.samples[0]}` : "";
+      const teacher = d.restrictedTeachers?.length ? ` · 제약교사: ${d.restrictedTeachers.join(", ")}` : "";
+      return `<li>${esc(d.name)}${d.occurrences > 1 ? ` ×${d.occurrences}` : ""} — ${esc(d.summary)}${esc(teacher)}${esc(sample)}</li>`;
+    }).join("")}${diagnostics.length > limit ? `<li>외 ${diagnostics.length - limit}개</li>` : ""}</ul></div>`;
+  }
+
   function checkPlacementValid(item, slot, placed, options = {}) {
     const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
     const existing = [...entries(), ...placed];
@@ -1314,6 +1504,7 @@ export function createAutoAssignAll(deps) {
       }, true);
     }
     bestFailed = stillFailed;
+    const failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
 
     await updateProgress({
       percent: 96,
@@ -1346,6 +1537,8 @@ export function createAutoAssignAll(deps) {
       forcedCount: forcedPlaced.length,
       failedCount: names.length,
       failedNames: names,
+      failedDiagnostics,
+      failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}`),
       forcedNames: [...new Set(forcedPlaced.map(f => f.name))],
       durationMs: Date.now() - autoStartedAt,
       conflictTotal: conflictSummary.totalAffected,
@@ -1398,7 +1591,8 @@ export function createAutoAssignAll(deps) {
         .join("");
       const moreFailed = names.length > 12 ? `<li>외 ${names.length - 12}개</li>` : "";
       detailLines.push(`<div class="tt-auto-progress-failed"><b>남은 카드</b><ul>${failedList}${moreFailed}</ul></div>`);
-      detailLines.push(`남은 카드는 고정 채플/창체 보호 슬롯 또는 동일 카드 동일 시간 중복 때문에 배치할 수 없었습니다.`);
+      detailLines.push(diagnosticsToHtml(failedDiagnostics, 8));
+      detailLines.push(`남은 카드는 아래 원인 후보를 우선 확인해 주세요. 제약교사 조건, 반/학생 충돌, 교실 충돌, 고정 슬롯이 주요 원인일 수 있습니다.`);
     }
     detailLines.push(`자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.`);
 
