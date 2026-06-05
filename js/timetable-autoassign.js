@@ -689,6 +689,72 @@ export function createAutoAssignAll(deps) {
     };
   }
 
+  function escapeReportHtml(value = "") {
+    return String(value ?? "").replace(/[<>&"']/g, ch => ({
+      "<": "&lt;",
+      ">": "&gt;",
+      "&": "&amp;",
+      "\"": "&quot;",
+      "'": "&#39;"
+    }[ch] || ch));
+  }
+
+  function makeDeltaText(before, after, suffix = "") {
+    const b = Number(before) || 0;
+    const a = Number(after) || 0;
+    const d = a - b;
+    if (d === 0) return `<span class="tt-auto-compare-same">변화 없음</span>`;
+    const sign = d > 0 ? "+" : "";
+    const cls = d > 0 ? "tt-auto-compare-up" : "tt-auto-compare-down";
+    return `<span class="${cls}">${sign}${d}${suffix}</span>`;
+  }
+
+  function compareMetricRow(label, before, after, suffix = "") {
+    return `<tr>`
+      + `<th>${escapeReportHtml(label)}</th>`
+      + `<td>${escapeReportHtml(before)}${suffix}</td>`
+      + `<td>${escapeReportHtml(after)}${suffix}</td>`
+      + `<td>${makeDeltaText(before, after, suffix)}</td>`
+      + `</tr>`;
+  }
+
+  function buildAutoAssignComparisonHtml(preReport = {}, postReport = {}) {
+    // 11단계에서 결과 비교표 호출부가 먼저 들어가고, 함수 정의가 누락되어
+    // ReferenceError가 발생했습니다. 비교표는 UI 보조 기능이므로 항상 안전하게
+    // HTML을 반환하도록 방어적으로 작성합니다.
+    try {
+      const preClass = preReport.classSlots || {};
+      const postClass = postReport.classSlots || {};
+      const preRestricted = preReport.restrictedTeachers || {};
+      const postRestricted = postReport.restrictedTeachers || {};
+      const preProtected = preReport.protectedIntrusions || {};
+      const postProtected = postReport.protectedIntrusions || {};
+      const rows = [
+        compareMetricRow("학급 시수 합계", preClass.total ?? 0, postClass.total ?? 0, "시수"),
+        compareMetricRow("시수 불일치 학급", preClass.issueCount ?? 0, postClass.issueCount ?? 0, "개"),
+        compareMetricRow("제약교사 위반", preRestricted.issueCount ?? 0, postRestricted.issueCount ?? 0, "명"),
+        compareMetricRow("고정/보호 침범", preProtected.total ?? 0, postProtected.total ?? 0, "건"),
+        compareMetricRow("교실 미배정", preReport.missingRoomCount ?? 0, postReport.missingRoomCount ?? 0, "개"),
+        compareMetricRow("미배치 카드", preReport.failedCount ?? 0, postReport.failedCount ?? 0, "개")
+      ].join("");
+
+      const classIssues = (postClass.issues || []).slice(0, 8);
+      const issueList = classIssues.length
+        ? `<ul>${classIssues.map(row => `<li>${escapeReportHtml(formatClassKeyForReport(row.key))}: ${escapeReportHtml(row.count)}/${escapeReportHtml(row.target)}시수 (${row.diff < 0 ? `${Math.abs(row.diff)} 부족` : `${row.diff} 초과`})</li>`).join("")}${(postClass.issues || []).length > 8 ? `<li>외 ${(postClass.issues || []).length - 8}개 학급</li>` : ""}</ul>`
+        : `<div class="tt-auto-compare-ok">학급별 기준 시수를 모두 충족했습니다.</div>`;
+
+      return `<div class="tt-auto-progress-failed tt-auto-compare-box">`
+        + `<b>자동배치 전/후 비교</b>`
+        + `<table class="tt-auto-compare-table"><thead><tr><th>항목</th><th>이전</th><th>이후</th><th>변화</th></tr></thead><tbody>${rows}</tbody></table>`
+        + `<div class="tt-auto-compare-summary"><b>이후 상태</b>: ${escapeReportHtml(postReport.summary || "-")}</div>`
+        + issueList
+        + `</div>`;
+    } catch (err) {
+      console.warn("Failed to build auto assign comparison html:", err);
+      return `<div class="tt-auto-progress-failed"><b>자동배치 전/후 비교</b><br>비교표 생성 중 오류가 있었지만 자동배치 결과는 반영되었습니다.</div>`;
+    }
+  }
+
 
   function getRoomCapacity(room = {}) {
     const n = Number(room.capacity);
