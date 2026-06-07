@@ -39,7 +39,7 @@ import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
 import { createTimetableDetailHandlers } from "./timetable-detail.js?v=fixed_lessons_r2";
 import { createTimetableConstraintsHandlers } from "./timetable-constraints.js?v=teacher_constraint_copy_r1";
 import { createTimetableLogHandlers } from "./timetable-log.js?v=auto_relax_r1";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=remaining_cards_fix_r1";
+import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=subject_class_filter_r1";
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";

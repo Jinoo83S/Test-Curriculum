@@ -26,8 +26,10 @@ export function createTimetableSidebarHandlers(deps) {
 
   const TT_DRAG_MIME = "application/x-his-timetable-drag";
   const GRADE_FILTER_STORAGE_KEY = "his_timetable_grade_filter";
+  const CLASS_FILTER_STORAGE_KEY = "his_timetable_class_filter";
   const CARD_SORT_STORAGE_KEY = "his_timetable_card_sort";
   let activeGradeFilter = loadGradeFilter();
+  let activeClassFilter = loadClassFilter();
   let activeCardSort = loadCardSort();
 
   function clean(value) {
@@ -199,7 +201,6 @@ export function createTimetableSidebarHandlers(deps) {
     const ttcards = appState.timetable?.ttcards || [];
     toolbar.append(actionGroup, buildCardSortControls(), buildGradeFilterControls(ttcards));
     if (modal) toolbar.appendChild(buildSubjectCardSearchControl(panel));
-    toolbar.appendChild(buildClassCountSummary(ttcards));
     panel.appendChild(toolbar);
 
     if (modal) {
@@ -591,8 +592,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     const gradeBar = document.createElement("div");
     gradeBar.className = "tt-subject-editor-gradebar";
-    const summary = getClassCreditSummary(getTtCards());
-    const options = [{ value: "all", label: `전체 ${totalCount}` }, ...getAvailableGradeFilterOptions(summary).map(opt => ({ value: opt.value, label: `${opt.label} ${opt.countText || ""}`.trim() }))];
+    const options = [{ value: "all", label: `전체 ${totalCount}` }, ...getAvailableGradeFilterOptions(getTtCards()).map(opt => ({ value: opt.value, label: opt.label }))];
     options.forEach(opt => {
       const btn = document.createElement("button");
       btn.type = "button";
@@ -600,7 +600,9 @@ export function createTimetableSidebarHandlers(deps) {
       btn.className = activeGradeFilter === opt.value ? "active" : "";
       btn.addEventListener("click", () => {
         activeGradeFilter = opt.value;
+        activeClassFilter = "all";
         saveGradeFilter(activeGradeFilter);
+        saveClassFilter(activeClassFilter);
         renderSubjectCardEditor(subjectCardModalBody);
         renderSubjectPanel();
       });
@@ -1105,6 +1107,7 @@ export function createTimetableSidebarHandlers(deps) {
           const sections = getSectionCount(tpl.id);
           const teachers = getTeachersForTemplateSafe(tpl.id);
           for (let sec = 0; sec < Math.max(1, sections); sec++) {
+            if (activeClassFilter !== "all" && normalizeClassLabel(formatFullClassLabel(gradeKey, sectionLabel(sec))) !== activeClassFilter) continue;
             const key = `${tpl.id}:${gradeKey}:${sec}`;
             if (seenStandalone.has(key)) continue;
             seenStandalone.add(key);
@@ -1130,48 +1133,138 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildGradeFilterControls(ttcards) {
     const wrap = document.createElement("div");
-    wrap.className = "tt-grade-filter-controls";
+    wrap.className = "tt-grade-filter-controls tt-grade-class-filter-controls";
+    Object.assign(wrap.style, {
+      display: "grid",
+      gridTemplateColumns: "1fr",
+      gap: "4px",
+      alignItems: "stretch",
+      overflowX: "visible"
+    });
 
-    const label = document.createElement("span");
-    label.className = "tt-toolbar-label";
-    label.textContent = "학년 필터";
-    wrap.appendChild(label);
+    const gradeRow = document.createElement("div");
+    gradeRow.className = "tt-filter-row tt-filter-grade-row";
+    Object.assign(gradeRow.style, { display: "flex", alignItems: "center", gap: "5px", minWidth: "0", overflowX: "auto", paddingBottom: "1px" });
 
-    const summary = getClassCreditSummary(ttcards);
-    const gradeOptions = getAvailableGradeFilterOptions(summary);
+    const gradeLabel = document.createElement("span");
+    gradeLabel.className = "tt-toolbar-label";
+    gradeLabel.textContent = "학년 필터";
+    gradeRow.appendChild(gradeLabel);
+
+    const gradeOptions = getAvailableGradeFilterOptions(ttcards);
     if (activeGradeFilter !== "all" && !gradeOptions.some(opt => opt.value === activeGradeFilter)) {
       activeGradeFilter = "all";
       saveGradeFilter(activeGradeFilter);
     }
+    if (activeClassFilter !== "all" && !classFilterMatchesGrade(activeClassFilter, activeGradeFilter)) {
+      activeClassFilter = "all";
+      saveClassFilter(activeClassFilter);
+    }
 
-    const makeFilterBtn = (value, text, countText) => {
+    const makeGradeBtn = (value, text) => {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "tt-grade-filter-btn" + (activeGradeFilter === value ? " active" : "");
-      btn.textContent = countText != null ? `${text} ${countText}` : text;
-      btn.title = value === "all" ? "전체 학년 카드 보기" : `${text}학년 카드만 보기`;
-      const active = activeGradeFilter === value;
+      btn.textContent = text;
+      btn.title = value === "all" ? "전체 학년 카드 보기" : `${text} 카드만 보기`;
       btn.addEventListener("click", () => {
-        if (activeGradeFilter === value) return;
+        if (activeGradeFilter === value && activeClassFilter === "all") return;
         activeGradeFilter = value;
-        saveGradeFilter(value);
+        activeClassFilter = "all";
+        saveGradeFilter(activeGradeFilter);
+        saveClassFilter(activeClassFilter);
         refreshSubjectViews();
       });
       return btn;
     };
 
-    wrap.appendChild(makeFilterBtn("all", "전체", formatCreditValue(summary.total)));
-    gradeOptions.forEach(opt => wrap.appendChild(makeFilterBtn(opt.value, opt.label, opt.countText)));
+    gradeRow.appendChild(makeGradeBtn("all", "전체"));
+    gradeOptions.forEach(opt => gradeRow.appendChild(makeGradeBtn(opt.value, opt.label)));
+
+    const classRow = document.createElement("div");
+    classRow.className = "tt-filter-row tt-filter-class-row";
+    Object.assign(classRow.style, { display: "flex", alignItems: "center", gap: "5px", minWidth: "0", overflowX: "auto", paddingBottom: "1px" });
+
+    const classLabel = document.createElement("span");
+    classLabel.className = "tt-toolbar-label";
+    classLabel.textContent = "학급 필터";
+    classRow.appendChild(classLabel);
+
+    const makeClassBtn = (value, text) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "tt-grade-filter-btn tt-class-filter-btn" + (activeClassFilter === value ? " active" : "");
+      btn.textContent = text;
+      btn.title = value === "all" ? "선택한 학년의 전체 학급 보기" : `${text} 카드만 보기`;
+      btn.addEventListener("click", () => {
+        if (activeClassFilter === value) return;
+        activeClassFilter = value;
+        if (value !== "all") {
+          const parsed = parseClassLabel(value);
+          if (parsed.grade) activeGradeFilter = parsed.grade;
+        }
+        saveGradeFilter(activeGradeFilter);
+        saveClassFilter(activeClassFilter);
+        refreshSubjectViews();
+      });
+      return btn;
+    };
+
+    classRow.appendChild(makeClassBtn("all", "전체"));
+    getAvailableClassFilterOptions(ttcards).forEach(opt => classRow.appendChild(makeClassBtn(opt.value, opt.label)));
+
+    wrap.append(gradeRow, classRow);
     return wrap;
   }
 
-  function getAvailableGradeFilterOptions(summary) {
-    return (summary.gradeSummaries || []).map(gs => {
-      const countText = gs.isBalanced
-        ? formatCreditValue(gs.value)
-        : `${formatCreditValue(gs.min)}~${formatCreditValue(gs.max)}`;
-      return { value: gs.grade, label: gs.grade, countText };
+  function getAvailableGradeFilterOptions(ttcards) {
+    const nums = new Set();
+    (ttcards || []).forEach(card => collectGradeNumbersForCard(card).forEach(g => nums.add(g)));
+    if (!nums.size) {
+      (GRADE_KEYS || []).forEach(g => {
+        const n = getGradeNumber(g);
+        if (n) nums.add(n);
+      });
+    }
+    return [...nums]
+      .sort((a, b) => Number(a) - Number(b))
+      .map(num => ({ value: num, label: `${num}학년` }));
+  }
+
+  function getAvailableClassFilterOptions(ttcards) {
+    const labels = new Set();
+    const gradeNums = new Set();
+    if (activeGradeFilter !== "all") gradeNums.add(activeGradeFilter);
+    if (activeClassFilter !== "all") {
+      const parsed = parseClassLabel(activeClassFilter);
+      if (parsed.grade) gradeNums.add(parsed.grade);
+    }
+
+    (appState.classes?.classes || []).forEach(cls => {
+      const gradeNum = getGradeNumber(cls.grade);
+      if (!gradeNum) return;
+      if (gradeNums.size && !gradeNums.has(gradeNum)) return;
+      const label = normalizeClassLabel(`${gradeNum}${clean(cls.name)}`);
+      if (label) labels.add(label);
     });
+
+    if (!labels.size) {
+      (ttcards || []).forEach(card => {
+        collectClassLabelsForCard(card).forEach(label => {
+          const parsed = parseClassLabel(label);
+          if (gradeNums.size && !gradeNums.has(parsed.grade)) return;
+          if (parsed.grade && parsed.section) labels.add(`${parsed.grade}${parsed.section}`);
+        });
+      });
+    }
+
+    return [...labels].sort(compareClassLabels).map(label => ({ value: label, label }));
+  }
+
+  function classFilterMatchesGrade(classLabel, gradeValue) {
+    if (!classLabel || classLabel === "all" || !gradeValue || gradeValue === "all") return true;
+    const parsed = parseClassLabel(classLabel);
+    return !parsed.grade || parsed.grade === String(gradeValue);
   }
 
   function filterTtCardsByGrade(ttcards) {
@@ -1185,13 +1278,25 @@ export function createTimetableSidebarHandlers(deps) {
   }
 
   function cardMatchesActiveGradeFilter(card) {
-    if (activeGradeFilter === "all") return true;
-    return collectGradeNumbersForCard(card).has(activeGradeFilter);
+    if (activeGradeFilter !== "all" && !collectGradeNumbersForCard(card).has(activeGradeFilter)) return false;
+    if (activeClassFilter !== "all") {
+      return collectClassLabelsForCard(card).has(activeClassFilter);
+    }
+    return true;
   }
 
   function gradeKeyMatchesActiveFilter(gradeKey) {
-    if (activeGradeFilter === "all") return true;
-    return getGradeNumber(gradeKey) === activeGradeFilter;
+    const gradeNum = getGradeNumber(gradeKey);
+    if (activeGradeFilter !== "all" && gradeNum !== activeGradeFilter) return false;
+    if (activeClassFilter !== "all") {
+      const parsed = parseClassLabel(activeClassFilter);
+      return !parsed.grade || parsed.grade === gradeNum;
+    }
+    return true;
+  }
+
+  function collectClassLabelsForCard(card) {
+    return new Set(getClassLabelsForTtCard(card).map(normalizeClassLabel).filter(Boolean));
   }
 
   function collectGradeNumbersForCard(card) {
@@ -1227,6 +1332,22 @@ export function createTimetableSidebarHandlers(deps) {
   function saveGradeFilter(value) {
     try {
       localStorage.setItem(GRADE_FILTER_STORAGE_KEY, value || "all");
+    } catch (err) {
+      // ignore storage errors
+    }
+  }
+
+  function loadClassFilter() {
+    try {
+      return localStorage.getItem(CLASS_FILTER_STORAGE_KEY) || "all";
+    } catch (err) {
+      return "all";
+    }
+  }
+
+  function saveClassFilter(value) {
+    try {
+      localStorage.setItem(CLASS_FILTER_STORAGE_KEY, value || "all");
     } catch (err) {
       // ignore storage errors
     }
