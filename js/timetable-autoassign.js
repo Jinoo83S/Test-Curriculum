@@ -74,22 +74,18 @@ export function createAutoAssignAll(deps) {
 
   // ── Auto-assign scoring preferences ────────────────────────────
   // 자동배치 품질 기준은 학교 운영 상황에 따라 달라지므로, 옵션 팝업에서
-  // 중요도를 조절할 수 있도록 숫자 가중치로 통일합니다.
+  // 필요한 항목만 중요도를 조절할 수 있도록 숫자 가중치로 통일합니다.
   const DEFAULT_SCORE_WEIGHTS = Object.freeze({
-    latePeriod: 2,          // 7교시/후반 교시 회피
     teacherGap: 2,          // 교사 공강 최소화
     sameSubjectDay: 2,      // 같은 과목 하루 반복 회피
     teacherConsecutive: 2,  // 교사 연속수업 부담
-    classConsecutive: 1,    // 학급 연속수업 부담
-    majorMorning: 1         // 주요과목 오전/중반 우선
+    classConsecutive: 1     // 학급 연속수업 부담
   });
 
   const SCORE_PRESETS = Object.freeze({
-    balanced:       { latePeriod:2, teacherGap:2, sameSubjectDay:2, teacherConsecutive:2, classConsecutive:1, majorMorning:1 },
-    avoidLate:      { latePeriod:3, teacherGap:1, sameSubjectDay:2, teacherConsecutive:2, classConsecutive:1, majorMorning:2 },
-    teacherFriendly:{ latePeriod:1, teacherGap:3, sameSubjectDay:1, teacherConsecutive:3, classConsecutive:1, majorMorning:1 },
-    studentFriendly:{ latePeriod:2, teacherGap:1, sameSubjectDay:3, teacherConsecutive:1, classConsecutive:3, majorMorning:2 },
-    majorMorning:   { latePeriod:2, teacherGap:1, sameSubjectDay:2, teacherConsecutive:1, classConsecutive:2, majorMorning:3 }
+    balanced:        { teacherGap:2, sameSubjectDay:2, teacherConsecutive:2, classConsecutive:1 },
+    teacherFriendly: { teacherGap:3, sameSubjectDay:1, teacherConsecutive:3, classConsecutive:1 },
+    studentFriendly: { teacherGap:1, sameSubjectDay:3, teacherConsecutive:1, classConsecutive:3 }
   });
 
   function clampWeight(value, fallback = 1) {
@@ -101,12 +97,10 @@ export function createAutoAssignAll(deps) {
   function normalizeScoreWeights(weights = {}) {
     const src = { ...DEFAULT_SCORE_WEIGHTS, ...(weights || {}) };
     return {
-      latePeriod: clampWeight(src.latePeriod, DEFAULT_SCORE_WEIGHTS.latePeriod),
       teacherGap: clampWeight(src.teacherGap, DEFAULT_SCORE_WEIGHTS.teacherGap),
       sameSubjectDay: clampWeight(src.sameSubjectDay, DEFAULT_SCORE_WEIGHTS.sameSubjectDay),
       teacherConsecutive: clampWeight(src.teacherConsecutive, DEFAULT_SCORE_WEIGHTS.teacherConsecutive),
       classConsecutive: clampWeight(src.classConsecutive, DEFAULT_SCORE_WEIGHTS.classConsecutive),
-      majorMorning: clampWeight(src.majorMorning, DEFAULT_SCORE_WEIGHTS.majorMorning),
     };
   }
 
@@ -117,7 +111,7 @@ export function createAutoAssignAll(deps) {
   function describeScoreWeights(weights = {}) {
     const w = normalizeScoreWeights(weights);
     const label = n => ["끔", "낮음", "보통", "높음"][clampWeight(n, 0)] || "보통";
-    return `7교시 ${label(w.latePeriod)} · 교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)} · 학급연속 ${label(w.classConsecutive)} · 주요과목 ${label(w.majorMorning)}`;
+    return `교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)} · 학급연속 ${label(w.classConsecutive)}`;
   }
 
 
@@ -1315,15 +1309,6 @@ export function createAutoAssignAll(deps) {
 
     let preferencePenalty = 0;
 
-    // 7교시 또는 후반 교시를 강하게 피해야 할 때 사용합니다.
-    if (slot.period >= 6) preferencePenalty += 22 * weights.latePeriod;
-    else if (slot.period === 5) preferencePenalty += 7 * weights.latePeriod;
-
-    // 주요과목은 가능하면 오전/중반에 먼저 놓습니다. 절대 조건은 아니므로 점수만 조정합니다.
-    if (isMajorSubjectForScoring(item)) {
-      if (slot.period >= 4) preferencePenalty += (slot.period - 3) * 7 * weights.majorMorning;
-      else if (slot.period <= 2) preferencePenalty -= 3 * weights.majorMorning;
-    }
 
     const itemSubject = entrySubjectKeyForScoring(item);
     for (const cls of classKeys) {
@@ -1403,9 +1388,6 @@ export function createAutoAssignAll(deps) {
 
     const weights = normalizeScoreWeights(options.scoringWeights);
     let score = slotEnts.length * 10 + existing.filter(e => e.period === slot.period).length * 0.25;
-    if (slot.period >= 6) score += 10 * weights.latePeriod;
-    else if (slot.period === 5) score += 3 * weights.latePeriod;
-    if (isMajorSubjectForScoring(item) && slot.period >= 4) score += (slot.period - 3) * 5 * weights.majorMorning;
 
     for (const e of slotEnts) {
       const sameUnit = item.unitId && e.unitId && item.unitId === e.unitId;
@@ -1476,7 +1458,7 @@ export function createAutoAssignAll(deps) {
   }
 
   // ── Post-placement improvement helpers ─────────────────────────
-  // 자동배치가 일단 성공한 뒤, 충돌을 만들지 않는 범위에서 7교시 몰림,
+  // 자동배치가 일단 성공한 뒤, 충돌을 만들지 않는 범위에서
   // 같은 과목 같은 날 반복, 교사 공강/연속수업 부담을 줄입니다.
   function entryClassKeysForScoring(entry = {}) {
     const audience = audienceForPlacement(entry);
@@ -1524,7 +1506,6 @@ export function createAutoAssignAll(deps) {
 
     const classDaySubject = new Map();
     const classDayPeriods = new Map();
-    const classLateCount = new Map();
     const teacherDayPeriods = new Map();
 
     all.forEach(entry => {
@@ -1541,16 +1522,6 @@ export function createAutoAssignAll(deps) {
         const subjectDayKey = `${cls}:${entry.day}:${subjectKey}`;
         classDaySubject.set(subjectDayKey, (classDaySubject.get(subjectDayKey) || 0) + 1);
 
-        if (period >= 6) {
-          score += 12 * weights.latePeriod;
-          classLateCount.set(cls, (classLateCount.get(cls) || 0) + 1);
-        } else if (period === 5) {
-          score += 3 * weights.latePeriod;
-        }
-        if (isMajorSubjectForScoring(entry)) {
-          if (period >= 4) score += (period - 3) * 6 * weights.majorMorning;
-          else if (period <= 2) score -= 2 * weights.majorMorning;
-        }
       });
 
       getTeacherNamesForScoring(entry).forEach(teacher => {
@@ -1570,9 +1541,6 @@ export function createAutoAssignAll(deps) {
       if (maxC >= 5) score += (maxC - 4) * 12 * weights.classConsecutive;
     });
 
-    classLateCount.forEach(count => {
-      if (count > 4) score += (count - 4) * 5;
-    });
 
     teacherDayPeriods.forEach((periods, key) => {
       const unique = [...new Set(periods)].sort((a, b) => a - b);
@@ -1633,7 +1601,6 @@ export function createAutoAssignAll(deps) {
     let bestScore = scoreScheduleQuality(current, options);
 
     const orderedSlots = [...baseSlots].sort((a, b) => {
-      // 7교시를 무조건 금지하지는 않지만, 개선 후보에서는 앞쪽 교시를 먼저 검토합니다.
       if (a.period !== b.period) return a.period - b.period;
       return a.day - b.day;
     });
@@ -2183,6 +2150,7 @@ export function createAutoAssignAll(deps) {
   function openAutoAssignOptionsDialog(activeGrades = [], defaultOptions = {}) {
     const grades = activeGrades.length ? activeGrades : GRADE_KEYS;
     const defaults = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, ...defaultOptions };
+    if (!SCORE_PRESETS[defaults.scoringProfile] && defaults.scoringProfile !== "custom") defaults.scoringProfile = "balanced";
     const defaultWeights = normalizeScoreWeights(defaults.scoringWeights || SCORE_PRESETS[defaults.scoringProfile] || DEFAULT_SCORE_WEIGHTS);
     const weightLabel = v => ["끔", "낮음", "보통", "높음"][clampWeight(v, 0)] || "보통";
     return new Promise(resolve => {
@@ -2244,21 +2212,17 @@ export function createAutoAssignAll(deps) {
                 <h4>점수 기준</h4>
                 <select id="ttAutoScorePreset" class="tt-auto-select tt-auto-score-preset">
                   <option value="balanced" ${defaults.scoringProfile === "balanced" ? "selected" : ""}>균형</option>
-                  <option value="avoidLate" ${defaults.scoringProfile === "avoidLate" ? "selected" : ""}>7교시 회피 우선</option>
-                  <option value="teacherFriendly" ${defaults.scoringProfile === "teacherFriendly" ? "selected" : ""}>교사 공강/연속 최소화</option>
-                  <option value="studentFriendly" ${defaults.scoringProfile === "studentFriendly" ? "selected" : ""}>학생 과목 몰림 최소화</option>
-                  <option value="majorMorning" ${defaults.scoringProfile === "majorMorning" ? "selected" : ""}>주요과목 오전 우선</option>
+                  <option value="teacherFriendly" ${defaults.scoringProfile === "teacherFriendly" ? "selected" : ""}>교사 부담 최소화</option>
+                  <option value="studentFriendly" ${defaults.scoringProfile === "studentFriendly" ? "selected" : ""}>학생 몰림 최소화</option>
                   <option value="custom" ${defaults.scoringProfile === "custom" ? "selected" : ""}>직접 설정</option>
                 </select>
               </div>
               <div class="tt-auto-weight-grid">
                 ${[
-                  ["latePeriod", "7교시 회피", "후반 교시, 특히 7교시 배치를 줄입니다."],
                   ["teacherGap", "교사 공강 최소화", "교사의 하루 수업 간 빈 시간을 줄입니다."],
                   ["sameSubjectDay", "같은 과목 몰림 회피", "한 반에 같은 과목이 하루에 반복되는 것을 줄입니다."],
                   ["teacherConsecutive", "교사 연속수업 완화", "교사의 긴 연속수업을 줄입니다."],
                   ["classConsecutive", "학급 연속수업 완화", "한 반의 긴 연속수업 부담을 줄입니다."],
-                  ["majorMorning", "주요과목 오전 우선", "국영수·사회·과학을 오전/중반에 더 우선합니다."],
                 ].map(([key, label, help]) => `
                   <label class="tt-auto-weight-row" data-weight-key="${key}">
                     <span><b>${label}</b><em>${help}</em></span>
