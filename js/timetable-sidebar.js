@@ -1133,75 +1133,76 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildGradeFilterControls(ttcards) {
     const wrap = document.createElement("div");
-    wrap.className = "tt-grade-filter-controls tt-grade-class-filter-controls";
+    wrap.className = "tt-grade-filter-controls tt-grade-class-filter-controls tt-compact-class-filter";
     Object.assign(wrap.style, {
-      display: "grid",
-      gridTemplateColumns: "1fr",
-      gap: "4px",
-      alignItems: "stretch",
-      overflowX: "visible"
+      display: "flex",
+      alignItems: "center",
+      gap: "5px",
+      minWidth: "0",
+      overflowX: "auto",
+      overflowY: "hidden",
+      whiteSpace: "nowrap",
+      padding: "1px 0 2px",
+      scrollbarWidth: "thin"
     });
 
-    const gradeRow = document.createElement("div");
-    gradeRow.className = "tt-filter-row tt-filter-grade-row";
-    Object.assign(gradeRow.style, { display: "flex", alignItems: "center", gap: "5px", minWidth: "0", overflowX: "auto", paddingBottom: "1px" });
-
-    const gradeLabel = document.createElement("span");
-    gradeLabel.className = "tt-toolbar-label";
-    gradeLabel.textContent = "학년 필터";
-    gradeRow.appendChild(gradeLabel);
-
     const gradeOptions = getAvailableGradeFilterOptions(ttcards);
+    const classGroups = getAvailableClassFilterGroups(ttcards, gradeOptions);
+
     if (activeGradeFilter !== "all" && !gradeOptions.some(opt => opt.value === activeGradeFilter)) {
       activeGradeFilter = "all";
       saveGradeFilter(activeGradeFilter);
     }
-    if (activeClassFilter !== "all" && !classFilterMatchesGrade(activeClassFilter, activeGradeFilter)) {
+
+    const allClassValues = new Set();
+    classGroups.forEach(group => group.classes.forEach(cls => allClassValues.add(cls.value)));
+    if (activeClassFilter !== "all" && !allClassValues.has(activeClassFilter)) {
       activeClassFilter = "all";
       saveClassFilter(activeClassFilter);
     }
+    if (activeClassFilter !== "all" && !classFilterMatchesGrade(activeClassFilter, activeGradeFilter)) {
+      const parsed = parseClassLabel(activeClassFilter);
+      activeGradeFilter = parsed.grade || "all";
+      saveGradeFilter(activeGradeFilter);
+    }
 
-    const makeGradeBtn = (value, text) => {
+    const makeBtn = ({ value, text, type = "class", grade = "", title = "" }) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.className = "tt-grade-filter-btn" + (activeGradeFilter === value ? " active" : "");
+      const isAll = value === "all";
+      const isGrade = type === "grade";
+      const active = isAll
+        ? activeGradeFilter === "all" && activeClassFilter === "all"
+        : isGrade
+          ? activeGradeFilter === value && activeClassFilter === "all"
+          : activeClassFilter === value;
+      btn.className = "tt-grade-filter-btn tt-compact-filter-btn" + (isGrade ? " tt-compact-grade-btn" : " tt-compact-section-btn") + (active ? " active" : "");
       btn.textContent = text;
-      btn.title = value === "all" ? "전체 학년 카드 보기" : `${text} 카드만 보기`;
-      btn.addEventListener("click", () => {
-        if (activeGradeFilter === value && activeClassFilter === "all") return;
-        activeGradeFilter = value;
-        activeClassFilter = "all";
-        saveGradeFilter(activeGradeFilter);
-        saveClassFilter(activeClassFilter);
-        refreshSubjectViews();
+      btn.title = title || (isAll ? "전체 학년·학급 보기" : isGrade ? `${text}학년 전체 보기` : `${value} 카드만 보기`);
+      Object.assign(btn.style, {
+        minWidth: isAll ? "38px" : isGrade ? "28px" : "24px",
+        height: "24px",
+        padding: isAll ? "0 9px" : "0 7px",
+        borderRadius: isGrade ? "999px" : "8px",
+        fontSize: "12px",
+        lineHeight: "1",
+        fontWeight: isGrade ? "800" : "700",
+        flex: "0 0 auto"
       });
-      return btn;
-    };
-
-    gradeRow.appendChild(makeGradeBtn("all", "전체"));
-    gradeOptions.forEach(opt => gradeRow.appendChild(makeGradeBtn(opt.value, opt.label)));
-
-    const classRow = document.createElement("div");
-    classRow.className = "tt-filter-row tt-filter-class-row";
-    Object.assign(classRow.style, { display: "flex", alignItems: "center", gap: "5px", minWidth: "0", overflowX: "auto", paddingBottom: "1px" });
-
-    const classLabel = document.createElement("span");
-    classLabel.className = "tt-toolbar-label";
-    classLabel.textContent = "학급 필터";
-    classRow.appendChild(classLabel);
-
-    const makeClassBtn = (value, text) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "tt-grade-filter-btn tt-class-filter-btn" + (activeClassFilter === value ? " active" : "");
-      btn.textContent = text;
-      btn.title = value === "all" ? "선택한 학년의 전체 학급 보기" : `${text} 카드만 보기`;
       btn.addEventListener("click", () => {
-        if (activeClassFilter === value) return;
-        activeClassFilter = value;
-        if (value !== "all") {
+        if (isAll) {
+          if (activeGradeFilter === "all" && activeClassFilter === "all") return;
+          activeGradeFilter = "all";
+          activeClassFilter = "all";
+        } else if (isGrade) {
+          if (activeGradeFilter === value && activeClassFilter === "all") return;
+          activeGradeFilter = value;
+          activeClassFilter = "all";
+        } else {
+          if (activeClassFilter === value) return;
+          activeClassFilter = value;
           const parsed = parseClassLabel(value);
-          if (parsed.grade) activeGradeFilter = parsed.grade;
+          activeGradeFilter = parsed.grade || grade || activeGradeFilter;
         }
         saveGradeFilter(activeGradeFilter);
         saveClassFilter(activeClassFilter);
@@ -1210,11 +1211,62 @@ export function createTimetableSidebarHandlers(deps) {
       return btn;
     };
 
-    classRow.appendChild(makeClassBtn("all", "전체"));
-    getAvailableClassFilterOptions(ttcards).forEach(opt => classRow.appendChild(makeClassBtn(opt.value, opt.label)));
+    wrap.appendChild(makeBtn({ value: "all", text: "전체", type: "all" }));
 
-    wrap.append(gradeRow, classRow);
+    classGroups.forEach(group => {
+      const cluster = document.createElement("div");
+      cluster.className = "tt-compact-filter-cluster";
+      Object.assign(cluster.style, {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "2px",
+        flex: "0 0 auto",
+        padding: "2px",
+        border: "1px solid #dbeafe",
+        borderRadius: "12px",
+        background: "#f8fbff"
+      });
+      cluster.appendChild(makeBtn({ value: group.grade, text: group.grade, type: "grade", title: `${group.grade}학년 전체 보기` }));
+      group.classes.forEach(cls => {
+        cluster.appendChild(makeBtn({ value: cls.value, text: cls.section, type: "class", grade: group.grade, title: `${cls.value} 카드만 보기` }));
+      });
+      wrap.appendChild(cluster);
+    });
+
     return wrap;
+  }
+
+  function getAvailableClassFilterGroups(ttcards, gradeOptions = getAvailableGradeFilterOptions(ttcards)) {
+    const gradeMap = new Map();
+    const ensureGrade = grade => {
+      if (!grade) return null;
+      if (!gradeMap.has(grade)) gradeMap.set(grade, new Map());
+      return gradeMap.get(grade);
+    };
+
+    (appState.classes?.classes || []).forEach(cls => {
+      const grade = getGradeNumber(cls.grade);
+      const section = clean(cls.name).toUpperCase();
+      if (!grade || !section) return;
+      ensureGrade(grade)?.set(section, { value: `${grade}${section}`, section });
+    });
+
+    (ttcards || []).forEach(card => {
+      collectClassLabelsForCard(card).forEach(label => {
+        const parsed = parseClassLabel(label);
+        if (!parsed.grade || !parsed.section) return;
+        ensureGrade(parsed.grade)?.set(parsed.section, { value: `${parsed.grade}${parsed.section}`, section: parsed.section });
+      });
+    });
+
+    gradeOptions.forEach(opt => ensureGrade(opt.value));
+
+    return [...gradeMap.entries()]
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([grade, sectionMap]) => ({
+        grade,
+        classes: [...sectionMap.values()].sort((a, b) => compareClassLabels(a.value, b.value))
+      }));
   }
 
   function getAvailableGradeFilterOptions(ttcards) {
