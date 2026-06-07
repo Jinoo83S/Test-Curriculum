@@ -1496,6 +1496,329 @@ function setPinnedForBlocks(blocks = [], value = true, label = "고정 수업 �
   renderAll();
 }
 
+// ── Saved timetable versions ─────────────────────────────────────
+const savedSchedules = () => {
+  const domain = ttDomain();
+  if (!Array.isArray(domain.savedSchedules)) domain.savedSchedules = [];
+  return domain.savedSchedules;
+};
+
+function cloneTimetableEntries(list = entries()) {
+  return (list || []).map(e => normalizeTimetableEntry(JSON.parse(JSON.stringify(e || {}))));
+}
+
+function formatVersionDate(iso) {
+  const d = new Date(iso || Date.now());
+  if (Number.isNaN(d.getTime())) return "날짜 없음";
+  const pad = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function defaultSavedScheduleName() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  return `배치 ${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function getEntryIdentityKey(entry = {}) {
+  const cardIds = [...(entry.ttcardIds || []), entry.ttcardId].map(clean).filter(Boolean).sort();
+  if (cardIds.length) return `cards:${cardIds.join("|")}`;
+  const tpl = [...(entry.templateIds || []), entry.templateId].map(clean).filter(Boolean).sort().join("|");
+  const grades = [...(entry.gradeKeys || []), entry.gradeKey].map(clean).filter(Boolean).sort().join("|");
+  return ["entry", entry.groupId || "", entry.unitId || "", tpl, grades, entry.sectionIdx ?? 0, clean(entry.teacherName)].join(":");
+}
+
+function getEntryPlacementKey(entry = {}) {
+  return `${entry.day}:${entry.period}:${getEntryIdentityKey(entry)}`;
+}
+
+function buildSavedScheduleStats(list = entries()) {
+  const src = list || [];
+  const identitySet = new Set();
+  const placementSet = new Set();
+  const slotBlocks = new Set();
+  const classSlotCounts = new Map();
+  let pinned = 0;
+  let roomAssigned = 0;
+
+  src.forEach(entry => {
+    if (!entry) return;
+    identitySet.add(getEntryIdentityKey(entry));
+    placementSet.add(getEntryPlacementKey(entry));
+    const blockKey = entry.groupId
+      ? `group:${entry.groupId}:${entry.day}:${entry.period}`
+      : `entry:${getEntryIdentityKey(entry)}:${entry.day}:${entry.period}`;
+    slotBlocks.add(blockKey);
+    if (entry.pinned) pinned += 1;
+    if (entry.roomId) roomAssigned += 1;
+    try {
+      const occ = getEntryOccupancy(entry, {
+        getTtCardById,
+        templateGroups: appState.timetable?.ttcardGroups || []
+      });
+      const labels = [...(occ.classLabels || new Set())].filter(Boolean);
+      labels.forEach(label => classSlotCounts.set(label, (classSlotCounts.get(label) || 0) + 1));
+    } catch (_) {}
+  });
+
+  const classSummary = [...classSlotCounts.entries()].sort((a, b) => a[0].localeCompare(b[0], "ko", { numeric: true }));
+  return {
+    entryCount: src.length,
+    blockCount: slotBlocks.size,
+    pinned,
+    roomAssigned,
+    identitySet,
+    placementSet,
+    classSummary,
+  };
+}
+
+function compareSavedScheduleToCurrent(version) {
+  const current = buildSavedScheduleStats(entries());
+  const saved = buildSavedScheduleStats(version?.entries || []);
+  let samePlacement = 0;
+  saved.placementSet.forEach(k => { if (current.placementSet.has(k)) samePlacement += 1; });
+
+  let sameIdentity = 0;
+  saved.identitySet.forEach(k => { if (current.identitySet.has(k)) sameIdentity += 1; });
+
+  const added = Math.max(0, current.identitySet.size - sameIdentity);
+  const removed = Math.max(0, saved.identitySet.size - sameIdentity);
+  const moved = Math.max(0, sameIdentity - samePlacement);
+  return { current, saved, samePlacement, sameIdentity, added, removed, moved };
+}
+
+function buildVersionCompareHtml(version) {
+  const c = compareSavedScheduleToCurrent(version);
+  const classText = c.saved.classSummary.slice(0, 18).map(([label, count]) => `${label} ${count}`).join(" · ") || "학급 점유 없음";
+  return `<div class="tt-version-compare">
+    <h4>현재 배치와 비교: ${escapeHtml(version?.name || "저장 배치")}</h4>
+    <div>저장본: 배치 ${c.saved.entryCount}개 / 수업블록 ${c.saved.blockCount}개 / 교실지정 ${c.saved.roomAssigned}개 / 고정 ${c.saved.pinned}개</div>
+    <div>현재본: 배치 ${c.current.entryCount}개 / 수업블록 ${c.current.blockCount}개 / 교실지정 ${c.current.roomAssigned}개 / 고정 ${c.current.pinned}개</div>
+    <div>같은 위치 ${c.samePlacement}개 · 위치 변경 가능 ${c.moved}개 · 현재에만 있음 ${c.added}개 · 저장본에만 있음 ${c.removed}개</div>
+    <div style="margin-top:6px;color:#64748b">저장본 학급별 점유 참고: ${escapeHtml(classText)}</div>
+  </div>`;
+}
+
+function saveCurrentScheduleVersion(name = "") {
+  if (!canEdit()) return;
+  const version = {
+    id: uid("ttv"),
+    name: clean(name) || defaultSavedScheduleName(),
+    note: "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    periodCount: ttConfig().periodCount,
+    entryCount: entries().length,
+    entries: cloneTimetableEntries(entries()),
+  };
+  savedSchedules().unshift(version);
+  ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+  scheduleSave("timetable");
+  renderAll();
+  return version;
+}
+
+function loadSavedScheduleVersion(versionId) {
+  if (!canEdit()) return;
+  const version = savedSchedules().find(v => v.id === versionId);
+  if (!version) return;
+  const msg = `저장된 배치 "${version.name}"을 불러올까요?\n\n현재 시간표 배치는 저장본의 배치로 교체됩니다.\n카드/그룹/교사조건은 그대로 유지됩니다.`;
+  if (!confirm(msg)) return;
+  captureTimetableUndo(`저장 배치 불러오기: ${version.name}`);
+  ttDomain().entries = cloneTimetableEntries(version.entries || []);
+  if (version.periodCount && version.periodCount !== ttConfig().periodCount) {
+    const applyPeriod = confirm(`저장본은 ${version.periodCount}교시 기준입니다. 현재 교시 설정도 ${version.periodCount}교시로 바꿀까요?`);
+    if (applyPeriod) setPeriodCount(version.periodCount);
+  }
+  scheduleSave("timetable");
+  recomputeConflicts();
+  renderAll();
+}
+
+function renameSavedScheduleVersion(versionId) {
+  if (!canEdit()) return;
+  const version = savedSchedules().find(v => v.id === versionId);
+  if (!version) return;
+  const next = prompt("저장 배치 이름을 입력하세요.", version.name || "");
+  if (next == null) return;
+  version.name = clean(next) || version.name;
+  version.updatedAt = new Date().toISOString();
+  scheduleSave("timetable");
+  openScheduleVersionManager();
+}
+
+function duplicateSavedScheduleVersion(versionId) {
+  if (!canEdit()) return;
+  const version = savedSchedules().find(v => v.id === versionId);
+  if (!version) return;
+  const copy = {
+    ...JSON.parse(JSON.stringify(version)),
+    id: uid("ttv"),
+    name: `${version.name || "저장 배치"} 복사본`,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    entries: cloneTimetableEntries(version.entries || []),
+  };
+  savedSchedules().unshift(copy);
+  scheduleSave("timetable");
+  openScheduleVersionManager();
+}
+
+function deleteSavedScheduleVersion(versionId) {
+  if (!canEdit()) return;
+  const version = savedSchedules().find(v => v.id === versionId);
+  if (!version) return;
+  if (!confirm(`저장 배치 "${version.name}"을 삭제할까요? 현재 시간표에는 영향을 주지 않습니다.`)) return;
+  ttDomain().savedSchedules = savedSchedules().filter(v => v.id !== versionId);
+  scheduleSave("timetable");
+  openScheduleVersionManager();
+}
+
+function exportSavedScheduleVersion(versionId) {
+  const version = savedSchedules().find(v => v.id === versionId);
+  if (!version) return;
+  const payload = {
+    version: 1,
+    mode: "his-timetable-saved-schedule",
+    exportedAt: new Date().toISOString(),
+    schedule: version,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(version.name || "timetable-schedule").replace(/[\\/:*?"<>|]+/g, "_")}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function importSavedScheduleVersion(file) {
+  if (!canEdit() || !file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result || "{}"));
+      const raw = parsed.schedule || parsed;
+      const imported = {
+        id: uid("ttv"),
+        name: clean(raw.name) || `가져온 배치 ${formatVersionDate(new Date().toISOString())}`,
+        note: clean(raw.note),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        periodCount: Math.max(1, Math.min(12, parseInt(raw.periodCount) || ttConfig().periodCount)),
+        entries: Array.isArray(raw.entries) ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId) : [],
+      };
+      imported.entryCount = imported.entries.length;
+      if (!imported.entries.length) throw new Error("entries가 없습니다.");
+      savedSchedules().unshift(imported);
+      scheduleSave("timetable");
+      openScheduleVersionManager();
+    } catch (e) {
+      alert(`배치 파일을 불러올 수 없습니다.\n${e?.message || e}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function openScheduleVersionManager() {
+  const old = document.getElementById("ttScheduleVersionsOverlay");
+  old?.remove();
+  const versions = savedSchedules();
+  const currentStats = buildSavedScheduleStats(entries());
+  const overlay = document.createElement("div");
+  overlay.id = "ttScheduleVersionsOverlay";
+  overlay.className = "tt-version-overlay";
+  overlay.innerHTML = `
+    <div class="tt-version-modal" role="dialog" aria-modal="true" aria-labelledby="ttScheduleVersionsTitle">
+      <div class="tt-version-head">
+        <div>
+          <p class="tt-version-kicker">배치 버전 관리</p>
+          <h3 id="ttScheduleVersionsTitle">저장된 시간표 배치</h3>
+          <p>커리큘럼 카드나 교사 조건은 그대로 두고, 시간표에 배치된 entries만 버전별로 저장하고 불러옵니다.</p>
+        </div>
+        <button type="button" class="tt-version-close" aria-label="닫기">×</button>
+      </div>
+      <div class="tt-version-body">
+        <div class="tt-version-summary">
+          <span>현재 배치 <b>${currentStats.entryCount}</b>개</span>
+          <span>현재 수업블록 <b>${currentStats.blockCount}</b>개</span>
+          <span>저장본 <b>${versions.length}</b>개</span>
+        </div>
+        <div class="tt-version-savebox">
+          <input id="ttVersionNameInput" type="text" value="${escapeHtml(defaultSavedScheduleName())}" aria-label="저장할 배치 이름">
+          <button type="button" data-action="save-current">현재 배치 저장</button>
+        </div>
+        <div class="tt-version-actions">
+          <button type="button" class="secondary" data-action="export-current">현재 배치 JSON 내보내기</button>
+          <button type="button" class="secondary" data-action="import-json">JSON 가져오기</button>
+          <input id="ttVersionImportFile" type="file" accept="application/json,.json" hidden>
+        </div>
+        <div id="ttVersionCompareBox"></div>
+        <div class="tt-version-list">
+          ${versions.length ? versions.map(v => {
+            const stats = buildSavedScheduleStats(v.entries || []);
+            return `<div class="tt-version-row" data-id="${escapeHtml(v.id)}">
+              <div>
+                <div class="tt-version-row-title">${escapeHtml(v.name || "저장 배치")}</div>
+                <div class="tt-version-row-meta">
+                  <span>${escapeHtml(formatVersionDate(v.createdAt))}</span>
+                  <span>배치 ${stats.entryCount}개</span>
+                  <span>블록 ${stats.blockCount}개</span>
+                  <span>교실 ${stats.roomAssigned}개</span>
+                  <span>고정 ${stats.pinned}개</span>
+                </div>
+              </div>
+              <div class="tt-version-row-buttons">
+                <button type="button" data-action="load" data-id="${escapeHtml(v.id)}">불러오기</button>
+                <button type="button" class="secondary" data-action="compare" data-id="${escapeHtml(v.id)}">비교</button>
+                <button type="button" class="secondary" data-action="rename" data-id="${escapeHtml(v.id)}">이름</button>
+                <button type="button" class="secondary" data-action="duplicate" data-id="${escapeHtml(v.id)}">복사</button>
+                <button type="button" class="secondary" data-action="export" data-id="${escapeHtml(v.id)}">내보내기</button>
+                <button type="button" class="danger" data-action="delete" data-id="${escapeHtml(v.id)}">삭제</button>
+              </div>
+            </div>`;
+          }).join("") : `<div class="tt-version-empty">아직 저장된 배치가 없습니다. 현재 시간표를 배치한 뒤 “현재 배치 저장”을 눌러 주세요.</div>`}
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector(".tt-version-close")?.addEventListener("click", close);
+  overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
+  overlay.querySelector('[data-action="save-current"]')?.addEventListener("click", () => {
+    const name = overlay.querySelector("#ttVersionNameInput")?.value || "";
+    saveCurrentScheduleVersion(name);
+    openScheduleVersionManager();
+  });
+  overlay.querySelector('[data-action="export-current"]')?.addEventListener("click", () => {
+    const temp = { id: uid("ttv"), name: clean(overlay.querySelector("#ttVersionNameInput")?.value) || defaultSavedScheduleName(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), periodCount: ttConfig().periodCount, entries: cloneTimetableEntries(entries()) };
+    temp.entryCount = temp.entries.length;
+    savedSchedules().unshift(temp);
+    exportSavedScheduleVersion(temp.id);
+    ttDomain().savedSchedules = savedSchedules().filter(v => v.id !== temp.id);
+  });
+  overlay.querySelector('[data-action="import-json"]')?.addEventListener("click", () => overlay.querySelector("#ttVersionImportFile")?.click());
+  overlay.querySelector("#ttVersionImportFile")?.addEventListener("change", e => importSavedScheduleVersion(e.target.files?.[0]));
+  overlay.querySelectorAll("[data-action][data-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.id;
+      const action = btn.dataset.action;
+      if (action === "load") { close(); loadSavedScheduleVersion(id); }
+      else if (action === "compare") {
+        const version = savedSchedules().find(v => v.id === id);
+        const box = overlay.querySelector("#ttVersionCompareBox");
+        if (box && version) box.innerHTML = buildVersionCompareHtml(version);
+      } else if (action === "rename") renameSavedScheduleVersion(id);
+      else if (action === "duplicate") duplicateSavedScheduleVersion(id);
+      else if (action === "export") exportSavedScheduleVersion(id);
+      else if (action === "delete") deleteSavedScheduleVersion(id);
+    });
+  });
+}
+
 function openFixedLessonManager() {
   const old = document.getElementById("ttFixedLessonsOverlay");
   old?.remove();
@@ -2184,6 +2507,7 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
+$("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
 
 
 // Expose schedule control callbacks to inline HTML script

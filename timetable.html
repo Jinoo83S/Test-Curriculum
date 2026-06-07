@@ -22,6 +22,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-save-btn:hover{background:#1d4ed8!important}
 .tt-auto-btn {background:#7c3aed!important;border-color:#7c3aed!important}
 .tt-auto-btn:hover{background:#6d28d9!important}
+.tt-version-btn{background:#0f766e!important;border-color:#0f766e!important}
+.tt-version-btn:hover{background:#0d5f59!important}
 .tt-clear-btn{background:rgba(220,38,38,.2)!important;border-color:rgba(252,165,165,.5)!important}
 .tt-clear-btn:hover{background:rgba(220,38,38,.35)!important}
 
@@ -521,6 +523,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .usage-empty{margin:0;color:#64748b;font-size:13px}.usage-actions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:16px 20px}.danger-outline{border-color:#fecaca!important;color:#b91c1c!important;background:#fff5f5!important}
 @media(max-width:640px){.usage-modal-backdrop{padding:8px}.usage-log-item{grid-template-columns:1fr 1fr;align-items:start}.usage-log-item em{grid-column:1/-1}.usage-actions{justify-content:stretch}.usage-actions button{flex:1 1 auto}}
 
+
+/* ── Saved timetable versions ─────────────────────────────── */
+.tt-version-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:10020;display:flex;align-items:center;justify-content:center;padding:24px}
+.tt-version-modal{width:min(980px,94vw);max-height:min(760px,92vh);background:white;border-radius:14px;box-shadow:0 24px 70px rgba(15,23,42,.32);display:flex;flex-direction:column;overflow:hidden}
+.tt-version-head{display:flex;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.tt-version-kicker{display:inline-flex;align-items:center;border-radius:999px;background:#ccfbf1;color:#0f766e;font-size:11px;font-weight:800;padding:3px 10px;margin-bottom:8px}
+.tt-version-head h3{font-size:18px;margin:0 0 4px;color:#0f172a}
+.tt-version-head p{font-size:12px;color:#64748b;margin:0}
+.tt-version-close{width:32px;height:32px;border:1px solid #cbd5e1;border-radius:999px;background:white;color:#0f172a;font-size:18px;cursor:pointer}
+.tt-version-body{padding:16px 22px;overflow:auto;display:grid;gap:14px}
+.tt-version-savebox{display:grid;grid-template-columns:1fr auto;gap:10px;border:1px solid #dbeafe;background:#eff6ff;border-radius:12px;padding:12px}
+.tt-version-savebox input{height:34px;border:1px solid #bfdbfe;border-radius:8px;padding:0 10px;font-size:13px}
+.tt-version-savebox button,.tt-version-row button,.tt-version-actions button{height:34px;border:1px solid #0f766e;background:#0f766e;color:white;border-radius:8px;padding:0 12px;font-size:12px;font-weight:800;cursor:pointer}
+.tt-version-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tt-version-actions button.secondary,.tt-version-row button.secondary{background:white;color:#334155;border-color:#cbd5e1}
+.tt-version-actions button.danger,.tt-version-row button.danger{background:white;color:#dc2626;border-color:#fecaca}
+.tt-version-summary{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#334155}
+.tt-version-summary span{border:1px solid #e2e8f0;background:#f8fafc;border-radius:999px;padding:5px 10px}
+.tt-version-list{display:grid;gap:8px}
+.tt-version-row{border:1px solid #e2e8f0;border-radius:12px;background:white;padding:12px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.tt-version-row-title{font-weight:900;color:#0f172a;margin-bottom:4px}
+.tt-version-row-meta{display:flex;gap:8px;flex-wrap:wrap;color:#64748b;font-size:11px}
+.tt-version-row-meta span{background:#f1f5f9;border-radius:999px;padding:3px 8px}
+.tt-version-row-buttons{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.tt-version-empty{padding:26px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
+.tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
+.tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
+@media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
+
 </style>
 
 <style>
@@ -923,10 +954,39 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .tt-entry-card { min-height: 19px !important; }
 }
 
+
+/* ── Saved timetable versions ─────────────────────────────── */
+.tt-version-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:10020;display:flex;align-items:center;justify-content:center;padding:24px}
+.tt-version-modal{width:min(980px,94vw);max-height:min(760px,92vh);background:white;border-radius:14px;box-shadow:0 24px 70px rgba(15,23,42,.32);display:flex;flex-direction:column;overflow:hidden}
+.tt-version-head{display:flex;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.tt-version-kicker{display:inline-flex;align-items:center;border-radius:999px;background:#ccfbf1;color:#0f766e;font-size:11px;font-weight:800;padding:3px 10px;margin-bottom:8px}
+.tt-version-head h3{font-size:18px;margin:0 0 4px;color:#0f172a}
+.tt-version-head p{font-size:12px;color:#64748b;margin:0}
+.tt-version-close{width:32px;height:32px;border:1px solid #cbd5e1;border-radius:999px;background:white;color:#0f172a;font-size:18px;cursor:pointer}
+.tt-version-body{padding:16px 22px;overflow:auto;display:grid;gap:14px}
+.tt-version-savebox{display:grid;grid-template-columns:1fr auto;gap:10px;border:1px solid #dbeafe;background:#eff6ff;border-radius:12px;padding:12px}
+.tt-version-savebox input{height:34px;border:1px solid #bfdbfe;border-radius:8px;padding:0 10px;font-size:13px}
+.tt-version-savebox button,.tt-version-row button,.tt-version-actions button{height:34px;border:1px solid #0f766e;background:#0f766e;color:white;border-radius:8px;padding:0 12px;font-size:12px;font-weight:800;cursor:pointer}
+.tt-version-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tt-version-actions button.secondary,.tt-version-row button.secondary{background:white;color:#334155;border-color:#cbd5e1}
+.tt-version-actions button.danger,.tt-version-row button.danger{background:white;color:#dc2626;border-color:#fecaca}
+.tt-version-summary{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#334155}
+.tt-version-summary span{border:1px solid #e2e8f0;background:#f8fafc;border-radius:999px;padding:5px 10px}
+.tt-version-list{display:grid;gap:8px}
+.tt-version-row{border:1px solid #e2e8f0;border-radius:12px;background:white;padding:12px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.tt-version-row-title{font-weight:900;color:#0f172a;margin-bottom:4px}
+.tt-version-row-meta{display:flex;gap:8px;flex-wrap:wrap;color:#64748b;font-size:11px}
+.tt-version-row-meta span{background:#f1f5f9;border-radius:999px;padding:3px 8px}
+.tt-version-row-buttons{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.tt-version-empty{padding:26px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
+.tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
+.tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
+@media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
+
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=wholegrade_card_gen_r1"/>
+<link rel="stylesheet" href="timetable-ui.css?v=schedule_versions_r1"/>
 
 </head>
 <body>
@@ -945,6 +1005,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
     <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
     <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
+    <button id="ttScheduleVersionsBtn" class="tt-version-btn" type="button">🗃 배치 보관</button>
     <button id="ttSaveBtn" class="tt-save-btn">💾 저장</button>
   </div>
 </header>
@@ -999,7 +1060,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <script type="module" src="js/local-dev.js?v=room_missing_conflict_r1"></script>
-<script type="module" src="js/timetable.js?v=wholegrade_card_gen_r1"></script>
+<script type="module" src="js/timetable.js?v=schedule_versions_r1"></script>
 <script>
 /* ── Tab switching ── */
 document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
@@ -1306,6 +1367,35 @@ window._ttBottomToggle = (function() {
   .tt-all-cell,.tt-cell { height: 23px !important; min-height: 23px !important; }
   .tt-entry-card { min-height: 19px !important; }
 }
+
+
+/* ── Saved timetable versions ─────────────────────────────── */
+.tt-version-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:10020;display:flex;align-items:center;justify-content:center;padding:24px}
+.tt-version-modal{width:min(980px,94vw);max-height:min(760px,92vh);background:white;border-radius:14px;box-shadow:0 24px 70px rgba(15,23,42,.32);display:flex;flex-direction:column;overflow:hidden}
+.tt-version-head{display:flex;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.tt-version-kicker{display:inline-flex;align-items:center;border-radius:999px;background:#ccfbf1;color:#0f766e;font-size:11px;font-weight:800;padding:3px 10px;margin-bottom:8px}
+.tt-version-head h3{font-size:18px;margin:0 0 4px;color:#0f172a}
+.tt-version-head p{font-size:12px;color:#64748b;margin:0}
+.tt-version-close{width:32px;height:32px;border:1px solid #cbd5e1;border-radius:999px;background:white;color:#0f172a;font-size:18px;cursor:pointer}
+.tt-version-body{padding:16px 22px;overflow:auto;display:grid;gap:14px}
+.tt-version-savebox{display:grid;grid-template-columns:1fr auto;gap:10px;border:1px solid #dbeafe;background:#eff6ff;border-radius:12px;padding:12px}
+.tt-version-savebox input{height:34px;border:1px solid #bfdbfe;border-radius:8px;padding:0 10px;font-size:13px}
+.tt-version-savebox button,.tt-version-row button,.tt-version-actions button{height:34px;border:1px solid #0f766e;background:#0f766e;color:white;border-radius:8px;padding:0 12px;font-size:12px;font-weight:800;cursor:pointer}
+.tt-version-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tt-version-actions button.secondary,.tt-version-row button.secondary{background:white;color:#334155;border-color:#cbd5e1}
+.tt-version-actions button.danger,.tt-version-row button.danger{background:white;color:#dc2626;border-color:#fecaca}
+.tt-version-summary{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#334155}
+.tt-version-summary span{border:1px solid #e2e8f0;background:#f8fafc;border-radius:999px;padding:5px 10px}
+.tt-version-list{display:grid;gap:8px}
+.tt-version-row{border:1px solid #e2e8f0;border-radius:12px;background:white;padding:12px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.tt-version-row-title{font-weight:900;color:#0f172a;margin-bottom:4px}
+.tt-version-row-meta{display:flex;gap:8px;flex-wrap:wrap;color:#64748b;font-size:11px}
+.tt-version-row-meta span{background:#f1f5f9;border-radius:999px;padding:3px 8px}
+.tt-version-row-buttons{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.tt-version-empty{padding:26px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
+.tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
+.tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
+@media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
 
 </style>
 <style>
@@ -1638,10 +1728,39 @@ window._ttBottomToggle = (function() {
   .tt-entry-card { min-height: 19px !important; }
 }
 
+
+/* ── Saved timetable versions ─────────────────────────────── */
+.tt-version-overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:10020;display:flex;align-items:center;justify-content:center;padding:24px}
+.tt-version-modal{width:min(980px,94vw);max-height:min(760px,92vh);background:white;border-radius:14px;box-shadow:0 24px 70px rgba(15,23,42,.32);display:flex;flex-direction:column;overflow:hidden}
+.tt-version-head{display:flex;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+.tt-version-kicker{display:inline-flex;align-items:center;border-radius:999px;background:#ccfbf1;color:#0f766e;font-size:11px;font-weight:800;padding:3px 10px;margin-bottom:8px}
+.tt-version-head h3{font-size:18px;margin:0 0 4px;color:#0f172a}
+.tt-version-head p{font-size:12px;color:#64748b;margin:0}
+.tt-version-close{width:32px;height:32px;border:1px solid #cbd5e1;border-radius:999px;background:white;color:#0f172a;font-size:18px;cursor:pointer}
+.tt-version-body{padding:16px 22px;overflow:auto;display:grid;gap:14px}
+.tt-version-savebox{display:grid;grid-template-columns:1fr auto;gap:10px;border:1px solid #dbeafe;background:#eff6ff;border-radius:12px;padding:12px}
+.tt-version-savebox input{height:34px;border:1px solid #bfdbfe;border-radius:8px;padding:0 10px;font-size:13px}
+.tt-version-savebox button,.tt-version-row button,.tt-version-actions button{height:34px;border:1px solid #0f766e;background:#0f766e;color:white;border-radius:8px;padding:0 12px;font-size:12px;font-weight:800;cursor:pointer}
+.tt-version-actions{display:flex;gap:8px;flex-wrap:wrap}
+.tt-version-actions button.secondary,.tt-version-row button.secondary{background:white;color:#334155;border-color:#cbd5e1}
+.tt-version-actions button.danger,.tt-version-row button.danger{background:white;color:#dc2626;border-color:#fecaca}
+.tt-version-summary{display:flex;gap:8px;flex-wrap:wrap;font-size:12px;color:#334155}
+.tt-version-summary span{border:1px solid #e2e8f0;background:#f8fafc;border-radius:999px;padding:5px 10px}
+.tt-version-list{display:grid;gap:8px}
+.tt-version-row{border:1px solid #e2e8f0;border-radius:12px;background:white;padding:12px;display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}
+.tt-version-row-title{font-weight:900;color:#0f172a;margin-bottom:4px}
+.tt-version-row-meta{display:flex;gap:8px;flex-wrap:wrap;color:#64748b;font-size:11px}
+.tt-version-row-meta span{background:#f1f5f9;border-radius:999px;padding:3px 8px}
+.tt-version-row-buttons{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.tt-version-empty{padding:26px;text-align:center;border:1px dashed #cbd5e1;border-radius:12px;color:#64748b;background:#f8fafc}
+.tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
+.tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
+@media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
+
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=wholegrade_card_gen_r1";
+  var href = "timetable-ui.css?v=schedule_versions_r1";
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

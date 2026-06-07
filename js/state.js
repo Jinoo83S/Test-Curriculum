@@ -597,6 +597,24 @@ export function normalizeTtCard(item = {}) {
 const TEACHER_WORK_TYPES = new Set(["fulltime", "parttime", "childcare", "restricted", "other"]);
 const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
 
+
+function normalizeSavedTimetableVersion(item = {}) {
+  const entries = Array.isArray(item.entries)
+    ? item.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
+    : [];
+  const createdAt = clean(item.createdAt) || new Date().toISOString();
+  return {
+    id: clean(item.id) || uid("ttv"),
+    name: clean(item.name) || "저장된 배치",
+    note: clean(item.note),
+    createdAt,
+    updatedAt: clean(item.updatedAt) || createdAt,
+    periodCount: Math.max(1, Math.min(12, parseInt(item.periodCount) || 7)),
+    entryCount: Number.isInteger(item.entryCount) ? item.entryCount : entries.length,
+    entries,
+  };
+}
+
 export function normalizeTimetableConstraint(c = {}) {
   const workType = TEACHER_WORK_TYPES.has(clean(c.workType)) ? clean(c.workType) : "fulltime";
   const maxPerWeek = Number.isInteger(c.maxPerWeek) && c.maxPerWeek > 0 ? c.maxPerWeek : 0;
@@ -671,6 +689,10 @@ function normalizeTimetableDomain(raw = {}) {
     ttcardGroups: Array.isArray(raw.ttcardGroups)
       ? raw.ttcardGroups.map(normalizeTemplateGroup).filter(g => g.name)
       : (Array.isArray(raw.templateGroups) ? raw.templateGroups.map(normalizeTemplateGroup).filter(g => g.name) : []),
+    // 배치된 시간표만 별도 저장한 버전 목록입니다. 카드/커리큘럼은 제외하고 entries만 보관합니다.
+    savedSchedules: Array.isArray(raw.savedSchedules)
+      ? raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length)
+      : [],
     teacherConstraints: constraints,
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
@@ -1163,7 +1185,8 @@ function markSplitBaselines(domain, normalized = normalizedForDomain(domain)) {
     splitDocFingerprints.timetable.timetableMeta = fp({
       config: n.config,
       teacherConstraints: n.teacherConstraints,
-      ttcardGroups: n.ttcardGroups || []
+      ttcardGroups: n.ttcardGroups || [],
+      savedSchedules: n.savedSchedules || []
     });
   }
 }
@@ -1311,7 +1334,8 @@ async function saveSplitDomain(domain, options = {}) {
       {
         config: normalized.config,
         teacherConstraints: normalized.teacherConstraints,
-        ttcardGroups: normalized.ttcardGroups || []
+        ttcardGroups: normalized.ttcardGroups || [],
+        savedSchedules: normalized.savedSchedules || []
       },
       options
     );
@@ -1512,7 +1536,7 @@ async function applyTimetableSplitIfReady() {
   if (!hasSplitData && !splitConfirmed.has("timetable") && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
-      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
+      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
     });
     if (migrated) return;
   }
@@ -1523,6 +1547,7 @@ async function applyTimetableSplitIfReady() {
     config: timetableSplitCache.meta?.config || {},
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
     ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
+    savedSchedules: timetableSplitCache.meta?.savedSchedules || [],
     entries: timetableSplitCache.entries,
     ttcards: timetableSplitCache.ttcards,
   };
