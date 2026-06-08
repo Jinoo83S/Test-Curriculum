@@ -220,6 +220,17 @@ export function createAutoAssignAll(deps) {
     };
   }
 
+
+  function isTeacherUnavailable(teacher, day, period) {
+    const name = String(teacher || "").trim();
+    if (!name) return false;
+    const c = constraints()?.[name] || {};
+    const slots = Array.isArray(c.unavailableSlots) ? c.unavailableSlots : [];
+    const d = Number(day);
+    const p = Number(period);
+    return slots.some(slot => Number(slot?.day) === d && Number(slot?.period) === p);
+  }
+
   function teacherLimitPenalty(teacher, slot, existing = []) {
     const s = getTeacherLimitState(teacher, slot, existing);
     let penalty = 0;
