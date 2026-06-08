@@ -1568,6 +1568,25 @@ export function createAutoAssignAll(deps) {
     return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 6 + preferencePenalty + samePeriodLoad * 0.15 + Math.random();
   }
 
+  function selectCandidateWithExploration(candidates = [], checkOptions = {}) {
+    if (!candidates.length) return null;
+    const sorted = [...candidates].sort((a, b) => a.score - b.score);
+    const randomness = Math.max(0, Number(checkOptions.slotRandomness || 0));
+    const topCandidateCount = Math.max(1, Math.min(12, Number(checkOptions.topCandidateCount || 1)));
+    if (!randomness || topCandidateCount <= 1) return sorted[0];
+
+    const bestScore = sorted[0].score;
+    const tolerance = Math.max(4, randomness * 14);
+    const pool = sorted
+      .filter(c => c.score <= bestScore + tolerance)
+      .slice(0, topCandidateCount);
+    if (pool.length <= 1) return sorted[0];
+
+    // 좋은 후보를 더 자주 고르되, 같은 점수대의 다른 후보도 일부 시도합니다.
+    const index = Math.min(pool.length - 1, Math.floor(Math.pow(Math.random(), 1.8) * pool.length));
+    return pool[index] || pool[0];
+  }
+
   function findBestAutoSlot(item, baseSlots, placed, checkOptions) {
     const candidates = [];
     for (const slot of shuffle([...baseSlots])) {
@@ -1575,8 +1594,7 @@ export function createAutoAssignAll(deps) {
         candidates.push({ slot, score: scoreAutoSlot(item, slot, placed, checkOptions) });
       }
     }
-    candidates.sort((a, b) => a.score - b.score);
-    return candidates[0]?.slot || null;
+    return selectCandidateWithExploration(candidates, checkOptions)?.slot || null;
   }
 
   function makeAutoEntry(item, slot, placed = []) {
@@ -2486,8 +2504,34 @@ export function createAutoAssignAll(deps) {
   function attemptsForMode(mode) {
     const value = String(mode || "balanced");
     if (value === "fast") return [18, 12, 6];
-    if (value === "deep") return [54, 36, 16];
-    return [30, 24, 10];
+    if (value === "deep") return [60, 40, 18];
+    return [36, 26, 12];
+  }
+
+  function explorationOptionsForAttempt(mode, attempt = 0, stageIndex = 0) {
+    const value = String(mode || "balanced");
+    const base = value === "deep" ? 6 : (value === "fast" ? 2 : 4);
+    const warmup = attempt === 0 ? 0 : 1;
+    const jitter = (attempt % Math.max(2, base)) + stageIndex;
+    const slotRandomness = warmup ? Math.min(7, 1 + jitter) : 0;
+    const topCandidateCount = warmup ? Math.min(10, 2 + base + (attempt % 3)) : 1;
+    return { slotRandomness, topCandidateCount };
+  }
+
+  function compareAutoRunResults(a = {}, b = {}) {
+    // 반환값이 음수이면 a가 더 좋습니다.
+    const aFailed = Number(a.failedCount ?? 999999);
+    const bFailed = Number(b.failedCount ?? 999999);
+    if (aFailed !== bFailed) return aFailed - bFailed;
+    const aPlaced = Number(a.placedCount ?? 0);
+    const bPlaced = Number(b.placedCount ?? 0);
+    if (aPlaced !== bPlaced) return bPlaced - aPlaced;
+    const aQuality = Number(a.qualityScore ?? Infinity);
+    const bQuality = Number(b.qualityScore ?? Infinity);
+    if (aQuality !== bQuality) return aQuality - bQuality;
+    const aForced = Number(a.forcedCount ?? 0);
+    const bForced = Number(b.forcedCount ?? 0);
+    return aForced - bForced;
   }
 
   function escapeHtml(s) {
@@ -3098,7 +3142,7 @@ export function createAutoAssignAll(deps) {
     await updateProgress({
       percent: 10,
       step: "배치 대상 분석",
-      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
+      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. 여러 초기 배치 후보를 만든 뒤 가장 좋은 결과를 선택합니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
       log: restrictedTeacherNames.length
         ? `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")} · ${describeScoreWeights(options.scoringWeights)}`
         : `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 그룹 수업은 동시배정 단위로 계산합니다. · ${describeScoreWeights(options.scoringWeights)}`
@@ -3125,6 +3169,9 @@ export function createAutoAssignAll(deps) {
     ];
 
     let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
+    let bestQualityScore = Infinity;
+    let bestAttemptInfo = { stageLabel: stages[0]?.label || "", attempt: 0, totalAttempts: 0, exploration: "기본" };
+    let exploredInitialRuns = 0;
     let autoOps = 0;
     const yieldAutoAssign = async (data = null, force = false) => {
       if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
@@ -3141,7 +3188,7 @@ export function createAutoAssignAll(deps) {
         await updateProgress({
           percent: stagePercent,
           step: `자동배치 탐색 · ${stage.label}`,
-          detail: `시도 ${attempt + 1} / ${stage.attempts} · 현재까지 최선 ${Math.max(0, bestScore)}개 배치`,
+          detail: `초기배치 후보 ${attempt + 1} / ${stage.attempts} · 현재까지 최선 ${Math.max(0, bestScore)}개 배치 · ${attempt === 0 ? "최저점 우선" : "랜덤 후보 탐색"}`,
           placed: 0,
           best: Math.max(0, bestScore),
           failed: bestFailed.length,
@@ -3149,6 +3196,9 @@ export function createAutoAssignAll(deps) {
           log: attempt === 0 ? `${stage.label} 단계 시작` : null
         }, true);
         const placed = [], failed = [];
+        exploredInitialRuns++;
+        const exploration = explorationOptionsForAttempt(options.runAttempts, attempt, stageIndex);
+        const stageAttemptOptions = { ...stage.options, ...exploration, attemptIndex: attempt, stageIndex };
 
         // ── Sort schedulable units by priority ───────────────────────
         // 1) 고정 수업은 위에서 이미 pinnedEntries로 보호
@@ -3161,7 +3211,7 @@ export function createAutoAssignAll(deps) {
           if (candidateCountCache.has(key)) return candidateCountCache.get(key);
           let count = 0;
           for (const slot of baseSlots) {
-            if (checkPlacementValid(item, slot, placed, stage.options)) count += 1;
+            if (checkPlacementValid(item, slot, placed, stageAttemptOptions)) count += 1;
           }
           candidateCountCache.set(key, count);
           return count;
@@ -3251,8 +3301,8 @@ export function createAutoAssignAll(deps) {
               const probeCards = activeItems.flatMap(u => u.ttcards || []);
               const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
               const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
-              const foundSlot = probe ? findBestAutoSlot(probe, baseSlots, placed, stage.options) : null;
-              if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed, stage.options)) {
+              const foundSlot = probe ? findBestAutoSlot(probe, baseSlots, placed, stageAttemptOptions) : null;
+              if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed, stageAttemptOptions)) {
                 continue;
               }
               activeItems.forEach(groupItem => {
@@ -3282,7 +3332,7 @@ export function createAutoAssignAll(deps) {
                 if (!(occurrenceGroupItem.ttcards || []).length) continue;
                 const item = makePlacementFromGroupItem(group, occurrenceGroupItem);
                 const checkedItem = item ? annotateRestrictedAutoItem(item) : null;
-                const slot = checkedItem ? findBestAutoSlot(checkedItem, baseSlots, placed, stage.options) : null;
+                const slot = checkedItem ? findBestAutoSlot(checkedItem, baseSlots, placed, stageAttemptOptions) : null;
                 if (slot) {
                   const entry = makeAutoEntry(checkedItem, slot, placed);
                   if (entry) placed.push(entry);
@@ -3309,7 +3359,7 @@ export function createAutoAssignAll(deps) {
                 failed: failed.length,
                 currentCard: getAutoItemName(item)
               });
-              const slot = findBestAutoSlot(item, baseSlots, placed, stage.options);
+              const slot = findBestAutoSlot(item, baseSlots, placed, stageAttemptOptions);
               if (!slot) {
                 // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
                 // break하면, 마지막 보정 단계가 1시수만 복구하고 나머지는 계속 하단에 남습니다.
@@ -3334,22 +3384,45 @@ export function createAutoAssignAll(deps) {
         await placeGroups(normalGroupBlocks, "그룹 수업 배치");
         await placeStandaloneKeys(normalKeys, "일반 카드 배치");
 
-        if (placed.length > bestScore || (placed.length === bestScore && failed.length < bestFailed.length)) {
+        const qualityScore = Math.round(scoreScheduleQuality(placed, { ...options, scoringWeights: stageAttemptOptions.scoringWeights }) * 10) / 10;
+        const currentRun = {
+          placedCount: placed.length,
+          failedCount: failed.length,
+          qualityScore,
+          forcedCount: 0
+        };
+        const bestRun = {
+          placedCount: bestPlaced.length,
+          failedCount: bestFailed.length,
+          qualityScore: bestQualityScore,
+          forcedCount: 0
+        };
+        if (bestScore < 0 || compareAutoRunResults(currentRun, bestRun) < 0) {
           bestScore  = placed.length;
           bestPlaced = placed;
           bestFailed = failed;
-          bestStage  = stage;
+          bestStage  = { ...stage, options: stageAttemptOptions };
+          bestQualityScore = qualityScore;
+          bestAttemptInfo = {
+            stageLabel: stage.label,
+            attempt: attempt + 1,
+            totalAttempts: stage.attempts,
+            exploration: stageAttemptOptions.slotRandomness ? `상위 ${stageAttemptOptions.topCandidateCount}개 후보 탐색` : "최저점 후보 우선",
+            qualityScore
+          };
           await updateProgress({
             percent: stagePercent,
-            step: `최선 결과 갱신 · ${stage.label}`,
-            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개`,
+            step: `최선 초기배치 갱신 · ${stage.label}`,
+            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개, 품질점수 ${qualityScore}`,
             placed: placed.length,
             best: bestPlaced.length,
             failed: bestFailed.length,
-            log: `최선 결과 갱신: ${bestPlaced.length}개 배치`
+            log: `최선 초기배치 갱신: ${bestPlaced.length}개 배치 · 미배치 ${bestFailed.length}개 · 품질 ${qualityScore}`
           }, true);
         }
-        if (!failed.length) break;
+        // 완전 배치 후보가 나와도 같은 단계의 남은 초기 후보를 계속 비교해 품질이 더 좋은 배치를 찾습니다.
+        // 단, 빠른 배치는 최소 3회 이후 완전 배치가 나오면 시간을 절약합니다.
+        if (!failed.length && String(options.runAttempts || "balanced") === "fast" && attempt >= 2) break;
       }
       if (!bestFailed.length) break;
     }
@@ -3513,6 +3586,9 @@ export function createAutoAssignAll(deps) {
       scoringProfile: options.scoringProfile || "balanced",
       scoringWeights: options.scoringWeights,
       scoringSummary: describeScoreWeights(options.scoringWeights),
+      initialRunCount: exploredInitialRuns,
+      initialBestQualityScore: bestQualityScore,
+      initialBestAttemptInfo: bestAttemptInfo,
       failedCount: names.length,
       failedNames: names,
       failedDiagnostics,
@@ -3550,7 +3626,7 @@ export function createAutoAssignAll(deps) {
     addTimetableLog(
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 이동/교환 복구 ${swapRepaired.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
+      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 이동/교환 복구 ${swapRepaired.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 초기후보 ${exploredInitialRuns}회 · 탐색: ${bestStage.label}`
     );
     addTimetableLog(
       outcomeAnalysis.failedUnitCount ? "warn" : "auto",
@@ -3582,6 +3658,7 @@ export function createAutoAssignAll(deps) {
       `<b>배치 방식</b> ${modeText}`,
       beforeAutoSnapshot ? `<b>자동 보관</b> 전: ${safeAutoHtml(beforeAutoSnapshot.name)} / 결과: ${safeAutoHtml(afterAutoSnapshot?.name || "저장 실패")}` : null,
       `<b>탐색 방식</b> ${bestStage.label}`,
+      `<b>초기배치 후보</b> ${exploredInitialRuns}회 중 ${bestAttemptInfo.stageLabel} ${bestAttemptInfo.attempt}/${bestAttemptInfo.totalAttempts} 선택 · ${bestAttemptInfo.exploration} · 품질 ${bestAttemptInfo.qualityScore ?? "-"}`,
       `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
       `<b>고정/보호 슬롯 제외</b> ${protectedSummary.slots}칸`,
       restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
