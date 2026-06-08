@@ -1168,7 +1168,8 @@ function recomputeConflicts() {
     audienceForPlacement,
     {
       getProtectedGrades: protectedGradesForEntry,
-      getCompoundPartRefs: compoundPartRefsForPlacement
+      getCompoundPartRefs: compoundPartRefsForPlacement,
+      rooms: getRooms()
     }
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
@@ -1382,7 +1383,7 @@ function alertProtectedSlot(block) {
   alert(`이 시간에는 고정된 전체학년 수업(${name})이 있어 다른 과목을 배치할 수 없습니다.`);
 }
 
-const MANUAL_BLOCKING_CONFLICTS = new Set(["teacher", "room", "student"]);
+const MANUAL_BLOCKING_CONFLICTS = new Set(["teacher", "room", "roomUnavailable", "student"]);
 
 function getManualPlacementBlock(candidates, options = {}) {
   const candidateList = (Array.isArray(candidates) ? candidates : [candidates])
@@ -1407,7 +1408,11 @@ function getManualPlacementBlock(candidates, options = {}) {
       appState.timetable.ttcardGroups,
       [],
       audienceForPlacement,
-      { getProtectedGrades: protectedGradesForEntry }
+      {
+        getProtectedGrades: protectedGradesForEntry,
+        getCompoundPartRefs: compoundPartRefsForPlacement,
+        rooms: getRooms()
+      }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
       .filter(type => MANUAL_BLOCKING_CONFLICTS.has(type));

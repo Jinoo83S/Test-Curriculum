@@ -85,6 +85,17 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     catch (err) { console.warn("Protected grade resolver failed:", err); return new Set(); }
   };
 
+  const rooms = Array.isArray(options.rooms) ? options.rooms : [];
+  const roomMap = new Map(rooms.filter(r => r?.id).map(r => [r.id, r]));
+  const isRoomUnavailable = (roomId, day, period) => {
+    if (!roomId) return false;
+    const room = roomMap.get(roomId);
+    const slots = Array.isArray(room?.unavailableSlots) ? room.unavailableSlots : [];
+    const d = Number(day);
+    const p = Number(period);
+    return slots.some(slot => Number(slot?.day) === d && Number(slot?.period) === p);
+  };
+
   const compoundRefsFor = entry => {
     if (typeof options.getCompoundPartRefs !== "function") return [];
     try {
@@ -118,6 +129,7 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
   entries.forEach(e => {
     const rule = String(e.roomRule || "auto").trim();
     if (!e.roomId && rule !== "none") result.get(e.id)?.add("roomMissing");
+    if (e.roomId && isRoomUnavailable(e.roomId, e.day, e.period)) result.get(e.id)?.add("roomUnavailable");
     // 같은 대표 복합과목의 서로 다른 구성 카드가 하나의 aggregate entry 안에 같이 있으면
     // 실제로는 같은 학생이 같은 시간에 두 수업을 듣는 상태이므로 학생 충돌로 표시합니다.
     if (hasInternalCompoundConflict(e)) result.get(e.id)?.add("student");
@@ -268,32 +280,20 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 }
 
 /**
- * Returns Map<entryId, Set<"maxPerDay"|"maxPerWeek"|"maxConsecutive"|"unavailable">>
+ * Returns Map<entryId, Set<"maxPerDay"|"maxConsecutive"|"unavailable">>
  */
 export function detectConstraintViolations(entries, teacherConstraints = {}) {
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
-  // Build per-teacher entry lists
-  const byTeacher = new Map();
+  // Build per-teacher, per-day entry lists
   const byTeacherDay = new Map();
   entries.forEach(e => {
     splitTeacherNames(e.teacherName).filter(Boolean).forEach(teacher => {
-      if (!byTeacher.has(teacher)) byTeacher.set(teacher, []);
-      byTeacher.get(teacher).push(e);
       const k = `${teacher}:${e.day}`;
       if (!byTeacherDay.has(k)) byTeacherDay.set(k, []);
       byTeacherDay.get(k).push(e);
     });
-  });
-
-  // Max per week
-  byTeacher.forEach((teacherEntries, teacher) => {
-    const c = teacherConstraints[teacher];
-    const maxPerWeek = Number(c?.maxPerWeek) || 0;
-    if (maxPerWeek > 0 && teacherEntries.length > maxPerWeek) {
-      teacherEntries.forEach(e => result.get(e.id).add("maxPerWeek"));
-    }
   });
 
   byTeacherDay.forEach((dayEntries, key) => {
@@ -336,10 +336,10 @@ export function getConflictLabel(set) {
   const labels = [];
   if (set.has("teacher")) labels.push("교사 중복");
   if (set.has("room"))    labels.push("교실 중복");
+  if (set.has("roomUnavailable")) labels.push("교실 불가시간");
   if (set.has("roomMissing")) labels.push("교실 미배정");
   if (set.has("student")) labels.push("학생 중복");
   if (set.has("maxPerDay")) labels.push("일일 최대 초과");
-  if (set.has("maxPerWeek")) labels.push("주간 최대 초과");
   if (set.has("maxConsecutive")) labels.push("연속수업 초과");
   if (set.has("unavailable"))   labels.push("불가 시간대");
   if (set.has("syncRequired"))   labels.push("동시배정 불일치");

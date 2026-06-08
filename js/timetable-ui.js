@@ -18,16 +18,16 @@ export function getGradeColor(gradeKey) {
 export const CONFLICT_DISPLAY = {
   teacher:        { label:"교사", short:"교", color:"#dc2626" },
   room:           { label:"교실", short:"실", color:"#ea580c" },
+  roomUnavailable:{ label:"교실불가", short:"불", color:"#b45309" },
   roomMissing:    { label:"교실미배정", short:"미", color:"#f97316" },
   student:        { label:"학생", short:"학", color:"#7c3aed" },
   syncRequired:   { label:"동시배정", short:"동", color:"#2563eb" },
   unavailable:    { label:"불가시간", short:"불", color:"#475569" },
   maxConsecutive: { label:"연속초과", short:"연", color:"#ca8a04" },
   maxPerDay:      { label:"일일초과", short:"일", color:"#ca8a04" },
-  maxPerWeek:     { label:"주간초과", short:"주", color:"#ca8a04" },
 };
 
-export const CONFLICT_PRIORITY = ["teacher", "room", "roomMissing", "student", "syncRequired", "unavailable", "maxPerWeek", "maxConsecutive", "maxPerDay"];
+export const CONFLICT_PRIORITY = ["teacher", "room", "roomUnavailable", "roomMissing", "student", "syncRequired", "unavailable", "maxConsecutive", "maxPerDay"];
 
 export function getOrderedConflictTypes(conflicts) {
   return CONFLICT_PRIORITY.filter(type => conflicts.has(type));

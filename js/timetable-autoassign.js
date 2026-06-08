@@ -398,6 +398,25 @@ export function createAutoAssignAll(deps) {
     return slotEntries.some(e => e.roomId === roomId && !sameUnitPlacement(candidate, e));
   }
 
+  function getRoomByIdLocal(roomId) {
+    if (!roomId) return null;
+    return (appState.rooms?.rooms || []).find(r => r.id === roomId) || null;
+  }
+
+  function isRoomUnavailable(roomId, day, period) {
+    const room = getRoomByIdLocal(roomId);
+    const slots = Array.isArray(room?.unavailableSlots) ? room.unavailableSlots : [];
+    const d = Number(day);
+    const p = Number(period);
+    return slots.some(slot => Number(slot?.day) === d && Number(slot?.period) === p);
+  }
+
+  function roomUnavailableInSlot(candidate = {}, slot = {}) {
+    const roomId = candidate.roomId;
+    if (!roomId) return false;
+    return isRoomUnavailable(roomId, slot.day, slot.period);
+  }
+
 
   // ── Fixed/protected slot helpers ───────────────────────────────
   // 자동배치에서는 entries()에 남겨 둔 항목이 곧 보호 대상입니다.
@@ -1006,14 +1025,14 @@ export function createAutoAssignAll(deps) {
     // 고정 교실은 사용자가 지정한 값 그대로 유지합니다.
     if (entryData.roomPinned || rule === "fixed") return entryData;
 
-    // 기본 추천 교실이 있고 해당 시간에 비어 있으면 그대로 사용합니다.
-    if (entryData.roomId && !roomConflictsInSlot(entryData, slot, placed)) return entryData;
+    // 기본 추천 교실이 있고 해당 시간에 비어 있으며 사용 가능 시간이면 그대로 사용합니다.
+    if (entryData.roomId && !roomUnavailableInSlot(entryData, slot) && !roomConflictsInSlot(entryData, slot, placed)) return entryData;
 
     // 기본 추천 교실이 없거나 이미 사용 중이면, 해당 시간에 비어 있는 교실을 자동 보조 배정합니다.
     for (const room of sortRoomCandidatesFor(entryData)) {
       if (!room.id || room.id === entryData.roomId) continue;
       const test = { ...entryData, roomId: room.id };
-      if (!roomConflictsInSlot(test, slot, placed)) return test;
+      if (!roomUnavailableInSlot(test, slot) && !roomConflictsInSlot(test, slot, placed)) return test;
     }
     return entryData;
   }
@@ -1111,6 +1130,10 @@ export function createAutoAssignAll(deps) {
     }
 
     const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    if (respectAssignedRoom && roomUnavailableInSlot(candidateRoomData, slot)) {
+      const roomName = getRoomByIdLocal(candidateRoomData.roomId)?.name || candidateRoomData.roomId || "교실";
+      addReason(reasons, "roomUnavailable", "교실 불가시간", `${formatSlotLabel(slot)} · ${roomName}`);
+    }
     if (respectAssignedRoom && roomConflictsInSlot(candidateRoomData, slot, placed)) {
       const roomName = (appState.rooms?.rooms || []).find(r => r.id === candidateRoomData.roomId)?.name || candidateRoomData.roomId || "교실";
       addReason(reasons, "roomConflict", "교실 시간 충돌", `${formatSlotLabel(slot)} · ${roomName}`);
@@ -1446,6 +1469,7 @@ export function createAutoAssignAll(deps) {
     // 같은 시간대의 다른 과목은 각각 다른 교실을 가져야 합니다.
     // 자동 추천 교실이 이미 사용 중이면 빈 일반교실을 보조 추천합니다.
     const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    if (respectAssignedRoom && roomUnavailableInSlot(candidateRoomData, slot)) return false;
     if (respectAssignedRoom && roomConflictsInSlot(candidateRoomData, slot, placed)) return false;
 
     // 7. 교사 담당교실 기준 추가 방어 검사입니다.
@@ -1599,6 +1623,7 @@ export function createAutoAssignAll(deps) {
 
     // 마지막 보정 단계에서도 교실 중복은 허용하지 않습니다.
     const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    if (roomUnavailableInSlot(candidateRoomData, slot)) return Infinity;
     if (roomConflictsInSlot(candidateRoomData, slot, placed)) return Infinity;
 
     const weights = normalizeScoreWeights(options.scoringWeights);
