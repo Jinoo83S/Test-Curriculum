@@ -232,19 +232,10 @@ export function getTtCardClassInfos(card) {
   if (!card) return [];
 
   const classRows = getAllClasses();
-  const explicitWhole = !!card.isWholeGrade || isChanCheCategory(card.category) || isProtectedWholeGradeLabel(
-    card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
-  );
 
-  // 전체학년/채플/창체 계열 카드는 과거 저장값에 7A만 남아 있어도
-  // 현재 학급 목록 기준으로 해당 학년 전체 반을 우선 점유하게 합니다.
-  // 이 기준을 하단 카드 수, 충돌검사, 자동배치가 함께 사용해야 합니다.
-  if (explicitWhole && card.gradeKey) {
-    const allGradeClasses = classRows.filter(c => c.gradeKey === card.gradeKey);
-    if (allGradeClasses.length) return allGradeClasses;
-  }
-
-  // 1순위: 시간표 사전작업에서 생성·수정되어 Firebase에 저장된 카드 데이터
+  // 1순위: 사용자가 편집한 저장 카드 데이터입니다.
+  // 수동 카드/JSON 편집 카드에서는 isWholeGrade가 과거 값으로 true로 남아 있어도
+  // classLabels/classKeys에 입력한 대상 반을 우선합니다.
   const stored = [];
   if (Array.isArray(card.classLabels) && card.classLabels.length) {
     card.classLabels.forEach(label => stored.push(classInfoFromStoredLabel(label, card.gradeKey)));
@@ -254,14 +245,29 @@ export function getTtCardClassInfos(card) {
       if (info) stored.push(info);
     });
   }
-  if (stored.length) {
+  const normalizeStoredInfos = () => {
     const seen = new Set();
     return stored.filter(info => {
       const key = classKey(info);
       if (!key || seen.has(key)) return false;
       seen.add(key); return true;
     });
+  };
+  if (stored.length && (card.isManual || card.manualEdited)) return normalizeStoredInfos();
+
+  const explicitWhole = !!card.isWholeGrade || isChanCheCategory(card.category) || isProtectedWholeGradeLabel(
+    card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
+  );
+
+  // 전체학년/채플/창체 계열 카드는 과거 저장값에 7A만 남아 있어도
+  // 현재 학급 목록 기준으로 해당 학년 전체 반을 우선 점유하게 합니다.
+  // 단, 수동 편집 카드가 아닌 일반 생성 카드에 한정합니다.
+  if (explicitWhole && card.gradeKey) {
+    const allGradeClasses = classRows.filter(c => c.gradeKey === card.gradeKey);
+    if (allGradeClasses.length) return allGradeClasses;
   }
+
+  if (stored.length) return normalizeStoredInfos();
 
   // 이하 코드는 이전 데이터 호환용 fallback입니다.
   const rosterEntries = getRosterEntriesForTtCard(card);

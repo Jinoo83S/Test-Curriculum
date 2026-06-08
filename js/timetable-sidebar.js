@@ -836,6 +836,24 @@ export function createTimetableSidebarHandlers(deps) {
     return makeEditorSelect(label, options, value || "");
   }
 
+  function countGradeClassesForCard(card) {
+    if (!card?.gradeKey) return 0;
+    return (appState.classes?.classes || []).filter(cls => String(cls.grade || "").trim() === card.gradeKey).length;
+  }
+
+  function normalizeManualCardAudienceFlags(card) {
+    if (!card) return card;
+    card.studentKeys = [];
+    const classCount = countGradeClassesForCard(card);
+    const explicitCount = Array.isArray(card.classLabels) && card.classLabels.length
+      ? card.classLabels.length
+      : Array.isArray(card.classKeys) ? card.classKeys.length : 0;
+    if ((card.isManual || card.manualEdited) && explicitCount > 0 && classCount > 0 && explicitCount < classCount) {
+      card.isWholeGrade = false;
+    }
+    return card;
+  }
+
   function saveSubjectCardFromForm(cardId, values) {
     const card = getTtCardById(cardId);
     if (!card) return;
@@ -855,10 +873,14 @@ export function createTimetableSidebarHandlers(deps) {
     card.studentKeys = [];
     card.roomRule = values.roomRule || "auto";
     card.fixedRoomId = values.roomRule === "fixed" ? (values.fixedRoomId || null) : (values.fixedRoomId || null);
-    card.isWholeGrade = !!values.isWholeGrade;
+    const gradeClassCount = countGradeClassesForCard(card);
+    const targetClassCount = card.classKeys.length || card.classLabels.length;
+    card.isWholeGrade = !!values.isWholeGrade && (!gradeClassCount || targetClassCount >= gradeClassCount);
     card.manualEdited = true;
     card.editedAt = new Date().toISOString();
-    scheduleSave("timetable", { delayMs: 350 });
+    normalizeManualCardAudienceFlags(card);
+    if (typeof saveNow === "function") void saveNow("timetable", { force: true });
+    else scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
     renderAll();
     refreshSubjectViews();
   }
@@ -871,6 +893,10 @@ export function createTimetableSidebarHandlers(deps) {
     Object.assign(card, parsed, { id: keepId, manualEdited: true, editedAt: new Date().toISOString() });
     if (card.teacherName && !Array.isArray(card.teachers)) card.teachers = splitEditorTeachers(card.teacherName);
     if (Array.isArray(card.teachers) && !card.teacherName) card.teacherName = card.teachers.join(", ");
+    if (Array.isArray(card.classLabels) && !Array.isArray(card.classKeys)) card.classKeys = card.classLabels.map(label => classLabelToKey(label, card.gradeKey)).filter(Boolean);
+    if (!Array.isArray(card.classLabels)) card.classLabels = [];
+    if (!Array.isArray(card.classKeys)) card.classKeys = [];
+    normalizeManualCardAudienceFlags(card);
     if (typeof saveNow === "function") void saveNow("timetable", { force: true });
     else scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
     renderAll();
@@ -994,7 +1020,7 @@ export function createTimetableSidebarHandlers(deps) {
       const isDone = credits > 0 && assigned >= credits;
       const gradeColor = getGradeColor(gradeKeys[0] || "7학년");
       const detailItems = grpCards.map(describeTtCard);
-      const title = `[${grp.name}] ${detailItems.map(i => i.title).join(" · ")}`;
+      const title = grp.name || "그룹 카드";
       const classLabels = compactClassLabelGroups(
         detailItems.flatMap(item => classLabelsFromDetailItem(item))
       );

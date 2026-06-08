@@ -134,8 +134,8 @@ function entryTitleFallback(entry = {}) {
   return cleanText(entry.subject || entry.label || entry.title || entry.templateName || "수업");
 }
 
-function displayTitleForEntry(entry = {}) {
-  const groupName = cleanText(entry.groupName);
+function displayTitleForEntry(entry = {}, ctx = {}) {
+  const groupName = cleanText(entry.groupName) || (entry.groupId && typeof ctx.getGroupNameById === "function" ? cleanText(ctx.getGroupNameById(entry.groupId)) : "");
   if (groupName) return groupName;
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
   const groupCardName = cleanText(cards.find(card => cleanText(card.groupName))?.groupName);
@@ -197,8 +197,8 @@ function summarizeEntryGroup(group, ctx = {}) {
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
 
-  const groupDisplayName = cleanText(firstEntry.groupName) || cleanText(firstCard?.groupName);
-  let title = groupDisplayName || tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || displayTitleForEntry(firstEntry);
+  const groupDisplayName = cleanText(firstEntry.groupName) || (firstEntry.groupId && typeof ctx.getGroupNameById === "function" ? cleanText(ctx.getGroupNameById(firstEntry.groupId)) : "") || cleanText(firstCard?.groupName);
+  let title = groupDisplayName || tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || displayTitleForEntry(firstEntry, ctx);
   const subjectTitles = localUnique(group.cards.map(cardTitle));
   const isSingleSubject = group.entries.length === 1 && group.cards.length <= 1;
   if (!groupDisplayName && isSingleSubject) title = subjectTitles[0] || title;
@@ -252,7 +252,7 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   card.style.setProperty("--tt-sum-bg", summary.gradeColor.bg || "#eff6ff");
   card.style.setProperty("--tt-sum-text", summary.gradeColor.text || "#1e3a8a");
   card.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
-  const subjectText = summary.title || displayTitleForEntry(summary.entries?.[0] || {});
+  const subjectText = summary.title || displayTitleForEntry(summary.entries?.[0] || {}, ctx);
   const teacherText = (summary.teachers && summary.teachers.length)
     ? summary.teachers.join(", ")
     : "교사 없음";
@@ -316,7 +316,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
   const titleWrap = document.createElement("div");
   const title = document.createElement("div");
   title.className = "tt-all-detail-panel-title";
-  title.textContent = summary.title || displayTitleForEntry(summary.entries?.[0] || {});
+  title.textContent = summary.title || displayTitleForEntry(summary.entries?.[0] || {}, ctx);
   const sub = document.createElement("div");
   sub.className = "tt-all-detail-panel-sub";
   sub.textContent = `${summary.entries.length}개 배치 · ${summary.cards.length || summary.entries.length}개 카드`;
@@ -365,7 +365,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
     const names = localUnique(cards.map(cardTitle));
     const itemTitle = document.createElement("div");
     itemTitle.className = "tt-all-detail-item-title";
-    itemTitle.textContent = displayTitleForEntry(entry);
+    itemTitle.textContent = displayTitleForEntry(entry, ctx);
     const conflictSet = ctx.getEntryConflictSet?.(entry) || new Set();
     if (conflictSet.size) {
       const badge = document.createElement("span");

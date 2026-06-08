@@ -2592,6 +2592,34 @@ function isElementInViewport(el) {
   return rect.bottom >= 0 && rect.top <= vh && rect.right >= 0 && rect.left <= vw;
 }
 
+function getDragTargetGradeKeys(data = {}) {
+  const grades = new Set();
+  const add = g => { if (g) grades.add(String(g)); };
+  add(data?.gradeKey);
+
+  const addCard = card => {
+    if (!card) return;
+    add(card.gradeKey);
+    (card.gradeKeys || []).forEach(add);
+    (card.classLabels || []).forEach(label => {
+      const m = String(label || "").match(/\d{1,2}/);
+      if (m) add(`${Number(m[0])}학년`);
+    });
+    (card.classKeys || []).forEach(key => {
+      const g = String(key || "").split(":")[0];
+      if (g) add(`${Number(g)}학년`);
+    });
+  };
+
+  (data?.ttcardIds || []).forEach(id => addCard(getTtCardById(id)));
+  if (data?.ttcardId) addCard(getTtCardById(data.ttcardId));
+  if (data?.groupId) {
+    const grp = (appState.timetable?.ttcardGroups || []).find(g => g.id === data.groupId);
+    getGroupCards(grp).forEach(addCard);
+  }
+  return grades;
+}
+
 function getDragPreviewCells(data = {}) {
   const all = [...document.querySelectorAll(".tt-cell[data-day][data-period]")];
   const visible = all.filter(isElementInViewport);
@@ -2599,9 +2627,9 @@ function getDragPreviewCells(data = {}) {
 
   // 하단 과목카드 드래그 때 전체보기의 모든 셀을 한 번에 검사하면 브라우저가 멈출 수 있습니다.
   // 현재 보이는 셀 위주로, 그리고 명확히 다른 학년 행은 가능한 줄여서 검사합니다.
-  const gradeKey = data?.gradeKey || "";
-  const filtered = gradeKey
-    ? source.filter(cell => !cell.dataset.gradeKey || cell.dataset.gradeKey === gradeKey || data.kind === "group" || data.groupId)
+  const targetGrades = getDragTargetGradeKeys(data);
+  const filtered = targetGrades.size
+    ? source.filter(cell => !cell.dataset.gradeKey || targetGrades.has(cell.dataset.gradeKey))
     : source;
 
   return filtered.slice(0, DRAG_PREVIEW_MAX_VISIBLE_CELLS);
