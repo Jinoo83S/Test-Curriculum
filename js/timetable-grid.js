@@ -32,11 +32,12 @@ function localUnique(list = []) {
 
 function getAllViewMode() {
   const v = localStorage.getItem(ALL_VIEW_MODE_KEY) || "summary";
-  return ["summary", "detail", "problem"].includes(v) ? v : "summary";
+  if (v === "detail") return "summary";
+  return ["summary", "problem"].includes(v) ? v : "summary";
 }
 
 function setAllViewMode(v) {
-  const mode = ["summary", "detail", "problem"].includes(v) ? v : "summary";
+  const mode = ["summary", "problem"].includes(v) ? v : "summary";
   localStorage.setItem(ALL_VIEW_MODE_KEY, mode);
 }
 
@@ -93,8 +94,7 @@ function makeAllViewToolbar(wrap) {
   title.textContent = "전체보기 표시";
   toolbar.appendChild(title);
   const modes = [
-    ["summary", "요약"],
-    ["detail", "상세"],
+    ["summary", "전체"],
     ["problem", "문제 중심"],
   ];
   const current = getAllViewMode();
@@ -112,7 +112,7 @@ function makeAllViewToolbar(wrap) {
   });
   const help = document.createElement("span");
   help.className = "tt-all-view-help";
-  help.textContent = "요약카드를 클릭하면 포함 과목·교사·교실을 확인합니다.";
+  help.textContent = "전체카드를 클릭하면 포함 과목·교사·교실을 확인합니다.";
   toolbar.appendChild(help);
   return toolbar;
 }
@@ -134,6 +134,15 @@ function entryTitleFallback(entry = {}) {
   return cleanText(entry.subject || entry.label || entry.title || entry.templateName || "수업");
 }
 
+function displayTitleForEntry(entry = {}) {
+  const groupName = cleanText(entry.groupName);
+  if (groupName) return groupName;
+  const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
+  const groupCardName = cleanText(cards.find(card => cleanText(card.groupName))?.groupName);
+  if (groupCardName) return groupCardName;
+  return entryTitleFallback(entry);
+}
+
 function entryTeachers(entry = {}) {
   const direct = Array.isArray(entry.teacherNames) && entry.teacherNames.length ? entry.teacherNames : splitTeacherNames(entry.teacherName || "");
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
@@ -149,7 +158,7 @@ function entryRooms(entry = {}, ctx = {}) {
 
 function entryStudents(entry = {}) {
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
-  return [];
+  return localUnique(cards.flatMap(c => safeArray(c.studentKeys)));
 }
 
 function groupKeyForEntry(entry = {}) {
@@ -183,15 +192,16 @@ function summarizeEntryGroup(group, ctx = {}) {
   const categories = localUnique(group.cards.map(c => c.category).concat(group.entries.map(e => e.category)));
   const teachers = localUnique(group.entries.flatMap(entryTeachers));
   const rooms = localUnique(group.entries.flatMap(entry => entryRooms(entry, ctx)));
-  const studentKeys = [];
+  const studentKeys = localUnique(group.cards.flatMap(c => safeArray(c.studentKeys)).concat(group.entries.flatMap(e => safeArray(e.studentKeys))));
   const conflictCount = group.entries.filter(e => ctx.getEntryConflictSet?.(e)?.size).length;
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
 
-  let title = tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || entryTitleFallback(firstEntry);
+  const groupDisplayName = cleanText(firstEntry.groupName) || cleanText(firstCard?.groupName);
+  let title = groupDisplayName || tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || displayTitleForEntry(firstEntry);
   const subjectTitles = localUnique(group.cards.map(cardTitle));
   const isSingleSubject = group.entries.length === 1 && group.cards.length <= 1;
-  if (isSingleSubject) title = subjectTitles[0] || title;
+  if (!groupDisplayName && isSingleSubject) title = subjectTitles[0] || title;
 
   return {
     ...group,
@@ -242,9 +252,7 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   card.style.setProperty("--tt-sum-bg", summary.gradeColor.bg || "#eff6ff");
   card.style.setProperty("--tt-sum-text", summary.gradeColor.text || "#1e3a8a");
   card.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
-  const subjectText = (summary.subjectTitles && summary.subjectTitles.length)
-    ? summary.subjectTitles.join(" / ")
-    : (summary.title || entryTitleFallback(summary.entries?.[0]));
+  const subjectText = summary.title || displayTitleForEntry(summary.entries?.[0] || {});
   const teacherText = (summary.teachers && summary.teachers.length)
     ? summary.teachers.join(", ")
     : "교사 없음";
@@ -308,7 +316,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
   const titleWrap = document.createElement("div");
   const title = document.createElement("div");
   title.className = "tt-all-detail-panel-title";
-  title.textContent = summary.title;
+  title.textContent = summary.title || displayTitleForEntry(summary.entries?.[0] || {});
   const sub = document.createElement("div");
   sub.className = "tt-all-detail-panel-sub";
   sub.textContent = `${summary.entries.length}개 배치 · ${summary.cards.length || summary.entries.length}개 카드`;
@@ -357,7 +365,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
     const names = localUnique(cards.map(cardTitle));
     const itemTitle = document.createElement("div");
     itemTitle.className = "tt-all-detail-item-title";
-    itemTitle.textContent = names.length ? names.join(" / ") : entryTitleFallback(entry);
+    itemTitle.textContent = displayTitleForEntry(entry);
     const conflictSet = ctx.getEntryConflictSet?.(entry) || new Set();
     if (conflictSet.size) {
       const badge = document.createElement("span");
@@ -369,7 +377,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
     meta.className = "tt-all-detail-item-meta";
     const teachers = entryTeachers(entry).join(", ") || "교사 없음";
     const rooms = entryRooms(entry, ctx).join(", ") || "교실 미배정";
-    const students = 0;
+    const students = localUnique(cards.flatMap(c => safeArray(c.studentKeys))).length;
     const classes = localUnique(cards.flatMap(c => safeArray(c.classLabels))).join(", ");
     meta.textContent = [teachers, rooms, students ? `${students}명` : "", classes].filter(Boolean).join(" · ");
     item.append(itemTitle, meta);
