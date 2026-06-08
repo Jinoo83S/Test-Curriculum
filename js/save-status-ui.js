@@ -16,6 +16,7 @@ import {
 } from "./state.js";
 import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
+import { openAppHealthCheckDialog } from "./app-health-check.js";
 
 const saveStatusEl = document.getElementById("saveStatusEl");
 let saveStatusTimer = null;
@@ -143,6 +144,15 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
     panel.append(exportBtn, importBtn, resetLocalBtn);
     devMenu.appendChild(panel);
     insertAfterSaveStatus(devMenu);
+
+    const healthBtn = document.createElement("button");
+    healthBtn.type = "button";
+    healthBtn.className = "secondary-btn app-health-check-btn dev-tool-control";
+    healthBtn.style.padding = "6px 10px";
+    healthBtn.textContent = "앱 점검";
+    healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
+    healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
+    insertAfterSaveStatus(healthBtn);
   } else {
     const diagBtn = document.createElement("button");
     diagBtn.type = "button";
@@ -187,8 +197,17 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
     usageBtn.title = "이 브라우저에서 발생한 Firestore 읽기/쓰기/삭제 추정치를 확인합니다.";
     usageBtn.addEventListener("click", () => openFirestoreUsageDialog());
 
+    const healthBtn = document.createElement("button");
+    healthBtn.type = "button";
+    healthBtn.className = "secondary-btn app-health-check-btn dev-tool-control";
+    healthBtn.style.padding = "6px 10px";
+    healthBtn.textContent = "앱 점검";
+    healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
+    healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
+
     insertAfterSaveStatus(cleanupBtn);
     insertAfterSaveStatus(usageBtn);
+    insertAfterSaveStatus(healthBtn);
     insertAfterSaveStatus(diagBtn);
   }
 

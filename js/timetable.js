@@ -10,6 +10,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 import { versioned } from "./version.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
+import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -263,6 +264,14 @@ function setupTtSaveQuotaControls() {
     panel.append(exportBtn, importBtn, resetLocalBtn);
     devMenu.appendChild(panel);
     parent.insertBefore(devMenu, parent.firstChild);
+
+    const healthBtn = document.createElement("button");
+    healthBtn.type = "button";
+    healthBtn.className = "tt-save-mode-btn app-health-check-btn dev-tool-control";
+    healthBtn.textContent = "앱 점검";
+    healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
+    healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
+    parent.insertBefore(healthBtn, parent.firstChild);
   } else {
     const diagBtn = document.createElement("button");
     diagBtn.type = "button";
@@ -303,8 +312,16 @@ function setupTtSaveQuotaControls() {
     usageBtn.title = "이 브라우저에서 발생한 Firestore 읽기/쓰기/삭제 추정치를 확인합니다.";
     usageBtn.addEventListener("click", () => openFirestoreUsageDialog());
 
+    const healthBtn = document.createElement("button");
+    healthBtn.type = "button";
+    healthBtn.className = "tt-save-mode-btn app-health-check-btn dev-tool-control";
+    healthBtn.textContent = "앱 점검";
+    healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
+    healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
+
     parent.insertBefore(cleanupBtn, parent.firstChild);
     parent.insertBefore(usageBtn, parent.firstChild);
+    parent.insertBefore(healthBtn, parent.firstChild);
     parent.insertBefore(diagBtn, parent.firstChild);
   }
 
