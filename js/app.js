@@ -7,7 +7,8 @@ import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js";
 import { setupSaveStatusUi } from "./save-status-ui.js";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
-import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
+import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
+import { appState, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy } from "./state.js";
 import { versioned } from "./version.js";
 
 // ── Template imports ──────────────────────────────────────────────
@@ -141,6 +142,7 @@ const tab10to12Btn = document.getElementById("tab10to12Btn");
 // ================================================================
 // NAVIGATION STATE
 // ================================================================
+const INITIAL_VIEW = document.body?.dataset.initialView || "board";
 let activeMainView = INITIAL_VIEW;
 let activeTab = "tab7to9";
 let selectedClassId = null;
@@ -154,92 +156,7 @@ const navigationUi = setupAppNavigationUi({
 });
 
 
-// ── Phase 2: view-scoped Firestore subscriptions ─────────────────
-// 화면별로 필요한 Firestore 도메인만 실시간 구독합니다.
-// appState에는 마지막으로 읽은 값이 남아 있으므로, 화면 전환 시 필요한 도메인만 다시 붙입니다.
-const VIEW_DOMAIN_SETS = {
-  board:        ["curriculum", "templates", "teachers"],
-  manager:      ["curriculum", "templates", "teachers"],
-  teachers:     ["templates", "teachers"],
-  students:     ["classes", "rosters"],
-  rooms:        ["rooms", "teachers", "classes"],
-  subjectsetup: ["curriculum", "templates", "rosters"],
-  rosters:      ["curriculum", "templates", "classes", "rosters"],
-  ttcards:      ["curriculum", "templates", "classes", "rosters", "timetable"],
-  groups:       ["curriculum", "templates", "classes", "rosters", "timetable"],
-  results:      ["curriculum", "templates", "rosters"],
-};
-
-let activeDomainSubscriptions = new Set();
-
-function domainsForView(view) {
-  return VIEW_DOMAIN_SETS[view] || VIEW_DOMAIN_SETS.board;
-}
-
-function waitForDomainsLoaded(domains, timeoutMs = 7000) {
-  const list = [...new Set(domains || [])].filter(Boolean);
-  if (!list.length || list.every(d => initialLoad[d])) return Promise.resolve(true);
-
-  const startedAt = Date.now();
-  const timeout = Math.max(1000, Number(timeoutMs) || 7000);
-
-  return new Promise(resolve => {
-    let rafId = 0;
-    const check = () => {
-      const pending = list.filter(d => !initialLoad[d]);
-      if (!pending.length) {
-        resolve(true);
-        return;
-      }
-
-      if (Date.now() - startedAt >= timeout) {
-        console.warn(`[domain-load] timeout after ${timeout}ms: ${pending.join(", ")}`);
-        resolve(false);
-        return;
-      }
-
-      rafId = requestAnimationFrame(check);
-    };
-
-    // 첫 확인은 microtask 이후에 실행하여 subscribe 직후 동기 갱신을 먼저 반영합니다.
-    Promise.resolve().then(() => {
-      if (list.every(d => initialLoad[d])) {
-        resolve(true);
-      } else {
-        rafId = requestAnimationFrame(check);
-      }
-    });
-  });
-}
-
-function syncDomainSubscriptionsForView(view) {
-  if (!canEdit()) return;
-  const desired = new Set(domainsForView(view));
-  const toRemove = [...activeDomainSubscriptions].filter(d => !desired.has(d));
-  const toAdd = [...desired].filter(d => !activeDomainSubscriptions.has(d));
-
-  if (toRemove.length) {
-    unsubscribeDomains(toRemove);
-    toRemove.forEach(d => activeDomainSubscriptions.delete(d));
-  }
-  if (toAdd.length) {
-    // subscribeDomains는 이미 구독 중인 도메인은 건너뛰므로 전체 desired를 넘겨도 안전합니다.
-    subscribeDomains([...desired]);
-    toAdd.forEach(d => activeDomainSubscriptions.add(d));
-  }
-}
-
-async function ensureDomains(domains) {
-  if (!canEdit()) return false;
-  const desired = new Set([...activeDomainSubscriptions, ...(domains || [])]);
-  const toAdd = [...desired].filter(d => !activeDomainSubscriptions.has(d));
-  if (toAdd.length) {
-    subscribeDomains([...desired]);
-    toAdd.forEach(d => activeDomainSubscriptions.add(d));
-  }
-  return waitForDomainsLoaded(domains);
-}
-
+// ── View-scoped Firestore subscriptions are handled in app-domains.js ───────
 // Board tab cache
 const tabBoardCache = { tab7to9: null, tab10to12: null };
 const dirtyTabs     = new Set(["tab7to9","tab10to12"]);
@@ -672,13 +589,12 @@ onAuth(async (user) => {
     } catch (e) {
       console.warn("Migration skipped; continuing normal load.", e);
     } finally {
-      // Phase 2: 첫 화면에는 현재 메뉴에 필요한 도메인만 구독합니다.
-      activeDomainSubscriptions.clear();
+      // 첫 화면에는 현재 메뉴에 필요한 도메인만 구독합니다.
+      resetDomainSubscriptions();
       syncDomainSubscriptionsForView(activeMainView || "board");
     }
   } else {
-    unsubscribeAll();
-    activeDomainSubscriptions.clear();
+    stopAllDomainSubscriptions();
     invalidateTabs();
     render();
   }
