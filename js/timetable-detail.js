@@ -13,6 +13,7 @@ import { getTtCardById } from "./ttcards.js";
 
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;
+const HOME_ROOM_ROOM_SELECT_VALUE = "__homeroom__";
 
 function bringModalToFront(modal) {
   if (!modal) return;
@@ -147,7 +148,7 @@ function makeRoomRuleSelect(value = "auto") {
   return sel;
 }
 
-function makeRoomSelect(value = "", { includeNone = true } = {}) {
+function makeRoomSelect(value = "", { includeNone = true, includeHomeroom = false } = {}) {
   const sel = document.createElement("select");
   sel.style.cssText = "width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px";
   if (includeNone) {
@@ -156,6 +157,13 @@ function makeRoomSelect(value = "", { includeNone = true } = {}) {
     no.textContent = "교실 없음";
     if (!value) no.selected = true;
     sel.appendChild(no);
+  }
+  if (includeHomeroom) {
+    const home = document.createElement("option");
+    home.value = HOME_ROOM_ROOM_SELECT_VALUE;
+    home.textContent = "각 학반 홈룸으로 배정";
+    home.title = "그룹/창체 카드의 모든 대상 학반을 각 학반 홈룸으로 나누어 배정합니다.";
+    sel.appendChild(home);
   }
   getRooms().forEach(r => {
     const o = document.createElement("option");
@@ -796,7 +804,7 @@ export function createTimetableDetailHandlers(ctx) {
 
     const ruleSel = makeRoomRuleSelect(entry.roomPinned ? "fixed" : (entry.roomRule || "auto"));
     ruleSel.disabled = !canEdit();
-    const roomSel = makeRoomSelect(entry.roomId || "");
+    const roomSel = makeRoomSelect(entry.roomId || "", { includeHomeroom: true });
     roomSel.disabled = !canEdit();
 
     const ruleWrap = document.createElement("div");
@@ -817,10 +825,17 @@ export function createTimetableDetailHandlers(ctx) {
     hint.style.cssText = "font-size:10px;color:#64748b;line-height:1.35;margin:4px 0 7px";
     const refreshRoomUi = () => {
       const rule = normalizeRoomRule(ruleSel.value);
-      roomWrap.style.display = (rule === "fixed" || entry.roomPinned) ? "block" : "block";
+      if (rule === "homeroom" && roomSel.value !== HOME_ROOM_ROOM_SELECT_VALUE) {
+        roomSel.value = HOME_ROOM_ROOM_SELECT_VALUE;
+      } else if (rule !== "homeroom" && roomSel.value === HOME_ROOM_ROOM_SELECT_VALUE) {
+        roomSel.value = entry.roomId || "";
+      }
+      roomWrap.style.display = "block";
       hint.textContent = entry.roomPinned
         ? `이 배치 수업은 현재 교실(${ctx.getRoomDisplayName?.(roomSel.value) || roomSel.value || "교실 없음"})에 고정되어 있습니다.`
-        : getRoomRuleHint(rule, roomSel.value);
+        : roomSel.value === HOME_ROOM_ROOM_SELECT_VALUE
+          ? "대상 학반별 홈룸으로 나누어 배정합니다. 교실 관리에서 각 학급의 홈룸이 지정되어 있어야 합니다."
+          : getRoomRuleHint(rule, roomSel.value);
     };
 
     const applyBtn = document.createElement("button");
@@ -829,8 +844,10 @@ export function createTimetableDetailHandlers(ctx) {
     applyBtn.textContent = "교실 설정 적용";
     applyBtn.disabled = !canEdit();
     applyBtn.onclick = () => {
-      if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) { alert("고정할 교실을 선택해 주세요."); return; }
-      ctx.applyRoomRuleToEntry?.(entry.id, ruleSel.value, roomSel.value);
+      const selectedRoomValue = roomSel.value;
+      const selectedRule = selectedRoomValue === HOME_ROOM_ROOM_SELECT_VALUE ? "homeroom" : ruleSel.value;
+      if (normalizeRoomRule(selectedRule) === "fixed" && !selectedRoomValue) { alert("고정할 교실을 선택해 주세요."); return; }
+      ctx.applyRoomRuleToEntry?.(entry.id, selectedRule, selectedRoomValue === HOME_ROOM_ROOM_SELECT_VALUE ? "" : selectedRoomValue);
       ctx.recomputeConflicts();
       ctx.renderAll();
       modal.remove();
@@ -838,6 +855,12 @@ export function createTimetableDetailHandlers(ctx) {
 
     roomSel.addEventListener("change", () => {
       if (!canEdit()) return;
+      if (roomSel.value === HOME_ROOM_ROOM_SELECT_VALUE) {
+        ruleSel.value = "homeroom";
+        refreshRoomUi();
+        return;
+      }
+      if (normalizeRoomRule(ruleSel.value) === "homeroom") ruleSel.value = "auto";
       // 교실만 바꾼 경우에는 현재 배치 수업에 직접 반영합니다. 고정은 별도 버튼/배정 방식에서 처리합니다.
       ctx.updateEntry(entry.id, "roomId", roomSel.value || null);
       ctx.recomputeConflicts();
@@ -855,6 +878,7 @@ export function createTimetableDetailHandlers(ctx) {
       roomPinBtn.style.cssText = "width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;background:white;color:#334155;font-size:12px;font-weight:800;cursor:pointer";
       roomPinBtn.textContent = entry.roomPinned ? "🔓 교실 고정 해제" : "📍 이 교실에 고정";
       roomPinBtn.onclick = () => {
+        if (roomSel.value === HOME_ROOM_ROOM_SELECT_VALUE) { alert("홈룸 배정은 교실 고정이 아니라 '교실 설정 적용'으로 처리해 주세요."); return; }
         const roomId = roomSel.value || entry.roomId || "";
         if (!entry.roomPinned && !roomId) { alert("고정할 교실을 먼저 선택해 주세요."); return; }
         const e = entries().find(x => x.id === entry.id);
