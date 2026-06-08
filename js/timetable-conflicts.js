@@ -13,9 +13,8 @@ import {
  *
  * getAudience(entry) is optional and can return:
  * { studentKeys:Set<string>, classKeys:Set<string> }.
- * When provided, student conflicts are checked by actual audience overlap
- * instead of grade-only overlap. This prevents 7A and 7B from being marked
- * as a student conflict simply because both belong to 7th grade.
+ * When provided, class conflicts are checked by class audience overlap. Student keys are not used here;
+ * student-level splits are handled during prework and concurrent group setup.
  */
 export function detectConflicts(entries, templateGroups = [], templates = [], getAudience = null, options = {}) {
   const result = new Map();
@@ -180,31 +179,18 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
           }
         }
 
-        // Student conflict — same concurrent group means intentional level/roster split.
-        // Teacher/room conflicts were already checked above, but student conflict must be
-        // judged only by actual roster overlap. Same class label alone is not a conflict here.
+        // Class conflict — same concurrent group means intentional parallel/level-split lessons.
+        // Student-level conflicts are not checked during timetable placement.
         const audienceA = audienceFor(a);
         const audienceB = audienceFor(b);
-        if (sameConcurrentGroup) {
-          const bothRostered = audienceA.studentKeys?.size && audienceB.studentKeys?.size;
-          if (bothRostered && intersects(audienceA.studentKeys, audienceB.studentKeys)) {
-            result.get(a.id).add("student");
-            result.get(b.id).add("student");
-          }
-          continue;
-        }
+        if (sameConcurrentGroup) continue;
 
-        // Student conflict — skip if cross-grade co-teaching in the same group
+        // Class conflict — skip if cross-grade co-teaching in the same group
         if (sameGroup(a, b) && (isCrossGrade(a) || isCrossGrade(b))) continue; // cross-grade in same group
 
-        // Student conflict: compare actual audience/class overlap, not grade-only overlap.
-        // 7A and 7B in the same period are valid unless they share students or the same class audience.
+        // Class conflict: compare class audience overlap, not student IDs.
         const protectedA = protectedGradesFor(a);
         const protectedB = protectedGradesFor(b);
-        // Student conflict is first determined by actual class/student audience overlap.
-        // Whole-grade lessons such as MS채플 should already carry all covered classKeys
-        // (7:A, 7:B, 8:A, 8:B...). Older grade-only protection was too broad and
-        // incorrectly marked same-grade A/B parallel classes as student conflicts.
         const actualAudienceOverlap = audiencesOverlap(audienceA, audienceB, a, b);
 
         // Fallback only when a protected whole-grade entry has no concrete class audience.
@@ -338,7 +324,7 @@ export function getConflictLabel(set) {
   if (set.has("room"))    labels.push("교실 중복");
   if (set.has("roomUnavailable")) labels.push("교실 불가시간");
   if (set.has("roomMissing")) labels.push("교실 미배정");
-  if (set.has("student")) labels.push("학생 중복");
+  if (set.has("student")) labels.push("학급 중복");
   if (set.has("maxPerDay")) labels.push("일일 최대 초과");
   if (set.has("maxConsecutive")) labels.push("연속수업 초과");
   if (set.has("unavailable"))   labels.push("불가 시간대");

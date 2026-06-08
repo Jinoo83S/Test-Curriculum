@@ -268,33 +268,20 @@ export function audienceGradeSet(occupancy = {}) {
 export function audiencesConflict(a = {}, b = {}) {
   const classA = a.classKeys || new Set();
   const classB = b.classKeys || new Set();
-  const studentsA = a.studentKeys || new Set();
-  const studentsB = b.studentKeys || new Set();
 
-  // 1) 학급 정보가 양쪽 모두 있으면 먼저 학급 교집합을 확인합니다.
-  //    8A와 8B처럼 학급이 다르면, 과거 roster snapshot에 같은 학생키가 남아 있어도
-  //    학생 충돌로 보지 않습니다.
-  if (classA.size && classB.size) {
-    if (!setsIntersect(classA, classB)) return false;
+  // HIS 시간표 편성 기준:
+  // 학생 개인 단위 충돌은 사전작업(학생배정, 수강명단, 동시배정 그룹)에서 이미 해결합니다.
+  // 시간표 배치 단계에서는 같은 학급/반이 같은 요일·교시에 두 과목을 듣는지만 봅니다.
+  // 따라서 studentKeys는 충돌 판정에 사용하지 않습니다.
+  if (classA.size && classB.size) return setsIntersect(classA, classB);
 
-    // 2) 같은 학급 안에서 세부 수강명단이 양쪽 모두 설정되어 있으면,
-    //    학급명이 아니라 실제 학생 ID 교집합으로만 충돌을 판단합니다.
-    //    예: 한국어 일부 학생 + 국어 A 나머지 학생 → 겹치는 학생이 없으면 충돌 없음.
-    if (studentsA.size && studentsB.size) return setsIntersect(studentsA, studentsB);
-
-    // 3) 한쪽이라도 수강명단이 없으면 해당 학급 전체 수업으로 보고 보수적으로 충돌 처리합니다.
-    return true;
-  }
-
-  // 4) 학급 정보가 부족한 경우에만 학생명단 기준으로 판단합니다.
-  if (studentsA.size && studentsB.size) return setsIntersect(studentsA, studentsB);
-
-  // 5) 서로 다른 학년은 단순히 같은 A반이라는 이유로 충돌하지 않습니다.
+  // classKeys가 없는 매우 오래된 데이터는 학년 범위가 명확히 다를 때만 안전하게 비충돌 처리합니다.
   const gradesA = audienceGradeSet(a);
   const gradesB = audienceGradeSet(b);
   if (gradesA.size && gradesB.size && !setsIntersect(gradesA, gradesB)) return false;
 
-  return setsIntersect(classA, classB);
+  // 반 정보가 없으면 학생키로 억지 판단하지 않습니다.
+  return false;
 }
 
 export function conflictDetailBetween(a = {}, b = {}) {

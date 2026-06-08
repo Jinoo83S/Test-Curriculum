@@ -20,7 +20,7 @@ export const CONFLICT_DISPLAY = {
   room:           { label:"교실", short:"실", color:"#ea580c" },
   roomUnavailable:{ label:"교실불가", short:"불", color:"#b45309" },
   roomMissing:    { label:"교실미배정", short:"미", color:"#f97316" },
-  student:        { label:"학생", short:"학", color:"#7c3aed" },
+  student:        { label:"학급", short:"반", color:"#7c3aed" },
   syncRequired:   { label:"동시배정", short:"동", color:"#2563eb" },
   unavailable:    { label:"불가시간", short:"불", color:"#475569" },
   maxConsecutive: { label:"연속초과", short:"연", color:"#ca8a04" },

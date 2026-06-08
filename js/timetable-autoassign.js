@@ -473,7 +473,7 @@ export function createAutoAssignAll(deps) {
       if (audiencesConflict(candidateAudience, fixedAudience)) {
         return {
           code: "protectedAudience",
-          label: "고정 수업 학급/학생 충돌",
+          label: "고정 수업 학급 충돌",
           detail: `${slotLabelForProtected(slot.day, slot.period)} · ${getAutoItemName(fixed)}`,
           entry: fixed
         };
@@ -1097,15 +1097,12 @@ export function createAutoAssignAll(deps) {
       if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
       const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      // 같은 동시배정 그룹은 사전작업에서 한 수업묶음으로 확정한 병렬 수업입니다.
+      // 학생 개인 단위 비교는 여기서 하지 않고, 같은 그룹이 아닌 경우에만 학급 중복을 막습니다.
+      if (conc) continue;
       const eAudience = audienceForPlacement(e);
       const conflict = audiencesConflict(itemAudience, eAudience);
-      if (conc) {
-        if (itemAudience.studentKeys.size && eAudience.studentKeys.size && conflict) {
-          addReason(reasons, "studentConflict", "학생/반 시간 충돌", `${formatSlotLabel(slot)} · ${getAutoItemName(e)}`);
-        }
-        continue;
-      }
-      if (conflict) addReason(reasons, "studentConflict", "학생/반 시간 충돌", `${formatSlotLabel(slot)} · ${getAutoItemName(e)}`);
+      if (conflict) addReason(reasons, "studentConflict", "학급 시간 충돌", `${formatSlotLabel(slot)} · ${getAutoItemName(e)}`);
     }
 
     for (const teacher of teachers) {
@@ -1219,8 +1216,8 @@ export function createAutoAssignAll(deps) {
       },
       {
         codes: ['studentConflict'],
-        title: '학급/학생 충돌 수업 이동',
-        detail: '같은 반 또는 같은 학생군이 이미 점유한 시간 때문에 막힌 경우입니다. 해당 시간대의 기존 수업을 먼저 이동하면 해결될 수 있습니다.',
+        title: '학급 충돌 수업 이동',
+        detail: '같은 반이 이미 점유한 시간 때문에 막힌 경우입니다. 해당 시간대의 기존 수업을 먼저 이동하면 해결될 수 있습니다.',
         priority: 3
       },
       {
@@ -1432,7 +1429,9 @@ export function createAutoAssignAll(deps) {
     if (itemCardIds.size && slotEnts.some(e => ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)))) return false;
     if (!itemCardIds.size && slotEnts.some(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && e.sectionIdx === item.sectionIdx)) return false;
 
-    // 3. Student conflict. Prefer roster-level student comparison; fall back to homeroom coverage.
+    // 3. Class conflict.
+    // 학생 개인 단위는 사전작업/그룹묶음에서 처리합니다.
+    // 자동배치에서는 같은 동시배정 그룹이 아닌 한, 같은 학급이 같은 시간에 두 과목을 갖지 않도록 막습니다.
     const itemAudience = audienceForPlacement(item);
     for (const e of slotEnts) {
       // Same unit → co-located intentionally
@@ -1440,14 +1439,10 @@ export function createAutoAssignAll(deps) {
 
       const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      if (conc) continue;
+
       const eAudience = audienceForPlacement(e);
       const conflict = audiencesConflict(itemAudience, eAudience);
-
-      // Concurrent groups may share the same homeroom only when rosters prove students differ.
-      if (conc) {
-        if (itemAudience.studentKeys.size && eAudience.studentKeys.size && conflict) return false;
-        continue;
-      }
       if (conflict) return false;
     }
 
@@ -1529,7 +1524,7 @@ export function createAutoAssignAll(deps) {
   function getAutoItemDifficulty(item) {
     const audience = audienceForPlacement(item);
     const teacherCount = splitTeacherNames(item.teacherName).filter(Boolean).length;
-    return teacherCount * 20 + audience.studentKeys.size + audience.classKeys.size * 5;
+    return teacherCount * 20 + audience.classKeys.size * 8;
   }
 
   function scoreAutoSlot(item, slot, placed, checkOptions = {}) {
@@ -1641,10 +1636,9 @@ export function createAutoAssignAll(deps) {
 
       const eAudience = audienceForPlacement(e);
       const conflict = audiencesConflict(itemAudience, eAudience);
-      // 보정 배치에서도 같은 학생의 수업 중복은 절대 만들지 않습니다.
-      // 단, 같은 동시배정 그룹 안에서 양쪽 모두 수강명단이 있고 실제 학생이 겹치지 않으면 허용합니다.
-      const rosterSplitOk = conc && itemAudience.studentKeys.size && eAudience.studentKeys.size && ![...itemAudience.studentKeys].some(k => eAudience.studentKeys.has(k));
-      if (conflict && !rosterSplitOk) return Infinity;
+      // 보정 배치에서도 같은 학급 중복은 만들지 않습니다.
+      // 단, 같은 동시배정 그룹은 사전작업에서 병렬 수업으로 확정된 묶음이므로 허용합니다.
+      if (conflict && !conc) return Infinity;
       if (e.roomId) {
         const assignedRooms = teachers.map(getEffectiveAssignedRoomId).filter(Boolean);
         if (assignedRooms.includes(e.roomId)) score += 250;
@@ -1831,6 +1825,119 @@ export function createAutoAssignAll(deps) {
       moved.push(normalized);
     }
     return moved;
+  }
+
+  function blockKeyForEntry(entry, index = 0) {
+    return entry.groupId
+      ? `group:${entry.groupId}:${entry.day}:${entry.period}`
+      : (entry.unitId ? `unit:${entry.unitId}:${entry.day}:${entry.period}` : `entry:${entry.id || index}`);
+  }
+
+  function getBlockingBlocksForSlot(item, slot, placed = []) {
+    const slotEnts = placed.filter(e => e.day === slot.day && e.period === slot.period);
+    if (!slotEnts.length) return [];
+    const teachers = new Set(splitTeacherNames(item.teacherName || '').filter(Boolean));
+    const itemAudience = audienceForPlacement(item);
+    const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
+    const blockedKeys = new Set();
+
+    slotEnts.forEach((e, index) => {
+      if (sameUnitPlacement(item, e)) return;
+      const sameGrp = sameActiveGroup(item, e);
+      const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+      if (conc) return;
+
+      const eTeachers = splitTeacherNames(e.teacherName || '').filter(Boolean);
+      const teacherHit = eTeachers.some(t => teachers.has(t));
+      const classHit = audiencesConflict(itemAudience, audienceForPlacement(e));
+      const roomHit = !!(candidateRoomData.roomId && e.roomId && candidateRoomData.roomId === e.roomId);
+      if (teacherHit || classHit || roomHit) blockedKeys.add(blockKeyForEntry(e, index));
+    });
+
+    if (!blockedKeys.size) return [];
+    return getMovableBlocks(placed).filter(block => blockedKeys.has(block.key));
+  }
+
+  async function repairFailedItemsBySingleMove(failedItems = [], baseSlots = [], placed = [], options = {}, progressUpdater = null) {
+    const current = [...placed];
+    const remaining = [];
+    const repaired = [];
+    const orderedSlots = [...baseSlots].sort((a, b) => a.period - b.period || a.day - b.day);
+    const maxFailedToTry = options.runAttempts === 'deep' ? 80 : (options.runAttempts === 'fast' ? 24 : 48);
+    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 8 : 5;
+    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(18, orderedSlots.length);
+    let attempts = 0;
+
+    for (let idx = 0; idx < failedItems.length; idx++) {
+      const failedItem = failedItems[idx];
+      const item = failedItem?.item;
+      if (!item || idx >= maxFailedToTry) {
+        remaining.push(failedItem);
+        continue;
+      }
+
+      let done = false;
+
+      // 이전 복구로 새 빈칸이 생긴 경우 바로 배치합니다.
+      const directSlot = findBestAutoSlot(item, orderedSlots, current, options);
+      if (directSlot) {
+        const entry = makeAutoEntry(item, directSlot, current);
+        if (entry) {
+          current.push(entry);
+          repaired.push({ ...failedItem, repairMode: 'direct-after-repair' });
+          done = true;
+        }
+      }
+
+      for (const targetSlot of orderedSlots) {
+        if (done) break;
+        const blockers = getBlockingBlocksForSlot(item, targetSlot, current).slice(0, maxBlockersPerSlot);
+        if (!blockers.length) continue;
+
+        for (const block of blockers) {
+          if (done) break;
+          const blockIds = new Set(block.entries.map(e => e.id));
+          const withoutBlock = current.filter(e => !blockIds.has(e.id));
+          const moveSlots = shuffle([...orderedSlots]).slice(0, maxMoveSlotsPerBlock);
+
+          for (const moveSlot of moveSlots) {
+            attempts++;
+            if (moveSlot.day === targetSlot.day && moveSlot.period === targetSlot.period) continue;
+            const moved = makeMovedBlockEntries(block, moveSlot, withoutBlock);
+            if (!moved) continue;
+            const baseWithMoved = [...withoutBlock, ...moved];
+            if (!checkPlacementValid(item, targetSlot, baseWithMoved, options)) continue;
+            const entry = makeAutoEntry(item, targetSlot, baseWithMoved);
+            if (!entry) continue;
+            current.length = 0;
+            current.push(...baseWithMoved, entry);
+            repaired.push({ ...failedItem, repairMode: 'single-move', movedBlock: block.key });
+            done = true;
+            break;
+          }
+        }
+
+        if (progressUpdater && attempts && attempts % 60 === 0) {
+          await progressUpdater({
+            percent: 83,
+            step: '미배치 복구 탐색',
+            detail: `기존 수업 1개 이동으로 미배치 수업을 넣을 수 있는지 확인 중입니다. 복구 ${repaired.length}건`,
+            placed: current.length,
+            failed: Math.max(0, failedItems.length - repaired.length),
+            currentCard: failedItem.name || getAutoItemName(item)
+          });
+        }
+      }
+
+      if (!done) remaining.push(failedItem);
+    }
+
+    // 시도 한도를 넘겨 건너뛴 항목이 있다면 그대로 남깁니다.
+    if (failedItems.length > maxFailedToTry) {
+      // 이미 loop에서 remaining에 넣습니다. 중복 방지를 위해 추가 작업 없음.
+    }
+
+    return { placed: current, repaired, remaining, attempts };
   }
 
   async function improveAutoPlacement(placed = [], baseSlots = [], options = {}, progressUpdater = null) {
@@ -3247,14 +3354,45 @@ export function createAutoAssignAll(deps) {
       if (!bestFailed.length) break;
     }
 
+    // ── Repair pass ───────────────────────────────────────────────
+    // Greedy 자동배치가 막힌 경우, 기존 자동배치 수업 1개를 다른 칸으로 옮겨
+    // 미배치 수업을 넣을 수 있는지 먼저 탐색합니다.
+    let swapRepaired = [];
+    if (bestFailed.length) {
+      await updateProgress({
+        percent: 82,
+        step: "미배치 복구 탐색",
+        detail: `미배치 후보 ${bestFailed.length}개를 기존 수업 이동/교환 방식으로 먼저 복구합니다.`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "-",
+        log: "Repair/Swap 1차 복구 단계 시작"
+      }, true);
+      const repair = await repairFailedItemsBySingleMove(bestFailed, baseSlots, bestPlaced, bestStage?.options || options, updateProgress);
+      bestPlaced = repair.placed;
+      bestFailed = repair.remaining;
+      swapRepaired = repair.repaired || [];
+      await updateProgress({
+        percent: 84,
+        step: "미배치 복구 완료",
+        detail: `이동/교환으로 ${swapRepaired.length}개를 복구했습니다. 남은 후보 ${bestFailed.length}개`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "-",
+        log: `Repair/Swap 복구 ${swapRepaired.length}건`
+      }, true);
+    }
+
     // ── Final repair pass ─────────────────────────────────────────
-    // Greedy 자동배치가 끝까지 못 넣은 카드는 보정 배치를 시도합니다.
-    // 단, 보호 슬롯·동일 카드 중복·교사 중복·학생/학급 중복·교실 중복은 만들지 않습니다.
+    // 그래도 못 넣은 카드는 최소 충돌 보정 배치를 시도합니다.
+    // 단, 보호 슬롯·동일 카드 중복·교사 중복·학급 중복·교실 중복은 만들지 않습니다.
     // 배치 가능한 안전 슬롯이 없으면 무리하게 겹쳐 넣지 않고 미배치로 남깁니다.
     await updateProgress({
-      percent: 84,
+      percent: 85,
       step: "미배치 보정 준비",
-      detail: `미배치 후보 ${bestFailed.length}개를 최소 충돌 위치에 보정 배치합니다.`,
+      detail: `남은 미배치 후보 ${bestFailed.length}개를 최소 충돌 위치에 보정 배치합니다.`,
       placed: bestPlaced.length,
       best: bestPlaced.length,
       failed: bestFailed.length,
@@ -3412,7 +3550,7 @@ export function createAutoAssignAll(deps) {
     addTimetableLog(
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
+      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 이동/교환 복구 ${swapRepaired.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
     );
     addTimetableLog(
       outcomeAnalysis.failedUnitCount ? "warn" : "auto",
@@ -3433,6 +3571,7 @@ export function createAutoAssignAll(deps) {
 
     const detailLines = [
       `<b>정상 배치</b> ${bestPlaced.length - forcedPlaced.length}개`,
+      `<b>이동/교환 복구</b> ${swapRepaired.length}개`,
       `<b>보정 배치</b> ${forcedPlaced.length}개`,
       `<b>후처리 개선</b> ${improvement.improvedCount}건`,
       `<b>미배치</b> ${names.length}개`,

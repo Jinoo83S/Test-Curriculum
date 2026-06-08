@@ -872,17 +872,9 @@ function getStudentConflictDetail(entry, other) {
   const otherAudience = audienceForPlacement(other);
   const detail = occConflictDetailBetween(audience, otherAudience);
 
-  // 세부 수강명단이 양쪽 모두 있는 경우에는 학급명보다 실제 학생 교집합을 먼저 보여줍니다.
-  // 같은 8A 안에서도 한국어/국어 A처럼 학생이 분리되어 있으면 충돌이 아니며,
-  // 실제로 겹칠 때만 학생 수가 표시됩니다.
-  if (audience.studentKeys?.size && otherAudience.studentKeys?.size && detail.studentKeys?.length) {
-    return `겹치는 학생: ${detail.studentKeys.length}명`;
-  }
-
+  // 시간표 배치 단계에서는 학생 ID가 아니라 학급/반 점유를 기준으로 충돌을 설명합니다.
   const classLabels = localUniqueStrings((detail.classKeys || []).map(occFormatClassLabelFromKey).filter(Boolean));
   if (classLabels.length) return `겹치는 학급: ${classLabels.join(", ")}`;
-
-  if (detail.studentKeys?.length) return `겹치는 학생: ${detail.studentKeys.length}명`;
 
   const protectedA = protectedGradesForEntry(entry);
   const protectedB = protectedGradesForEntry(other);
@@ -895,7 +887,7 @@ function getStudentConflictDetail(entry, other) {
   if (byB.length) protectedReasons.push(`${entryTitle(other)} 전체학년 보호: ${formatGradeSetForDetail(new Set(byB))}`);
   if (protectedReasons.length) return protectedReasons.join(" / ");
 
-  return "학급·학생명단 겹침 없음 — 충돌 판정 데이터를 재확인하세요";
+  return "학급 겹침 없음 — 충돌 판정 데이터를 재확인하세요";
 }
 
 function getRelatedConflictEntries(entry, type) {
@@ -957,7 +949,7 @@ function renderEntryConflictDetailSection(box, entry) {
     section.appendChild(header);
     const desc = document.createElement("div");
     desc.style.cssText = "font-size:11px;color:#64748b;line-height:1.45";
-    desc.textContent = "현재 선택한 수업에는 교사, 교실, 학생, 제약 조건 충돌이 없습니다.";
+    desc.textContent = "현재 선택한 수업에는 교사, 교실, 학급, 제약 조건 충돌이 없습니다.";
     section.appendChild(desc);
     box.appendChild(section);
     return;
@@ -1039,7 +1031,7 @@ function addEntry(data) {
   if (!e.templateId) return null;
 
   // 수동 드래그 배치는 충돌이 있어도 먼저 허용합니다.
-  // 이후 recomputeConflicts()에서 교사/교실/학생/동시배정/제약 충돌을 색상 배지로 표시합니다.
+  // 이후 recomputeConflicts()에서 교사/교실/학급/동시배정/제약 충돌을 색상 배지로 표시합니다.
   // 자동배치는 기존처럼 배치 가능 여부를 사전에 검사합니다.
   captureTimetableUndo("수업 추가");
   entries().push(e); scheduleSave("timetable"); return e;
@@ -1368,7 +1360,7 @@ function protectedSlotConflict(candidate = {}, day = candidate.day, period = can
     const fixedAudience = audienceForPlacement(fixed);
     const fixedGrades = audienceCanonicalGradeSet(fixedAudience);
 
-    // 채플/창체/전체학년 수업은 학생명단 키가 불완전해도 학년·반 범위가 겹치면 막습니다.
+    // 채플/창체/전체학년 수업은 학년·반 범위가 겹치면 막습니다.
     if (audiencesConflict(candidateAudience, fixedAudience)) {
       return { entry: fixed, reason: "audience" };
     }
