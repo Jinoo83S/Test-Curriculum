@@ -12,14 +12,13 @@ function waitForDomainsLoaded(domains = CLEANUP_DOMAINS, timeoutMs = 8000) {
   if (!list.length || list.every(d => initialLoad[d])) return Promise.resolve(true);
   return new Promise(resolve => {
     const started = Date.now();
-    const timer = setInterval(() => {
+    const tick = () => {
       const done = list.every(d => initialLoad[d]);
       const timedOut = Date.now() - started > timeoutMs;
-      if (done || timedOut) {
-        clearInterval(timer);
-        resolve(done);
-      }
-    }, 80);
+      if (done || timedOut) return resolve(done);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   });
 }
 
@@ -88,6 +87,18 @@ function getEntryCardIds(entry = {}) {
   return [...(entry.ttcardIds || []), entry.ttcardId].filter(Boolean);
 }
 
+function getCardIdsFromGroup(group = {}) {
+  const ids = [];
+  (group.poolCardIds || []).forEach(id => ids.push(id));
+  (group.excludedCardIds || []).forEach(id => ids.push(id));
+  (group.units || []).forEach(unit => (unit.ttcardIds || []).forEach(id => ids.push(id)));
+  return ids.filter(Boolean);
+}
+
+function getCardMap() {
+  return new Map((appState.timetable?.ttcards || []).map(card => [card.id, card]));
+}
+
 function cardReferenceCounts() {
   const counts = new Map();
   (appState.timetable?.entries || []).forEach(entry => {
@@ -95,6 +106,7 @@ function cardReferenceCounts() {
   });
   (appState.timetable?.ttcardGroups || []).forEach(group => {
     (group.poolCardIds || []).forEach(id => counts.set(id, (counts.get(id) || 0) + 0.1));
+    (group.excludedCardIds || []).forEach(id => counts.set(id, (counts.get(id) || 0) + 0.05));
     (group.units || []).forEach(unit => {
       (unit.ttcardIds || []).forEach(id => counts.set(id, (counts.get(id) || 0) + 0.1));
     });
@@ -146,6 +158,100 @@ function findDuplicateWholeGradeCards() {
   return duplicates;
 }
 
+function findBrokenCardReferences() {
+  const cardIds = new Set((appState.timetable?.ttcards || []).map(card => card.id));
+  const brokenEntries = [];
+  const brokenGroups = [];
+
+  (appState.timetable?.entries || []).forEach((entry, index) => {
+    const ids = getEntryCardIds(entry);
+    const missing = ids.filter(id => !cardIds.has(id));
+    if (missing.length) {
+      brokenEntries.push({
+        index,
+        entryId: entry.id || "",
+        day: entry.day,
+        period: entry.period,
+        title: clean(entry.subject) || clean(entry.label) || clean(entry.groupName) || "배치 엔트리",
+        missing
+      });
+    }
+  });
+
+  (appState.timetable?.ttcardGroups || []).forEach((group, groupIndex) => {
+    const missingPool = (group.poolCardIds || []).filter(id => !cardIds.has(id));
+    const missingExcluded = (group.excludedCardIds || []).filter(id => !cardIds.has(id));
+    const missingUnits = [];
+    (group.units || []).forEach((unit, unitIndex) => {
+      const missing = (unit.ttcardIds || []).filter(id => !cardIds.has(id));
+      if (missing.length) missingUnits.push({ unitIndex, unitName: clean(unit.name) || `unit ${unitIndex + 1}`, missing });
+    });
+    const count = missingPool.length + missingExcluded.length + missingUnits.reduce((sum, u) => sum + u.missing.length, 0);
+    if (count) {
+      brokenGroups.push({
+        groupIndex,
+        groupId: group.id || "",
+        groupName: clean(group.name) || clean(group.groupName) || `그룹 ${groupIndex + 1}`,
+        missingPool,
+        missingExcluded,
+        missingUnits,
+        count
+      });
+    }
+  });
+  return { brokenEntries, brokenGroups };
+}
+
+function findEmptyGroups() {
+  return (appState.timetable?.ttcardGroups || [])
+    .map((group, index) => ({
+      index,
+      groupId: group.id || "",
+      groupName: clean(group.name) || clean(group.groupName) || `그룹 ${index + 1}`,
+      cardCount: getCardIdsFromGroup(group).length,
+      unitCount: (group.units || []).filter(unit => (unit.ttcardIds || []).length || (unit.templateIds || []).length || clean(unit.name)).length,
+    }))
+    .filter(item => !item.cardCount && !item.unitCount);
+}
+
+function entryDuplicateKey(entry = {}) {
+  const ids = getEntryCardIds(entry).sort().join(",");
+  return [
+    entry.day ?? "",
+    entry.period ?? "",
+    entry.groupId || "",
+    entry.unitId || "",
+    ids,
+    entry.ttcardId || "",
+    entry.templateId || "",
+    entry.gradeKey || "",
+    entry.sectionIdx ?? "",
+    clean(entry.subject) || clean(entry.label) || "",
+    clean(entry.roomId) || clean(entry.roomName) || ""
+  ].join("|");
+}
+
+function findDuplicateEntries() {
+  const seen = new Map();
+  const duplicates = [];
+  (appState.timetable?.entries || []).forEach((entry, index) => {
+    const key = entryDuplicateKey(entry);
+    if (seen.has(key)) {
+      duplicates.push({
+        index,
+        firstIndex: seen.get(key),
+        entryId: entry.id || "",
+        title: clean(entry.subject) || clean(entry.label) || clean(entry.groupName) || "배치 엔트리",
+        day: entry.day,
+        period: entry.period
+      });
+      return;
+    }
+    seen.set(key, index);
+  });
+  return duplicates;
+}
+
 function findRoomHomeRoomMigrations() {
   const classMap = classIdByLabelMap();
   const rooms = appState.rooms?.rooms || [];
@@ -172,8 +278,7 @@ function findRoomHomeRoomMigrations() {
 }
 
 function buildClassCreditSnapshot(ttcards = appState.timetable?.ttcards || []) {
-  // 정밀 계산은 화면의 시수 진단에서 수행합니다. 여기서는 정리 전/후 대략적인 검증용으로
-  // 학급 라벨과 전체학년 카드 기준의 필요 시수를 간단히 산출합니다.
+  // 정밀 계산은 시간표 시수 진단에서 수행합니다. 여기서는 정리 전/후 참고값만 산출합니다.
   const classes = appState.classes?.classes || [];
   const classLabelsByGrade = new Map();
   classes.forEach(cls => {
@@ -236,110 +341,185 @@ function buildActualEntrySlotSnapshot(entries = appState.timetable?.entries || [
     .map(([label, set]) => ({ label, credits: set.size }));
 }
 
-export function previewDataCleanup() {
+function buildCleanupPlan() {
   const duplicateCards = findDuplicateWholeGradeCards();
+  const brokenRefs = findBrokenCardReferences();
+  const emptyGroups = findEmptyGroups();
+  const duplicateEntries = findDuplicateEntries();
   const roomMigrations = findRoomHomeRoomMigrations();
   const removeIds = new Set(duplicateCards.map(x => x.removeId));
   const afterCards = (appState.timetable?.ttcards || []).filter(c => !removeIds.has(c.id));
+  const safeCount = duplicateCards.length + brokenRefs.brokenEntries.length + brokenRefs.brokenGroups.reduce((sum, g) => sum + g.count, 0) + emptyGroups.length;
+  const cautionCount = duplicateEntries.length + roomMigrations.length;
   return {
     duplicateCards,
+    brokenRefs,
+    emptyGroups,
+    duplicateEntries,
     roomMigrations,
+    dangerous: [
+      { title: "모든 시간표 카드 재생성", description: "현재 배치와 그룹 참조에 영향이 있을 수 있으므로 DB 정리 팝업에서는 실행하지 않습니다." },
+      { title: "시간표 배치 전체 초기화", description: "시간표 편집 화면의 전용 초기화 기능에서만 실행하는 것이 안전합니다." },
+    ],
     beforeCreditSnapshot: buildClassCreditSnapshot(appState.timetable?.ttcards || []),
     afterCreditSnapshot: buildClassCreditSnapshot(afterCards),
     actualEntrySnapshot: buildActualEntrySlotSnapshot(appState.timetable?.entries || []),
     totals: {
+      safeCount,
+      cautionCount,
+      dangerousCount: 2,
       duplicateCardCount: duplicateCards.length,
+      brokenEntryCount: brokenRefs.brokenEntries.length,
+      brokenGroupRefCount: brokenRefs.brokenGroups.reduce((sum, g) => sum + g.count, 0),
+      emptyGroupCount: emptyGroups.length,
+      duplicateEntryCount: duplicateEntries.length,
       roomMigrationCount: roomMigrations.length,
     }
   };
 }
 
-function replaceCardIdList(list = [], idMap = new Map()) {
+export function previewDataCleanup() {
+  return buildCleanupPlan();
+}
+
+function replaceCardIdList(list = [], idMap = new Map(), validIds = null) {
   const out = [];
   (list || []).forEach(id => {
     const next = idMap.get(id) || id;
-    if (next && !out.includes(next)) out.push(next);
+    if (!next) return;
+    if (validIds && !validIds.has(next)) return;
+    if (!out.includes(next)) out.push(next);
   });
   return out;
 }
 
-function cleanupEntries(entries = [], idMap = new Map(), removeIds = new Set()) {
+function cleanupEntries(entries = [], idMap = new Map(), removeIds = new Set(), options = {}) {
+  const validIds = options.validIds || null;
+  const dedupe = !!options.dedupe;
   const out = [];
   const seen = new Set();
   entries.forEach(entry => {
     const next = { ...entry };
-    if (next.ttcardId) next.ttcardId = idMap.get(next.ttcardId) || next.ttcardId;
-    if (Array.isArray(next.ttcardIds)) next.ttcardIds = replaceCardIdList(next.ttcardIds, idMap);
-    if (next.templateId && removeIds.has(next.ttcardId)) return;
-    const ids = getEntryCardIds(next);
-    if (ids.length && ids.every(id => removeIds.has(id))) return;
-    const key = [next.day, next.period, next.groupId || "", next.unitId || "", ids.sort().join(","), next.templateId || "", next.gradeKey || "", next.sectionIdx ?? ""].join("|");
-    if (seen.has(key)) return;
-    seen.add(key);
+    const hadCardRefs = getEntryCardIds(next).length > 0;
+    if (next.ttcardId) {
+      const mapped = idMap.get(next.ttcardId) || next.ttcardId;
+      next.ttcardId = validIds && !validIds.has(mapped) ? "" : mapped;
+    }
+    if (Array.isArray(next.ttcardIds)) next.ttcardIds = replaceCardIdList(next.ttcardIds || [], idMap, validIds);
+    if (next.ttcardId && removeIds.has(next.ttcardId)) next.ttcardId = idMap.get(next.ttcardId) || "";
+    if (Array.isArray(next.ttcardIds)) next.ttcardIds = next.ttcardIds.filter(id => !removeIds.has(id) || idMap.has(id));
+
+    const ids = getEntryCardIds(next).filter(id => !validIds || validIds.has(id));
+    if (hadCardRefs && !ids.length) return;
+    if (Array.isArray(next.ttcardIds)) next.ttcardIds = next.ttcardIds.filter(Boolean);
+    if (!next.ttcardId) delete next.ttcardId;
+
+    if (dedupe) {
+      const key = entryDuplicateKey(next);
+      if (seen.has(key)) return;
+      seen.add(key);
+    }
     out.push(next);
   });
   return out;
 }
 
-function cleanupGroups(groups = [], idMap = new Map()) {
-  return (groups || []).map(group => {
+function cleanupGroups(groups = [], idMap = new Map(), options = {}) {
+  const validIds = options.validIds || null;
+  const removeEmptyGroups = !!options.removeEmptyGroups;
+  const out = [];
+  (groups || []).forEach(group => {
     const next = { ...group };
-    next.poolCardIds = replaceCardIdList(group.poolCardIds || [], idMap);
+    next.poolCardIds = replaceCardIdList(group.poolCardIds || [], idMap, validIds);
+    next.excludedCardIds = replaceCardIdList(group.excludedCardIds || [], idMap, validIds);
     next.units = (group.units || []).map(unit => ({
       ...unit,
-      ttcardIds: replaceCardIdList(unit.ttcardIds || [], idMap)
+      ttcardIds: replaceCardIdList(unit.ttcardIds || [], idMap, validIds)
     })).filter(unit => (unit.ttcardIds || []).length || (unit.templateIds || []).length || clean(unit.name));
-    return next;
+    const hasContent = (next.poolCardIds || []).length || (next.excludedCardIds || []).length || (next.units || []).length || clean(next.name) || clean(next.groupName);
+    const hasCards = getCardIdsFromGroup(next).length > 0 || (next.units || []).some(unit => (unit.templateIds || []).length);
+    if (removeEmptyGroups && hasContent && !hasCards && !(next.units || []).length) return;
+    out.push(next);
   });
+  return out;
 }
 
-function applyDuplicateCardCleanup(preview) {
+function applySafeCleanup(preview) {
   const duplicateCards = preview?.duplicateCards || [];
-  if (!duplicateCards.length) return false;
   const idMap = new Map(duplicateCards.map(x => [x.removeId, x.keepId]));
   const removeIds = new Set(duplicateCards.map(x => x.removeId));
-  appState.timetable.ttcards = (appState.timetable.ttcards || []).filter(card => !removeIds.has(card.id));
-  appState.timetable.ttcardGroups = cleanupGroups(appState.timetable.ttcardGroups || [], idMap);
-  appState.timetable.entries = cleanupEntries(appState.timetable.entries || [], idMap, removeIds);
-  return true;
+  const beforeCards = appState.timetable?.ttcards || [];
+  const nextCards = beforeCards.filter(card => !removeIds.has(card.id));
+  const validIds = new Set(nextCards.map(card => card.id));
+  let changed = false;
+
+  if (nextCards.length !== beforeCards.length) changed = true;
+  appState.timetable.ttcards = nextCards;
+
+  const beforeGroupJson = JSON.stringify(appState.timetable.ttcardGroups || []);
+  appState.timetable.ttcardGroups = cleanupGroups(appState.timetable.ttcardGroups || [], idMap, { validIds, removeEmptyGroups: true });
+  if (JSON.stringify(appState.timetable.ttcardGroups || []) !== beforeGroupJson) changed = true;
+
+  const beforeEntryJson = JSON.stringify(appState.timetable.entries || []);
+  appState.timetable.entries = cleanupEntries(appState.timetable.entries || [], idMap, removeIds, { validIds, dedupe: false });
+  if (JSON.stringify(appState.timetable.entries || []) !== beforeEntryJson) changed = true;
+
+  return changed;
+}
+
+function applyCautionCleanup(preview) {
+  let changed = false;
+  const validIds = new Set((appState.timetable?.ttcards || []).map(card => card.id));
+
+  const beforeEntryJson = JSON.stringify(appState.timetable.entries || []);
+  appState.timetable.entries = cleanupEntries(appState.timetable.entries || [], new Map(), new Set(), { validIds, dedupe: true });
+  if (JSON.stringify(appState.timetable.entries || []) !== beforeEntryJson) changed = true;
+
+  const beforeGroupJson = JSON.stringify(appState.timetable.ttcardGroups || []);
+  appState.timetable.ttcardGroups = cleanupGroups(appState.timetable.ttcardGroups || [], new Map(), { validIds, removeEmptyGroups: true });
+  if (JSON.stringify(appState.timetable.ttcardGroups || []) !== beforeGroupJson) changed = true;
+
+  if (applyRoomHomeRoomMigration(preview)) changed = true;
+  return changed;
 }
 
 function applyRoomHomeRoomMigration(preview) {
   const migrations = preview?.roomMigrations || [];
   if (!migrations.length) return false;
   const byRoom = new Map(migrations.map(m => [m.roomId, m]));
-  const usedHomeRooms = new Set();
+  const claimedHomeRooms = new Set();
+  let changed = false;
   appState.rooms.rooms = (appState.rooms.rooms || []).map(room => {
     const mig = byRoom.get(room.id);
     if (!mig) return room;
-    usedHomeRooms.add(mig.homeRoomClassId);
+    if (claimedHomeRooms.has(mig.homeRoomClassId)) return room;
+    claimedHomeRooms.add(mig.homeRoomClassId);
+    changed = true;
     return {
       ...room,
       homeRoomClassId: mig.homeRoomClassId,
       teacherName: mig.newTeacherName,
       note: mig.newNote
     };
-  }).map(room => {
-    // 동일 홈룸이 여러 교실에 지정되는 것을 방지합니다.
-    const homeId = clean(room.homeRoomClassId);
-    if (!homeId) return room;
-    if (!usedHomeRooms.has(homeId)) return room;
-    usedHomeRooms.delete(homeId);
-    return room;
   });
-  return true;
+  return changed;
 }
 
-export async function applyDataCleanup(preview = previewDataCleanup()) {
+export async function applyDataCleanup(preview = previewDataCleanup(), mode = "safe") {
   if (!canEdit()) throw new Error("로그인/편집 권한이 필요합니다.");
   const changed = { timetable: false, rooms: false };
-  changed.timetable = applyDuplicateCardCleanup(preview);
-  changed.rooms = applyRoomHomeRoomMigration(preview);
+  changed.timetable = applySafeCleanup(preview);
+  if (mode === "caution") {
+    const beforeRooms = JSON.stringify(appState.rooms?.rooms || []);
+    const cautionChanged = applyCautionCleanup(preview);
+    changed.timetable = changed.timetable || cautionChanged;
+    changed.rooms = JSON.stringify(appState.rooms?.rooms || []) !== beforeRooms;
+  }
   const saves = [];
   if (changed.timetable) saves.push(saveNow("timetable", { force: true }));
   if (changed.rooms) saves.push(saveNow("rooms", { force: true }));
   await Promise.all(saves);
-  return { changed, preview: previewDataCleanup() };
+  return { changed, mode, preview: previewDataCleanup() };
 }
 
 function el(tag, className = "", text = "") {
@@ -354,14 +534,50 @@ function creditSnapshotText(rows = []) {
   return rows.map(r => `${r.label} ${r.credits}`).join("  ");
 }
 
+function countLine(label, count, okText = "없음") {
+  const strong = count ? `color:#b45309;font-weight:900;` : `color:#15803d;font-weight:900;`;
+  return `<div style="display:flex;justify-content:space-between;gap:12px;"><span>${label}</span><b style="${strong}">${count ? `${count}건` : okText}</b></div>`;
+}
+
+function renderList(box, items, formatter, emptyText) {
+  if (!items.length) {
+    box.appendChild(el("p", "muted", emptyText));
+    return;
+  }
+  const list = el("ul", "cleanup-list");
+  items.slice(0, 120).forEach(item => list.appendChild(el("li", "", formatter(item))));
+  if (items.length > 120) list.appendChild(el("li", "", `외 ${items.length - 120}건...`));
+  box.appendChild(list);
+}
+
 function renderPreviewBody(body, preview) {
   body.innerHTML = "";
   const summary = el("div", "cleanup-summary");
   summary.innerHTML = `
-    <div><b>중복 시간표 카드</b> ${preview.totals.duplicateCardCount}개</div>
-    <div><b>교실 홈룸 마이그레이션</b> ${preview.totals.roomMigrationCount}건</div>
+    <div><b>안전 정리</b> ${preview.totals.safeCount}건</div>
+    <div><b>주의 정리</b> ${preview.totals.cautionCount}건</div>
+    <div><b>위험 정리</b> 별도 화면에서만 실행</div>
   `;
   body.appendChild(summary);
+
+  const modeGuide = el("div", "cleanup-section");
+  modeGuide.innerHTML = `
+    <h4>정리 단계 구분</h4>
+    <p style="margin:0;color:#64748b;font-size:12px;line-height:1.55;">
+      <b>안전 정리</b>는 깨진 카드 참조, 빈 그룹, 전체학년/창체 중복 카드처럼 명백한 정리 대상만 처리합니다.<br>
+      <b>주의 정리</b>는 중복 배치 엔트리 정리와 교실 홈룸 마이그레이션까지 포함합니다.<br>
+      <b>위험 정리</b>인 전체 카드 재생성/시간표 초기화는 이 팝업에서 실행하지 않습니다.
+    </p>
+    <div style="display:grid;gap:5px;margin-top:10px;font-size:13px;">
+      ${countLine("전체학년/창체 중복 카드", preview.totals.duplicateCardCount)}
+      ${countLine("깨진 배치 엔트리 참조", preview.totals.brokenEntryCount)}
+      ${countLine("깨진 그룹 카드 참조", preview.totals.brokenGroupRefCount)}
+      ${countLine("빈 그룹", preview.totals.emptyGroupCount)}
+      ${countLine("중복 배치 엔트리", preview.totals.duplicateEntryCount)}
+      ${countLine("교실 홈룸 마이그레이션", preview.totals.roomMigrationCount)}
+    </div>
+  `;
+  body.appendChild(modeGuide);
 
   const creditBox = el("div", "cleanup-section");
   creditBox.innerHTML = `
@@ -375,35 +591,25 @@ function renderPreviewBody(body, preview) {
     <p><b>카드 원시 합계 · 정리 후</b> ${creditSnapshotText(preview.afterCreditSnapshot)}</p>`;
   body.appendChild(creditBox);
 
-  const dupBox = el("div", "cleanup-section");
-  dupBox.innerHTML = `<h4>삭제/병합 예정 중복 카드</h4>`;
-  if (preview.duplicateCards.length) {
-    const list = el("ul", "cleanup-list");
-    preview.duplicateCards.forEach(item => {
-      const li = el("li", "", `${item.gradeKey} · ${item.title} · ${item.removeId} → ${item.keepId}`);
-      list.appendChild(li);
-    });
-    dupBox.appendChild(list);
-  } else {
-    dupBox.appendChild(el("p", "muted", "중복 전체학년 카드가 없습니다."));
-  }
-  body.appendChild(dupBox);
+  const safeBox = el("div", "cleanup-section");
+  safeBox.innerHTML = `<h4>안전 정리 대상</h4>`;
+  renderList(safeBox, preview.duplicateCards, item => `${item.gradeKey} · ${item.title} · ${item.removeId} → ${item.keepId}`, "중복 전체학년 카드가 없습니다.");
+  renderList(safeBox, preview.brokenRefs.brokenEntries, item => `${item.title} ${item.day ?? "-"}요일 ${item.period ?? "-"}교시 · 누락 ${item.missing.join(", ")}`, "깨진 배치 엔트리 참조가 없습니다.");
+  renderList(safeBox, preview.brokenRefs.brokenGroups, item => `${item.groupName} · 누락 카드 ${item.count}개`, "깨진 그룹 카드 참조가 없습니다.");
+  renderList(safeBox, preview.emptyGroups, item => `${item.groupName} · ${item.groupId || "id 없음"}`, "빈 그룹이 없습니다.");
+  body.appendChild(safeBox);
 
-  const roomBox = el("div", "cleanup-section");
-  roomBox.innerHTML = `<h4>홈룸 마이그레이션 예정</h4>`;
-  if (preview.roomMigrations.length) {
-    const list = el("ul", "cleanup-list");
-    preview.roomMigrations.forEach(item => {
-      const li = el("li", "", `${item.roomName}: ${item.homeRoomLabel} 홈룸 지정, 담당 교사 ${item.newTeacherName || "-"}`);
-      list.appendChild(li);
-    });
-    roomBox.appendChild(list);
-  } else {
-    roomBox.appendChild(el("p", "muted", "마이그레이션할 교실 홈룸 데이터가 없습니다."));
-  }
-  body.appendChild(roomBox);
+  const cautionBox = el("div", "cleanup-section");
+  cautionBox.innerHTML = `<h4>주의 정리 대상</h4>`;
+  renderList(cautionBox, preview.duplicateEntries, item => `${item.title} · ${item.day ?? "-"}요일 ${item.period ?? "-"}교시 · #${item.index}`, "중복 배치 엔트리가 없습니다.");
+  renderList(cautionBox, preview.roomMigrations, item => `${item.roomName}: ${item.homeRoomLabel} 홈룸 지정, 담당 교사 ${item.newTeacherName || "-"}`, "마이그레이션할 교실 홈룸 데이터가 없습니다.");
+  body.appendChild(cautionBox);
+
+  const dangerBox = el("div", "cleanup-section");
+  dangerBox.innerHTML = `<h4>위험 정리 · 이 팝업에서 실행하지 않음</h4>`;
+  renderList(dangerBox, preview.dangerous, item => `${item.title}: ${item.description}`, "위험 정리 항목이 없습니다.");
+  body.appendChild(dangerBox);
 }
-
 
 function applyInlineStyles(node, styles = {}) {
   if (!node) return node;
@@ -438,6 +644,7 @@ function makeUiButton(label, variant = "secondary", extraClass = "") {
     secondary: { background: "#eef5ff", color: "#1d4ed8", border: "1px solid #bfdbfe" },
     ghost: { background: "#f1f5f9", color: "#475569", border: "1px solid #e2e8f0" },
     danger: { background: "#fee2e2", color: "#b91c1c", border: "1px solid #fecaca" },
+    warn: { background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa" },
   };
   applyInlineStyles(btn, { ...base, ...(variants[variant] || variants.secondary) });
   return btn;
@@ -477,8 +684,8 @@ export async function openDataCleanupDialog() {
 
   const modal = el("div", "cleanup-modal his-ui-modal");
   applyInlineStyles(modal, {
-    width: "min(820px, calc(100vw - 56px))",
-    maxHeight: "min(86vh, 820px)",
+    width: "min(940px, calc(100vw - 56px))",
+    maxHeight: "min(88vh, 860px)",
     overflow: "hidden",
     background: "#fff",
     borderRadius: "24px",
@@ -501,9 +708,9 @@ export async function openDataCleanupDialog() {
 
   const titleBlock = el("div", "cleanup-title-block");
   titleBlock.innerHTML = `
-    <span class="cleanup-kicker his-ui-kicker" style="display:inline-flex;align-items:center;margin-bottom:6px;padding:4px 9px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:900;">데이터 안전 정리</span>
+    <span class="cleanup-kicker his-ui-kicker" style="display:inline-flex;align-items:center;margin-bottom:6px;padding:4px 9px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:11px;font-weight:900;">데이터 단계별 정리</span>
     <h3 style="margin:0 0 5px;font-size:21px;font-weight:900;letter-spacing:-.03em;color:#0f172a;">DB 진단/정리</h3>
-    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.45;">기존 Firestore 데이터를 삭제하지 않고, 중복 카드와 홈룸 데이터를 보정합니다.</p>
+    <p style="margin:0;color:#64748b;font-size:13px;line-height:1.45;">안전 정리와 주의 정리를 분리해, 의도적 그룹/묶음 수업을 최대한 보호합니다.</p>
   `;
 
   const closeBtn = makeUiButton("×", "ghost", "cleanup-icon-close his-ui-icon-btn");
@@ -536,6 +743,7 @@ export async function openDataCleanupDialog() {
   applyInlineStyles(footer, {
     display: "flex",
     justifyContent: "flex-end",
+    flexWrap: "wrap",
     gap: "9px",
     padding: "14px 20px",
     borderTop: "1px solid #e2e8f0",
@@ -544,9 +752,10 @@ export async function openDataCleanupDialog() {
 
   const closeFooterBtn = makeUiButton("닫기", "ghost", "cleanup-cancel-btn");
   const refreshBtn = makeUiButton("↻ 다시 진단", "secondary", "cleanup-refresh-btn");
-  const applyBtn = makeUiButton("정리 실행", "primary", "cleanup-apply-btn");
+  const safeBtn = makeUiButton("안전 정리 실행", "primary", "cleanup-safe-btn");
+  const cautionBtn = makeUiButton("주의 정리 실행", "warn", "cleanup-caution-btn");
   closeFooterBtn.addEventListener("click", () => overlay.remove());
-  footer.append(closeFooterBtn, refreshBtn, applyBtn);
+  footer.append(closeFooterBtn, refreshBtn, safeBtn, cautionBtn);
 
   modal.append(header, body, footer);
   overlay.appendChild(modal);
@@ -555,31 +764,42 @@ export async function openDataCleanupDialog() {
   let preview = previewDataCleanup();
   renderPreviewBody(body, preview);
 
-  refreshBtn.addEventListener("click", () => {
+  const refresh = () => {
     preview = previewDataCleanup();
     renderPreviewBody(body, preview);
-  });
+  };
 
-  applyBtn.addEventListener("click", async () => {
-    if (!preview.totals.duplicateCardCount && !preview.totals.roomMigrationCount) {
+  refreshBtn.addEventListener("click", refresh);
+
+  async function runCleanup(mode) {
+    const isCaution = mode === "caution";
+    const count = isCaution ? (preview.totals.safeCount + preview.totals.cautionCount) : preview.totals.safeCount;
+    if (!count) {
       alert("정리할 항목이 없습니다.");
       return;
     }
-    if (!confirm("표시된 항목을 정리하고 저장할까요? 실행 전 Firestore 진단 JSON을 보관해 두는 것을 권장합니다.")) return;
-    setButtonBusy(applyBtn, true, "정리 중…");
+    const message = isCaution
+      ? "주의 정리는 안전 정리에 더해 중복 배치 엔트리와 교실 홈룸 마이그레이션까지 처리합니다. 실행할까요?"
+      : "안전 정리는 깨진 참조, 빈 그룹, 전체학년/창체 중복 카드만 정리합니다. 실행할까요?";
+    if (!confirm(message)) return;
+    setButtonBusy(safeBtn, true, "정리 중…");
+    setButtonBusy(cautionBtn, true, "정리 중…");
     setButtonBusy(refreshBtn, true, "↻ 다시 진단");
     try {
-      const result = await applyDataCleanup(preview);
+      const result = await applyDataCleanup(preview, mode);
       preview = result.preview;
       renderPreviewBody(body, preview);
-      alert("DB 정리가 완료되었습니다. 화면을 새로고침한 뒤 자동배치를 다시 확인해 주세요.");
+      alert(isCaution ? "주의 정리가 완료되었습니다." : "안전 정리가 완료되었습니다.");
     } catch (e) {
       console.error(e);
       alert("DB 정리에 실패했습니다: " + (e?.message || e));
     } finally {
-      setButtonBusy(applyBtn, false, "정리 실행");
+      setButtonBusy(safeBtn, false, "안전 정리 실행");
+      setButtonBusy(cautionBtn, false, "주의 정리 실행");
       setButtonBusy(refreshBtn, false, "↻ 다시 진단");
     }
-  });
-}
+  }
 
+  safeBtn.addEventListener("click", () => runCleanup("safe"));
+  cautionBtn.addEventListener("click", () => runCleanup("caution"));
+}
