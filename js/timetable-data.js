@@ -377,8 +377,24 @@ export function makePlacementFromGroupItem(group, groupItem) {
   });
 }
 
+function entryAudienceClassKeySet(entry = {}) {
+  return new Set((Array.isArray(entry.audienceClassKeys) ? entry.audienceClassKeys : [])
+    .map(clean)
+    .filter(Boolean));
+}
+
 export function entryMatchesClass(entry, cls) {
   if (!entry || !cls) return false;
+
+  // 배치 상세에서 학반별 홈룸 배정을 적용하면 같은 과목카드를 여러 학반용 entry로
+  // 분할합니다. 이 경우 카드 원본은 여러 반을 덮더라도 entry.audienceClassKeys가
+  // 실제 표시/충돌 대상 반을 결정해야 합니다.
+  const narrowedClassKeys = entryAudienceClassKeySet(entry);
+  if (narrowedClassKeys.size) {
+    const clsKey = classKey(cls);
+    return !!clsKey && narrowedClassKeys.has(clsKey);
+  }
+
   const cardIds = [...(entry.ttcardIds || []), entry.ttcardId].filter(Boolean);
 
   if (cardIds.length) {

@@ -126,7 +126,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── Bottom panel (resizable, tabs: 과목카드 / 교사조건 / 교실관리) ── */
 .tt-bottom{flex-shrink:0;display:flex;flex-direction:column;background:white;height:260px;min-height:0;overflow:hidden;border-top:1px solid #e2e8f0}
 .tt-bottom-collapsed{height:0!important}
-.tt-bottom-resizer{height:8px;cursor:row-resize;background:#f1f5f9;border-top:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;flex-shrink:0;user-select:none}
+.tt-bottom-resizer{height:8px;cursor:row-resize;background:#f1f5f9;border-top:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;flex-shrink:0;user-select:none;touch-action:none;position:relative;z-index:5}
 .tt-bottom-resizer::after{content:"⋯";font-size:11px;color:#9ca3af;letter-spacing:3px}
 .tt-bottom-resizer:hover{background:#eff6ff}
 .tt-bottom-resizer:hover::after{color:#2563eb}
@@ -1060,7 +1060,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-08-manual-card-group-ui-scroll-r3";</script>
+<script>window.HIS_APP_VERSION = "2026-06-08-bottom-wheel-scroll-r4";</script>
 <script type="module">
   import { versioned } from "./js/version.js";
   await import(versioned("./js/timetable.js"));
@@ -1103,26 +1103,55 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
   let h = applyHeight(localStorage.getItem("tt_botH") || DEFAULT_H, true);
 
-  resizer.addEventListener("mousedown", e => {
-    e.preventDefault();
+  let resizeActive = false;
+  function startResize(clientY, pointerId = null) {
+    if (resizeActive) return;
+    resizeActive = true;
     document.body.classList.add("tt-resizing-bottom");
-    const startY = e.clientY;
+    const startY = clientY;
     const startH = bottom.offsetHeight;
 
-    const mv = ev => {
-      // Moving up = larger bottom panel. The page itself scrolls, so the grid no longer disappears.
-      const delta = startY - ev.clientY;
+    const move = ev => {
+      const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? startY;
+      const delta = startY - y;
       h = applyHeight(startH + delta, false);
     };
-    const up = () => {
+    const end = () => {
       applyHeight(h, true);
+      resizeActive = false;
       document.body.classList.remove("tt-resizing-bottom");
-      document.removeEventListener("mousemove", mv);
-      document.removeEventListener("mouseup", up);
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", end);
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", end);
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", end);
+      try { if (pointerId != null) resizer.releasePointerCapture?.(pointerId); } catch (_) {}
     };
-    document.addEventListener("mousemove", mv);
-    document.addEventListener("mouseup", up);
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", end);
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", end);
+  }
+
+  resizer.addEventListener("mousedown", e => {
+    e.preventDefault();
+    startResize(e.clientY);
   });
+  resizer.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    try { resizer.setPointerCapture?.(e.pointerId); } catch (_) {}
+    startResize(e.clientY, e.pointerId);
+  });
+  resizer.addEventListener("touchstart", e => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    e.preventDefault();
+    startResize(t.clientY);
+  }, { passive: false });
 
   resizer.addEventListener("dblclick", () => {
     h = applyHeight(DEFAULT_H, true);
@@ -1161,29 +1190,67 @@ window._ttBottomToggle = (function() {
 /* ── Bottom panel wheel scroll fix ── */
 (function() {
   const bottom = document.getElementById("ttBottom");
-  if (!bottom || bottom.dataset.wheelScrollFixed === "1") return;
-  bottom.dataset.wheelScrollFixed = "1";
+  if (!bottom || bottom.dataset.wheelScrollFixedR4 === "1") return;
+  bottom.dataset.wheelScrollFixedR4 = "1";
 
-  function findScrollable(start) {
-    let el = start instanceof Element ? start : null;
-    while (el && el !== document.body && el !== bottom.parentElement) {
+  const toPixels = (ev, baseEl) => {
+    if (ev.deltaMode === 1) return ev.deltaY * 32;
+    if (ev.deltaMode === 2) return ev.deltaY * Math.max(1, baseEl?.clientHeight || window.innerHeight || 600);
+    return ev.deltaY;
+  };
+
+  const isHidden = el => !el || el.classList?.contains("hidden") || el.hidden;
+  const isActuallyVisible = el => !!el && !isHidden(el) && !!(el.offsetWidth || el.offsetHeight || el.getClientRects?.().length);
+  const maxScrollTop = el => Math.max(0, (el?.scrollHeight || 0) - (el?.clientHeight || 0));
+  const canScrollY = (el, dy) => {
+    const max = maxScrollTop(el);
+    if (!el || max <= 1) return false;
+    if (dy > 0) return el.scrollTop < max - 1;
+    if (dy < 0) return el.scrollTop > 1;
+    return false;
+  };
+
+  function findBestScroller(target, dy) {
+    let el = target instanceof Element ? target : null;
+    while (el && el !== document.body && el !== document.documentElement) {
+      if (!bottom.contains(el)) break;
       const style = window.getComputedStyle(el);
-      const canY = /(auto|scroll)/.test(style.overflowY || "");
-      if (canY && el.scrollHeight > el.clientHeight + 1) return el;
+      const overflowY = style.overflowY || style.overflow || "";
+      if (/(auto|scroll|overlay)/.test(overflowY) && canScrollY(el, dy)) return el;
       el = el.parentElement;
     }
-    return bottom.querySelector(".tt-subject-card-dialog-body") ||
-      bottom.querySelector(".tt-subject-editor-card-list") ||
-      bottom.querySelector(".tt-bottom-scroll");
+
+    const activeTab = [...bottom.querySelectorAll(".tt-bottom-content > div")]
+      .find(el => !el.classList.contains("hidden") && isActuallyVisible(el));
+    const candidates = [
+      activeTab,
+      activeTab?.querySelector(".tt-log-list, .tt-log-table-wrap, .room-status-scroll, .room-editor-list, .tt-subject-card-dialog-body, .tt-subject-editor-card-list"),
+      bottom.querySelector(".tt-bottom-content"),
+      bottom.querySelector(".tt-bottom-scroll"),
+    ].filter(Boolean);
+
+    return candidates.find(el => canScrollY(el, dy)) || bottom.querySelector(".tt-bottom-scroll");
   }
 
-  bottom.addEventListener("wheel", ev => {
-    const scroller = findScrollable(ev.target);
-    if (!scroller) return;
+  function scrollByWheel(scroller, dy) {
+    if (!scroller) return false;
     const before = scroller.scrollTop;
-    scroller.scrollTop += ev.deltaY;
-    if (scroller.scrollTop !== before) ev.preventDefault();
-  }, { passive: false });
+    const max = maxScrollTop(scroller);
+    scroller.scrollTop = Math.max(0, Math.min(max, before + dy));
+    return scroller.scrollTop !== before;
+  }
+
+  document.addEventListener("wheel", ev => {
+    if (ev.ctrlKey) return;
+    if (!(ev.target instanceof Element) || !bottom.contains(ev.target)) return;
+    const dy = toPixels(ev, bottom);
+    if (!dy) return;
+    const scroller = findBestScroller(ev.target, dy);
+    if (scrollByWheel(scroller, dy)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }, { passive: false, capture: true });
 })();
 
 /* ── Schedule controls ── */
@@ -1790,10 +1857,22 @@ window._ttBottomToggle = (function() {
 .tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
 @media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
 
+
+/* ── Bottom panel wheel scroll · r4 ───────────────────────────── */
+.tt-bottom-scroll{
+  min-height:0!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  overscroll-behavior:contain!important;
+  -webkit-overflow-scrolling:touch;
+}
+.tt-bottom-content{min-height:0!important;}
+.tt-bottom-content > div:not(.hidden){min-height:0;}
+
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-08-manual-card-group-ui-scroll-r3");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-08-bottom-wheel-scroll-r4");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

@@ -112,12 +112,20 @@ export function createTimetableSidebarHandlers(deps) {
   }
 
   function beginSidebarDrag(event, card, data, effect = "copy") {
+    event?.stopPropagation?.();
     setDragging(data);
     if (event?.dataTransfer) {
       event.dataTransfer.effectAllowed = effect;
       const payload = JSON.stringify(data);
       event.dataTransfer.setData(TT_DRAG_MIME, payload);
       event.dataTransfer.setData("text/plain", payload);
+      try {
+        const ghost = card.cloneNode(true);
+        ghost.style.cssText = "position:absolute;top:-1000px;left:-1000px;width:180px;opacity:.85;pointer-events:none;";
+        document.body.appendChild(ghost);
+        event.dataTransfer.setDragImage(ghost, 20, 14);
+        setTimeout(() => ghost.remove(), 0);
+      } catch (_) {}
     }
     card.classList.add("tt-dragging");
   }
@@ -729,6 +737,15 @@ export function createTimetableSidebarHandlers(deps) {
     });
     actions.append(saveBtn, detailBtn);
 
+    if (isManualSubjectCard(card)) {
+      const deleteBtn = makeBtn("수동 카드 삭제", "his-ui-btn his-ui-btn-danger his-ui-btn-compact", () => {
+        deleteManualSubjectCard(card.id);
+      });
+      deleteBtn.disabled = !canEdit();
+      deleteBtn.title = "시간표 편집에서 직접 만든 수동 과목카드만 삭제할 수 있습니다.";
+      actions.appendChild(deleteBtn);
+    }
+
     pane.append(form, actions);
     return pane;
   }
@@ -852,6 +869,49 @@ export function createTimetableSidebarHandlers(deps) {
       card.isWholeGrade = false;
     }
     return card;
+  }
+
+  function isManualSubjectCard(card) {
+    return !!(card?.isManual || card?.manualCreatedAt || String(card?.id || "").startsWith("ttc_manual_") || String(card?.templateId || "").startsWith("manual_"));
+  }
+
+  function deleteManualSubjectCard(cardId) {
+    if (!canEdit()) return false;
+    const card = getTtCardById(cardId);
+    if (!card || !isManualSubjectCard(card)) return false;
+    const title = getEditableCardTitle(card);
+    const used = entries().filter(e => [e.ttcardId, ...(e.ttcardIds || [])].filter(Boolean).includes(cardId));
+    const extra = used.length ? `\n이 카드로 배치된 수업 ${used.length}개도 함께 삭제됩니다.` : "";
+    if (!confirm(`수동 추가한 과목카드 "${title}"를 삭제할까요?${extra}`)) return false;
+
+    appState.timetable.ttcards = (appState.timetable.ttcards || []).filter(c => c.id !== cardId);
+    appState.timetable.entries = (appState.timetable.entries || [])
+      .map(e => {
+        const ids = (e.ttcardIds || []).filter(id => id !== cardId);
+        const singleRemoved = e.ttcardId === cardId;
+        return { ...e, ttcardIds: ids, ttcardId: singleRemoved ? null : e.ttcardId };
+      })
+      .filter(e => e.ttcardId || (e.ttcardIds || []).length || !used.some(u => u.id === e.id));
+
+    (appState.timetable.ttcardGroups || []).forEach(group => {
+      group.poolCardIds = (group.poolCardIds || []).filter(id => id !== cardId);
+      group.excludedCardIds = (group.excludedCardIds || []).filter(id => id !== cardId);
+      (group.units || []).forEach(unit => {
+        unit.ttcardIds = (unit.ttcardIds || []).filter(id => id !== cardId);
+      });
+      group.units = (group.units || []).filter(unit => (unit.ttcardIds || []).length);
+    });
+    appState.timetable.ttcardGroups = (appState.timetable.ttcardGroups || []).filter(group =>
+      (group.poolCardIds || []).length || (group.units || []).length
+    );
+
+    if (subjectCardEditorSelectedId === cardId) subjectCardEditorSelectedId = "";
+    if (typeof saveNow === "function") void saveNow("timetable", { force: true });
+    else scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
+    renderAll();
+    refreshSubjectViews();
+    renderSubjectCardEditor(subjectCardModalBody);
+    return true;
   }
 
   function saveSubjectCardFromForm(cardId, values) {
@@ -2986,6 +3046,10 @@ export function createTimetableSidebarHandlers(deps) {
     card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
     card.style.background = isDone ? "#f0fdf4" : gradeColor.bg + "dd";
     card.draggable = canEdit() && !isDone;
+    if (card.draggable) {
+      card.title = "드래그하여 시간표에 배치";
+      card.style.cursor = "grab";
+    }
     const displayTitle = groupName || title;
     const uniqueTeachers = [...new Set(teachers || [])];
     card.dataset.sortName = normalizeSortText(displayTitle);

@@ -61,7 +61,7 @@ const {
   getSubjectsForGrade, getCreditsForTemplate, getCategoryColor, getAssignedCount,
   getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate,
   getTeachersForTemplate, getSectionCount, getCreditsForTtCard, getTeachersForTtCard,
-  getGroupCards, getTtCardClassLabels, describeTtCard, buildEntryDataFromTtCards,
+  getGroupCards, getTtCardClassLabels, getTtCardClassInfos, classKey, describeTtCard, buildEntryDataFromTtCards,
   makePlacementFromGroupItem, entryMatchesClass, getUnitForTemplate, getUnitDisplayTitle,
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
@@ -439,6 +439,58 @@ function getRoomDisplayName(roomId) {
   return getRooms().find(r => r.id === roomId)?.name || roomId;
 }
 
+const ROOM_UNAVAILABLE_PREFIX = "__room_unavailable__:";
+
+function roomUnavailableConstraintKey(roomId) {
+  return ROOM_UNAVAILABLE_PREFIX + clean(roomId);
+}
+
+function normalizeRoomUnavailableSlots(slots = []) {
+  const seen = new Set();
+  return (Array.isArray(slots) ? slots : [])
+    .map(s => ({ day: Number(s?.day), period: Number(s?.period) }))
+    .filter(s => Number.isInteger(s.day) && s.day >= 0 && s.day <= 4 && Number.isInteger(s.period) && s.period >= 0 && s.period <= 11)
+    .filter(s => {
+      const key = `${s.day}:${s.period}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    })
+    .sort((a, b) => a.day - b.day || a.period - b.period);
+}
+
+function getRoomUnavailableSlots(roomId) {
+  const key = roomUnavailableConstraintKey(roomId);
+  return normalizeRoomUnavailableSlots(constraints()?.[key]?.unavailableSlots || []);
+}
+
+function setRoomUnavailableSlots(roomId, slots) {
+  if (!canEdit() || !roomId) return false;
+  const key = roomUnavailableConstraintKey(roomId);
+  const next = normalizeRoomUnavailableSlots(slots);
+  const domain = constraints();
+  if (!next.length) delete domain[key];
+  else {
+    domain[key] = {
+      ...(domain[key] || {}),
+      unavailableSlots: next,
+      workType: "fulltime",
+      maxPerDay: 99,
+      maxConsecutive: 99,
+      maxPerWeek: 0,
+      constraintNote: "교실 불가시간 저장용",
+    };
+  }
+  scheduleSave("timetable");
+  return true;
+}
+
+function getEffectiveRoomsForTimetable() {
+  return getRooms().map(room => ({
+    ...room,
+    unavailableSlots: getRoomUnavailableSlots(room.id)
+  }));
+}
+
 function getEffectiveAssignedRoomId(teacher) {
   return constraintsPanelApi?.getEffectiveAssignedRoomId(teacher) || null;
 }
@@ -742,13 +794,106 @@ function classIdForAudienceClassKey(classKey = "") {
   return cls?.id || "";
 }
 
+function getAudienceClassKeysForPlacementData(data = {}) {
+  const direct = (Array.isArray(data.audienceClassKeys) ? data.audienceClassKeys : [])
+    .map(clean)
+    .filter(Boolean);
+  if (direct.length) return [...new Set(direct)];
+
+  const cardKeys = ttCardIdsFromPlacement(data)
+    .map(id => getTtCardById(id))
+    .filter(Boolean)
+    .flatMap(card => getTtCardClassInfos(card).map(info => classKey(info)).filter(Boolean));
+  if (cardKeys.length) return [...new Set(cardKeys)];
+
+  const gradeKey = data.gradeKey || (Array.isArray(data.gradeKeys) ? data.gradeKeys[0] : "");
+  if (!gradeKey) return [];
+  return [classKey({ gradeKey, sectionIdx: data.sectionIdx ?? 0, section: sectionLabel(data.sectionIdx ?? 0) })].filter(Boolean);
+}
+
+function classInfoFromAudienceClassKey(key = "") {
+  const [gradeNo, rawSection] = String(key || "").split(":");
+  const gradeNum = Number(gradeNo);
+  const section = clean(rawSection).toUpperCase();
+  const gradeKey = Number.isFinite(gradeNum) && gradeNum > 0 ? `${gradeNum}학년` : "";
+  const cls = (appState.classes?.classes || []).find(c =>
+    c.grade === gradeKey && clean(c.name).toUpperCase() === section
+  );
+  return {
+    gradeKey,
+    section,
+    sectionIdx: cls ? (cls.sectionIdx ?? 0) : Math.max(0, section.charCodeAt(0) - 65),
+    classId: cls?.id || ""
+  };
+}
+
+function getHomeRoomIdForClassKey(key = "") {
+  const classId = classIdForAudienceClassKey(key);
+  if (!classId) return null;
+  return getRooms().find(r => r.homeRoomClassId === classId)?.id || null;
+}
+
 function getHomeRoomIdForPlacementData(data = {}) {
-  const classKeys = Array.isArray(data.audienceClassKeys) ? data.audienceClassKeys : [];
-  const classIds = classKeys.map(classIdForAudienceClassKey).filter(Boolean);
-  if (!classIds.length) return null;
-  const rooms = getRooms().filter(r => r.homeRoomClassId && classIds.includes(r.homeRoomClassId));
-  const roomIds = [...new Set(rooms.map(r => r.id))];
+  const classKeys = getAudienceClassKeysForPlacementData(data);
+  const roomIds = [...new Set(classKeys.map(getHomeRoomIdForClassKey).filter(Boolean))];
   return roomIds.length === 1 ? roomIds[0] : null;
+}
+
+function getRoomRuleApplyBlockEntries(entry = {}) {
+  if (!entry?.id) return [];
+  if (entry.groupId || entry.unitId) {
+    return entries().filter(e =>
+      e.day === entry.day &&
+      e.period === entry.period &&
+      ((entry.groupId && e.groupId === entry.groupId) || (entry.unitId && e.unitId === entry.unitId))
+    );
+  }
+  return [entry];
+}
+
+function buildClassScopedEntry(entry, classKeyValue, roomId) {
+  const info = classInfoFromAudienceClassKey(classKeyValue);
+  return normalizeTimetableEntry({
+    ...entry,
+    id: uid("ent"),
+    gradeKey: info.gradeKey || entry.gradeKey,
+    gradeKeys: info.gradeKey ? [info.gradeKey] : (entry.gradeKeys || [entry.gradeKey].filter(Boolean)),
+    sectionIdx: Number.isInteger(info.sectionIdx) ? info.sectionIdx : (entry.sectionIdx ?? 0),
+    audienceClassKeys: [classKeyValue],
+    roomRule: "homeroom",
+    roomId: roomId || null,
+    roomPinned: false,
+  });
+}
+
+function applyHomeroomRuleToEntryBlock(entry) {
+  const block = getRoomRuleApplyBlockEntries(entry);
+  if (!block.length) return false;
+
+  const originalEntries = entries();
+  const replaceMap = new Map();
+  block.forEach(e => {
+    const classKeys = getAudienceClassKeysForPlacementData(e);
+    if (classKeys.length <= 1) {
+      const oneKey = classKeys[0];
+      e.roomRule = "homeroom";
+      e.roomPinned = false;
+      e.roomId = oneKey ? getHomeRoomIdForClassKey(oneKey) : null;
+      return;
+    }
+    replaceMap.set(e.id, classKeys.map(key => buildClassScopedEntry(e, key, getHomeRoomIdForClassKey(key))));
+  });
+
+  if (replaceMap.size) {
+    const next = [];
+    originalEntries.forEach(e => {
+      if (replaceMap.has(e.id)) next.push(...replaceMap.get(e.id));
+      else next.push(e);
+    });
+    ttDomain().entries = next;
+  }
+  scheduleSave("timetable");
+  return true;
 }
 
 function getCardPreferenceForPlacementData(data = {}) {
@@ -813,7 +958,15 @@ function applyRoomRuleToEntry(entryId, rule = "auto", roomId = null) {
   const e = entries().find(x => x.id === entryId);
   if (!e) return false;
   captureTimetableUndo("수업 교실 설정");
-  e.roomRule = clean(rule) || "auto";
+  const normalizedRule = clean(rule) || "auto";
+
+  // 여러 학반을 한 번에 덮는 그룹/창체 카드는 entry 하나에 교실 하나만 담을 수 없으므로,
+  // 홈룸 적용 시 학반별 entry로 자동 분할해 각 학반의 홈룸을 배정합니다.
+  if (normalizedRule === "homeroom") {
+    return applyHomeroomRuleToEntryBlock(e);
+  }
+
+  e.roomRule = normalizedRule;
   e.roomPinned = e.roomRule === "fixed";
   if (e.roomRule === "fixed") e.roomId = clean(roomId) || e.roomId || null;
   else e.roomId = resolveRoomForPlacementData(e, e.roomRule);
@@ -1187,7 +1340,7 @@ function recomputeConflicts() {
     {
       getProtectedGrades: protectedGradesForEntry,
       getCompoundPartRefs: compoundPartRefsForPlacement,
-      rooms: getRooms()
+      rooms: getEffectiveRoomsForTimetable()
     }
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
@@ -1429,7 +1582,7 @@ function getManualPlacementBlock(candidates, options = {}) {
       {
         getProtectedGrades: protectedGradesForEntry,
         getCompoundPartRefs: compoundPartRefsForPlacement,
-        rooms: getRooms()
+        rooms: getEffectiveRoomsForTimetable()
       }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
@@ -1462,6 +1615,15 @@ function getEntryClassSummary(entry) {
     const txt = formatClassLabel(gradeKey, label);
     if (txt && !seen.has(txt)) { seen.add(txt); parts.push(txt); }
   };
+
+  const scopedClassKeys = Array.isArray(entry?.audienceClassKeys) ? entry.audienceClassKeys.map(clean).filter(Boolean) : [];
+  if (scopedClassKeys.length) {
+    scopedClassKeys.forEach(key => {
+      const info = classInfoFromAudienceClassKey(key);
+      addLabel(info.gradeKey, info.section);
+    });
+    if (parts.length) return parts.join(", ");
+  }
 
   if (cardIds.length) {
     cardIds.forEach(id => {
@@ -2387,6 +2549,107 @@ export const autoAssignAll = createAutoAssignAll({
   getConflictCounts, recomputeConflicts, renderAll, $
 });
 
+// ── Room unavailable slots manager ───────────────────────────────
+function slotKey(day, period) {
+  return `${day}:${period}`;
+}
+
+function renderRoomUnavailableManager(container) {
+  if (!container || container.querySelector("#ttRoomUnavailableManager")) return;
+  const rooms = getRooms();
+  const section = document.createElement("section");
+  section.id = "ttRoomUnavailableManager";
+  section.style.cssText = "margin-top:8px;border:1px solid #dbe4f0;border-radius:12px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.045);overflow:hidden;";
+
+  const head = document.createElement("div");
+  head.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:#f8fafc;border-bottom:1px solid #e6edf7;";
+  const title = document.createElement("div");
+  title.innerHTML = `<strong style="display:block;font-size:13px;color:#102a43">교실 불가시간</strong><span style="display:block;margin-top:1px;font-size:10px;color:#64748b">교사 조건의 불가능 시간처럼, 교실도 특정 요일·교시를 막습니다.</span>`;
+  const roomSelect = document.createElement("select");
+  roomSelect.style.cssText = "height:28px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 8px;font-size:11px;font-weight:800;color:#334155;";
+  if (!rooms.length) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "등록된 교실 없음";
+    roomSelect.appendChild(opt);
+  } else {
+    const last = localStorage.getItem("his:tt:roomUnavailable:selected") || "";
+    rooms.forEach(room => {
+      const opt = document.createElement("option");
+      opt.value = room.id;
+      opt.textContent = room.name || room.id;
+      if (room.id === last) opt.selected = true;
+      roomSelect.appendChild(opt);
+    });
+  }
+  head.append(title, roomSelect);
+  section.appendChild(head);
+
+  const body = document.createElement("div");
+  body.style.cssText = "padding:8px 10px 10px;overflow:auto;";
+  section.appendChild(body);
+
+  const renderGrid = () => {
+    body.innerHTML = "";
+    const roomId = roomSelect.value;
+    if (roomId) localStorage.setItem("his:tt:roomUnavailable:selected", roomId);
+    if (!roomId) {
+      body.textContent = "교실을 먼저 등록해 주세요.";
+      body.style.color = "#64748b";
+      body.style.fontSize = "11px";
+      return;
+    }
+    const active = new Set(getRoomUnavailableSlots(roomId).map(s => slotKey(s.day, s.period)));
+    const dayLabels = ["월", "화", "수", "목", "금"];
+    const periodLabels = ttConfig().periodLabels || [];
+    const grid = document.createElement("div");
+    grid.style.cssText = `display:grid;grid-template-columns:42px repeat(${dayLabels.length},minmax(54px,1fr));gap:3px;min-width:360px;`;
+    const corner = document.createElement("div");
+    corner.textContent = "교시";
+    corner.style.cssText = "display:flex;align-items:center;justify-content:center;height:24px;border-radius:7px;background:#eaf1fb;font-size:10px;font-weight:900;color:#334155;";
+    grid.appendChild(corner);
+    dayLabels.forEach(d => {
+      const h = document.createElement("div");
+      h.textContent = d;
+      h.style.cssText = "display:flex;align-items:center;justify-content:center;height:24px;border-radius:7px;background:#f1f5f9;font-size:10px;font-weight:900;color:#334155;";
+      grid.appendChild(h);
+    });
+    periodLabels.forEach((label, period) => {
+      const p = document.createElement("div");
+      p.textContent = label || `${period + 1}교시`;
+      p.style.cssText = "display:flex;align-items:center;justify-content:center;min-height:28px;border-radius:7px;background:#f8fafc;border:1px solid #e2e8f0;font-size:10px;font-weight:900;color:#475569;";
+      grid.appendChild(p);
+      dayLabels.forEach((_, day) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        const key = slotKey(day, period);
+        const on = active.has(key);
+        btn.textContent = on ? "불가" : "가능";
+        btn.disabled = !canEdit();
+        btn.style.cssText = [
+          "min-height:28px;border-radius:7px;font-size:10px;font-weight:900;cursor:pointer",
+          on ? "border:1px solid #ef4444;background:#fee2e2;color:#991b1b" : "border:1px solid #bbf7d0;background:#f0fdf4;color:#166534",
+          !canEdit() ? "opacity:.65;cursor:not-allowed" : ""
+        ].join(";");
+        btn.addEventListener("click", () => {
+          if (!canEdit()) return;
+          captureTimetableUndo("교실 불가시간 변경");
+          const next = getRoomUnavailableSlots(roomId).filter(s => slotKey(s.day, s.period) !== key);
+          if (!on) next.push({ day, period });
+          setRoomUnavailableSlots(roomId, next);
+          recomputeConflicts();
+          renderAll();
+        });
+        grid.appendChild(btn);
+      });
+    });
+    body.appendChild(grid);
+  };
+  roomSelect.addEventListener("change", renderGrid);
+  renderGrid();
+  container.appendChild(section);
+}
+
 // ── Schedule controls (toolbar) ───────────────────────────────────
 function renderScheduleControls() {
   const pcInp = $("ttPeriodCountInput");
@@ -2425,6 +2688,7 @@ function renderAll() {
         recomputeConflicts();
       }
     });
+    renderRoomUnavailableManager(roomsEl);
   }
 
   const logsEl = $("ttLogsContent");
@@ -2637,8 +2901,7 @@ function getDragPreviewCells(data = {}) {
 
 function isRoomUnavailableForDragPreview(roomId, day, period) {
   if (!roomId) return false;
-  const room = getRooms().find(r => r.id === roomId);
-  return Array.isArray(room?.unavailableSlots) && room.unavailableSlots.some(s => s.day === day && s.period === period);
+  return getRoomUnavailableSlots(roomId).some(s => s.day === day && s.period === period);
 }
 
 function getSlotEntriesForPreview(day, period, excludeIds = new Set()) {
