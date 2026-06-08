@@ -12,6 +12,7 @@ export function createAutoAssignAll(deps) {
     uid, sectionLabel, gradeDisplay, splitTeacherNames,
     getTemplateById, getTemplateCardTitle, getTtCardById,
     describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
+    getTeachersForTtCard,
     entries, ttDomain, ttConfig, constraints,
     buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
     audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
@@ -3302,7 +3303,7 @@ export function createAutoAssignAll(deps) {
 
         const groupBlockComplexity = block => {
           const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
-          const teachers = new Set(cards.flatMap(getTeachersForTtCard).filter(Boolean));
+          const teachers = new Set(getTeacherNamesFromCards(cards).filter(Boolean));
           const classKeys = new Set(cards.flatMap(card => card.classKeys || []).filter(Boolean));
           const maxCredits = Math.max(0, ...(block?.unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
           // 여러 학년·반·교사가 동시에 움직이는 그룹을 먼저 배치해야 후반부 카드 부족/미배치가 줄어듭니다.

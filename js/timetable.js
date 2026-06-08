@@ -2542,6 +2542,7 @@ export const autoAssignAll = createAutoAssignAll({
   uid, sectionLabel, gradeDisplay, splitTeacherNames,
   getTemplateById, getTemplateCardTitle, getTtCardById,
   describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
+  getTeachersForTtCard,
   entries, ttDomain, ttConfig, constraints,
   buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
   audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
