@@ -10,6 +10,7 @@ import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
 import { appState, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy } from "./state.js";
 import { versioned } from "./version.js";
+import { createAppModuleLoader } from "./app-module-loader.js";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -31,20 +32,16 @@ const { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, s
 
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
-// Initial curriculum board keeps only curriculum/templates in the startup bundle.
-// Other screens are downloaded when the user actually opens that menu.
-const lazyModules = {};
-function lazyImport(key, path) {
-  const moduleUrl = versioned(path);
-  return lazyModules[key] || (lazyModules[key] = import(moduleUrl));
-}
-const loadStudents     = () => lazyImport("students", "./students.js");
-const loadTeachers     = () => lazyImport("teachers", "./teachers.js");
-const loadRosters      = () => lazyImport("rosters", "./rosters.js");
-const loadResults      = () => lazyImport("results", "./results.js");
-const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
-const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
-const loadRooms        = () => lazyImport("rooms", "./rooms.js");
+// 지연 로딩 모듈 관리는 app-module-loader.js에서 담당합니다.
+// app.js는 화면별로 필요한 모듈을 요청만 합니다.
+const moduleLoader = createAppModuleLoader();
+const loadStudents     = () => moduleLoader.load("students");
+const loadTeachers     = () => moduleLoader.load("teachers");
+const loadRosters      = () => moduleLoader.load("rosters");
+const loadResults      = () => moduleLoader.load("results");
+const loadTtCards      = () => moduleLoader.load("ttcards");
+const loadSubjectSetup = () => moduleLoader.load("subjectSetup");
+const loadRooms        = () => moduleLoader.load("rooms");
 
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const resetBoardBtn    = document.getElementById("resetBoardBtn");
