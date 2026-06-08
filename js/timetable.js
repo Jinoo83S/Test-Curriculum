@@ -1025,10 +1025,32 @@ function renderEntryConflictDetailSection(box, entry) {
 }
 
 // ── Entry CRUD ────────────────────────────────────────────────────
+function getSameSlotCardIds(entry = {}) {
+  return [...new Set([...(entry.ttcardIds || []), entry.ttcardId].map(clean).filter(Boolean))];
+}
+
+function hasSameCardInSameSlot(candidate = {}) {
+  const ids = new Set(getSameSlotCardIds(candidate));
+  if (!ids.size || !Number.isInteger(candidate.day) || !Number.isInteger(candidate.period)) return false;
+
+  // 같은 과목카드는 시수만큼 서로 다른 슬롯에 여러 번 배치될 수 있습니다.
+  // 단, 같은 요일·교시에 같은 카드가 중복 생성되는 것은 데이터 오류이므로 막습니다.
+  return entries().some(entry => {
+    if (!entry || entry.id === candidate.id) return false;
+    if (entry.day !== candidate.day || entry.period !== candidate.period) return false;
+    return getSameSlotCardIds(entry).some(id => ids.has(id));
+  });
+}
+
 function addEntry(data) {
   if (!canEdit()) return null;
   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
+
+  if (hasSameCardInSameSlot(e)) {
+    alert("이미 같은 시간에 배치된 카드입니다. 기존 카드를 이동하거나 삭제한 뒤 다시 배치해 주세요.");
+    return null;
+  }
 
   // 수동 드래그 배치는 충돌이 있어도 먼저 허용합니다.
   // 이후 recomputeConflicts()에서 교사/교실/학급/동시배정/제약 충돌을 색상 배지로 표시합니다.

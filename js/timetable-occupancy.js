@@ -3,7 +3,8 @@
 // ================================================================
 // 이 파일의 목적:
 // - 자동배치, 충돌검사, 상세보기, 로그가 모두 같은 기준으로 수업 점유 범위를 판단하게 합니다.
-// - 시간표 사전작업에서 Firebase에 저장된 카드 데이터(classKeys/studentKeys/teacherNames)를 최우선으로 사용합니다.
+// - 시간표 사전작업에서 Firebase에 저장된 카드 데이터(classKeys/teacherNames)를 최우선으로 사용합니다.
+// - 학생 개인 단위 충돌은 사전작업(학생배정, 그룹묶음)에서 이미 해결하므로 시간표 배치 단계에서는 studentKeys를 사용하지 않습니다.
 // - 기존 데이터 호환을 위해 entry.audienceClassKeys, gradeKey/sectionIdx fallback도 유지합니다.
 
 const clean = v => String(v ?? "").trim();
@@ -82,14 +83,12 @@ function classKeyGrades(classKeys = new Set()) {
 
 function collapseStaleWholeGradeCardAudience(card = {}, occupancy) {
   const classKeys = occupancy.classKeys || new Set();
-  const studentKeys = occupancy.studentKeys || new Set();
   const gradeKey = card.gradeKey;
 
   // 과거 버전에서 CA/SA 계열 카드를 whole-grade로 잘못 생성해 classKeys가
-  // 9:A+9:B처럼 저장된 경우가 있습니다. 실제 학생명단이 없고,
-  // 명시적인 전체학년 키워드도 없으며, 한 학년 안에서 여러 반만 잡혀 있으면
-  // 해당 카드의 sectionIdx 한 반으로 되돌려 학생 충돌 오판을 막습니다.
-  if (studentKeys.size) return occupancy;
+  // 9:A+9:B처럼 저장된 경우가 있습니다. 명시적인 전체학년 키워드가 없고,
+  // 한 학년 안에서 여러 반만 잡혀 있으면 해당 카드의 sectionIdx 한 반으로 되돌려
+  // 학급 충돌 오판을 막습니다.
   if (!gradeKey || classKeys.size <= 1) return occupancy;
 
   const strict = isStrictWholeGradeText(
@@ -111,7 +110,6 @@ function collapseStaleWholeGradeCardAudience(card = {}, occupancy) {
 export function getCardOccupancy(card = {}) {
   const classKeys = new Set();
   const classLabels = new Set();
-  const studentKeys = new Set();
   const teacherNames = new Set();
   const ttcardIds = new Set();
 
@@ -133,7 +131,7 @@ export function getCardOccupancy(card = {}) {
     }
   });
 
-  (card.studentKeys || []).forEach(k => { if (clean(k)) studentKeys.add(clean(k)); });
+  // studentKeys는 배치 점유/충돌 판정에 사용하지 않습니다.
   teacherNamesFromValue(card.teacherNames || card.teachers || card.teacherName).forEach(t => teacherNames.add(t));
 
   // Legacy fallback: no stored audience → one grade/section card.
@@ -145,13 +143,12 @@ export function getCardOccupancy(card = {}) {
     }
   }
 
-  return collapseStaleWholeGradeCardAudience(card, { classKeys, classLabels, studentKeys, teacherNames, ttcardIds });
+  return collapseStaleWholeGradeCardAudience(card, { classKeys, classLabels, teacherNames, ttcardIds });
 }
 
 function mergeInto(target, source) {
   (source.classKeys || new Set()).forEach(v => target.classKeys.add(v));
   (source.classLabels || new Set()).forEach(v => target.classLabels.add(v));
-  (source.studentKeys || new Set()).forEach(v => target.studentKeys.add(v));
   (source.teacherNames || new Set()).forEach(v => target.teacherNames.add(v));
   (source.ttcardIds || new Set()).forEach(v => target.ttcardIds.add(v));
   return target;
@@ -161,7 +158,7 @@ function emptyOccupancy() {
   return {
     classKeys: new Set(),
     classLabels: new Set(),
-    studentKeys: new Set(),
+    studentKeys: new Set(), // legacy shape only; collision logic intentionally ignores it.
     teacherNames: new Set(),
     roomIds: new Set(),
     ttcardIds: new Set(),
@@ -198,8 +195,8 @@ export function getEntryOccupancy(entry = {}, ctx = {}) {
   });
 
   // 2. Entry snapshot audience saved at placement time.
-  // 카드가 없거나 카드에 청중 정보가 없을 때만 호환용으로 사용합니다.
-  if (!cardAudienceFound || (!out.classKeys.size && !out.studentKeys.size)) {
+  // 카드가 없거나 카드에 학급 정보가 없을 때만 호환용으로 사용합니다.
+  if (!cardAudienceFound || !out.classKeys.size) {
     (entry.audienceClassKeys || []).forEach(k => {
       const key = normalizeClassKey(k, entry.gradeKey);
       if (key) {
@@ -207,17 +204,17 @@ export function getEntryOccupancy(entry = {}, ctx = {}) {
         out.classLabels.add(formatClassLabelFromKey(key));
       }
     });
-    (entry.audienceStudentKeys || []).forEach(k => { if (clean(k)) out.studentKeys.add(clean(k)); });
+    // entry.audienceStudentKeys는 legacy 데이터 호환을 위해 읽지 않습니다.
   }
 
   // 3. Legacy fallback for old group entries only.
   // Important: a normal grouped card entry can have entry.groupId while still representing
   // only one class/card (for example 9A and 9B cards in the same group).
   // If we always merge every card in the group, each entry becomes 9A+9B and different
-  // sections are incorrectly marked as a student conflict.
+  // sections are incorrectly marked as a class conflict.
   // Therefore we load group-wide cards only when the entry has no concrete card/audience
   // snapshot at all.
-  if (entry.groupId && !directCardIds.length && !out.classKeys.size && !out.studentKeys.size) {
+  if (entry.groupId && !directCardIds.length && !out.classKeys.size) {
     const group = getGroupById(entry.groupId);
     getGroupCardIds(group).forEach(id => {
       if (out.ttcardIds.has(id)) return;
@@ -287,7 +284,7 @@ export function audiencesConflict(a = {}, b = {}) {
 export function conflictDetailBetween(a = {}, b = {}) {
   return {
     classKeys: setIntersection(a.classKeys, b.classKeys),
-    studentKeys: setIntersection(a.studentKeys, b.studentKeys),
+    studentKeys: [],
     teacherNames: setIntersection(a.teacherNames, b.teacherNames),
     roomIds: setIntersection(a.roomIds, b.roomIds),
   };

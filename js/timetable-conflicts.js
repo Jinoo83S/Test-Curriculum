@@ -12,8 +12,8 @@ import {
  * Returns Map<entryId, Set<"teacher"|"room"|"student"|"syncRequired">>
  *
  * getAudience(entry) is optional and can return:
- * { studentKeys:Set<string>, classKeys:Set<string> }.
- * When provided, class conflicts are checked by class audience overlap. Student keys are not used here;
+ * { classKeys:Set<string> }.
+ * When provided, class conflicts are checked by class audience overlap. Student keys are intentionally ignored;
  * student-level splits are handled during prework and concurrent group setup.
  */
 export function detectConflicts(entries, templateGroups = [], templates = [], getAudience = null, options = {}) {
@@ -51,14 +51,14 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
   };
   const fallbackAudience = e => getEntryOccupancy(e);
   const normalizeAudience = raw => ({
-    studentKeys: raw?.studentKeys instanceof Set ? raw.studentKeys : new Set(raw?.studentKeys || []),
+    studentKeys: new Set(),
     classKeys: raw?.classKeys instanceof Set ? raw.classKeys : new Set(raw?.classKeys || [])
   });
   const audienceFor = e => {
     if (typeof getAudience === "function") {
       try {
         const resolved = normalizeAudience(getAudience(e));
-        if (resolved.studentKeys.size || resolved.classKeys.size) return resolved;
+        if (resolved.classKeys.size) return resolved;
       } catch (err) {
         console.warn("Audience resolver failed:", err);
       }
