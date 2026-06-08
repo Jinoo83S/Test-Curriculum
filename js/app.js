@@ -1,6 +1,9 @@
 // ================================================================
-// app.js · Main Entry: Auth + Bootstrap
+// app.js · Main Entry / Bootstrap
 // ================================================================
+// 이 파일은 앱 전체 초기화만 담당합니다.
+// 화면별 UI, 도메인 구독, 지연 로딩, 렌더링은 전용 모듈로 분리되어 있습니다.
+
 import { onAuth, canEdit } from "./auth.js";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js";
 import { setupSaveStatusUi } from "./save-status-ui.js";
@@ -15,126 +18,152 @@ import { setupStudentManagementUi } from "./app-students-ui.js";
 import { setupAppBoardUi } from "./app-board-ui.js";
 import { setupAppTemplatesUi } from "./app-templates-ui.js";
 
-// ── Curriculum imports ────────────────────────────────────────────
-const curriculumApi = await import(versioned("./curriculum.js"));
-const { buildTabBoard, exportXLSX } = curriculumApi;
+const DEFAULT_VIEW = "board";
+const FIRESTORE_RENDER_DEBOUNCE_MS = 50;
 
-// ── Lazy-loaded view modules ──────────────────────────────────────
-const moduleLoader = createAppModuleLoader();
-const loadStudents     = () => moduleLoader.load("students");
-const loadTeachers     = () => moduleLoader.load("teachers");
-const loadRosters      = () => moduleLoader.load("rosters");
-const loadResults      = () => moduleLoader.load("results");
-const loadTtCards      = () => moduleLoader.load("ttcards");
-const loadSubjectSetup = () => moduleLoader.load("subjectSetup");
-const loadRooms        = () => moduleLoader.load("rooms");
+function resolveInitialView() {
+  return document.body?.dataset.initialView || DEFAULT_VIEW;
+}
 
-// ================================================================
-// BOOTSTRAP STATE
-// ================================================================
-const INITIAL_VIEW = document.body?.dataset.initialView || "board";
-let renderer = null;
-let templateUi = null;
-let navigationUi = null;
+function createLazyLoaders() {
+  const moduleLoader = createAppModuleLoader();
+  return {
+    students:     () => moduleLoader.load("students"),
+    teachers:     () => moduleLoader.load("teachers"),
+    rosters:      () => moduleLoader.load("rosters"),
+    results:      () => moduleLoader.load("results"),
+    ttCards:      () => moduleLoader.load("ttcards"),
+    subjectSetup: () => moduleLoader.load("subjectSetup"),
+    rooms:        () => moduleLoader.load("rooms"),
+  };
+}
 
-const studentUi = setupStudentManagementUi({
-  loadStudents,
-  getActiveView: () => renderer?.getActiveView?.() || INITIAL_VIEW,
-});
+function setupFirestoreRenderDebounce(renderer) {
+  let renderTimer = null;
+  const pendingDomains = new Set();
 
-const boardUi = setupAppBoardUi({
-  buildTabBoard,
-  exportXLSX,
-  renderSidebar: () => renderer?.renderSidebar?.(),
-  renderApp: () => renderer?.render?.(),
-});
+  setOnUpdate(domain => {
+    pendingDomains.add(domain || "__all__");
+    clearTimeout(renderTimer);
+    renderTimer = setTimeout(() => {
+      const domains = new Set(pendingDomains);
+      pendingDomains.clear();
+      renderer.render(domains);
+    }, FIRESTORE_RENDER_DEBOUNCE_MS);
+  });
+}
 
-renderer = createAppRenderOrchestrator({
-  initialView: INITIAL_VIEW,
-  appState,
-  canEdit,
-  domainsForView,
-  waitForDomainsLoaded,
-  syncDomainSubscriptionsForView,
-  syncNavigation: (view, section) => navigationUi?.syncNavigation?.(view, section),
-  boardUi,
-  studentUi,
-  loadTeachers,
-  loadRosters,
-  loadResults,
-  loadTtCards,
-  loadSubjectSetup,
-  loadRooms,
-  getTemplateUi: () => templateUi,
-});
+function setupLocalDataChangeHandler({ boardUi, renderer }) {
+  setupSaveStatusUi({
+    onLocalDataChanged: () => {
+      boardUi.invalidateTabs();
+      renderer.render("all");
+    },
+  });
+}
 
-navigationUi = setupAppNavigationUi({
-  initialView: renderer.getActiveView(),
-  initialSection: document.body?.dataset.section,
-  getCurrentView: () => renderer.getActiveView(),
-  navigateTo: view => renderer.navigateTo(view),
-  resetBeforeBoard: () => templateUi?.resetTemplateForm(),
-});
+function setupAuthStateHandler({ boardUi, renderer }) {
+  setupAuthUi();
+  setAuthCheckingUI();
 
-templateUi = setupAppTemplatesUi({
-  ensureDomains,
-  invalidateTabs: () => boardUi.invalidateTabs(),
-  renderApp: () => renderer.render(),
-  renderBoardTab: () => boardUi.renderBoardTab(),
-  renderResultsPanel: () => renderer.renderResultsPanel(),
-  renderTeacherPanel: () => renderer.renderTeacherPanel(),
-  renderGroupManagerView: () => renderer.renderGroupManagerView(),
-  getActiveView: () => renderer.getActiveView(),
-  navigateToBoard: () => void renderer.navigateTo("board"),
-  curriculumApi,
-});
+  onAuth(async user => {
+    updateAuthUI(user);
 
-// ================================================================
-// GLOBAL UI SETUP
-// ================================================================
-setupAppSidebarUi();
+    if (!user) {
+      stopAllDomainSubscriptions();
+      boardUi.invalidateTabs();
+      renderer.render();
+      return;
+    }
 
-let _renderTimer = null;
-const _pendingRenderDomains = new Set();
-setOnUpdate(domain => {
-  _pendingRenderDomains.add(domain || "__all__");
-  clearTimeout(_renderTimer);
-  _renderTimer = setTimeout(() => {
-    const domains = new Set(_pendingRenderDomains);
-    _pendingRenderDomains.clear();
-    renderer.render(domains);
-  }, 50);
-});
-
-setupSaveStatusUi({
-  onLocalDataChanged: () => {
-    boardUi.invalidateTabs();
-    renderer.render("all");
-  }
-});
-
-setupAuthUi();
-setAuthCheckingUI();
-
-onAuth(async (user) => {
-  updateAuthUI(user);
-  if (user) {
     try {
       await migrateFromLegacy();
-    } catch (e) {
-      console.warn("Migration skipped; continuing normal load.", e);
+    } catch (error) {
+      console.warn("Migration skipped; continuing normal load.", error);
     } finally {
       resetDomainSubscriptions();
-      syncDomainSubscriptionsForView(renderer.getActiveView() || "board");
+      syncDomainSubscriptionsForView(renderer.getActiveView() || DEFAULT_VIEW);
     }
-  } else {
-    stopAllDomainSubscriptions();
-    boardUi.invalidateTabs();
-    renderer.render();
-  }
-});
+  });
+}
 
-// ── Initial render ────────────────────────────────────────────────
-renderer.setView(renderer.getActiveView());
-navigationUi?.syncNavigation(renderer.getActiveView(), VIEW_TO_SECTION[renderer.getActiveView()]);
-renderer.render();
+async function createCurriculumApi() {
+  return import(versioned("./curriculum.js"));
+}
+
+async function bootstrap() {
+  const initialView = resolveInitialView();
+  const curriculumApi = await createCurriculumApi();
+  const { buildTabBoard, exportXLSX } = curriculumApi;
+  const loaders = createLazyLoaders();
+
+  let renderer = null;
+  let templateUi = null;
+  let navigationUi = null;
+
+  const studentUi = setupStudentManagementUi({
+    loadStudents: loaders.students,
+    getActiveView: () => renderer?.getActiveView?.() || initialView,
+  });
+
+  const boardUi = setupAppBoardUi({
+    buildTabBoard,
+    exportXLSX,
+    renderSidebar: () => renderer?.renderSidebar?.(),
+    renderApp: () => renderer?.render?.(),
+  });
+
+  renderer = createAppRenderOrchestrator({
+    initialView,
+    appState,
+    canEdit,
+    domainsForView,
+    waitForDomainsLoaded,
+    syncDomainSubscriptionsForView,
+    syncNavigation: (view, section) => navigationUi?.syncNavigation?.(view, section),
+    boardUi,
+    studentUi,
+    loadTeachers: loaders.teachers,
+    loadRosters: loaders.rosters,
+    loadResults: loaders.results,
+    loadTtCards: loaders.ttCards,
+    loadSubjectSetup: loaders.subjectSetup,
+    loadRooms: loaders.rooms,
+    getTemplateUi: () => templateUi,
+  });
+
+  navigationUi = setupAppNavigationUi({
+    initialView: renderer.getActiveView(),
+    initialSection: document.body?.dataset.section,
+    getCurrentView: () => renderer.getActiveView(),
+    navigateTo: view => renderer.navigateTo(view),
+    resetBeforeBoard: () => templateUi?.resetTemplateForm(),
+  });
+
+  templateUi = setupAppTemplatesUi({
+    ensureDomains,
+    invalidateTabs: () => boardUi.invalidateTabs(),
+    renderApp: () => renderer.render(),
+    renderBoardTab: () => boardUi.renderBoardTab(),
+    renderResultsPanel: () => renderer.renderResultsPanel(),
+    renderTeacherPanel: () => renderer.renderTeacherPanel(),
+    renderGroupManagerView: () => renderer.renderGroupManagerView(),
+    getActiveView: () => renderer.getActiveView(),
+    navigateToBoard: () => void renderer.navigateTo(DEFAULT_VIEW),
+    curriculumApi,
+  });
+
+  setupAppSidebarUi();
+  setupFirestoreRenderDebounce(renderer);
+  setupLocalDataChangeHandler({ boardUi, renderer });
+  setupAuthStateHandler({ boardUi, renderer });
+
+  renderer.setView(renderer.getActiveView());
+  navigationUi.syncNavigation(renderer.getActiveView(), VIEW_TO_SECTION[renderer.getActiveView()]);
+  renderer.render();
+}
+
+bootstrap().catch(error => {
+  console.error("[app bootstrap]", error);
+  alert(`앱을 초기화하는 중 오류가 발생했습니다.\n${error?.message || error}`);
+});
