@@ -88,7 +88,11 @@ let currentRoom    = "";
 let teacherPickerOutsideHandlerInstalled = false;
 let roomPickerOutsideHandlerInstalled = false;
 let dragData       = null;
+let dragPreviewRaf = 0;
+let dragPreviewToken = 0;
 const TT_DRAG_MIME = "application/x-his-timetable-drag";
+const DRAG_PREVIEW_FRAME_BUDGET_MS = 7;
+const DRAG_PREVIEW_MAX_VISIBLE_CELLS = 180;
 
 // 시간표 카드 갱신/불러오기는 curriculum + templates + rosters 원본이 모두 필요합니다.
 // state.js의 TIMETABLE_CORE_DOMAINS가 가볍게 유지되어 있어도, 시간표 페이지에서는
@@ -2524,7 +2528,7 @@ function previewClassForBlock(block) {
   if (block.kind === "protected") return "tt-drag-preview-student";
   const types = new Set(block.conflictTypes || []);
   if (types.has("teacher")) return "tt-drag-preview-teacher";
-  if (types.has("room")) return "tt-drag-preview-room";
+  if (types.has("room") || types.has("roomUnavailable")) return "tt-drag-preview-room";
   if (types.has("student")) return "tt-drag-preview-student";
   return "tt-drag-preview-student";
 }
@@ -2557,30 +2561,156 @@ function clearDragPreviewClasses() {
   });
 }
 
+function cancelDragPreviewWork() {
+  dragPreviewToken += 1;
+  if (dragPreviewRaf) {
+    cancelAnimationFrame(dragPreviewRaf);
+    dragPreviewRaf = 0;
+  }
+}
+
+function isElementInViewport(el) {
+  if (!el || typeof el.getBoundingClientRect !== "function") return false;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return false;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  return rect.bottom >= 0 && rect.top <= vh && rect.right >= 0 && rect.left <= vw;
+}
+
+function getDragPreviewCells(data = {}) {
+  const all = [...document.querySelectorAll(".tt-cell[data-day][data-period]")];
+  const visible = all.filter(isElementInViewport);
+  const source = visible.length ? visible : all.slice(0, DRAG_PREVIEW_MAX_VISIBLE_CELLS);
+
+  // 하단 과목카드 드래그 때 전체보기의 모든 셀을 한 번에 검사하면 브라우저가 멈출 수 있습니다.
+  // 현재 보이는 셀 위주로, 그리고 명확히 다른 학년 행은 가능한 줄여서 검사합니다.
+  const gradeKey = data?.gradeKey || "";
+  const filtered = gradeKey
+    ? source.filter(cell => !cell.dataset.gradeKey || cell.dataset.gradeKey === gradeKey || data.kind === "group" || data.groupId)
+    : source;
+
+  return filtered.slice(0, DRAG_PREVIEW_MAX_VISIBLE_CELLS);
+}
+
+function isRoomUnavailableForDragPreview(roomId, day, period) {
+  if (!roomId) return false;
+  const room = getRooms().find(r => r.id === roomId);
+  return Array.isArray(room?.unavailableSlots) && room.unavailableSlots.some(s => s.day === day && s.period === period);
+}
+
+function getSlotEntriesForPreview(day, period, excludeIds = new Set()) {
+  return entries().filter(e => e && e.day === day && e.period === period && !excludeIds.has(e.id));
+}
+
+function getDragPreviewBlockLight(candidates, options = {}) {
+  const candidateList = (Array.isArray(candidates) ? candidates : [candidates])
+    .filter(Boolean)
+    .map((candidate, idx) => normalizeTimetableEntry({
+      ...candidate,
+      id: candidate.id || `__drag_preview_${idx}`
+    }));
+
+  if (!candidateList.length) return null;
+
+  const excludeIds = new Set(options.excludeIds || []);
+
+  for (const candidate of candidateList) {
+    const slotEntries = getSlotEntriesForPreview(candidate.day, candidate.period, excludeIds);
+    const candidateAudience = audienceForPlacement(candidate);
+    const candidateGrades = audienceCanonicalGradeSet(candidateAudience);
+    const candidateProtectedGrades = protectedGradesForEntry(candidate);
+    const candidateTeachers = new Set(splitTeacherNames(candidate.teacherName || ""));
+
+    if (isRoomUnavailableForDragPreview(candidate.roomId, candidate.day, candidate.period)) {
+      return { kind: "conflict", candidate, conflictTypes: ["roomUnavailable"] };
+    }
+
+    for (const fixed of slotEntries) {
+      const fixedAudience = audienceForPlacement(fixed);
+      const fixedProtectedGrades = protectedGradesForEntry(fixed);
+      const fixedGrades = audienceCanonicalGradeSet(fixedAudience);
+
+      if (candidateProtectedGrades.size || fixedProtectedGrades.size) {
+        if (audiencesConflict(candidateAudience, fixedAudience)) {
+          return { kind: "protected", block: { entry: fixed, reason: "audience" }, candidate };
+        }
+        if (fixedProtectedGrades.size && setsIntersect(candidateGrades, fixedProtectedGrades)) {
+          return { kind: "protected", block: { entry: fixed, reason: "protected-fixed-grade" }, candidate };
+        }
+        if (candidateProtectedGrades.size && setsIntersect(candidateProtectedGrades, fixedGrades)) {
+          return { kind: "protected", block: { entry: fixed, reason: "protected-candidate-grade" }, candidate };
+        }
+      }
+
+      if (audiencesConflict(candidateAudience, fixedAudience)) {
+        return { kind: "conflict", candidate, conflictTypes: ["student"] };
+      }
+
+      const fixedTeachers = splitTeacherNames(fixed.teacherName || "");
+      if (candidateTeachers.size && fixedTeachers.some(t => candidateTeachers.has(t))) {
+        return { kind: "conflict", candidate, conflictTypes: ["teacher"] };
+      }
+
+      if (candidate.roomId && fixed.roomId && candidate.roomId === fixed.roomId) {
+        return { kind: "conflict", candidate, conflictTypes: ["room"] };
+      }
+    }
+  }
+
+  return null;
+}
+
+function markDragPreviewCell(cell, data) {
+  const day = parseInt(cell.dataset.day, 10);
+  const period = parseInt(cell.dataset.period, 10);
+  if (!Number.isFinite(day) || !Number.isFinite(period)) return;
+
+  const patch = {};
+  if (cell.dataset.gradeKey) patch.gradeKey = cell.dataset.gradeKey;
+  if (cell.dataset.sectionIdx !== undefined) patch.sectionIdx = parseInt(cell.dataset.sectionIdx, 10) || 0;
+
+  const { candidates, excludeIds } = buildDragPreviewCandidates(data, day, period, patch);
+  if (!candidates.length) return;
+
+  const block = getDragPreviewBlockLight(candidates, { excludeIds });
+  const cls = previewClassForBlock(block);
+  cell.classList.add(cls);
+
+  if (cls !== "tt-drag-preview-ok") {
+    const suffix = cls.includes("teacher") ? "teacher" : cls.includes("room") ? "room" : "student";
+    cell.closest("tr")?.querySelector(".tt-all-row-hdr,.tt-period-label,.tt-section-sub-hdr")?.classList.add(`tt-drag-preview-row-${suffix}`);
+    document.querySelectorAll(`.tt-period-sub-hdr[data-day="${day}"][data-period="${period}"]`).forEach(h => h.classList.add(`tt-drag-preview-slot-${suffix}`));
+  }
+}
+
 function applySlotDragPreview(data) {
+  cancelDragPreviewWork();
   clearDragPreviewClasses();
-  const cells = [...document.querySelectorAll(".tt-cell[data-day][data-period]")];
+
+  const cells = getDragPreviewCells(data);
   if (!cells.length) return;
 
-  cells.forEach(cell => {
-    const day = parseInt(cell.dataset.day, 10);
-    const period = parseInt(cell.dataset.period, 10);
-    if (!Number.isFinite(day) || !Number.isFinite(period)) return;
-    const patch = {};
-    if (cell.dataset.gradeKey) patch.gradeKey = cell.dataset.gradeKey;
-    if (cell.dataset.sectionIdx !== undefined) patch.sectionIdx = parseInt(cell.dataset.sectionIdx, 10) || 0;
-    const { candidates, excludeIds } = buildDragPreviewCandidates(data, day, period, patch);
-    if (!candidates.length) return;
-    const block = getManualPlacementBlock(candidates, { excludeIds });
-    const cls = previewClassForBlock(block);
-    cell.classList.add(cls);
+  const token = ++dragPreviewToken;
+  let index = 0;
 
-    if (cls !== "tt-drag-preview-ok") {
-      const suffix = cls.includes("teacher") ? "teacher" : cls.includes("room") ? "room" : "student";
-      cell.closest("tr")?.querySelector(".tt-all-row-hdr,.tt-period-label,.tt-section-sub-hdr")?.classList.add(`tt-drag-preview-row-${suffix}`);
-      document.querySelectorAll(`.tt-period-sub-hdr[data-day="${day}"][data-period="${period}"]`).forEach(h => h.classList.add(`tt-drag-preview-slot-${suffix}`));
+  const run = () => {
+    if (token !== dragPreviewToken) return;
+
+    const deadline = performance.now() + DRAG_PREVIEW_FRAME_BUDGET_MS;
+    while (index < cells.length && performance.now() < deadline) {
+      markDragPreviewCell(cells[index], data);
+      index += 1;
     }
-  });
+
+    if (index < cells.length) {
+      dragPreviewRaf = requestAnimationFrame(run);
+    } else {
+      dragPreviewRaf = 0;
+    }
+  };
+
+  dragPreviewRaf = requestAnimationFrame(run);
 }
 
 /** Called on dragstart: highlight relevant cells / sidebar cards */
@@ -2607,6 +2737,7 @@ function applyDragHighlight(data) {
 }
 
 function clearDragHighlight() {
+  cancelDragPreviewWork();
   document.querySelectorAll(".tt-drag-teacher-busy,.tt-drag-grade-highlight").forEach(el => {
     el.classList.remove("tt-drag-teacher-busy","tt-drag-grade-highlight");
   });
