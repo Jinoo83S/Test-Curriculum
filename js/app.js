@@ -11,6 +11,7 @@ import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainS
 import { appState, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy } from "./state.js";
 import { versioned } from "./version.js";
 import { createAppModuleLoader } from "./app-module-loader.js";
+import { setupStudentManagementUi } from "./app-students-ui.js";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -42,6 +43,11 @@ const loadResults      = () => moduleLoader.load("results");
 const loadTtCards      = () => moduleLoader.load("ttcards");
 const loadSubjectSetup = () => moduleLoader.load("subjectSetup");
 const loadRooms        = () => moduleLoader.load("rooms");
+
+const studentUi = setupStudentManagementUi({
+  loadStudents,
+  getActiveView: () => activeMainView,
+});
 
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const resetBoardBtn    = document.getElementById("resetBoardBtn");
@@ -111,23 +117,6 @@ const ttCardsContent  = document.getElementById("ttCardsContent");
 const subjectSetupMgrView = document.getElementById("subjectSetupView");
 const subjectSetupContent = document.getElementById("subjectSetupContent");
 
-// ── DOM: Student management sub-elements ──────────────────────────
-const classListEl       = document.getElementById("classList");
-const addClassBtn       = document.getElementById("addClassBtn");
-const classNameInput    = document.getElementById("classNameInput");
-const classGradeSelect  = document.getElementById("classGradeSelect");
-const deleteClassBtn    = document.getElementById("deleteClassBtn");
-const studentCountEl    = document.getElementById("studentCount");
-const studentMainEmpty  = document.getElementById("studentMainEmpty");
-const studentMainContent= document.getElementById("studentMainContent");
-const excelPasteArea    = document.getElementById("excelPasteArea");
-const parsePasteBtn     = document.getElementById("parsePasteBtn");
-const clearPasteBtn     = document.getElementById("clearPasteBtn");
-const studentTableBody  = document.getElementById("studentTableBody");
-const studentTableEmpty = document.getElementById("studentTableEmpty");
-const addStudentRowBtn  = document.getElementById("addStudentRowBtn");
-const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
-
 // ── DOM: Board tab buttons ───────────────────────────────────────
 // 분리된 페이지(roster/setup/prework/results)에는 이 버튼들이 없으므로
 // 반드시 명시적으로 null-safe DOM 참조를 만들어야 합니다.
@@ -142,7 +131,6 @@ const tab10to12Btn = document.getElementById("tab10to12Btn");
 const INITIAL_VIEW = document.body?.dataset.initialView || "board";
 let activeMainView = INITIAL_VIEW;
 let activeTab = "tab7to9";
-let selectedClassId = null;
 
 const navigationUi = setupAppNavigationUi({
   initialView: activeMainView,
@@ -325,32 +313,6 @@ async function renderGroupManagerView() {
   if (activeMainView === "groups") renderGroupMgrFromTtCards(groupMgrBoard);
 }
 
-async function renderStudentView() {
-  if (activeMainView !== "students") return;
-  const { renderClassList, getClassById } = await loadStudents();
-  if (activeMainView !== "students") return;
-  function handleClassSelect(classId) {
-    selectedClassId = classId;
-    const cls = getClassById(classId);
-    if (cls) {
-      studentMainEmpty?.classList.add("hidden"); studentMainContent?.classList.remove("hidden");
-      if (classNameInput)  classNameInput.value   = cls.name;
-      if (classGradeSelect) classGradeSelect.value = cls.grade;
-    }
-    void renderStudentTableView();
-    if (classListEl) renderClassList(classListEl, selectedClassId, handleClassSelect);
-  }
-  if (classListEl) renderClassList(classListEl, selectedClassId, handleClassSelect);
-}
-
-async function renderStudentTableView() {
-  if (!selectedClassId || activeMainView !== "students") return;
-  const { renderStudentTable } = await loadStudents();
-  if (activeMainView === "students") {
-    renderStudentTable(studentTableBody, selectedClassId, studentTableEmpty, studentCountEl);
-  }
-}
-
 // View renderer map — 화면별 렌더러를 한 곳에서 관리합니다.
 // 새 화면이 추가될 때 render()/navigateTo()의 if-chain을 수정하지 않고
 // 여기만 확장하면 됩니다.
@@ -358,7 +320,7 @@ const VIEW_RENDERERS = {
   board:        () => renderBoardTab(),
   groups:       () => renderGroupManagerView(),
   manager:      () => renderTemplateManagerView(),
-  students:     () => renderStudentView(),
+  students:     () => studentUi.renderStudentView(),
   teachers:     () => renderTeacherPanel(),
   rooms:        () => renderRoomsPanel(),
   rosters:      () => renderRosterPanel(),
@@ -378,7 +340,7 @@ const VIEW_NAVIGATION_HOOKS = {
     after:  () => renderSidebar(),
   },
   students: {
-    before: () => { selectedClassId = null; },
+    before: () => studentUi.resetSelection(),
   },
 };
 
@@ -446,10 +408,9 @@ function setControlsDisabled(disabled) {
    resetBoardBtn, exportXlsxBtn,
    groupMgrAddBtn,
    tplMgrBackBtn, tplMgrAddBtn, tplMgrSaveBtn, tplMgrDiscBtn,
-   tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrSortBtn, tplMgrLevel,
-   addClassBtn, deleteClassBtn, classNameInput, classGradeSelect,
-   parsePasteBtn, clearPasteBtn, addStudentRowBtn, exportStudentBtn
+   tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrSortBtn, tplMgrLevel
   ].forEach(el => { if (el) el.disabled = disabled; });
+  studentUi?.setDisabled(disabled);
 }
 
 // ================================================================
@@ -684,69 +645,6 @@ tplPasteBtn?.addEventListener("click", () => {
   alert(`${added}개 과목카드가 추가되었습니다.`);
 });
 tplPasteClearBtn?.addEventListener("click", () => { if (tplPasteArea) tplPasteArea.value = ""; });
-
-// ── Student management ────────────────────────────────────────────
-addClassBtn?.addEventListener("click", async () => {
-  const { addNewClass } = await loadStudents();
-  const cls = addNewClass(); if (!cls) return;
-  selectedClassId = cls.id;
-  studentMainEmpty?.classList.add("hidden"); studentMainContent?.classList.remove("hidden");
-  if (classNameInput) classNameInput.value = cls.name;
-  if (classGradeSelect) classGradeSelect.value = cls.grade;
-  await renderStudentView(); await renderStudentTableView();
-  setTimeout(() => { classNameInput?.focus(); classNameInput?.select(); }, 50);
-});
-
-deleteClassBtn?.addEventListener("click", async () => {
-  const { deleteClass } = await loadStudents();
-  if (deleteClass(selectedClassId)) {
-    selectedClassId = null;
-    studentMainEmpty?.classList.remove("hidden"); studentMainContent?.classList.add("hidden");
-    void renderStudentView();
-  }
-});
-
-classNameInput?.addEventListener("change", async e => {
-  const { updateClass } = await loadStudents();
-  updateClass(selectedClassId, "name", e.target.value);
-  void renderStudentView();
-});
-classGradeSelect?.addEventListener("change", async e => {
-  const { updateClass } = await loadStudents();
-  updateClass(selectedClassId, "grade", e.target.value);
-  void renderStudentView();
-});
-
-parsePasteBtn?.addEventListener("click", async () => {
-  const raw = excelPasteArea?.value.trim();
-  if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
-  const { getClassById, parseExcelPaste } = await loadStudents();
-  const cls = getClassById(selectedClassId); if (!cls) { alert("반을 먼저 선택해 주세요."); return; }
-  const parsed = parseExcelPaste(raw);
-  if (!parsed.length) { alert("파싱된 학생이 없습니다.\n엑셀에서 이름이 포함된 셀을 복사해 붙여넣기 해주세요."); return; }
-  parsed.forEach(s => { cls.students.push(s); }); scheduleSave("classes");
-  if (excelPasteArea) excelPasteArea.value = "";
-  void renderStudentTableView(); void renderStudentView();
-  alert(`${parsed.length}명이 추가되었습니다.`);
-});
-
-clearPasteBtn?.addEventListener("click", () => { if (excelPasteArea) excelPasteArea.value = ""; });
-
-addStudentRowBtn?.addEventListener("click", async () => {
-  const { addStudentToClass } = await loadStudents();
-  const s = addStudentToClass(selectedClassId); if (!s) return;
-  await renderStudentTableView(); await renderStudentView();
-  setTimeout(() => {
-    const rows = studentTableBody?.querySelectorAll("tr");
-    const last = rows?.[rows.length - 1];
-    last?.scrollIntoView({ behavior:"smooth", block:"nearest" }); last?.querySelector("input")?.focus();
-  }, 50);
-});
-
-exportStudentBtn?.addEventListener("click", async () => {
-  const { exportStudentXlsx } = await loadStudents();
-  exportStudentXlsx(selectedClassId);
-});
 
 // ── Initial render ────────────────────────────────────────────────
 setView(activeMainView);
