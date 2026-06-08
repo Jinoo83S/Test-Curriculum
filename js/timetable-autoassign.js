@@ -29,6 +29,60 @@ export function createAutoAssignAll(deps) {
     scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
   }
 
+  // 자동배치 전/후 배치를 자동으로 보관해 비교와 복구가 쉽도록 합니다.
+  // 커리큘럼/카드/교사조건은 저장하지 않고, 배치 entries만 savedSchedules에 넣습니다.
+  function formatAutoSnapshotTime(date = new Date()) {
+    const pad = n => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function normalizeSnapshotEntries(list = []) {
+    return (list || []).map(entry => {
+      const cloned = cloneAutoAssignData(entry || {});
+      return typeof normalizeTimetableEntry === "function"
+        ? normalizeTimetableEntry(cloned)
+        : cloned;
+    }).filter(entry => entry && (entry.templateId || entry.ttcardId || (entry.ttcardIds || []).length));
+  }
+
+  function saveAutoAssignScheduleSnapshot(kind, sourceEntries = [], meta = {}) {
+    const snapshotEntries = normalizeSnapshotEntries(sourceEntries);
+    if (!snapshotEntries.length) return null;
+
+    const domain = ttDomain();
+    if (!Array.isArray(domain.savedSchedules)) domain.savedSchedules = [];
+
+    const now = new Date();
+    const modeLabel = meta.modeText || (meta.options?.placementMode === "keep" ? "현재 배치 유지" : "초기화 후 배치");
+    const grades = (meta.activeGrades || []).map(g => typeof gradeDisplay === "function" ? gradeDisplay(g) : g).filter(Boolean).join(", ");
+    const label = kind === "before" ? "자동배치 전" : "자동배치 결과";
+    const version = {
+      id: uid(`ttv_auto_${kind}`),
+      name: `${label} ${formatAutoSnapshotTime(now)}`,
+      note: [
+        "자동 생성된 배치 보관본입니다.",
+        grades ? `대상: ${grades}` : "",
+        modeLabel ? `방식: ${modeLabel}` : "",
+        meta.validationSummary ? `검증: ${meta.validationSummary}` : ""
+      ].filter(Boolean).join(" / "),
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+      periodCount: Math.max(1, Number(ttConfig()?.periodCount || 7)),
+      entryCount: snapshotEntries.length,
+      autoSnapshot: true,
+      snapshotKind: kind,
+      source: "autoassign",
+      entries: snapshotEntries,
+    };
+
+    // 자동 스냅샷이 너무 많이 쌓이지 않도록 최근 12개만 유지하고, 전체 보관본은 30개로 제한합니다.
+    const existing = domain.savedSchedules || [];
+    const autoSnapshots = existing.filter(v => v?.autoSnapshot === true);
+    const keepAutoIds = new Set(autoSnapshots.slice(0, 11).map(v => v.id));
+    domain.savedSchedules = [version, ...existing.filter(v => v?.autoSnapshot !== true || keepAutoIds.has(v.id))].slice(0, 30);
+    return version;
+  }
+
   // ── Restricted-teacher helpers ─────────────────────────────────
   // 시간강사/육아단축/제한근무 교사는 자동배치에서 고정 수업 다음 우선순위로 다룹니다.
   const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
@@ -2856,6 +2910,11 @@ export function createAutoAssignAll(deps) {
 
     const autoStartedAt = Date.now();
     const rollbackEntriesSnapshot = cloneAutoAssignData(entries());
+    const beforeAutoSnapshot = saveAutoAssignScheduleSnapshot("before", rollbackEntriesSnapshot, { activeGrades, modeText, options });
+    if (beforeAutoSnapshot) {
+      addTimetableLog("auto", "자동배치 전 배치 보관", `${beforeAutoSnapshot.name}으로 현재 배치를 저장했습니다.`);
+      await persistTimetableNow();
+    }
     let rollbackConsumed = false;
     let autoAssignCancelled = false;
     const progress = createAutoAssignProgressDialog(autoTargetSlots, () => { autoAssignCancelled = true; });
@@ -3247,6 +3306,12 @@ export function createAutoAssignAll(deps) {
     });
 
     bestPlaced.forEach(e => entries().push(e));
+    const afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), {
+      activeGrades,
+      modeText,
+      options,
+      validationSummary: postValidation.summary || (postValidation.ok ? "통과" : "확인 필요")
+    });
     await persistTimetableNow();
     recomputeConflicts();
 
@@ -3314,7 +3379,9 @@ export function createAutoAssignAll(deps) {
       restrictedTeacherCount: restrictedTeacherNames.length,
       restrictedTeacherNames,
       restrictedStandaloneCount,
-      restrictedGroupCount
+      restrictedGroupCount,
+      beforeSnapshotName: beforeAutoSnapshot?.name || "",
+      afterSnapshotName: afterAutoSnapshot?.name || ""
     };
     setLastAutoAssignReport(report);
     addTimetableLog(
@@ -3327,6 +3394,9 @@ export function createAutoAssignAll(deps) {
       "자동배치 결과 분석",
       `수업 블록 ${outcomeAnalysis.placedBlockCount}개(그룹 ${outcomeAnalysis.placedGroupBlockCount}, 일반 ${outcomeAnalysis.placedStandaloneBlockCount}) · 배치 카드 ${outcomeAnalysis.placedCardCount}개 · 미배치 유닛 ${outcomeAnalysis.failedUnitCount}개 / ${outcomeAnalysis.failedOccurrenceCount}회차`
     );
+    if (afterAutoSnapshot) {
+      addTimetableLog("auto", "자동배치 결과 배치 보관", `${afterAutoSnapshot.name}으로 결과 배치를 저장했습니다. [배치 보관]에서 비교/복구할 수 있습니다.`);
+    }
     if (missingRoomEntries.length) {
       addTimetableLog(
         "warn",
@@ -3346,6 +3416,7 @@ export function createAutoAssignAll(deps) {
       `<b>검증 결과</b> ${postValidation.ok ? "통과" : postValidation.summary}`,
       `<b>학급 시수</b> ${postValidation.classSlots?.total ?? "-"}/${postValidation.classSlots?.targetTotal ?? "-"}시수`,
       `<b>배치 방식</b> ${modeText}`,
+      beforeAutoSnapshot ? `<b>자동 보관</b> 전: ${safeAutoHtml(beforeAutoSnapshot.name)} / 결과: ${safeAutoHtml(afterAutoSnapshot?.name || "저장 실패")}` : null,
       `<b>탐색 방식</b> ${bestStage.label}`,
       `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
       `<b>고정/보호 슬롯 제외</b> ${protectedSummary.slots}칸`,
