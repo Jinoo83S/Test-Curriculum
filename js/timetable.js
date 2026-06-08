@@ -2217,7 +2217,7 @@ const ttSidebarHandlers = createTimetableSidebarHandlers({
   getGradeColor, gradeDisplay, sectionLabel,
   showSidebarCardDetail, showEntryDetailByUnit,
   renderAll: () => renderAll(),
-  setDragData: value => { dragData = value; },
+  setDragData: value => { dragData = value; if (value) applyDragHighlight(value); else clearDragHighlight(); },
   scheduleSave,
   saveNow,
 });
@@ -2409,32 +2409,203 @@ function renderAll() {
 }
 
 /** Called on dragstart: highlight relevant cells / sidebar cards */
-function applyDragHighlight(data) {
-  if (!data || data.kind !== "subject") return;
-  const teacherNames = splitTeacherNames(data.teacherName || "").filter(Boolean);
-  const gradeKey = data.gradeKey;
-  const sectionIdx = data.sectionIdx ?? 0;
+function getDragTeacherNames(data = {}) {
+  if (!data) return [];
+  if (data.kind === "entry" && data.entryId) {
+    const entry = entries().find(e => e.id === data.entryId);
+    return entry ? splitTeacherNames(entry.teacherName || "") : [];
+  }
+  if (data.kind === "group" && data.groupId) {
+    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === data.groupId);
+    return grp ? getGroupCards(grp).flatMap(getTeachersForTtCard).filter(Boolean) : [];
+  }
+  if (data.unitId) {
+    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === data.groupId);
+    const unit = grp?.units?.find(u => u.id === data.unitId);
+    const cards = (unit?.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
+    return cards.length ? cards.flatMap(getTeachersForTtCard).filter(Boolean) : splitTeacherNames(data.teacherName || "");
+  }
+  if (data.ttcardId) {
+    const card = getTtCardById(data.ttcardId);
+    return card ? getTeachersForTtCard(card).filter(Boolean) : [];
+  }
+  if (data.templateId) return splitTeacherNames(data.teacherName || getTeachersForTemplate(data.templateId)[0] || "");
+  return splitTeacherNames(data.teacherName || "");
+}
 
-  // Highlight existing entries that share teacher (teacher busy indicator)
+function buildDragPreviewCandidates(data = {}, day, period, patch = {}) {
+  if (!data) return { candidates: [], excludeIds: [] };
+  const patched = { ...data, ...patch };
+  const sectionIdx = patched.sectionIdx ?? 0;
+
+  if (patched.kind === "entry" && patched.entryId) {
+    const entry = entries().find(e => e.id === patched.entryId);
+    if (!entry) return { candidates: [], excludeIds: [] };
+    const siblings = (entry.groupId || entry.unitId) ? entries().filter(x =>
+      x.id !== entry.id &&
+      ((entry.groupId && x.groupId === entry.groupId) || (entry.unitId && x.unitId === entry.unitId)) &&
+      x.day === entry.day && x.period === entry.period
+    ) : [];
+    const moving = [entry, ...siblings];
+    return {
+      candidates: moving.map(e => normalizeTimetableEntry({ ...e, day, period })),
+      excludeIds: moving.map(e => e.id),
+    };
+  }
+
+  if (patched.kind === "group" && patched.groupId) {
+    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === patched.groupId);
+    const cards = grp ? getGroupCards(grp) : [];
+    const candidate = cards.length ? buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id, groupName: grp.name || "" }) : null;
+    return { candidates: candidate ? [candidate] : [], excludeIds: [] };
+  }
+
+  if (patched.unitId) {
+    const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === patched.groupId);
+    const unit = grp?.units?.find(u => u.id === patched.unitId);
+    const cards = (unit?.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
+    const candidate = cards.length ? buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id, unitId: unit.id, groupName: grp.name || "" }) : null;
+    return { candidates: candidate ? [candidate] : [], excludeIds: [] };
+  }
+
+  if (patched.ttcardId) {
+    const card = getTtCardById(patched.ttcardId);
+    const candidate = card ? buildEntryDataFromTtCards([card], { day, period, groupId: patched.groupId || null, groupName: patched.groupName || "" }) : null;
+    return { candidates: candidate ? [candidate] : [], excludeIds: [] };
+  }
+
+  if (patched.templateId) {
+    const resolvedGrade = patched.gradeKey || currentGrade;
+    const unitInfo = getUnitForTemplate(patched.templateId);
+    if (unitInfo) {
+      const { group, unit } = unitInfo;
+      const gradeKeys = getUnitGradeKeys(unit);
+      const teachers = getUnitTeachers(unit).join(",");
+      return {
+        candidates: [normalizeTimetableEntry({
+          id: "__drag_preview_unit",
+          day, period, sectionIdx,
+          unitId: unit.id,
+          groupId: group.id,
+          templateIds: unit.templateIds,
+          gradeKeys,
+          templateId: unit.templateIds[0] || patched.templateId,
+          gradeKey: gradeKeys[0] || resolvedGrade,
+          teacherName: teachers,
+          roomId: null,
+        })],
+        excludeIds: [],
+      };
+    }
+    return {
+      candidates: [normalizeTimetableEntry({
+        id: "__drag_preview_subject",
+        day, period,
+        templateId: patched.templateId,
+        sectionIdx,
+        teacherName: patched.teacherName || getTeachersForTemplate(patched.templateId)[0] || "",
+        roomId: null,
+        gradeKey: resolvedGrade,
+      })],
+      excludeIds: [],
+    };
+  }
+
+  return { candidates: [], excludeIds: [] };
+}
+
+function previewClassForBlock(block) {
+  if (!block) return "tt-drag-preview-ok";
+  if (block.kind === "protected") return "tt-drag-preview-student";
+  const types = new Set(block.conflictTypes || []);
+  if (types.has("teacher")) return "tt-drag-preview-teacher";
+  if (types.has("room")) return "tt-drag-preview-room";
+  if (types.has("student")) return "tt-drag-preview-student";
+  return "tt-drag-preview-student";
+}
+
+function clearDragPreviewClasses() {
+  document.querySelectorAll([
+    ".tt-drag-preview-ok",
+    ".tt-drag-preview-student",
+    ".tt-drag-preview-teacher",
+    ".tt-drag-preview-room",
+    ".tt-drag-preview-row-student",
+    ".tt-drag-preview-row-teacher",
+    ".tt-drag-preview-row-room",
+    ".tt-drag-preview-slot-student",
+    ".tt-drag-preview-slot-teacher",
+    ".tt-drag-preview-slot-room",
+  ].join(",")).forEach(el => {
+    el.classList.remove(
+      "tt-drag-preview-ok",
+      "tt-drag-preview-student",
+      "tt-drag-preview-teacher",
+      "tt-drag-preview-room",
+      "tt-drag-preview-row-student",
+      "tt-drag-preview-row-teacher",
+      "tt-drag-preview-row-room",
+      "tt-drag-preview-slot-student",
+      "tt-drag-preview-slot-teacher",
+      "tt-drag-preview-slot-room",
+    );
+  });
+}
+
+function applySlotDragPreview(data) {
+  clearDragPreviewClasses();
+  const cells = [...document.querySelectorAll(".tt-cell[data-day][data-period]")];
+  if (!cells.length) return;
+
+  cells.forEach(cell => {
+    const day = parseInt(cell.dataset.day, 10);
+    const period = parseInt(cell.dataset.period, 10);
+    if (!Number.isFinite(day) || !Number.isFinite(period)) return;
+    const patch = {};
+    if (cell.dataset.gradeKey) patch.gradeKey = cell.dataset.gradeKey;
+    if (cell.dataset.sectionIdx !== undefined) patch.sectionIdx = parseInt(cell.dataset.sectionIdx, 10) || 0;
+    const { candidates, excludeIds } = buildDragPreviewCandidates(data, day, period, patch);
+    if (!candidates.length) return;
+    const block = getManualPlacementBlock(candidates, { excludeIds });
+    const cls = previewClassForBlock(block);
+    cell.classList.add(cls);
+
+    if (cls !== "tt-drag-preview-ok") {
+      const suffix = cls.includes("teacher") ? "teacher" : cls.includes("room") ? "room" : "student";
+      cell.closest("tr")?.querySelector(".tt-all-row-hdr,.tt-period-label,.tt-section-sub-hdr")?.classList.add(`tt-drag-preview-row-${suffix}`);
+      document.querySelectorAll(`.tt-period-sub-hdr[data-day="${day}"][data-period="${period}"]`).forEach(h => h.classList.add(`tt-drag-preview-slot-${suffix}`));
+    }
+  });
+}
+
+/** Called on dragstart: highlight relevant cells / sidebar cards */
+function applyDragHighlight(data) {
+  if (!data) return;
+  const teacherNames = [...new Set(getDragTeacherNames(data))];
+  const gradeKey = data.gradeKey;
+
   document.querySelectorAll(".tt-entry-card").forEach(c => c.classList.remove("tt-drag-teacher-busy"));
   if (teacherNames.length) {
     entries().forEach(e => {
-      if (teacherNames.some(t => splitTeacherNames(e.teacherName||"").includes(t))) {
+      if (teacherNames.some(t => splitTeacherNames(e.teacherName || "").includes(t))) {
         document.querySelectorAll(`.tt-entry-card[data-entry-id="${e.id}"]`).forEach(c => c.classList.add("tt-drag-teacher-busy"));
       }
     });
   }
-  // Highlight grade rows in all-classes view
+
   document.querySelectorAll(".tt-all-row-hdr").forEach(hdr => {
     const match = gradeKey && hdr.closest("tr")?.dataset.gradeKey === gradeKey;
     hdr.closest("tr")?.classList.toggle("tt-drag-grade-highlight", !!match);
   });
+
+  applySlotDragPreview(data);
 }
 
 function clearDragHighlight() {
   document.querySelectorAll(".tt-drag-teacher-busy,.tt-drag-grade-highlight").forEach(el => {
     el.classList.remove("tt-drag-teacher-busy","tt-drag-grade-highlight");
   });
+  clearDragPreviewClasses();
 }
 
 // ── Auth UI ───────────────────────────────────────────────────────

@@ -25,18 +25,6 @@ export function createTimetableConstraintsHandlers({
     return constraints()[teacher];
   }
 
-  const WORK_TYPE_OPTIONS = [
-    ["fulltime", "전임"],
-    ["parttime", "시간강사"],
-    ["childcare", "육아단축"],
-    ["restricted", "제한근무"],
-    ["other", "기타제약"],
-  ];
-  const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
-  const workTypeLabel = value => WORK_TYPE_OPTIONS.find(([key]) => key === value)?.[1] || "전임";
-  const normalizeWorkType = value => WORK_TYPE_OPTIONS.some(([key]) => key === value) ? value : "fulltime";
-  const isRestrictedWorkConstraint = c => !!(c && (c.isRestrictedWork || RESTRICTED_WORK_TYPES.has(normalizeWorkType(c.workType))));
-
   function getAllTimetableTeachers() {
     const fromCards = [...new Set(
       (appState.timetable?.ttcards || []).flatMap(c => [
@@ -455,7 +443,7 @@ export function createTimetableConstraintsHandlers({
     style.textContent = `
       .tt-con-launch-card{margin:10px 14px;padding:14px 16px;border:1px solid #dbe4f0;border-radius:14px;background:linear-gradient(180deg,#fff,#f8fbff);display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 8px 22px rgba(15,23,42,.06)}
       .tt-con-launch-card h3{margin:0 0 4px;font-size:14px;font-weight:900;color:#0f172a}.tt-con-launch-card p{margin:0;font-size:12px;color:#64748b}.tt-con-launch-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tt-con-launch-chip{font-size:11px;font-weight:800;border:1px solid #dbe4f0;border-radius:999px;padding:4px 8px;background:#fff;color:#334155}.tt-con-open-btn{height:32px;padding:0 14px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;font-size:12px;cursor:pointer;white-space:nowrap}.tt-con-open-btn:disabled{opacity:.45;cursor:not-allowed}
-      .ttc-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px}.ttc-modal{width:min(1480px,92vw);height:min(820px,82vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}.ttc-modal-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e2e8f0;background:#f8fbff}.ttc-modal-title{font-size:16px;font-weight:950;color:#0f172a}.ttc-modal-sub{font-size:11px;color:#64748b;margin-left:8px;font-weight:700}.ttc-close{width:30px;height:30px;border:0;border-radius:9px;background:#eef2f7;color:#64748b;font-size:18px;font-weight:900;cursor:pointer}.ttc-body{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(470px,1fr) 330px;gap:0}.ttc-left,.ttc-center,.ttc-right{min-height:0;overflow:auto}.ttc-left{border-right:1px solid #e2e8f0;background:#f8fafc;padding:12px}.ttc-center{padding:14px 16px;background:#fff}.ttc-right{border-left:1px solid #e2e8f0;background:#fbfdff;padding:14px}.ttc-search{width:100%;height:32px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px;font-weight:700;background:#fff}.ttc-filter-row{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px}.ttc-filter{height:24px;border:1px solid #dbe4f0;border-radius:999px;background:#fff;color:#475569;font-size:10.5px;font-weight:900;padding:0 8px;cursor:pointer}.ttc-filter.active{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-teacher-list{display:flex;flex-direction:column;gap:5px}.ttc-teacher-item{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;text-align:left;cursor:pointer}.ttc-teacher-item.active{border-color:#2563eb;background:#eff6ff}.ttc-teacher-name{font-size:12px;font-weight:950;color:#0f172a}.ttc-teacher-meta{margin-top:3px;font-size:10.5px;color:#64748b;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.ttc-work-chip{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:999px;border:1px solid #dbe4f0;background:#fff;color:#475569;font-size:9.5px;font-weight:950}.ttc-work-chip.restricted{background:#fff7ed;border-color:#fed7aa;color:#c2410c}.ttc-warn{color:#b45309;font-weight:900}.ttc-ok{color:#15803d;font-weight:900}.ttc-section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ttc-section-title h4{margin:0;font-size:14px;font-weight:950;color:#0f172a}.ttc-section-title span{font-size:11px;color:#64748b;font-weight:800}.ttc-availability-card{border:1px solid #e2e8f0;border-radius:16px;background:linear-gradient(180deg,#fff,#f8fbff);padding:12px;margin-bottom:12px}.ttc-availability-toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:0 0 10px}.ttc-availability-buttons{display:flex;gap:6px;flex-wrap:wrap}.ttc-preset-wrap{display:inline-flex;align-items:center;gap:5px;height:30px;border:1px solid #dbe4f0;border-radius:10px;background:#f8fafc;padding:0 6px}.ttc-preset-wrap span{font-size:10.5px;font-weight:950;color:#64748b}.ttc-preset-select{height:24px;min-width:168px;border:0;background:transparent;color:#334155;font-size:11px;font-weight:900;outline:none}.ttc-availability-summary{font-size:11px;font-weight:900;color:#475569;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:999px;padding:5px 9px}.ttc-time-grid{display:grid;grid-template-columns:48px repeat(5,1fr);gap:6px;user-select:none}.ttc-time-cell,.ttc-time-head,.ttc-time-period{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}.ttc-time-head{background:#173b68;color:#fff;border:0}.ttc-time-head.quick,.ttc-time-period.quick{cursor:pointer}.ttc-time-head.quick:hover{background:#21558f}.ttc-time-period{background:#f1f5f9;color:#475569;border:0}.ttc-time-period.quick:hover{background:#dbeafe;color:#1d4ed8}.ttc-time-cell{border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;cursor:pointer;position:relative;transition:background .08s ease,border-color .08s ease,transform .08s ease}.ttc-time-cell:hover{border-color:#22c55e;background:#dcfce7;transform:translateY(-1px)}.ttc-time-cell.unavailable{border-color:#fecaca;background:#fee2e2;color:#b91c1c}.ttc-time-cell.unavailable:hover{border-color:#ef4444;background:#fecaca}.ttc-time-cell.busy::after{content:"";position:absolute;left:8px;right:8px;bottom:5px;height:3px;border-radius:999px;background:#60a5fa}.ttc-time-cell.painting{outline:2px solid #2563eb;outline-offset:1px}.ttc-legend{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}.ttc-legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-2px}.ttc-availability-help{margin-top:8px;font-size:11px;line-height:1.45;color:#64748b}.ttc-availability-help strong{color:#334155}.ttc-form-card{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:12px;margin-bottom:12px}.ttc-form-card h4{margin:0 0 10px;font-size:13px;font-weight:950;color:#0f172a}.ttc-field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.ttc-field label{font-size:11px;font-weight:900;color:#475569}.ttc-field input,.ttc-field select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px;font-size:12px;font-weight:750}.ttc-inline{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ttc-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:850;color:#334155;margin:4px 0 10px}.ttc-btn-row{display:flex;gap:6px;flex-wrap:wrap}.ttc-btn{height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-size:11.5px;font-weight:900;padding:0 10px;cursor:pointer}.ttc-btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-btn.ghost{background:#f8fafc}.ttc-btn.danger{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.ttc-btn:disabled,.ttc-time-cell:disabled{opacity:.45;cursor:not-allowed}.ttc-footer{border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}.ttc-bulk-title{font-size:12px;font-weight:950;color:#0f172a;margin-bottom:5px}.ttc-bulk-grid{display:grid;grid-template-columns:28px repeat(5,28px);gap:3px}.ttc-bulk-grid div,.ttc-bulk-grid button{height:24px;border-radius:6px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center}.ttc-bulk-grid div{background:#e2e8f0;color:#475569}.ttc-bulk-grid button{border:1px solid #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer}.ttc-bulk-grid button.selected{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-bulk-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ttc-mini-field{display:flex;flex-direction:column;gap:4px}.ttc-mini-field span{font-size:10px;font-weight:900;color:#64748b}.ttc-mini-field input{width:58px;height:28px;border:1px solid #cbd5e1;border-radius:8px;padding:0 7px;font-size:12px;font-weight:850}.ttc-empty{font-size:12px;color:#94a3b8;text-align:center;padding:28px 0}.ttc-assist{font-size:11px;color:#64748b;line-height:1.5;margin-top:6px}.ttc-field textarea{min-height:58px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:8px 9px;font-size:12px;font-weight:700;line-height:1.35;resize:vertical}.ttc-field select option{font-weight:700}.ttc-field-help{font-size:10.5px;color:#64748b;line-height:1.4}.ttc-restricted-card{border-color:#fed7aa;background:#fffaf4}
+      .ttc-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px}.ttc-modal{width:min(1480px,92vw);height:min(820px,82vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}.ttc-modal-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e2e8f0;background:#f8fbff}.ttc-modal-title{font-size:16px;font-weight:950;color:#0f172a}.ttc-modal-sub{font-size:11px;color:#64748b;margin-left:8px;font-weight:700}.ttc-close{width:30px;height:30px;border:0;border-radius:9px;background:#eef2f7;color:#64748b;font-size:18px;font-weight:900;cursor:pointer}.ttc-body{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(470px,1fr) 330px;gap:0}.ttc-left,.ttc-center,.ttc-right{min-height:0;overflow:auto}.ttc-left{border-right:1px solid #e2e8f0;background:#f8fafc;padding:12px}.ttc-center{padding:14px 16px;background:#fff}.ttc-right{border-left:1px solid #e2e8f0;background:#fbfdff;padding:14px}.ttc-search{width:100%;height:32px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px;font-weight:700;background:#fff}.ttc-filter-row{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px}.ttc-filter{height:24px;border:1px solid #dbe4f0;border-radius:999px;background:#fff;color:#475569;font-size:10.5px;font-weight:900;padding:0 8px;cursor:pointer}.ttc-filter.active{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-teacher-list{display:flex;flex-direction:column;gap:5px}.ttc-teacher-item{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;text-align:left;cursor:pointer}.ttc-teacher-item.active{border-color:#2563eb;background:#eff6ff}.ttc-teacher-name{font-size:12px;font-weight:950;color:#0f172a}.ttc-teacher-meta{margin-top:3px;font-size:10.5px;color:#64748b;display:flex;gap:6px;align-items:center}.ttc-warn{color:#b45309;font-weight:900}.ttc-ok{color:#15803d;font-weight:900}.ttc-section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ttc-section-title h4{margin:0;font-size:14px;font-weight:950;color:#0f172a}.ttc-section-title span{font-size:11px;color:#64748b;font-weight:800}.ttc-time-grid{display:grid;grid-template-columns:46px repeat(5,1fr);gap:6px}.ttc-time-cell,.ttc-time-head,.ttc-time-period{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}.ttc-time-head{background:#173b68;color:#fff}.ttc-time-period{background:#f1f5f9;color:#475569}.ttc-time-cell{border:1px solid #dbe4f0;background:#f8fafc;color:#94a3b8;cursor:pointer}.ttc-time-cell:hover{border-color:#60a5fa;background:#eff6ff}.ttc-time-cell.unavailable{border-color:#ef4444;background:#fee2e2;color:#b91c1c}.ttc-time-cell.busy{box-shadow:inset 0 -3px 0 #93c5fd}.ttc-legend{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}.ttc-legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-2px}.ttc-form-card{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:12px;margin-bottom:12px}.ttc-form-card h4{margin:0 0 10px;font-size:13px;font-weight:950;color:#0f172a}.ttc-field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.ttc-field label{font-size:11px;font-weight:900;color:#475569}.ttc-field input,.ttc-field select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px;font-size:12px;font-weight:750}.ttc-inline{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ttc-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:850;color:#334155;margin:4px 0 10px}.ttc-btn-row{display:flex;gap:6px;flex-wrap:wrap}.ttc-btn{height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-size:11.5px;font-weight:900;padding:0 10px;cursor:pointer}.ttc-btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-btn.ghost{background:#f8fafc}.ttc-btn.danger{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.ttc-btn:disabled,.ttc-time-cell:disabled{opacity:.45;cursor:not-allowed}.ttc-footer{border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}.ttc-bulk-title{font-size:12px;font-weight:950;color:#0f172a;margin-bottom:5px}.ttc-bulk-grid{display:grid;grid-template-columns:28px repeat(5,28px);gap:3px}.ttc-bulk-grid div,.ttc-bulk-grid button{height:24px;border-radius:6px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center}.ttc-bulk-grid div{background:#e2e8f0;color:#475569}.ttc-bulk-grid button{border:1px solid #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer}.ttc-bulk-grid button.selected{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-bulk-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ttc-mini-field{display:flex;flex-direction:column;gap:4px}.ttc-mini-field span{font-size:10px;font-weight:900;color:#64748b}.ttc-mini-field input{width:58px;height:28px;border:1px solid #cbd5e1;border-radius:8px;padding:0 7px;font-size:12px;font-weight:850}.ttc-empty{font-size:12px;color:#94a3b8;text-align:center;padding:28px 0}.ttc-assist{font-size:11px;color:#64748b;line-height:1.5;margin-top:6px}
       @media (max-width:1100px){.ttc-body{grid-template-columns:210px 1fr}.ttc-right{grid-column:1 / -1;border-left:0;border-top:1px solid #e2e8f0}.ttc-modal{height:90vh}.ttc-footer{grid-template-columns:1fr}}
     `;
     document.head.appendChild(style);
@@ -464,15 +452,12 @@ export function createTimetableConstraintsHandlers({
   function getTeacherStats(teacher) {
     const placed = entries().filter(e => splitTeacherNames(e.teacherName).includes(teacher)).length;
     const roomId = getEffectiveAssignedRoomId(teacher);
-    const c = ensureConstraint(teacher);
-    const workType = normalizeWorkType(c.workType);
-    const isRestricted = isRestrictedWorkConstraint(c);
     const constraintMap = getConstraintMap();
     const hasViolation = [...constraintMap.entries()].some(([id, s]) => {
       const e = entries().find(x => x.id === id);
       return e && splitTeacherNames(e.teacherName).includes(teacher) && s.size > 0;
     });
-    return { placed, roomId, hasViolation, workType, isRestricted, maxPerWeek: Number(c.maxPerWeek) || 0 };
+    return { placed, roomId, hasViolation };
   }
 
   function getFilteredConstraintTeachers(allTeachers) {
@@ -480,7 +465,6 @@ export function createTimetableConstraintsHandlers({
     return allTeachers.filter(t => {
       if (q && !t.toLowerCase().includes(q)) return false;
       const stat = getTeacherStats(t);
-      if (constraintModalState.filter === "restricted") return stat.isRestricted;
       if (constraintModalState.filter === "noRoom") return !stat.roomId;
       if (constraintModalState.filter === "violation") return stat.hasViolation;
       return true;
@@ -520,248 +504,100 @@ export function createTimetableConstraintsHandlers({
   }
 
   function renderTeacherList(container, allTeachers) {
+    container.innerHTML = "";
+
     const search = document.createElement("input");
     search.className = "ttc-search";
     search.placeholder = "교사 검색";
     search.value = constraintModalState.search || "";
-    search.addEventListener("input", e => {
-      constraintModalState.search = e.target.value || "";
-      renderTeacherConstraintsModalContent();
-    });
     container.appendChild(search);
 
     const filterRow = document.createElement("div");
     filterRow.className = "ttc-filter-row";
-    [
-      ["all", "전체"],
-      ["restricted", "제약근무"],
-      ["noRoom", "교실 미지정"],
-      ["violation", "충돌"],
-    ].forEach(([key, label]) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "ttc-filter" + (constraintModalState.filter === key ? " active" : "");
-      btn.textContent = label;
-      btn.addEventListener("click", () => {
-        constraintModalState.filter = key;
-        renderTeacherConstraintsModalContent();
-      });
-      filterRow.appendChild(btn);
-    });
     container.appendChild(filterRow);
 
     const list = document.createElement("div");
     list.className = "ttc-teacher-list";
-    const teachers = getFilteredConstraintTeachers(allTeachers);
-    if (!teachers.includes(constraintModalState.teacher)) constraintModalState.teacher = teachers[0] || allTeachers[0] || null;
-
-    teachers.forEach(teacher => {
-      const stat = getTeacherStats(teacher);
-      const room = getRooms().find(r => r.id === stat.roomId);
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "ttc-teacher-item" + (constraintModalState.teacher === teacher ? " active" : "");
-      btn.innerHTML = `
-        <div class="ttc-teacher-name">${escapeText(teacher)}</div>
-        <div class="ttc-teacher-meta">
-          <span>${stat.placed ? `${stat.placed}시수` : "배정 없음"}</span>
-          <span>${room ? escapeText(room.name) : "교실 없음"}</span>
-          <span class="ttc-work-chip${stat.isRestricted ? " restricted" : ""}">${escapeText(workTypeLabel(stat.workType))}</span>
-          ${stat.maxPerWeek ? `<span>주 ${stat.maxPerWeek}시수</span>` : ""}
-          <span class="${stat.hasViolation ? "ttc-warn" : "ttc-ok"}">${stat.hasViolation ? "충돌" : "정상"}</span>
-        </div>`;
-      btn.addEventListener("click", () => {
-        constraintModalState.teacher = teacher;
-        renderTeacherConstraintsModalContent();
-      });
-      list.appendChild(btn);
-    });
-
-    if (!teachers.length) {
-      const empty = document.createElement("div");
-      empty.className = "ttc-empty";
-      empty.textContent = "조건에 맞는 교사가 없습니다.";
-      list.appendChild(empty);
-    }
     container.appendChild(list);
-  }
 
+    const renderFilterButtons = () => {
+      filterRow.innerHTML = "";
+      [
+        ["all", "전체"],
+        ["noRoom", "교실 미지정"],
+        ["violation", "충돌"],
+      ].forEach(([key, label]) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ttc-filter" + (constraintModalState.filter === key ? " active" : "");
+        btn.textContent = label;
+        btn.addEventListener("click", () => {
+          constraintModalState.filter = key;
+          renderFilterButtons();
+          renderTeacherItems();
+        });
+        filterRow.appendChild(btn);
+      });
+    };
 
-  function slotKey(day, period) {
-    return `${day}:${period}`;
-  }
+    const renderTeacherItems = () => {
+      list.innerHTML = "";
+      const teachers = getFilteredConstraintTeachers(allTeachers);
+      teachers.forEach(teacher => {
+        const stat = getTeacherStats(teacher);
+        const room = getRooms().find(r => r.id === stat.roomId);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "ttc-teacher-item" + (constraintModalState.teacher === teacher ? " active" : "");
+        btn.innerHTML = `
+          <div class="ttc-teacher-name">${escapeText(teacher)}</div>
+          <div class="ttc-teacher-meta">
+            <span>${stat.placed ? `${stat.placed}시수` : "배정 없음"}</span>
+            <span>${room ? escapeText(room.name) : "교실 없음"}</span>
+            <span class="${stat.hasViolation ? "ttc-warn" : "ttc-ok"}">${stat.hasViolation ? "충돌" : "정상"}</span>
+          </div>`;
+        btn.addEventListener("click", () => {
+          constraintModalState.teacher = teacher;
+          renderTeacherConstraintsModalContent();
+        });
+        list.appendChild(btn);
+      });
 
-  function getUnavailableSlotSet(c) {
-    return new Set((Array.isArray(c.unavailableSlots) ? c.unavailableSlots : []).map(s => slotKey(s.day, s.period)));
-  }
-
-  function writeUnavailableSlotSet(c, set) {
-    c.unavailableSlots = [...set].map(key => {
-      const [day, period] = key.split(":").map(v => parseInt(v, 10));
-      return { day, period };
-    }).filter(s => Number.isInteger(s.day) && Number.isInteger(s.period))
-      .sort((a, b) => (a.day - b.day) || (a.period - b.period));
-  }
-
-  function applyTeacherAvailabilityPreset(teacher, dayLabels, periods, mode, extra = {}) {
-    if (!canEdit()) return;
-    const c = ensureConstraint(teacher);
-    const set = getUnavailableSlotSet(c);
-    const periodCount = periods.length;
-    const dayCount = dayLabels.length;
-    const morningEnd = Math.min(4, periodCount); // 1~4교시를 오전 기준으로 처리합니다.
-
-    const setAll = unavailable => {
-      set.clear();
-      if (unavailable) {
-        for (let d = 0; d < dayCount; d += 1) {
-          for (let p = 0; p < periodCount; p += 1) set.add(slotKey(d, p));
-        }
+      if (!teachers.length) {
+        const empty = document.createElement("div");
+        empty.className = "ttc-empty";
+        empty.textContent = "조건에 맞는 교사가 없습니다.";
+        list.appendChild(empty);
       }
     };
 
-    captureTimetableUndo("교사 가능 시간 빠른 설정");
-    if (mode === "allAvailable") setAll(false);
-    else if (mode === "allUnavailable") setAll(true);
-    else if (mode === "morningOnly") {
-      set.clear();
-      for (let d = 0; d < dayCount; d += 1) {
-        for (let p = morningEnd; p < periodCount; p += 1) set.add(slotKey(d, p));
-      }
-    } else if (mode === "afternoonOnly") {
-      set.clear();
-      for (let d = 0; d < dayCount; d += 1) {
-        for (let p = 0; p < morningEnd; p += 1) set.add(slotKey(d, p));
-      }
-    } else if (mode === "toggleDay") {
-      const day = extra.day;
-      const keys = Array.from({ length: periodCount }, (_, p) => slotKey(day, p));
-      const makeUnavailable = keys.some(key => !set.has(key));
-      keys.forEach(key => makeUnavailable ? set.add(key) : set.delete(key));
-    } else if (mode === "togglePeriod") {
-      const period = extra.period;
-      const keys = Array.from({ length: dayCount }, (_, d) => slotKey(d, period));
-      const makeUnavailable = keys.some(key => !set.has(key));
-      keys.forEach(key => makeUnavailable ? set.add(key) : set.delete(key));
-    } else if (mode === "workdayMorning") {
-      set.clear();
-      for (let d = 0; d < dayCount; d += 1) {
-        const isWorkday = d >= 0 && d <= 4;
-        for (let p = 0; p < periodCount; p += 1) {
-          if (!isWorkday || p >= morningEnd) set.add(slotKey(d, p));
+    search.addEventListener("input", e => {
+      // 검색어 입력 때 전체 팝업을 다시 그리면 input이 매 글자마다 focus를 잃고
+      // 한글 IME 조합도 끊깁니다. 왼쪽 교사 목록만 갱신합니다.
+      constraintModalState.search = e.target.value || "";
+      renderTeacherItems();
+      requestAnimationFrame(() => {
+        if (document.activeElement !== search && search.isConnected) {
+          search.focus({ preventScroll: true });
+          const pos = search.value.length;
+          try { search.setSelectionRange(pos, pos); } catch {}
         }
-      }
-    } else if (mode === "monWedFriMorning") {
-      set.clear();
-      const allowedDays = new Set([0, 2, 4]);
-      for (let d = 0; d < dayCount; d += 1) {
-        for (let p = 0; p < periodCount; p += 1) {
-          if (!allowedDays.has(d) || p >= morningEnd) set.add(slotKey(d, p));
-        }
-      }
-    } else if (mode === "tueThuAfternoon") {
-      set.clear();
-      const allowedDays = new Set([1, 3]);
-      for (let d = 0; d < dayCount; d += 1) {
-        for (let p = 0; p < periodCount; p += 1) {
-          if (!allowedDays.has(d) || p < morningEnd) set.add(slotKey(d, p));
-        }
-      }
-    } else if (mode === "noFriday") {
-      for (let p = 0; p < periodCount; p += 1) set.add(slotKey(4, p));
-    } else if (mode === "noFirstPeriod") {
-      for (let d = 0; d < dayCount; d += 1) set.add(slotKey(d, 0));
-    } else if (mode === "noSeventhPeriod") {
-      const last = Math.min(6, periodCount - 1);
-      for (let d = 0; d < dayCount; d += 1) set.add(slotKey(d, last));
-    } else if (mode === "keepOnlySelectedDays") {
-      set.clear();
-      const allowedDays = new Set(Array.isArray(extra.days) ? extra.days : []);
-      for (let d = 0; d < dayCount; d += 1) {
-        for (let p = 0; p < periodCount; p += 1) {
-          if (!allowedDays.has(d)) set.add(slotKey(d, p));
-        }
-      }
-    }
-    writeUnavailableSlotSet(c, set);
-    commitConstraintChange({ page: false, modal: true });
-  }
+      });
+    });
 
-  function updateAvailabilityCellVisual(btn, unavailable, busy) {
-    btn.className = "ttc-time-cell" + (unavailable ? " unavailable" : "") + (busy ? " busy" : "");
-    btn.textContent = unavailable ? "불가" : (busy ? "수업" : "가능");
-    btn.title = unavailable ? "수업 불가 시간" : (busy ? "현재 수업 배정 있음" : "수업 가능 시간");
+    renderFilterButtons();
+    renderTeacherItems();
   }
 
   function renderTeacherTimeGrid(container, teacher, dayLabels, periods) {
     const c = ensureConstraint(teacher);
     const busySlots = getTeacherBusySlots(teacher);
-    const unavailable = getUnavailableSlotSet(c);
-    const totalSlots = dayLabels.length * periods.length;
-    const unavailableCount = unavailable.size;
-    const availableCount = Math.max(0, totalSlots - unavailableCount);
-
-    const wrap = document.createElement("div");
-    wrap.className = "ttc-availability-card";
+    const unavailable = new Set((c.unavailableSlots || []).map(s => `${s.day}:${s.period}`));
 
     const title = document.createElement("div");
     title.className = "ttc-section-title";
-    title.innerHTML = `<h4>${escapeText(teacher)} 주간 가능시간표</h4><span>클릭·드래그로 가능/불가를 지정</span>`;
-    wrap.appendChild(title);
-
-    const toolbar = document.createElement("div");
-    toolbar.className = "ttc-availability-toolbar";
-    const buttons = document.createElement("div");
-    buttons.className = "ttc-availability-buttons";
-    const addQuickButton = (label, mode, cls = "ghost") => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = `ttc-btn ${cls}`;
-      btn.textContent = label;
-      btn.disabled = !canEdit();
-      btn.addEventListener("click", () => applyTeacherAvailabilityPreset(teacher, dayLabels, periods, mode));
-      buttons.appendChild(btn);
-    };
-    addQuickButton("전체 가능", "allAvailable", "primary");
-    addQuickButton("전체 불가", "allUnavailable", "danger");
-    addQuickButton("오전만 가능", "morningOnly", "ghost");
-    addQuickButton("오후만 가능", "afternoonOnly", "ghost");
-
-    const presetWrap = document.createElement("div");
-    presetWrap.className = "ttc-preset-wrap";
-    const presetLabel = document.createElement("span");
-    presetLabel.textContent = "프리셋";
-    const presetSelect = document.createElement("select");
-    presetSelect.className = "ttc-preset-select";
-    [
-      ["", "자주 쓰는 조건 선택"],
-      ["workdayMorning", "월~금 오전만 가능"],
-      ["monWedFriMorning", "월·수·금 오전만 가능"],
-      ["tueThuAfternoon", "화·목 오후만 가능"],
-      ["noFriday", "금요일 전체 불가"],
-      ["noFirstPeriod", "매일 1교시 불가"],
-      ["noSeventhPeriod", "매일 7교시 불가"],
-    ].forEach(([value, label]) => {
-      const opt = document.createElement("option");
-      opt.value = value;
-      opt.textContent = label;
-      presetSelect.appendChild(opt);
-    });
-    presetSelect.disabled = !canEdit();
-    presetSelect.addEventListener("change", e => {
-      const mode = e.target.value;
-      if (!mode) return;
-      applyTeacherAvailabilityPreset(teacher, dayLabels, periods, mode);
-      e.target.value = "";
-    });
-    presetWrap.append(presetLabel, presetSelect);
-    buttons.appendChild(presetWrap);
-
-    const summary = document.createElement("div");
-    summary.className = "ttc-availability-summary";
-    summary.textContent = `가능 ${availableCount}칸 · 불가 ${unavailableCount}칸`;
-    toolbar.append(buttons, summary);
-    wrap.appendChild(toolbar);
+    title.innerHTML = `<h4>${escapeText(teacher)} 수업 가능 시간</h4><span>클릭하여 가능/불가 전환</span>`;
+    container.appendChild(title);
 
     const grid = document.createElement("div");
     grid.className = "ttc-time-grid";
@@ -769,153 +605,71 @@ export function createTimetableConstraintsHandlers({
     corner.className = "ttc-time-period";
     corner.textContent = "교시";
     grid.appendChild(corner);
-    dayLabels.forEach((d, dIdx) => {
-      const h = document.createElement("button");
-      h.type = "button";
-      h.className = "ttc-time-head quick";
+    dayLabels.forEach(d => {
+      const h = document.createElement("div");
+      h.className = "ttc-time-head";
       h.textContent = d;
-      h.title = `${d}요일 전체 가능/불가 전환`;
-      h.disabled = !canEdit();
-      h.addEventListener("click", () => applyTeacherAvailabilityPreset(teacher, dayLabels, periods, "toggleDay", { day: dIdx }));
       grid.appendChild(h);
     });
 
-    let isPainting = false;
-    let paintUnavailable = false;
-    let changedDuringPaint = false;
-    let undoCaptured = false;
-    const cells = [];
-
-    const applyPaint = (btn, day, period, targetUnavailable) => {
-      const key = slotKey(day, period);
-      const has = unavailable.has(key);
-      if (has === targetUnavailable) return;
-      if (targetUnavailable) unavailable.add(key);
-      else unavailable.delete(key);
-      changedDuringPaint = true;
-      updateAvailabilityCellVisual(btn, targetUnavailable, busySlots.has(key));
-      btn.classList.add("painting");
-    };
-
-    const finishPaint = () => {
-      if (!isPainting) return;
-      isPainting = false;
-      cells.forEach(btn => btn.classList.remove("painting"));
-      document.removeEventListener("pointerup", finishPaint, true);
-      if (changedDuringPaint) {
-        writeUnavailableSlotSet(c, unavailable);
-        commitConstraintChange({ page: false, modal: true });
-      }
-      changedDuringPaint = false;
-      undoCaptured = false;
-    };
-
     periods.forEach((label, pIdx) => {
-      const p = document.createElement("button");
-      p.type = "button";
-      p.className = "ttc-time-period quick";
+      const p = document.createElement("div");
+      p.className = "ttc-time-period";
       p.textContent = `${pIdx + 1}`;
-      p.title = `${pIdx + 1}교시 전체 가능/불가 전환`;
-      p.disabled = !canEdit();
-      p.addEventListener("click", () => applyTeacherAvailabilityPreset(teacher, dayLabels, periods, "togglePeriod", { period: pIdx }));
       grid.appendChild(p);
       dayLabels.forEach((_, dIdx) => {
-        const key = slotKey(dIdx, pIdx);
+        const key = `${dIdx}:${pIdx}`;
         const btn = document.createElement("button");
         btn.type = "button";
-        updateAvailabilityCellVisual(btn, unavailable.has(key), busySlots.has(key));
+        btn.className = "ttc-time-cell" + (unavailable.has(key) ? " unavailable" : "") + (busySlots.has(key) ? " busy" : "");
+        btn.textContent = unavailable.has(key) ? "불가" : (busySlots.has(key) ? "수업" : "가능");
         btn.disabled = !canEdit();
-        btn.dataset.day = String(dIdx);
-        btn.dataset.period = String(pIdx);
-        btn.addEventListener("pointerdown", event => {
+        btn.addEventListener("click", () => {
           if (!canEdit()) return;
-          event.preventDefault();
-          if (!undoCaptured) {
-            captureTimetableUndo("교사 주간 가능시간표 수정");
-            undoCaptured = true;
-          }
-          isPainting = true;
-          paintUnavailable = !unavailable.has(key);
-          applyPaint(btn, dIdx, pIdx, paintUnavailable);
-          document.addEventListener("pointerup", finishPaint, true);
+          captureTimetableUndo("교사 수업 가능 시간 수정");
+          const slots = c.unavailableSlots || (c.unavailableSlots = []);
+          const idx = slots.findIndex(s => s.day === dIdx && s.period === pIdx);
+          if (idx >= 0) slots.splice(idx, 1);
+          else slots.push({ day: dIdx, period: pIdx });
+          commitConstraintChange({ page: false, modal: true });
         });
-        btn.addEventListener("pointerenter", () => {
-          if (!isPainting || !canEdit()) return;
-          applyPaint(btn, dIdx, pIdx, paintUnavailable);
-        });
-        cells.push(btn);
         grid.appendChild(btn);
       });
     });
-    wrap.appendChild(grid);
+    container.appendChild(grid);
 
     const legend = document.createElement("div");
     legend.className = "ttc-legend";
-    legend.innerHTML = `<span><i style="background:#f0fdf4;border:1px solid #22c55e"></i>가능</span><span><i style="background:#fee2e2;border:1px solid #ef4444"></i>불가</span><span><i style="background:#dbeafe"></i>수업 배정 있음</span><span>요일명/교시 숫자를 누르면 해당 줄 전체가 전환됩니다.</span>`;
-    wrap.appendChild(legend);
-
-    const help = document.createElement("div");
-    help.className = "ttc-availability-help";
-    help.innerHTML = `<strong>사용 팁</strong> · 시간강사/육아단축 교사는 먼저 근무 유형을 지정한 뒤, 프리셋으로 큰 틀을 적용하고 필요한 칸만 클릭·드래그로 보정하면 안정적입니다.`;
-    wrap.appendChild(help);
-    container.appendChild(wrap);
+    legend.innerHTML = `<span><i style="background:#f8fafc;border:1px solid #cbd5e1"></i>가능</span><span><i style="background:#fee2e2;border:1px solid #ef4444"></i>불가</span><span><i style="background:#dbeafe"></i>수업 배정 있음</span>`;
+    container.appendChild(legend);
   }
 
   function renderTeacherSettings(container, teacher, rooms) {
     const c = ensureConstraint(teacher);
     const card = document.createElement("div");
-    card.className = "ttc-form-card" + (isRestrictedWorkConstraint(c) ? " ttc-restricted-card" : "");
+    card.className = "ttc-form-card";
     card.innerHTML = `<h4>선택 교사 설정</h4>`;
-
-    const workField = document.createElement("div");
-    workField.className = "ttc-field";
-    const workLabel = document.createElement("label");
-    workLabel.textContent = "근무 유형";
-    const workSel = document.createElement("select");
-    WORK_TYPE_OPTIONS.forEach(([key, label]) => {
-      const opt = document.createElement("option");
-      opt.value = key;
-      opt.textContent = label;
-      if (normalizeWorkType(c.workType) === key) opt.selected = true;
-      workSel.appendChild(opt);
-    });
-    workSel.disabled = !canEdit();
-    workSel.addEventListener("change", e => {
-      if (!canEdit()) return;
-      captureTimetableUndo("교사 근무 유형 수정");
-      c.workType = normalizeWorkType(e.target.value);
-      c.isRestrictedWork = RESTRICTED_WORK_TYPES.has(c.workType);
-      commitConstraintChange({ page: false, modal: true });
-    });
-    const workHelp = document.createElement("div");
-    workHelp.className = "ttc-field-help";
-    workHelp.textContent = "시간강사·육아단축·제한근무 교사는 자동배치에서 고정 수업 다음 우선 배치 대상으로 분류됩니다.";
-    workField.append(workLabel, workSel, workHelp);
-    card.appendChild(workField);
 
     const inline = document.createElement("div");
     inline.className = "ttc-inline";
     [
-      ["maxPerDay", "하루 최대", 6, 1],
-      ["maxConsecutive", "최대 연속", 4, 1],
-      ["maxPerWeek", "주 최대", 0, 0],
-    ].forEach(([key, label, fallback, min]) => {
+      ["maxPerDay", "하루 최대", 6],
+      ["maxConsecutive", "최대 연속", 4],
+    ].forEach(([key, label, fallback]) => {
       const field = document.createElement("div");
       field.className = "ttc-field";
       const lab = document.createElement("label");
       lab.textContent = label;
       const inp = document.createElement("input");
       inp.type = "number";
-      inp.min = String(min ?? 1);
-      inp.max = key === "maxPerWeek" ? "40" : "12";
+      inp.min = "1";
+      inp.max = "12";
       inp.value = c[key] ?? fallback;
       inp.disabled = !canEdit();
       inp.addEventListener("change", e => {
         if (!canEdit()) return;
         captureTimetableUndo("교사 조건 숫자 수정");
-        const value = parseInt(e.target.value, 10);
-        if (key === "maxPerWeek") c[key] = Number.isFinite(value) && value > 0 ? value : 0;
-        else c[key] = Number.isFinite(value) && value > 0 ? value : fallback;
+        c[key] = parseInt(e.target.value, 10) || fallback;
         commitConstraintChange({ page: false, modal: true });
       });
       field.append(lab, inp);
@@ -981,23 +735,6 @@ export function createTimetableConstraintsHandlers({
     });
     assignedField.append(assignedLabel, assignedSel);
     card.appendChild(assignedField);
-
-    const noteField = document.createElement("div");
-    noteField.className = "ttc-field";
-    const noteLabel = document.createElement("label");
-    noteLabel.textContent = "제약 메모";
-    const note = document.createElement("textarea");
-    note.placeholder = "예) 화요일 불가, 월·수 오전만 가능, 육아 단축근무 등";
-    note.value = c.constraintNote || "";
-    note.disabled = !canEdit();
-    note.addEventListener("change", e => {
-      if (!canEdit()) return;
-      captureTimetableUndo("교사 제약 메모 수정");
-      c.constraintNote = clean(e.target.value);
-      commitConstraintChange({ page: false, modal: true });
-    });
-    noteField.append(noteLabel, note);
-    card.appendChild(noteField);
 
     const row = document.createElement("div");
     row.className = "ttc-btn-row";
@@ -1221,7 +958,6 @@ export function createTimetableConstraintsHandlers({
       return;
     }
 
-    const restrictedCount = allTeachers.filter(t => getTeacherStats(t).isRestricted).length;
     const noRoomCount = allTeachers.filter(t => !getTeacherStats(t).roomId).length;
     const violationCount = allTeachers.filter(t => getTeacherStats(t).hasViolation).length;
     const expanded = document.createElement("div");
@@ -1232,7 +968,6 @@ export function createTimetableConstraintsHandlers({
         <p>하단바에서는 요약만 표시하고, 편집은 넓은 팝업창에서 진행합니다.</p>
         <div class="tt-con-launch-stats">
           <span class="tt-con-launch-chip">교사 ${allTeachers.length}명</span>
-          <span class="tt-con-launch-chip">제약근무 ${restrictedCount}명</span>
           <span class="tt-con-launch-chip">교실 미지정 ${noRoomCount}명</span>
           <span class="tt-con-launch-chip">충돌 ${violationCount}명</span>
         </div>
