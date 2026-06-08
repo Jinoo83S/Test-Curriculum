@@ -2143,16 +2143,34 @@ export function createAutoAssignAll(deps) {
   }
 
   function placeAutoGroupSlot(group, activeItems, slot, placed, checkOptions = {}) {
-    // Current group manager stores a visible group as one aggregate item.
-    // 다만 같은 수업 묶음(unit)이 아닌 여러 과목은 과목별 entry로 분리해
-    // 각 과목이 자신의 교사 담당교실/홈룸을 따로 받을 수 있게 합니다.
-    const groupItem = activeItems[0];
-    if (!groupItem) return false;
+    // 한 그룹 안에 pool 카드와 unit 카드가 함께 있을 수 있습니다.
+    // 기존 로직은 activeItems[0]만 저장해, 여러 unitItems 구조가 들어오면 같은 회차의 일부 카드가 누락될 수 있었습니다.
+    // 현재 회차에 활성화된 모든 카드를 합친 뒤, 같은 수업 묶음(unit)은 하나로 유지하고
+    // 나머지 병렬 과목은 과목별 entry로 분리해 각각 담당교실/홈룸을 배정합니다.
+    const activeList = (activeItems || []).filter(Boolean);
+    if (!activeList.length) return false;
 
-    const batches = getGroupRoomBatches(group, groupItem.ttcards || []);
+    const seenCardIds = new Set();
+    const activeCards = [];
+    activeList.forEach(item => {
+      (item.ttcards || []).forEach(card => {
+        if (!card?.id || seenCardIds.has(card.id)) return;
+        seenCardIds.add(card.id);
+        activeCards.push(card);
+      });
+    });
+    if (!activeCards.length) return false;
+
+    const batches = getGroupRoomBatches(group, activeCards);
     const pending = [];
-    for (const cards of batches.length ? batches : [groupItem.ttcards || []]) {
-      const item = makePlacementFromGroupItem(group, { ...groupItem, ttcards: cards });
+    for (const cards of batches.length ? batches : [activeCards]) {
+      const batchIds = new Set((cards || []).map(c => c.id).filter(Boolean));
+      const unit = (group?.units || []).find(u => {
+        const ids = new Set(u.ttcardIds || []);
+        return batchIds.size && [...batchIds].every(id => ids.has(id));
+      }) || null;
+      const sourceItem = activeList.find(item => (item.ttcards || []).some(c => batchIds.has(c.id))) || activeList[0];
+      const item = makePlacementFromGroupItem(group, { ...sourceItem, unit, ttcards: cards });
       if (!item) continue;
       const checkedItem = annotateRestrictedAutoItem(item);
       // probe 검사를 통과했더라도 실제 저장 entry가 과목별로 분리되면서
@@ -2745,18 +2763,53 @@ export function createAutoAssignAll(deps) {
 
   function isWholeGradeLikeCard(card = {}) {
     const text = cardTextForPrecheck(card);
+    const category = String(card.category || "").trim();
     if (card.isWholeGrade || card.wholeGrade || card.isGradeWide) return true;
-    if (Array.isArray(card.classKeys) && card.classKeys.length >= 2) return true;
-    if (Array.isArray(card.classLabels) && card.classLabels.length >= 2) return true;
-    return /(자율활동|동아리활동|채플|종교|진로와\s*소명|성품과\s*공동체|선교적\s*생활|섬김의\s*리더십|변혁적\s*리더십|중학교\s*특성화|Self[-\s]*regulated|Club\s*Activity|Chapel|Vision|Vocation|Leadership|Missional)/i.test(text);
+    if (category === "창체") return true;
+    // 과목명에 "종교"가 들어간 일반 교과나 선택과목은 전체학년 카드가 아닙니다.
+    // 전체학년/창체 경고는 실제 공동 활동 계열만 대상으로 좁혀 오탐을 줄입니다.
+    return /(자율활동|동아리활동|채플|진로와\s*소명|성품과\s*공동체|선교적\s*생활|섬김의\s*리더십|변혁적\s*리더십|중학교\s*특성화|Self[-\s]*regulated|Club\s*Activity|Chapel|Vision|Vocation|Leadership|Missional)/i.test(text);
+  }
+
+  function compoundPartKeyForPrecheck(card = {}) {
+    if (!card?.compoundParentTemplateId) return "";
+    return [
+      "compound",
+      card.compoundParentTemplateId || card.templateId || "",
+      card.compoundPartId || card.id || "",
+    ].join(":");
+  }
+
+  function cardAudienceKeyForPrecheck(card = {}) {
+    const classKeys = [...new Set((card.classKeys || []).map(v => String(v || "").trim()).filter(Boolean))].sort();
+    if (classKeys.length) return classKeys.join(",");
+    const classLabels = [...new Set((card.classLabels || []).map(v => String(v || "").trim()).filter(Boolean))].sort();
+    if (classLabels.length) return classLabels.join(",");
+    return String(card.sectionIdx ?? card.sectionIndex ?? "");
+  }
+
+  function cardAudienceOverlapsForPrecheck(a = {}, b = {}) {
+    const aKeys = new Set((a.classKeys || []).map(v => String(v || "").trim()).filter(Boolean));
+    const bKeys = new Set((b.classKeys || []).map(v => String(v || "").trim()).filter(Boolean));
+    if (aKeys.size && bKeys.size) {
+      for (const key of aKeys) if (bKeys.has(key)) return true;
+      return false;
+    }
+    return (a.sectionIdx ?? a.sectionIndex ?? 0) === (b.sectionIdx ?? b.sectionIndex ?? 0);
   }
 
   function cardKeyForPrecheck(card = {}) {
-    return [card.gradeKey || "", card.templateId || "", card.sectionIdx ?? card.sectionIndex ?? ""].join("::");
+    return [
+      card.gradeKey || "",
+      card.templateId || "",
+      compoundPartKeyForPrecheck(card),
+      card.sectionIdx ?? card.sectionIndex ?? "",
+      cardAudienceKeyForPrecheck(card),
+    ].join("::");
   }
 
   function gradeTemplateKeyForPrecheck(card = {}) {
-    return [card.gradeKey || "", card.templateId || ""].join("::");
+    return [card.gradeKey || "", card.templateId || "", compoundPartKeyForPrecheck(card)].join("::");
   }
 
   function getPlacedCardIdsForPrecheck(existingEntries = []) {
@@ -2885,7 +2938,14 @@ export function createAutoAssignAll(deps) {
       refs.forEach(id => {
         const card = cards.find(c => c.id === id);
         if (!card) return;
-        const siblings = cards.filter(c => c.id !== id && c.gradeKey === card.gradeKey && c.templateId === card.templateId && !groupRefSet.has(c.id));
+        const siblings = cards.filter(c =>
+          c.id !== id &&
+          c.gradeKey === card.gradeKey &&
+          c.templateId === card.templateId &&
+          !groupRefSet.has(c.id) &&
+          !compoundPartKeyForPrecheck(c) &&
+          cardAudienceOverlapsForPrecheck(card, c)
+        );
         if (siblings.length) siblingIssues.push(`${group.name || group.groupName || group.id}: ${card.gradeKey || "?"} ${describeTtCard(card).title} 외 ${siblings.length}개`);
       });
     });
@@ -3240,6 +3300,15 @@ export function createAutoAssignAll(deps) {
           return minCount;
         };
 
+        const groupBlockComplexity = block => {
+          const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
+          const teachers = new Set(cards.flatMap(getTeachersForTtCard).filter(Boolean));
+          const classKeys = new Set(cards.flatMap(card => card.classKeys || []).filter(Boolean));
+          const maxCredits = Math.max(0, ...(block?.unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
+          // 여러 학년·반·교사가 동시에 움직이는 그룹을 먼저 배치해야 후반부 카드 부족/미배치가 줄어듭니다.
+          return teachers.size * 100 + classKeys.size * 12 + cards.length * 5 + maxCredits;
+        };
+
         const orderedGroups = shuffle([...groupBlocks]).sort((a, b) => {
           const ac = Math.max(0, ...a.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
           const bc = Math.max(0, ...b.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
@@ -3250,6 +3319,8 @@ export function createAutoAssignAll(deps) {
           const acand = candidateCountForGroupBlock(a);
           const bcand = candidateCountForGroupBlock(b);
           if (acand !== bcand) return acand - bcand;
+          const complexity = groupBlockComplexity(b) - groupBlockComplexity(a);
+          if (complexity !== 0) return complexity;
           return bc - ac;
         });
 

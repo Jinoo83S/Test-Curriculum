@@ -105,8 +105,9 @@ export function createTimetableSidebarHandlers(deps) {
 
   function getSidebarCompletionCredits(card) {
     if (!card) return 0;
-    const compoundTotal = Number(card.compoundTotalCredits);
-    if (card.compoundParentTemplateId && Number.isFinite(compoundTotal) && compoundTotal > 0) return compoundTotal;
+    // 미적분(2)+심화물리(2)처럼 복합과목 파트가 서로 다른 교사/시수로 운영되는 경우,
+    // 각 파트 카드는 자신의 실제 시수(예: 2시수)를 완료 기준으로 봅니다.
+    // 그룹 카드 자체는 그룹 내 카드들의 최대 시수로 완료 여부를 계산하므로 선택묶음 4시수 구조는 유지됩니다.
     return getCreditsForTtCard(card);
   }
 
