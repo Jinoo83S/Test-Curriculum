@@ -237,18 +237,38 @@ function domainsForView(view) {
 }
 
 function waitForDomainsLoaded(domains, timeoutMs = 7000) {
-  const list = [...new Set(domains || [])];
+  const list = [...new Set(domains || [])].filter(Boolean);
   if (!list.length || list.every(d => initialLoad[d])) return Promise.resolve(true);
+
+  const startedAt = Date.now();
+  const timeout = Math.max(1000, Number(timeoutMs) || 7000);
+
   return new Promise(resolve => {
-    const started = Date.now();
-    const timer = setInterval(() => {
-      const done = list.every(d => initialLoad[d]);
-      const timedOut = Date.now() - started > timeoutMs;
-      if (done || timedOut) {
-        clearInterval(timer);
-        resolve(done);
+    let rafId = 0;
+    const check = () => {
+      const pending = list.filter(d => !initialLoad[d]);
+      if (!pending.length) {
+        resolve(true);
+        return;
       }
-    }, 50);
+
+      if (Date.now() - startedAt >= timeout) {
+        console.warn(`[domain-load] timeout after ${timeout}ms: ${pending.join(", ")}`);
+        resolve(false);
+        return;
+      }
+
+      rafId = requestAnimationFrame(check);
+    };
+
+    // 첫 확인은 microtask 이후에 실행하여 subscribe 직후 동기 갱신을 먼저 반영합니다.
+    Promise.resolve().then(() => {
+      if (list.every(d => initialLoad[d])) {
+        resolve(true);
+      } else {
+        rafId = requestAnimationFrame(check);
+      }
+    });
   });
 }
 
