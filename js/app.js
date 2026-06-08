@@ -5,6 +5,7 @@ import { auth, GRADE_GROUPS } from "./config.js";
 import { onAuth, canEdit } from "./auth.js";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js";
 import { setupSaveStatusUi } from "./save-status-ui.js";
+import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
 import { versioned } from "./version.js";
 
@@ -665,68 +666,7 @@ function submitTemplateForm() {
 // ================================================================
 // BOOTSTRAP
 // ================================================================
-// ── Sidebar toggle / resize ──────────────────────────────────────
-const sidebarToggleBtn = document.getElementById("appSidebarToggle");
-let sidebarFloatingToggleBtn = document.getElementById("appSidebarFloatingToggle");
-const sidebarResizer = document.getElementById("appSidebarResizer");
-const pageEl = document.querySelector(".page");
-const sidebarEl = document.getElementById("appSidebar");
-
-// 사이드바를 접은 뒤에도 다시 펼칠 수 있도록 플로팅 버튼을 자동 생성합니다.
-// 분리된 HTML 파일에서 버튼 누락이 있어도 안전하게 동작합니다.
-if (!sidebarFloatingToggleBtn && pageEl && sidebarEl) {
-  sidebarFloatingToggleBtn = document.createElement("button");
-  sidebarFloatingToggleBtn.id = "appSidebarFloatingToggle";
-  sidebarFloatingToggleBtn.type = "button";
-  sidebarFloatingToggleBtn.className = "sidebar-floating-toggle hidden";
-  sidebarFloatingToggleBtn.textContent = "▶";
-  sidebarFloatingToggleBtn.title = "사이드바 펼치기";
-  document.body.appendChild(sidebarFloatingToggleBtn);
-}
-let sidebarWidth = parseInt(localStorage.getItem("cur_sbW") || "320", 10);
-if (!Number.isFinite(sidebarWidth)) sidebarWidth = 320;
-sidebarWidth = Math.max(220, Math.min(520, sidebarWidth));
-
-function applySidebarState(hidden = pageEl?.classList.contains("sidebar-hidden")) {
-  if (!pageEl) return;
-  pageEl.style.setProperty("--sidebar-width", hidden ? "0px" : `${sidebarWidth}px`);
-  pageEl.classList.toggle("sidebar-hidden", !!hidden);
-  if (sidebarToggleBtn) {
-    sidebarToggleBtn.textContent = hidden ? "▶" : "◀";
-    sidebarToggleBtn.title = hidden ? "사이드바 펼치기" : "사이드바 접기";
-  }
-  if (sidebarFloatingToggleBtn) {
-    sidebarFloatingToggleBtn.classList.toggle("hidden", !hidden);
-    sidebarFloatingToggleBtn.textContent = "▶";
-    sidebarFloatingToggleBtn.title = "사이드바 펼치기";
-  }
-}
-
-function toggleSidebar() {
-  applySidebarState(!pageEl?.classList.contains("sidebar-hidden"));
-}
-
-sidebarToggleBtn?.addEventListener("click", toggleSidebar);
-sidebarFloatingToggleBtn?.addEventListener("click", toggleSidebar);
-
-sidebarResizer?.addEventListener("mousedown", e => {
-  if (!pageEl || pageEl.classList.contains("sidebar-hidden")) return;
-  e.preventDefault();
-  const x0 = e.clientX;
-  const w0 = sidebarEl?.getBoundingClientRect().width || sidebarWidth;
-  const onMove = ev => {
-    sidebarWidth = Math.max(220, Math.min(520, Math.round(w0 + ev.clientX - x0)));
-    pageEl.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
-  };
-  const onUp = () => {
-    localStorage.setItem("cur_sbW", String(sidebarWidth));
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-  };
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
-});
-applySidebarState(false);
+setupAppSidebarUi();
 
 let _renderTimer = null;
 const _pendingRenderDomains = new Set();
