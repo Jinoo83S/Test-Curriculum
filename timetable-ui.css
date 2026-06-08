@@ -1434,22 +1434,62 @@ button.tt-grade-filter-btn.active {
 }
 
 /* Drag conflict preview: highlights conflict time/class headers while dragging cards */
+.tt-cell.tt-drag-preview-ok,
+.tt-cell.tt-drag-preview-student,
+.tt-cell.tt-drag-preview-teacher,
+.tt-cell.tt-drag-preview-room {
+  position: relative;
+}
 .tt-cell.tt-drag-preview-ok {
-  box-shadow: inset 0 0 0 1px rgba(34,197,94,.22);
-  background-image: linear-gradient(rgba(34,197,94,.045), rgba(34,197,94,.045));
+  box-shadow: inset 0 0 0 2px rgba(34,197,94,.45) !important;
+  background-image: linear-gradient(rgba(34,197,94,.10), rgba(34,197,94,.10)) !important;
+}
+.tt-cell.tt-drag-preview-ok::after,
+.tt-cell.tt-drag-preview-student::after,
+.tt-cell.tt-drag-preview-teacher::after,
+.tt-cell.tt-drag-preview-room::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 4px;
+  pointer-events: none;
+  z-index: 40;
+  box-sizing: border-box;
+}
+.tt-cell.tt-drag-preview-ok::after {
+  border: 2px solid rgba(34,197,94,.72);
+  background: rgba(34,197,94,.08);
 }
 .tt-cell.tt-drag-preview-student {
-  box-shadow: inset 0 0 0 2px rgba(239,68,68,.8) !important;
-  background-image: linear-gradient(rgba(239,68,68,.13), rgba(239,68,68,.13)) !important;
+  box-shadow: inset 0 0 0 3px rgba(220,38,38,.98) !important;
+  background-image: linear-gradient(rgba(239,68,68,.22), rgba(239,68,68,.22)) !important;
+}
+.tt-cell.tt-drag-preview-student::after {
+  border: 3px solid rgba(220,38,38,.98);
+  background: repeating-linear-gradient(135deg, rgba(239,68,68,.28) 0 6px, rgba(254,226,226,.12) 6px 12px);
 }
 .tt-cell.tt-drag-preview-teacher {
-  box-shadow: inset 0 0 0 2px rgba(245,158,11,.78) !important;
-  background-image: linear-gradient(rgba(245,158,11,.13), rgba(245,158,11,.13)) !important;
+  box-shadow: inset 0 0 0 3px rgba(234,88,12,.98) !important;
+  background-image: linear-gradient(rgba(249,115,22,.22), rgba(249,115,22,.22)) !important;
+}
+.tt-cell.tt-drag-preview-teacher::after {
+  border: 3px solid rgba(234,88,12,.98);
+  background: repeating-linear-gradient(135deg, rgba(249,115,22,.26) 0 6px, rgba(255,237,213,.12) 6px 12px);
 }
 .tt-cell.tt-drag-preview-room {
-  box-shadow: inset 0 0 0 2px rgba(234,179,8,.78) !important;
-  background-image: linear-gradient(rgba(234,179,8,.13), rgba(234,179,8,.13)) !important;
+  box-shadow: inset 0 0 0 3px rgba(202,138,4,.98) !important;
+  background-image: linear-gradient(rgba(234,179,8,.24), rgba(234,179,8,.24)) !important;
 }
+.tt-cell.tt-drag-preview-room::after {
+  border: 3px solid rgba(202,138,4,.98);
+  background: repeating-linear-gradient(135deg, rgba(234,179,8,.28) 0 6px, rgba(254,249,195,.12) 6px 12px);
+}
+.tt-cell.tt-drag-preview-student .tt-entry-card,
+.tt-cell.tt-drag-preview-student .tt-all-summary-card { outline: 3px solid #dc2626 !important; outline-offset: -3px; }
+.tt-cell.tt-drag-preview-teacher .tt-entry-card,
+.tt-cell.tt-drag-preview-teacher .tt-all-summary-card { outline: 3px solid #ea580c !important; outline-offset: -3px; }
+.tt-cell.tt-drag-preview-room .tt-entry-card,
+.tt-cell.tt-drag-preview-room .tt-all-summary-card { outline: 3px solid #ca8a04 !important; outline-offset: -3px; }
 .tt-all-row-hdr.tt-drag-preview-row-student,
 .tt-period-label.tt-drag-preview-row-student,
 .tt-section-sub-hdr.tt-drag-preview-row-student {

@@ -58,10 +58,10 @@ function injectAllSummaryStyles() {
     .tt-all-summary-card:hover{filter:brightness(.98);box-shadow:inset 0 0 0 1px rgba(37,99,235,.25);}
     .tt-all-summary-card.tt-all-summary-problem{outline:2px solid #ef4444;outline-offset:-2px;background:#fff1f2!important;color:#9f1239!important;}
     .tt-all-summary-card.tt-all-summary-hidden-normal{opacity:.18;filter:grayscale(.6);}
-    .tt-all-summary-top{width:100%;font-size:clamp(7px,.62vw,9px);font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:clip;}
-    .tt-all-summary-mid{width:100%;margin-top:1px;font-size:clamp(6px,.54vw,8px);font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:clip;opacity:.9;}
-    .tt-all-summary-bottom{width:100%;margin-top:1px;font-size:clamp(5.5px,.50vw,7px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:clip;opacity:.78;}
-    .tt-all-summary-more{position:absolute;right:2px;top:1px;min-width:13px;height:12px;border-radius:999px;background:rgba(15,23,42,.12);font-size:8px;font-weight:950;line-height:12px;}
+    .tt-all-summary-top{width:100%;font-size:clamp(7px,.62vw,9px);font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .tt-all-summary-mid{width:100%;margin-top:1px;font-size:clamp(6px,.54vw,8px);font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92;}
+    .tt-all-summary-bottom{width:100%;margin-top:1px;font-size:clamp(5.5px,.50vw,7px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.82;}
+    .tt-all-summary-card.tt-dragging{opacity:.58;outline:2px dashed rgba(37,99,235,.75);outline-offset:-2px;}
     .tt-all-detail-panel-backdrop{position:fixed;inset:0;z-index:99997;background:rgba(15,23,42,.08);pointer-events:none;}
     .tt-all-detail-panel{position:fixed;top:58px;right:12px;bottom:14px;width:min(430px,calc(100vw - 26px));z-index:99998;border:1px solid #cbd5e1;border-radius:16px;background:#fff;box-shadow:0 22px 55px rgba(15,23,42,.26);display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;}
     .tt-all-detail-panel-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px 12px;border-bottom:1px solid #e2e8f0;background:linear-gradient(180deg,#fff,#f8fafc);}
@@ -176,15 +176,9 @@ function buildEntryGroups(slotEntries = [], ctx = {}) {
   return [...map.values()].map(group => summarizeEntryGroup(group, ctx));
 }
 
-function getEntryGroupDisplayName(entry = {}, ctx = {}) {
-  if (!entry?.groupId) return "";
-  return cleanText(entry.groupName) || cleanText(ctx.getGroupNameById?.(entry.groupId)) || "";
-}
-
 function summarizeEntryGroup(group, ctx = {}) {
   const firstEntry = group.entries[0] || {};
   const firstCard = group.cards[0] || null;
-  const groupNames = localUnique(group.entries.map(e => getEntryGroupDisplayName(e, ctx)));
   const tracks = localUnique(group.cards.map(c => c.track).concat(group.entries.map(e => e.track)));
   const categories = localUnique(group.cards.map(c => c.category).concat(group.entries.map(e => e.category)));
   const teachers = localUnique(group.entries.flatMap(entryTeachers));
@@ -194,9 +188,9 @@ function summarizeEntryGroup(group, ctx = {}) {
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
 
-  let title = groupNames[0] || tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || entryTitleFallback(firstEntry);
+  let title = tracks.find(t => t && t !== "공통") || tracks[0] || categories[0] || entryTitleFallback(firstEntry);
   const subjectTitles = localUnique(group.cards.map(cardTitle));
-  const isSingleSubject = !groupNames.length && group.entries.length === 1 && group.cards.length <= 1;
+  const isSingleSubject = group.entries.length === 1 && group.cards.length <= 1;
   if (isSingleSubject) title = subjectTitles[0] || title;
 
   return {
@@ -211,35 +205,35 @@ function summarizeEntryGroup(group, ctx = {}) {
   };
 }
 
+function getSummaryDragData(summary = {}) {
+  const movable = (summary.entries || []).filter(e => e && !e.pinned);
+  if (!movable.length) return null;
+  const first = movable[0];
 
-function writeSummaryDragDataToEvent(ev, data, effect = "move") {
-  if (!ev?.dataTransfer || !data) return;
-  ev.dataTransfer.effectAllowed = effect;
-  const payload = JSON.stringify(data);
-  ev.dataTransfer.setData(TT_DRAG_MIME, payload);
-  ev.dataTransfer.setData("text/plain", payload);
-}
+  // 단일 배치이거나 같은 시간의 같은 그룹/unit으로 묶인 요약 카드만 안전하게 이동합니다.
+  const isGrouped = !!(first.groupId || first.unitId);
+  const canMoveTogether = movable.length === 1 || (isGrouped && movable.every(e =>
+    e.day === first.day &&
+    e.period === first.period &&
+    ((first.groupId && e.groupId === first.groupId) || (first.unitId && e.unitId === first.unitId))
+  ));
+  if (!canMoveTogether) return null;
 
-function getSummaryMovableEntry(summary = {}) {
-  const list = safeArray(summary.entries).filter(Boolean);
-  if (list.length === 1) return list[0];
-  if (!list.length) return null;
-  const first = list[0];
-  const sameSlot = list.every(e => e.day === first.day && e.period === first.period);
-  const sameUnit = first.unitId && list.every(e => e.unitId === first.unitId);
-  const sameGroup = first.groupId && list.every(e => e.groupId === first.groupId);
-  return sameSlot && (sameUnit || sameGroup) ? first : null;
-}
-
-function summaryDragDataFromEntry(entry = {}) {
-  if (!entry?.id) return null;
   return {
     kind: "entry",
-    entryId: entry.id,
-    teacherName: entry.teacherName,
-    gradeKey: entry.gradeKey,
-    sectionIdx: entry.sectionIdx ?? 0,
+    entryId: first.id,
+    teacherName: first.teacherName || "",
+    gradeKey: first.gradeKey || "",
+    sectionIdx: first.sectionIdx ?? 0,
   };
+}
+
+function writeSummaryDragData(ev, data) {
+  if (!ev?.dataTransfer || !data) return;
+  const payload = JSON.stringify(data);
+  ev.dataTransfer.effectAllowed = "move";
+  ev.dataTransfer.setData(TT_DRAG_MIME, payload);
+  ev.dataTransfer.setData("text/plain", payload);
 }
 
 function makeSummaryCard(summary, ctx = {}, mode = "summary") {
@@ -248,54 +242,50 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   card.style.setProperty("--tt-sum-bg", summary.gradeColor.bg || "#eff6ff");
   card.style.setProperty("--tt-sum-text", summary.gradeColor.text || "#1e3a8a");
   card.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
+  const subjectText = (summary.subjectTitles && summary.subjectTitles.length)
+    ? summary.subjectTitles.join(" / ")
+    : (summary.title || entryTitleFallback(summary.entries?.[0]));
+  const teacherText = (summary.teachers && summary.teachers.length)
+    ? summary.teachers.join(", ")
+    : "교사 없음";
+  const roomText = (summary.rooms && summary.rooms.length)
+    ? summary.rooms.join(", ")
+    : "교실 미배정";
+
   const top = document.createElement("div");
   top.className = "tt-all-summary-top";
-  top.textContent = summary.title;
+  top.textContent = subjectText;
+  top.title = subjectText;
+
   const mid = document.createElement("div");
   mid.className = "tt-all-summary-mid";
-  const subjectCount = Math.max(summary.subjectTitles.length, summary.cards.length, summary.entries.length);
-  const studentText = summary.studentCount ? `${summary.studentCount}명` : "";
-  mid.textContent = [subjectCount > 1 ? `${subjectCount}과목` : (summary.subjectTitles[0] || "단일"), studentText].filter(Boolean).join(" · ");
+  mid.textContent = teacherText;
+  mid.title = teacherText;
+
   const bottom = document.createElement("div");
   bottom.className = "tt-all-summary-bottom";
-  bottom.textContent = [summary.teachers.slice(0, 2).join(", "), summary.rooms.length ? `교실 ${summary.rooms.length}` : "교실 미배정"].filter(Boolean).join(" · ");
+  bottom.textContent = roomText;
+  bottom.title = roomText;
+
   card.append(top, mid, bottom);
-  if (subjectCount > 1) {
-    const more = document.createElement("span");
-    more.className = "tt-all-summary-more";
-    more.textContent = `×${subjectCount}`;
-    card.appendChild(more);
+  if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · ${subjectText}`;
+  else card.title = [subjectText, teacherText, roomText].filter(Boolean).join(" · ");
+
+  const dragData = getSummaryDragData(summary);
+  if (dragData && canEdit()) {
+    card.draggable = true;
+    card.addEventListener("dragstart", ev => {
+      const data = getSummaryDragData(summary);
+      if (!data) { ev.preventDefault(); return; }
+      writeSummaryDragData(ev, data);
+      if (typeof ctx.setDragData === "function") ctx.setDragData(data);
+      card.classList.add("tt-dragging");
+    });
+    card.addEventListener("dragend", () => {
+      if (typeof ctx.setDragData === "function") ctx.setDragData(null);
+      card.classList.remove("tt-dragging");
+    });
   }
-  const movableEntry = getSummaryMovableEntry(summary);
-  const canMoveSummary = !!movableEntry && canEdit() && !movableEntry.pinned;
-  if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · 클릭해서 상세 확인`;
-  else if (canMoveSummary) card.title = "클릭: 포함 과목 보기 · 우클릭: 배치 메뉴 · 드래그: 이동";
-  else card.title = "클릭해서 포함 과목 보기";
-
-  card.draggable = canMoveSummary;
-  card.addEventListener("dragstart", ev => {
-    const entry = getSummaryMovableEntry(summary);
-    const data = summaryDragDataFromEntry(entry);
-    if (!data || !canEdit() || entry?.pinned) { ev.preventDefault(); return; }
-    ctx.setDragData?.(data);
-    writeSummaryDragDataToEvent(ev, data, "move");
-    card.classList.add("tt-dragging");
-  });
-  card.addEventListener("dragend", () => {
-    ctx.setDragData?.(null);
-    card.classList.remove("tt-dragging");
-  });
-
-  card.addEventListener("contextmenu", ev => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    const entry = getSummaryMovableEntry(summary);
-    if (entry && typeof ctx.showEntryContextMenu === "function") {
-      ctx.showEntryContextMenu(entry, ev.clientX, ev.clientY);
-    } else {
-      openAllSummaryDetailPanel(summary, ctx);
-    }
-  });
 
   card.addEventListener("click", ev => {
     ev.stopPropagation();
@@ -383,27 +373,6 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
     const classes = localUnique(cards.flatMap(c => safeArray(c.classLabels))).join(", ");
     meta.textContent = [teachers, rooms, students ? `${students}명` : "", classes].filter(Boolean).join(" · ");
     item.append(itemTitle, meta);
-    const detailDragData = summaryDragDataFromEntry(entry);
-    const canDragDetailItem = !!detailDragData && canEdit() && !entry.pinned;
-    item.draggable = canDragDetailItem;
-    item.title = canDragDetailItem ? "우클릭: 배치 메뉴 · 드래그: 이동" : (entry.pinned ? "고정된 수업입니다." : "배치 상세 항목");
-    item.addEventListener("dragstart", ev => {
-      if (!detailDragData || !canEdit() || entry.pinned) { ev.preventDefault(); return; }
-      ctx.setDragData?.(detailDragData);
-      writeSummaryDragDataToEvent(ev, detailDragData, "move");
-      item.classList.add("tt-dragging");
-    });
-    item.addEventListener("dragend", () => {
-      ctx.setDragData?.(null);
-      item.classList.remove("tt-dragging");
-    });
-    item.addEventListener("contextmenu", ev => {
-      if (typeof ctx.showEntryContextMenu !== "function") return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      ctx.showEntryContextMenu(entry, ev.clientX, ev.clientY);
-    });
-
     if (ctx.showEntryDetail) {
       const actions = document.createElement("div");
       actions.className = "tt-all-detail-item-actions";

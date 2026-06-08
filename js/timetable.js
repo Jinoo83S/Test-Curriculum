@@ -1190,7 +1190,7 @@ function renderGrid() {
     periods: ttConfig().periodLabels,
     entries: entries(),
     getDragData: () => dragData,
-    setDragData: value => { dragData = value; },
+    setDragData: value => { dragData = value; if (value) applyDragHighlight(value); else clearDragHighlight(); },
     handleDrop,
     updatePeriodLabel,
     buildEntryCard,
