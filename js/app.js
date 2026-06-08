@@ -297,17 +297,9 @@ async function navigateTo(view) {
   // 먼저 렌더링되어 빈 화면처럼 보일 수 있습니다. 필요한 구독이 붙은 뒤 한 번 더 렌더링합니다.
   await waitForDomainsLoaded(domainsForView(view), 7000);
 
-  // Render
-  if (view === "board") { renderBoardTab(); renderSidebar(); }
-  else if (view === "manager") { clearStableOrder(); renderTemplateManagerView(); renderSidebar(); }
-  else if (view === "students") { selectedClassId = null; await renderStudentView(); }
-  else if (view === "teachers")     await renderTeacherPanel();
-  else if (view === "rooms")        await renderRoomsPanel();
-  else if (view === "rosters")      await renderRosterPanel();
-  else if (view === "subjectsetup") await renderSubjectSetupPanel();
-  else if (view === "ttcards")      await renderTtCardsPanel();
-  else if (view === "groups")       await renderGroupManagerView();
-  else if (view === "results")      await renderResultsPanel();
+  runViewNavigationHook(view, "before");
+  await runViewRenderer(view, { catchErrors: false });
+  runViewNavigationHook(view, "after");
 }
 
 function setView(view) {
@@ -487,6 +479,51 @@ async function renderStudentTableView() {
   }
 }
 
+// View renderer map — 화면별 렌더러를 한 곳에서 관리합니다.
+// 새 화면이 추가될 때 render()/navigateTo()의 if-chain을 수정하지 않고
+// 여기만 확장하면 됩니다.
+const VIEW_RENDERERS = {
+  board:        () => renderBoardTab(),
+  groups:       () => renderGroupManagerView(),
+  manager:      () => renderTemplateManagerView(),
+  students:     () => renderStudentView(),
+  teachers:     () => renderTeacherPanel(),
+  rooms:        () => renderRoomsPanel(),
+  rosters:      () => renderRosterPanel(),
+  results:      () => renderResultsPanel(),
+  subjectsetup: () => renderSubjectSetupPanel(),
+  ttcards:      () => renderTtCardsPanel(),
+};
+
+// 화면 진입 시에만 필요한 부수 작업입니다.
+// Firestore 업데이트 렌더링에서는 실행하지 않아 기존 상태가 유지됩니다.
+const VIEW_NAVIGATION_HOOKS = {
+  board: {
+    after: () => renderSidebar(),
+  },
+  manager: {
+    before: () => clearStableOrder(),
+    after:  () => renderSidebar(),
+  },
+  students: {
+    before: () => { selectedClassId = null; },
+  },
+};
+
+function runViewNavigationHook(view, phase) {
+  const hook = VIEW_NAVIGATION_HOOKS[view]?.[phase];
+  if (typeof hook === "function") hook();
+}
+
+function runViewRenderer(view = activeMainView, { catchErrors = true } = {}) {
+  const renderer = VIEW_RENDERERS[view] || VIEW_RENDERERS.board;
+  const result = renderer();
+  if (catchErrors && result && typeof result.catch === "function") {
+    result.catch(err => console.error(`[render:${view}]`, err));
+  }
+  return result;
+}
+
 // Master render — called on every Firestore update
 function render(domain) {
   setControlsDisabled(!canEdit());
@@ -515,16 +552,7 @@ function render(domain) {
     renderSidebar();
   }
 
-  if (activeMainView === "board") renderBoardTab();
-  if (activeMainView === "groups")       void renderGroupManagerView();
-  if (activeMainView === "manager")      renderTemplateManagerView();
-  if (activeMainView === "students")     void renderStudentView();
-  if (activeMainView === "teachers")     void renderTeacherPanel();
-  if (activeMainView === "rooms")        void renderRoomsPanel();
-  if (activeMainView === "rosters")      void renderRosterPanel();
-  if (activeMainView === "results")      void renderResultsPanel();
-  if (activeMainView === "subjectsetup") void renderSubjectSetupPanel();
-  if (activeMainView === "ttcards")      void renderTtCardsPanel();
+  runViewRenderer(activeMainView);
   renderTabBtns();
 }
 
