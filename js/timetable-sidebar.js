@@ -17,7 +17,7 @@ export function createTimetableSidebarHandlers(deps) {
     getCreditsForTemplate, getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate, getSectionCount, entryTemplateIds, entryHasGrade,
     getGradeColor, gradeDisplay, sectionLabel,
     showSidebarCardDetail, showEntryDetailByUnit,
-    renderAll, setDragData, scheduleSave = () => {},
+    renderAll, setDragData, scheduleSave = () => {}, saveNow = null,
   } = deps;
 
   function setDragging(value) {
@@ -434,7 +434,8 @@ export function createTimetableSidebarHandlers(deps) {
       };
       if (!Array.isArray(appState.timetable.ttcards)) appState.timetable.ttcards = [];
       appState.timetable.ttcards.push(card);
-      scheduleSave("timetable");
+      if (typeof saveNow === "function") void saveNow("timetable", { force: true });
+      else scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
       overlay.remove();
       renderAll();
       refreshSubjectViews();
@@ -865,7 +866,7 @@ export function createTimetableSidebarHandlers(deps) {
     card.isWholeGrade = !!values.isWholeGrade;
     card.manualEdited = true;
     card.editedAt = new Date().toISOString();
-    scheduleSave("timetable");
+    scheduleSave("timetable", { delayMs: 350 });
     renderAll();
     refreshSubjectViews();
   }
@@ -878,7 +879,8 @@ export function createTimetableSidebarHandlers(deps) {
     Object.assign(card, parsed, { id: keepId, manualEdited: true, editedAt: new Date().toISOString() });
     if (card.teacherName && !Array.isArray(card.teachers)) card.teachers = splitEditorTeachers(card.teacherName);
     if (Array.isArray(card.teachers) && !card.teacherName) card.teacherName = card.teachers.join(", ");
-    scheduleSave("timetable");
+    if (typeof saveNow === "function") void saveNow("timetable", { force: true });
+    else scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
     renderAll();
     refreshSubjectViews();
   }

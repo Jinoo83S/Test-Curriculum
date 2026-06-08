@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js";
 import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
+import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
 } from "./templates.js";
@@ -637,7 +637,7 @@ export function generateTtCards() {
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
   appState.timetable.ttcards = cards;
   pruneObsoleteGeneratedTtCardRefs(cards, before);
-  scheduleSave("timetable");
+  void saveNow("timetable", { force: true });
   return cards.length;
 }
 

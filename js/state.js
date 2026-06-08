@@ -37,8 +37,10 @@ export const initialLoad = {
 // ── Per-domain save timers ────────────────────────────────────────
 const saveTimers = {};
 const dirtyDomains = new Set();
-// 개발 중에는 드래그/입력 테스트가 많아지므로 자동저장 간격을 조금 길게 둡니다.
-const SAVE_DELAY_MS = 10000;
+// 자동저장 지연 시간은 운영/로컬 개발 환경을 분리합니다.
+// 운영에서는 데이터 유실 위험을 줄이기 위해 짧게, 로컬 개발에서는 드래그/입력 테스트 여유를 둡니다.
+export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 10000 : 2000;
+export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 1500 : 350;
 const AUTO_SAVE_KEY = "his_auto_save_v1";
 
 
@@ -251,7 +253,7 @@ export function getDirtyDomains() {
   return [...dirtyDomains];
 }
 
-export function scheduleSave(domain) {
+export function scheduleSave(domain, options = {}) {
   if (!canEdit() || !initialLoad[domain]) return;
   dirtyDomains.add(domain);
 
@@ -264,7 +266,13 @@ export function scheduleSave(domain) {
 
   _onSaveStatus?.("saving", { autoSave: true, dirtyDomains: getDirtyDomains() });
   clearTimeout(saveTimers[domain]);
-  saveTimers[domain] = setTimeout(() => saveNow(domain), SAVE_DELAY_MS);
+  const requestedDelay = Number(options?.delayMs);
+  const delayMs = options?.immediate ? 0 : (Number.isFinite(requestedDelay) ? Math.max(0, requestedDelay) : SAVE_DELAY_MS);
+  saveTimers[domain] = setTimeout(() => saveNow(domain, options?.saveOptions || {}), delayMs);
+}
+
+export function scheduleFastSave(domain, options = {}) {
+  return scheduleSave(domain, { ...options, delayMs: options.delayMs ?? FAST_SAVE_DELAY_MS });
 }
 
 export async function saveNow(domain, options = {}) {

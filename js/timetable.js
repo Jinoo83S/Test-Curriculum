@@ -1641,7 +1641,7 @@ function saveCurrentScheduleVersion(name = "") {
   };
   savedSchedules().unshift(version);
   ttDomain().savedSchedules = savedSchedules().slice(0, 30);
-  scheduleSave("timetable");
+  void saveNow("timetable", { force: true });
   renderAll();
   return version;
 }
@@ -1658,7 +1658,7 @@ function loadSavedScheduleVersion(versionId) {
     const applyPeriod = confirm(`저장본은 ${version.periodCount}교시 기준입니다. 현재 교시 설정도 ${version.periodCount}교시로 바꿀까요?`);
     if (applyPeriod) setPeriodCount(version.periodCount);
   }
-  scheduleSave("timetable");
+  void saveNow("timetable", { force: true });
   recomputeConflicts();
   renderAll();
 }
@@ -1671,7 +1671,7 @@ function renameSavedScheduleVersion(versionId) {
   if (next == null) return;
   version.name = clean(next) || version.name;
   version.updatedAt = new Date().toISOString();
-  scheduleSave("timetable");
+  void saveNow("timetable", { force: true });
   openScheduleVersionManager();
 }
 
@@ -1688,7 +1688,7 @@ function duplicateSavedScheduleVersion(versionId) {
     entries: cloneTimetableEntries(version.entries || []),
   };
   savedSchedules().unshift(copy);
-  scheduleSave("timetable");
+  void saveNow("timetable", { force: true });
   openScheduleVersionManager();
 }
 
@@ -1698,7 +1698,7 @@ function deleteSavedScheduleVersion(versionId) {
   if (!version) return;
   if (!confirm(`저장 배치 "${version.name}"을 삭제할까요? 현재 시간표에는 영향을 주지 않습니다.`)) return;
   ttDomain().savedSchedules = savedSchedules().filter(v => v.id !== versionId);
-  scheduleSave("timetable");
+  void saveNow("timetable", { force: true });
   openScheduleVersionManager();
 }
 
@@ -1741,7 +1741,7 @@ function importSavedScheduleVersion(file) {
       imported.entryCount = imported.entries.length;
       if (!imported.entries.length) throw new Error("entries가 없습니다.");
       savedSchedules().unshift(imported);
-      scheduleSave("timetable");
+      void saveNow("timetable", { force: true });
       openScheduleVersionManager();
     } catch (e) {
       alert(`배치 파일을 불러올 수 없습니다.\n${e?.message || e}`);
@@ -2202,6 +2202,7 @@ const ttSidebarHandlers = createTimetableSidebarHandlers({
   renderAll: () => renderAll(),
   setDragData: value => { dragData = value; },
   scheduleSave,
+  saveNow,
 });
 
 function renderSubjectPanel() {
@@ -2335,7 +2336,7 @@ constraintsPanelApi = createTimetableConstraintsHandlers({
 const shuffle = arr => { const a = [...arr]; for (let i = a.length-1; i > 0; i--) { const j = Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; };
 
 export const autoAssignAll = createAutoAssignAll({
-  GRADE_KEYS, canEdit, appState, scheduleSave, normalizeTimetableEntry,
+  GRADE_KEYS, canEdit, appState, scheduleSave, saveNow, normalizeTimetableEntry,
   uid, sectionLabel, gradeDisplay, splitTeacherNames,
   getTemplateById, getTemplateCardTitle, getTtCardById,
   describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
@@ -2530,7 +2531,7 @@ $("ttClearGradeBtn")?.addEventListener("click", () => {
 Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   captureTimetableUndo("시간표 초기화");
   ttDomain().entries = entries().filter(keepFn);
-  scheduleSave("timetable"); recomputeConflicts(); renderAll();
+  void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());

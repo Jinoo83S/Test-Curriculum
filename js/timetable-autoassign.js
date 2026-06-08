@@ -8,7 +8,7 @@
 
 export function createAutoAssignAll(deps) {
   const {
-    GRADE_KEYS, canEdit, appState, scheduleSave, normalizeTimetableEntry,
+    GRADE_KEYS, canEdit, appState, scheduleSave, saveNow, normalizeTimetableEntry,
     uid, sectionLabel, gradeDisplay, splitTeacherNames,
     getTemplateById, getTemplateCardTitle, getTtCardById,
     describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
@@ -20,6 +20,14 @@ export function createAutoAssignAll(deps) {
   } = deps;
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
+
+  async function persistTimetableNow() {
+    if (typeof saveNow === "function") {
+      await saveNow("timetable", { force: true });
+      return;
+    }
+    scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
+  }
 
   // ── Restricted-teacher helpers ─────────────────────────────────
   // 시간강사/육아단축/제한근무 교사는 자동배치에서 고정 수업 다음 우선순위로 다룹니다.
@@ -2757,7 +2765,7 @@ export function createAutoAssignAll(deps) {
     });
 
     bestPlaced.forEach(e => entries().push(e));
-    scheduleSave("timetable");
+    await persistTimetableNow();
     recomputeConflicts();
 
     const missingRoomEntries = bestPlaced.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
@@ -2898,7 +2906,7 @@ export function createAutoAssignAll(deps) {
           rollbackConsumed = true;
           if (button) { button.disabled = true; button.textContent = "되돌리는 중..."; }
           ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
-          scheduleSave("timetable");
+          await persistTimetableNow();
           recomputeConflicts();
           renderAll();
           addTimetableLog("undo", "자동배치 결과 되돌리기", "자동배치 전 시간표 상태로 복원했습니다.");
