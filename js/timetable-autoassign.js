@@ -691,6 +691,148 @@ export function createAutoAssignAll(deps) {
     };
   }
 
+
+  function summarizeAutoAssignOutcome({ placedEntries = [], failedItems = [], forcedEntries = [], protectedEntries = [], missingRoomEntries = [] } = {}) {
+    const normalize = value => String(value ?? "").trim();
+    const placedCardIds = new Set();
+    const placedBlocks = new Map();
+    const groupBlocks = new Map();
+    const standaloneBlocks = new Map();
+    const forcedIds = new Set((forcedEntries || []).map(e => e?.id).filter(Boolean));
+
+    const blockKeyForEntry = entry => {
+      if (!entry) return "";
+      if (entry.groupId) return `group:${entry.groupId}:${entry.day}:${entry.period}`;
+      const ids = ttCardIdsFromPlacement(entry).filter(Boolean).sort().join(",");
+      if (ids) return `cards:${ids}:${entry.day}:${entry.period}`;
+      const tpl = (entry.templateIds || [entry.templateId]).filter(Boolean).sort().join(",");
+      return `entry:${tpl || entry.id || getAutoItemName(entry)}:${entry.day}:${entry.period}`;
+    };
+
+    const labelForEntry = entry => {
+      if (!entry) return "-";
+      if (entry.groupId) {
+        const groupName = ttGroups().find(g => g.id === entry.groupId)?.name || entry.groupName || entry.label || "그룹 수업";
+        return groupName;
+      }
+      return getAutoItemName(entry);
+    };
+
+    (placedEntries || []).forEach(entry => {
+      ttCardIdsFromPlacement(entry).forEach(id => id && placedCardIds.add(id));
+      const key = blockKeyForEntry(entry);
+      if (!key) return;
+      if (!placedBlocks.has(key)) {
+        const block = {
+          key,
+          name: labelForEntry(entry),
+          groupId: entry.groupId || "",
+          day: entry.day,
+          period: entry.period,
+          entries: 0,
+          cardIds: new Set(),
+          forced: false,
+          missingRoom: false
+        };
+        placedBlocks.set(key, block);
+        if (entry.groupId) groupBlocks.set(key, block);
+        else standaloneBlocks.set(key, block);
+      }
+      const block = placedBlocks.get(key);
+      block.entries += 1;
+      block.forced = block.forced || forcedIds.has(entry.id);
+      block.missingRoom = block.missingRoom || (!entry.roomId && String(entry.roomRule || "auto").trim() !== "none");
+      ttCardIdsFromPlacement(entry).forEach(id => id && block.cardIds.add(id));
+    });
+
+    const failedUnitMap = new Map();
+    (failedItems || []).forEach(fail => {
+      const item = fail?.item || {};
+      const ids = ttCardIdsFromPlacement(item).filter(Boolean).sort();
+      const key = fail?.groupId
+        ? `group:${fail.groupId}:${normalize(fail.name || getAutoItemName(item))}`
+        : (ids.length ? `cards:${ids.join(",")}` : `name:${normalize(fail?.name || getAutoItemName(item))}`);
+      if (!failedUnitMap.has(key)) {
+        failedUnitMap.set(key, {
+          key,
+          name: fail?.name || getAutoItemName(item),
+          groupId: fail?.groupId || item.groupId || "",
+          occurrences: 0,
+          cardIds: new Set(),
+          teachers: new Set(),
+          restrictedTeachers: new Set()
+        });
+      }
+      const row = failedUnitMap.get(key);
+      row.occurrences += 1;
+      ids.forEach(id => row.cardIds.add(id));
+      getTeachersForAutoItem(item).forEach(t => row.teachers.add(t));
+      (item.restrictedTeachers || getRestrictedTeachersForAutoItem(item)).forEach(t => row.restrictedTeachers.add(t));
+    });
+
+    const failedUnits = [...failedUnitMap.values()].map(row => ({
+      ...row,
+      cardIds: [...row.cardIds],
+      teachers: [...row.teachers],
+      restrictedTeachers: [...row.restrictedTeachers]
+    })).sort((a, b) => b.occurrences - a.occurrences || String(a.name).localeCompare(String(b.name), "ko"));
+
+    const missingRoomBlockCount = [...placedBlocks.values()].filter(b => b.missingRoom).length;
+    const forcedBlockCount = [...placedBlocks.values()].filter(b => b.forced).length;
+    const protectedBlockKeys = new Set((protectedEntries || []).map(blockKeyForEntry).filter(Boolean));
+
+    return {
+      placedEntryCount: placedEntries.length,
+      placedBlockCount: placedBlocks.size,
+      placedCardCount: placedCardIds.size,
+      placedGroupBlockCount: groupBlocks.size,
+      placedStandaloneBlockCount: standaloneBlocks.size,
+      protectedEntryCount: protectedEntries.length,
+      protectedBlockCount: protectedBlockKeys.size,
+      forcedEntryCount: forcedEntries.length,
+      forcedBlockCount,
+      missingRoomEntryCount: missingRoomEntries.length,
+      missingRoomBlockCount,
+      failedOccurrenceCount: failedItems.length,
+      failedUnitCount: failedUnits.length,
+      failedUnits,
+      topFailedUnits: failedUnits.slice(0, 12).map(row => ({
+        name: row.name,
+        occurrences: row.occurrences,
+        cardCount: row.cardIds.length,
+        teachers: row.teachers,
+        restrictedTeachers: row.restrictedTeachers
+      }))
+    };
+  }
+
+  function buildAutoAssignOutcomeHtml(outcome = {}) {
+    const failedUnits = Array.isArray(outcome.topFailedUnits) ? outcome.topFailedUnits : [];
+    const failedHtml = failedUnits.length
+      ? `<ul class="tt-auto-outcome-list">${failedUnits.map(row => {
+          const teacherText = row.teachers?.length ? ` · ${escapeReportHtml(row.teachers.join(", "))}` : "";
+          const restricted = row.restrictedTeachers?.length ? ` <span class="tt-auto-outcome-badge warn">제약교사</span>` : "";
+          return `<li><b>${escapeReportHtml(row.name)}</b><span>${Number(row.occurrences || 0)}회차 · 카드 ${Number(row.cardCount || 0)}개${teacherText}</span>${restricted}</li>`;
+        }).join("")}</ul>`
+      : `<div class="tt-auto-compare-ok">미배치 수업 유닛이 없습니다.</div>`;
+
+    return `<div class="tt-auto-progress-failed tt-auto-outcome-box">`
+      + `<b>자동배치 결과 분석</b>`
+      + `<div class="tt-auto-outcome-grid">`
+      + `<span><em>신규 배치</em><strong>${Number(outcome.placedEntryCount || 0)}</strong><small>entry</small></span>`
+      + `<span><em>수업 블록</em><strong>${Number(outcome.placedBlockCount || 0)}</strong><small>unit</small></span>`
+      + `<span><em>그룹 블록</em><strong>${Number(outcome.placedGroupBlockCount || 0)}</strong><small>unit</small></span>`
+      + `<span><em>일반 블록</em><strong>${Number(outcome.placedStandaloneBlockCount || 0)}</strong><small>unit</small></span>`
+      + `<span><em>배치 카드</em><strong>${Number(outcome.placedCardCount || 0)}</strong><small>card</small></span>`
+      + `<span class="${outcome.failedUnitCount ? "warn" : "ok"}"><em>미배치 유닛</em><strong>${Number(outcome.failedUnitCount || 0)}</strong><small>${Number(outcome.failedOccurrenceCount || 0)}회차</small></span>`
+      + `</div>`
+      + `<div class="tt-auto-outcome-note">카드 수가 아니라 같은 시간에 함께 움직이는 <b>수업 블록/유닛</b> 기준으로 자동배치 결과를 해석합니다.</div>`
+      + (outcome.forcedEntryCount ? `<div class="tt-auto-outcome-note warn">보정 배치 ${Number(outcome.forcedEntryCount || 0)}개 entry / ${Number(outcome.forcedBlockCount || 0)}개 블록이 있습니다. 충돌 표시를 확인해 주세요.</div>` : "")
+      + (outcome.missingRoomEntryCount ? `<div class="tt-auto-outcome-note warn">교실 미배정 ${Number(outcome.missingRoomEntryCount || 0)}개 entry / ${Number(outcome.missingRoomBlockCount || 0)}개 블록이 있습니다.</div>` : "")
+      + `<div class="tt-auto-outcome-failed"><b>남은 수업 유닛</b>${failedHtml}</div>`
+      + `</div>`;
+  }
+
   function escapeReportHtml(value = "") {
     return String(value ?? "").replace(/[<>&"']/g, ch => ({
       "<": "&lt;",
@@ -3099,6 +3241,13 @@ export function createAutoAssignAll(deps) {
 
     const missingRoomEntries = bestPlaced.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
     const missingRoomNames = [...new Set(missingRoomEntries.map(e => getAutoItemName(e)))];
+    const outcomeAnalysis = summarizeAutoAssignOutcome({
+      placedEntries: bestPlaced,
+      failedItems: bestFailed,
+      forcedEntries: forcedPlaced,
+      protectedEntries,
+      missingRoomEntries
+    });
     const conflictSummary = getConflictCounts();
     const report = {
       ts: Date.now(),
@@ -3129,6 +3278,14 @@ export function createAutoAssignAll(deps) {
       failedNames: names,
       failedDiagnostics,
       failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
+      outcomeAnalysis,
+      placedBlockCount: outcomeAnalysis.placedBlockCount,
+      placedGroupBlockCount: outcomeAnalysis.placedGroupBlockCount,
+      placedStandaloneBlockCount: outcomeAnalysis.placedStandaloneBlockCount,
+      placedCardCount: outcomeAnalysis.placedCardCount,
+      failedUnitCount: outcomeAnalysis.failedUnitCount,
+      failedOccurrenceCount: outcomeAnalysis.failedOccurrenceCount,
+      topFailedUnits: outcomeAnalysis.topFailedUnits,
       forcedNames: [...new Set(forcedPlaced.map(f => f.name))],
       durationMs: Date.now() - autoStartedAt,
       conflictTotal: conflictSummary.totalAffected,
@@ -3153,6 +3310,11 @@ export function createAutoAssignAll(deps) {
       "auto",
       names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
       `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 탐색: ${bestStage.label}`
+    );
+    addTimetableLog(
+      outcomeAnalysis.failedUnitCount ? "warn" : "auto",
+      "자동배치 결과 분석",
+      `수업 블록 ${outcomeAnalysis.placedBlockCount}개(그룹 ${outcomeAnalysis.placedGroupBlockCount}, 일반 ${outcomeAnalysis.placedStandaloneBlockCount}) · 배치 카드 ${outcomeAnalysis.placedCardCount}개 · 미배치 유닛 ${outcomeAnalysis.failedUnitCount}개 / ${outcomeAnalysis.failedOccurrenceCount}회차`
     );
     if (missingRoomEntries.length) {
       addTimetableLog(
@@ -3180,6 +3342,7 @@ export function createAutoAssignAll(deps) {
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
     detailLines.push(buildAutoAssignComparisonHtml(preValidation, postValidation));
+    detailLines.push(buildAutoAssignOutcomeHtml(outcomeAnalysis));
     if (!postValidation.ok) {
       const issueRows = postValidation.classSlots?.issues || [];
       const classList = issueRows.slice(0, 10)

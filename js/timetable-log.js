@@ -162,6 +162,27 @@ export function createTimetableLogHandlers({
 
 
 
+    const outcome = auto?.outcomeAnalysis || null;
+    const outcomeHtml = outcome
+      ? (() => {
+          const failedUnits = Array.isArray(outcome.topFailedUnits) ? outcome.topFailedUnits : [];
+          const failedUnitHtml = failedUnits.length
+            ? `<ul>${failedUnits.slice(0, 10).map(row => `<li><b>${escapeHtml(row.name || "-")}</b> ${Number(row.occurrences || 0)}회차 · 카드 ${Number(row.cardCount || 0)}개${row.restrictedTeachers?.length ? ` <span class="tt-log-badge warn">제약교사</span>` : ""}</li>`).join("")}${failedUnits.length > 10 ? `<li>외 ${failedUnits.length - 10}개 유닛</li>` : ""}</ul>`
+            : `<div class="tt-log-validation-block ok">남은 수업 유닛 없음</div>`;
+          return `<div class="tt-log-validation tt-log-outcome">
+            <div class="tt-log-subtitle">자동배치 결과 분석</div>
+            <dl class="tt-log-kv compact">
+              <dt>신규 배치</dt><dd>${outcome.placedEntryCount ?? 0} entry</dd>
+              <dt>수업 블록</dt><dd>${outcome.placedBlockCount ?? 0}개</dd>
+              <dt>그룹/일반</dt><dd>${outcome.placedGroupBlockCount ?? 0} / ${outcome.placedStandaloneBlockCount ?? 0}</dd>
+              <dt>배치 카드</dt><dd>${outcome.placedCardCount ?? 0}개</dd>
+              <dt>미배치 유닛</dt><dd>${outcome.failedUnitCount ?? 0}개 · ${outcome.failedOccurrenceCount ?? 0}회차</dd>
+            </dl>
+            <div class="tt-log-validation-block"><div class="tt-log-subtitle">남은 수업 유닛</div>${failedUnitHtml}</div>
+          </div>`;
+        })()
+      : "";
+
     const validation = auto?.postValidation || null;
     const validationHtml = validation
       ? (() => {
@@ -245,7 +266,9 @@ export function createTimetableLogHandlers({
                   <span class="tt-log-badge ${auto.failedCount ? "warn" : "ok"}">${auto.failedCount ? "부분 완료" : "전체 완료"}</span>
                   ${(auto.conflictTotal || 0) > 0 ? `<span class="tt-log-badge danger">충돌 ${auto.conflictTotal}건</span>` : `<span class="tt-log-badge ok">충돌 없음</span>`}
                   ${auto.validationOk === false ? `<span class="tt-log-badge warn">검증 필요</span>` : (auto.validationOk === true ? `<span class="tt-log-badge ok">검증 통과</span>` : "")}
+                  ${auto.failedUnitCount != null ? `<span class="tt-log-badge ${auto.failedUnitCount ? "warn" : "ok"}">미배치 유닛 ${auto.failedUnitCount}개</span>` : ""}
                 </div>
+                ${outcomeHtml}
                 ${validationHtml}
                 ${failedList}
                 ${failureDiagHtml}` : `<div class="tt-log-empty">아직 자동배치 실행 기록이 없습니다.</div>`}

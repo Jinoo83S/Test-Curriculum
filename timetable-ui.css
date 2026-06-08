@@ -2219,3 +2219,32 @@ body.tt-resizing-bottom * {
     min-height: 340px !important;
   }
 }
+
+
+/* Step 18 · 자동배치 결과 분석 */
+.tt-auto-outcome-box{
+  margin:12px 0 4px;
+  padding:12px;
+  border:1px solid #c7d2fe;
+  border-radius:14px;
+  background:linear-gradient(180deg,#eef2ff,#ffffff);
+}
+.tt-auto-outcome-box>b{display:block;margin-bottom:9px;color:#312e81;font-size:13px;}
+.tt-auto-outcome-grid{display:grid;grid-template-columns:repeat(6,minmax(84px,1fr));gap:7px;margin-bottom:8px;}
+.tt-auto-outcome-grid span{border:1px solid #e2e8f0;border-radius:12px;background:#fff;padding:8px 9px;display:flex;flex-direction:column;gap:2px;min-width:0;}
+.tt-auto-outcome-grid span.warn{background:#fff7ed;border-color:#fed7aa;}
+.tt-auto-outcome-grid span.ok{background:#f0fdf4;border-color:#bbf7d0;}
+.tt-auto-outcome-grid em{font-style:normal;font-size:10.5px;font-weight:900;color:#64748b;white-space:nowrap;}
+.tt-auto-outcome-grid strong{font-size:18px;line-height:1;color:#0f172a;font-weight:950;}
+.tt-auto-outcome-grid small{font-size:10px;font-weight:800;color:#94a3b8;}
+.tt-auto-outcome-note{font-size:11.5px;line-height:1.45;color:#475569;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px 9px;margin-top:6px;}
+.tt-auto-outcome-note.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412;font-weight:800;}
+.tt-auto-outcome-failed{margin-top:9px;border-top:1px dashed #cbd5e1;padding-top:9px;}
+.tt-auto-outcome-failed>b{display:block;margin-bottom:5px;color:#334155;font-size:12px;}
+.tt-auto-outcome-list{margin:0;padding-left:18px;font-size:12px;color:#334155;line-height:1.55;}
+.tt-auto-outcome-list li{margin:3px 0;}
+.tt-auto-outcome-list span{color:#64748b;margin-left:4px;}
+.tt-auto-outcome-badge{display:inline-flex;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:900;margin-left:4px;vertical-align:middle;}
+.tt-auto-outcome-badge.warn{background:#ffedd5;color:#9a3412;}
+@media (max-width:900px){.tt-auto-outcome-grid{grid-template-columns:repeat(3,minmax(84px,1fr));}}
+@media (max-width:560px){.tt-auto-outcome-grid{grid-template-columns:repeat(2,minmax(84px,1fr));}}
