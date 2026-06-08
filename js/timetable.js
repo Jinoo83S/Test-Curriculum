@@ -8,13 +8,11 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { openDataCleanupDialog } from "./data-cleanup.js?v=remaining_cards_fix_r1";
+import { versioned } from "./version.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
-import { getTtCards, getTtCardById, refreshTtCardData } from "./ttcards.js?v=wholegrade_card_gen_r1";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
-import { detectConflicts, detectConstraintViolations, getConflictLabel } from "./timetable-conflicts.js?v=compound_subject_slot_guard";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -25,7 +23,40 @@ import {
   formatClassLabelFromKey as occFormatClassLabelFromKey,
   normalizeClassKey as occNormalizeClassKey
 } from "./timetable-occupancy.js";
-import {
+import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
+import { createTimetableUndoHandlers } from "./timetable-undo.js";
+import { createTimetableAuthUi } from "./timetable-auth-ui.js";
+import { exportTimetableXlsx } from "./timetable-export.js";
+
+
+const [
+  dataCleanupModule,
+  ttCardsModule,
+  conflictModule,
+  timetableDataModule,
+  autoAssignModule,
+  gridModule,
+  detailModule,
+  constraintsModule,
+  logModule,
+  sidebarModule,
+] = await Promise.all([
+  import(versioned("./data-cleanup.js")),
+  import(versioned("./ttcards.js")),
+  import(versioned("./timetable-conflicts.js")),
+  import(versioned("./timetable-data.js")),
+  import(versioned("./timetable-autoassign.js")),
+  import(versioned("./timetable-grid.js")),
+  import(versioned("./timetable-detail.js")),
+  import(versioned("./timetable-constraints.js")),
+  import(versioned("./timetable-log.js")),
+  import(versioned("./timetable-sidebar.js")),
+]);
+
+const { openDataCleanupDialog } = dataCleanupModule;
+const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
+const { detectConflicts, detectConstraintViolations, getConflictLabel } = conflictModule;
+const {
   getSubjectsForGrade, getCreditsForTemplate, getCategoryColor, getAssignedCount,
   getCategoryForTemplate, getTrackForTemplate, getGroupNameForTemplate,
   getTeachersForTemplate, getSectionCount, getCreditsForTtCard, getTeachersForTtCard,
@@ -33,17 +64,13 @@ import {
   makePlacementFromGroupItem, entryMatchesClass, getUnitForTemplate, getUnitDisplayTitle,
   getUnitGradeKeys, getUnitTeachers, getAllClasses, entryGradeKeys, entryTemplateIds,
   entryHasGrade, entryTitle, entryTeachers, calculateClassCreditSummary
-} from "./timetable-data.js?v=auto_relax_r1";
-import { createAutoAssignAll } from "./timetable-autoassign.js?v=score_ui_remove_r1";
-import { renderTimetableGrid } from "./timetable-grid.js?v=group_name_r1";
-import { createTimetableDetailHandlers } from "./timetable-detail.js?v=fixed_lessons_r2";
-import { createTimetableConstraintsHandlers } from "./timetable-constraints.js?v=teacher_constraint_copy_r1";
-import { createTimetableLogHandlers } from "./timetable-log.js?v=auto_relax_r1";
-import { createTimetableSidebarHandlers } from "./timetable-sidebar.js?v=score_ui_remove_r1";
-import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
-import { createTimetableUndoHandlers } from "./timetable-undo.js";
-import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { exportTimetableXlsx } from "./timetable-export.js";
+} = timetableDataModule;
+const { createAutoAssignAll } = autoAssignModule;
+const { renderTimetableGrid } = gridModule;
+const { createTimetableDetailHandlers } = detailModule;
+const { createTimetableConstraintsHandlers } = constraintsModule;
+const { createTimetableLogHandlers } = logModule;
+const { createTimetableSidebarHandlers } = sidebarModule;
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;

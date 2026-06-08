@@ -7,11 +7,9 @@ import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUp
          isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
+import { versioned } from "./version.js";
 import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-
-// ── Curriculum imports ────────────────────────────────────────────
-import { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } from "./curriculum.js?v=compound_subject_card";
 
 // ── Template imports ──────────────────────────────────────────────
 import {
@@ -28,23 +26,25 @@ import {
 } from "./templates.js";
 import { normalizeTemplate } from "./state.js";
 
-const APP_MODULE_VERSION = "roster_competing_move_remove";
+// ── Curriculum imports ────────────────────────────────────────────
+const { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } = await import(versioned("./curriculum.js"));
+
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
 // Initial curriculum board keeps only curriculum/templates in the startup bundle.
 // Other screens are downloaded when the user actually opens that menu.
 const lazyModules = {};
 function lazyImport(key, path) {
-  const versionedPath = path.includes("?") ? `${path}&v=${APP_MODULE_VERSION}` : `${path}?v=${APP_MODULE_VERSION}`;
-  return lazyModules[key] || (lazyModules[key] = import(versionedPath));
+  const moduleUrl = versioned(path);
+  return lazyModules[key] || (lazyModules[key] = import(moduleUrl));
 }
 const loadStudents     = () => lazyImport("students", "./students.js");
 const loadTeachers     = () => lazyImport("teachers", "./teachers.js");
-const loadRosters      = () => lazyImport("rosters", "./rosters.js?v=roster_completion_excluded_count_fix");
+const loadRosters      = () => lazyImport("rosters", "./rosters.js");
 const loadResults      = () => lazyImport("results", "./results.js");
 const loadTtCards      = () => lazyImport("ttcards", "./ttcards.js");
 const loadSubjectSetup = () => lazyImport("subjectSetup", "./subject-setup.js");
-const loadRooms        = () => lazyImport("rooms", "./rooms.js?v=rooms_fullpage_restore");
+const loadRooms        = () => lazyImport("rooms", "./rooms.js");
 
 // ── DOM: Topbar ───────────────────────────────────────────────────
 const authStatusEl     = document.getElementById("authStatus");

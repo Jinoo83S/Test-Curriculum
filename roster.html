@@ -4,7 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS 명단</title>
-  <link rel="stylesheet" href="style.css?v=sidebar_template_popup_editor" />
+  <link id="his-main-css" rel="stylesheet" href="style.css" />
+  <script>
+    window.HIS_APP_VERSION = "2026-06-08-cache-central-r1";
+    (function() {
+      var link = document.getElementById("his-main-css");
+      if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
+    })();
+  </script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-section="roster" data-initial-view="teachers">
@@ -106,7 +113,9 @@
 </div>
   </section>
 </main>
-<script type="module" src="js/local-dev.js?v=sidebar_template_popup_editor"></script>
-<script type="module" src="js/app.js?v=topbar_auth_save_merged_rooms_restore"></script>
+<script type="module">
+  import { versioned } from "./js/version.js";
+  await import(versioned("./js/app.js"));
+</script>
 </body>
 </html>
