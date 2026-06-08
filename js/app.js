@@ -8,28 +8,17 @@ import { setupSaveStatusUi } from "./save-status-ui.js";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
-import { appState, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy } from "./state.js";
+import { appState, setOnUpdate, saveNow, migrateFromLegacy } from "./state.js";
 import { versioned } from "./version.js";
 import { createAppModuleLoader } from "./app-module-loader.js";
 import { setupStudentManagementUi } from "./app-students-ui.js";
 
-// ── Template imports ──────────────────────────────────────────────
-import {
-  renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
-  addTemplateManagerRow, getOrCreateDraft, resetDraft, commitDraft,
-  deleteTemplate, addLiveTemplateGroup,
-  templateEditId, templateFormSchoolLevel,
-  setTemplateEditId, setTemplateFormSchoolLevel,
-  getTemplateById, getSemesterTemplateData,
-  getTemplateCardTitle, managerUi,
-  setSidebarLevel,
-  copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
-  clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js";
-import { normalizeTemplate } from "./state.js";
+// ── Template/sidebar UI ─────────────────────────────────────────
+import { setupAppTemplatesUi } from "./app-templates-ui.js";
 
 // ── Curriculum imports ────────────────────────────────────────────
-const { buildTabBoard, renderOptionChips, exportXLSX, addOption, removeOption, setOnCurriculumChange, openTemplateCardPopup } = await import(versioned("./curriculum.js"));
+const curriculumApi = await import(versioned("./curriculum.js"));
+const { buildTabBoard, exportXLSX } = curriculumApi;
 
 
 // ── Lazy-loaded view modules ──────────────────────────────────────
@@ -53,56 +42,13 @@ const studentUi = setupStudentManagementUi({
 const resetBoardBtn    = document.getElementById("resetBoardBtn");
 const exportXlsxBtn    = document.getElementById("exportXlsxBtn");
 
-// ── DOM: Sidebar ──────────────────────────────────────────────────
-const templateListEl        = document.getElementById("templateList");
-const sidebarTemplateAddBtn = document.getElementById("sidebarTemplateAddBtn");
-const sidebarLevelFilter    = document.getElementById("sidebarSchoolLevelFilter");
-const categoryOptionList    = document.getElementById("categoryOptionList");
-const trackOptionList       = document.getElementById("trackOptionList");
-const groupOptionList       = document.getElementById("groupOptionList");
-const categoryOptionInput   = document.getElementById("categoryOptionInput");
-const trackOptionInput      = document.getElementById("trackOptionInput");
-const groupOptionInput      = document.getElementById("groupOptionInput");
-const addCategoryOptionBtn  = document.getElementById("addCategoryOptionBtn");
-const addTrackOptionBtn     = document.getElementById("addTrackOptionBtn");
-const addGroupOptionBtn     = document.getElementById("addGroupOptionBtn");
-
-// ── DOM: Template Form ────────────────────────────────────────────
-const templateNameKo    = document.getElementById("templateNameKo");
-const templateNameEn    = document.getElementById("templateNameEn");
-const templateTeacher   = document.getElementById("templateTeacher");
-const templateLanguage  = document.getElementById("templateLanguage");
-const templateSubmitBtn = document.getElementById("templateSubmitBtn");
-const templateCancelBtn = document.getElementById("templateCancelBtn");
-const templateSepCheck  = document.getElementById("templateSeparateSemesters");
-const semesterFields    = document.getElementById("semesterTemplateFields");
-const sem1NameKo  = document.getElementById("templateSem1NameKo");
-const sem1NameEn  = document.getElementById("templateSem1NameEn");
-const sem1Teacher = document.getElementById("templateSem1Teacher");
-const sem2NameKo  = document.getElementById("templateSem2NameKo");
-const sem2NameEn  = document.getElementById("templateSem2NameEn");
-const sem2Teacher = document.getElementById("templateSem2Teacher");
-const levelPicker = document.getElementById("templateSchoolLevelPicker");
-
 // ── DOM: Main views ───────────────────────────────────────────────
+
 const gradeBoard    = document.getElementById("gradeBoard");
 const boardView     = document.getElementById("boardView");
 const groupMgrView  = document.getElementById("groupManagerView");
 const groupMgrBoard = document.getElementById("groupManagerBoard");
-const groupMgrAddBtn= document.getElementById("groupManagerAddGroupBtn");
 const tplMgrView    = document.getElementById("templateManagerView");
-const tplMgrBackBtn = document.getElementById("templateManagerBackBtn");
-const tplMgrAddBtn  = document.getElementById("templateManagerAddRowBtn");
-const tplMgrSaveBtn = document.getElementById("templateManagerSaveBtn");
-const tplMgrDiscBtn = document.getElementById("templateManagerDiscardBtn");
-const tplMgrTableWrap = document.getElementById("templateManagerTableWrap");
-const tplMgrCount   = document.getElementById("templateManagerCount");
-const tplMgrSearch  = document.getElementById("templateManagerSearchInput");
-const tplMgrLang    = document.getElementById("templateManagerLanguageFilter");
-const tplMgrSplit   = document.getElementById("templateManagerSplitFilter");
-const tplMgrSort    = document.getElementById("templateManagerSortSelect");
-const tplMgrLevel   = document.getElementById("templateManagerLevelFilter");
-const tplMgrSortBtn = document.getElementById("templateManagerSortBtn");
 const studentMgrView= document.getElementById("studentMgmtView");
 const teacherMgrView= document.getElementById("teacherMgmtView");
 const roomMgrView   = document.getElementById("roomMgmtView");
@@ -132,12 +78,13 @@ const INITIAL_VIEW = document.body?.dataset.initialView || "board";
 let activeMainView = INITIAL_VIEW;
 let activeTab = "tab7to9";
 
+let templateUi = null;
 const navigationUi = setupAppNavigationUi({
   initialView: activeMainView,
   initialSection: document.body?.dataset.section,
   getCurrentView: () => activeMainView,
   navigateTo: view => navigateTo(view),
-  resetBeforeBoard: () => resetDraft(),
+  resetBeforeBoard: () => templateUi?.resetTemplateForm(),
 });
 
 
@@ -174,10 +121,10 @@ function setView(view) {
 }
 
 function closeToBoard() {
-  resetDraft();
+  templateUi?.resetTemplateForm();
   setView("board");
   invalidateTabs();
-  renderSidebar();
+  templateUi?.renderSidebar();
   renderBoardTab();
 }
 
@@ -192,79 +139,9 @@ function renderBoardTab() {
   gradeBoard.innerHTML = ""; els.forEach(el => gradeBoard.appendChild(el)); tabBoardCache[tab] = els; dirtyTabs.delete(tab);
 }
 
-function renderSidebar() {
-  if (!templateListEl) return;
-  // Keep sidebar teacher inputs linked to datalist
-  [templateTeacher, sem1Teacher, sem2Teacher].forEach(el => { if (el) el.setAttribute("list", "tpl-teacher-list"); });
-  updateTeacherDatalist();
-  renderTemplates(templateListEl, {
-    onEdit: (id) => openTemplateCardPopup(id),
-    // 과목 삭제는 수강명단/시간표 카드/시간표 배치까지 정리해야 하므로
-    // 삭제 직전에 관련 도메인을 확실히 불러온 뒤 실행합니다.
-    onDelete: async (id) => {
-      await ensureDomains(["rosters", "timetable"]);
-      deleteTemplate(id);
-      invalidateTabs(); renderSidebar(); renderBoardTab();
-    },
-    onCopy: (id) => { copyTemplate(id); invalidateTabs(); renderSidebar(); renderBoardTab(); }
-  });
-  renderOptionChips(categoryOptionList, "category");
-  renderOptionChips(trackOptionList, "track");
-  renderOptionChips(groupOptionList, "group");
-}
+function renderSidebar() { templateUi?.renderSidebar(); }
 
-function renderTemplateManagerView() {
-  renderTemplateManagerLevelTabs();
-  renderTemplateManagerTable(tplMgrTableWrap, tplMgrCount);
-}
-
-function renderTemplateManagerLevelTabs() {
-  if (!tplMgrView) return;
-  let tabs = document.getElementById("templateManagerLevelTabs");
-  if (!tabs) {
-    tabs = document.createElement("div");
-    tabs.id = "templateManagerLevelTabs";
-    tabs.className = "tpl-manager-level-tabs";
-  }
-
-  // 과목카드 표 편집의 과정 탭은 제목 오른쪽 여백에 고정합니다.
-  // 기존처럼 toolbar 위에 삽입하면 검색/필터 영역과 붙어 보여 위치가 어색했습니다.
-  const header  = tplMgrView.querySelector(".manager-header");
-  const actions = tplMgrView.querySelector(".manager-actions");
-  const toolbar = tplMgrView.querySelector(".manager-toolbar");
-  if (header) {
-    if (tabs.parentElement !== header) header.insertBefore(tabs, actions || null);
-  } else if (tabs.parentElement !== (toolbar?.parentNode || tplMgrView)) {
-    (toolbar?.parentNode || tplMgrView).insertBefore(tabs, toolbar || tplMgrView.firstChild);
-  }
-
-  const items = [
-    { value: "전체", title: "전체" },
-    { value: "중등", title: "중등" },
-    { value: "고등", title: "고등" },
-  ];
-
-  tabs.innerHTML = items.map(item => `
-    <button type="button" class="tpl-manager-level-tab ${managerUi.level === item.value ? "active" : ""}" data-level="${item.value}">
-      <strong>${item.title}</strong>
-    </button>
-  `).join("");
-
-  tabs.querySelectorAll("button[data-level]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const level = btn.dataset.level || "전체";
-      if (managerUi.level === level) return;
-      managerUi.level = level;
-      if (tplMgrLevel) tplMgrLevel.value = level;
-      clearStableOrder();
-      renderTemplateManagerView();
-    });
-  });
-
-  if (tplMgrLevel && tplMgrLevel.value !== managerUi.level) {
-    tplMgrLevel.value = managerUi.level;
-  }
-}
+function renderTemplateManagerView() { templateUi?.renderTemplateManagerView(); }
 
 async function renderTeacherPanel() {
   if (activeMainView !== "teachers" || !teacherContent) return;
@@ -336,7 +213,7 @@ const VIEW_NAVIGATION_HOOKS = {
     after: () => renderSidebar(),
   },
   manager: {
-    before: () => clearStableOrder(),
+    before: () => templateUi?.clearStableOrder(),
     after:  () => renderSidebar(),
   },
   students: {
@@ -375,7 +252,7 @@ function render(domain) {
   // other Firestore snapshots, the old single-domain debounce could keep the initial
   // empty board cache. Always invalidate when either board source changed.
   if (boardDataChanged) {
-    syncSchoolLevels();
+    templateUi?.syncSchoolLevels();
     invalidateTabs();
   }
 
@@ -400,91 +277,28 @@ function renderTabBtns() {
 // CONTROLS DISABLE/ENABLE
 // ================================================================
 function setControlsDisabled(disabled) {
-  [templateNameKo, templateNameEn, templateTeacher, templateLanguage,
-   templateSubmitBtn, templateCancelBtn, templateSepCheck,
-   sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher,
-   categoryOptionInput, trackOptionInput, groupOptionInput,
-   addCategoryOptionBtn, addTrackOptionBtn, addGroupOptionBtn,
-   resetBoardBtn, exportXlsxBtn,
-   groupMgrAddBtn,
-   tplMgrBackBtn, tplMgrAddBtn, tplMgrSaveBtn, tplMgrDiscBtn,
-   tplMgrSearch, tplMgrLang, tplMgrSplit, tplMgrSort, tplMgrSortBtn, tplMgrLevel
-  ].forEach(el => { if (el) el.disabled = disabled; });
+  [resetBoardBtn, exportXlsxBtn].forEach(el => { if (el) el.disabled = disabled; });
+  templateUi?.setDisabled(disabled);
   studentUi?.setDisabled(disabled);
-}
-
-// ================================================================
-// TEMPLATE FORM
-// ================================================================
-function setLevelPickerActive(level) {
-  setTemplateFormSchoolLevel(level);
-  levelPicker?.querySelectorAll(".level-btn").forEach(b => b.classList.toggle("active", b.dataset.level === level));
-}
-
-function toggleSemesterMode() { semesterFields?.classList.toggle("hidden", !templateSepCheck?.checked); }
-
-function resetTemplateForm() {
-  setTemplateEditId(null);
-  [templateNameKo, templateNameEn, templateTeacher, sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher].forEach(el => { if (el) el.value = ""; });
-  if (templateLanguage)  templateLanguage.value  = "Korean";
-  if (templateSepCheck)  templateSepCheck.checked = false;
-  if (templateSubmitBtn) templateSubmitBtn.textContent = "카드 추가";
-  templateCancelBtn?.classList.add("hidden");
-  setLevelPickerActive("공통"); toggleSemesterMode();
-}
-
-function fillTemplateForm(id) {
-  const item = getTemplateById(id); if (!item) return;
-  setTemplateEditId(id);
-  if (templateNameKo)  templateNameKo.value  = item.nameKo || getSemesterTemplateData(item, "sem1").nameKo;
-  if (templateNameEn)  templateNameEn.value  = item.nameEn || getSemesterTemplateData(item, "sem1").nameEn;
-  if (templateTeacher) templateTeacher.value = item.teacher || (item.sem1Teacher === item.sem2Teacher ? item.sem1Teacher : "");
-  if (templateLanguage)  templateLanguage.value  = item.language;
-  if (templateSepCheck)  templateSepCheck.checked = item.useSemesterOverrides;
-  if (sem1NameKo)  sem1NameKo.value  = getSemesterTemplateData(item, "sem1").nameKo;
-  if (sem1NameEn)  sem1NameEn.value  = getSemesterTemplateData(item, "sem1").nameEn;
-  if (sem1Teacher) sem1Teacher.value = getSemesterTemplateData(item, "sem1").teacher;
-  if (sem2NameKo)  sem2NameKo.value  = getSemesterTemplateData(item, "sem2").nameKo;
-  if (sem2NameEn)  sem2NameEn.value  = getSemesterTemplateData(item, "sem2").nameEn;
-  if (sem2Teacher) sem2Teacher.value = getSemesterTemplateData(item, "sem2").teacher;
-  if (templateSubmitBtn) templateSubmitBtn.textContent = "카드 수정 저장";
-  templateCancelBtn?.classList.remove("hidden");
-  setLevelPickerActive(item.schoolLevel || "공통"); toggleSemesterMode();
-}
-
-function submitTemplateForm() {
-  if (!canEdit()) return;
-  const useSep = templateSepCheck?.checked;
-  const editId = templateEditId;
-  const newId  = editId || `tpl-${Date.now()}-${Math.random().toString(36).slice(2,9)}`;
-  const data = normalizeTemplate({
-    id: newId,
-    language: templateLanguage?.value || "Korean",
-    useSemesterOverrides: useSep,
-    nameKo: templateNameKo?.value || "", nameEn: templateNameEn?.value || "", teacher: templateTeacher?.value || "",
-    sem1NameKo: sem1NameKo?.value || "", sem1NameEn: sem1NameEn?.value || "", sem1Teacher: sem1Teacher?.value || "",
-    sem2NameKo: sem2NameKo?.value || "", sem2NameEn: sem2NameEn?.value || "", sem2Teacher: sem2Teacher?.value || "",
-    schoolLevel: templateFormSchoolLevel
-  });
-  if (!data.nameKo && !data.nameEn && !(useSep && (data.sem1NameKo || data.sem1NameEn))) {
-    alert("한글 이름 또는 영어 이름을 입력해 주세요."); return;
-  }
-  const prev = getTemplateById(data.id);
-  if (prev) {
-    data.calcGroupId = prev.calcGroupId || null;
-    data.isCompound = !!prev.isCompound;
-    data.compoundParts = Array.isArray(prev.compoundParts) ? prev.compoundParts : [];
-  }
-  const tpls = appState.templates.templates;
-  const idx = tpls.findIndex(t => t.id === data.id);
-  if (idx >= 0) tpls[idx] = data; else tpls.push(data);
-  resetDraft(); resetTemplateForm(); scheduleSave("templates"); invalidateTabs(); render();
 }
 
 // ================================================================
 // BOOTSTRAP
 // ================================================================
 setupAppSidebarUi();
+
+templateUi = setupAppTemplatesUi({
+  ensureDomains,
+  invalidateTabs,
+  renderApp: () => render(),
+  renderBoardTab,
+  renderResultsPanel,
+  renderTeacherPanel,
+  renderGroupManagerView,
+  getActiveView: () => activeMainView,
+  navigateToBoard: () => void navigateTo("board"),
+  curriculumApi,
+});
 
 let _renderTimer = null;
 const _pendingRenderDomains = new Set();
@@ -506,35 +320,6 @@ setupSaveStatusUi({
   }
 });
 
-
-// Board popup template edits: refresh sidebar and current board immediately.
-document.addEventListener("his:template-updated", () => {
-  updateTeacherDatalist();
-  invalidateTabs();
-  renderSidebar();
-  if (activeMainView === "board") renderBoardTab();
-  if (activeMainView === "manager") renderTemplateManagerView();
-});
-
-// Req 2: when table edits happen, sync sidebar + board immediately
-setOnTemplateChange(() => {
-  updateTeacherDatalist();
-  invalidateTabs();
-  renderSidebar();
-  if (activeMainView === "board")    renderBoardTab();
-  if (activeMainView === "manager")  renderTemplateManagerView();
-  if (activeMainView === "teachers") void renderTeacherPanel();
-});
-
-// Req 4: sidebar grade chips update on board drag-drop
-setOnCurriculumChange(() => {
-  // Curriculum board mutations such as drag/drop, row add/delete, and clear are saved immediately.
-  // The board uses DOM cache, so the cache must be invalidated before re-rendering.
-  invalidateTabs();
-  renderSidebar();
-  if (activeMainView === "board") renderBoardTab();
-  if (activeMainView === "results") void renderResultsPanel();
-});
 
 setupAuthUi();
 setAuthCheckingUI();
@@ -577,74 +362,6 @@ resetBoardBtn?.addEventListener("click", async () => {
 // ── Tabs ──────────────────────────────────────────────────────────
 tab7to9Btn?.addEventListener("click",   () => { if (activeTab === "tab7to9")   return; activeTab = "tab7to9";   renderTabBtns(); renderBoardTab(); });
 tab10to12Btn?.addEventListener("click", () => { if (activeTab === "tab10to12") return; activeTab = "tab10to12"; renderTabBtns(); renderBoardTab(); });
-
-// ── Sidebar view toggles ──────────────────────────────────────────
-tplMgrBackBtn?.addEventListener("click", () => void navigateTo("board"));
-groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); });
-
-// ── Sidebar level filter ──────────────────────────────────────────
-sidebarLevelFilter?.addEventListener("change", e => { setSidebarLevel(e.target.value); renderSidebar(); });
-sidebarTemplateAddBtn?.addEventListener("click", () => openTemplateCardPopup(null, { mode: "new" }));
-
-// ── Template form ─────────────────────────────────────────────────
-templateSubmitBtn?.addEventListener("click", submitTemplateForm);
-templateCancelBtn?.addEventListener("click", resetTemplateForm);
-templateSepCheck?.addEventListener("change", () => {
-  if (templateSepCheck.checked && [sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher].every(el => !el?.value)) {
-    const ko = templateNameKo?.value, en = templateNameEn?.value, te = templateTeacher?.value;
-    [sem1NameKo, sem2NameKo].forEach(el => { if (el && !el.value) el.value = ko; });
-    [sem1NameEn, sem2NameEn].forEach(el => { if (el && !el.value) el.value = en; });
-    [sem1Teacher, sem2Teacher].forEach(el => { if (el && !el.value) el.value = te; });
-  }
-  toggleSemesterMode();
-});
-levelPicker?.addEventListener("click", e => { const btn = e.target.closest(".level-btn"); if (btn) setLevelPickerActive(btn.dataset.level); });
-[templateNameKo, templateNameEn, templateTeacher, sem1NameKo, sem1NameEn, sem1Teacher, sem2NameKo, sem2NameEn, sem2Teacher].forEach(el => el?.addEventListener("keydown", e => { if (e.key === "Enter") submitTemplateForm(); }));
-
-// ── Options ───────────────────────────────────────────────────────
-addCategoryOptionBtn?.addEventListener("click", () => { addOption("category", categoryOptionInput?.value); if (categoryOptionInput) categoryOptionInput.value = ""; invalidateTabs(); render(); });
-addTrackOptionBtn?.addEventListener("click",    () => { addOption("track",    trackOptionInput?.value);    if (trackOptionInput)    trackOptionInput.value    = ""; invalidateTabs(); render(); });
-addGroupOptionBtn?.addEventListener("click",    () => { addOption("group",    groupOptionInput?.value);    if (groupOptionInput)    groupOptionInput.value    = ""; invalidateTabs(); render(); });
-[[categoryOptionInput, addCategoryOptionBtn],[trackOptionInput, addTrackOptionBtn],[groupOptionInput, addGroupOptionBtn]].forEach(([inp, btn]) => inp?.addEventListener("keydown", e => { if (e.key === "Enter") btn?.click(); }));
-
-// ── Template manager ──────────────────────────────────────────────
-tplMgrAddBtn?.addEventListener("click", () => { addTemplateManagerRow(); renderTemplateManagerView(); });
-tplMgrDiscBtn?.addEventListener("click", () => { if (!canEdit()) return; renderTemplateManagerView(); renderSidebar(); });
-tplMgrSaveBtn?.addEventListener("click", async () => { await commitDraft(); invalidateTabs(); render(); });
-tplMgrSearch?.addEventListener("input", e => { managerUi.search = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
-tplMgrLang?.addEventListener("change",  e => { managerUi.language = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
-tplMgrSplit?.addEventListener("change", e => { managerUi.split = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
-tplMgrSort?.addEventListener("change",  e => { managerUi.sort = e.target.value; /* apply only on button click */ });
-tplMgrLevel?.addEventListener("change", e => { managerUi.level = e.target.value; clearStableOrder(); renderTemplateManagerView(); });
-tplMgrSortBtn?.addEventListener("click", () => { clearStableOrder(); renderTemplateManagerView(); });
-tplMgrTableWrap?.addEventListener("input",  e => handleTableInput(e));
-tplMgrTableWrap?.addEventListener("change", e => handleTableChange(e, renderTemplateManagerView));
-tplMgrTableWrap?.addEventListener("click", async e => {
-  if (e.target.closest("button[data-action='delete-template']")) {
-    await ensureDomains(["rosters", "timetable"]);
-  }
-  handleTableDeleteClick(e, renderTemplateManagerView);
-});
-
-// ── Template manager paste ────────────────────────────────────────
-const tplPasteArea    = document.getElementById("tplPasteArea");
-const tplPasteBtn     = document.getElementById("tplPasteBtn");
-const tplPasteClearBtn= document.getElementById("tplPasteClearBtn");
-
-tplPasteBtn?.addEventListener("click", () => {
-  if (!canEdit()) return;
-  const raw = tplPasteArea?.value.trim();
-  if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
-  const parsed = parseTemplatePaste(raw);
-  if (!parsed.length) { alert("파싱된 과목카드가 없습니다.\n첫 번째 열에 한글 이름이 있는지 확인하세요."); return; }
-  const added = addParsedTemplates(parsed);
-  if (tplPasteArea) tplPasteArea.value = "";
-  document.getElementById("tplMgrPasteDetails")?.removeAttribute("open");
-  renderTemplateManagerView();
-  renderSidebar();
-  alert(`${added}개 과목카드가 추가되었습니다.`);
-});
-tplPasteClearBtn?.addEventListener("click", () => { if (tplPasteArea) tplPasteArea.value = ""; });
 
 // ── Initial render ────────────────────────────────────────────────
 setView(activeMainView);
