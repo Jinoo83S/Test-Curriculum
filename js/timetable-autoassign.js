@@ -2308,6 +2308,324 @@ export function createAutoAssignAll(deps) {
     });
   }
 
+
+
+  // ── Auto-assign precheck report ────────────────────────────────
+  // 자동배치 전 데이터 상태를 먼저 보여 줍니다. 자동배치 실패 대부분은
+  // 알고리즘보다 카드/그룹/보호 슬롯/제약교사 데이터에서 시작되므로,
+  // 실행 전에 점검 결과를 확인할 수 있게 합니다.
+  function addPrecheckItem(report, section, status, title, detail = "", meta = {}) {
+    report.items.push({ section, status, title, detail, meta });
+    report.counts[status] = (report.counts[status] || 0) + 1;
+  }
+
+  function statusRankForPrecheck(status) {
+    return status === "error" ? 3 : status === "warn" ? 2 : status === "ok" ? 1 : 0;
+  }
+
+  function precheckEsc(value = "") {
+    return String(value ?? "").replace(/[<>&"']/g, ch => ({
+      "<":"&lt;", ">":"&gt;", "&":"&amp;", '"':"&quot;", "'":"&#39;"
+    }[ch] || ch));
+  }
+
+  function countPrecheckBy(items = [], keyFn = () => "") {
+    const map = new Map();
+    (items || []).forEach(item => {
+      const key = keyFn(item);
+      if (!key) return;
+      map.set(key, (map.get(key) || 0) + 1);
+    });
+    return map;
+  }
+
+  function collectCardIdsFromGroupForPrecheck(group = {}) {
+    const ids = [];
+    ids.push(...(group.poolCardIds || []));
+    ids.push(...(group.excludedCardIds || []));
+    ids.push(...(group.cardIds || []));
+    (group.units || []).forEach(unit => {
+      ids.push(...(unit.ttcardIds || []));
+      ids.push(...(unit.cardIds || []));
+      ids.push(...(unit.poolCardIds || []));
+    });
+    return [...new Set(ids.filter(Boolean))];
+  }
+
+  function cardTextForPrecheck(card = {}) {
+    const tpl = card.templateId ? getTemplateById(card.templateId) : null;
+    return [
+      card.subject, card.name, card.title, card.nameKo, card.nameEn,
+      card.groupName, card.track, card.category,
+      tpl?.nameKo, tpl?.nameEn, tpl?.sem1NameKo, tpl?.sem1NameEn
+    ].map(v => String(v || "")).join(" ");
+  }
+
+  function isWholeGradeLikeCard(card = {}) {
+    const text = cardTextForPrecheck(card);
+    if (card.isWholeGrade || card.wholeGrade || card.isGradeWide) return true;
+    if (Array.isArray(card.classKeys) && card.classKeys.length >= 2) return true;
+    if (Array.isArray(card.classLabels) && card.classLabels.length >= 2) return true;
+    return /(자율활동|동아리활동|채플|종교|진로와\s*소명|성품과\s*공동체|선교적\s*생활|섬김의\s*리더십|변혁적\s*리더십|중학교\s*특성화|Self[-\s]*regulated|Club\s*Activity|Chapel|Vision|Vocation|Leadership|Missional)/i.test(text);
+  }
+
+  function cardKeyForPrecheck(card = {}) {
+    return [card.gradeKey || "", card.templateId || "", card.sectionIdx ?? card.sectionIndex ?? ""].join("::");
+  }
+
+  function gradeTemplateKeyForPrecheck(card = {}) {
+    return [card.gradeKey || "", card.templateId || ""].join("::");
+  }
+
+  function getPlacedCardIdsForPrecheck(existingEntries = []) {
+    const set = new Set();
+    (existingEntries || []).forEach(entry => {
+      ttCardIdsFromPlacement(entry).forEach(id => { if (id) set.add(id); });
+    });
+    return set;
+  }
+
+  function summarizeAutoTargetsForPrecheck(standalone = [], groupBlocks = []) {
+    const groupSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
+      const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
+      const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
+      return sum + (isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
+    }, 0);
+    return { standaloneSlots: standalone.length, groupSlots, totalSlots: standalone.length + groupSlots };
+  }
+
+  function buildRestrictedTeacherTargetsForPrecheck(standalone = [], groupBlocks = []) {
+    const map = new Map();
+    const add = (teacher, count, sample) => {
+      if (!teacher || !isRestrictedTeacher(teacher)) return;
+      if (!map.has(teacher)) map.set(teacher, { teacher, target: 0, samples: [] });
+      const row = map.get(teacher);
+      row.target += count;
+      if (sample && row.samples.length < 5) row.samples.push(sample);
+    };
+
+    standalone.forEach(item => {
+      const name = getAutoItemName(item);
+      getTeachersForAutoItem(item).forEach(t => add(t, 1, name));
+    });
+
+    groupBlocks.forEach(block => {
+      const { group, unitItems } = block || {};
+      const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
+      const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
+      const groupSlotCount = Math.max(1, isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
+      const sample = group?.name || group?.groupName || "그룹 수업";
+      getTeachersForAutoItem(block).forEach(t => add(t, groupSlotCount, sample));
+      (unitItems || []).forEach(unit => getTeachersForAutoItem(unit).forEach(t => add(t, Math.max(1, Number(unit?.credits) || 1), sample)));
+    });
+
+    return [...map.values()];
+  }
+
+  function countAvailableSlotsForRestrictedTeacher(teacher, protectedEntries = []) {
+    const periodCount = Math.max(1, Number(ttConfig()?.periodCount || 7));
+    let available = 0;
+    const c = constraints()?.[teacher] || {};
+    for (let day = 0; day < 5; day++) {
+      for (let period = 0; period < periodCount; period++) {
+        if (isTeacherUnavailable(teacher, day, period)) continue;
+        const state = getTeacherLimitState(teacher, { day, period }, protectedEntries);
+        if (state.maxPerWeek > 0 && state.weekLoad >= state.maxPerWeek) continue;
+        if (state.maxPerDay > 0 && state.dayLoad >= state.maxPerDay) continue;
+        if (state.maxConsecutive > 0 && state.nextConsecutive > state.maxConsecutive) continue;
+        // 이 함수는 교사 개인의 가능 시간만 계산합니다. 학급/교실 충돌은 실제 자동배치에서 재검사합니다.
+        available += 1;
+      }
+    }
+    return { available, constraint: c };
+  }
+
+  function getActiveCardsForGrades(cards = [], activeGrades = []) {
+    const set = new Set((activeGrades || []).filter(Boolean));
+    if (!set.size) return cards;
+    return (cards || []).filter(card => set.has(card.gradeKey) || (card.gradeKeys || []).some(g => set.has(g)));
+  }
+
+  function buildAutoAssignPrecheckReport(context = {}) {
+    const {
+      standalone = [],
+      groupBlocks = [],
+      activeGrades = [],
+      options = {},
+      protectedEntries = [],
+      availableGrades = [],
+    } = context;
+    const report = {
+      version: 1,
+      mode: "his-autoassign-precheck",
+      createdAt: new Date().toISOString(),
+      scopeGrades: activeGrades,
+      counts: { ok: 0, warn: 0, error: 0, info: 0 },
+      items: []
+    };
+
+    const cards = ttDomain().ttcards || [];
+    const groups = ttGroups();
+    const existingEntries = entries();
+    const activeCards = getActiveCardsForGrades(cards, activeGrades.length ? activeGrades : availableGrades);
+    const cardIds = new Set(cards.map(c => c.id).filter(Boolean));
+    const placedCardIds = getPlacedCardIdsForPrecheck(existingEntries);
+    const targetSummary = summarizeAutoTargetsForPrecheck(standalone, groupBlocks);
+    const protectedSummary = protectedSlotSummary(protectedEntries);
+
+    addPrecheckItem(report, "대상 요약", cards.length ? "ok" : "error", "시간표 카드", `${cards.length}개 · 선택 학년: ${(activeGrades.length ? activeGrades : availableGrades).map(gradeDisplay).join(", ") || "없음"}`);
+    addPrecheckItem(report, "대상 요약", targetSummary.totalSlots ? "ok" : "error", "자동배치 대상", `개별 ${targetSummary.standaloneSlots}시수 · 그룹 ${targetSummary.groupSlots}시수 · 합계 ${targetSummary.totalSlots}시수`);
+    addPrecheckItem(report, "보호 슬롯", protectedSummary.total ? "info" : "ok", "기존 보호 배치", `엔트리 ${protectedSummary.total}개 · 슬롯 ${protectedSummary.slots}칸 · 고정 ${protectedSummary.pinned}개 · 수동 ${protectedSummary.manual}개`);
+
+    const missingGroupRefs = [];
+    const emptyGroups = [];
+    groups.forEach(group => {
+      const refs = collectCardIdsFromGroupForPrecheck(group);
+      if (!refs.length) emptyGroups.push(group.name || group.groupName || group.id || "이름 없는 그룹");
+      refs.forEach(id => { if (!cardIds.has(id)) missingGroupRefs.push(`${group.name || group.groupName || group.id} → ${id}`); });
+    });
+    addPrecheckItem(report, "그룹 점검", missingGroupRefs.length ? "error" : "ok", "그룹 카드 참조", missingGroupRefs.length ? `${missingGroupRefs.length}개 깨짐: ${missingGroupRefs.slice(0, 8).join(", ")}${missingGroupRefs.length > 8 ? " …" : ""}` : "정상");
+    addPrecheckItem(report, "그룹 점검", emptyGroups.length ? "warn" : "ok", "빈 그룹", emptyGroups.length ? `${emptyGroups.length}개: ${emptyGroups.slice(0, 8).join(", ")}${emptyGroups.length > 8 ? " …" : ""}` : "없음");
+
+    const duplicateIds = [...countPrecheckBy(cards, c => c.id).entries()].filter(([, n]) => n > 1);
+    const duplicateExactKeys = [...countPrecheckBy(activeCards, cardKeyForPrecheck).entries()].filter(([key, n]) => key && !key.endsWith("::") && n > 1);
+    addPrecheckItem(report, "카드 중복", duplicateIds.length ? "error" : "ok", "중복 카드 ID", duplicateIds.length ? `${duplicateIds.length}개 ID가 중복됩니다.` : "없음");
+    addPrecheckItem(report, "카드 중복", duplicateExactKeys.length ? "warn" : "ok", "같은 학년/템플릿/섹션 중복", duplicateExactKeys.length ? `${duplicateExactKeys.length}종 발견 · 카드 갱신/DB 정리 확인 필요` : "없음");
+
+    const wholeDuplicates = [...countPrecheckBy(activeCards.filter(isWholeGradeLikeCard), gradeTemplateKeyForPrecheck).entries()]
+      .filter(([key, n]) => key && !key.endsWith("::") && n > 1);
+    addPrecheckItem(report, "전체학년 카드", wholeDuplicates.length ? "warn" : "ok", "전체학년/창체 중복 생성", wholeDuplicates.length ? `${wholeDuplicates.length}종 발견 · 자율활동/동아리/채플이 중복 배치될 수 있습니다.` : "중복 없음");
+
+    const groupRefSet = new Set(groups.flatMap(collectCardIdsFromGroupForPrecheck));
+    const siblingIssues = [];
+    groups.forEach(group => {
+      const refs = collectCardIdsFromGroupForPrecheck(group);
+      refs.forEach(id => {
+        const card = cards.find(c => c.id === id);
+        if (!card) return;
+        const siblings = cards.filter(c => c.id !== id && c.gradeKey === card.gradeKey && c.templateId === card.templateId && !groupRefSet.has(c.id));
+        if (siblings.length) siblingIssues.push(`${group.name || group.groupName || group.id}: ${card.gradeKey || "?"} ${describeTtCard(card).title} 외 ${siblings.length}개`);
+      });
+    });
+    addPrecheckItem(report, "그룹 점검", siblingIssues.length ? "warn" : "ok", "그룹 대표카드와 중복 카드 불일치", siblingIssues.length ? `${siblingIssues.length}건 · ${siblingIssues.slice(0, 6).join(" / ")}${siblingIssues.length > 6 ? " …" : ""}` : "없음");
+
+    const manualCards = activeCards.filter(c => c.isManual || String(c.id || "").startsWith("ttc_manual"));
+    const placedManualCards = manualCards.filter(c => placedCardIds.has(c.id));
+    addPrecheckItem(report, "수동 카드", manualCards.length ? "info" : "ok", "수동 카드 보존", manualCards.length ? `수동 카드 ${manualCards.length}개 · 현재 배치 ${placedManualCards.length}개 · 보호 ${options.keepManual !== false ? "ON" : "OFF"}` : "수동 카드 없음");
+    if (manualCards.length && options.keepManual === false) {
+      addPrecheckItem(report, "수동 카드", "warn", "수동 카드 보호 꺼짐", "자동배치 초기화 범위에 배치된 수동 카드가 포함될 수 있습니다.");
+    }
+
+    const fixedRoomNoRoom = activeCards.filter(card => String(card.roomRule || "").trim() === "fixed" && !card.roomId && !card.fixedRoomId);
+    const anyNoRoom = activeCards.filter(card => String(card.roomRule || "auto").trim() !== "none" && !card.roomId && !card.fixedRoomId);
+    addPrecheckItem(report, "교실 점검", fixedRoomNoRoom.length ? "error" : "ok", "고정 교실 규칙 미지정", fixedRoomNoRoom.length ? `${fixedRoomNoRoom.length}개 카드가 고정 교실 규칙이지만 교실이 없습니다.` : "없음");
+    addPrecheckItem(report, "교실 점검", anyNoRoom.length ? "info" : "ok", "교실 자동 배정 대상", anyNoRoom.length ? `${anyNoRoom.length}개 카드는 담당교실/홈룸/일반교실 자동 배정 대상입니다.` : "모든 카드에 교실 또는 제외 규칙 있음");
+
+    const restrictedTargets = buildRestrictedTeacherTargetsForPrecheck(standalone, groupBlocks);
+    if (!restrictedTargets.length) {
+      addPrecheckItem(report, "제약교사", "ok", "제약근무 교사 수업", "선택 범위에 제약근무 교사 수업이 없습니다.");
+    } else {
+      const shortageRows = [];
+      restrictedTargets.forEach(row => {
+        const slotInfo = countAvailableSlotsForRestrictedTeacher(row.teacher, protectedEntries);
+        if (slotInfo.available < row.target) shortageRows.push(`${row.teacher}: 필요 ${row.target} / 가능 ${slotInfo.available}`);
+      });
+      addPrecheckItem(report, "제약교사", shortageRows.length ? "warn" : "ok", "제약교사 가능시간", shortageRows.length ? `${shortageRows.length}명 부족 가능성 · ${shortageRows.slice(0, 8).join(" / ")}${shortageRows.length > 8 ? " …" : ""}` : `${restrictedTargets.length}명 확인 · 개인 가능시간은 충분해 보입니다.`);
+    }
+
+    const invalidSlots = existingEntries.filter(e => !Number.isInteger(e.day) || e.day < 0 || e.day > 4 || !Number.isInteger(e.period) || e.period < 0 || e.period >= Number(ttConfig()?.periodCount || 7));
+    addPrecheckItem(report, "기존 배치", invalidSlots.length ? "error" : "ok", "요일/교시 범위", invalidSlots.length ? `${invalidSlots.length}개 엔트리가 현재 교시 범위를 벗어납니다.` : "정상");
+
+    const postTargetClassHint = buildScheduleVerificationReport(existingEntries, { scopeGrades: activeGrades, protectedEntries });
+    const classIssues = postTargetClassHint.classSlots?.issues || [];
+    addPrecheckItem(report, "현재 배치 참고", "info", "현재 학급별 점유", classIssues.length ? `${classIssues.length}개 학급이 현재 기준시수와 다릅니다. 자동배치 전 상태이므로 참고용입니다.` : "현재 배치 기준으로 모든 학급이 기준시수와 일치합니다.");
+
+    report.overall = report.counts.error ? "error" : report.counts.warn ? "warn" : "ok";
+    return report;
+  }
+
+  function buildAutoAssignPrecheckHtml(report = {}, { allowProceed = true } = {}) {
+    const bySection = new Map();
+    (report.items || []).forEach(item => {
+      if (!bySection.has(item.section)) bySection.set(item.section, []);
+      bySection.get(item.section).push(item);
+    });
+    const statusText = { ok: "정상", warn: "주의", error: "오류", info: "정보" };
+    const overall = report.overall || (report.counts?.error ? "error" : report.counts?.warn ? "warn" : "ok");
+    const sections = [...bySection.entries()].map(([section, items]) => {
+      const maxStatus = items.reduce((acc, item) => statusRankForPrecheck(item.status) > statusRankForPrecheck(acc) ? item.status : acc, "info");
+      return `<section class="tt-precheck-section"><h3><span class="tt-precheck-dot ${maxStatus}"></span>${precheckEsc(section)}</h3>${items.map(item => `
+        <div class="tt-precheck-item ${item.status}">
+          <div class="tt-precheck-item-head"><span class="tt-precheck-badge ${item.status}">${statusText[item.status] || item.status}</span><b>${precheckEsc(item.title)}</b></div>
+          ${item.detail ? `<div class="tt-precheck-detail">${precheckEsc(item.detail)}</div>` : ""}
+        </div>`).join("")}</section>`;
+    }).join("");
+
+    return `
+      <style>
+        .tt-precheck-overlay{position:fixed;inset:0;z-index:2147483646;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;}
+        .tt-precheck-dialog{width:min(980px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:#fff;border-radius:18px;box-shadow:0 28px 90px rgba(15,23,42,.34);overflow:hidden;display:flex;flex-direction:column;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+        .tt-precheck-header{padding:18px 22px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:16px;align-items:flex-start;background:linear-gradient(135deg,#f8fafc,#eef6ff);}
+        .tt-precheck-header h2{margin:0;font-size:20px;color:#0f172a}.tt-precheck-header p{margin:6px 0 0;color:#64748b;font-size:13px;line-height:1.45}
+        .tt-precheck-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:16px 22px 0;}
+        .tt-precheck-card{border:1px solid #e2e8f0;border-radius:14px;padding:12px;background:#fff}.tt-precheck-card strong{display:block;font-size:22px;line-height:1;color:#0f172a}.tt-precheck-card span{display:block;margin-top:6px;color:#64748b;font-size:12px;font-weight:800}.tt-precheck-card.overall.ok{background:#f0fdf4;border-color:#bbf7d0}.tt-precheck-card.overall.warn{background:#fffbeb;border-color:#fde68a}.tt-precheck-card.overall.error{background:#fef2f2;border-color:#fecaca}
+        .tt-precheck-body{overflow:auto;padding:4px 22px 22px}.tt-precheck-section{border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;margin-top:12px;background:#fff}.tt-precheck-section h3{margin:0;padding:12px 14px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0f172a;display:flex;gap:8px;align-items:center}.tt-precheck-dot{width:10px;height:10px;border-radius:999px;background:#64748b}.tt-precheck-dot.ok{background:#16a34a}.tt-precheck-dot.warn{background:#f59e0b}.tt-precheck-dot.error{background:#dc2626}.tt-precheck-dot.info{background:#64748b}
+        .tt-precheck-item{padding:11px 14px;border-bottom:1px solid #f1f5f9}.tt-precheck-item:last-child{border-bottom:0}.tt-precheck-item-head{display:flex;gap:8px;align-items:center;font-size:13px;color:#0f172a}.tt-precheck-badge{font-size:11px;border-radius:999px;padding:3px 7px;color:white;background:#64748b;min-width:36px;text-align:center}.tt-precheck-badge.ok{background:#16a34a}.tt-precheck-badge.warn{background:#f59e0b}.tt-precheck-badge.error{background:#dc2626}.tt-precheck-badge.info{background:#64748b}.tt-precheck-detail{margin-top:5px;color:#475569;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;}
+        .tt-precheck-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap}.tt-precheck-btn{border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:10px;padding:8px 12px;font-weight:800;cursor:pointer}.tt-precheck-btn.primary{background:#2563eb;border-color:#2563eb;color:#fff}.tt-precheck-btn.danger{background:#dc2626;border-color:#dc2626;color:#fff}
+        @media(max-width:780px){.tt-precheck-header{flex-direction:column}.tt-precheck-actions{justify-content:flex-start}.tt-precheck-summary{grid-template-columns:repeat(2,minmax(0,1fr));}}
+      </style>
+      <div class="tt-precheck-dialog" role="dialog" aria-modal="true" aria-label="자동배치 사전 점검">
+        <div class="tt-precheck-header"><div><h2>🩺 자동배치 사전 점검</h2><p>${precheckEsc(new Date(report.createdAt).toLocaleString())} 기준 · ${overall === "ok" ? "자동배치를 시작해도 좋은 상태입니다." : overall === "warn" ? "주의 항목을 확인한 뒤 진행하세요." : "오류 항목을 먼저 수정하는 것이 안전합니다."}</p></div><div class="tt-precheck-actions"><button type="button" class="tt-precheck-btn" data-precheck-export>JSON 내보내기</button><button type="button" class="tt-precheck-btn" data-precheck-close>닫기</button>${allowProceed ? `<button type="button" class="tt-precheck-btn ${overall === "error" ? "danger" : "primary"}" data-precheck-proceed>${overall === "ok" ? "자동배치 시작" : "확인 후 계속"}</button>` : ""}</div></div>
+        <div class="tt-precheck-summary"><div class="tt-precheck-card overall ${overall}"><strong>${overall === "ok" ? "OK" : overall === "warn" ? "주의" : "오류"}</strong><span>종합 상태</span></div><div class="tt-precheck-card"><strong>${report.counts?.error || 0}</strong><span>오류</span></div><div class="tt-precheck-card"><strong>${report.counts?.warn || 0}</strong><span>주의</span></div><div class="tt-precheck-card"><strong>${report.counts?.ok || 0}</strong><span>정상</span></div><div class="tt-precheck-card"><strong>${report.counts?.info || 0}</strong><span>정보</span></div></div>
+        <div class="tt-precheck-body">${sections}</div>
+      </div>`;
+  }
+
+  function downloadPrecheckJson(report) {
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `his-autoassign-precheck-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function openAutoAssignPrecheckDialog(report, { allowProceed = true } = {}) {
+    return new Promise(resolve => {
+      const old = document.querySelector(".tt-precheck-overlay");
+      if (old) old.remove();
+      const overlay = document.createElement("div");
+      overlay.className = "tt-precheck-overlay";
+      overlay.innerHTML = buildAutoAssignPrecheckHtml(report, { allowProceed });
+      document.body.appendChild(overlay);
+      const close = value => { overlay.remove(); resolve(value); };
+      overlay.querySelector("[data-precheck-close]")?.addEventListener("click", () => close(false));
+      overlay.querySelector("[data-precheck-proceed]")?.addEventListener("click", () => close(true));
+      overlay.querySelector("[data-precheck-export]")?.addEventListener("click", () => downloadPrecheckJson(report));
+      overlay.addEventListener("click", ev => { if (ev.target === overlay) close(false); });
+    });
+  }
+
+  async function openAutoAssignPrecheckOnly() {
+    const rawItems = buildSchedulableItems();
+    let standalone = (rawItems.standalone || []).map(annotateRestrictedAutoItem);
+    let groupBlocks = (rawItems.groupBlocks || []).map(annotateRestrictedGroupBlock);
+    const availableGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
+    if (!availableGrades.length || (!standalone.length && !groupBlocks.length)) {
+      alert("시간표 사전작업에서 생성된 과목 카드가 없습니다.");
+      return;
+    }
+    const options = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, selectedGrades: availableGrades };
+    ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
+    const protectedEntries = computeProtectedEntries(entries(), options);
+    const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
+    const report = buildAutoAssignPrecheckReport({ standalone, groupBlocks, activeGrades, availableGrades, options, protectedEntries });
+    await openAutoAssignPrecheckDialog(report, { allowProceed: false });
+  }
+
   async function autoAssignAll() {
     if (!canEdit()) return;
     if (autoAssignRunning) { alert("자동 배치가 이미 진행 중입니다."); return; }
@@ -2352,6 +2670,17 @@ export function createAutoAssignAll(deps) {
       alert("선택한 학년에 자동 배치할 과목 카드가 없습니다.");
       return;
     }
+
+    const precheckReport = buildAutoAssignPrecheckReport({
+      standalone,
+      groupBlocks,
+      activeGrades,
+      availableGrades,
+      options,
+      protectedEntries
+    });
+    const precheckProceed = await openAutoAssignPrecheckDialog(precheckReport, { allowProceed: true });
+    if (!precheckProceed) return;
 
     const modeText = options.placementMode === "keep" ? "현재 배치 유지 + 미배치만 배치" : "선택 범위 초기화 후 배치";
     const confirmText = [
@@ -2935,5 +3264,6 @@ export function createAutoAssignAll(deps) {
   }
 
 
+  autoAssignAll.openPrecheck = openAutoAssignPrecheckOnly;
   return autoAssignAll;
 }

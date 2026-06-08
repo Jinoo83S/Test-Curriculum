@@ -2551,6 +2551,7 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
+$("ttAutoPrecheckBtn")?.addEventListener("click", () => autoAssignAll.openPrecheck?.());
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
 
