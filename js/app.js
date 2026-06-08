@@ -6,6 +6,7 @@ import { onAuth, canEdit } from "./auth.js";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js";
 import { setupSaveStatusUi } from "./save-status-ui.js";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js";
+import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { appState, subscribeDomains, unsubscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow, migrateFromLegacy, initialLoad } from "./state.js";
 import { versioned } from "./version.js";
 
@@ -80,7 +81,6 @@ const sem2Teacher = document.getElementById("templateSem2Teacher");
 const levelPicker = document.getElementById("templateSchoolLevelPicker");
 
 // ── DOM: Main views ───────────────────────────────────────────────
-const navBoardBtn = document.getElementById("navBoardBtn");
 const gradeBoard    = document.getElementById("gradeBoard");
 const boardView     = document.getElementById("boardView");
 const groupMgrView  = document.getElementById("groupManagerView");
@@ -137,75 +137,21 @@ const exportStudentBtn  = document.getElementById("exportStudentXlsxBtn");
 const tab7to9Btn   = document.getElementById("tab7to9Btn");
 const tab10to12Btn = document.getElementById("tab10to12Btn");
 
-// ── DOM: Topbar nav buttons ───────────────────────────────────────
-const navManagerBtn = document.getElementById("navManagerBtn");
-const navButtons = {
-  board:        navBoardBtn,
-  students:     document.getElementById("navStudentsBtn"),
-  teachers:     document.getElementById("navTeachersBtn"),
-  rooms:        document.getElementById("navRoomsBtn"),
-  subjectsetup: document.getElementById("navSubjectSetupBtn"),
-  rosters:      document.getElementById("navRostersBtn"),
-  ttcards:      document.getElementById("navTtCardsBtn"),
-  groups:       document.getElementById("navGroupsBtn"),
-  results:      document.getElementById("navResultsBtn"),
-};
-
-// ── 2단 네비게이션 ──────────────────────────────────────────────
-const SECTION_DEFAULT_VIEW = {
-  curriculum: "board",
-  roster:     "teachers",
-  setup:      "subjectsetup",
-  prework:    "ttcards",
-  results:    "results",
-};
-const VIEW_TO_SECTION = {
-  board:"curriculum", manager:"curriculum",
-  teachers:"roster",  students:"roster", rooms:"roster",
-  subjectsetup:"setup", rosters:"setup",
-  ttcards:"prework",  groups:"prework",
-  results:"results",
-};
-const INITIAL_VIEW = document.body?.dataset.initialView || "board";
-let activeSection = document.body?.dataset.section || VIEW_TO_SECTION[INITIAL_VIEW] || "curriculum";
-
-function activateSection(section) {
-  activeSection = section;
-  document.querySelectorAll("#topbarMainNav [data-section]").forEach(btn => {
-    btn.classList.toggle("active", btn.dataset.section === section);
-  });
-  document.querySelectorAll(".sub-nav-group").forEach(g => {
-    g.classList.toggle("hidden", g.dataset.section !== section);
-  });
-}
-
-function activateSubBtn(view) {
-  const idMap = {
-    board:"navBoardBtn", manager:"navManagerBtn", teachers:"navTeachersBtn",
-    students:"navStudentsBtn", rooms:"navRoomsBtn", subjectsetup:"navSubjectSetupBtn", rosters:"navRostersBtn",
-    ttcards:"navTtCardsBtn", groups:"navGroupsBtn", results:"navResultsBtn",
-  };
-  document.querySelectorAll(".sub-nav-btn").forEach(btn => {
-    btn.classList.toggle("active", btn.id === idMap[view]);
-  });
-}
-
-// 1단 메인 섹션 클릭
-document.querySelectorAll("#topbarMainNav [data-section]").forEach(mainBtn => {
-  if (mainBtn.tagName === "A") return;
-  mainBtn.addEventListener("click", () => {
-    const section = mainBtn.dataset.section;
-    activateSection(section);
-    navigateTo(SECTION_DEFAULT_VIEW[section]);
-  });
-});
-
+// ── Navigation UI is initialized through app-navigation-ui.js ─────────
 // ================================================================
 // NAVIGATION STATE
 // ================================================================
 let activeMainView = INITIAL_VIEW;
 let activeTab = "tab7to9";
 let selectedClassId = null;
+
+const navigationUi = setupAppNavigationUi({
+  initialView: activeMainView,
+  initialSection: document.body?.dataset.section,
+  getCurrentView: () => activeMainView,
+  navigateTo: view => navigateTo(view),
+  resetBeforeBoard: () => resetDraft(),
+});
 
 
 // ── Phase 2: view-scoped Firestore subscriptions ─────────────────
@@ -303,9 +249,7 @@ export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("t
 async function navigateTo(view) {
   setView(view);
   syncDomainSubscriptionsForView(view);
-  const section = VIEW_TO_SECTION[view] || activeSection;
-  activateSection(section);
-  activateSubBtn(view);
+  navigationUi?.syncNavigation(view, VIEW_TO_SECTION[view]);
 
   // 화면 분리 후에는 현재 화면에 필요한 도메인이 아직 로드되지 않은 상태에서
   // 먼저 렌더링되어 빈 화면처럼 보일 수 있습니다. 필요한 구독이 붙은 뒤 한 번 더 렌더링합니다.
@@ -573,8 +517,7 @@ function render(domain) {
 function renderTabBtns() {
   tab7to9Btn?.classList.toggle("active", activeTab === "tab7to9");
   tab10to12Btn?.classList.toggle("active", activeTab === "tab10to12");
-  activateSection(VIEW_TO_SECTION[activeMainView] || activeSection);
-  activateSubBtn(activeMainView);
+  navigationUi?.syncNavigation(activeMainView, VIEW_TO_SECTION[activeMainView]);
 }
 
 // ================================================================
@@ -761,19 +704,6 @@ resetBoardBtn?.addEventListener("click", async () => {
 tab7to9Btn?.addEventListener("click",   () => { if (activeTab === "tab7to9")   return; activeTab = "tab7to9";   renderTabBtns(); renderBoardTab(); });
 tab10to12Btn?.addEventListener("click", () => { if (activeTab === "tab10to12") return; activeTab = "tab10to12"; renderTabBtns(); renderBoardTab(); });
 
-// ── Nav buttons ───────────────────────────────────────────────────
-// ── Sub-nav 버튼 클릭 ──────────────────────────────────────────────
-navBoardBtn?.addEventListener("click",   () => { resetDraft(); void navigateTo("board"); });
-navManagerBtn?.addEventListener("click", () => void navigateTo(activeMainView === "manager" ? "board" : "manager"));
-navButtons.students?.addEventListener("click",     () => void navigateTo("students"));
-navButtons.teachers?.addEventListener("click",     () => void navigateTo("teachers"));
-navButtons.rooms?.addEventListener("click",        () => void navigateTo("rooms"));
-navButtons.rosters?.addEventListener("click",      () => void navigateTo("rosters"));
-navButtons.subjectsetup?.addEventListener("click", () => void navigateTo("subjectsetup"));
-navButtons.results?.addEventListener("click",      () => void navigateTo("results"));
-navButtons.ttcards?.addEventListener("click",      () => void navigateTo("ttcards"));
-navButtons.groups?.addEventListener("click",       () => void navigateTo("groups"));
-
 // ── Sidebar view toggles ──────────────────────────────────────────
 tplMgrBackBtn?.addEventListener("click", () => void navigateTo("board"));
 groupMgrAddBtn?.addEventListener("click", () => { addLiveTemplateGroup(); renderGroupManagerView(); });
@@ -907,6 +837,5 @@ exportStudentBtn?.addEventListener("click", async () => {
 
 // ── Initial render ────────────────────────────────────────────────
 setView(activeMainView);
-activateSection(VIEW_TO_SECTION[activeMainView] || activeSection);
-activateSubBtn(activeMainView);
+navigationUi?.syncNavigation(activeMainView, VIEW_TO_SECTION[activeMainView]);
 render();
