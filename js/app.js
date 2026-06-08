@@ -1,17 +1,17 @@
 // ================================================================
 // app.js · Main Entry: Auth + Navigation + Events
 // ================================================================
-import { auth, GRADE_GROUPS } from "./config.js";
 import { onAuth, canEdit } from "./auth.js";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js";
 import { setupSaveStatusUi } from "./save-status-ui.js";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
-import { appState, setOnUpdate, saveNow, migrateFromLegacy } from "./state.js";
+import { appState, setOnUpdate, migrateFromLegacy } from "./state.js";
 import { versioned } from "./version.js";
 import { createAppModuleLoader } from "./app-module-loader.js";
 import { setupStudentManagementUi } from "./app-students-ui.js";
+import { setupAppBoardUi } from "./app-board-ui.js";
 
 // ── Template/sidebar UI ─────────────────────────────────────────
 import { setupAppTemplatesUi } from "./app-templates-ui.js";
@@ -38,13 +38,15 @@ const studentUi = setupStudentManagementUi({
   getActiveView: () => activeMainView,
 });
 
-// ── DOM: Topbar ───────────────────────────────────────────────────
-const resetBoardBtn    = document.getElementById("resetBoardBtn");
-const exportXlsxBtn    = document.getElementById("exportXlsxBtn");
+const boardUi = setupAppBoardUi({
+  buildTabBoard,
+  exportXLSX,
+  renderSidebar: () => renderSidebar(),
+  renderApp: () => render(),
+});
 
 // ── DOM: Main views ───────────────────────────────────────────────
 
-const gradeBoard    = document.getElementById("gradeBoard");
 const boardView     = document.getElementById("boardView");
 const groupMgrView  = document.getElementById("groupManagerView");
 const groupMgrBoard = document.getElementById("groupManagerBoard");
@@ -63,21 +65,12 @@ const ttCardsContent  = document.getElementById("ttCardsContent");
 const subjectSetupMgrView = document.getElementById("subjectSetupView");
 const subjectSetupContent = document.getElementById("subjectSetupContent");
 
-// ── DOM: Board tab buttons ───────────────────────────────────────
-// 분리된 페이지(roster/setup/prework/results)에는 이 버튼들이 없으므로
-// 반드시 명시적으로 null-safe DOM 참조를 만들어야 합니다.
-// 선언이 없으면 해당 페이지에서 ReferenceError가 발생해 하단 서브메뉴 클릭 이벤트가 등록되지 않습니다.
-const tab7to9Btn   = document.getElementById("tab7to9Btn");
-const tab10to12Btn = document.getElementById("tab10to12Btn");
-
 // ── Navigation UI is initialized through app-navigation-ui.js ─────────
 // ================================================================
 // NAVIGATION STATE
 // ================================================================
 const INITIAL_VIEW = document.body?.dataset.initialView || "board";
 let activeMainView = INITIAL_VIEW;
-let activeTab = "tab7to9";
-
 let templateUi = null;
 const navigationUi = setupAppNavigationUi({
   initialView: activeMainView,
@@ -89,11 +82,6 @@ const navigationUi = setupAppNavigationUi({
 
 
 // ── View-scoped Firestore subscriptions are handled in app-domains.js ───────
-// Board tab cache
-const tabBoardCache = { tab7to9: null, tab10to12: null };
-const dirtyTabs     = new Set(["tab7to9","tab10to12"]);
-export const invalidateTabs = () => { dirtyTabs.add("tab7to9"); dirtyTabs.add("tab10to12"); };
-
 // ── View switching ─────────────────────────────────────────────────
 async function navigateTo(view) {
   setView(view);
@@ -123,21 +111,15 @@ function setView(view) {
 function closeToBoard() {
   templateUi?.resetTemplateForm();
   setView("board");
-  invalidateTabs();
+  boardUi.invalidateTabs();
   templateUi?.renderSidebar();
-  renderBoardTab();
+  boardUi.renderBoardTab();
 }
 
 // ================================================================
 // RENDER
 // ================================================================
-function renderBoardTab() {
-  if (!gradeBoard) return;
-  const tab = activeTab;
-  if (!dirtyTabs.has(tab) && tabBoardCache[tab]) { gradeBoard.innerHTML = ""; tabBoardCache[tab].forEach(el => gradeBoard.appendChild(el)); return; }
-  const els = buildTabBoard(GRADE_GROUPS[tab], () => { invalidateTabs(); renderBoardTab(); renderSidebar(); });
-  gradeBoard.innerHTML = ""; els.forEach(el => gradeBoard.appendChild(el)); tabBoardCache[tab] = els; dirtyTabs.delete(tab);
-}
+function renderBoardTab() { boardUi.renderBoardTab(); }
 
 function renderSidebar() { templateUi?.renderSidebar(); }
 
@@ -253,7 +235,7 @@ function render(domain) {
   // empty board cache. Always invalidate when either board source changed.
   if (boardDataChanged) {
     templateUi?.syncSchoolLevels();
-    invalidateTabs();
+    boardUi.invalidateTabs();
   }
 
   // Sidebar cards depend on templates and also on curriculum placement chips.
@@ -268,8 +250,7 @@ function render(domain) {
 }
 
 function renderTabBtns() {
-  tab7to9Btn?.classList.toggle("active", activeTab === "tab7to9");
-  tab10to12Btn?.classList.toggle("active", activeTab === "tab10to12");
+  boardUi.renderTabButtons();
   navigationUi?.syncNavigation(activeMainView, VIEW_TO_SECTION[activeMainView]);
 }
 
@@ -277,7 +258,7 @@ function renderTabBtns() {
 // CONTROLS DISABLE/ENABLE
 // ================================================================
 function setControlsDisabled(disabled) {
-  [resetBoardBtn, exportXlsxBtn].forEach(el => { if (el) el.disabled = disabled; });
+  boardUi.setDisabled(disabled);
   templateUi?.setDisabled(disabled);
   studentUi?.setDisabled(disabled);
 }
@@ -289,9 +270,9 @@ setupAppSidebarUi();
 
 templateUi = setupAppTemplatesUi({
   ensureDomains,
-  invalidateTabs,
+  invalidateTabs: () => boardUi.invalidateTabs(),
   renderApp: () => render(),
-  renderBoardTab,
+  renderBoardTab: () => boardUi.renderBoardTab(),
   renderResultsPanel,
   renderTeacherPanel,
   renderGroupManagerView,
@@ -315,7 +296,7 @@ setOnUpdate(domain => {
 // ── Save status indicator / quota-saving controls ─────────────────
 setupSaveStatusUi({
   onLocalDataChanged: () => {
-    invalidateTabs();
+    boardUi.invalidateTabs();
     render("all");
   }
 });
@@ -338,7 +319,7 @@ onAuth(async (user) => {
     }
   } else {
     stopAllDomainSubscriptions();
-    invalidateTabs();
+    boardUi.invalidateTabs();
     render();
   }
 });
@@ -346,22 +327,6 @@ onAuth(async (user) => {
 // ================================================================
 // EVENT LISTENERS
 // ================================================================
-
-exportXlsxBtn?.addEventListener("click", () => exportXLSX(activeTab));
-resetBoardBtn?.addEventListener("click", async () => {
-  if (!canEdit()) return;
-  if (!confirm("커리큘럼 보드를 초기화할까요? (과목카드/학생 데이터는 유지됩니다)")) return;
-  const opts = { category:["교과","창체"], track:["공통","배정","선택"], group:["선택","국어","영어","수학","사회","과학","정보","예술","체육","자율활동","동아리","채플","기타"] };
-  const gradeBoards = {};
-  const GK = ["7학년","8학년","9학년","10학년","11학년","12학년"];
-  GK.forEach(g => { gradeBoards[g] = Array.from({ length:4 }, () => ({ id:`row-${Date.now()}-${Math.random().toString(36).slice(2,9)}`, category:opts.category[0], track:opts.track[0], group:opts.group[0], credits:"", sem1TemplateId:null, sem2TemplateId:null })); });
-  appState.curriculum = { options:opts, gradeBoards };
-  invalidateTabs(); await saveNow("curriculum"); render();
-});
-
-// ── Tabs ──────────────────────────────────────────────────────────
-tab7to9Btn?.addEventListener("click",   () => { if (activeTab === "tab7to9")   return; activeTab = "tab7to9";   renderTabBtns(); renderBoardTab(); });
-tab10to12Btn?.addEventListener("click", () => { if (activeTab === "tab10to12") return; activeTab = "tab10to12"; renderTabBtns(); renderBoardTab(); });
 
 // ── Initial render ────────────────────────────────────────────────
 setView(activeMainView);
