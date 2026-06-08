@@ -357,7 +357,8 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
     gradeKey: gradeKeys[0] || first.gradeKey,
     teacherName,
     audienceClassKeys: [...new Set(validCards.flatMap(c => getTtCardClassInfos(c).map(classKey)).filter(Boolean))],
-    audienceStudentKeys: [...new Set(validCards.flatMap(c => c.studentKeys || []))],
+    // 학생 key는 시간표 배치/충돌 기준에서 제외합니다.
+    audienceStudentKeys: [],
     roomId: null
   };
 }

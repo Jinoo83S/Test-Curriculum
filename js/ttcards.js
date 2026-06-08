@@ -242,7 +242,7 @@ function isWholeGradeRow(row, tpl) {
 }
 function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
   const classes = appState.classes?.classes || [];
-  const classKeys = new Set(), classLabels = new Set(), studentKeys = new Set();
+  const classKeys = new Set(), classLabels = new Set();
   const row = getCurriculumRowForCard(gradeKey, templateId);
   const tpl = getTemplateById(templateId);
   const whole = isWholeGradeRow(row, tpl);
@@ -258,12 +258,8 @@ function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
       const label = classLabelOf(gradeKey, sec);
       if (key) classKeys.add(key);
       if (label) classLabels.add(label);
-      (cls.students || []).forEach(stu => {
-        const sid = stu?.id || stu?.studentId || stu?.name || "";
-        if (sid) studentKeys.add(`${cls.id || key}:${sid}`);
-      });
     });
-    return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[...studentKeys] };
+    return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[] };
   }
 
   const rosterEntries = (appState.rosters?.rosters?.[templateId] || [])
@@ -277,9 +273,8 @@ function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
     const label = classLabelOf(gradeKey, sec);
     if (key) classKeys.add(key);
     if (label) classLabels.add(label);
-    studentKeys.add(`${re.classId}:${re.studentId}`);
   });
-  if (classKeys.size) return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[...studentKeys] };
+  if (classKeys.size) return { classKeys:[...classKeys], classLabels:[...classLabels], studentKeys:[] };
 
   const targetClasses = [gradeClasses[sectionIdx] || { grade: gradeKey, name: sectionLabel(sectionIdx ?? 0) }];
   targetClasses.forEach(cls => {
@@ -318,7 +313,8 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     group: row?.group || existing?.group || "",
     classKeys: audience.classKeys.length ? audience.classKeys : (existing?.classKeys || []),
     classLabels: audience.classLabels.length ? audience.classLabels : (existing?.classLabels || []),
-    studentKeys: audience.studentKeys.length ? audience.studentKeys : (existing?.studentKeys || []),
+    // 학생 key는 시간표 카드에 저장하지 않습니다. 학급/반 점유는 classKeys만 사용합니다.
+    studentKeys: [],
     isWholeGrade: row ? isWholeGradeRow(row, tpl) : !!existing?.isWholeGrade,
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,
@@ -332,7 +328,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
-    ["label","teacherName","teachers","credits","classKeys","classLabels","studentKeys","isWholeGrade"].forEach(k => {
+    ["label","teacherName","teachers","credits","classKeys","classLabels","isWholeGrade"].forEach(k => {
       if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
@@ -456,7 +452,9 @@ export function clearTtCards() {
 function updateTtCardField(cardId, field, value) {
   if (!canEdit()) return;
   const card = getTtCardById(cardId); if (!card) return;
-  if (["classLabels","classKeys","teachers","studentKeys"].includes(field)) {
+  if (field === "studentKeys") {
+    card.studentKeys = [];
+  } else if (["classLabels","classKeys","teachers"].includes(field)) {
     card[field] = String(value || "").split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
   } else if (field === "credits") {
     card[field] = isChanCheCategory(card.category) ? 1 : (parseFloat(value) || 0);
@@ -597,7 +595,6 @@ function createGeneratedCardBox(card) {
     ["제목", card.subject || card.label || ""],
     ["대상", target],
     ["반Key", arrText(card.classKeys), { mono:true }],
-    ["학생Key", `${Array.isArray(card.studentKeys) ? card.studentKeys.length : 0}개`],
     ["교사", card.teacherName || arrText(card.teachers)],
     ["시수", String(card.credits ?? "")],
     ["복합", card.compoundPartId ? `${(card.compoundPartIndex ?? 0) + 1}/${card.compoundPartCount || "?"} · 전체 ${card.compoundTotalCredits || "?"}시수` : "-"],

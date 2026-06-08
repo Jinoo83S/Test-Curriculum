@@ -553,7 +553,9 @@ export function normalizeTimetableEntry(e = {}) {
     gradeKeys:   Array.isArray(e.gradeKeys)   ? e.gradeKeys.filter(Boolean)   : (gradeKey   ? [gradeKey]   : []),
     teacherName: clean(e.teacherName),
     audienceClassKeys: Array.isArray(e.audienceClassKeys) ? e.audienceClassKeys.map(clean).filter(Boolean) : [],
-    audienceStudentKeys: Array.isArray(e.audienceStudentKeys) ? e.audienceStudentKeys.map(clean).filter(Boolean) : [],
+    // 학생 개인 key는 시간표 배치 단계에서 더 이상 사용하지 않습니다.
+    // 기존 Firestore 데이터에 남아 있어도 로드 시 비워서 UI/충돌/자동배치에 영향을 주지 않게 합니다.
+    audienceStudentKeys: [],
     roomId:      clean(e.roomId) || null,
     roomRule:    clean(e.roomRule) || "auto",
     roomPinned:  !!e.roomPinned,
@@ -582,7 +584,8 @@ export function normalizeTtCard(item = {}) {
     group:       clean(item.group),
     classKeys:   arr(item.classKeys),     // internal: "9:A"
     classLabels: arr(item.classLabels),   // display: "9A"
-    studentKeys: arr(item.studentKeys),   // internal: "classId:studentId"
+    // 학생 개인 key는 사전작업 단계에서만 의미가 있고 시간표 카드에는 저장하지 않습니다.
+    studentKeys: [],
     isWholeGrade: !!item.isWholeGrade,
     roomRule:    clean(item.roomRule) || "auto",
     fixedRoomId: clean(item.fixedRoomId) || null,

@@ -247,18 +247,13 @@ export function createTimetableSidebarHandlers(deps) {
   function selectedManualAudience(gradeKey, selectedLabels = []) {
     const labels = unique((selectedLabels || []).map(v => String(v || "").trim()).filter(Boolean));
     const classKeys = unique(labels.map(label => manualClassKeyFromLabel(label, gradeKey)).filter(Boolean));
-    const studentKeys = [];
     const selectedKeys = new Set(classKeys);
     (appState.classes?.classes || []).forEach(cls => {
       if (String(cls.grade || "").trim() !== gradeKey) return;
       const key = manualClassKeyFromLabel(manualClassLabel(gradeKey, cls.name), gradeKey);
       if (!selectedKeys.has(key)) return;
-      (cls.students || []).forEach(stu => {
-        const sid = stu?.id || stu?.studentId || stu?.name || "";
-        if (sid) studentKeys.push(`${cls.id || key}:${sid}`);
-      });
     });
-    return { classLabels: labels, classKeys, studentKeys: unique(studentKeys) };
+    return { classLabels: labels, classKeys, studentKeys: [] };
   }
 
   function openManualTtCardDialog() {
@@ -422,7 +417,6 @@ export function createTimetableSidebarHandlers(deps) {
         group: clean(groupInput.value) || "수동보정",
         classKeys: audience.classKeys,
         classLabels: audience.classLabels,
-        studentKeys: audience.studentKeys,
         isWholeGrade: !!wholeChk.checked && audience.classLabels.length === getManualClassRowsForGrade(gradeSel.value).length,
         roomRule: "auto",
         fixedRoomId: null,
@@ -677,8 +671,6 @@ export function createTimetableSidebarHandlers(deps) {
 
     const classLabels = makeEditorTextarea("대상 학급", (card.classLabels || []).join(", "), "예: 9A, 9B / 쉼표 또는 줄바꿈 구분");
     const classKeys = makeEditorTextarea("classKeys", (card.classKeys || []).join(", "), "고급 항목: 9:A 형식. 비워두면 대상 학급에서 자동 생성합니다.");
-    const studentKeys = makeEditorTextarea("studentKeys", (card.studentKeys || []).join("\n"), "고급 항목: 수강명단 기준 학생 key. 직접 수정은 신중히 진행하세요.");
-
     const roomRow = document.createElement("div");
     roomRow.className = "tt-subject-editor-grid-2";
     const roomRule = makeEditorSelect("교실 규칙", [
@@ -698,7 +690,7 @@ export function createTimetableSidebarHandlers(deps) {
     isWhole.checked = !!card.isWholeGrade;
     flags.append(isWhole, document.createTextNode(" 전체 학년/전체 반 수업으로 처리"));
 
-    form.append(subject.wrap, label.wrap, teacher.wrap, credits.wrap, metaRow, classLabels.wrap, classKeys.wrap, studentKeys.wrap, roomRow, flags);
+    form.append(subject.wrap, label.wrap, teacher.wrap, credits.wrap, metaRow, classLabels.wrap, classKeys.wrap, roomRow, flags);
 
     const actions = document.createElement("div");
     actions.className = "tt-subject-editor-actions";
@@ -714,7 +706,6 @@ export function createTimetableSidebarHandlers(deps) {
         group: group.input.value,
         classLabels: classLabels.input.value,
         classKeys: classKeys.input.value,
-        studentKeys: studentKeys.input.value,
         roomRule: roomRule.input.value,
         fixedRoomId: fixedRoom.input.value,
         isWholeGrade: isWhole.checked,
@@ -849,7 +840,6 @@ export function createTimetableSidebarHandlers(deps) {
     if (!card) return;
     const classLabels = parseEditorList(values.classLabels);
     const classKeys = parseEditorList(values.classKeys);
-    const studentKeys = parseEditorList(values.studentKeys);
     card.subject = String(values.subject || "").trim() || card.subject || "";
     card.label = String(values.label || "").trim();
     card.teacherName = String(values.teacherName || "").trim();
@@ -860,7 +850,8 @@ export function createTimetableSidebarHandlers(deps) {
     card.group = String(values.group || "").trim();
     card.classLabels = classLabels;
     card.classKeys = classKeys.length ? classKeys : classLabels.map(label => classLabelToKey(label, card.gradeKey)).filter(Boolean);
-    card.studentKeys = studentKeys;
+    // 학생 key는 시간표 카드에서 제거합니다. 학급/반 점유는 classKeys/classLabels만 사용합니다.
+    card.studentKeys = [];
     card.roomRule = values.roomRule || "auto";
     card.fixedRoomId = values.roomRule === "fixed" ? (values.fixedRoomId || null) : (values.fixedRoomId || null);
     card.isWholeGrade = !!values.isWholeGrade;
@@ -1647,7 +1638,6 @@ export function createTimetableSidebarHandlers(deps) {
         expectedCredits: 0,
         actualCredits: Number(card.credits) || 0,
         actualCardCount: 1,
-        studentCount: (card.studentKeys || []).length,
         note: "시간표카드는 있으나 현재 커리큘럼 행과 직접 연결되지 않습니다.",
         reason: "커리큘럼 보드의 해당 학년/과목카드 연결에서 찾지 못한 고아 카드입니다.",
         subjectClassCount: 0,
@@ -1718,7 +1708,7 @@ export function createTimetableSidebarHandlers(deps) {
     const expectedCardCount = isZeroCreative ? 0 : Math.max(1, subjectClassCount || 1) * compoundPartCount;
     const actualCreditTotal = actualCards.reduce((sum, card) => sum + (Number(card.credits) || 0), 0);
     const actualCardCount = actualCards.length;
-    const actualStudentCount = uniqueDiagnosticValues(actualCards.flatMap(card => card.studentKeys || [])).length;
+    const actualStudentCount = 0;
     const expectedCredits = isZeroCreative ? 0 : isCreative ? 1 : rawCredits;
     const expectedCardMode = isZeroCreative ? "제외" : isCompound ? "복합 분할" : isCreative ? "창체 1시수" : "일반";
 

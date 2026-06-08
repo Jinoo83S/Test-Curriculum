@@ -150,11 +150,8 @@ function buildExportContext(deps = {}) {
   };
 
   const studentMatches = (entry, student) => {
+    // 시간표 단계에서는 학생 개인 key를 사용하지 않고 학급/반 점유만 기준으로 출력합니다.
     const audience = deps.audienceForPlacement?.(entry);
-    const studentKeys = toArrayFromSet(audience?.studentKeys);
-    if (studentKeys.length) {
-      return studentKeys.includes(student.key) || studentKeys.includes(student.studentId);
-    }
     const classKeys = toArrayFromSet(audience?.classKeys);
     if (classKeys.length && student.classKey) return classKeys.includes(student.classKey);
     return classMatches(entry, student);

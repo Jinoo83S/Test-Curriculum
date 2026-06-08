@@ -990,10 +990,9 @@ export function createAutoAssignAll(deps) {
   }
 
   function getAudienceSizeForRoom(data = {}) {
-    const direct = Array.isArray(data.audienceStudentKeys) ? data.audienceStudentKeys.length : 0;
-    if (direct) return direct;
-    const audience = audienceForPlacement?.(data);
-    return audience?.studentKeys?.size || 0;
+    // 학생 개인 key는 시간표 배치 단계에서 사용하지 않습니다.
+    // 교실 후보 정렬에서도 학생 수 기반 보정보다 교사 담당교실/홈룸/고정교실 규칙을 우선합니다.
+    return 0;
   }
 
   function sortRoomCandidatesFor(data = {}) {

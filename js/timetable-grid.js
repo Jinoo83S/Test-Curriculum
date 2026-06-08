@@ -149,7 +149,7 @@ function entryRooms(entry = {}, ctx = {}) {
 
 function entryStudents(entry = {}) {
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
-  return localUnique(cards.flatMap(c => safeArray(c.studentKeys)));
+  return [];
 }
 
 function groupKeyForEntry(entry = {}) {
@@ -183,7 +183,7 @@ function summarizeEntryGroup(group, ctx = {}) {
   const categories = localUnique(group.cards.map(c => c.category).concat(group.entries.map(e => e.category)));
   const teachers = localUnique(group.entries.flatMap(entryTeachers));
   const rooms = localUnique(group.entries.flatMap(entry => entryRooms(entry, ctx)));
-  const studentKeys = localUnique(group.cards.flatMap(c => safeArray(c.studentKeys)).concat(group.entries.flatMap(e => safeArray(e.studentKeys))));
+  const studentKeys = [];
   const conflictCount = group.entries.filter(e => ctx.getEntryConflictSet?.(e)?.size).length;
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
@@ -369,7 +369,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
     meta.className = "tt-all-detail-item-meta";
     const teachers = entryTeachers(entry).join(", ") || "교사 없음";
     const rooms = entryRooms(entry, ctx).join(", ") || "교실 미배정";
-    const students = localUnique(cards.flatMap(c => safeArray(c.studentKeys))).length;
+    const students = 0;
     const classes = localUnique(cards.flatMap(c => safeArray(c.classLabels))).join(", ");
     meta.textContent = [teachers, rooms, students ? `${students}명` : "", classes].filter(Boolean).join(" · ");
     item.append(itemTitle, meta);
