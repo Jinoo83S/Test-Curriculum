@@ -2028,6 +2028,70 @@ export function createAutoAssignAll(deps) {
     return getMovableBlocks(placed).filter(block => blockedKeys.has(block.key));
   }
 
+  function uniqueMovableBlocks(blocks = []) {
+    const seen = new Set();
+    const list = [];
+    (blocks || []).forEach(block => {
+      if (!block?.key || seen.has(block.key)) return;
+      seen.add(block.key);
+      list.push(block);
+    });
+    return list;
+  }
+
+  function tryEvacuateBlockingBlocksForSlot(item, targetSlot, blockers = [], current = [], orderedSlots = [], options = {}, limits = {}) {
+    const maxBlocks = Math.max(1, Number(limits.maxBlocks || 2));
+    const activeBlockers = uniqueMovableBlocks(blockers).slice(0, maxBlocks + 1);
+    // 차단 블록이 너무 많으면 탐색 폭이 폭발하므로 기존 안전 보정 단계로 넘깁니다.
+    if (!activeBlockers.length || activeBlockers.length > maxBlocks) return null;
+
+    const blockedIds = new Set(activeBlockers.flatMap(block => (block.entries || []).map(e => e.id).filter(Boolean)));
+    const baseWithoutBlockers = current.filter(e => !blockedIds.has(e.id));
+    const maxMoveSlotsPerBlock = Math.max(1, Number(limits.maxMoveSlotsPerBlock || 12));
+    const moveSlots = shuffle([...orderedSlots])
+      .filter(slot => !(slot.day === targetSlot.day && slot.period === targetSlot.period))
+      .slice(0, maxMoveSlotsPerBlock);
+
+    let attempts = 0;
+    let best = null;
+    let bestScore = Infinity;
+
+    const search = (idx, movedEntries) => {
+      if (idx >= activeBlockers.length) {
+        const candidateBase = [...baseWithoutBlockers, ...movedEntries];
+        if (!checkPlacementValid(item, targetSlot, candidateBase, options)) return;
+        const entry = makeAutoEntry(item, targetSlot, candidateBase);
+        if (!entry) return;
+        const candidate = [...candidateBase, entry];
+        const score = scoreScheduleQuality(candidate, options);
+        if (score < bestScore) {
+          bestScore = score;
+          best = {
+            entries: candidate,
+            movedBlockKeys: activeBlockers.map(block => block.key),
+            insertedEntry: entry,
+            score
+          };
+        }
+        return;
+      }
+
+      const block = activeBlockers[idx];
+      for (const moveSlot of moveSlots) {
+        attempts++;
+        const placedSoFar = [...baseWithoutBlockers, ...movedEntries];
+        const moved = makeMovedBlockEntries(block, moveSlot, placedSoFar);
+        if (!moved) continue;
+        search(idx + 1, [...movedEntries, ...moved]);
+        // 균형/빠른 모드에서는 첫 안전 해답을 찾으면 더 깊은 불필요 탐색을 줄입니다.
+        if (best && options.runAttempts !== "deep") break;
+      }
+    };
+
+    search(0, []);
+    return best ? { ...best, attempts } : { attempts };
+  }
+
   async function repairFailedItemsBySingleMove(failedItems = [], baseSlots = [], placed = [], options = {}, progressUpdater = null) {
     const current = [...placed];
     const remaining = [];
@@ -2036,6 +2100,9 @@ export function createAutoAssignAll(deps) {
     const maxFailedToTry = options.runAttempts === 'deep' ? 80 : (options.runAttempts === 'fast' ? 24 : 48);
     const maxBlockersPerSlot = options.runAttempts === 'deep' ? 8 : 5;
     const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(18, orderedSlots.length);
+    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : 2;
+    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(24, orderedSlots.length) : Math.min(12, orderedSlots.length);
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 6200 : (options.runAttempts === 'fast' ? 900 : 2600);
     let attempts = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
@@ -2066,12 +2133,14 @@ export function createAutoAssignAll(deps) {
 
         for (const block of blockers) {
           if (done) break;
+          if (attempts >= maxRepairAttempts) break;
           const blockIds = new Set(block.entries.map(e => e.id));
           const withoutBlock = current.filter(e => !blockIds.has(e.id));
           const moveSlots = shuffle([...orderedSlots]).slice(0, maxMoveSlotsPerBlock);
 
           for (const moveSlot of moveSlots) {
             attempts++;
+            if (attempts >= maxRepairAttempts) break;
             if (moveSlot.day === targetSlot.day && moveSlot.period === targetSlot.period) continue;
             const moved = makeMovedBlockEntries(block, moveSlot, withoutBlock);
             if (!moved) continue;
@@ -2084,6 +2153,23 @@ export function createAutoAssignAll(deps) {
             repaired.push({ ...failedItem, repairMode: 'single-move', movedBlock: block.key });
             done = true;
             break;
+          }
+        }
+
+        // 한 칸에 여러 수업 블록이 걸려 막힌 경우, 차단 블록 2~3개를 동시에 다른 칸으로 이동한 뒤
+        // 미배치 수업을 넣는 다중 이동 복구를 시도합니다. 기존 single-move로는 해결되지 않는
+        // 학급+교사+교실 복합 차단을 줄이기 위한 단계입니다.
+        if (!done && blockers.length > 1 && blockers.length <= maxEvacuateBlocks && attempts < maxRepairAttempts) {
+          const multi = tryEvacuateBlockingBlocksForSlot(item, targetSlot, blockers, current, orderedSlots, options, {
+            maxBlocks: maxEvacuateBlocks,
+            maxMoveSlotsPerBlock: maxMultiMoveSlotsPerBlock
+          });
+          attempts += Number(multi?.attempts || 0);
+          if (multi?.entries?.length) {
+            current.length = 0;
+            current.push(...multi.entries);
+            repaired.push({ ...failedItem, repairMode: 'multi-move', movedBlocks: multi.movedBlockKeys || [] });
+            done = true;
           }
         }
 
@@ -3464,13 +3550,30 @@ export function createAutoAssignAll(deps) {
           return minCount;
         };
 
+        const groupBlockSpecialPriority = block => {
+          const group = block?.group || {};
+          const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
+          const teachers = new Set(getTeacherNamesFromCards(cards).filter(Boolean));
+          const classKeys = new Set(cards.flatMap(card => card.classKeys || []).filter(Boolean));
+          const nameText = [group.name, group.label, group.groupName, ...cards.map(c => [c.group, c.groupName, c.track, c.subject, c.label].filter(Boolean).join(' '))]
+            .filter(Boolean).join(' ');
+          let bonus = 0;
+          if (group.isConcurrent || group.groupType === "concurrent") bonus += 6000;
+          if (/선택/.test(nameText)) bonus += 5200;
+          if (/채플|자율|동아리|CA|SA/.test(nameText)) bonus += 4200;
+          if (/국어|한국어|영어|Korean|English/i.test(nameText)) bonus += 2600;
+          // 여러 반·여러 교사·여러 카드가 동시에 움직이는 그룹은 뒤로 밀리면 거의 배치가 불가능해집니다.
+          bonus += classKeys.size * 180 + teachers.size * 260 + cards.length * 35;
+          return bonus;
+        };
+
         const groupBlockComplexity = block => {
           const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
           const teachers = new Set(getTeacherNamesFromCards(cards).filter(Boolean));
           const classKeys = new Set(cards.flatMap(card => card.classKeys || []).filter(Boolean));
           const maxCredits = Math.max(0, ...(block?.unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
           // 여러 학년·반·교사가 동시에 움직이는 그룹을 먼저 배치해야 후반부 카드 부족/미배치가 줄어듭니다.
-          return teachers.size * 100 + classKeys.size * 12 + cards.length * 5 + maxCredits;
+          return groupBlockSpecialPriority(block) + teachers.size * 100 + classKeys.size * 12 + cards.length * 5 + maxCredits;
         };
 
         const orderedGroups = shuffle([...groupBlocks]).sort((a, b) => {
@@ -3480,6 +3583,8 @@ export function createAutoAssignAll(deps) {
           if (ap !== 0) return ap;
           const art = (b.restrictedTeachers || []).length - (a.restrictedTeachers || []).length;
           if (art !== 0) return art;
+          const special = groupBlockSpecialPriority(b) - groupBlockSpecialPriority(a);
+          if (special !== 0) return special;
           const acand = candidateCountForGroupBlock(a);
           const bcand = candidateCountForGroupBlock(b);
           if (acand !== bcand) return acand - bcand;
