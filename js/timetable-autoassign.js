@@ -683,31 +683,45 @@ export function createAutoAssignAll(deps) {
       ...row,
       target: targetPerClass,
       protectedSlots: new Set(),
+      // 보호 배치 중 자동배치 원본 카드/그룹에 포함되지 않는 외부 보호 슬롯만 별도 가산합니다.
+      // 채플/CA/SA처럼 이미 35시수 안에 들어 있는 보호 수업은 autoSlots와 중복 가산하지 않습니다.
+      externalProtectedSlots: new Set(),
       autoSlots: 0,
       samples: []
     }]));
 
-    const addAuto = (keys = [], count = 1, sample = "") => {
+    const autoSourceKeysByClass = new Map(rows.map(row => [row.key, new Set()]));
+
+    const sourceKeysForCapacity = (source = {}) => {
+      const keys = new Set();
+      ttCardIdsFromPlacement(source).forEach(id => { if (id) keys.add(`card:${id}`); });
+      const templateIds = [source.templateId, ...(source.templateIds || [])].filter(Boolean);
+      const gradeKeys = [source.gradeKey, ...(source.gradeKeys || [])].filter(Boolean);
+      const sectionIdx = source.sectionIdx ?? 0;
+      templateIds.forEach(tpl => {
+        if (gradeKeys.length) gradeKeys.forEach(grade => keys.add(`tpl:${tpl}:${grade}:${sectionIdx}`));
+        else keys.add(`tpl:${tpl}`);
+      });
+      (source.ttcards || []).forEach(card => {
+        if (card?.id) keys.add(`card:${card.id}`);
+        if (card?.templateId) keys.add(`tpl:${card.templateId}:${card.gradeKey || ""}:${card.sectionIdx ?? 0}`);
+      });
+      return [...keys];
+    };
+
+    const addAuto = (keys = [], count = 1, sample = "", sources = []) => {
       const normalized = [...new Set((keys || []).map(normalizeClassKeyForReportKey).filter(key => rowKeys.has(key)))];
+      const sourceList = Array.isArray(sources) ? sources : [sources];
+      const sourceKeys = new Set(sourceList.flatMap(sourceKeysForCapacity));
       normalized.forEach(key => {
         const row = map.get(key);
         row.autoSlots += Math.max(0, Number(count) || 0);
+        sourceKeys.forEach(srcKey => autoSourceKeysByClass.get(key)?.add(srcKey));
         if (sample && row.samples.length < 6) row.samples.push(sample);
       });
     };
 
-    (protectedEntries || []).forEach(entry => {
-      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
-      const slotKey = `${entry.day}:${entry.period}`;
-      classKeysForCapacity(entry).forEach(key => {
-        if (!rowKeys.has(key)) return;
-        const row = map.get(key);
-        row.protectedSlots.add(slotKey);
-        if (row.samples.length < 6) row.samples.push(`보호 ${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
-      });
-    });
-
-    (standalone || []).forEach(item => addAuto(classKeysForCapacity(item), 1, getAutoItemName(item)));
+    (standalone || []).forEach(item => addAuto(classKeysForCapacity(item), 1, getAutoItemName(item), item));
 
     (groupBlocks || []).forEach(block => {
       const group = block?.group || {};
@@ -718,35 +732,64 @@ export function createAutoAssignAll(deps) {
         const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u?.credits) || 0)));
         for (let occurrence = 0; occurrence < maxCredits; occurrence++) {
           const keys = new Set();
+          const sources = [];
           unitItems
             .filter(u => occurrence < Math.max(0, Number(u?.credits) || 0))
             .map(u => getGroupItemForOccurrence(u, occurrence))
             .filter(u => (u?.ttcards || []).length)
             .forEach(u => {
               const placement = makePlacementFromGroupItem(group, u) || u;
+              sources.push(placement, u);
               classKeysForCapacity(placement).forEach(key => keys.add(key));
             });
-          addAuto([...keys], 1, groupName);
+          addAuto([...keys], 1, groupName, sources);
         }
       } else {
         unitItems.forEach(unit => {
           const credits = Math.max(0, Number(unit?.credits) || 0);
           for (let occurrence = 0; occurrence < credits; occurrence++) {
-            const placement = makePlacementFromGroupItem(group, getGroupItemForOccurrence(unit, occurrence)) || unit;
-            addAuto(classKeysForCapacity(placement), 1, groupName);
+            const occurrenceItem = getGroupItemForOccurrence(unit, occurrence);
+            const placement = makePlacementFromGroupItem(group, occurrenceItem) || occurrenceItem || unit;
+            addAuto(classKeysForCapacity(placement), 1, groupName, [placement, occurrenceItem, unit]);
           }
         });
       }
     });
 
+    (protectedEntries || []).forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      const entrySourceKeys = sourceKeysForCapacity(entry);
+      classKeysForCapacity(entry).forEach(key => {
+        if (!rowKeys.has(key)) return;
+        const row = map.get(key);
+        row.protectedSlots.add(slotKey);
+        const knownAutoSources = autoSourceKeysByClass.get(key) || new Set();
+        const coveredByAutoSource = entrySourceKeys.length
+          ? entrySourceKeys.some(srcKey => knownAutoSources.has(srcKey))
+          : row.autoSlots >= row.target;
+        if (!coveredByAutoSource) row.externalProtectedSlots.add(slotKey);
+        if (row.samples.length < 6) {
+          const prefix = coveredByAutoSource ? "보호/원본중복" : "외부보호";
+          row.samples.push(`${prefix} ${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
+        }
+      });
+    });
+
     const capacityRows = [...map.values()].map(row => {
       const protectedCount = row.protectedSlots.size;
+      const protectedExternalCount = row.externalProtectedSlots.size;
+      const protectedCoveredCount = Math.max(0, protectedCount - protectedExternalCount);
       const autoCount = row.autoSlots;
-      const available = protectedCount + autoCount;
+      // 핵심 수정: 보호 수업은 대부분 자동배치 원본 시수 안에 이미 포함되어 있으므로 중복으로 더하지 않습니다.
+      // 원본 카드/그룹에 없는 외부 보호 슬롯만 자동 원본 시수에 추가합니다.
+      const available = autoCount + protectedExternalCount;
       const diff = available - row.target;
       return {
         ...row,
         protectedCount,
+        protectedCoveredCount,
+        protectedExternalCount,
         autoCount,
         available,
         diff,
@@ -758,17 +801,21 @@ export function createAutoAssignAll(deps) {
     const overRows = capacityRows.filter(row => row.diff > 0);
     const targetTotal = capacityRows.reduce((sum, row) => sum + row.target, 0);
     const availableTotal = capacityRows.reduce((sum, row) => sum + row.available, 0);
+    const protectedCoveredTotal = capacityRows.reduce((sum, row) => sum + row.protectedCoveredCount, 0);
+    const protectedExternalTotal = capacityRows.reduce((sum, row) => sum + row.protectedExternalCount, 0);
     return {
       targetPerClass,
       targetTotal,
       availableTotal,
+      protectedCoveredTotal,
+      protectedExternalTotal,
       ok: shortRows.length === 0 && overRows.length === 0,
       shortRows,
       overRows,
       rows: capacityRows,
       summary: shortRows.length || overRows.length
         ? `부족 ${shortRows.length}개 학급 · 초과 ${overRows.length}개 학급 · 가능 ${availableTotal}/${targetTotal}시수`
-        : `${capacityRows.length}개 학급 모두 ${targetPerClass}시수 구성 가능`
+        : `${capacityRows.length}개 학급 모두 ${targetPerClass}시수 구성 가능 · 보호중복 ${protectedCoveredTotal}시수 제외${protectedExternalTotal ? ` · 외부보호 ${protectedExternalTotal}시수 포함` : ""}`
     };
   }
 
