@@ -6,7 +6,7 @@
   <title>HIS Curriculum</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-06-09-save-control-unified-r8";
+    window.HIS_APP_VERSION = "2026-06-09-save-ui-unified-r10";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -34,7 +34,7 @@
       <button id="topLocalModeBtn" class="secondary-btn top-mode-btn" type="button">로컬 모드</button>
       <button id="topOnlineModeBtn" class="secondary-btn top-mode-btn" type="button">온라인 모드</button>
     </div>
-    <span id="saveStatusEl" class="save-status"></span>
+    <span id="saveStatusEl" class="save-status save-status-inline-hidden" style="display:none;width:0;min-width:0;max-width:0;padding:0;margin:0;overflow:hidden"></span>
     <span id="authStatus" class="auth-status">로그인 확인 중…</span>
     <button id="exportXlsxBtn" class="secondary-btn" type="button">엑셀 내보내기</button>
     <button id="loginBtn" class="primary-btn hidden" type="button">Google 로그인</button>
@@ -170,7 +170,7 @@
 <div class="paste-area-wrap tpl-paste-body">
 <div class="paste-label">
             열 구성 <span class="paste-hint">
-<strong>기본 5열</strong>: 한글이름 · 영어이름 · 교사 · 언어(Korean/English/Both) · 구분(중등/고등/공통)
+<strong>기본 5열</strong>: 한글이름 · 영어이름 · 교사 · 언어(Korean/English/Both) · 구분(중등/고등)
               <br/>
 <strong>학기분리 11열</strong>: 기본 5열 뒤에 1학기한글 · 1학기영어 · 1학기교사 · 2학기한글 · 2학기영어 · 2학기교사 순서로 추가합니다.
             </span>

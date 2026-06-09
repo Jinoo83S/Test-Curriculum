@@ -29,6 +29,12 @@ function hideLegacySaveStatus() {
   saveStatusEl.textContent = "";
   saveStatusEl.className = "save-status save-status-inline-hidden";
   saveStatusEl.style.display = "none";
+  saveStatusEl.style.width = "0";
+  saveStatusEl.style.minWidth = "0";
+  saveStatusEl.style.maxWidth = "0";
+  saveStatusEl.style.padding = "0";
+  saveStatusEl.style.margin = "0";
+  saveStatusEl.style.overflow = "hidden";
 }
 
 function saveButtonText(autoSave, dirty, status) {
@@ -56,6 +62,14 @@ function saveButtonTitle(autoSave, dirty, status) {
     : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켭니다.";
 }
 
+function applyTopButtonBaseStyle(btn) {
+  if (!btn) return;
+  btn.style.padding = "6px 11px";
+  btn.style.borderRadius = "999px";
+  btn.style.fontWeight = "800";
+  btn.style.whiteSpace = "nowrap";
+}
+
 function updateSaveControlButtons() {
   const autoSave = isAutoSaveEnabled();
   const dirty = getDirtyDomains();
@@ -63,7 +77,7 @@ function updateSaveControlButtons() {
 
   hideLegacySaveStatus();
 
-  saveModeBtn.textContent = saveButtonText(autoSave, dirty, lastSaveStatus);
+  saveModeBtn.textContent = `💾 ${saveButtonText(autoSave, dirty, lastSaveStatus)}`;
   saveModeBtn.title = saveButtonTitle(autoSave, dirty, lastSaveStatus);
   saveModeBtn.disabled = lastSaveStatus === "saving";
 
@@ -74,6 +88,25 @@ function updateSaveControlButtons() {
   saveModeBtn.classList.toggle("save-mode-error", lastSaveStatus === "error");
   saveModeBtn.classList.toggle("save-mode-saved", (lastSaveStatus === "saved" || lastSaveStatus === "skipped") && dirty.length === 0);
   saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
+  applyTopButtonBaseStyle(saveModeBtn);
+
+  if (lastSaveStatus === "error") {
+    saveModeBtn.style.background = "#fee2e2";
+    saveModeBtn.style.color = "#991b1b";
+    saveModeBtn.style.border = "1px solid #fecaca";
+  } else if (dirty.length) {
+    saveModeBtn.style.background = "#fef3c7";
+    saveModeBtn.style.color = "#92400e";
+    saveModeBtn.style.border = "1px solid #f59e0b";
+  } else if (autoSave) {
+    saveModeBtn.style.background = "#dcfce7";
+    saveModeBtn.style.color = "#166534";
+    saveModeBtn.style.border = "1px solid #86efac";
+  } else {
+    saveModeBtn.style.background = "#f3f4f6";
+    saveModeBtn.style.color = "#374151";
+    saveModeBtn.style.border = "1px solid #d1d5db";
+  }
 }
 
 function downloadJsonFile(filename, data) {
@@ -112,11 +145,60 @@ function pickJsonFile() {
 }
 
 function insertAfterSaveStatus(el) {
-  saveStatusEl?.insertAdjacentElement("afterend", el);
+  if (saveStatusEl) saveStatusEl.insertAdjacentElement("afterend", el);
+  else document.querySelector(".topbar-right")?.prepend(el);
+}
+
+function styleLocalDevMenu(devMenu, summary, panel) {
+  devMenu.style.position = "relative";
+  devMenu.style.display = "inline-flex";
+  devMenu.style.alignItems = "center";
+  devMenu.style.zIndex = "1000";
+
+  summary.style.listStyle = "none";
+  summary.style.cursor = "pointer";
+  summary.style.display = "inline-flex";
+  summary.style.alignItems = "center";
+  summary.style.gap = "4px";
+  summary.style.padding = "6px 12px";
+  summary.style.borderRadius = "999px";
+  summary.style.border = "1px solid #fef3c7";
+  summary.style.background = "rgba(255,255,255,0.16)";
+  summary.style.color = "#fef3c7";
+  summary.style.fontWeight = "800";
+  summary.style.fontSize = "12px";
+  summary.style.whiteSpace = "nowrap";
+
+  panel.style.position = "absolute";
+  panel.style.top = "calc(100% + 8px)";
+  panel.style.right = "0";
+  panel.style.minWidth = "180px";
+  panel.style.display = "grid";
+  panel.style.gap = "8px";
+  panel.style.padding = "10px";
+  panel.style.borderRadius = "10px";
+  panel.style.border = "1px solid #dbe2ef";
+  panel.style.background = "#ffffff";
+  panel.style.color = "#1f2937";
+  panel.style.boxShadow = "0 10px 25px rgba(15,23,42,0.18)";
+  panel.style.zIndex = "9999";
+}
+
+function styleLocalDevActionButton(btn) {
+  btn.style.display = "block";
+  btn.style.width = "100%";
+  btn.style.padding = "8px 10px";
+  btn.style.borderRadius = "8px";
+  btn.style.background = "#eef4ff";
+  btn.style.color = "#1e3a5f";
+  btn.style.border = "1px solid #c7d2e8";
+  btn.style.textAlign = "left";
+  btn.style.fontWeight = "800";
+  btn.style.fontSize = "12px";
 }
 
 function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
-  const parent = saveStatusEl?.parentElement;
+  const parent = saveStatusEl?.parentElement || document.querySelector(".topbar-right");
   if (!parent || saveModeBtn) return;
 
   hideLegacySaveStatus();
@@ -127,7 +209,7 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
     devMenu.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
 
     const summary = document.createElement("summary");
-    summary.textContent = "LOCAL DEV";
+    summary.textContent = "LOCAL DEV ▾";
     devMenu.appendChild(summary);
 
     const panel = document.createElement("div");
@@ -171,8 +253,10 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
       devMenu.open = false;
     });
 
+    [exportBtn, importBtn, resetLocalBtn].forEach(styleLocalDevActionButton);
     panel.append(exportBtn, importBtn, resetLocalBtn);
     devMenu.appendChild(panel);
+    styleLocalDevMenu(devMenu, summary, panel);
     insertAfterSaveStatus(devMenu);
 
     const healthBtn = document.createElement("button");
@@ -249,8 +333,11 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
     if (dirty.length || lastSaveStatus === "error") {
       lastSaveStatus = "saving";
       updateSaveControlButtons();
-      await savePendingNow();
-      updateSaveControlButtons();
+      try {
+        await savePendingNow();
+      } finally {
+        updateSaveControlButtons();
+      }
       return;
     }
     const next = !isAutoSaveEnabled();
@@ -267,6 +354,7 @@ export function setupSaveStatusUi(options = {}) {
   if (initialized) return;
   initialized = true;
 
+  hideLegacySaveStatus();
   setupSaveQuotaControls(options);
 
   setOnSaveStatus((status, detail) => {
