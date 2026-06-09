@@ -1795,7 +1795,10 @@ export function createTimetableSidebarHandlers(deps) {
     const expectedCardCount = isZeroCreative ? 0 : Math.max(1, subjectClassCount || 1) * compoundPartCount;
     const actualCreditTotal = actualCards.reduce((sum, card) => sum + (Number(card.credits) || 0), 0);
     const actualCardCount = actualCards.length;
-    const actualStudentCount = 0;
+    // 시간표 카드에서는 studentKeys를 저장하지 않습니다.
+    // 진단 화면에서도 학생 수를 카드의 studentKeys로 판단하지 않고,
+    // 수강명단 원본(rosterCount)이 있을 때만 참고값으로 표시합니다.
+    const diagnosticRosterStudentCount = rosterCount;
     const expectedCredits = isZeroCreative ? 0 : isCreative ? 1 : rawCredits;
     const expectedCardMode = isZeroCreative ? "제외" : isCompound ? "복합 분할" : isCreative ? "창체 1시수" : "일반";
 
@@ -1869,13 +1872,10 @@ export function createTimetableSidebarHandlers(deps) {
       }
     }
 
-    if (actualCardCount && actualStudentCount === 0 && groupInfo.count > 0 && (level === "ok" || level === "warn")) {
-      level = "info";
-      status = "group-placeholder";
-      note = `수강생 0명 카드이지만 ${groupInfo.summary}에 포함되어 있어 의도적 묶음 유지 카드로 봅니다.`;
-      reason = `동시수업 그룹(${groupInfo.summary})의 시간표 슬롯을 유지하기 위한 카드입니다.`;
-      transformNote = "수강생 0명 카드 → 동시수업 그룹 유지용으로 인정";
-    }
+    // 과거에는 시간표 카드의 studentKeys 개수를 기준으로 "수강생 0명 카드" 예외를 표시했습니다.
+    // 이제 시간표 배치 기준은 classKeys/classLabels이며 studentKeys는 저장하지 않으므로,
+    // 이 예외 표시는 모든 그룹 카드를 불필요하게 "의도된 변환/예외"로 밀어 올리는 오탐이 됩니다.
+    // 그룹 포함 여부는 참고 정보로만 보존하고, 오류/경고/변환 판정에는 사용하지 않습니다.
 
     const groupHitCount = groupInfo.count;
     const assignedCount = actualEntries.filter(e => actualCards.some(c => e.ttcardId === c.id || (e.ttcardIds || []).includes(c.id))).length;
@@ -1887,7 +1887,7 @@ export function createTimetableSidebarHandlers(deps) {
       expectedCredits,
       actualCredits: actualCreditTotal,
       actualCardCount,
-      studentCount: actualStudentCount,
+      studentCount: diagnosticRosterStudentCount,
       rosterCount,
       classCountMeta: meta?.classCount || "",
       subjectClassCount,
@@ -1971,7 +1971,7 @@ export function createTimetableSidebarHandlers(deps) {
   }
 
   function buildCurriculumTransformTable(items) {
-    const list = items.filter(item => item.transformNote || item.level === "info");
+    const list = items.filter(item => item.transformNote || (item.level === "info" && item.status !== "normal"));
     if (!list.length) return makeCurriculumDiagEmpty("표시할 변환/예외 항목이 없습니다.");
     return buildCurriculumDiagTable(["종류", "학년", "구분", "과목", "변환 내용", "카드"], list.map(item => [
       levelBadgeHtml(item.level), item.gradeKey, [item.track, item.group].filter(Boolean).join(" / ") || "-", item.title,
@@ -1981,7 +1981,7 @@ export function createTimetableSidebarHandlers(deps) {
 
   function buildCurriculumFullTable(items) {
     if (!items.length) return makeCurriculumDiagEmpty("진단할 커리큘럼 행이 없습니다.");
-    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "대상 반", "카드 반", "과목 반수", "실제 섹션", "대상 학급", "원본", "시간표", "카드", "학생", "메모/원인"], items.map(item => [
+    return buildCurriculumDiagTable(["상태", "학년", "분류", "구분", "교과군", "과목", "대상 반", "카드 반", "과목 반수", "실제 섹션", "대상 학급", "원본", "시간표", "카드", "수강명단", "메모/원인"], items.map(item => [
       levelBadgeHtml(item.level), item.gradeKey, item.category, item.track, item.group, item.title,
       item.targetClassLabelText || formatDiagnosticLabels(item.coveredClassLabels || item.expectedClassLabels || []),
       (item.cardSectionLabels || []).join(", ") || "-",
