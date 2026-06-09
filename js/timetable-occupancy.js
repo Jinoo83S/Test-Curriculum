@@ -82,28 +82,11 @@ function classKeyGrades(classKeys = new Set()) {
 }
 
 function collapseStaleWholeGradeCardAudience(card = {}, occupancy) {
-  const classKeys = occupancy.classKeys || new Set();
-  const gradeKey = card.gradeKey;
-
-  // 과거 버전에서 CA/SA 계열 카드를 whole-grade로 잘못 생성해 classKeys가
-  // 9:A+9:B처럼 저장된 경우가 있습니다. 명시적인 전체학년 키워드가 없고,
-  // 한 학년 안에서 여러 반만 잡혀 있으면 해당 카드의 sectionIdx 한 반으로 되돌려
-  // 학급 충돌 오판을 막습니다.
-  if (!gradeKey || classKeys.size <= 1) return occupancy;
-
-  const strict = isStrictWholeGradeText(
-    card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
-  );
-  if (strict) return occupancy;
-
-  const grades = classKeyGrades(classKeys);
-  if (grades.size !== 1) return occupancy;
-
-  const fallbackKey = makeClassKey(gradeKey, sectionLabel(card.sectionIdx ?? 0));
-  if (!fallbackKey) return occupancy;
-
-  occupancy.classKeys = new Set([fallbackKey]);
-  occupancy.classLabels = new Set([formatClassLabelFromKey(fallbackKey)]);
+  // 2026-06-09 기준: 시간표 카드는 studentKeys를 사용하지 않고 classKeys/classLabels가
+  // 실제 수업 점유 범위의 기준입니다. 선택과목 그룹(예: 11선택4, 12선택5)은 한 카드가
+  // 여러 학반을 의도적으로 막아야 하므로, 여러 classKeys를 sectionIdx 한 반으로 접으면
+  // 공통/선택 과목이 같은 시간에 중복 배치되는 심각한 오류가 생깁니다.
+  // 따라서 카드에 저장된 classKeys/classLabels를 그대로 신뢰합니다.
   return occupancy;
 }
 

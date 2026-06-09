@@ -141,14 +141,13 @@ export function createAutoAssignAll(deps) {
   const DEFAULT_SCORE_WEIGHTS = Object.freeze({
     teacherGap: 2,          // 교사 공강 최소화
     sameSubjectDay: 2,      // 같은 과목 하루 반복 회피
-    teacherConsecutive: 2,  // 교사 연속수업 부담
-    classConsecutive: 1     // 학급 연속수업 부담
+    teacherConsecutive: 2   // 교사 연속수업 부담
   });
 
   const SCORE_PRESETS = Object.freeze({
-    balanced:        { teacherGap:2, sameSubjectDay:2, teacherConsecutive:2, classConsecutive:1 },
-    teacherFriendly: { teacherGap:3, sameSubjectDay:1, teacherConsecutive:3, classConsecutive:1 },
-    studentFriendly: { teacherGap:1, sameSubjectDay:3, teacherConsecutive:1, classConsecutive:3 }
+    balanced:        { teacherGap:2, sameSubjectDay:2, teacherConsecutive:2 },
+    teacherFriendly: { teacherGap:3, sameSubjectDay:1, teacherConsecutive:3 },
+    studentFriendly: { teacherGap:1, sameSubjectDay:3, teacherConsecutive:1 }
   });
 
   function clampWeight(value, fallback = 1) {
@@ -163,7 +162,6 @@ export function createAutoAssignAll(deps) {
       teacherGap: clampWeight(src.teacherGap, DEFAULT_SCORE_WEIGHTS.teacherGap),
       sameSubjectDay: clampWeight(src.sameSubjectDay, DEFAULT_SCORE_WEIGHTS.sameSubjectDay),
       teacherConsecutive: clampWeight(src.teacherConsecutive, DEFAULT_SCORE_WEIGHTS.teacherConsecutive),
-      classConsecutive: clampWeight(src.classConsecutive, DEFAULT_SCORE_WEIGHTS.classConsecutive),
     };
   }
 
@@ -174,7 +172,7 @@ export function createAutoAssignAll(deps) {
   function describeScoreWeights(weights = {}) {
     const w = normalizeScoreWeights(weights);
     const label = n => ["끔", "낮음", "보통", "높음"][clampWeight(n, 0)] || "보통";
-    return `교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)} · 학급연속 ${label(w.classConsecutive)}`;
+    return `교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)}`;
   }
 
 
@@ -1551,11 +1549,6 @@ export function createAutoAssignAll(deps) {
       );
       if (sameSubjectToday) preferencePenalty += 26 * weights.sameSubjectDay;
 
-      const dayPeriods = dayEnts
-        .filter(e => entryClassKeysForScoring(e).includes(cls))
-        .map(e => e.period);
-      const nextMax = maxConsecutiveFromPeriods([...dayPeriods, slot.period]);
-      if (nextMax >= 5) preferencePenalty += (nextMax - 4) * 12 * weights.classConsecutive;
     }
 
     for (const teacher of teachers) {
@@ -1757,7 +1750,6 @@ export function createAutoAssignAll(deps) {
     let score = 0;
 
     const classDaySubject = new Map();
-    const classDayPeriods = new Map();
     const teacherDayPeriods = new Map();
 
     all.forEach(entry => {
@@ -1768,9 +1760,6 @@ export function createAutoAssignAll(deps) {
 
       classKeys.forEach(cls => {
         const dayKey = `${cls}:${entry.day}`;
-        if (!classDayPeriods.has(dayKey)) classDayPeriods.set(dayKey, []);
-        classDayPeriods.get(dayKey).push(period);
-
         const subjectDayKey = `${cls}:${entry.day}:${subjectKey}`;
         classDaySubject.set(subjectDayKey, (classDaySubject.get(subjectDayKey) || 0) + 1);
 
@@ -1786,13 +1775,6 @@ export function createAutoAssignAll(deps) {
     classDaySubject.forEach(count => {
       if (count > 1) score += (count - 1) * 28 * weights.sameSubjectDay;
     });
-
-    classDayPeriods.forEach(periods => {
-      const unique = [...new Set(periods)].sort((a, b) => a - b);
-      const maxC = maxConsecutiveFromPeriods(unique);
-      if (maxC >= 5) score += (maxC - 4) * 12 * weights.classConsecutive;
-    });
-
 
     teacherDayPeriods.forEach((periods, key) => {
       const unique = [...new Set(periods)].sort((a, b) => a - b);
@@ -2631,7 +2613,6 @@ export function createAutoAssignAll(deps) {
                   ["teacherGap", "교사 공강 최소화", "교사의 하루 수업 간 빈 시간을 줄입니다."],
                   ["sameSubjectDay", "같은 과목 몰림 회피", "한 반에 같은 과목이 하루에 반복되는 것을 줄입니다."],
                   ["teacherConsecutive", "교사 연속수업 완화", "교사의 긴 연속수업을 줄입니다."],
-                  ["classConsecutive", "학급 연속수업 완화", "한 반의 긴 연속수업 부담을 줄입니다."],
                 ].map(([key, label, help]) => `
                   <label class="tt-auto-weight-row" data-weight-key="${key}">
                     <span><b>${label}</b><em>${help}</em></span>
@@ -3224,7 +3205,7 @@ export function createAutoAssignAll(deps) {
     const attemptPlan = attemptsForMode(options.runAttempts);
     const stages = [
       { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
-      { name:"relaxedSoft", label:"일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
+      { name:"relaxedSoft", label:"교사 일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
       { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:attemptPlan[2], options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
     ];
 
