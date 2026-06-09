@@ -3,7 +3,7 @@
 // ================================================================
 // Update this value once per release. HTML entry points can override it by
 // setting window.HIS_APP_VERSION before loading app modules.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-09-timetable-save-unified-r12");
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-09-autoassign-classfill-mrv-r13");
 
 export function versioned(path) {
   const raw = String(path || "");

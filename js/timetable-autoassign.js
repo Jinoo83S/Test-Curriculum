@@ -139,15 +139,16 @@ export function createAutoAssignAll(deps) {
   // 자동배치 품질 기준은 학교 운영 상황에 따라 달라지므로, 옵션 팝업에서
   // 필요한 항목만 중요도를 조절할 수 있도록 숫자 가중치로 통일합니다.
   const DEFAULT_SCORE_WEIGHTS = Object.freeze({
+    classFill: 3,           // 학급별 월~금 전체 시수 채우기
     teacherGap: 2,          // 교사 공강 최소화
     sameSubjectDay: 2,      // 같은 과목 하루 반복 회피
     teacherConsecutive: 2   // 교사 연속수업 부담
   });
 
   const SCORE_PRESETS = Object.freeze({
-    balanced:        { teacherGap:2, sameSubjectDay:2, teacherConsecutive:2 },
-    teacherFriendly: { teacherGap:3, sameSubjectDay:1, teacherConsecutive:3 },
-    studentFriendly: { teacherGap:1, sameSubjectDay:3, teacherConsecutive:1 }
+    balanced:        { classFill:3, teacherGap:2, sameSubjectDay:2, teacherConsecutive:2 },
+    teacherFriendly: { classFill:3, teacherGap:3, sameSubjectDay:1, teacherConsecutive:3 },
+    studentFriendly: { classFill:3, teacherGap:1, sameSubjectDay:3, teacherConsecutive:1 }
   });
 
   function clampWeight(value, fallback = 1) {
@@ -159,6 +160,7 @@ export function createAutoAssignAll(deps) {
   function normalizeScoreWeights(weights = {}) {
     const src = { ...DEFAULT_SCORE_WEIGHTS, ...(weights || {}) };
     return {
+      classFill: clampWeight(src.classFill, DEFAULT_SCORE_WEIGHTS.classFill),
       teacherGap: clampWeight(src.teacherGap, DEFAULT_SCORE_WEIGHTS.teacherGap),
       sameSubjectDay: clampWeight(src.sameSubjectDay, DEFAULT_SCORE_WEIGHTS.sameSubjectDay),
       teacherConsecutive: clampWeight(src.teacherConsecutive, DEFAULT_SCORE_WEIGHTS.teacherConsecutive),
@@ -172,7 +174,7 @@ export function createAutoAssignAll(deps) {
   function describeScoreWeights(weights = {}) {
     const w = normalizeScoreWeights(weights);
     const label = n => ["끔", "낮음", "보통", "높음"][clampWeight(n, 0)] || "보통";
-    return `교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)}`;
+    return `학급공강 ${label(w.classFill)} · 교사공강 ${label(w.teacherGap)} · 과목몰림 ${label(w.sameSubjectDay)} · 교사연속 ${label(w.teacherConsecutive)}`;
   }
 
 
@@ -623,6 +625,150 @@ export function createAutoAssignAll(deps) {
       summary: issues.length
         ? `${rows.length}개 학급 중 ${issues.length}개 학급 시수 불일치 · 현재 ${total}/${targetTotal}시수`
         : `${rows.length}개 학급 모두 ${targetPerClass}시수 충족 · 현재 ${total}/${targetTotal}시수`
+    };
+  }
+
+
+  function normalizeClassKeyForReportKey(rawValue = "") {
+    const raw = String(rawValue || "").trim();
+    if (!raw) return "";
+    if (raw.includes(":")) {
+      const [g, s] = raw.split(":");
+      return makeClassKeyForReport(g, s);
+    }
+    const m = raw.replace(/\s+/g, "").replace(/학년/g, "").match(/^(\d{1,2})(.+)$/);
+    return m ? makeClassKeyForReport(m[1], m[2]) : raw;
+  }
+
+  function classKeysForCapacity(x = {}) {
+    const audience = audienceForPlacement(x);
+    return [...(audience?.classKeys || new Set())]
+      .map(normalizeClassKeyForReportKey)
+      .filter(Boolean);
+  }
+
+  function buildClassSlotStatsForEntries(allEntries = [], scopeGrades = []) {
+    const rows = getReportClassRows(scopeGrades);
+    const rowKeys = new Set(rows.map(row => row.key));
+    const stats = new Map(rows.map(row => [row.key, { ...row, slots: new Set(), dayPeriods: new Map(), samples: [] }]));
+    (allEntries || []).forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      classKeysForCapacity(entry).forEach(cls => {
+        if (!rowKeys.has(cls)) return;
+        const stat = stats.get(cls);
+        const before = stat.slots.size;
+        stat.slots.add(slotKey);
+        if (!stat.dayPeriods.has(entry.day)) stat.dayPeriods.set(entry.day, new Set());
+        stat.dayPeriods.get(entry.day).add(entry.period);
+        if (stat.slots.size !== before && stat.samples.length < 6) stat.samples.push(`${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
+      });
+    });
+    return stats;
+  }
+
+  function classDayLoadFromStats(stats, classKey, day) {
+    return stats.get(classKey)?.dayPeriods?.get(day)?.size || 0;
+  }
+
+  function classSlotCountFromStats(stats, classKey) {
+    return stats.get(classKey)?.slots?.size || 0;
+  }
+
+  function buildClassCapacityPrecheck(standalone = [], groupBlocks = [], protectedEntries = [], scopeGrades = []) {
+    const targetPerClass = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
+    const rows = getReportClassRows(scopeGrades);
+    const rowKeys = new Set(rows.map(row => row.key));
+    const map = new Map(rows.map(row => [row.key, {
+      ...row,
+      target: targetPerClass,
+      protectedSlots: new Set(),
+      autoSlots: 0,
+      samples: []
+    }]));
+
+    const addAuto = (keys = [], count = 1, sample = "") => {
+      const normalized = [...new Set((keys || []).map(normalizeClassKeyForReportKey).filter(key => rowKeys.has(key)))];
+      normalized.forEach(key => {
+        const row = map.get(key);
+        row.autoSlots += Math.max(0, Number(count) || 0);
+        if (sample && row.samples.length < 6) row.samples.push(sample);
+      });
+    };
+
+    (protectedEntries || []).forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      classKeysForCapacity(entry).forEach(key => {
+        if (!rowKeys.has(key)) return;
+        const row = map.get(key);
+        row.protectedSlots.add(slotKey);
+        if (row.samples.length < 6) row.samples.push(`보호 ${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
+      });
+    });
+
+    (standalone || []).forEach(item => addAuto(classKeysForCapacity(item), 1, getAutoItemName(item)));
+
+    (groupBlocks || []).forEach(block => {
+      const group = block?.group || {};
+      const unitItems = block?.unitItems || [];
+      const isConcurrent = group.isConcurrent || group.groupType === "concurrent";
+      const groupName = group.name || group.groupName || "그룹 수업";
+      if (isConcurrent) {
+        const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u?.credits) || 0)));
+        for (let occurrence = 0; occurrence < maxCredits; occurrence++) {
+          const keys = new Set();
+          unitItems
+            .filter(u => occurrence < Math.max(0, Number(u?.credits) || 0))
+            .map(u => getGroupItemForOccurrence(u, occurrence))
+            .filter(u => (u?.ttcards || []).length)
+            .forEach(u => {
+              const placement = makePlacementFromGroupItem(group, u) || u;
+              classKeysForCapacity(placement).forEach(key => keys.add(key));
+            });
+          addAuto([...keys], 1, groupName);
+        }
+      } else {
+        unitItems.forEach(unit => {
+          const credits = Math.max(0, Number(unit?.credits) || 0);
+          for (let occurrence = 0; occurrence < credits; occurrence++) {
+            const placement = makePlacementFromGroupItem(group, getGroupItemForOccurrence(unit, occurrence)) || unit;
+            addAuto(classKeysForCapacity(placement), 1, groupName);
+          }
+        });
+      }
+    });
+
+    const capacityRows = [...map.values()].map(row => {
+      const protectedCount = row.protectedSlots.size;
+      const autoCount = row.autoSlots;
+      const available = protectedCount + autoCount;
+      const diff = available - row.target;
+      return {
+        ...row,
+        protectedCount,
+        autoCount,
+        available,
+        diff,
+        status: diff === 0 ? "ok" : (diff < 0 ? "short" : "over"),
+        samples: row.samples
+      };
+    });
+    const shortRows = capacityRows.filter(row => row.diff < 0);
+    const overRows = capacityRows.filter(row => row.diff > 0);
+    const targetTotal = capacityRows.reduce((sum, row) => sum + row.target, 0);
+    const availableTotal = capacityRows.reduce((sum, row) => sum + row.available, 0);
+    return {
+      targetPerClass,
+      targetTotal,
+      availableTotal,
+      ok: shortRows.length === 0 && overRows.length === 0,
+      shortRows,
+      overRows,
+      rows: capacityRows,
+      summary: shortRows.length || overRows.length
+        ? `부족 ${shortRows.length}개 학급 · 초과 ${overRows.length}개 학급 · 가능 ${availableTotal}/${targetTotal}시수`
+        : `${capacityRows.length}개 학급 모두 ${targetPerClass}시수 구성 가능`
     };
   }
 
@@ -1530,25 +1676,34 @@ export function createAutoAssignAll(deps) {
     const weights = normalizeScoreWeights(checkOptions.scoringWeights);
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
     const exclusionPenalty = slotEnts.some(e => hasAutoGroupExclusionSlotConflict(item, e)) ? 100000 : 0;
-    const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
+    const teachers = getTeachersForAutoItem(item);
     const dayEnts = existing.filter(e => e.day === slot.day);
     const teacherLoad = teachers.reduce((sum, t) => sum + getTeacherDayLoad(t, existing, slot.day), 0);
     const teacherLimitLoad = teachers.reduce((sum, t) => sum + teacherLimitPenalty(t, slot, existing), 0);
     const audience = audienceForPlacement(item);
-    const classKeys = [...(audience.classKeys || [])];
+    const classKeys = classKeysForCapacity(item);
     const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
     const samePeriodLoad = existing.filter(e => e.period === slot.period).length;
+    const classStats = buildClassSlotStatsForEntries(existing);
+    const targetPerClass = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
 
     let preferencePenalty = 0;
-
 
     const itemSubject = entrySubjectKeyForScoring(item);
     for (const cls of classKeys) {
       const sameSubjectToday = dayEnts.some(e =>
-        entryClassKeysForScoring(e).includes(cls) && entrySubjectKeyForScoring(e) === itemSubject
+        entryClassKeysForScoring(e).map(normalizeClassKeyForReportKey).includes(cls) && entrySubjectKeyForScoring(e) === itemSubject
       );
       if (sameSubjectToday) preferencePenalty += 26 * weights.sameSubjectDay;
 
+      // 학급 공강 제거가 최우선입니다. 아직 전체 35시수에 덜 찬 학급과
+      // 해당 요일 수업이 적은 학급의 빈칸을 먼저 채우도록 강한 보상을 줍니다.
+      const filled = classSlotCountFromStats(classStats, cls);
+      const shortage = Math.max(0, targetPerClass - filled);
+      const dayLoad = classDayLoadFromStats(classStats, cls, slot.day);
+      preferencePenalty -= shortage * 10 * weights.classFill;
+      preferencePenalty += dayLoad * 9 * weights.classFill;
+      if (slot.period <= 2) preferencePenalty -= 1.5 * weights.classFill;
     }
 
     for (const teacher of teachers) {
@@ -1558,7 +1713,7 @@ export function createAutoAssignAll(deps) {
       if (nextMax >= 4) preferencePenalty += (nextMax - 3) * 12 * weights.teacherConsecutive;
     }
 
-    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 6 + preferencePenalty + samePeriodLoad * 0.15 + Math.random();
+    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 10 + preferencePenalty + samePeriodLoad * 0.15 + Math.random();
   }
 
   function selectCandidateWithExploration(candidates = [], checkOptions = {}) {
@@ -1790,6 +1945,21 @@ export function createAutoAssignAll(deps) {
       if (unique.length >= 6) score += (unique.length - 5) * 8 * weights.teacherGap;
       if (limitC > 0 && maxC > limitC) score += (maxC - limitC) * 40 * weights.teacherConsecutive;
       else if (maxC >= 4) score += (maxC - 3) * 14 * weights.teacherConsecutive;
+    });
+
+    const classStats = buildClassSlotStatsForEntries(all);
+    const targetPerClass = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
+    getReportClassRows().forEach(row => {
+      const stat = classStats.get(row.key);
+      const filled = stat?.slots?.size || 0;
+      const diff = filled - targetPerClass;
+      if (diff < 0) score += Math.pow(Math.abs(diff), 2) * 90 * weights.classFill;
+      if (diff > 0) score += Math.pow(diff, 2) * 140 * weights.classFill;
+      for (let day = 0; day < 5; day++) {
+        const dayCount = stat?.dayPeriods?.get(day)?.size || 0;
+        const dayShortage = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) - dayCount);
+        score += Math.pow(dayShortage, 2) * 7 * weights.classFill;
+      }
     });
 
     return score;
@@ -2610,6 +2780,7 @@ export function createAutoAssignAll(deps) {
               </div>
               <div class="tt-auto-weight-grid">
                 ${[
+                  ["classFill", "학급 공강 제거", "각 학급의 월~금 1~7교시를 먼저 채우도록 배치합니다."],
                   ["teacherGap", "교사 공강 최소화", "교사의 하루 수업 간 빈 시간을 줄입니다."],
                   ["sameSubjectDay", "같은 과목 몰림 회피", "한 반에 같은 과목이 하루에 반복되는 것을 줄입니다."],
                   ["teacherConsecutive", "교사 연속수업 완화", "교사의 긴 연속수업을 줄입니다."],
@@ -2893,6 +3064,17 @@ export function createAutoAssignAll(deps) {
     addPrecheckItem(report, "대상 요약", cards.length ? "ok" : "error", "시간표 카드", `${cards.length}개 · 선택 학년: ${(activeGrades.length ? activeGrades : availableGrades).map(gradeDisplay).join(", ") || "없음"}`);
     addPrecheckItem(report, "대상 요약", targetSummary.totalSlots ? "ok" : "error", "자동배치 대상", `개별 ${targetSummary.standaloneSlots}시수 · 그룹 ${targetSummary.groupSlots}시수 · 합계 ${targetSummary.totalSlots}시수`);
     addPrecheckItem(report, "보호 슬롯", protectedSummary.total ? "info" : "ok", "기존 보호 배치", `엔트리 ${protectedSummary.total}개 · 슬롯 ${protectedSummary.slots}칸 · 고정 ${protectedSummary.pinned}개 · 수동 ${protectedSummary.manual}개`);
+
+    const capacity = buildClassCapacityPrecheck(standalone, groupBlocks, protectedEntries, activeGrades.length ? activeGrades : availableGrades);
+    report.classCapacity = capacity;
+    const shortText = capacity.shortRows.slice(0, 8).map(row => `${row.label}: ${row.available}/${row.target} (${Math.abs(row.diff)} 부족)`).join(" / ");
+    const overText = capacity.overRows.slice(0, 8).map(row => `${row.label}: ${row.available}/${row.target} (${row.diff} 초과)`).join(" / ");
+    const capacityDetail = capacity.shortRows.length
+      ? `${capacity.summary} · ${shortText}${capacity.shortRows.length > 8 ? " …" : ""}`
+      : capacity.overRows.length
+        ? `${capacity.summary} · ${overText}${capacity.overRows.length > 8 ? " …" : ""}`
+        : capacity.summary;
+    addPrecheckItem(report, "학급 시수 가능성", capacity.shortRows.length ? "error" : (capacity.overRows.length ? "warn" : "ok"), "월~금 전체 시수 구성 가능 여부", capacityDetail);
 
     const missingGroupRefs = [];
     const emptyGroups = [];
@@ -3397,15 +3579,38 @@ export function createAutoAssignAll(deps) {
         };
 
         const placeStandaloneKeys = async (keys, phaseLabel) => {
-          for (const key of keys) {
+          const pendingKeys = new Set(keys || []);
+          const liveCandidateCountForItem = (item) => {
+            if (!item) return 9999;
+            let count = 0;
+            for (const slot of baseSlots) if (checkPlacementValid(item, slot, placed, stageAttemptOptions)) count += 1;
+            return count;
+          };
+
+          while (pendingKeys.size) {
+            const key = [...pendingKeys].sort((a, b) => {
+              const ia = itemByKey.get(a);
+              const ib = itemByKey.get(b);
+              const acand = liveCandidateCountForItem(ia);
+              const bcand = liveCandidateCountForItem(ib);
+              if (acand !== bcand) return acand - bcand;
+              const ap = comparePriority(ia, ib);
+              if (ap !== 0) return ap;
+              const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
+              if (art !== 0) return art;
+              return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
+            })[0];
+            pendingKeys.delete(key);
+
             const item = itemByKey.get(key);
             const required = requiredByKey.get(key) || 0;
             const pinned = pinnedByKey.get(key) || 0;
             while (pinned + (placedByKey.get(key) || 0) < required) {
+              const candidateCount = liveCandidateCountForItem(item);
               await yieldAutoAssign({
                 percent: stagePercent,
                 step: `${phaseLabel} · ${stage.label}`,
-                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
+                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다. 후보 ${candidateCount}칸${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
                 placed: placed.length,
                 best: Math.max(0, bestScore),
                 failed: failed.length,
