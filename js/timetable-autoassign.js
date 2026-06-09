@@ -892,6 +892,20 @@ export function createAutoAssignAll(deps) {
     };
   }
 
+  function classSlotIssueCountForCandidate(movableEntries = [], scopeGrades = []) {
+    const report = buildClassSlotValidation([...entries(), ...(movableEntries || [])], scopeGrades || []);
+    const shortCount = (report.issues || []).filter(row => row.diff < 0).length;
+    const overCount = (report.issues || []).filter(row => row.diff > 0).length;
+    return {
+      issueCount: report.issueCount || 0,
+      shortCount,
+      overCount,
+      totalDiff: report.diff || 0,
+      total: report.total || 0,
+      targetTotal: report.targetTotal || 0,
+    };
+  }
+
   function buildScheduleVerificationReport(allEntries = [], options = {}) {
     const classSlots = buildClassSlotValidation(allEntries, options.scopeGrades || []);
     const restrictedTeachers = buildRestrictedTeacherValidation(allEntries);
@@ -1844,6 +1858,19 @@ export function createAutoAssignAll(deps) {
       }
     }
 
+    const weights = normalizeScoreWeights(options.scoringWeights);
+    const classStats = buildClassSlotStatsForEntries(existing);
+    const targetPerClass = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
+    for (const cls of classKeysForCapacity(item)) {
+      const filled = classSlotCountFromStats(classStats, cls);
+      const shortage = Math.max(0, targetPerClass - filled);
+      const dayLoad = classDayLoadFromStats(classStats, cls, slot.day);
+      // 보정 배치에서도 학급 공강을 채우는 슬롯을 강하게 우선합니다.
+      score -= shortage * 18 * weights.classFill;
+      score += dayLoad * 10 * weights.classFill;
+      if (filled >= targetPerClass) score += 650 * weights.classFill;
+    }
+
     return score + Math.random();
   }
 
@@ -2776,15 +2803,31 @@ export function createAutoAssignAll(deps) {
 
   function compareAutoRunResults(a = {}, b = {}) {
     // 반환값이 음수이면 a가 더 좋습니다.
+    // 3단계 기준: 단순 배치 수보다 학급별 35시수 충족 여부를 먼저 봅니다.
     const aFailed = Number(a.failedCount ?? 999999);
     const bFailed = Number(b.failedCount ?? 999999);
     if (aFailed !== bFailed) return aFailed - bFailed;
-    const aPlaced = Number(a.placedCount ?? 0);
-    const bPlaced = Number(b.placedCount ?? 0);
-    if (aPlaced !== bPlaced) return bPlaced - aPlaced;
+
+    const aClassIssues = Number(a.classSlotIssueCount ?? 999999);
+    const bClassIssues = Number(b.classSlotIssueCount ?? 999999);
+    if (aClassIssues !== bClassIssues) return aClassIssues - bClassIssues;
+
+    const aShort = Number(a.classShortCount ?? 999999);
+    const bShort = Number(b.classShortCount ?? 999999);
+    if (aShort !== bShort) return aShort - bShort;
+
+    const aOver = Number(a.classOverCount ?? 999999);
+    const bOver = Number(b.classOverCount ?? 999999);
+    if (aOver !== bOver) return aOver - bOver;
+
     const aQuality = Number(a.qualityScore ?? Infinity);
     const bQuality = Number(b.qualityScore ?? Infinity);
     if (aQuality !== bQuality) return aQuality - bQuality;
+
+    const aPlaced = Number(a.placedCount ?? 0);
+    const bPlaced = Number(b.placedCount ?? 0);
+    if (aPlaced !== bPlaced) return bPlaced - aPlaced;
+
     const aForced = Number(a.forcedCount ?? 0);
     const bForced = Number(b.forcedCount ?? 0);
     return aForced - bForced;
@@ -3747,17 +3790,27 @@ export function createAutoAssignAll(deps) {
         await placeStandaloneKeys(normalKeys, "일반 카드 배치");
 
         const qualityScore = Math.round(scoreScheduleQuality(placed, { ...options, scoringWeights: stageAttemptOptions.scoringWeights }) * 10) / 10;
+        const currentClassSlots = classSlotIssueCountForCandidate(placed, activeGrades);
+        const bestClassSlots = bestScore < 0
+          ? { issueCount: 999999, shortCount: 999999, overCount: 999999 }
+          : classSlotIssueCountForCandidate(bestPlaced, activeGrades);
         const currentRun = {
           placedCount: placed.length,
           failedCount: failed.length,
           qualityScore,
-          forcedCount: 0
+          forcedCount: 0,
+          classSlotIssueCount: currentClassSlots.issueCount,
+          classShortCount: currentClassSlots.shortCount,
+          classOverCount: currentClassSlots.overCount
         };
         const bestRun = {
           placedCount: bestPlaced.length,
           failedCount: bestFailed.length,
           qualityScore: bestQualityScore,
-          forcedCount: 0
+          forcedCount: 0,
+          classSlotIssueCount: bestClassSlots.issueCount,
+          classShortCount: bestClassSlots.shortCount,
+          classOverCount: bestClassSlots.overCount
         };
         if (bestScore < 0 || compareAutoRunResults(currentRun, bestRun) < 0) {
           bestScore  = placed.length;
@@ -3775,11 +3828,11 @@ export function createAutoAssignAll(deps) {
           await updateProgress({
             percent: stagePercent,
             step: `최선 초기배치 갱신 · ${stage.label}`,
-            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개, 품질점수 ${qualityScore}`,
+            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개, 학급시수 문제 ${currentClassSlots.issueCount}개, 품질점수 ${qualityScore}`,
             placed: placed.length,
             best: bestPlaced.length,
             failed: bestFailed.length,
-            log: `최선 초기배치 갱신: ${bestPlaced.length}개 배치 · 미배치 ${bestFailed.length}개 · 품질 ${qualityScore}`
+            log: `최선 초기배치 갱신: ${bestPlaced.length}개 배치 · 미배치 ${bestFailed.length}개 · 학급시수 문제 ${currentClassSlots.issueCount}개 · 품질 ${qualityScore}`
           }, true);
         }
         // 완전 배치 후보가 나와도 같은 단계의 남은 초기 후보를 계속 비교해 품질이 더 좋은 배치를 찾습니다.
