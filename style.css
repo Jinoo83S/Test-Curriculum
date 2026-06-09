@@ -7796,3 +7796,102 @@ body.his-dev-tools-off .developer-toggle-btn {
 .tt-credit-chip.is-lack { background: #fff7ed !important; border-color: #fdba74 !important; color: #9a3412 !important; }
 .tt-credit-chip.is-over { background: #fef2f2 !important; border-color: #fca5a5 !important; color: #991b1b !important; }
 @media (max-width:1280px){.tt-card-toolbar.his-card-toolbar{grid-template-columns:1fr!important;grid-template-areas:"actions" "sort" "filters" "search" "summary"!important;}}
+
+
+/* ================================================================
+   FINAL OVERRIDE · Unified topbar save UI r11
+   - The old saveStatusEl must never occupy a blank slot.
+   - LOCAL DEV uses a custom button/menu, not native details marker.
+   ================================================================ */
+#saveStatusEl,
+.save-status-inline-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  max-width: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  flex: 0 0 0 !important;
+  pointer-events: none !important;
+}
+.his-dev-tools-off #saveStatusEl,
+.his-dev-tools-off .save-status-inline-hidden {
+  display: none !important;
+}
+.local-dev-menu-fixed {
+  position: relative !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  flex: 0 0 auto !important;
+}
+.local-dev-menu-fixed::before,
+.local-dev-menu-fixed::after,
+.local-dev-toggle-btn::before,
+.local-dev-toggle-btn::after {
+  content: none !important;
+  display: none !important;
+}
+.topbar-right .local-dev-toggle-btn {
+  height: 28px !important;
+  min-height: 28px !important;
+  padding: 4px 12px !important;
+  border-radius: 999px !important;
+  background: #fef3c7 !important;
+  color: #92400e !important;
+  border: 1px solid #fde68a !important;
+  font-weight: 900 !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+.local-dev-menu-panel-fixed {
+  position: absolute !important;
+  right: 0 !important;
+  top: calc(100% + 6px) !important;
+  z-index: 9999 !important;
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+  min-width: 158px !important;
+  padding: 8px !important;
+  border-radius: 10px !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  border: 1px solid #dbe2ef !important;
+  box-shadow: 0 12px 28px rgba(15,23,42,.22) !important;
+}
+.local-dev-menu-panel-fixed[hidden] {
+  display: none !important;
+}
+.local-dev-menu-panel-fixed:not([hidden]) {
+  display: grid !important;
+}
+.topbar-right .local-dev-menu-panel-fixed .local-dev-action,
+.local-dev-menu-panel-fixed .local-dev-action {
+  display: block !important;
+  width: 100% !important;
+  height: 30px !important;
+  padding: 7px 10px !important;
+  border-radius: 8px !important;
+  background: #eef4ff !important;
+  color: #1e3a5f !important;
+  border: 1px solid #c7d2e8 !important;
+  text-align: center !important;
+  font-weight: 800 !important;
+  font-size: 12px !important;
+  line-height: 1 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+.topbar-right .save-mode-toggle {
+  border-radius: 999px !important;
+  font-weight: 900 !important;
+}

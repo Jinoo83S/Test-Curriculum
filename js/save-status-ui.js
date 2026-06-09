@@ -1,5 +1,5 @@
 // ================================================================
-// save-status-ui.js · Save indicator + quota/local-dev controls
+// save-status-ui.js · Unified save button + quota/local-dev controls
 // ================================================================
 import { canEdit } from "./auth.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
@@ -19,22 +19,35 @@ import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 
 const saveStatusEl = document.getElementById("saveStatusEl");
+const topbarRight = document.querySelector(".topbar-right");
+const authStatusEl = document.getElementById("authStatus");
 let saveStatusTimer = null;
 let saveModeBtn = null;
 let initialized = false;
 let lastSaveStatus = "mode";
 
-function hideLegacySaveStatus() {
+function removeLegacySaveStatus() {
   if (!saveStatusEl) return;
   saveStatusEl.textContent = "";
+  saveStatusEl.hidden = true;
   saveStatusEl.className = "save-status save-status-inline-hidden";
-  saveStatusEl.style.display = "none";
-  saveStatusEl.style.width = "0";
-  saveStatusEl.style.minWidth = "0";
-  saveStatusEl.style.maxWidth = "0";
-  saveStatusEl.style.padding = "0";
-  saveStatusEl.style.margin = "0";
-  saveStatusEl.style.overflow = "hidden";
+  saveStatusEl.setAttribute("aria-hidden", "true");
+  saveStatusEl.style.setProperty("display", "none", "important");
+  saveStatusEl.style.setProperty("width", "0", "important");
+  saveStatusEl.style.setProperty("min-width", "0", "important");
+  saveStatusEl.style.setProperty("max-width", "0", "important");
+  saveStatusEl.style.setProperty("height", "0", "important");
+  saveStatusEl.style.setProperty("min-height", "0", "important");
+  saveStatusEl.style.setProperty("padding", "0", "important");
+  saveStatusEl.style.setProperty("margin", "0", "important");
+  saveStatusEl.style.setProperty("border", "0", "important");
+  saveStatusEl.style.setProperty("overflow", "hidden", "important");
+}
+
+function insertBeforeAuth(el) {
+  const parent = topbarRight || saveStatusEl?.parentElement || document.body;
+  const anchor = authStatusEl?.parentElement === parent ? authStatusEl : null;
+  parent.insertBefore(el, anchor);
 }
 
 function saveButtonText(autoSave, dirty, status) {
@@ -62,12 +75,35 @@ function saveButtonTitle(autoSave, dirty, status) {
     : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켭니다.";
 }
 
-function applyTopButtonBaseStyle(btn) {
+function applySaveButtonInlineStyle(btn, autoSave, dirty, status) {
   if (!btn) return;
-  btn.style.padding = "6px 11px";
-  btn.style.borderRadius = "999px";
-  btn.style.fontWeight = "800";
-  btn.style.whiteSpace = "nowrap";
+  btn.style.setProperty("height", "28px", "important");
+  btn.style.setProperty("min-height", "28px", "important");
+  btn.style.setProperty("padding", "4px 10px", "important");
+  btn.style.setProperty("border-radius", "999px", "important");
+  btn.style.setProperty("font-weight", "900", "important");
+  btn.style.setProperty("white-space", "nowrap", "important");
+  btn.style.setProperty("display", "inline-flex", "important");
+  btn.style.setProperty("align-items", "center", "important");
+  btn.style.setProperty("justify-content", "center", "important");
+
+  if (status === "error") {
+    btn.style.setProperty("background", "#fee2e2", "important");
+    btn.style.setProperty("color", "#991b1b", "important");
+    btn.style.setProperty("border", "1px solid #fecaca", "important");
+  } else if (dirty.length) {
+    btn.style.setProperty("background", "#fef3c7", "important");
+    btn.style.setProperty("color", "#92400e", "important");
+    btn.style.setProperty("border", "1px solid #f59e0b", "important");
+  } else if (autoSave) {
+    btn.style.setProperty("background", "#dcfce7", "important");
+    btn.style.setProperty("color", "#166534", "important");
+    btn.style.setProperty("border", "1px solid #86efac", "important");
+  } else {
+    btn.style.setProperty("background", "#334155", "important");
+    btn.style.setProperty("color", "#fef3c7", "important");
+    btn.style.setProperty("border", "1px solid #f59e0b", "important");
+  }
 }
 
 function updateSaveControlButtons() {
@@ -75,7 +111,7 @@ function updateSaveControlButtons() {
   const dirty = getDirtyDomains();
   if (!saveModeBtn) return;
 
-  hideLegacySaveStatus();
+  removeLegacySaveStatus();
 
   saveModeBtn.textContent = `💾 ${saveButtonText(autoSave, dirty, lastSaveStatus)}`;
   saveModeBtn.title = saveButtonTitle(autoSave, dirty, lastSaveStatus);
@@ -88,25 +124,7 @@ function updateSaveControlButtons() {
   saveModeBtn.classList.toggle("save-mode-error", lastSaveStatus === "error");
   saveModeBtn.classList.toggle("save-mode-saved", (lastSaveStatus === "saved" || lastSaveStatus === "skipped") && dirty.length === 0);
   saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
-  applyTopButtonBaseStyle(saveModeBtn);
-
-  if (lastSaveStatus === "error") {
-    saveModeBtn.style.background = "#fee2e2";
-    saveModeBtn.style.color = "#991b1b";
-    saveModeBtn.style.border = "1px solid #fecaca";
-  } else if (dirty.length) {
-    saveModeBtn.style.background = "#fef3c7";
-    saveModeBtn.style.color = "#92400e";
-    saveModeBtn.style.border = "1px solid #f59e0b";
-  } else if (autoSave) {
-    saveModeBtn.style.background = "#dcfce7";
-    saveModeBtn.style.color = "#166534";
-    saveModeBtn.style.border = "1px solid #86efac";
-  } else {
-    saveModeBtn.style.background = "#f3f4f6";
-    saveModeBtn.style.color = "#374151";
-    saveModeBtn.style.border = "1px solid #d1d5db";
-  }
+  applySaveButtonInlineStyle(saveModeBtn, autoSave, dirty, lastSaveStatus);
 }
 
 function downloadJsonFile(filename, data) {
@@ -144,186 +162,150 @@ function pickJsonFile() {
   });
 }
 
-function insertAfterSaveStatus(el) {
-  if (saveStatusEl) saveStatusEl.insertAdjacentElement("afterend", el);
-  else document.querySelector(".topbar-right")?.prepend(el);
+function styleTopbarToolButton(btn) {
+  btn.style.setProperty("height", "28px", "important");
+  btn.style.setProperty("min-height", "28px", "important");
+  btn.style.setProperty("padding", "4px 10px", "important");
+  btn.style.setProperty("border-radius", "6px", "important");
+  btn.style.setProperty("font-size", "12px", "important");
+  btn.style.setProperty("font-weight", "700", "important");
+  btn.style.setProperty("white-space", "nowrap", "important");
 }
 
-function styleLocalDevMenu(devMenu, summary, panel) {
-  devMenu.style.position = "relative";
-  devMenu.style.display = "inline-flex";
-  devMenu.style.alignItems = "center";
-  devMenu.style.zIndex = "1000";
+function styleLocalDevMenu(menu, toggle, panel) {
+  menu.className = "local-dev-menu local-dev-menu-fixed";
+  menu.style.setProperty("position", "relative", "important");
+  menu.style.setProperty("display", "inline-flex", "important");
+  menu.style.setProperty("align-items", "center", "important");
+  menu.style.setProperty("z-index", "1000", "important");
 
-  summary.style.listStyle = "none";
-  summary.style.cursor = "pointer";
-  summary.style.display = "inline-flex";
-  summary.style.alignItems = "center";
-  summary.style.gap = "4px";
-  summary.style.padding = "6px 12px";
-  summary.style.borderRadius = "999px";
-  summary.style.border = "1px solid #fef3c7";
-  summary.style.background = "rgba(255,255,255,0.16)";
-  summary.style.color = "#fef3c7";
-  summary.style.fontWeight = "800";
-  summary.style.fontSize = "12px";
-  summary.style.whiteSpace = "nowrap";
+  toggle.className = "local-dev-toggle-btn";
+  toggle.type = "button";
+  toggle.style.setProperty("height", "28px", "important");
+  toggle.style.setProperty("min-height", "28px", "important");
+  toggle.style.setProperty("padding", "4px 12px", "important");
+  toggle.style.setProperty("border-radius", "999px", "important");
+  toggle.style.setProperty("background", "#fef3c7", "important");
+  toggle.style.setProperty("color", "#92400e", "important");
+  toggle.style.setProperty("border", "1px solid #fde68a", "important");
+  toggle.style.setProperty("font-weight", "900", "important");
+  toggle.style.setProperty("font-size", "12px", "important");
+  toggle.style.setProperty("white-space", "nowrap", "important");
 
-  panel.style.position = "absolute";
-  panel.style.top = "calc(100% + 8px)";
-  panel.style.right = "0";
-  panel.style.minWidth = "180px";
-  panel.style.display = "grid";
-  panel.style.gap = "8px";
-  panel.style.padding = "10px";
-  panel.style.borderRadius = "10px";
-  panel.style.border = "1px solid #dbe2ef";
-  panel.style.background = "#ffffff";
-  panel.style.color = "#1f2937";
-  panel.style.boxShadow = "0 10px 25px rgba(15,23,42,0.18)";
-  panel.style.zIndex = "9999";
+  panel.className = "local-dev-menu-panel local-dev-menu-panel-fixed";
+  panel.hidden = true;
+  panel.style.setProperty("position", "absolute", "important");
+  panel.style.setProperty("right", "0", "important");
+  panel.style.setProperty("top", "calc(100% + 6px)", "important");
+  panel.style.setProperty("z-index", "9999", "important");
+  panel.style.setProperty("display", "none", "important");
+  panel.style.setProperty("grid-template-columns", "1fr", "important");
+  panel.style.setProperty("gap", "6px", "important");
+  panel.style.setProperty("min-width", "158px", "important");
+  panel.style.setProperty("padding", "8px", "important");
+  panel.style.setProperty("border-radius", "10px", "important");
+  panel.style.setProperty("background", "#ffffff", "important");
+  panel.style.setProperty("color", "#111827", "important");
+  panel.style.setProperty("border", "1px solid #dbe2ef", "important");
+  panel.style.setProperty("box-shadow", "0 12px 28px rgba(15,23,42,.22)", "important");
+}
+
+function setLocalDevMenuOpen(menu, toggle, panel, open) {
+  menu.dataset.open = open ? "true" : "false";
+  toggle.textContent = open ? "LOCAL DEV ▴" : "LOCAL DEV ▾";
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  panel.hidden = !open;
+  panel.style.setProperty("display", open ? "grid" : "none", "important");
 }
 
 function styleLocalDevActionButton(btn) {
-  btn.style.display = "block";
-  btn.style.width = "100%";
-  btn.style.padding = "8px 10px";
-  btn.style.borderRadius = "8px";
-  btn.style.background = "#eef4ff";
-  btn.style.color = "#1e3a5f";
-  btn.style.border = "1px solid #c7d2e8";
-  btn.style.textAlign = "left";
-  btn.style.fontWeight = "800";
-  btn.style.fontSize = "12px";
+  btn.className = "local-dev-action";
+  btn.style.setProperty("display", "block", "important");
+  btn.style.setProperty("width", "100%", "important");
+  btn.style.setProperty("height", "30px", "important");
+  btn.style.setProperty("padding", "7px 10px", "important");
+  btn.style.setProperty("border-radius", "8px", "important");
+  btn.style.setProperty("background", "#eef4ff", "important");
+  btn.style.setProperty("color", "#1e3a5f", "important");
+  btn.style.setProperty("border", "1px solid #c7d2e8", "important");
+  btn.style.setProperty("text-align", "center", "important");
+  btn.style.setProperty("font-weight", "800", "important");
+  btn.style.setProperty("font-size", "12px", "important");
+  btn.style.setProperty("line-height", "1", "important");
 }
 
-function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
-  const parent = saveStatusEl?.parentElement || document.querySelector(".topbar-right");
+function makeDevToolButton(text, title, onClick) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "secondary-btn dev-tool-control";
+  btn.textContent = text;
+  btn.title = title;
+  styleTopbarToolButton(btn);
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function setupLocalDevMenu({ onLocalDataChanged } = {}) {
+  const menu = document.createElement("span");
+  const toggle = document.createElement("button");
+  const panel = document.createElement("div");
+
+  const exportBtn = document.createElement("button");
+  exportBtn.type = "button";
+  exportBtn.textContent = "로컬 내보내기";
+  exportBtn.addEventListener("click", () => {
+    downloadJsonFile(`his-local-dev-${new Date().toISOString().slice(0,10)}.json`, exportLocalSnapshot());
+    setLocalDevMenuOpen(menu, toggle, panel, false);
+  });
+
+  const importBtn = document.createElement("button");
+  importBtn.type = "button";
+  importBtn.textContent = "로컬 가져오기";
+  importBtn.addEventListener("click", async () => {
+    try {
+      const json = await pickJsonFile();
+      if (!json) return;
+      importLocalSnapshot(json);
+      onLocalDataChanged?.();
+      setLocalDevMenuOpen(menu, toggle, panel, false);
+      alert("로컬 데이터를 가져왔습니다.");
+    } catch (e) {
+      console.error(e);
+      alert("JSON 가져오기에 실패했습니다: " + (e?.message || e));
+    }
+  });
+
+  const resetLocalBtn = document.createElement("button");
+  resetLocalBtn.type = "button";
+  resetLocalBtn.textContent = "로컬 초기화";
+  resetLocalBtn.addEventListener("click", () => {
+    if (!confirm("브라우저에 저장된 로컬 개발 데이터를 초기화할까요? Firebase 데이터에는 영향이 없습니다.")) return;
+    resetLocalSnapshot();
+    onLocalDataChanged?.();
+    setLocalDevMenuOpen(menu, toggle, panel, false);
+  });
+
+  [exportBtn, importBtn, resetLocalBtn].forEach(styleLocalDevActionButton);
+  panel.append(exportBtn, importBtn, resetLocalBtn);
+  menu.append(toggle, panel);
+  styleLocalDevMenu(menu, toggle, panel);
+  setLocalDevMenuOpen(menu, toggle, panel, false);
+
+  toggle.addEventListener("click", event => {
+    event.stopPropagation();
+    setLocalDevMenuOpen(menu, toggle, panel, menu.dataset.open !== "true");
+  });
+  document.addEventListener("click", event => {
+    if (!menu.contains(event.target)) setLocalDevMenuOpen(menu, toggle, panel, false);
+  });
+  return menu;
+}
+
+function setupSaveQuotaControls(options = {}) {
+  const parent = topbarRight || saveStatusEl?.parentElement;
   if (!parent || saveModeBtn) return;
 
-  hideLegacySaveStatus();
-
-  if (LOCAL_DEV_MODE) {
-    const devMenu = document.createElement("details");
-    devMenu.className = "local-dev-menu";
-    devMenu.title = "Firebase를 읽거나 쓰지 않고 localStorage만 사용합니다.";
-
-    const summary = document.createElement("summary");
-    summary.textContent = "LOCAL DEV ▾";
-    devMenu.appendChild(summary);
-
-    const panel = document.createElement("div");
-    panel.className = "local-dev-menu-panel";
-
-    const exportBtn = document.createElement("button");
-    exportBtn.type = "button";
-    exportBtn.className = "secondary-btn local-dev-action";
-    exportBtn.textContent = "로컬 내보내기";
-    exportBtn.addEventListener("click", () => {
-      downloadJsonFile(`his-local-dev-${new Date().toISOString().slice(0,10)}.json`, exportLocalSnapshot());
-      devMenu.open = false;
-    });
-
-    const importBtn = document.createElement("button");
-    importBtn.type = "button";
-    importBtn.className = "secondary-btn local-dev-action";
-    importBtn.textContent = "로컬 가져오기";
-    importBtn.addEventListener("click", async () => {
-      try {
-        const json = await pickJsonFile();
-        if (!json) return;
-        importLocalSnapshot(json);
-        onLocalDataChanged?.();
-        devMenu.open = false;
-        alert("로컬 데이터를 가져왔습니다.");
-      } catch (e) {
-        console.error(e);
-        alert("JSON 가져오기에 실패했습니다: " + (e?.message || e));
-      }
-    });
-
-    const resetLocalBtn = document.createElement("button");
-    resetLocalBtn.type = "button";
-    resetLocalBtn.className = "secondary-btn local-dev-action";
-    resetLocalBtn.textContent = "로컬 초기화";
-    resetLocalBtn.addEventListener("click", () => {
-      if (!confirm("브라우저에 저장된 로컬 개발 데이터를 초기화할까요? Firebase 데이터에는 영향이 없습니다.")) return;
-      resetLocalSnapshot();
-      onLocalDataChanged?.();
-      devMenu.open = false;
-    });
-
-    [exportBtn, importBtn, resetLocalBtn].forEach(styleLocalDevActionButton);
-    panel.append(exportBtn, importBtn, resetLocalBtn);
-    devMenu.appendChild(panel);
-    styleLocalDevMenu(devMenu, summary, panel);
-    insertAfterSaveStatus(devMenu);
-
-    const healthBtn = document.createElement("button");
-    healthBtn.type = "button";
-    healthBtn.className = "secondary-btn app-health-check-btn dev-tool-control";
-    healthBtn.style.padding = "6px 10px";
-    healthBtn.textContent = "앱 점검";
-    healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
-    healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
-    insertAfterSaveStatus(healthBtn);
-  } else {
-    const diagBtn = document.createElement("button");
-    diagBtn.type = "button";
-    diagBtn.className = "secondary-btn firestore-diagnostic-btn dev-tool-control";
-    diagBtn.style.padding = "6px 10px";
-    diagBtn.textContent = "Firestore 진단";
-    diagBtn.title = "현재 Firestore 저장 데이터를 JSON으로 내보냅니다. 읽기 quota를 사용합니다.";
-    diagBtn.addEventListener("click", async () => {
-      if (!canEdit()) {
-        alert("온라인 모드에서 로그인 후 실행할 수 있습니다.");
-        return;
-      }
-      if (!confirm("Firestore 저장 데이터를 진단용 JSON으로 내보낼까요?\n읽기 quota가 일부 사용됩니다.")) return;
-      const prevText = diagBtn.textContent;
-      diagBtn.disabled = true;
-      diagBtn.textContent = "진단 내보내는 중…";
-      try {
-        const snapshot = await exportFirestoreDiagnosticSnapshot();
-        downloadJsonFile(`his-firestore-diagnostic-${new Date().toISOString().slice(0,10)}.json`, snapshot);
-      } catch (e) {
-        console.error(e);
-        alert("Firestore 진단 내보내기에 실패했습니다: " + (e?.message || e));
-      } finally {
-        diagBtn.disabled = false;
-        diagBtn.textContent = prevText;
-      }
-    });
-
-    const cleanupBtn = document.createElement("button");
-    cleanupBtn.type = "button";
-    cleanupBtn.className = "secondary-btn data-cleanup-btn dev-tool-control";
-    cleanupBtn.style.padding = "6px 10px";
-    cleanupBtn.textContent = "DB 정리";
-    cleanupBtn.title = "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.";
-    cleanupBtn.addEventListener("click", () => openDataCleanupDialog());
-
-    const usageBtn = document.createElement("button");
-    usageBtn.type = "button";
-    usageBtn.className = "secondary-btn firestore-usage-btn dev-tool-control";
-    usageBtn.style.padding = "6px 10px";
-    usageBtn.textContent = "사용량";
-    usageBtn.title = "이 브라우저에서 발생한 Firestore 읽기/쓰기/삭제 추정치를 확인합니다.";
-    usageBtn.addEventListener("click", () => openFirestoreUsageDialog());
-
-    const healthBtn = document.createElement("button");
-    healthBtn.type = "button";
-    healthBtn.className = "secondary-btn app-health-check-btn dev-tool-control";
-    healthBtn.style.padding = "6px 10px";
-    healthBtn.textContent = "앱 점검";
-    healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
-    healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
-
-    insertAfterSaveStatus(cleanupBtn);
-    insertAfterSaveStatus(usageBtn);
-    insertAfterSaveStatus(healthBtn);
-    insertAfterSaveStatus(diagBtn);
-  }
+  removeLegacySaveStatus();
 
   saveModeBtn = document.createElement("button");
   saveModeBtn.type = "button";
@@ -345,8 +327,57 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
     lastSaveStatus = "mode";
     updateSaveControlButtons();
   });
+  insertBeforeAuth(saveModeBtn);
 
-  insertAfterSaveStatus(saveModeBtn);
+  const healthBtn = makeDevToolButton(
+    "앱 점검",
+    "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.",
+    () => openAppHealthCheckDialog()
+  );
+  insertBeforeAuth(healthBtn);
+
+  if (LOCAL_DEV_MODE) {
+    insertBeforeAuth(setupLocalDevMenu(options));
+  } else {
+    const usageBtn = makeDevToolButton(
+      "사용량",
+      "이 브라우저에서 발생한 Firestore 읽기/쓰기/삭제 추정치를 확인합니다.",
+      () => openFirestoreUsageDialog()
+    );
+    const cleanupBtn = makeDevToolButton(
+      "DB 정리",
+      "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.",
+      () => openDataCleanupDialog()
+    );
+    const diagBtn = makeDevToolButton(
+      "Firestore 진단",
+      "현재 Firestore 저장 데이터를 JSON으로 내보냅니다. 읽기 quota를 사용합니다.",
+      async () => {
+        if (!canEdit()) {
+          alert("온라인 모드에서 로그인 후 실행할 수 있습니다.");
+          return;
+        }
+        if (!confirm("Firestore 저장 데이터를 진단용 JSON으로 내보낼까요?\n읽기 quota가 일부 사용됩니다.")) return;
+        const prevText = diagBtn.textContent;
+        diagBtn.disabled = true;
+        diagBtn.textContent = "진단 내보내는 중…";
+        try {
+          const snapshot = await exportFirestoreDiagnosticSnapshot();
+          downloadJsonFile(`his-firestore-diagnostic-${new Date().toISOString().slice(0,10)}.json`, snapshot);
+        } catch (e) {
+          console.error(e);
+          alert("Firestore 진단 내보내기에 실패했습니다: " + (e?.message || e));
+        } finally {
+          diagBtn.disabled = false;
+          diagBtn.textContent = prevText;
+        }
+      }
+    );
+    insertBeforeAuth(usageBtn);
+    insertBeforeAuth(cleanupBtn);
+    insertBeforeAuth(diagBtn);
+  }
+
   updateSaveControlButtons();
 }
 
@@ -354,12 +385,12 @@ export function setupSaveStatusUi(options = {}) {
   if (initialized) return;
   initialized = true;
 
-  hideLegacySaveStatus();
+  removeLegacySaveStatus();
   setupSaveQuotaControls(options);
 
   setOnSaveStatus((status, detail) => {
     clearTimeout(saveStatusTimer);
-    hideLegacySaveStatus();
+    removeLegacySaveStatus();
 
     if (status === "saving" || status === "dirty" || status === "saved" || status === "skipped" || status === "mode") {
       lastSaveStatus = status;
@@ -367,7 +398,7 @@ export function setupSaveStatusUi(options = {}) {
       if (status === "saved" || status === "skipped") {
         saveStatusTimer = setTimeout(() => {
           lastSaveStatus = "mode";
-          hideLegacySaveStatus();
+          removeLegacySaveStatus();
           updateSaveControlButtons();
         }, status === "saved" ? 1800 : 1200);
       }
