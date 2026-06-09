@@ -157,23 +157,69 @@ function activateBottomTab(tabName) {
   btn?.click();
 }
 
-let ttSaveStatusEl = null;
-let ttSaveModeBtn = null;
-let ttSavePendingBtn = null;
+let ttSaveStatusEl = null; // 통합 저장 버튼 초기화 여부를 표시하는 내부 sentinel
+let ttSaveModeBtn = null;   // 실제 화면에서는 #ttSaveBtn 하나만 사용합니다.
 let ttSaveStatusTimer = null;
+let lastTtSaveStatus = "mode";
+
+function ttSaveButtonText(autoSave, dirty, status) {
+  const count = dirty.length;
+  if (status === "saving") return count ? `💾 저장 중(${count})` : "💾 저장 중…";
+  if (status === "error") return count ? `💾 저장 실패(${count})` : "💾 저장 실패";
+  if ((status === "saved" || status === "skipped") && count === 0) {
+    return status === "saved" ? "💾 저장됨" : "💾 변경 없음";
+  }
+  if (count) return autoSave ? `💾 저장 대기(${count})` : `💾 수동 저장(${count})`;
+  return autoSave ? "💾 자동저장 ON" : "💾 자동저장 OFF";
+}
+
+function ttSaveButtonTitle(autoSave, dirty, status) {
+  const count = dirty.length;
+  if (status === "saving") return "변경사항을 저장하는 중입니다.";
+  if (status === "error") return count ? "저장에 실패했습니다. 클릭하면 다시 저장을 시도합니다." : "저장에 실패했습니다.";
+  if (count) {
+    return autoSave
+      ? "변경사항이 저장 대기 중입니다. 클릭하면 즉시 저장합니다."
+      : "자동저장이 꺼져 있습니다. 클릭하면 변경사항을 수동 저장합니다.";
+  }
+  return autoSave
+    ? "현재 자동저장 중입니다. 클릭하면 자동저장을 끕니다."
+    : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켭니다.";
+}
 
 function updateTtSaveControls() {
-  if (ttSaveModeBtn) {
-    ttSaveModeBtn.textContent = isAutoSaveEnabled() ? "자동저장 ON" : "자동저장 OFF";
-    ttSaveModeBtn.title = isAutoSaveEnabled()
-      ? "클릭하면 개발용 수동 저장 모드로 전환됩니다."
-      : "클릭하면 자동 저장을 다시 켭니다.";
+  const btn = ttSaveModeBtn || $("ttSaveBtn");
+  if (!btn) return;
+  const autoSave = isAutoSaveEnabled();
+  const dirty = getDirtyDomains();
+  btn.textContent = ttSaveButtonText(autoSave, dirty, lastTtSaveStatus);
+  btn.title = ttSaveButtonTitle(autoSave, dirty, lastTtSaveStatus);
+  btn.disabled = lastTtSaveStatus === "saving";
+  btn.classList.add("tt-save-essential");
+  btn.classList.toggle("tt-save-autosave-on", autoSave);
+  btn.classList.toggle("tt-save-autosave-off", !autoSave);
+  btn.classList.toggle("tt-save-pending", dirty.length > 0);
+  btn.classList.toggle("tt-save-saving", lastTtSaveStatus === "saving");
+  btn.classList.toggle("tt-save-error", lastTtSaveStatus === "error");
+}
+
+async function handleTtUnifiedSaveClick() {
+  const dirty = getDirtyDomains();
+  if (dirty.length || lastTtSaveStatus === "error") {
+    lastTtSaveStatus = "saving";
+    updateTtSaveControls();
+    try {
+      await saveNow("timetable");
+      await savePendingNow();
+    } finally {
+      updateTtSaveControls();
+    }
+    return;
   }
-  if (ttSavePendingBtn) {
-    const dirty = getDirtyDomains();
-    ttSavePendingBtn.hidden = dirty.length === 0;
-    ttSavePendingBtn.textContent = dirty.length ? `저장 대기(${dirty.length})` : "저장 대기";
-  }
+  const next = !isAutoSaveEnabled();
+  setAutoSaveEnabled(next);
+  lastTtSaveStatus = "mode";
+  updateTtSaveControls();
 }
 
 function downloadJsonFile(filename, data) {
@@ -329,69 +375,36 @@ function setupTtSaveQuotaControls() {
     parent.insertBefore(diagBtn, parent.firstChild);
   }
 
-  ttSaveStatusEl = document.createElement("span");
-  ttSaveStatusEl.className = "tt-save-status";
-  ttSaveStatusEl.style.fontSize = "12px";
-  ttSaveStatusEl.style.fontWeight = "800";
-  ttSaveStatusEl.style.color = "#64748b";
-
-  ttSaveModeBtn = document.createElement("button");
-  ttSaveModeBtn.type = "button";
-  ttSaveModeBtn.id = "ttAutoSaveModeBtn";
-  // 운영 필수 버튼입니다. 개발자 OFF 상태에서도 숨기지 않습니다.
-  ttSaveModeBtn.className = "tt-save-mode-btn tt-save-essential";
-  ttSaveModeBtn.addEventListener("click", async () => {
-    const next = !isAutoSaveEnabled();
-    setAutoSaveEnabled(next);
-    updateTtSaveControls();
-    if (next && getDirtyDomains().length) await savePendingNow();
-  });
-
-  ttSavePendingBtn = document.createElement("button");
-  ttSavePendingBtn.type = "button";
-  ttSavePendingBtn.id = "ttSavePendingBtn";
-  // 운영 필수 버튼입니다. 변경사항 저장 대기는 개발자 OFF 상태에서도 보여야 합니다.
-  ttSavePendingBtn.className = "tt-save-btn tt-save-essential";
-  ttSavePendingBtn.addEventListener("click", async () => {
-    await savePendingNow();
-    updateTtSaveControls();
-  });
-
-  const saveBtn = $("ttSaveBtn");
-  parent.insertBefore(ttSaveStatusEl, saveBtn || null);
-  parent.insertBefore(ttSaveModeBtn, saveBtn || null);
-  parent.insertBefore(ttSavePendingBtn, saveBtn || null);
+  // 커리큘럼 상단바처럼 저장 상태/수동 저장/자동저장 전환을 #ttSaveBtn 하나로 통합합니다.
+  // 별도 "자동저장 OFF" / "저장 대기" 버튼은 만들지 않습니다.
+  ttSaveStatusEl = { integrated: true };
+  ttSaveModeBtn = $("ttSaveBtn");
+  if (ttSaveModeBtn) {
+    ttSaveModeBtn.classList.add("tt-save-essential", "tt-unified-save-btn");
+    ttSaveModeBtn.type = "button";
+  }
   updateTtSaveControls();
 }
 
 function setupTtSaveStatusHandler() {
   setOnSaveStatus((status, detail) => {
-    if (!ttSaveStatusEl) return;
     clearTimeout(ttSaveStatusTimer);
-    updateTtSaveControls();
 
-    if (status === "saving") {
-      ttSaveStatusEl.textContent = "저장 대기 중…";
-      ttSaveStatusEl.style.color = "#ca8a04";
-    } else if (status === "dirty") {
-      const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
-      ttSaveStatusEl.textContent = `변경 ${count}개 대기`;
-      ttSaveStatusEl.style.color = "#ca8a04";
-    } else if (status === "saved") {
-      ttSaveStatusEl.textContent = "저장됨";
-      ttSaveStatusEl.style.color = "#15803d";
-      ttSaveStatusTimer = setTimeout(() => { ttSaveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드"; updateTtSaveControls(); }, 2500);
-    } else if (status === "skipped") {
-      ttSaveStatusEl.textContent = "변경 없음";
-      ttSaveStatusEl.style.color = "#15803d";
-      ttSaveStatusTimer = setTimeout(() => { ttSaveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드"; updateTtSaveControls(); }, 1500);
-    } else if (status === "mode") {
-      ttSaveStatusEl.textContent = isAutoSaveEnabled() ? "" : "수동 저장 모드";
-      ttSaveStatusEl.style.color = "#64748b";
-    } else {
-      ttSaveStatusEl.textContent = "저장 실패";
-      ttSaveStatusEl.style.color = "#dc2626";
+    if (status === "saving" || status === "dirty" || status === "saved" || status === "skipped" || status === "mode") {
+      lastTtSaveStatus = status;
+      updateTtSaveControls();
+      if (status === "saved" || status === "skipped") {
+        ttSaveStatusTimer = setTimeout(() => {
+          lastTtSaveStatus = "mode";
+          updateTtSaveControls();
+        }, status === "saved" ? 1800 : 1200);
+      }
+      return;
     }
+
+    lastTtSaveStatus = "error";
+    updateTtSaveControls();
+    console.warn("Timetable save status error", detail);
   });
 }
 
@@ -3137,7 +3150,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 $("ttLoginBtn")?.addEventListener("click", login);
 $("ttLogoutBtn")?.addEventListener("click", logout);
 $("ttExportBtn")?.addEventListener("click", exportXlsx);
-$("ttSaveBtn")?.addEventListener("click", async () => { await saveNow("timetable"); await savePendingNow(); alert("저장되었습니다."); });
+$("ttSaveBtn")?.addEventListener("click", handleTtUnifiedSaveClick);
 $("ttClearGradeBtn")?.addEventListener("click", () => {
   if (!canEdit()) return;
   let label, keepFn;

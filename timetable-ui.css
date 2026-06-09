@@ -2327,3 +2327,41 @@ body.his-dev-tools-off #ttSavePendingBtn {
   line-height: 1.2 !important;
   white-space: nowrap !important;
 }
+
+
+/* ================================================================
+   FINAL r12 · Timetable save button unified
+   - 저장 상태/수동 저장/자동저장 전환은 #ttSaveBtn 하나만 사용합니다.
+   - 별도 자동저장/저장대기 버튼이 다시 생겨도 화면에 남지 않도록 보호합니다.
+   ================================================================ */
+.tt-topbar #ttSaveBtn.tt-unified-save-btn,
+.tt-topbar .tt-unified-save-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
+.tt-topbar #ttSaveBtn.tt-save-pending {
+  background: #1d4ed8 !important;
+  border-color: #3b82f6 !important;
+  color: #fff !important;
+}
+.tt-topbar #ttSaveBtn.tt-save-autosave-off:not(.tt-save-pending) {
+  background: #334155 !important;
+  border-color: rgba(255,255,255,.35) !important;
+  color: #fff !important;
+}
+.tt-topbar #ttSaveBtn.tt-save-error {
+  background: #dc2626 !important;
+  border-color: #fca5a5 !important;
+  color: #fff !important;
+}
+.tt-topbar #ttSavePendingBtn,
+.tt-topbar #ttAutoSaveModeBtn {
+  display: none !important;
+}
