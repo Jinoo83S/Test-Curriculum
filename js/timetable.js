@@ -337,7 +337,9 @@ function setupTtSaveQuotaControls() {
 
   ttSaveModeBtn = document.createElement("button");
   ttSaveModeBtn.type = "button";
-  ttSaveModeBtn.className = "tt-save-mode-btn dev-tool-control";
+  ttSaveModeBtn.id = "ttAutoSaveModeBtn";
+  // 운영 필수 버튼입니다. 개발자 OFF 상태에서도 숨기지 않습니다.
+  ttSaveModeBtn.className = "tt-save-mode-btn tt-save-essential";
   ttSaveModeBtn.addEventListener("click", async () => {
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
@@ -347,7 +349,9 @@ function setupTtSaveQuotaControls() {
 
   ttSavePendingBtn = document.createElement("button");
   ttSavePendingBtn.type = "button";
-  ttSavePendingBtn.className = "tt-save-btn dev-tool-control";
+  ttSavePendingBtn.id = "ttSavePendingBtn";
+  // 운영 필수 버튼입니다. 변경사항 저장 대기는 개발자 OFF 상태에서도 보여야 합니다.
+  ttSavePendingBtn.className = "tt-save-btn tt-save-essential";
   ttSavePendingBtn.addEventListener("click", async () => {
     await savePendingNow();
     updateTtSaveControls();

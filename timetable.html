@@ -479,7 +479,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 /* ── Developer tools visibility ───────────────────────── */
 .developer-toggle-btn{white-space:nowrap;font-weight:800}
-.his-dev-tools-off .tt-mode-switch,
 .his-dev-tools-off .top-mode-switch,
 .his-dev-tools-off .local-dev-menu,
 .his-dev-tools-off .firestore-diagnostic-btn,
@@ -986,7 +985,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-09-timetable-topbar-essential-r11"/>
 
 </head>
 <body>
@@ -1060,7 +1059,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-09-classkeys-hardfill-r9";</script>
+<script>window.HIS_APP_VERSION = "2026-06-09-timetable-topbar-essential-r11";</script>
 <script type="module">
   import { versioned } from "./js/version.js";
   await import(versioned("./js/timetable.js"));
@@ -1872,7 +1871,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-09-classkeys-hardfill-r9");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-09-timetable-topbar-essential-r11");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

@@ -2288,3 +2288,42 @@ body.tt-resizing-bottom * {
 .tt-auto-outcome-badge.warn{background:#ffedd5;color:#9a3412;}
 @media (max-width:900px){.tt-auto-outcome-grid{grid-template-columns:repeat(3,minmax(84px,1fr));}}
 @media (max-width:560px){.tt-auto-outcome-grid{grid-template-columns:repeat(2,minmax(84px,1fr));}}
+
+
+/* ================================================================
+   FINAL r11 · Timetable topbar operational controls
+   - 개발자 OFF여도 로컬/온라인 전환과 자동저장 버튼은 계속 표시합니다.
+   - 고정 수업 버튼은 다른 상단 버튼과 같은 높이/패딩으로 맞춥니다.
+   ================================================================ */
+html.his-dev-tools-off .tt-mode-switch,
+body.his-dev-tools-off .tt-mode-switch {
+  display: inline-flex !important;
+}
+html.his-dev-tools-off .tt-save-essential,
+body.his-dev-tools-off .tt-save-essential,
+html.his-dev-tools-off #ttAutoSaveModeBtn,
+body.his-dev-tools-off #ttAutoSaveModeBtn,
+html.his-dev-tools-off #ttSavePendingBtn,
+body.his-dev-tools-off #ttSavePendingBtn {
+  display: inline-flex !important;
+}
+.tt-topbar button.tt-fixed-btn,
+.tt-topbar .tt-fixed-btn {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  box-shadow: none !important;
+}
+.tt-topbar .tt-save-mode-btn,
+.tt-topbar .tt-save-essential {
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  line-height: 1.2 !important;
+  white-space: nowrap !important;
+}
