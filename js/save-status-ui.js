@@ -22,29 +22,57 @@ const saveStatusEl = document.getElementById("saveStatusEl");
 let saveStatusTimer = null;
 let saveModeBtn = null;
 let initialized = false;
+let lastSaveStatus = "mode";
+
+function hideLegacySaveStatus() {
+  if (!saveStatusEl) return;
+  saveStatusEl.textContent = "";
+  saveStatusEl.className = "save-status save-status-inline-hidden";
+  saveStatusEl.style.display = "none";
+}
+
+function saveButtonText(autoSave, dirty, status) {
+  const count = dirty.length;
+  if (status === "saving") return count ? `저장 중(${count})` : "저장 중…";
+  if (status === "error") return count ? `저장 실패(${count})` : "저장 실패";
+  if ((status === "saved" || status === "skipped") && count === 0) {
+    return status === "saved" ? "저장됨" : "변경 없음";
+  }
+  if (count) return autoSave ? `저장 대기(${count})` : `수동 저장(${count})`;
+  return autoSave ? "자동저장 ON" : "자동저장 OFF";
+}
+
+function saveButtonTitle(autoSave, dirty, status) {
+  const count = dirty.length;
+  if (status === "saving") return "변경사항을 저장하는 중입니다.";
+  if (status === "error") return count ? "저장에 실패했습니다. 클릭하면 다시 저장을 시도합니다." : "저장에 실패했습니다. 네트워크 또는 권한을 확인하세요.";
+  if (count) {
+    return autoSave
+      ? "변경사항이 저장 대기 중입니다. 클릭하면 즉시 저장합니다."
+      : "자동저장이 꺼져 있습니다. 클릭하면 변경사항을 수동 저장합니다.";
+  }
+  return autoSave
+    ? "현재 자동저장 중입니다. 클릭하면 자동저장을 끕니다."
+    : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켭니다.";
+}
 
 function updateSaveControlButtons() {
   const autoSave = isAutoSaveEnabled();
   const dirty = getDirtyDomains();
   if (!saveModeBtn) return;
 
-  if (autoSave) {
-    saveModeBtn.textContent = dirty.length ? `자동저장 중(${dirty.length})` : "자동저장 ON";
-    saveModeBtn.title = dirty.length
-      ? "변경사항이 자동저장 대기 중입니다. 클릭하면 즉시 저장합니다."
-      : "현재 자동저장 중입니다. 클릭하면 자동저장을 끕니다.";
-    saveModeBtn.disabled = false;
-  } else {
-    saveModeBtn.textContent = dirty.length ? `수동 저장(${dirty.length})` : "자동저장 OFF";
-    saveModeBtn.title = dirty.length
-      ? "자동저장이 꺼져 있습니다. 클릭하면 변경사항을 수동 저장합니다."
-      : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켭니다.";
-    saveModeBtn.disabled = false;
-  }
+  hideLegacySaveStatus();
+
+  saveModeBtn.textContent = saveButtonText(autoSave, dirty, lastSaveStatus);
+  saveModeBtn.title = saveButtonTitle(autoSave, dirty, lastSaveStatus);
+  saveModeBtn.disabled = lastSaveStatus === "saving";
 
   saveModeBtn.classList.toggle("save-mode-on", autoSave);
   saveModeBtn.classList.toggle("save-mode-off", !autoSave);
   saveModeBtn.classList.toggle("manual-save-pending", dirty.length > 0);
+  saveModeBtn.classList.toggle("save-mode-saving", lastSaveStatus === "saving");
+  saveModeBtn.classList.toggle("save-mode-error", lastSaveStatus === "error");
+  saveModeBtn.classList.toggle("save-mode-saved", (lastSaveStatus === "saved" || lastSaveStatus === "skipped") && dirty.length === 0);
   saveModeBtn.setAttribute("aria-pressed", autoSave ? "true" : "false");
 }
 
@@ -90,6 +118,8 @@ function insertAfterSaveStatus(el) {
 function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
   const parent = saveStatusEl?.parentElement;
   if (!parent || saveModeBtn) return;
+
+  hideLegacySaveStatus();
 
   if (LOCAL_DEV_MODE) {
     const devMenu = document.createElement("details");
@@ -216,13 +246,16 @@ function setupSaveQuotaControls({ onLocalDataChanged } = {}) {
   saveModeBtn.className = "secondary-btn save-mode-toggle";
   saveModeBtn.addEventListener("click", async () => {
     const dirty = getDirtyDomains();
-    if (dirty.length) {
+    if (dirty.length || lastSaveStatus === "error") {
+      lastSaveStatus = "saving";
+      updateSaveControlButtons();
       await savePendingNow();
       updateSaveControlButtons();
       return;
     }
     const next = !isAutoSaveEnabled();
     setAutoSaveEnabled(next);
+    lastSaveStatus = "mode";
     updateSaveControlButtons();
   });
 
@@ -237,39 +270,24 @@ export function setupSaveStatusUi(options = {}) {
   setupSaveQuotaControls(options);
 
   setOnSaveStatus((status, detail) => {
-    if (!saveStatusEl) return;
     clearTimeout(saveStatusTimer);
-    updateSaveControlButtons();
+    hideLegacySaveStatus();
 
-    if (status === "saving") {
-      saveStatusEl.textContent = "💾 저장 대기 중…";
-      saveStatusEl.className = "save-status saving";
-    } else if (status === "dirty") {
-      const count = detail?.dirtyDomains?.length || getDirtyDomains().length;
-      saveStatusEl.textContent = `✍️ 변경사항 ${count}개 저장 대기`;
-      saveStatusEl.className = "save-status saving";
-    } else if (status === "saved") {
-      saveStatusEl.textContent = "✅ 저장됨";
-      saveStatusEl.className = "save-status saved";
-      saveStatusTimer = setTimeout(() => {
-        saveStatusEl.textContent = "";
-        saveStatusEl.className = "save-status";
-        updateSaveControlButtons();
-      }, 2500);
-    } else if (status === "skipped") {
-      saveStatusEl.textContent = "✅ 변경 없음";
-      saveStatusEl.className = "save-status saved";
-      saveStatusTimer = setTimeout(() => {
-        saveStatusEl.textContent = "";
-        saveStatusEl.className = "save-status";
-        updateSaveControlButtons();
-      }, 1500);
-    } else if (status === "mode") {
-      saveStatusEl.textContent = "";
-      saveStatusEl.className = "save-status";
-    } else {
-      saveStatusEl.textContent = "⚠️ 저장 실패 (네트워크 또는 권한 확인)";
-      saveStatusEl.className = "save-status error";
+    if (status === "saving" || status === "dirty" || status === "saved" || status === "skipped" || status === "mode") {
+      lastSaveStatus = status;
+      updateSaveControlButtons();
+      if (status === "saved" || status === "skipped") {
+        saveStatusTimer = setTimeout(() => {
+          lastSaveStatus = "mode";
+          hideLegacySaveStatus();
+          updateSaveControlButtons();
+        }, status === "saved" ? 1800 : 1200);
+      }
+      return;
     }
+
+    lastSaveStatus = "error";
+    updateSaveControlButtons();
+    console.warn("Save status error", detail);
   });
 }
