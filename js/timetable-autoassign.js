@@ -1858,7 +1858,7 @@ export function createAutoAssignAll(deps) {
       }
     }
 
-    const weights = normalizeScoreWeights(options.scoringWeights);
+    const classFillWeights = normalizeScoreWeights(options.scoringWeights);
     const classStats = buildClassSlotStatsForEntries(existing);
     const targetPerClass = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
     for (const cls of classKeysForCapacity(item)) {
@@ -1866,9 +1866,9 @@ export function createAutoAssignAll(deps) {
       const shortage = Math.max(0, targetPerClass - filled);
       const dayLoad = classDayLoadFromStats(classStats, cls, slot.day);
       // 보정 배치에서도 학급 공강을 채우는 슬롯을 강하게 우선합니다.
-      score -= shortage * 18 * weights.classFill;
-      score += dayLoad * 10 * weights.classFill;
-      if (filled >= targetPerClass) score += 650 * weights.classFill;
+      score -= shortage * 18 * classFillWeights.classFill;
+      score += dayLoad * 10 * classFillWeights.classFill;
+      if (filled >= targetPerClass) score += 650 * classFillWeights.classFill;
     }
 
     return score + Math.random();
