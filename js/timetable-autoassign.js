@@ -2171,12 +2171,12 @@ export function createAutoAssignAll(deps) {
     const remaining = [];
     const repaired = [];
     const orderedSlots = [...baseSlots].sort((a, b) => a.period - b.period || a.day - b.day);
-    const maxFailedToTry = options.runAttempts === 'deep' ? 80 : (options.runAttempts === 'fast' ? 24 : 48);
-    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 8 : 5;
-    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(18, orderedSlots.length);
-    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : 2;
-    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(24, orderedSlots.length) : Math.min(12, orderedSlots.length);
-    const maxRepairAttempts = options.runAttempts === 'deep' ? 6200 : (options.runAttempts === 'fast' ? 900 : 2600);
+    const maxFailedToTry = options.runAttempts === 'deep' ? 40 : (options.runAttempts === 'fast' ? 12 : 24);
+    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 6 : (options.runAttempts === 'fast' ? 3 : 4);
+    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(24, orderedSlots.length) : (options.runAttempts === 'fast' ? Math.min(8, orderedSlots.length) : Math.min(10, orderedSlots.length));
+    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : (options.runAttempts === 'fast' ? 1 : 2);
+    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(14, orderedSlots.length) : (options.runAttempts === 'fast' ? Math.min(0, orderedSlots.length) : Math.min(6, orderedSlots.length));
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 2200 : (options.runAttempts === 'fast' ? 250 : 700);
     let attempts = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
@@ -2272,7 +2272,7 @@ export function createAutoAssignAll(deps) {
 
   async function improveAutoPlacement(placed = [], baseSlots = [], options = {}, progressUpdater = null) {
     const current = [...placed];
-    const limit = options.runAttempts === "deep" ? 360 : (options.runAttempts === "fast" ? 90 : 190);
+    const limit = options.runAttempts === "deep" ? 160 : (options.runAttempts === "fast" ? 35 : 70);
     let attempts = 0;
     let improved = 0;
     let bestScore = scoreScheduleQuality(current, options);
@@ -2833,19 +2833,24 @@ export function createAutoAssignAll(deps) {
 
   function attemptsForMode(mode) {
     const value = String(mode || "balanced");
-    if (value === "fast") return [18, 12, 6];
-    if (value === "deep") return [60, 40, 18];
-    return [36, 26, 12];
+    // r18: r15의 학급공강/MRV 보강 이후 탐색량이 과도해져 전체 배치가 지나치게 느려졌습니다.
+    // 빠른/균형 모드는 운영 중 재시도 가능한 속도를 우선하고, 정교한 배치만 더 넓게 탐색합니다.
+    if (value === "fast") return [4, 2, 0];
+    if (value === "deep") return [18, 10, 4];
+    return [8, 4, 1];
   }
 
   function explorationOptionsForAttempt(mode, attempt = 0, stageIndex = 0) {
     const value = String(mode || "balanced");
-    const base = value === "deep" ? 6 : (value === "fast" ? 2 : 4);
     const warmup = attempt === 0 ? 0 : 1;
-    const jitter = (attempt % Math.max(2, base)) + stageIndex;
-    const slotRandomness = warmup ? Math.min(7, 1 + jitter) : 0;
-    const topCandidateCount = warmup ? Math.min(10, 2 + base + (attempt % 3)) : 1;
-    return { slotRandomness, topCandidateCount };
+    if (!warmup) return { slotRandomness: 0, topCandidateCount: 1 };
+    if (value === "fast") return { slotRandomness: 1, topCandidateCount: 2 };
+    if (value === "deep") {
+      const jitter = (attempt % 4) + stageIndex;
+      return { slotRandomness: Math.min(5, 1 + jitter), topCandidateCount: Math.min(6, 3 + (attempt % 3)) };
+    }
+    const jitter = (attempt % 3) + stageIndex;
+    return { slotRandomness: Math.min(3, 1 + jitter), topCandidateCount: Math.min(4, 2 + (attempt % 2)) };
   }
 
   function compareAutoRunResults(a = {}, b = {}) {
@@ -3597,15 +3602,19 @@ export function createAutoAssignAll(deps) {
         const placed = [], failed = [];
         exploredInitialRuns++;
         const exploration = explorationOptionsForAttempt(options.runAttempts, attempt, stageIndex);
-        const stageAttemptOptions = { ...stage.options, ...exploration, attemptIndex: attempt, stageIndex };
+        const stageAttemptOptions = { ...stage.options, ...exploration, attemptIndex: attempt, stageIndex, runAttempts: options.runAttempts };
 
         // ── Sort schedulable units by priority ───────────────────────
         // 1) 고정 수업은 위에서 이미 pinnedEntries로 보호
         // 2) 제약근무 교사 포함 수업은 일반 그룹/일반 카드보다 먼저 배치
         // 3) 같은 우선순위 안에서는 "후보 시간이 적은 수업"을 먼저 배치합니다.
         const candidateCountCache = new Map();
+        const runMode = String(options.runAttempts || "balanced");
+        // 빠른/균형 모드에서는 후보 슬롯 수 전수계산이 가장 큰 병목입니다.
+        // 정교한 배치의 첫 strict 시도에서만 제한적으로 사용하고, 그 외에는 우선순위/복잡도 점수로 정렬합니다.
+        const useCandidateCountProbe = runMode === "deep" && stageIndex === 0 && attempt === 0;
         const candidateCountForItem = (item) => {
-          if (!item) return 9999;
+          if (!item || !useCandidateCountProbe) return 9999;
           const key = `${autoItemKey(item)}::${stage.name}`;
           if (candidateCountCache.has(key)) return candidateCountCache.get(key);
           let count = 0;
@@ -3616,6 +3625,7 @@ export function createAutoAssignAll(deps) {
           return count;
         };
         const candidateCountForGroupBlock = (block) => {
+          if (!useCandidateCountProbe) return 9999;
           const group = block?.group;
           const unitItems = block?.unitItems || [];
           if (!group || !unitItems.length) return 9999;
@@ -3623,7 +3633,7 @@ export function createAutoAssignAll(deps) {
           if (candidateCountCache.has(cacheKey)) return candidateCountCache.get(cacheKey);
           let minCount = 9999;
           const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
-          const samples = Math.max(1, Math.min(maxCredits || 1, 5));
+          const samples = Math.max(1, Math.min(maxCredits || 1, 2));
           for (let occurrence = 0; occurrence < samples; occurrence++) {
             const activeItems = unitItems
               .filter(u => occurrence < (Number(u.credits) || 0))
@@ -3775,26 +3785,34 @@ export function createAutoAssignAll(deps) {
 
         const placeStandaloneKeys = async (keys, phaseLabel) => {
           const pendingKeys = new Set(keys || []);
+          const useLiveMrv = String(options.runAttempts || "balanced") === "deep" && stageIndex === 0 && attempt === 0;
+          const liveCandidateCountCache = new Map();
           const liveCandidateCountForItem = (item) => {
-            if (!item) return 9999;
+            if (!item || !useLiveMrv) return null;
+            const key = autoItemKey(item);
+            if (liveCandidateCountCache.has(key)) return liveCandidateCountCache.get(key);
             let count = 0;
             for (const slot of baseSlots) if (checkPlacementValid(item, slot, placed, stageAttemptOptions)) count += 1;
+            liveCandidateCountCache.set(key, count);
             return count;
           };
-
-          while (pendingKeys.size) {
-            const key = [...pendingKeys].sort((a, b) => {
-              const ia = itemByKey.get(a);
-              const ib = itemByKey.get(b);
+          const standaloneSort = (a, b) => {
+            const ia = itemByKey.get(a);
+            const ib = itemByKey.get(b);
+            if (useLiveMrv) {
               const acand = liveCandidateCountForItem(ia);
               const bcand = liveCandidateCountForItem(ib);
               if (acand !== bcand) return acand - bcand;
-              const ap = comparePriority(ia, ib);
-              if (ap !== 0) return ap;
-              const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
-              if (art !== 0) return art;
-              return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
-            })[0];
+            }
+            const ap = comparePriority(ia, ib);
+            if (ap !== 0) return ap;
+            const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
+            if (art !== 0) return art;
+            return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
+          };
+
+          while (pendingKeys.size) {
+            const key = [...pendingKeys].sort(standaloneSort)[0];
             pendingKeys.delete(key);
 
             const item = itemByKey.get(key);
@@ -3805,7 +3823,7 @@ export function createAutoAssignAll(deps) {
               await yieldAutoAssign({
                 percent: stagePercent,
                 step: `${phaseLabel} · ${stage.label}`,
-                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다. 후보 ${candidateCount}칸${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
+                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.${candidateCount == null ? "" : ` 후보 ${candidateCount}칸`}${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
                 placed: placed.length,
                 best: Math.max(0, bestScore),
                 failed: failed.length,
