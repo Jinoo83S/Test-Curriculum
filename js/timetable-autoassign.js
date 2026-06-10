@@ -118,19 +118,53 @@ export function createAutoAssignAll(deps) {
       ...item,
       hasRestrictedTeacher: restrictedTeachers.length > 0,
       restrictedTeachers,
-      // 0은 고정/잠금, 1은 제약근무 교사, 2는 일반 자동배치 대상입니다.
+      // 0은 핵심 동시배정 그룹, 1은 제약근무 교사, 2는 일반 자동배치 대상입니다.
       priorityTier: restrictedTeachers.length > 0 ? 1 : 2
     };
   };
+
+  function groupBlockPriorityText(block = {}) {
+    const group = block?.group || {};
+    const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
+    return [
+      group.name, group.label, group.groupName,
+      ...cards.map(c => [c.subject, c.label, c.groupName, c.track, c.group, c.nameKo, c.nameEn].filter(Boolean).join(" "))
+    ].filter(Boolean).join(" ");
+  }
+
+  function getStructuralGroupRank(block = {}) {
+    const group = block?.group || {};
+    const isConcurrent = group.isConcurrent || group.groupType === "concurrent";
+    if (!isConcurrent) return 99;
+    const text = groupBlockPriorityText(block);
+    const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
+    const classCount = new Set(cards.flatMap(c => c.classKeys || c.audienceClassKeys || []).filter(Boolean)).size;
+    const teacherCount = new Set(getTeacherNamesFromCards(cards)).size;
+
+    // 실제 HIS 시간표에서 먼저 자리를 잡아야 하는 뼈대 그룹입니다.
+    // 특히 HS국어는 10A/11A/12A와 여러 교사가 얽혀 있어, 제약교사 일반카드보다 뒤로 밀리면 거의 항상 실패합니다.
+    if (/HS\s*국어|고등\s*국어/i.test(text)) return 0;
+    if (/MS\s*국어|중등\s*국어/i.test(text)) return 1;
+    if (/국어|한국어|Korean/i.test(text) && classCount >= 3) return 2;
+    if (/선택/.test(text) && classCount >= 2) return 3;
+    if (/채플|CA|SA|자율|동아리|Chapel|Club/i.test(text)) return 4;
+    if (cards.length >= 4 || classCount >= 4 || teacherCount >= 4) return 5;
+    return 99;
+  }
+
   const annotateRestrictedGroupBlock = block => {
     const unitItems = (block?.unitItems || []).map(annotateRestrictedAutoItem);
+    const normalized = { ...block, unitItems };
     const restrictedTeachers = [...new Set(unitItems.flatMap(u => u.restrictedTeachers || []))];
+    const structuralRank = getStructuralGroupRank(normalized);
+    const hasStructuralPriority = structuralRank < 99;
     return {
-      ...block,
-      unitItems,
+      ...normalized,
       hasRestrictedTeacher: restrictedTeachers.length > 0,
       restrictedTeachers,
-      priorityTier: restrictedTeachers.length > 0 ? 1 : 2
+      hasStructuralPriority,
+      structuralRank,
+      priorityTier: hasStructuralPriority ? 0 : (restrictedTeachers.length > 0 ? 1 : 2)
     };
   };
   const comparePriority = (a, b) => (Number(a?.priorityTier ?? 2) - Number(b?.priorityTier ?? 2));
@@ -1799,6 +1833,11 @@ export function createAutoAssignAll(deps) {
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
       if (teachers.some(t => et.includes(t))) {
         if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
+        // 같은 동시배정 그룹 내부의 반복 교사는 하나의 통합 블록으로 봅니다.
+        // 예: HS국어의 한국어 계열처럼 같은 교사가 여러 학급/분반 카드에 반복될 수 있습니다.
+        const sameGrp = sameActiveGroup(item, e);
+        const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
+        if (conc && options.allowSameGroupTeacherOverlap !== false) continue;
         return false;
       }
     }
@@ -2074,7 +2113,11 @@ export function createAutoAssignAll(deps) {
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
 
       const et = splitTeacherNames(e.teacherName).filter(Boolean);
-      if (teachers.some(t => et.includes(t))) return Infinity;
+      if (teachers.some(t => et.includes(t))) {
+        const sameGrpForTeacher = sameActiveGroup(item, e);
+        const concForTeacher = sameGrpForTeacher && isConcurrentItem(item) && isConcurrentItem(e);
+        if (!concForTeacher || options.allowSameGroupTeacherOverlap === false) return Infinity;
+      }
 
       const eAudience = audienceForPlacement(e);
       const conflict = audiencesConflict(itemAudience, eAudience);
@@ -3941,12 +3984,16 @@ export function createAutoAssignAll(deps) {
           const nameText = [group.name, group.label, group.groupName, ...cards.map(c => [c.group, c.groupName, c.track, c.subject, c.label].filter(Boolean).join(' '))]
             .filter(Boolean).join(' ');
           let bonus = 0;
-          if (group.isConcurrent || group.groupType === "concurrent") bonus += 6000;
-          if (/선택/.test(nameText)) bonus += 5200;
-          if (/채플|자율|동아리|CA|SA/.test(nameText)) bonus += 4200;
-          if (/국어|한국어|영어|Korean|English/i.test(nameText)) bonus += 2600;
+          const structuralRank = getStructuralGroupRank(block);
+          if (structuralRank < 99) bonus += 25000 - structuralRank * 1800;
+          if (/HS\s*국어|고등\s*국어/i.test(nameText)) bonus += 18000;
+          if (/MS\s*국어|중등\s*국어/i.test(nameText)) bonus += 12000;
+          if (group.isConcurrent || group.groupType === "concurrent") bonus += 8000;
+          if (/선택/.test(nameText)) bonus += 6200;
+          if (/채플|자율|동아리|CA|SA|Chapel|Club/i.test(nameText)) bonus += 5200;
+          if (/국어|한국어|영어|Korean|English/i.test(nameText)) bonus += 4200;
           // 여러 반·여러 교사·여러 카드가 동시에 움직이는 그룹은 뒤로 밀리면 거의 배치가 불가능해집니다.
-          bonus += classKeys.size * 180 + teachers.size * 260 + cards.length * 35;
+          bonus += classKeys.size * 220 + teachers.size * 320 + cards.length * 60;
           return bonus;
         };
 
@@ -3988,8 +4035,9 @@ export function createAutoAssignAll(deps) {
           if (acand !== bcand) return acand - bcand;
           return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
         });
-        const restrictedGroupBlocks = orderedGroups.filter(block => block.hasRestrictedTeacher);
-        const normalGroupBlocks = orderedGroups.filter(block => !block.hasRestrictedTeacher);
+        const structuralGroupBlocks = orderedGroups.filter(block => block.hasStructuralPriority || block.priorityTier === 0);
+        const restrictedGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && block.hasRestrictedTeacher);
+        const normalGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && !block.hasRestrictedTeacher);
         const restrictedKeys = orderedKeys.filter(key => itemByKey.get(key)?.hasRestrictedTeacher);
         const normalKeys = orderedKeys.filter(key => !itemByKey.get(key)?.hasRestrictedTeacher);
         const placedByKey = new Map();
@@ -4131,7 +4179,9 @@ export function createAutoAssignAll(deps) {
           }
         };
 
-        // 고정 수업 다음: 제약근무 교사 포함 수업을 먼저 배치합니다.
+        // 고정 수업 다음: 큰 동시배정 그룹을 먼저 배치합니다.
+        // 제약교사 일반카드가 10A/11A/12A의 희소 슬롯을 먼저 점유하면 HS국어 같은 그룹은 나중에 복구가 거의 불가능합니다.
+        await placeGroups(structuralGroupBlocks, "핵심 동시배정 그룹 선배치");
         await placeGroups(restrictedGroupBlocks, "제약교사 그룹 우선 배치");
         await placeStandaloneKeys(restrictedKeys, "제약교사 일반 카드 우선 배치");
         await placeGroups(normalGroupBlocks, "그룹 수업 배치");
@@ -4416,6 +4466,20 @@ export function createAutoAssignAll(deps) {
       beforeSnapshotName: beforeAutoSnapshot?.name || "",
       afterSnapshotName: afterAutoSnapshot?.name || ""
     };
+    if (afterAutoSnapshot) {
+      try {
+        afterAutoSnapshot.autoAssignMeta = JSON.parse(JSON.stringify(report));
+        afterAutoSnapshot.note = [
+          "자동 생성된 배치 보관본입니다.",
+          activeGrades.length ? `대상: ${activeGrades.map(gradeDisplay).join(", ")}` : "",
+          modeText ? `방식: ${modeText}` : "",
+          report.validationSummary ? `검증: ${report.validationSummary}` : ""
+        ].filter(Boolean).join(" / ");
+        await persistTimetableNow();
+      } catch (_) {
+        afterAutoSnapshot.autoAssignMeta = { validationSummary: report.validationSummary || "" };
+      }
+    }
     setLastAutoAssignReport(report);
     addTimetableLog(
       "auto",
