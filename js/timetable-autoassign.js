@@ -3226,13 +3226,9 @@ export function createAutoAssignAll(deps) {
 
   function compareAutoRunResults(a = {}, b = {}) {
     // 반환값이 음수이면 a가 더 좋습니다.
-    // 3단계 기준: 단순 배치 수보다 학급별 35시수 충족 여부를 먼저 봅니다.
-    const aFailed = Number(a.failedCount ?? 999999);
-    const bFailed = Number(b.failedCount ?? 999999);
-    if (aFailed !== bFailed) return aFailed - bFailed;
-
-    // r24: 학급 총시수보다 먼저 카드별 부족 시수를 봅니다.
-    // excludedCardIds가 뒤로 밀리면 학급 칸은 비슷해 보여도 실제 카드 시수가 부족해집니다.
+    // r26: 단순 미배치 개수보다 최종 검증 품질을 먼저 봅니다.
+    // 자동배치가 특정 미배치 카드를 해결하면서 다른 카드/학급 시수를 무너뜨리면
+    // 결과적으로 더 나쁜 시간표이므로 저장 대상에서 제외해야 합니다.
     const aCardShortage = Number(a.cardShortageSlots ?? 999999);
     const bCardShortage = Number(b.cardShortageSlots ?? 999999);
     if (aCardShortage !== bCardShortage) return aCardShortage - bCardShortage;
@@ -3240,6 +3236,10 @@ export function createAutoAssignAll(deps) {
     const aCardIssues = Number(a.cardCoverageIssueCount ?? 999999);
     const bCardIssues = Number(b.cardCoverageIssueCount ?? 999999);
     if (aCardIssues !== bCardIssues) return aCardIssues - bCardIssues;
+
+    const aGroupIssues = Number(a.groupCoverageIssueCount ?? 999999);
+    const bGroupIssues = Number(b.groupCoverageIssueCount ?? 999999);
+    if (aGroupIssues !== bGroupIssues) return aGroupIssues - bGroupIssues;
 
     const aClassIssues = Number(a.classSlotIssueCount ?? 999999);
     const bClassIssues = Number(b.classSlotIssueCount ?? 999999);
@@ -3249,9 +3249,17 @@ export function createAutoAssignAll(deps) {
     const bShort = Number(b.classShortCount ?? 999999);
     if (aShort !== bShort) return aShort - bShort;
 
+    const aFailed = Number(a.failedCount ?? 999999);
+    const bFailed = Number(b.failedCount ?? 999999);
+    if (aFailed !== bFailed) return aFailed - bFailed;
+
     const aOver = Number(a.classOverCount ?? 999999);
     const bOver = Number(b.classOverCount ?? 999999);
     if (aOver !== bOver) return aOver - bOver;
+
+    const aForced = Number(a.forcedCount ?? 0);
+    const bForced = Number(b.forcedCount ?? 0);
+    if (aForced !== bForced) return aForced - bForced;
 
     const aQuality = Number(a.qualityScore ?? Infinity);
     const bQuality = Number(b.qualityScore ?? Infinity);
@@ -3261,9 +3269,66 @@ export function createAutoAssignAll(deps) {
     const bPlaced = Number(b.placedCount ?? 0);
     if (aPlaced !== bPlaced) return bPlaced - aPlaced;
 
-    const aForced = Number(a.forcedCount ?? 0);
-    const bForced = Number(b.forcedCount ?? 0);
-    return aForced - bForced;
+    return 0;
+  }
+
+  function buildAutoRunMetricsFromValidation(report = {}, context = {}) {
+    const card = report.cardCoverage || {};
+    const cls = report.classSlots || {};
+    const group = report.groupCoverage || {};
+    const classIssues = cls.issues || [];
+    const cardShortageSlots = (card.shortRows || []).reduce((sum, row) => sum + Math.max(0, -Number(row.diff || 0)), 0);
+    const cardOverageSlots = (card.overRows || []).reduce((sum, row) => sum + Math.max(0, Number(row.diff || 0)), 0);
+    return {
+      label: context.label || '',
+      validationSummary: report.summary || '',
+      validationOk: !!report.ok,
+      placedCount: Number(context.placedCount || 0),
+      failedCount: Number(context.failedCount || 0),
+      forcedCount: Number(context.forcedCount || 0),
+      qualityScore: Number.isFinite(Number(context.qualityScore)) ? Number(context.qualityScore) : Infinity,
+      cardCoverageIssueCount: Number(card.issueCount || 0),
+      cardShortCount: Number(card.shortCount || 0),
+      cardOverCount: Number(card.overCount || 0),
+      cardShortageSlots,
+      cardOverageSlots,
+      groupCoverageIssueCount: Number(group.issueCount || 0),
+      classSlotIssueCount: Number(cls.issueCount || 0),
+      classShortCount: classIssues.filter(row => Number(row.diff || 0) < 0).length,
+      classOverCount: classIssues.filter(row => Number(row.diff || 0) > 0).length,
+      classTotal: Number(cls.total || 0),
+      classTargetTotal: Number(cls.targetTotal || 0)
+    };
+  }
+
+  function buildAutoRunMetricsForEntries(allEntries = [], scopeGrades = [], failedItems = [], context = {}) {
+    const failedNames = [...new Set((failedItems || []).map(f => f?.name).filter(Boolean))];
+    const report = buildScheduleVerificationReport(allEntries, {
+      scopeGrades,
+      protectedEntries: context.protectedEntries || [],
+      failedNames
+    });
+    return {
+      report,
+      metrics: buildAutoRunMetricsFromValidation(report, {
+        label: context.label || '',
+        placedCount: context.placedCount,
+        failedCount: failedNames.length,
+        forcedCount: context.forcedCount,
+        qualityScore: context.qualityScore
+      }),
+      failedNames
+    };
+  }
+
+  function formatAutoRunMetricSummary(metrics = {}) {
+    return [
+      `카드부족 ${Number(metrics.cardShortageSlots || 0)}시수`,
+      `카드문제 ${Number(metrics.cardCoverageIssueCount || 0)}개`,
+      `그룹문제 ${Number(metrics.groupCoverageIssueCount || 0)}개`,
+      `학급문제 ${Number(metrics.classSlotIssueCount || 0)}개`,
+      `미배치 ${Number(metrics.failedCount || 0)}개`
+    ].join(' · ');
   }
 
   function escapeHtml(s) {
@@ -3903,6 +3968,13 @@ export function createAutoAssignAll(deps) {
     captureTimetableUndo("자동 배정");
     addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`);
     const preValidation = buildScheduleVerificationReport(entries(), { scopeGrades: activeGrades });
+    const baselineAutoRunMetrics = buildAutoRunMetricsFromValidation(preValidation, {
+      label: '자동배치 전',
+      placedCount: rollbackEntriesSnapshot.length,
+      failedCount: 0,
+      forcedCount: 0,
+      qualityScore: Infinity
+    });
 
     // Preserve entries according to the selected auto-assign options.
     // - reset: selected range is cleared, but locked/manual/out-of-range entries can be protected.
@@ -4371,6 +4443,35 @@ export function createAutoAssignAll(deps) {
       }, true);
     }
 
+    let acceptedPlaced = cloneAutoAssignData(bestPlaced) || [];
+    let acceptedFailed = [...bestFailed];
+    let acceptedForced = [];
+    let acceptedLabel = "초기 최선 배치";
+    let acceptedMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...acceptedPlaced], activeGrades, acceptedFailed, {
+      protectedEntries,
+      placedCount: acceptedPlaced.length,
+      forcedCount: 0,
+      qualityScore: bestQualityScore,
+      label: acceptedLabel
+    }).metrics;
+    const considerAutoCandidate = (label, placed, failed, forced = [], qualityScore = Infinity) => {
+      const result = buildAutoRunMetricsForEntries([...protectedEntries, ...(placed || [])], activeGrades, failed || [], {
+        protectedEntries,
+        placedCount: (placed || []).length,
+        forcedCount: (forced || []).length,
+        qualityScore,
+        label
+      });
+      if (compareAutoRunResults(result.metrics, acceptedMetrics) < 0) {
+        acceptedPlaced = cloneAutoAssignData(placed || []) || [];
+        acceptedFailed = [...(failed || [])];
+        acceptedForced = [...(forced || [])];
+        acceptedLabel = label;
+        acceptedMetrics = result.metrics;
+      }
+      return result.metrics;
+    };
+
     // ── Repair pass ───────────────────────────────────────────────
     // Greedy 자동배치가 막힌 경우, 기존 자동배치 수업 1개를 다른 칸으로 옮겨
     // 미배치 수업을 넣을 수 있는지 먼저 탐색합니다.
@@ -4428,7 +4529,7 @@ export function createAutoAssignAll(deps) {
       log: bestFailed.length ? "보정 배치 단계 시작" : "보정 배치 대상 없음"
     }, true);
 
-    const forcedPlaced = [];
+    let forcedPlaced = [];
     const stillFailed = [];
     if (engineProfile.enableFinalRepair && bestFailed.length) {
       const limit = Number.isFinite(engineProfile.finalRepairLimit) ? engineProfile.finalRepairLimit : bestFailed.length;
@@ -4487,8 +4588,61 @@ export function createAutoAssignAll(deps) {
       log: "자동배치 후처리 단계 시작"
     }, true);
 
-    const improvement = await improveAutoPlacement(bestPlaced, baseSlots, { ...options, engineProfile }, updateProgress);
+    const beforePostProcessPlaced = cloneAutoAssignData(bestPlaced) || [];
+    const beforePostProcessFailed = [...bestFailed];
+    const beforePostProcessForced = [...forcedPlaced];
+    const beforePostProcessMetrics = considerAutoCandidate("보정/복구 후", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
+    let improvement = await improveAutoPlacement(bestPlaced, baseSlots, { ...options, engineProfile }, updateProgress);
     bestPlaced = improvement.placed;
+    const afterPostProcessMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
+      protectedEntries,
+      placedCount: bestPlaced.length,
+      forcedCount: forcedPlaced.length,
+      qualityScore: improvement.qualityScore,
+      label: "후처리 결과"
+    }).metrics;
+    if (compareAutoRunResults(afterPostProcessMetrics, beforePostProcessMetrics) > 0) {
+      bestPlaced = beforePostProcessPlaced;
+      bestFailed = beforePostProcessFailed;
+      forcedPlaced = beforePostProcessForced;
+      improvement = { ...improvement, placed: bestPlaced, improvedCount: 0, revertedByQualityGate: true };
+      await updateProgress({
+        percent: 95,
+        step: "후처리 결과 폐기",
+        detail: `후처리 후 검증 점수가 나빠져 이전 복구 결과로 되돌렸습니다. (${formatAutoRunMetricSummary(beforePostProcessMetrics)})`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "품질 게이트",
+        log: `후처리 결과 폐기 · ${formatAutoRunMetricSummary(afterPostProcessMetrics)} → ${formatAutoRunMetricSummary(beforePostProcessMetrics)}`
+      }, true);
+    } else {
+      considerAutoCandidate("후처리 결과", bestPlaced, bestFailed, forcedPlaced, improvement.qualityScore);
+    }
+
+    const finalCandidateMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
+      protectedEntries,
+      placedCount: bestPlaced.length,
+      forcedCount: forcedPlaced.length,
+      qualityScore: improvement.qualityScore,
+      label: "최종 후보"
+    }).metrics;
+    if (compareAutoRunResults(finalCandidateMetrics, acceptedMetrics) > 0) {
+      bestPlaced = cloneAutoAssignData(acceptedPlaced) || [];
+      bestFailed = [...acceptedFailed];
+      forcedPlaced = [...acceptedForced];
+      improvement = { ...improvement, placed: bestPlaced, improvedCount: 0, revertedToAccepted: acceptedLabel };
+      await updateProgress({
+        percent: 95,
+        step: "최선 결과 복원",
+        detail: `복구/후처리 과정에서 전체 검증 점수가 나빠져 ${acceptedLabel}로 복원했습니다. (${formatAutoRunMetricSummary(acceptedMetrics)})`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "품질 게이트",
+        log: `최선 결과 복원: ${formatAutoRunMetricSummary(finalCandidateMetrics)} → ${formatAutoRunMetricSummary(acceptedMetrics)}`
+      }, true);
+    }
 
     const failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
 
@@ -4514,6 +4668,58 @@ export function createAutoAssignAll(deps) {
       failedNames: names,
       failedDiagnostics
     });
+    const finalAutoRunMetrics = buildAutoRunMetricsFromValidation(postValidation, {
+      label: "최종 결과",
+      placedCount: bestPlaced.length,
+      failedCount: names.length,
+      forcedCount: forcedPlaced.length,
+      qualityScore: improvement.qualityScore
+    });
+    const rejectWorseThanBaseline = compareAutoRunResults(finalAutoRunMetrics, baselineAutoRunMetrics) > 0;
+    if (rejectWorseThanBaseline) {
+      ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
+      await persistTimetableNow();
+      recomputeConflicts();
+      renderAll();
+      const rejectReport = {
+        ts: Date.now(),
+        rejectedByQualityGate: true,
+        reason: "새 자동배치 결과가 기존 시간표보다 검증 점수가 나빠 반영하지 않았습니다.",
+        activeGrades: activeGrades.map(gradeDisplay).join(", "),
+        placementModeLabel: modeText,
+        beforeValidation: preValidation,
+        rejectedValidation: postValidation,
+        beforeMetrics: baselineAutoRunMetrics,
+        rejectedMetrics: finalAutoRunMetrics,
+        comparisonSummary: `${preValidation.summary || "이전 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`
+      };
+      if (appState.timetable) appState.timetable.autoAssignMeta = rejectReport;
+      setLastAutoAssignReport(rejectReport);
+      addTimetableLog(
+        "warn",
+        "자동배치 결과 폐기",
+        `새 결과가 기존 시간표보다 나빠 반영하지 않았습니다. 기존: ${formatAutoRunMetricSummary(baselineAutoRunMetrics)} / 폐기: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
+      );
+      await progress.complete({
+        partial: true,
+        title: "자동배치 결과 폐기",
+        subtitle: "기존 시간표가 더 좋아 새 자동배치 결과를 반영하지 않았습니다.",
+        step: "결과 폐기",
+        detailHtml: [
+          `<div><b>기존 시간표 유지</b> ${safeAutoHtml(preValidation.summary || "검증 정보 없음")}</div>`,
+          `<div><b>폐기된 결과</b> ${safeAutoHtml(postValidation.summary || "검증 정보 없음")}</div>`,
+          `<div><b>기존 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(baselineAutoRunMetrics))}</div>`,
+          `<div><b>폐기 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(finalAutoRunMetrics))}</div>`,
+          `<div>자동배치가 특정 카드를 채우면서 다른 카드/학급 시수를 더 많이 무너뜨렸기 때문에 저장하지 않았습니다.</div>`
+        ].join(""),
+        placed: 0,
+        best: 0,
+        failed: names.length,
+        currentCard: "품질 게이트",
+        closeLabel: "확인"
+      });
+      return;
+    }
 
     bestPlaced.forEach(e => entries().push(e));
     const afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), {
@@ -4599,8 +4805,18 @@ export function createAutoAssignAll(deps) {
       restrictedStandaloneCount,
       restrictedGroupCount,
       beforeSnapshotName: beforeAutoSnapshot?.name || "",
-      afterSnapshotName: afterAutoSnapshot?.name || ""
+      afterSnapshotName: afterAutoSnapshot?.name || "",
+      selectedAcceptedLabel: acceptedLabel,
+      acceptedMetrics,
+      finalMetrics: finalAutoRunMetrics,
+      baselineMetrics: baselineAutoRunMetrics,
+      qualityGate: {
+        postProcessReverted: !!improvement.revertedByQualityGate,
+        revertedToAccepted: improvement.revertedToAccepted || "",
+        acceptedLabel
+      }
     };
+    if (appState.timetable) appState.timetable.autoAssignMeta = report;
     if (afterAutoSnapshot) {
       try {
         afterAutoSnapshot.autoAssignMeta = JSON.parse(JSON.stringify(report));
