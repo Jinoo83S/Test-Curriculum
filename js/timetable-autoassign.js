@@ -3861,6 +3861,9 @@ export function createAutoAssignAll(deps) {
       for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
     }
 
+    const attemptPlan = attemptsForMode(options.runAttempts);
+    const engineProfile = autoEngineProfileForMode(options.runAttempts);
+
     await updateProgress({
       percent: 10,
       step: "배치 대상 분석",
@@ -3883,8 +3886,6 @@ export function createAutoAssignAll(deps) {
       pinnedByKey.set(key, pinnedEntries.filter(e => entryMatchesAutoItem(e, item)).length);
     });
 
-    const attemptPlan = attemptsForMode(options.runAttempts);
-    const engineProfile = autoEngineProfileForMode(options.runAttempts);
     const stages = [
       { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
       { name:"relaxedSoft", label:"교사 일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
