@@ -112,14 +112,47 @@ export function createAutoAssignAll(deps) {
     return [...new Set(names.map(t => String(t || "").trim()).filter(Boolean))];
   };
   const getRestrictedTeachersForAutoItem = item => getTeachersForAutoItem(item).filter(isRestrictedTeacher);
+
+  function excludedGroupsForAutoItem(item = {}) {
+    const cardIds = ttCardIdsFromPlacement(item).filter(Boolean);
+    if (!cardIds.length) return [];
+    const idSet = new Set(cardIds);
+    return ttGroups().filter(group => (group?.excludedCardIds || []).some(cardId => idSet.has(cardId)));
+  }
+
+  function excludedCardPriorityForAutoItem(item = {}) {
+    const groups = excludedGroupsForAutoItem(item);
+    if (!groups.length) return 0;
+    const itemText = normalizeSubjectTextForScoring(item);
+    let score = 9000 + getAutoItemDifficulty(item) * 10;
+    groups.forEach(group => {
+      const text = [group.name, group.label, group.groupName, itemText].filter(Boolean).join(" ");
+      if (/HS\s*국어|고등\s*국어/i.test(text)) score += 26000;
+      else if (/MS\s*국어|중등\s*국어/i.test(text)) score += 23000;
+      else if (/국어|한국어|Korean/i.test(text)) score += 20000;
+      else if (/영어|English/i.test(text)) score += 16000;
+      else if (/수학|Math|Algebra|Calculus|Geometry|Statistics/i.test(text)) score += 14000;
+      else if (/사회|History|Social/i.test(text)) score += 12000;
+      if (/선택/.test(text)) score += 7000;
+      if (group.isConcurrent || group.groupType === "concurrent") score += 5000;
+    });
+    return score;
+  }
+
   const annotateRestrictedAutoItem = item => {
     const restrictedTeachers = getRestrictedTeachersForAutoItem(item);
+    const excludedGroups = excludedGroupsForAutoItem(item);
+    const excludedGroupPriority = excludedCardPriorityForAutoItem(item);
     return {
       ...item,
       hasRestrictedTeacher: restrictedTeachers.length > 0,
       restrictedTeachers,
-      // 0은 핵심 동시배정 그룹, 1은 제약근무 교사, 2는 일반 자동배치 대상입니다.
-      priorityTier: restrictedTeachers.length > 0 ? 1 : 2
+      excludedGroupIds: excludedGroups.map(group => group.id).filter(Boolean),
+      excludedGroupNames: excludedGroups.map(group => group.name || group.groupName || group.label || group.id).filter(Boolean),
+      isExcludedGroupFollowup: excludedGroupPriority > 0,
+      excludedGroupPriority,
+      // 0은 핵심 동시배정 그룹, 1은 그룹 후속 필수카드/제약근무 교사, 2는 일반 자동배치 대상입니다.
+      priorityTier: excludedGroupPriority > 0 ? 1 : (restrictedTeachers.length > 0 ? 1 : 2)
     };
   };
 
@@ -1110,6 +1143,22 @@ export function createAutoAssignAll(deps) {
       issueCount: report.issueCount || 0,
       shortCount,
       overCount,
+      totalDiff: report.diff || 0,
+      total: report.total || 0,
+      targetTotal: report.targetTotal || 0,
+    };
+  }
+
+  function cardCoverageIssueCountForCandidate(movableEntries = [], scopeGrades = []) {
+    const report = buildCardCoverageValidation([...entries(), ...(movableEntries || [])], scopeGrades || []);
+    const shortageSlots = (report.shortRows || []).reduce((sum, row) => sum + Math.max(0, -Number(row.diff || 0)), 0);
+    const overageSlots = (report.overRows || []).reduce((sum, row) => sum + Math.max(0, Number(row.diff || 0)), 0);
+    return {
+      issueCount: report.issueCount || 0,
+      shortCount: report.shortCount || 0,
+      overCount: report.overCount || 0,
+      shortageSlots,
+      overageSlots,
       totalDiff: report.diff || 0,
       total: report.total || 0,
       targetTotal: report.targetTotal || 0,
@@ -3182,6 +3231,16 @@ export function createAutoAssignAll(deps) {
     const bFailed = Number(b.failedCount ?? 999999);
     if (aFailed !== bFailed) return aFailed - bFailed;
 
+    // r24: 학급 총시수보다 먼저 카드별 부족 시수를 봅니다.
+    // excludedCardIds가 뒤로 밀리면 학급 칸은 비슷해 보여도 실제 카드 시수가 부족해집니다.
+    const aCardShortage = Number(a.cardShortageSlots ?? 999999);
+    const bCardShortage = Number(b.cardShortageSlots ?? 999999);
+    if (aCardShortage !== bCardShortage) return aCardShortage - bCardShortage;
+
+    const aCardIssues = Number(a.cardCoverageIssueCount ?? 999999);
+    const bCardIssues = Number(b.cardCoverageIssueCount ?? 999999);
+    if (aCardIssues !== bCardIssues) return aCardIssues - bCardIssues;
+
     const aClassIssues = Number(a.classSlotIssueCount ?? 999999);
     const bClassIssues = Number(b.classSlotIssueCount ?? 999999);
     if (aClassIssues !== bClassIssues) return aClassIssues - bClassIssues;
@@ -4038,6 +4097,8 @@ export function createAutoAssignAll(deps) {
           const ib = itemByKey.get(b);
           const ap = comparePriority(ia, ib);
           if (ap !== 0) return ap;
+          const excludedPriority = Number(ib?.excludedGroupPriority || 0) - Number(ia?.excludedGroupPriority || 0);
+          if (excludedPriority !== 0) return excludedPriority;
           const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
           if (art !== 0) return art;
           const acand = candidateCountForItem(ia);
@@ -4048,8 +4109,10 @@ export function createAutoAssignAll(deps) {
         const structuralGroupBlocks = orderedGroups.filter(block => block.hasStructuralPriority || block.priorityTier === 0);
         const restrictedGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && block.hasRestrictedTeacher);
         const normalGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && !block.hasRestrictedTeacher);
-        const restrictedKeys = orderedKeys.filter(key => itemByKey.get(key)?.hasRestrictedTeacher);
-        const normalKeys = orderedKeys.filter(key => !itemByKey.get(key)?.hasRestrictedTeacher);
+        const excludedFollowupKeys = orderedKeys.filter(key => itemByKey.get(key)?.isExcludedGroupFollowup);
+        const excludedFollowupKeySet = new Set(excludedFollowupKeys);
+        const restrictedKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && itemByKey.get(key)?.hasRestrictedTeacher);
+        const normalKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
         const placedByKey = new Map();
 
         const placeGroups = async (blocks, phaseLabel) => {
@@ -4192,6 +4255,7 @@ export function createAutoAssignAll(deps) {
         // 고정 수업 다음: 큰 동시배정 그룹을 먼저 배치합니다.
         // 제약교사 일반카드가 10A/11A/12A의 희소 슬롯을 먼저 점유하면 HS국어 같은 그룹은 나중에 복구가 거의 불가능합니다.
         await placeGroups(structuralGroupBlocks, "핵심 동시배정 그룹 선배치");
+        await placeStandaloneKeys(excludedFollowupKeys, "그룹 후속 필수카드 선배치");
         await placeGroups(restrictedGroupBlocks, "제약교사 그룹 우선 배치");
         await placeStandaloneKeys(restrictedKeys, "제약교사 일반 카드 우선 배치");
         await placeGroups(normalGroupBlocks, "그룹 수업 배치");
@@ -4199,14 +4263,23 @@ export function createAutoAssignAll(deps) {
 
         const qualityScore = Math.round(scoreScheduleQuality(placed, { ...options, scoringWeights: stageAttemptOptions.scoringWeights }) * 10) / 10;
         const currentClassSlots = classSlotIssueCountForCandidate(placed, activeGrades);
+        const currentCardSlots = cardCoverageIssueCountForCandidate(placed, activeGrades);
         const bestClassSlots = bestScore < 0
           ? { issueCount: 999999, shortCount: 999999, overCount: 999999 }
           : classSlotIssueCountForCandidate(bestPlaced, activeGrades);
+        const bestCardSlots = bestScore < 0
+          ? { issueCount: 999999, shortCount: 999999, overCount: 999999, shortageSlots: 999999, overageSlots: 999999 }
+          : cardCoverageIssueCountForCandidate(bestPlaced, activeGrades);
         const currentRun = {
           placedCount: placed.length,
           failedCount: failed.length,
           qualityScore,
           forcedCount: 0,
+          cardCoverageIssueCount: currentCardSlots.issueCount,
+          cardShortCount: currentCardSlots.shortCount,
+          cardOverCount: currentCardSlots.overCount,
+          cardShortageSlots: currentCardSlots.shortageSlots,
+          cardOverageSlots: currentCardSlots.overageSlots,
           classSlotIssueCount: currentClassSlots.issueCount,
           classShortCount: currentClassSlots.shortCount,
           classOverCount: currentClassSlots.overCount
@@ -4216,6 +4289,11 @@ export function createAutoAssignAll(deps) {
           failedCount: bestFailed.length,
           qualityScore: bestQualityScore,
           forcedCount: 0,
+          cardCoverageIssueCount: bestCardSlots.issueCount,
+          cardShortCount: bestCardSlots.shortCount,
+          cardOverCount: bestCardSlots.overCount,
+          cardShortageSlots: bestCardSlots.shortageSlots,
+          cardOverageSlots: bestCardSlots.overageSlots,
           classSlotIssueCount: bestClassSlots.issueCount,
           classShortCount: bestClassSlots.shortCount,
           classOverCount: bestClassSlots.overCount
@@ -4236,11 +4314,11 @@ export function createAutoAssignAll(deps) {
           await updateProgress({
             percent: stagePercent,
             step: `최선 초기배치 갱신 · ${stage.label}`,
-            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개, 학급시수 문제 ${currentClassSlots.issueCount}개, 품질점수 ${qualityScore}`,
+            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개, 카드시수 부족 ${currentCardSlots.shortageSlots}시수, 학급시수 문제 ${currentClassSlots.issueCount}개, 품질점수 ${qualityScore}`,
             placed: placed.length,
             best: bestPlaced.length,
             failed: bestFailed.length,
-            log: `최선 초기배치 갱신: ${bestPlaced.length}개 배치 · 미배치 ${bestFailed.length}개 · 학급시수 문제 ${currentClassSlots.issueCount}개 · 품질 ${qualityScore}`
+            log: `최선 초기배치 갱신: ${bestPlaced.length}개 배치 · 미배치 ${bestFailed.length}개 · 카드시수 부족 ${currentCardSlots.shortageSlots}시수 · 학급시수 문제 ${currentClassSlots.issueCount}개 · 품질 ${qualityScore}`
           }, true);
         }
         // 완전 배치 후보가 나와도 같은 단계의 남은 초기 후보를 계속 비교해 품질이 더 좋은 배치를 찾습니다.
@@ -4248,6 +4326,49 @@ export function createAutoAssignAll(deps) {
         if (!failed.length && String(options.runAttempts || "balanced") === "fast" && attempt >= 2) break;
       }
       if (!bestFailed.length) break;
+    }
+
+    const appendCardShortageFailures = () => {
+      const coverage = buildCardCoverageValidation([...protectedEntries, ...bestPlaced], activeGrades);
+      const failedByKey = new Map();
+      bestFailed.forEach(failedItem => {
+        if (!failedItem?.item) return;
+        const key = autoItemKey(failedItem.item);
+        failedByKey.set(key, (failedByKey.get(key) || 0) + 1);
+      });
+      let added = 0;
+      (coverage.shortRows || []).forEach(row => {
+        const key = `ttc:${row.id}`;
+        const item = itemByKey.get(key);
+        if (!item) return;
+        const shortage = Math.max(0, -Number(row.diff || 0));
+        const already = failedByKey.get(key) || 0;
+        const need = Math.max(0, shortage - already);
+        for (let i = 0; i < need; i++) {
+          bestFailed.push(makeFailedPlacement(`${row.title}${row.classLabels?.length ? ` ${row.classLabels.join(", ")}` : ""}`, item, {
+            source: "cardCoverageShortage",
+            ttcardId: row.id,
+            occurrence: (row.count || 0) + i + 1,
+            required: row.target
+          }));
+          added += 1;
+        }
+      });
+      return added;
+    };
+
+    const addedCoverageFailures = appendCardShortageFailures();
+    if (addedCoverageFailures) {
+      await updateProgress({
+        percent: 81,
+        step: "카드 시수 부족 보정 대상 추가",
+        detail: `초기 탐색 후 카드별 부족 ${addedCoverageFailures}시수를 미배치 복구 대상으로 승격했습니다.`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "카드 시수 보정",
+        log: `카드 시수 부족 ${addedCoverageFailures}시수 복구 대상 추가`
+      }, true);
     }
 
     // ── Repair pass ───────────────────────────────────────────────
@@ -4465,6 +4586,10 @@ export function createAutoAssignAll(deps) {
       validationSummary: postValidation.summary,
       validationOk: postValidation.ok,
       classSlotIssueCount: postValidation.classSlots?.issueCount || 0,
+      cardCoverageIssueCount: postValidation.cardCoverage?.issueCount || 0,
+      cardShortCount: postValidation.cardCoverage?.shortCount || 0,
+      cardOverCount: postValidation.cardCoverage?.overCount || 0,
+      cardShortageSlots: (postValidation.cardCoverage?.shortRows || []).reduce((sum, row) => sum + Math.max(0, -Number(row.diff || 0)), 0),
       restrictedTeacherIssueCount: postValidation.restrictedTeachers?.issueCount || 0,
       protectedIntrusionCount: postValidation.protectedIntrusions?.total || 0,
       missingRoomCount: missingRoomEntries.length,
