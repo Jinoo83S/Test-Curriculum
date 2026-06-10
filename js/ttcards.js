@@ -421,6 +421,286 @@ function guardGeneratedCards(cards, previousCount = 0, action = "refresh") {
   return { ok: true, code: "ok", count: cards.length };
 }
 
+
+const CARD_GENERATION_META_VERSION = "2026-06-10-card-generation-integrity-r25";
+const CARD_GENERATION_ISSUE_LIMIT = 80;
+
+function normalizeStoredClassKey(key, fallbackGradeKey = "") {
+  const raw = clean(key).replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+  if (!raw) return "";
+  if (raw.includes(":")) {
+    const [g, sec] = raw.split(":");
+    const grade = clean(g || fallbackGradeKey).replace(/학년/g, "");
+    const section = clean(sec).replace(/^\d{1,2}/, "").toUpperCase();
+    return grade && section ? `${grade}:${section}` : "";
+  }
+  const m = raw.match(/^(\d{1,2})(.+)$/);
+  if (m) return `${m[1]}:${m[2]}`;
+  const fg = gradeDisplay(fallbackGradeKey || "").trim();
+  return fg && raw ? `${fg}:${raw}` : "";
+}
+
+function normalizeStoredClassLabel(label, fallbackGradeKey = "") {
+  const raw = clean(label).replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+  if (!raw) return "";
+  const m = raw.match(/^(\d{1,2})(.+)$/);
+  if (m) return `${m[1]}${m[2]}`;
+  const fg = gradeDisplay(fallbackGradeKey || "").trim();
+  return fg && raw ? `${fg}${raw}` : raw;
+}
+
+function classLabelFromKey(key, fallbackGradeKey = "") {
+  const normalized = normalizeStoredClassKey(key, fallbackGradeKey);
+  const [g, sec] = normalized.split(":");
+  return g && sec ? `${g}${sec}` : "";
+}
+
+function classKeyFromLabel(label, fallbackGradeKey = "") {
+  const normalized = normalizeStoredClassLabel(label, fallbackGradeKey);
+  const m = normalized.match(/^(\d{1,2})(.+)$/);
+  if (m) return `${m[1]}:${m[2]}`;
+  return normalizeStoredClassKey(normalized, fallbackGradeKey);
+}
+
+function normalizeClassPairs({ classKeys = [], classLabels = [], fallbackGradeKey = "" } = {}) {
+  const pairMap = new Map();
+  (classKeys || []).forEach(k => {
+    const key = normalizeStoredClassKey(k, fallbackGradeKey);
+    if (!key) return;
+    pairMap.set(key, classLabelFromKey(key, fallbackGradeKey));
+  });
+  (classLabels || []).forEach(l => {
+    const label = normalizeStoredClassLabel(l, fallbackGradeKey);
+    if (!label) return;
+    const key = classKeyFromLabel(label, fallbackGradeKey);
+    if (!key) return;
+    pairMap.set(key, label);
+  });
+  return {
+    classKeys: [...pairMap.keys()],
+    classLabels: [...pairMap.values()],
+  };
+}
+
+function sameArrayValues(a = [], b = []) {
+  const aa = (a || []).map(clean).filter(Boolean).sort();
+  const bb = (b || []).map(clean).filter(Boolean).sort();
+  return aa.length === bb.length && aa.every((v, i) => v === bb[i]);
+}
+
+function pushCardGenerationIssue(meta, level, type, message, extra = {}) {
+  const entry = { level, type, message, ...extra };
+  if (level === "error") meta.errorCount += 1;
+  else meta.warningCount += 1;
+  if ((extra.repaired || level === "repair") && level !== "error") meta.repairCount += 1;
+  if (meta.issues.length < CARD_GENERATION_ISSUE_LIMIT) meta.issues.push(entry);
+}
+
+function repairTtCardIntegrity(card, meta, { action = "refresh" } = {}) {
+  if (!card) return null;
+  const tpl = getTemplateById(card.templateId);
+  const row = getCurriculumRowForCard(card.gradeKey, card.templateId);
+  const expectedWhole = row ? isWholeGradeRow(row, tpl) : false;
+  const manual = isManualTtCard(card) || !!card.isManual;
+  const beforeKeys = [...(card.classKeys || [])];
+  const beforeLabels = [...(card.classLabels || [])];
+  const beforeWhole = !!card.isWholeGrade;
+
+  // 1) classKeys/classLabels는 항상 한 쌍으로 맞춥니다. studentKeys는 시간표 기준에서 제거합니다.
+  const normalizedPair = normalizeClassPairs({
+    classKeys: card.classKeys || [],
+    classLabels: card.classLabels || [],
+    fallbackGradeKey: card.gradeKey,
+  });
+  card.classKeys = normalizedPair.classKeys;
+  card.classLabels = normalizedPair.classLabels;
+  card.studentKeys = [];
+
+  // 2) 생성 카드인데 대상 반이 비었거나 원본과 불일치하는 경우, 생성 규칙에서 다시 계산합니다.
+  const expectedAudience = (card.templateId && card.gradeKey)
+    ? resolveCardAudience({ templateId: card.templateId, gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0 })
+    : { classKeys: [], classLabels: [] };
+  const shouldFollowGeneratedAudience = !manual && !card.manualEdited;
+  if (expectedWhole && expectedAudience.classKeys.length) {
+    if (!sameArrayValues(card.classKeys, expectedAudience.classKeys)) {
+      card.classKeys = [...expectedAudience.classKeys];
+      card.classLabels = [...expectedAudience.classLabels];
+      pushCardGenerationIssue(meta, "warning", "whole-grade-audience-repaired", `${getTtCardLabel(card)}: 전체학년 카드 대상 반을 현재 학급 목록으로 보정했습니다.`, { cardId: card.id, repaired: true });
+    }
+    card.isWholeGrade = true;
+  } else if (shouldFollowGeneratedAudience && expectedAudience.classKeys.length && !sameArrayValues(card.classKeys, expectedAudience.classKeys)) {
+    card.classKeys = [...expectedAudience.classKeys];
+    card.classLabels = [...expectedAudience.classLabels];
+    pushCardGenerationIssue(meta, "warning", "generated-audience-repaired", `${getTtCardLabel(card)}: 생성 카드 대상 반을 원본 수강명단/분반 기준으로 보정했습니다.`, { cardId: card.id, repaired: true });
+  } else if (!card.classKeys.length && expectedAudience.classKeys.length) {
+    card.classKeys = [...expectedAudience.classKeys];
+    card.classLabels = [...expectedAudience.classLabels];
+    pushCardGenerationIssue(meta, "warning", "missing-audience-repaired", `${getTtCardLabel(card)}: 비어 있던 대상 반을 원본 기준으로 보정했습니다.`, { cardId: card.id, repaired: true });
+  }
+
+  // 3) 수동 수정/수동 생성 카드에 남은 isWholeGrade 잔여값을 정리합니다.
+  //    예: classKeys는 12:A 하나뿐인데 isWholeGrade=true인 오래된 HR/수동 카드.
+  if (!expectedWhole && card.isWholeGrade && (card.classKeys || []).length <= 1) {
+    card.isWholeGrade = false;
+    pushCardGenerationIssue(meta, "warning", "stale-whole-grade-flag-repaired", `${getTtCardLabel(card)}: 한 학급 카드에 남아 있던 전체학년 플래그를 해제했습니다.`, { cardId: card.id, repaired: true });
+  }
+
+  // 4) 교사 문자열과 배열을 동기화합니다. 다중교사는 splitTeacherNames 기준입니다.
+  const teacherNames = uniqueNames([
+    ...splitTeacherNames(card.teacherName),
+    ...((Array.isArray(card.teachers) ? card.teachers : []).flatMap(t => splitTeacherNames(t))),
+  ]);
+  if (teacherNames.length) {
+    const joined = teacherNames.join(", ");
+    if (!sameArrayValues(card.teachers || [], teacherNames) || clean(card.teacherName) !== joined) {
+      card.teachers = teacherNames;
+      card.teacherName = joined;
+      pushCardGenerationIssue(meta, "warning", "teacher-snapshot-repaired", `${getTtCardLabel(card)}: 교사 스냅샷을 배열/문자열 기준으로 동기화했습니다.`, { cardId: card.id, repaired: true });
+    }
+  } else {
+    card.teachers = [];
+    card.teacherName = "";
+  }
+
+  // 5) 필수 참조와 시수 기본값을 검증합니다.
+  if (!manual && card.templateId && !tpl) {
+    pushCardGenerationIssue(meta, "error", "missing-template", `${getTtCardLabel(card)}: 과목 템플릿을 찾을 수 없습니다.`, { cardId: card.id, templateId: card.templateId });
+  }
+  if (!card.gradeKey) {
+    pushCardGenerationIssue(meta, "error", "missing-grade", `${getTtCardLabel(card)}: gradeKey가 비어 있습니다.`, { cardId: card.id });
+  }
+  if (!(card.classKeys || []).length) {
+    pushCardGenerationIssue(meta, "error", "missing-class-keys", `${getTtCardLabel(card)}: 대상 classKeys가 비어 있습니다.`, { cardId: card.id });
+  }
+  if ((card.classKeys || []).length !== (card.classLabels || []).length) {
+    const fixed = normalizeClassPairs({ classKeys: card.classKeys, classLabels: card.classLabels, fallbackGradeKey: card.gradeKey });
+    card.classKeys = fixed.classKeys;
+    card.classLabels = fixed.classLabels;
+    pushCardGenerationIssue(meta, "warning", "class-key-label-mismatch-repaired", `${getTtCardLabel(card)}: classKeys/classLabels 개수 불일치를 보정했습니다.`, { cardId: card.id, repaired: true });
+  }
+  const n = parseFloat(card.credits);
+  if (!Number.isFinite(n) || n < 0) {
+    card.credits = 0;
+    pushCardGenerationIssue(meta, "warning", "invalid-credits-repaired", `${getTtCardLabel(card)}: 잘못된 시수 값을 0으로 보정했습니다.`, { cardId: card.id, repaired: true });
+  }
+
+  if (!sameArrayValues(beforeKeys, card.classKeys) || !sameArrayValues(beforeLabels, card.classLabels) || beforeWhole !== !!card.isWholeGrade) {
+    meta.repairedCardIds.add(card.id);
+  }
+  return card;
+}
+
+function repairTtCardGroupReferences(cards, meta) {
+  const validIds = new Set((cards || []).map(c => c?.id).filter(Boolean));
+  const uniqueRefs = list => {
+    const seen = new Set();
+    const kept = [];
+    (list || []).forEach(id => {
+      const v = clean(id);
+      if (!v || seen.has(v)) return;
+      seen.add(v);
+      if (validIds.has(v)) kept.push(v);
+      else pushCardGenerationIssue(meta, "warning", "invalid-group-card-ref-removed", `그룹 참조에서 존재하지 않는 카드 ID를 제거했습니다: ${v}`, { cardId: v, repaired: true });
+    });
+    return kept;
+  };
+
+  (appState.timetable.ttcardGroups || []).forEach(group => {
+    const beforePool = (group.poolCardIds || []).length;
+    const beforeEx = (group.excludedCardIds || []).length;
+    group.poolCardIds = uniqueRefs(group.poolCardIds || []);
+    group.excludedCardIds = uniqueRefs(group.excludedCardIds || []);
+    if (beforePool !== group.poolCardIds.length || beforeEx !== group.excludedCardIds.length) {
+      meta.repairedGroupIds.add(group.id || group.name || "group");
+    }
+    (group.units || []).forEach(unit => {
+      const before = (unit.ttcardIds || []).length;
+      unit.ttcardIds = uniqueRefs(unit.ttcardIds || []);
+      if (before !== unit.ttcardIds.length) meta.repairedGroupIds.add(group.id || group.name || "group");
+    });
+  });
+}
+
+function repairTimetableEntryAudienceFromCards(cards, meta) {
+  const cardMap = new Map((cards || []).filter(c => c?.id).map(c => [c.id, c]));
+  const entries = appState.timetable.entries || [];
+  entries.forEach(entry => {
+    const ids = [...(entry.ttcardIds || []), entry.ttcardId].filter(Boolean);
+    if (!ids.length) return;
+    const related = ids.map(id => cardMap.get(id)).filter(Boolean);
+    if (!related.length) return;
+    const classKeys = [...new Set(related.flatMap(card => card.classKeys || []).map(k => normalizeStoredClassKey(k, entry.gradeKey)).filter(Boolean))];
+    if (classKeys.length && !sameArrayValues(entry.audienceClassKeys || [], classKeys)) {
+      entry.audienceClassKeys = classKeys;
+      meta.repairedEntryCount += 1;
+      pushCardGenerationIssue(meta, "warning", "entry-audience-repaired", `배치 entry의 audienceClassKeys를 카드 기준으로 보정했습니다.`, { entryId: entry.id, repaired: true });
+    }
+    const teachers = uniqueNames(related.flatMap(card => [card.teacherName, ...(card.teachers || [])].flatMap(t => splitTeacherNames(t))));
+    const joined = teachers.join(", ");
+    if (joined && clean(entry.teacherName) !== joined) {
+      entry.teacherName = joined;
+      meta.repairedEntryCount += 1;
+      pushCardGenerationIssue(meta, "warning", "entry-teacher-repaired", `배치 entry의 teacherName을 카드 기준으로 보정했습니다.`, { entryId: entry.id, repaired: true });
+    }
+  });
+}
+
+function validateAndRepairTtCardGeneration(cards = [], { action = "refresh", previous = [] } = {}) {
+  const meta = {
+    schemaVersion: CARD_GENERATION_META_VERSION,
+    action,
+    checkedAt: new Date().toISOString(),
+    cardCount: cards.length,
+    generatedCardCount: (cards || []).filter(c => !isManualTtCard(c)).length,
+    manualCardCount: (cards || []).filter(isManualTtCard).length,
+    warningCount: 0,
+    errorCount: 0,
+    repairCount: 0,
+    repairedEntryCount: 0,
+    repairedCardIds: new Set(),
+    repairedGroupIds: new Set(),
+    issues: [],
+  };
+
+  const seenIds = new Set();
+  const repairedCards = (cards || []).map(card => {
+    if (!card?.id) {
+      pushCardGenerationIssue(meta, "error", "missing-card-id", "ID가 없는 시간표 카드가 있습니다.", {});
+      return card;
+    }
+    if (seenIds.has(card.id)) {
+      pushCardGenerationIssue(meta, "error", "duplicate-card-id", `중복 시간표 카드 ID가 있습니다: ${card.id}`, { cardId: card.id });
+    }
+    seenIds.add(card.id);
+    return repairTtCardIntegrity(card, meta, { action });
+  }).filter(Boolean);
+
+  repairTtCardGroupReferences(repairedCards, meta);
+  repairTimetableEntryAudienceFromCards(repairedCards, meta);
+
+  const serializableMeta = {
+    ...meta,
+    repairedCardIds: [...meta.repairedCardIds],
+    repairedGroupIds: [...meta.repairedGroupIds],
+    issueLimit: CARD_GENERATION_ISSUE_LIMIT,
+    truncated: meta.issues.length >= CARD_GENERATION_ISSUE_LIMIT,
+  };
+  appState.timetable.cardGenerationMeta = serializableMeta;
+  console.info(`[TTCARDS] 생성검증 ${action}: cards=${serializableMeta.cardCount}, repairs=${serializableMeta.repairCount}, warnings=${serializableMeta.warningCount}, errors=${serializableMeta.errorCount}`);
+  return { cards: repairedCards, meta: serializableMeta };
+}
+
+function cardGenerationMetaAlertSuffix() {
+  const meta = appState.timetable?.cardGenerationMeta;
+  if (!meta) return "";
+  const parts = [];
+  if (meta.repairCount) parts.push(`보정 ${meta.repairCount}건`);
+  if (meta.warningCount) parts.push(`경고 ${meta.warningCount}건`);
+  if (meta.errorCount) parts.push(`오류 ${meta.errorCount}건`);
+  if (!parts.length) return "\n\n생성검증: 정상";
+  return `\n\n생성검증: ${parts.join(" · ")}\n자세한 내용은 내보낸 JSON의 data.timetable.cardGenerationMeta에서 확인할 수 있습니다.`;
+}
+
 export function refreshTtCardData() {
   if (!canEdit()) return 0;
 
@@ -429,10 +709,11 @@ export function refreshTtCardData() {
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
   const generatedCards = buildAllGeneratedTtCards(existing);
-  const nextCards = mergeGeneratedAndManualCards(generatedCards, before);
+  const mergedCards = mergeGeneratedAndManualCards(generatedCards, before);
   const guard = guardGeneratedCards(generatedCards, before.length, "refresh");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
 
+  const { cards: nextCards } = validateAndRepairTtCardGeneration(mergedCards, { action: "refresh", previous: before });
   appState.timetable.ttcards = nextCards;
   pruneObsoleteGeneratedTtCardRefs(nextCards, before);
   scheduleSave("timetable");
@@ -629,9 +910,10 @@ export function generateTtCards() {
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
   const generated = buildAllGeneratedTtCards(existing);
-  const cards = mergeGeneratedAndManualCards(generated, before);
+  const mergedCards = mergeGeneratedAndManualCards(generated, before);
   const guard = guardGeneratedCards(generated, before.length, "generate");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
+  const { cards } = validateAndRepairTtCardGeneration(mergedCards, { action: "generate", previous: before });
   appState.timetable.ttcards = cards;
   pruneObsoleteGeneratedTtCardRefs(cards, before);
   void saveNow("timetable", { force: true });
@@ -658,7 +940,7 @@ export function renderTtCardsView(container) {
       alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
-    alert(`${n}개 시간표 카드 데이터가 생성되었습니다.`);
+    alert(`${n}개 시간표 카드 데이터가 생성되었습니다.${cardGenerationMetaAlertSuffix()}`);
     renderTtCardsView(container);
   });
   const refreshBtn = makeBtn("🔄 카드 데이터 새로고침", "secondary-btn", () => {
@@ -667,7 +949,7 @@ export function renderTtCardsView(container) {
       alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
-    alert(`${n}개 카드 데이터를 갱신했습니다.`);
+    alert(`${n}개 카드 데이터를 갱신했습니다.${cardGenerationMetaAlertSuffix()}`);
     renderTtCardsView(container);
   });
   const clearBtn = makeBtn("🧹 카드 초기화", "danger-btn", () => {

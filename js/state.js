@@ -622,6 +622,11 @@ function normalizeSavedTimetableVersion(item = {}) {
     updatedAt: clean(item.updatedAt) || createdAt,
     periodCount: Math.max(1, Math.min(12, parseInt(item.periodCount) || 7)),
     entryCount: Number.isInteger(item.entryCount) ? item.entryCount : entries.length,
+    autoSnapshot: !!item.autoSnapshot,
+    snapshotKind: clean(item.snapshotKind),
+    source: clean(item.source),
+    autoAssignMeta: item.autoAssignMeta && typeof item.autoAssignMeta === "object" ? JSON.parse(JSON.stringify(item.autoAssignMeta)) : null,
+    cardGenerationMeta: item.cardGenerationMeta && typeof item.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(item.cardGenerationMeta)) : null,
     entries,
   };
 }
@@ -705,6 +710,9 @@ function normalizeTimetableDomain(raw = {}) {
       ? raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length)
       : [],
     teacherConstraints: constraints,
+    // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
+    cardGenerationMeta: raw.cardGenerationMeta && typeof raw.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(raw.cardGenerationMeta)) : null,
+    autoAssignMeta: raw.autoAssignMeta && typeof raw.autoAssignMeta === "object" ? JSON.parse(JSON.stringify(raw.autoAssignMeta)) : null,
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
     ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})
@@ -904,6 +912,9 @@ function buildNormalizedDiagnostic(raw) {
     config: splitMetaDoc?.data?.config || {},
     teacherConstraints: splitMetaDoc?.data?.teacherConstraints || {},
     ttcardGroups: splitMetaDoc?.data?.ttcardGroups || splitMetaDoc?.data?.templateGroups || [],
+    savedSchedules: splitMetaDoc?.data?.savedSchedules || [],
+    cardGenerationMeta: splitMetaDoc?.data?.cardGenerationMeta || null,
+    autoAssignMeta: splitMetaDoc?.data?.autoAssignMeta || null,
     entries: splitEntryDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
     ttcards: splitTtCardDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
   };
@@ -1197,7 +1208,9 @@ function markSplitBaselines(domain, normalized = normalizedForDomain(domain)) {
       config: n.config,
       teacherConstraints: n.teacherConstraints,
       ttcardGroups: n.ttcardGroups || [],
-      savedSchedules: n.savedSchedules || []
+      savedSchedules: n.savedSchedules || [],
+      cardGenerationMeta: n.cardGenerationMeta || null,
+      autoAssignMeta: n.autoAssignMeta || null
     });
   }
 }
@@ -1346,7 +1359,9 @@ async function saveSplitDomain(domain, options = {}) {
         config: normalized.config,
         teacherConstraints: normalized.teacherConstraints,
         ttcardGroups: normalized.ttcardGroups || [],
-        savedSchedules: normalized.savedSchedules || []
+        savedSchedules: normalized.savedSchedules || [],
+        cardGenerationMeta: normalized.cardGenerationMeta || null,
+        autoAssignMeta: normalized.autoAssignMeta || null
       },
       options
     );
