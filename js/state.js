@@ -276,7 +276,7 @@ export function scheduleFastSave(domain, options = {}) {
 }
 
 export async function saveNow(domain, options = {}) {
-  if (!canEdit() || !initialLoad[domain]) return;
+  if (!canEdit() || !initialLoad[domain]) return false;
   clearTimeout(saveTimers[domain]);
   delete saveTimers[domain];
 
@@ -284,7 +284,7 @@ export async function saveNow(domain, options = {}) {
   if (!options.force && !domainChanged(domain, normalized)) {
     dirtyDomains.delete(domain);
     _onSaveStatus?.("skipped", { domain, dirtyDomains: getDirtyDomains() });
-    return;
+    return true;
   }
 
   if (LOCAL_DEV_MODE) {
@@ -294,11 +294,14 @@ export async function saveNow(domain, options = {}) {
       dirtyDomains.delete(domain);
       _onSaveStatus?.("saved", { domain, local: true, dirtyDomains: getDirtyDomains() });
       console.info(`[Local dev save] ${domain} 저장 완료`);
+      return true;
     } catch (e) {
+      dirtyDomains.add(domain);
       console.error(`Local save failed [${domain}]:`, e);
       _onSaveStatus?.("error", e);
+      if (options.throwOnError) throw e;
+      return false;
     }
-    return;
   }
 
   try {
@@ -313,15 +316,22 @@ export async function saveNow(domain, options = {}) {
     dirtyDomains.delete(domain);
     _onSaveStatus?.("saved", { domain, dirtyDomains: getDirtyDomains() });
     console.info(`[Firestore save] ${domain} 저장 완료`);
+    return true;
   } catch (e) {
+    dirtyDomains.add(domain);
     console.error(`Save failed [${domain}]:`, e);
     _onSaveStatus?.("error", e);
+    if (options.throwOnError) throw e;
+    return false;
   }
 }
 
-export async function flushPendingSaves() {
+export async function flushPendingSaves(options = {}) {
   const domains = [...dirtyDomains];
-  await Promise.all(domains.map(d => saveNow(d)));
+  const results = await Promise.all(domains.map(d => saveNow(d, options)));
+  const ok = results.every(Boolean);
+  if (!ok && options.throwOnError) throw new Error("일부 변경사항 저장에 실패했습니다.");
+  return ok;
 }
 
 export const savePendingNow = flushPendingSaves;
@@ -609,6 +619,144 @@ const TEACHER_WORK_TYPES = new Set(["fulltime", "parttime", "childcare", "restri
 const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
 
 
+
+const TIMETABLE_SAVED_VERSION_LIMIT = 6;
+const TIMETABLE_AUTO_AFTER_LIMIT = 4;
+const TIMETABLE_AUTO_BEFORE_LIMIT = 1;
+const TIMETABLE_MANUAL_LIMIT = 3;
+const TIMETABLE_META_DIAGNOSTIC_LIMIT = 12;
+
+function safeJsonClone(value) {
+  if (value == null || typeof value !== "object") return value ?? null;
+  try { return JSON.parse(JSON.stringify(value)); }
+  catch (_) { return null; }
+}
+
+function compactAutoAssignMetaForStorage(meta = null) {
+  if (!meta || typeof meta !== "object") return null;
+  const cloneMetric = value => (value && typeof value === "object") ? safeJsonClone(value) : null;
+  const compactDiagnostics = Array.isArray(meta.failedDiagnostics)
+    ? meta.failedDiagnostics.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(d => ({
+        key: clean(d?.key || d?.id || ""),
+        name: clean(d?.name || d?.title || ""),
+        title: clean(d?.title || ""),
+        missing: Number(d?.missing || d?.shortage || d?.missingCount || 0) || 0,
+        candidateCount: Number(d?.candidateCount || d?.availableCount || 0) || 0,
+        reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 6).map(clean) : [],
+        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 4).map(clean) : []
+      }))
+    : [];
+  const compactReasonSummary = Array.isArray(meta.failedReasonSummary)
+    ? meta.failedReasonSummary.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(row => safeJsonClone(row)).filter(Boolean)
+    : [];
+  return {
+    schemaVersion: clean(meta.schemaVersion),
+    generatedAt: clean(meta.generatedAt) || clean(meta.at),
+    validationSummary: clean(meta.validationSummary),
+    ok: meta.ok === true,
+    placedEntryCount: Number(meta.placedEntryCount || meta.entryCount || 0) || 0,
+    placedBlockCount: Number(meta.placedBlockCount || 0) || 0,
+    failedUnitCount: Number(meta.failedUnitCount || 0) || 0,
+    failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,
+    classIssueCount: Number(meta.classIssueCount || 0) || 0,
+    cardCoverageIssueCount: Number(meta.cardCoverageIssueCount || 0) || 0,
+    groupCoverageIssueCount: Number(meta.groupCoverageIssueCount || 0) || 0,
+    cardShortageSlots: Number(meta.cardShortageSlots || 0) || 0,
+    restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount || 0) || 0,
+    protectedIntrusionCount: Number(meta.protectedIntrusionCount || 0) || 0,
+    missingRoomCount: Number(meta.missingRoomCount || 0) || 0,
+    selectedAcceptedLabel: clean(meta.selectedAcceptedLabel),
+    qualityBaselineSource: clean(meta.qualityBaselineSource),
+    qualityBaselineSnapshotName: clean(meta.qualityBaselineSnapshotName),
+    qualityBaselineValidationSummary: clean(meta.qualityBaselineValidationSummary),
+    currentBeforeMetrics: cloneMetric(meta.currentBeforeMetrics),
+    baselineMetrics: cloneMetric(meta.baselineMetrics),
+    acceptedMetrics: cloneMetric(meta.acceptedMetrics),
+    finalMetrics: cloneMetric(meta.finalMetrics),
+    qualityGate: cloneMetric(meta.qualityGate),
+    rejectedByQualityGate: meta.rejectedByQualityGate === true,
+    rejectReason: clean(meta.rejectReason),
+    failedDiagnostics: compactDiagnostics,
+    failedReasonSummary: compactReasonSummary,
+    missingRoomNames: Array.isArray(meta.missingRoomNames) ? meta.missingRoomNames.slice(0, 20).map(clean) : [],
+    restrictedTeacherNames: Array.isArray(meta.restrictedTeacherNames) ? meta.restrictedTeacherNames.slice(0, 20).map(clean) : []
+  };
+}
+
+function savedVersionTime(v = {}) {
+  const t = Date.parse(v.updatedAt || v.createdAt || 0);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function savedVersionQualityScore(v = {}) {
+  const m = v.autoAssignMeta || {};
+  const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
+  let classIssues = n(m.classIssueCount);
+  let cardIssues = n(m.cardCoverageIssueCount);
+  let groupIssues = n(m.groupCoverageIssueCount);
+  let failed = n(m.failedUnitCount);
+  let shortage = n(m.cardShortageSlots);
+  let restricted = n(m.restrictedTeacherIssueCount);
+  let rooms = n(m.missingRoomCount);
+  let protectedHits = n(m.protectedIntrusionCount);
+
+  if (!classIssues && !cardIssues && !groupIssues && !failed && !shortage && v.note) {
+    const text = String(v.note || "");
+    const cls = text.match(/학급\s*시수\s*(\d+)개/);
+    const card = text.match(/카드\s*시수\s*(\d+)개/);
+    const group = text.match(/그룹\/개별\s*(\d+)개/);
+    const fail = text.match(/미배치\s*(\d+)개/);
+    classIssues = cls ? Number(cls[1]) : 0;
+    cardIssues = card ? Number(card[1]) : 0;
+    groupIssues = group ? Number(group[1]) : 0;
+    failed = fail ? Number(fail[1]) : 0;
+    shortage = cardIssues;
+  }
+
+  return shortage * 100000 + cardIssues * 30000 + groupIssues * 12000 + classIssues * 4000 + failed * 1000 + restricted * 250 + rooms * 500 + protectedHits * 500 - n(v.entryCount) / 1000;
+}
+
+function isAutoTimetableVersion(v = {}) {
+  const name = clean(v.name);
+  return v.autoSnapshot === true || clean(v.source) === "autoassign" || name.startsWith("자동배치 ");
+}
+
+function isBeforeAutoTimetableVersion(v = {}) {
+  const name = clean(v.name);
+  return clean(v.snapshotKind) === "before" || name.startsWith("자동배치 전");
+}
+
+function pruneSavedTimetableVersions(list = []) {
+  const normalized = Array.isArray(list) ? list.filter(v => v && Array.isArray(v.entries) && v.entries.length) : [];
+  if (normalized.length <= TIMETABLE_SAVED_VERSION_LIMIT) return normalized.map(v => ({ ...v, autoAssignMeta: compactAutoAssignMetaForStorage(v.autoAssignMeta) }));
+
+  const byId = new Map();
+  const add = v => {
+    if (!v || byId.has(v.id)) return;
+    byId.set(v.id, { ...v, autoAssignMeta: compactAutoAssignMetaForStorage(v.autoAssignMeta) });
+  };
+
+  const auto = normalized.filter(isAutoTimetableVersion);
+  const autoAfter = auto.filter(v => !isBeforeAutoTimetableVersion(v));
+  const autoBefore = auto.filter(isBeforeAutoTimetableVersion);
+  const manual = normalized.filter(v => !isAutoTimetableVersion(v));
+
+  autoAfter.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0] && add(autoAfter.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0]);
+  autoAfter.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_AUTO_AFTER_LIMIT).forEach(add);
+  autoBefore.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_AUTO_BEFORE_LIMIT).forEach(add);
+  manual.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_MANUAL_LIMIT).forEach(add);
+
+  if (byId.size < TIMETABLE_SAVED_VERSION_LIMIT) {
+    normalized.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).forEach(v => {
+      if (byId.size < TIMETABLE_SAVED_VERSION_LIMIT) add(v);
+    });
+  }
+
+  return [...byId.values()]
+    .sort((a, b) => savedVersionTime(b) - savedVersionTime(a))
+    .slice(0, TIMETABLE_SAVED_VERSION_LIMIT);
+}
+
 function normalizeSavedTimetableVersion(item = {}) {
   const entries = Array.isArray(item.entries)
     ? item.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
@@ -625,7 +773,7 @@ function normalizeSavedTimetableVersion(item = {}) {
     autoSnapshot: !!item.autoSnapshot,
     snapshotKind: clean(item.snapshotKind),
     source: clean(item.source),
-    autoAssignMeta: item.autoAssignMeta && typeof item.autoAssignMeta === "object" ? JSON.parse(JSON.stringify(item.autoAssignMeta)) : null,
+    autoAssignMeta: compactAutoAssignMetaForStorage(item.autoAssignMeta),
     cardGenerationMeta: item.cardGenerationMeta && typeof item.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(item.cardGenerationMeta)) : null,
     entries,
   };
@@ -707,12 +855,12 @@ function normalizeTimetableDomain(raw = {}) {
       : (Array.isArray(raw.templateGroups) ? raw.templateGroups.map(normalizeTemplateGroup).filter(g => g.name) : []),
     // 배치된 시간표만 별도 저장한 버전 목록입니다. 카드/커리큘럼은 제외하고 entries만 보관합니다.
     savedSchedules: Array.isArray(raw.savedSchedules)
-      ? raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length)
+      ? pruneSavedTimetableVersions(raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length))
       : [],
     teacherConstraints: constraints,
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: raw.cardGenerationMeta && typeof raw.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(raw.cardGenerationMeta)) : null,
-    autoAssignMeta: raw.autoAssignMeta && typeof raw.autoAssignMeta === "object" ? JSON.parse(JSON.stringify(raw.autoAssignMeta)) : null,
+    autoAssignMeta: compactAutoAssignMetaForStorage(raw.autoAssignMeta),
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
     ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})
@@ -748,8 +896,19 @@ function saveLocalDomain(domain, normalized = normalizedForDomain(domain)) {
     : { version: 1, data: { ...(store || {}) } };
   next.version = next.version || 1;
   next.updatedAt = new Date().toISOString();
-  next.data[domain] = normalized;
-  if (!writeLocalStateStore(next)) throw new Error("localStorage 저장 실패");
+  const safeNormalized = domain === "timetable" ? normalizeTimetableDomain(normalized) : normalized;
+  next.data[domain] = safeNormalized;
+  if (writeLocalStateStore(next)) return;
+
+  // localStorage는 브라우저별 용량 제한이 작습니다. 자동배치 보관본이 많이 쌓인 경우
+  // 저장 실패와 UI 잠김처럼 보이는 현상이 생기므로, 시간표 도메인은 한 번 더 압축 저장을 시도합니다.
+  if (domain === "timetable") {
+    const retry = { ...next, data: { ...next.data } };
+    const compact = normalizeTimetableDomain({ ...safeNormalized, savedSchedules: pruneSavedTimetableVersions((safeNormalized.savedSchedules || []).slice(0, 3)) });
+    retry.data[domain] = compact;
+    if (writeLocalStateStore(retry)) return;
+  }
+  throw new Error("localStorage 저장 실패: 브라우저 저장공간 한도를 초과했을 수 있습니다. 오래된 자동배치 보관본을 정리한 뒤 다시 시도해 주세요.");
 }
 
 function subscribeLocalDomains(domainList = ALL_DOMAINS) {

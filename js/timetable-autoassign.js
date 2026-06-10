@@ -22,12 +22,24 @@ export function createAutoAssignAll(deps) {
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
 
+  function withAutoSaveTimeout(promise, ms = 25000, label = "시간표 저장") {
+    let timer = null;
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label}이 ${Math.round(ms / 1000)}초 이상 지연되어 중단했습니다. 네트워크/저장공간을 확인해 주세요.`)), ms);
+      })
+    ]).finally(() => { if (timer) clearTimeout(timer); });
+  }
+
   async function persistTimetableNow() {
     if (typeof saveNow === "function") {
-      await saveNow("timetable", { force: true });
-      return;
+      const ok = await withAutoSaveTimeout(saveNow("timetable", { force: true, throwOnError: true }), 25000, "시간표 저장");
+      if (!ok) throw new Error("시간표 저장에 실패했습니다. 오래된 자동배치 보관본이 너무 많거나 저장공간/네트워크 문제가 있을 수 있습니다.");
+      return true;
     }
     scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
+    return true;
   }
 
   // 자동배치 전/후 배치를 자동으로 보관해 비교와 복구가 쉽도록 합니다.
@@ -44,6 +56,80 @@ export function createAutoAssignAll(deps) {
         ? normalizeTimetableEntry(cloned)
         : cloned;
     }).filter(entry => entry && (entry.templateId || entry.ttcardId || (entry.ttcardIds || []).length));
+  }
+
+
+  function compactAutoAssignSnapshotMeta(meta = {}) {
+    const clone = value => {
+      if (!value || typeof value !== "object") return null;
+      try { return JSON.parse(JSON.stringify(value)); } catch (_) { return null; }
+    };
+    return {
+      validationSummary: String(meta.validationSummary || ""),
+      activeGrades: Array.isArray(meta.activeGrades) ? meta.activeGrades.slice() : [],
+      modeText: String(meta.modeText || ""),
+      options: clone(meta.options),
+      classIssueCount: Number(meta.classIssueCount || meta.finalMetrics?.classIssues || 0) || 0,
+      cardCoverageIssueCount: Number(meta.cardCoverageIssueCount || meta.finalMetrics?.cardIssues || 0) || 0,
+      groupCoverageIssueCount: Number(meta.groupCoverageIssueCount || meta.finalMetrics?.groupIssues || 0) || 0,
+      failedUnitCount: Number(meta.failedUnitCount || meta.finalMetrics?.failed || 0) || 0,
+      cardShortageSlots: Number(meta.cardShortageSlots || meta.finalMetrics?.cardShortageSlots || 0) || 0,
+      restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount || meta.finalMetrics?.restrictedTeacherIssueCount || 0) || 0,
+      missingRoomCount: Number(meta.missingRoomCount || meta.finalMetrics?.missingRoomCount || 0) || 0,
+      protectedIntrusionCount: Number(meta.protectedIntrusionCount || meta.finalMetrics?.protectedIntrusionCount || 0) || 0,
+      acceptedMetrics: clone(meta.acceptedMetrics),
+      finalMetrics: clone(meta.finalMetrics),
+      baselineMetrics: clone(meta.baselineMetrics),
+      qualityGate: clone(meta.qualityGate),
+      qualityBaselineSnapshotName: String(meta.qualityBaselineSnapshotName || ""),
+      qualityBaselineValidationSummary: String(meta.qualityBaselineValidationSummary || ""),
+      failedDiagnostics: Array.isArray(meta.failedDiagnostics) ? meta.failedDiagnostics.slice(0, 8).map(d => ({
+        key: String(d?.key || d?.id || ""),
+        name: String(d?.name || d?.title || ""),
+        missing: Number(d?.missing || d?.shortage || d?.missingCount || 0) || 0,
+        candidateCount: Number(d?.candidateCount || d?.availableCount || 0) || 0,
+        reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 4) : [],
+        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3) : []
+      })) : []
+    };
+  }
+
+  function snapshotQualityScoreForPrune(v = {}) {
+    const m = v.autoAssignMeta || {};
+    const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
+    let classIssues = n(m.classIssueCount);
+    let cardIssues = n(m.cardCoverageIssueCount);
+    let groupIssues = n(m.groupCoverageIssueCount);
+    let failed = n(m.failedUnitCount);
+    let shortage = n(m.cardShortageSlots);
+    if (!classIssues && !cardIssues && !groupIssues && !failed && v.note) {
+      const text = String(v.note || "");
+      classIssues = Number((text.match(/학급\s*시수\s*(\d+)개/) || [0,0])[1]) || 0;
+      cardIssues = Number((text.match(/카드\s*시수\s*(\d+)개/) || [0,0])[1]) || 0;
+      groupIssues = Number((text.match(/그룹\/개별\s*(\d+)개/) || [0,0])[1]) || 0;
+      failed = Number((text.match(/미배치\s*(\d+)개/) || [0,0])[1]) || 0;
+      shortage = cardIssues;
+    }
+    return shortage * 100000 + cardIssues * 30000 + groupIssues * 12000 + classIssues * 4000 + failed * 1000 - n(v.entryCount) / 1000;
+  }
+
+  function pruneAutoAssignSnapshots(domain) {
+    if (!domain || !Array.isArray(domain.savedSchedules)) return;
+    const all = domain.savedSchedules.filter(v => v && Array.isArray(v.entries) && v.entries.length);
+    const isAuto = v => v.autoSnapshot === true || String(v.source || "") === "autoassign" || String(v.name || "").startsWith("자동배치 ");
+    const isBefore = v => String(v.snapshotKind || "") === "before" || String(v.name || "").startsWith("자동배치 전");
+    const time = v => Date.parse(v.updatedAt || v.createdAt || 0) || 0;
+    const byId = new Map();
+    const add = v => { if (v && !byId.has(v.id)) byId.set(v.id, { ...v, autoAssignMeta: compactAutoAssignSnapshotMeta(v.autoAssignMeta || {}) }); };
+    const auto = all.filter(isAuto);
+    const after = auto.filter(v => !isBefore(v));
+    const before = auto.filter(isBefore);
+    const manual = all.filter(v => !isAuto(v));
+    after.slice().sort((a,b) => snapshotQualityScoreForPrune(a) - snapshotQualityScoreForPrune(b)).slice(0, 1).forEach(add);
+    after.slice().sort((a,b) => time(b) - time(a)).slice(0, 4).forEach(add);
+    before.slice().sort((a,b) => time(b) - time(a)).slice(0, 1).forEach(add);
+    manual.slice().sort((a,b) => time(b) - time(a)).slice(0, 2).forEach(add);
+    domain.savedSchedules = [...byId.values()].sort((a,b) => time(b) - time(a)).slice(0, 6);
   }
 
   function saveAutoAssignScheduleSnapshot(kind, sourceEntries = [], meta = {}) {
@@ -73,19 +159,15 @@ export function createAutoAssignAll(deps) {
       autoSnapshot: true,
       snapshotKind: kind,
       source: "autoassign",
-      autoAssignMeta: (() => {
-        try { return JSON.parse(JSON.stringify(meta || {})); }
-        catch (_) { return { validationSummary: meta?.validationSummary || "" }; }
-      })(),
+      autoAssignMeta: compactAutoAssignSnapshotMeta(meta || {}),
       entries: snapshotEntries,
     };
 
-    // 자동 스냅샷이 너무 많이 쌓이지 않도록 최근 12개만 유지하고, 전체 보관본은 30개로 제한합니다.
-    const existing = domain.savedSchedules || [];
-    const autoSnapshots = existing.filter(v => v?.autoSnapshot === true);
-    const keepAutoIds = new Set(autoSnapshots.slice(0, 11).map(v => v.id));
-    domain.savedSchedules = [version, ...existing.filter(v => v?.autoSnapshot !== true || keepAutoIds.has(v.id))].slice(0, 30);
-    return version;
+    // 저장 실패 방지: 자동배치 보관본은 entries가 커서 Firestore 문서/localStorage 한도를 쉽게 넘습니다.
+    // 이전 최고 결과 + 최근 결과만 남기고 즉시 정리합니다.
+    domain.savedSchedules = [version, ...(domain.savedSchedules || [])];
+    pruneAutoAssignSnapshots(domain);
+    return domain.savedSchedules.find(v => v.id === version.id) || version;
   }
 
   // ── Restricted-teacher helpers ─────────────────────────────────
@@ -5131,10 +5213,10 @@ export function createAutoAssignAll(deps) {
         acceptedLabel
       }
     };
-    if (appState.timetable) appState.timetable.autoAssignMeta = report;
+    if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
     if (afterAutoSnapshot) {
       try {
-        afterAutoSnapshot.autoAssignMeta = JSON.parse(JSON.stringify(report));
+        afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
         afterAutoSnapshot.note = [
           "자동 생성된 배치 보관본입니다.",
           activeGrades.length ? `대상: ${activeGrades.map(gradeDisplay).join(", ")}` : "",
