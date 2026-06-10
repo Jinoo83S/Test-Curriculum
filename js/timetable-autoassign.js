@@ -3226,7 +3226,7 @@ export function createAutoAssignAll(deps) {
 
   function compareAutoRunResults(a = {}, b = {}) {
     // 반환값이 음수이면 a가 더 좋습니다.
-    // r26: 단순 미배치 개수보다 최종 검증 품질을 먼저 봅니다.
+    // r27: 단순 미배치 개수보다 최종 검증 품질을 먼저 봅니다.
     // 자동배치가 특정 미배치 카드를 해결하면서 다른 카드/학급 시수를 무너뜨리면
     // 결과적으로 더 나쁜 시간표이므로 저장 대상에서 제외해야 합니다.
     const aCardShortage = Number(a.cardShortageSlots ?? 999999);
@@ -3256,6 +3256,18 @@ export function createAutoAssignAll(deps) {
     const aOver = Number(a.classOverCount ?? 999999);
     const bOver = Number(b.classOverCount ?? 999999);
     if (aOver !== bOver) return aOver - bOver;
+
+    const aRestricted = Number(a.restrictedTeacherIssueCount ?? 999999);
+    const bRestricted = Number(b.restrictedTeacherIssueCount ?? 999999);
+    if (aRestricted !== bRestricted) return aRestricted - bRestricted;
+
+    const aMissingRoom = Number(a.missingRoomCount ?? 999999);
+    const bMissingRoom = Number(b.missingRoomCount ?? 999999);
+    if (aMissingRoom !== bMissingRoom) return aMissingRoom - bMissingRoom;
+
+    const aIntrusion = Number(a.protectedIntrusionCount ?? 999999);
+    const bIntrusion = Number(b.protectedIntrusionCount ?? 999999);
+    if (aIntrusion !== bIntrusion) return aIntrusion - bIntrusion;
 
     const aForced = Number(a.forcedCount ?? 0);
     const bForced = Number(b.forcedCount ?? 0);
@@ -3293,6 +3305,9 @@ export function createAutoAssignAll(deps) {
       cardShortageSlots,
       cardOverageSlots,
       groupCoverageIssueCount: Number(group.issueCount || 0),
+      restrictedTeacherIssueCount: Number(report.restrictedTeachers?.issueCount || 0),
+      protectedIntrusionCount: Number(report.protectedIntrusions?.total || 0),
+      missingRoomCount: Number(report.missingRoomCount || 0),
       classSlotIssueCount: Number(cls.issueCount || 0),
       classShortCount: classIssues.filter(row => Number(row.diff || 0) < 0).length,
       classOverCount: classIssues.filter(row => Number(row.diff || 0) > 0).length,
@@ -3327,8 +3342,64 @@ export function createAutoAssignAll(deps) {
       `카드문제 ${Number(metrics.cardCoverageIssueCount || 0)}개`,
       `그룹문제 ${Number(metrics.groupCoverageIssueCount || 0)}개`,
       `학급문제 ${Number(metrics.classSlotIssueCount || 0)}개`,
-      `미배치 ${Number(metrics.failedCount || 0)}개`
-    ].join(' · ');
+      `미배치 ${Number(metrics.failedCount || 0)}개`,
+      Number(metrics.restrictedTeacherIssueCount || 0) ? `제약교사 ${Number(metrics.restrictedTeacherIssueCount || 0)}명` : '',
+      Number(metrics.missingRoomCount || 0) ? `교실미배정 ${Number(metrics.missingRoomCount || 0)}개` : '',
+      Number(metrics.protectedIntrusionCount || 0) ? `고정침범 ${Number(metrics.protectedIntrusionCount || 0)}건` : ''
+    ].filter(Boolean).join(' · ');
+  }
+
+
+  function findBestSavedAutoAssignReference(activeGrades = [], currentReference = null) {
+    const candidates = [];
+    if (currentReference?.metrics) candidates.push(currentReference);
+
+    const domain = ttDomain();
+    const schedules = Array.isArray(domain?.savedSchedules) ? domain.savedSchedules : [];
+    schedules.forEach((version, index) => {
+      if (!version || !Array.isArray(version.entries) || !version.entries.length) return;
+      const isAutoResult = version.snapshotKind === "result"
+        || (version.autoSnapshot === true && String(version.name || "").includes("자동배치 결과"))
+        || (version.source === "autoassign" && String(version.name || "").includes("자동배치 결과"));
+      if (!isAutoResult) return;
+      const snapshotEntries = normalizeSnapshotEntries(version.entries || []);
+      if (!snapshotEntries.length) return;
+      const meta = version.autoAssignMeta || {};
+      const failedNames = Array.isArray(meta.failedNames) ? meta.failedNames : [];
+      const validation = buildScheduleVerificationReport(snapshotEntries, {
+        scopeGrades: activeGrades,
+        failedNames,
+        failedDiagnostics: Array.isArray(meta.failedDiagnostics) ? meta.failedDiagnostics : []
+      });
+      const metrics = buildAutoRunMetricsFromValidation(validation, {
+        label: version.name || `저장된 자동배치 ${index + 1}`,
+        placedCount: Number(version.entryCount || snapshotEntries.length),
+        failedCount: failedNames.length || Number(meta.failedCount || meta.finalMetrics?.failedCount || 0),
+        forcedCount: Number(meta.forcedCount || meta.finalMetrics?.forcedCount || 0),
+        qualityScore: Number.isFinite(Number(meta.finalMetrics?.qualityScore))
+          ? Number(meta.finalMetrics.qualityScore)
+          : (Number.isFinite(Number(meta.postProcessQualityScore)) ? Number(meta.postProcessQualityScore) : Infinity)
+      });
+      candidates.push({
+        source: "savedSchedule",
+        name: version.name || "저장된 자동배치 결과",
+        scheduleId: version.id || "",
+        scheduleIndex: index,
+        createdAt: version.createdAt || "",
+        updatedAt: version.updatedAt || "",
+        entries: snapshotEntries,
+        validation,
+        metrics,
+        note: version.note || ""
+      });
+    });
+
+    let best = null;
+    candidates.forEach(candidate => {
+      if (!candidate?.metrics) return;
+      if (!best || compareAutoRunResults(candidate.metrics, best.metrics) < 0) best = candidate;
+    });
+    return best || currentReference;
   }
 
   function escapeHtml(s) {
@@ -3975,6 +4046,23 @@ export function createAutoAssignAll(deps) {
       forcedCount: 0,
       qualityScore: Infinity
     });
+    const currentQualityReference = {
+      source: "current",
+      name: "자동배치 전 현재 시간표",
+      entries: cloneAutoAssignData(rollbackEntriesSnapshot) || [],
+      validation: preValidation,
+      metrics: baselineAutoRunMetrics
+    };
+    const qualityBaselineReference = findBestSavedAutoAssignReference(activeGrades, currentQualityReference) || currentQualityReference;
+    const qualityBaselineMetrics = qualityBaselineReference.metrics || baselineAutoRunMetrics;
+    const qualityBaselineValidation = qualityBaselineReference.validation || preValidation;
+    if (qualityBaselineReference.source === "savedSchedule") {
+      addTimetableLog(
+        "auto",
+        "자동배치 품질 기준",
+        `이전 최고 자동배치 보관본 '${qualityBaselineReference.name}'을 품질 기준으로 사용합니다. ${formatAutoRunMetricSummary(qualityBaselineMetrics)}`
+      );
+    }
 
     // Preserve entries according to the selected auto-assign options.
     // - reset: selected range is cleared, but locked/manual/out-of-range entries can be protected.
@@ -4675,42 +4763,49 @@ export function createAutoAssignAll(deps) {
       forcedCount: forcedPlaced.length,
       qualityScore: improvement.qualityScore
     });
-    const rejectWorseThanBaseline = compareAutoRunResults(finalAutoRunMetrics, baselineAutoRunMetrics) > 0;
+    const rejectWorseThanBaseline = compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
     if (rejectWorseThanBaseline) {
-      ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
+      const restoreSource = qualityBaselineReference?.source === "savedSchedule" ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
+      ttDomain().entries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
       await persistTimetableNow();
       recomputeConflicts();
       renderAll();
       const rejectReport = {
         ts: Date.now(),
         rejectedByQualityGate: true,
-        reason: "새 자동배치 결과가 기존 시간표보다 검증 점수가 나빠 반영하지 않았습니다.",
+        reason: "새 자동배치 결과가 이전 최고 자동배치 결과보다 검증 점수가 나빠 반영하지 않았습니다.",
         activeGrades: activeGrades.map(gradeDisplay).join(", "),
         placementModeLabel: modeText,
         beforeValidation: preValidation,
+        referenceValidation: qualityBaselineValidation,
         rejectedValidation: postValidation,
         beforeMetrics: baselineAutoRunMetrics,
+        referenceMetrics: qualityBaselineMetrics,
         rejectedMetrics: finalAutoRunMetrics,
-        comparisonSummary: `${preValidation.summary || "이전 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`
+        referenceSource: qualityBaselineReference?.source || "current",
+        referenceSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
+        restoredFromReference: qualityBaselineReference?.source === "savedSchedule",
+        comparisonSummary: `${qualityBaselineValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`
       };
       if (appState.timetable) appState.timetable.autoAssignMeta = rejectReport;
       setLastAutoAssignReport(rejectReport);
       addTimetableLog(
         "warn",
         "자동배치 결과 폐기",
-        `새 결과가 기존 시간표보다 나빠 반영하지 않았습니다. 기존: ${formatAutoRunMetricSummary(baselineAutoRunMetrics)} / 폐기: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
+        `새 결과가 이전 최고 결과보다 나빠 반영하지 않았습니다. 기준: ${qualityBaselineReference?.name || "현재 시간표"} · ${formatAutoRunMetricSummary(qualityBaselineMetrics)} / 폐기: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
       );
       await progress.complete({
         partial: true,
         title: "자동배치 결과 폐기",
-        subtitle: "기존 시간표가 더 좋아 새 자동배치 결과를 반영하지 않았습니다.",
+        subtitle: qualityBaselineReference?.source === "savedSchedule" ? "이전 최고 자동배치 결과가 더 좋아 그 보관본으로 복원했습니다." : "기존 시간표가 더 좋아 새 자동배치 결과를 반영하지 않았습니다.",
         step: "결과 폐기",
         detailHtml: [
-          `<div><b>기존 시간표 유지</b> ${safeAutoHtml(preValidation.summary || "검증 정보 없음")}</div>`,
+          `<div><b>품질 기준</b> ${safeAutoHtml(qualityBaselineReference?.name || "현재 시간표")}</div>`,
+          `<div><b>기준 상태</b> ${safeAutoHtml(qualityBaselineValidation.summary || "검증 정보 없음")}</div>`,
           `<div><b>폐기된 결과</b> ${safeAutoHtml(postValidation.summary || "검증 정보 없음")}</div>`,
-          `<div><b>기존 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(baselineAutoRunMetrics))}</div>`,
+          `<div><b>기준 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(qualityBaselineMetrics))}</div>`,
           `<div><b>폐기 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(finalAutoRunMetrics))}</div>`,
-          `<div>자동배치가 특정 카드를 채우면서 다른 카드/학급 시수를 더 많이 무너뜨렸기 때문에 저장하지 않았습니다.</div>`
+          `<div>새 자동배치가 이전 최고 자동배치 결과보다 카드/학급/미배치 검증 점수가 나빠 저장하지 않았습니다.</div>`
         ].join(""),
         placed: 0,
         best: 0,
@@ -4809,7 +4904,11 @@ export function createAutoAssignAll(deps) {
       selectedAcceptedLabel: acceptedLabel,
       acceptedMetrics,
       finalMetrics: finalAutoRunMetrics,
-      baselineMetrics: baselineAutoRunMetrics,
+      baselineMetrics: qualityBaselineMetrics,
+      currentBeforeMetrics: baselineAutoRunMetrics,
+      qualityBaselineSource: qualityBaselineReference?.source || "current",
+      qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
+      qualityBaselineValidationSummary: qualityBaselineValidation.summary || "",
       qualityGate: {
         postProcessReverted: !!improvement.revertedByQualityGate,
         revertedToAccepted: improvement.revertedToAccepted || "",
