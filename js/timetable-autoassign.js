@@ -2473,17 +2473,48 @@ export function createAutoAssignAll(deps) {
     return best ? { ...best, attempts } : { attempts };
   }
 
+
+  function orderRepairTargetSlotsForItem(item = {}, orderedSlots = [], placed = []) {
+    const classKeys = [...classKeysForCapacity(item)].map(normalizeClassKeyForReportKey).filter(Boolean);
+    if (!classKeys.length) return [...orderedSlots];
+    const existing = [...entries(), ...(placed || [])];
+    const byClass = new Map();
+    classKeys.forEach(cls => byClass.set(cls, new Set()));
+    existing.forEach(entry => {
+      if (!Number.isInteger(entry.day) || !Number.isInteger(entry.period)) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      const eKeys = entryClassKeysForScoring(entry).map(normalizeClassKeyForReportKey).filter(Boolean);
+      classKeys.forEach(cls => {
+        if (eKeys.includes(cls)) byClass.get(cls)?.add(slotKey);
+      });
+    });
+    const target = Math.max(0, (parseInt(ttConfig().periodCount, 10) || 7) * 5);
+    const classShortage = classKeys.reduce((sum, cls) => sum + Math.max(0, target - (byClass.get(cls)?.size || 0)), 0);
+    return [...orderedSlots].sort((a, b) => {
+      const ak = `${a.day}:${a.period}`;
+      const bk = `${b.day}:${b.period}`;
+      const aHits = classKeys.reduce((n, cls) => n + (byClass.get(cls)?.has(ak) ? 1 : 0), 0);
+      const bHits = classKeys.reduce((n, cls) => n + (byClass.get(cls)?.has(bk) ? 1 : 0), 0);
+      // 부족 학급의 완전 빈칸을 가장 먼저 봅니다. 교사가 막혀 있으면 그 교사 수업 1개를 옮기는 복구가 여기서 작동합니다.
+      if (aHits !== bHits) return aHits - bHits;
+      // 부족이 클수록 오전/앞 교시부터 빠르게 채워 안정적인 35칸을 만듭니다.
+      if (classShortage > 0 && a.period !== b.period) return a.period - b.period;
+      if (a.day !== b.day) return a.day - b.day;
+      return a.period - b.period;
+    });
+  }
+
   async function repairFailedItemsBySingleMove(failedItems = [], baseSlots = [], placed = [], options = {}, progressUpdater = null) {
     const current = [...placed];
     const remaining = [];
     const repaired = [];
     const orderedSlots = [...baseSlots].sort((a, b) => a.period - b.period || a.day - b.day);
-    const maxFailedToTry = options.runAttempts === 'deep' ? 80 : (options.runAttempts === 'fast' ? 24 : 48);
-    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 8 : 5;
-    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(18, orderedSlots.length);
+    const maxFailedToTry = options.runAttempts === 'deep' ? 180 : (options.runAttempts === 'fast' ? 32 : 72);
+    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 12 : 7;
+    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(24, orderedSlots.length);
     const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : 2;
-    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(24, orderedSlots.length) : Math.min(12, orderedSlots.length);
-    const maxRepairAttempts = options.runAttempts === 'deep' ? 6200 : (options.runAttempts === 'fast' ? 900 : 2600);
+    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(28, orderedSlots.length) : Math.min(14, orderedSlots.length);
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 22000 : (options.runAttempts === 'fast' ? 1200 : 5200);
     let attempts = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
@@ -2507,7 +2538,8 @@ export function createAutoAssignAll(deps) {
         }
       }
 
-      for (const targetSlot of orderedSlots) {
+      const targetSlots = orderRepairTargetSlotsForItem(item, orderedSlots, current);
+      for (const targetSlot of targetSlots) {
         if (done) break;
         const blockers = getBlockingBlocksForSlot(item, targetSlot, current).slice(0, maxBlockersPerSlot);
         if (!blockers.length) continue;
@@ -4560,6 +4592,125 @@ export function createAutoAssignAll(deps) {
       return result.metrics;
     };
 
+    const makeCoverageShortageFailures = (placed, seedFailed = []) => {
+      const coverage = buildCardCoverageValidation([...protectedEntries, ...(placed || [])], activeGrades);
+      const failedByKey = new Map();
+      (seedFailed || []).forEach(failedItem => {
+        if (!failedItem?.item) return;
+        const key = autoItemKey(failedItem.item);
+        failedByKey.set(key, (failedByKey.get(key) || 0) + 1);
+      });
+      const priorityForRow = row => {
+        const title = `${row.title || ""} ${(row.classLabels || []).join(" ")}`;
+        const groupNames = (row.groupIds || []).map(id => ttGroups().find(g => g.id === id)?.name || "").join(" ");
+        const text = `${title} ${groupNames} ${row.group || ""} ${row.track || ""}`;
+        let score = 0;
+        if (/문학|국어|한국어|영어|수학|사회|과학|화학|성경|종교/i.test(text)) score -= 20;
+        if (/12영어|HS국어|MS국어|선택|사회|수학|영어/.test(text)) score -= 12;
+        score -= Math.max(0, -Number(row.diff || 0)) * 8;
+        return score;
+      };
+      const rows = [...(coverage.shortRows || [])].sort((a, b) => priorityForRow(a) - priorityForRow(b) || String(a.title).localeCompare(String(b.title), "ko"));
+      const result = [];
+      rows.forEach(row => {
+        const key = `ttc:${row.id}`;
+        const item = itemByKey.get(key);
+        if (!item) return;
+        const shortage = Math.max(0, -Number(row.diff || 0));
+        const already = failedByKey.get(key) || 0;
+        const need = Math.max(0, shortage - already);
+        for (let i = 0; i < need; i++) {
+          result.push(makeFailedPlacement(`${row.title}${row.classLabels?.length ? ` ${row.classLabels.join(", ")}` : ""}`, item, {
+            source: "iterativeCardCoverageRepair",
+            ttcardId: row.id,
+            occurrence: (row.count || 0) + i + 1,
+            required: row.target
+          }));
+        }
+      });
+      return { coverage, failures: result };
+    };
+
+    const repairCardCoverageShortagesIteratively = async (placed, failed, forced, labelPrefix = "카드시수 반복복구") => {
+      let currentPlaced = cloneAutoAssignData(placed || []) || [];
+      let currentFailed = [...(failed || [])];
+      let currentForced = [...(forced || [])];
+      let totalRepaired = 0;
+      let totalAttempts = 0;
+      let lastMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...currentPlaced], activeGrades, currentFailed, {
+        protectedEntries,
+        placedCount: currentPlaced.length,
+        forcedCount: currentForced.length,
+        qualityScore: scoreScheduleQuality(currentPlaced, options),
+        label: `${labelPrefix} 전`
+      }).metrics;
+
+      for (let pass = 0; pass < 4; pass++) {
+        const { coverage, failures: coverageFailures } = makeCoverageShortageFailures(currentPlaced, currentFailed);
+        if (!coverageFailures.length) break;
+        await updateProgress({
+          percent: 86 + pass,
+          step: `${labelPrefix} ${pass + 1}차`,
+          detail: `카드 부족 ${coverage.shortCount || 0}개 · 부족시수 ${coverageFailures.length}시수를 이동복구 대상으로 다시 투입합니다.`,
+          placed: currentPlaced.length,
+          best: currentPlaced.length,
+          failed: coverageFailures.length,
+          currentCard: "카드시수 반복복구",
+          log: `${labelPrefix}: 부족 ${coverageFailures.length}시수 재복구 시작`
+        }, true);
+        const repairOptions = {
+          ...(bestStage?.options || options),
+          runAttempts: "deep",
+          engineProfile: autoEngineProfileForMode("deep"),
+          respectSoftLimits: true,
+          respectUnavailable: true,
+          respectAssignedRoom: true
+        };
+        const repair = await repairFailedItemsBySingleMove([...currentFailed, ...coverageFailures], baseSlots, currentPlaced, repairOptions, updateProgress);
+        const nextPlaced = repair.placed || currentPlaced;
+        const nextCoverageInfo = makeCoverageShortageFailures(nextPlaced, repair.remaining || []);
+        const nextFailed = nextCoverageInfo.failures;
+        const nextMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...nextPlaced], activeGrades, nextFailed, {
+          protectedEntries,
+          placedCount: nextPlaced.length,
+          forcedCount: currentForced.length,
+          qualityScore: scoreScheduleQuality(nextPlaced, options),
+          label: `${labelPrefix} ${pass + 1}차`
+        }).metrics;
+        totalAttempts += Number(repair.attempts || 0);
+        if (compareAutoRunResults(nextMetrics, lastMetrics) < 0) {
+          const repairedNow = Math.max(0, (coverageFailures.length + currentFailed.length) - nextFailed.length);
+          totalRepaired += repairedNow;
+          currentPlaced = cloneAutoAssignData(nextPlaced) || [];
+          currentFailed = [...nextFailed];
+          lastMetrics = nextMetrics;
+          await updateProgress({
+            percent: 88 + pass,
+            step: `${labelPrefix} 개선`,
+            detail: `반복복구로 ${repairedNow}시수를 개선했습니다. 남은 카드 부족 ${currentFailed.length}개`,
+            placed: currentPlaced.length,
+            best: currentPlaced.length,
+            failed: currentFailed.length,
+            currentCard: "카드시수 반복복구",
+            log: `${labelPrefix}: ${repairedNow}시수 개선, 남은 부족 ${currentFailed.length}`
+          }, true);
+          if (!currentFailed.length) break;
+        } else {
+          await updateProgress({
+            percent: 88 + pass,
+            step: `${labelPrefix} 보류`,
+            detail: `반복복구 후보가 전체 검증 점수를 개선하지 못해 직전 상태를 유지합니다.`,
+            placed: currentPlaced.length,
+            best: currentPlaced.length,
+            failed: currentFailed.length,
+            currentCard: "카드시수 반복복구"
+          }, true);
+          break;
+        }
+      }
+      return { placed: currentPlaced, failed: currentFailed, forced: currentForced, repairedCount: totalRepaired, attempts: totalAttempts, metrics: lastMetrics };
+    };
+
     // ── Repair pass ───────────────────────────────────────────────
     // Greedy 자동배치가 막힌 경우, 기존 자동배치 수업 1개를 다른 칸으로 옮겨
     // 미배치 수업을 넣을 수 있는지 먼저 탐색합니다.
@@ -4665,6 +4816,21 @@ export function createAutoAssignAll(deps) {
     }
     bestFailed = stillFailed;
 
+    const iterativeCoverageRepair = await repairCardCoverageShortagesIteratively(bestPlaced, bestFailed, forcedPlaced, "최종 카드시수 반복복구");
+    if (compareAutoRunResults(iterativeCoverageRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
+      protectedEntries,
+      placedCount: bestPlaced.length,
+      forcedCount: forcedPlaced.length,
+      qualityScore: scoreScheduleQuality(bestPlaced, options),
+      label: "반복복구 전"
+    }).metrics) < 0) {
+      bestPlaced = iterativeCoverageRepair.placed;
+      bestFailed = iterativeCoverageRepair.failed;
+      forcedPlaced = iterativeCoverageRepair.forced;
+      swapRepaired.push(...Array.from({ length: Math.max(0, Number(iterativeCoverageRepair.repairedCount || 0)) }, (_, i) => ({ name: `카드시수 반복복구 ${i + 1}` })));
+      considerAutoCandidate("최종 카드시수 반복복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
+    }
+
     await updateProgress({
       percent: 91,
       step: "자동배치 후처리",
@@ -4732,7 +4898,7 @@ export function createAutoAssignAll(deps) {
       }, true);
     }
 
-    const failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
+    let failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
 
     await updateProgress({
       percent: 96,
@@ -4756,14 +4922,64 @@ export function createAutoAssignAll(deps) {
       failedNames: names,
       failedDiagnostics
     });
-    const finalAutoRunMetrics = buildAutoRunMetricsFromValidation(postValidation, {
+    let finalAutoRunMetrics = buildAutoRunMetricsFromValidation(postValidation, {
       label: "최종 결과",
       placedCount: bestPlaced.length,
       failedCount: names.length,
       forcedCount: forcedPlaced.length,
       qualityScore: improvement.qualityScore
     });
-    const rejectWorseThanBaseline = compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
+
+    // r28: 새 전체 배치가 이전 최고보다 나쁠 때도 바로 폐기하지 않고,
+    // 이전 최고 보관본 자체를 기준으로 카드시수 반복복구를 한 번 더 시도합니다.
+    // 목표는 이전 최고 상태를 출발점으로 삼아 남은 9~10개 미배치 단위를 실제로 줄이는 것입니다.
+    let baselineRepairAdopted = false;
+    if (compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0 && qualityBaselineReference?.source === "savedSchedule" && Array.isArray(qualityBaselineReference.entries)) {
+      const baselineAll = normalizeSnapshotEntries(qualityBaselineReference.entries) || [];
+      const protectedIds = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
+      const baselineAutoPlaced = baselineAll.filter(e => !protectedIds.has(e.id));
+      const baselineCoverageInfo = makeCoverageShortageFailures(baselineAutoPlaced, []);
+      if (baselineCoverageInfo.failures.length) {
+        await updateProgress({
+          percent: 96,
+          step: "이전 최고 결과 직접복구",
+          detail: `새 결과가 기준보다 나빠, 이전 최고 보관본의 남은 카드 부족 ${baselineCoverageInfo.failures.length}시수를 직접 복구합니다.`,
+          placed: baselineAutoPlaced.length,
+          best: baselineAutoPlaced.length,
+          failed: baselineCoverageInfo.failures.length,
+          currentCard: "이전 최고 직접복구",
+          log: "이전 최고 보관본 기준 반복복구 시작"
+        }, true);
+        const baselineRepair = await repairCardCoverageShortagesIteratively(baselineAutoPlaced, baselineCoverageInfo.failures, [], "이전최고 직접복구");
+        const baselineRepairValidation = buildScheduleVerificationReport([...protectedEntries, ...baselineRepair.placed], {
+          scopeGrades: activeGrades,
+          protectedEntries,
+          failedNames: [...new Set((baselineRepair.failed || []).map(f => f.name))],
+          failedDiagnostics: buildFailureDiagnostics(baselineRepair.failed || [], baseSlots, baselineRepair.placed, bestStage?.options || options)
+        });
+        const baselineRepairMetrics = buildAutoRunMetricsFromValidation(baselineRepairValidation, {
+          label: "이전 최고 직접복구 결과",
+          placedCount: baselineRepair.placed.length,
+          failedCount: [...new Set((baselineRepair.failed || []).map(f => f.name))].length,
+          forcedCount: 0,
+          qualityScore: scoreScheduleQuality(baselineRepair.placed, options)
+        });
+        if (compareAutoRunResults(baselineRepairMetrics, qualityBaselineMetrics) < 0 && compareAutoRunResults(baselineRepairMetrics, finalAutoRunMetrics) <= 0) {
+          bestPlaced = baselineRepair.placed;
+          bestFailed = baselineRepair.failed || [];
+          forcedPlaced = baselineRepair.forced || [];
+          names.length = 0;
+          names.push(...new Set(bestFailed.map(f => f.name)));
+          failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || options);
+          finalEntriesForValidation.length = 0;
+          finalEntriesForValidation.push(...protectedEntries, ...bestPlaced);
+          Object.assign(postValidation, baselineRepairValidation);
+          finalAutoRunMetrics = baselineRepairMetrics;
+          baselineRepairAdopted = true;
+        }
+      }
+    }
+    const rejectWorseThanBaseline = !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
     if (rejectWorseThanBaseline) {
       const restoreSource = qualityBaselineReference?.source === "savedSchedule" ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
       ttDomain().entries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
