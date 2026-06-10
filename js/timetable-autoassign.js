@@ -3120,15 +3120,17 @@ export function createAutoAssignAll(deps) {
     if (value === "deep") {
       return {
         mode: "deep",
-        label: "정교한 정밀 엔진",
-        useCandidateCountSort: true,
-        useLiveMrv: true,
-        slotScoring: "full",
+        label: "정교한 안정 엔진",
+        // r23: 브라우저 프리징의 원인이 된 전수 MRV/전체 통계 점수 계산은 초기 배치에서 끕니다.
+        // 핵심 그룹 우선순위 + 여러 초기 후보 + 복구 단계로 품질을 확보하고, UI 응답성을 우선 보장합니다.
+        useCandidateCountSort: false,
+        useLiveMrv: false,
+        slotScoring: "light",
         enableSwapRepair: true,
         enableFinalRepair: true,
         finalRepairLimit: Infinity,
-        postProcessLimit: 360,
-        postProcessPasses: 3,
+        postProcessLimit: 180,
+        postProcessPasses: 2,
         qualityClassCheck: true
       };
     }
@@ -3152,7 +3154,9 @@ export function createAutoAssignAll(deps) {
     // r19: 빠른/균형 모드는 운영 중 바로 테스트할 수 있도록 초기 후보 수를 크게 줄입니다.
     // 정교한 배치에서만 기존의 넓은 탐색을 유지합니다.
     if (value === "fast") return [1, 1, 0];
-    if (value === "deep") return [60, 40, 18];
+    // r23: 60+40+18회는 브라우저 단일 스레드에서 실제 운영 데이터 기준으로 과합니다.
+    // 정교한 모드는 1차 후보를 19회로 제한하고, 남은 품질은 복구/후처리에서 보정합니다.
+    if (value === "deep") return [10, 6, 3];
     return [3, 2, 1];
   }
 
@@ -3820,9 +3824,10 @@ export function createAutoAssignAll(deps) {
     const updateProgress = async (data = {}, force = false) => {
       const now = Date.now();
       if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
-      if (!force && now - lastProgressAt < 120) return;
+      if (!force && now - lastProgressAt < 120) return false;
       lastProgressAt = now;
       await progress.update({ total: autoTargetSlots, ...data });
+      return true;
     };
 
     try {
@@ -3900,8 +3905,12 @@ export function createAutoAssignAll(deps) {
     const yieldAutoAssign = async (data = null, force = false) => {
       if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
       autoOps++;
-      if (data) await updateProgress(data, force);
-      else if (autoOps % 20 === 0) await waitForBrowser();
+      if (data) {
+        const updated = await updateProgress(data, force);
+        // 진행률 갱신이 120ms 쓰로틀에 걸려도 일정 간격으로 이벤트 루프를 양보합니다.
+        // 이것이 없으면 정교한 배치에서 계산은 진행 중인데 브라우저가 멈춘 것처럼 보입니다.
+        if (!updated && autoOps % 10 === 0) await waitForBrowser();
+      } else if (autoOps % 10 === 0) await waitForBrowser();
       if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
     };
 
