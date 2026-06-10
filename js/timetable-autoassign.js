@@ -89,7 +89,13 @@ export function createAutoAssignAll(deps) {
         missing: Number(d?.missing || d?.shortage || d?.missingCount || 0) || 0,
         candidateCount: Number(d?.candidateCount || d?.availableCount || 0) || 0,
         reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 4) : [],
-        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3) : []
+        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3).map(s => {
+          if (!s || typeof s !== "object") return String(s ?? "");
+          const title = String(s.title || s.summary || "제안").trim();
+          const detail = String(s.detail || "").trim();
+          const available = Number(s.availableAfter || 0);
+          return `${title}${detail ? `: ${detail}` : ""}${available ? ` · 완화 시 ${available}칸 가능` : ""}`;
+        }).filter(Boolean) : []
       })) : []
     };
   }
@@ -2591,12 +2597,14 @@ export function createAutoAssignAll(deps) {
     const remaining = [];
     const repaired = [];
     const orderedSlots = [...baseSlots].sort((a, b) => a.period - b.period || a.day - b.day);
-    const maxFailedToTry = options.runAttempts === 'deep' ? 180 : (options.runAttempts === 'fast' ? 32 : 72);
-    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 12 : 7;
-    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(24, orderedSlots.length);
-    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : 2;
-    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(28, orderedSlots.length) : Math.min(14, orderedSlots.length);
-    const maxRepairAttempts = options.runAttempts === 'deep' ? 22000 : (options.runAttempts === 'fast' ? 1200 : 5200);
+    // r30: 최종 목표는 모든 카드 시수 충족입니다. 남은 5~10시수 구간에서는
+    // 초기 배치보다 복구 탐색 깊이가 더 중요하므로, 정교한 배치에서 1~다중 이동 탐색폭을 넓힙니다.
+    const maxFailedToTry = options.runAttempts === 'deep' ? 360 : (options.runAttempts === 'fast' ? 48 : 120);
+    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 24 : 10;
+    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(30, orderedSlots.length);
+    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 5 : 3;
+    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(20, orderedSlots.length);
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 120000 : (options.runAttempts === 'fast' ? 2400 : 12000);
     let attempts = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
@@ -4727,7 +4735,9 @@ export function createAutoAssignAll(deps) {
         label: `${labelPrefix} 전`
       }).metrics;
 
-      for (let pass = 0; pass < 4; pass++) {
+      // r30: 카드 부족 복구는 한 번의 이동으로 해결되지 않는 경우가 많습니다.
+      // 개선되는 동안 최대 10차까지 반복합니다.
+      for (let pass = 0; pass < 10; pass++) {
         const { coverage, failures: coverageFailures } = makeCoverageShortageFailures(currentPlaced, currentFailed);
         if (!coverageFailures.length) break;
         await updateProgress({
@@ -4740,26 +4750,44 @@ export function createAutoAssignAll(deps) {
           currentCard: "카드시수 반복복구",
           log: `${labelPrefix}: 부족 ${coverageFailures.length}시수 재복구 시작`
         }, true);
-        const repairOptions = {
+        const repairBaseOptions = {
           ...(bestStage?.options || options),
           runAttempts: "deep",
           engineProfile: autoEngineProfileForMode("deep"),
-          respectSoftLimits: true,
           respectUnavailable: true,
           respectAssignedRoom: true
         };
-        const repair = await repairFailedItemsBySingleMove([...currentFailed, ...coverageFailures], baseSlots, currentPlaced, repairOptions, updateProgress);
-        const nextPlaced = repair.placed || currentPlaced;
-        const nextCoverageInfo = makeCoverageShortageFailures(nextPlaced, repair.remaining || []);
-        const nextFailed = nextCoverageInfo.failures;
-        const nextMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...nextPlaced], activeGrades, nextFailed, {
-          protectedEntries,
-          placedCount: nextPlaced.length,
-          forcedCount: currentForced.length,
-          qualityScore: scoreScheduleQuality(nextPlaced, options),
-          label: `${labelPrefix} ${pass + 1}차`
-        }).metrics;
-        totalAttempts += Number(repair.attempts || 0);
+        const tryRepairWithOptions = async (label, extraOptions = {}) => {
+          const repair = await repairFailedItemsBySingleMove([...currentFailed, ...coverageFailures], baseSlots, currentPlaced, {
+            ...repairBaseOptions,
+            ...extraOptions
+          }, updateProgress);
+          const nextPlaced = repair.placed || currentPlaced;
+          const nextCoverageInfo = makeCoverageShortageFailures(nextPlaced, repair.remaining || []);
+          const nextFailed = nextCoverageInfo.failures;
+          const nextMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...nextPlaced], activeGrades, nextFailed, {
+            protectedEntries,
+            placedCount: nextPlaced.length,
+            forcedCount: currentForced.length,
+            qualityScore: scoreScheduleQuality(nextPlaced, options),
+            label
+          }).metrics;
+          return { repair, nextPlaced, nextFailed, nextMetrics };
+        };
+
+        let repairPack = await tryRepairWithOptions(`${labelPrefix} ${pass + 1}차`, { respectSoftLimits: true });
+        totalAttempts += Number(repairPack.repair?.attempts || 0);
+        // 엄격 복구가 개선되지 않으면, 교사 하루/연속 같은 소프트 제한만 완화해 한 번 더 탐색합니다.
+        // 교사 불가시간·교실 불가시간·학급/교실/고정 충돌은 여전히 금지합니다.
+        if (compareAutoRunResults(repairPack.nextMetrics, lastMetrics) >= 0) {
+          const relaxedPack = await tryRepairWithOptions(`${labelPrefix} ${pass + 1}차 · 소프트완화`, { respectSoftLimits: false });
+          totalAttempts += Number(relaxedPack.repair?.attempts || 0);
+          if (compareAutoRunResults(relaxedPack.nextMetrics, repairPack.nextMetrics) < 0) repairPack = relaxedPack;
+        }
+        const repair = repairPack.repair;
+        const nextPlaced = repairPack.nextPlaced;
+        const nextFailed = repairPack.nextFailed;
+        const nextMetrics = repairPack.nextMetrics;
         if (compareAutoRunResults(nextMetrics, lastMetrics) < 0) {
           const repairedNow = Math.max(0, (coverageFailures.length + currentFailed.length) - nextFailed.length);
           totalRepaired += repairedNow;
@@ -4791,6 +4819,73 @@ export function createAutoAssignAll(deps) {
         }
       }
       return { placed: currentPlaced, failed: currentFailed, forced: currentForced, repairedCount: totalRepaired, attempts: totalAttempts, metrics: lastMetrics };
+    };
+
+
+
+    const forceResidualCardShortagesSafely = async (placed, failed, forced, labelPrefix = "잔여 카드 강제복구") => {
+      // 마지막 잔여 카드만 대상으로 합니다. 기존 final repair보다 더 명시적으로
+      // cardCoverage.shortRows를 다시 읽고, 안전 슬롯이 있는 경우 그 슬롯에 직접 삽입합니다.
+      // strongProtected/동일카드/학급/교사/교실 hard conflict는 forcedSlotScore에서 계속 차단합니다.
+      let currentPlaced = cloneAutoAssignData(placed || []) || [];
+      let currentFailed = [...(failed || [])];
+      let currentForced = [...(forced || [])];
+      let totalForced = 0;
+      for (let pass = 0; pass < 3; pass++) {
+        const { coverage, failures } = makeCoverageShortageFailures(currentPlaced, currentFailed);
+        if (!failures.length) break;
+        let changed = 0;
+        await updateProgress({
+          percent: 92 + pass,
+          step: `${labelPrefix} ${pass + 1}차`,
+          detail: `남은 카드 부족 ${coverage.shortCount || 0}개 · ${failures.length}시수를 안전 슬롯에 직접 보정합니다.`,
+          placed: currentPlaced.length,
+          best: currentPlaced.length,
+          failed: failures.length,
+          currentCard: "잔여 카드 강제복구",
+          log: `${labelPrefix}: ${failures.length}시수 직접 보정 시도`
+        }, true);
+        for (const failedItem of failures) {
+          const item = failedItem?.item;
+          if (!item) continue;
+          const slot = findLeastBadSlot(item, baseSlots, currentPlaced, {
+            ...(bestStage?.options || options),
+            runAttempts: "deep",
+            engineProfile: autoEngineProfileForMode("deep"),
+            respectSoftLimits: false,
+            respectUnavailable: true,
+            respectAssignedRoom: true
+          });
+          const entry = slot ? makeAutoEntry(item, slot, currentPlaced) : null;
+          if (!entry) continue;
+          entry.autoForced = true;
+          entry.autoRepairMode = "r30-card-completion";
+          currentPlaced.push(entry);
+          currentForced.push(failedItem);
+          changed += 1;
+          totalForced += 1;
+          await yieldAutoAssign({
+            percent: 93 + pass,
+            step: `${labelPrefix} 중`,
+            detail: `${failedItem.name || getAutoItemName(item)} 잔여 시수를 보정했습니다.`,
+            placed: currentPlaced.length,
+            best: currentPlaced.length,
+            failed: Math.max(0, failures.length - changed),
+            currentCard: failedItem.name || getAutoItemName(item)
+          });
+        }
+        const next = makeCoverageShortageFailures(currentPlaced, []);
+        currentFailed = next.failures;
+        if (!changed) break;
+      }
+      const metrics = buildAutoRunMetricsForEntries([...protectedEntries, ...currentPlaced], activeGrades, currentFailed, {
+        protectedEntries,
+        placedCount: currentPlaced.length,
+        forcedCount: currentForced.length,
+        qualityScore: scoreScheduleQuality(currentPlaced, options),
+        label: labelPrefix
+      }).metrics;
+      return { placed: currentPlaced, failed: currentFailed, forced: currentForced, forcedCount: totalForced, metrics };
     };
 
     // ── Repair pass ───────────────────────────────────────────────
@@ -4911,6 +5006,23 @@ export function createAutoAssignAll(deps) {
       forcedPlaced = iterativeCoverageRepair.forced;
       swapRepaired.push(...Array.from({ length: Math.max(0, Number(iterativeCoverageRepair.repairedCount || 0)) }, (_, i) => ({ name: `카드시수 반복복구 ${i + 1}` })));
       considerAutoCandidate("최종 카드시수 반복복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
+    }
+
+    const hardResidualRepair = await forceResidualCardShortagesSafely(bestPlaced, bestFailed, forcedPlaced, "r30 잔여 카드 완성복구");
+    if (compareAutoRunResults(hardResidualRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
+      protectedEntries,
+      placedCount: bestPlaced.length,
+      forcedCount: forcedPlaced.length,
+      qualityScore: scoreScheduleQuality(bestPlaced, options),
+      label: "r30 잔여복구 전"
+    }).metrics) < 0) {
+      bestPlaced = hardResidualRepair.placed;
+      bestFailed = hardResidualRepair.failed;
+      forcedPlaced = hardResidualRepair.forced;
+      if (Number(hardResidualRepair.forcedCount || 0)) {
+        swapRepaired.push(...Array.from({ length: Number(hardResidualRepair.forcedCount || 0) }, (_, i) => ({ name: `r30 잔여 카드 완성복구 ${i + 1}` })));
+      }
+      considerAutoCandidate("r30 잔여 카드 완성복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
     }
 
     await updateProgress({
