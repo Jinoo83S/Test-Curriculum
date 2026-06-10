@@ -73,6 +73,10 @@ export function createAutoAssignAll(deps) {
       autoSnapshot: true,
       snapshotKind: kind,
       source: "autoassign",
+      autoAssignMeta: (() => {
+        try { return JSON.parse(JSON.stringify(meta || {})); }
+        catch (_) { return { validationSummary: meta?.validationSummary || "" }; }
+      })(),
       entries: snapshotEntries,
     };
 
@@ -629,6 +633,131 @@ export function createAutoAssignAll(deps) {
   }
 
 
+
+  function classLabelsForCardCoverage(card = {}) {
+    const labels = (card.classLabels || []).map(v => String(v || "").trim()).filter(Boolean);
+    if (labels.length) return labels;
+    const keys = (card.classKeys || []).map(normalizeClassKeyForReportKey).filter(Boolean);
+    if (keys.length) return keys.map(formatClassKeyForReport);
+    if (card.gradeKey) return [`${gradeDisplay(card.gradeKey)}${sectionLabel(card.sectionIdx ?? 0)}`];
+    return [];
+  }
+
+  function cardTitleForCoverage(card = {}) {
+    try { return describeTtCard(card).title || card.subject || card.label || card.id || "카드"; }
+    catch (_) { return card.subject || card.label || card.id || "카드"; }
+  }
+
+  function getActiveTtCardsForValidation(scopeGrades = []) {
+    const scope = new Set((scopeGrades || []).map(g => String(g || "").trim()).filter(Boolean));
+    return (ttDomain().ttcards || [])
+      .filter(card => card && card.id)
+      .filter(card => !scope.size || scope.has(card.gradeKey) || (card.gradeKeys || []).some(g => scope.has(g)))
+      .filter(card => Math.max(0, Number(card.credits ?? getCreditsForTtCard?.(card) ?? 0)) > 0);
+  }
+
+  function buildCardCoverageValidation(allEntries = [], scopeGrades = []) {
+    const cards = getActiveTtCardsForValidation(scopeGrades);
+    const cardMap = new Map(cards.map(card => [card.id, card]));
+    const placedSlotsByCard = new Map(cards.map(card => [card.id, new Set()]));
+    const samplesByCard = new Map(cards.map(card => [card.id, []]));
+
+    (allEntries || []).forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      const ids = ttCardIdsFromPlacement(entry).filter(id => cardMap.has(id));
+      ids.forEach(id => {
+        const slots = placedSlotsByCard.get(id);
+        const before = slots.size;
+        slots.add(slotKey);
+        if (slots.size !== before) {
+          const list = samplesByCard.get(id) || [];
+          if (list.length < 5) list.push(`${formatSlotLabel(entry)} · ${getAutoItemName(entry)}`);
+          samplesByCard.set(id, list);
+        }
+      });
+    });
+
+    const rows = cards.map(card => {
+      const target = Math.max(0, Number(card.credits ?? getCreditsForTtCard?.(card) ?? 0));
+      const count = placedSlotsByCard.get(card.id)?.size || 0;
+      const diff = count - target;
+      return {
+        id: card.id,
+        title: cardTitleForCoverage(card),
+        gradeKey: card.gradeKey || "",
+        classLabels: classLabelsForCardCoverage(card),
+        teacherName: card.teacherName || (card.teachers || []).join(", "),
+        groupIds: groupIdsForCardId(card.id),
+        category: card.category || "",
+        track: card.track || "",
+        group: card.group || "",
+        target,
+        count,
+        diff,
+        status: diff === 0 ? "ok" : (diff < 0 ? "short" : "over"),
+        samples: samplesByCard.get(card.id) || []
+      };
+    });
+    const issues = rows.filter(row => row.diff !== 0);
+    const shortRows = issues.filter(row => row.diff < 0).sort((a, b) => a.count - b.count || a.title.localeCompare(b.title, "ko"));
+    const overRows = issues.filter(row => row.diff > 0).sort((a, b) => b.diff - a.diff || a.title.localeCompare(b.title, "ko"));
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    const targetTotal = rows.reduce((sum, row) => sum + row.target, 0);
+    return {
+      targetTotal,
+      total,
+      diff: total - targetTotal,
+      ok: issues.length === 0,
+      issueCount: issues.length,
+      shortCount: shortRows.length,
+      overCount: overRows.length,
+      rows,
+      issues,
+      shortRows,
+      overRows,
+      summary: issues.length
+        ? `카드 시수 불일치 ${issues.length}개 · 부족 ${shortRows.length}개 · 초과 ${overRows.length}개 · 현재 ${total}/${targetTotal}시수`
+        : `카드 ${rows.length}개 모두 입력 시수와 배치 시수 일치 · 현재 ${total}/${targetTotal}시수`
+    };
+  }
+
+  function summarizeGroupCoverageValidation(cardCoverage = {}) {
+    const issueRows = Array.isArray(cardCoverage.issues) ? cardCoverage.issues : [];
+    const map = new Map();
+    const add = (key, name, row) => {
+      if (!key) return;
+      if (!map.has(key)) map.set(key, { id: key, name, issueCount: 0, shortCount: 0, overCount: 0, samples: [] });
+      const dest = map.get(key);
+      dest.issueCount += 1;
+      if (row.diff < 0) dest.shortCount += 1;
+      if (row.diff > 0) dest.overCount += 1;
+      if (dest.samples.length < 6) {
+        const cls = (row.classLabels || []).join(", ");
+        dest.samples.push(`${row.title}${cls ? ` ${cls}` : ""}: ${row.count}/${row.target}`);
+      }
+    };
+
+    issueRows.forEach(row => {
+      const ids = row.groupIds || [];
+      if (!ids.length) {
+        add(`standalone:${row.gradeKey || ""}:${row.id}`, "개별 카드", row);
+        return;
+      }
+      ids.forEach(groupId => {
+        const group = ttGroups().find(g => g.id === groupId);
+        add(groupId, group?.name || group?.groupName || groupId, row);
+      });
+    });
+    const rows = [...map.values()].sort((a, b) => b.issueCount - a.issueCount || String(a.name).localeCompare(String(b.name), "ko"));
+    return {
+      ok: rows.length === 0,
+      issueCount: rows.length,
+      rows,
+      summary: rows.length ? `그룹/개별 묶음 ${rows.length}개에서 카드 시수 불일치` : "그룹/개별 카드 시수 불일치 없음"
+    };
+  }
+
   function normalizeClassKeyForReportKey(rawValue = "") {
     const raw = String(rawValue || "").trim();
     if (!raw) return "";
@@ -954,14 +1083,19 @@ export function createAutoAssignAll(deps) {
   }
 
   function buildScheduleVerificationReport(allEntries = [], options = {}) {
-    const classSlots = buildClassSlotValidation(allEntries, options.scopeGrades || []);
+    const scopeGrades = options.scopeGrades || [];
+    const classSlots = buildClassSlotValidation(allEntries, scopeGrades);
+    const cardCoverage = buildCardCoverageValidation(allEntries, scopeGrades);
+    const groupCoverage = summarizeGroupCoverageValidation(cardCoverage);
     const restrictedTeachers = buildRestrictedTeacherValidation(allEntries);
     const protectedIntrusions = buildProtectedIntrusionValidation(allEntries, options.protectedEntries || []);
     const failedCount = Array.isArray(options.failedNames) ? options.failedNames.length : 0;
     const missingRooms = (allEntries || []).filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
-    const ok = classSlots.ok && restrictedTeachers.ok && protectedIntrusions.ok && failedCount === 0 && missingRooms.length === 0;
+    const ok = classSlots.ok && cardCoverage.ok && restrictedTeachers.ok && protectedIntrusions.ok && failedCount === 0 && missingRooms.length === 0;
     const issueParts = [];
     if (!classSlots.ok) issueParts.push(`학급 시수 ${classSlots.issueCount}개`);
+    if (!cardCoverage.ok) issueParts.push(`카드 시수 ${cardCoverage.issueCount}개`);
+    if (!groupCoverage.ok) issueParts.push(`그룹/개별 ${groupCoverage.issueCount}개`);
     if (!restrictedTeachers.ok) issueParts.push(`제약교사 ${restrictedTeachers.issueCount}명`);
     if (!protectedIntrusions.ok) issueParts.push(`고정침범 ${protectedIntrusions.total}건`);
     if (missingRooms.length) issueParts.push(`교실미배정 ${missingRooms.length}개`);
@@ -971,6 +1105,8 @@ export function createAutoAssignAll(deps) {
       ok,
       summary: ok ? "검증 통과" : `검증 필요: ${issueParts.join(" · ")}`,
       classSlots,
+      cardCoverage,
+      groupCoverage,
       restrictedTeachers,
       protectedIntrusions,
       missingRoomCount: missingRooms.length,
@@ -1499,6 +1635,32 @@ export function createAutoAssignAll(deps) {
       .slice(0, 3);
   }
 
+
+  function targetCreditsForAutoItem(item = {}) {
+    const ids = ttCardIdsFromPlacement(item).filter(Boolean);
+    const credits = ids.map(id => Math.max(0, Number(getTtCardById(id)?.credits ?? 0))).filter(n => n > 0);
+    if (credits.length) return Math.max(...credits);
+    return Math.max(1, Number(item.credits || 1));
+  }
+
+  function placedSlotCountForAutoItem(item = {}, placed = []) {
+    const ids = new Set(ttCardIdsFromPlacement(item).filter(Boolean));
+    const slots = new Set();
+    [...entries(), ...(placed || [])].forEach(entry => {
+      if (!Number.isInteger(entry?.day) || !Number.isInteger(entry?.period)) return;
+      const entryIds = ttCardIdsFromPlacement(entry);
+      const matchById = ids.size && entryIds.some(id => ids.has(id));
+      const matchByShape = !ids.size && entryMatchesAutoItem(entry, item);
+      if (matchById || matchByShape) slots.add(`${entry.day}:${entry.period}`);
+    });
+    return slots.size;
+  }
+
+  function classLabelSummaryForAutoItem(item = {}) {
+    const labels = classKeysForCapacity(item).map(formatClassKeyForReport);
+    return [...new Set(labels)].slice(0, 8).join(", ");
+  }
+
   function summarizeFailedPlacement(failedItem, baseSlots = [], placed = [], options = {}) {
     const item = failedItem?.item;
     const name = failedItem?.name || getAutoItemName(item);
@@ -1525,15 +1687,22 @@ export function createAutoAssignAll(deps) {
     const reasonText = topReasons.length
       ? topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ")
       : (validSlots ? "후보 시간은 있으나 보정 단계에서 다른 카드와 충돌" : "후보 시간 없음");
+    const requiredCredits = targetCreditsForAutoItem(item);
+    const placedSlots = placedSlotCountForAutoItem(item, placed);
+    const missingSlots = Math.max(0, requiredCredits - placedSlots);
     const diag = {
       name,
       groupName: failedItem?.groupId ? (ttGroups().find(g => g.id === failedItem.groupId)?.name || "") : "",
       teachers,
       restrictedTeachers,
+      classLabels: classLabelSummaryForAutoItem(item),
+      requiredCredits,
+      placedSlots,
+      missingSlots,
       validSlots,
       totalSlots: baseSlots.length,
       topReasons,
-      summary: `가능 ${validSlots}/${baseSlots.length}칸 · ${reasonText}`
+      summary: `시수 ${placedSlots}/${requiredCredits}${missingSlots ? ` (${missingSlots} 부족)` : ""} · 가능 ${validSlots}/${baseSlots.length}칸 · ${reasonText}`
     };
     diag.suggestions = buildRelaxationSuggestions(diag, item, baseSlots, placed, options);
     diag.suggestionSummary = (diag.suggestions || []).map(s => s.summary || s.title).join(' / ');
@@ -1550,6 +1719,10 @@ export function createAutoAssignAll(deps) {
       }
       const acc = byName.get(key);
       acc.occurrences += 1;
+      acc.requiredCredits = Math.max(Number(acc.requiredCredits || 0), Number(diag.requiredCredits || 0));
+      acc.placedSlots = Math.max(Number(acc.placedSlots || 0), Number(diag.placedSlots || 0));
+      acc.missingSlots = Math.max(0, Number(acc.requiredCredits || 0) - Number(acc.placedSlots || 0));
+      if (!acc.classLabels && diag.classLabels) acc.classLabels = diag.classLabels;
       // 여러 회차가 같은 이름으로 실패하면 가능한 시간은 가장 보수적으로 낮은 값을 표시합니다.
       acc.validSlots = Math.min(acc.validSlots, diag.validSlots);
       const mergedReasons = new Map((acc.topReasons || []).map(r => [r.code || r.label, { ...r, samples: [...(r.samples || [])] }]));
@@ -1565,7 +1738,7 @@ export function createAutoAssignAll(deps) {
         }
       });
       acc.topReasons = [...mergedReasons.values()].sort((a, b) => b.count - a.count).slice(0, 5);
-      acc.summary = `가능 ${acc.validSlots}/${acc.totalSlots}칸 · ${acc.topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ") || "후보 시간 없음"}`;
+      acc.summary = `시수 ${Number(acc.placedSlots || 0)}/${Number(acc.requiredCredits || 0)}${Number(acc.missingSlots || 0) ? ` (${Number(acc.missingSlots || 0)} 부족)` : ""} · 가능 ${acc.validSlots}/${acc.totalSlots}칸 · ${acc.topReasons.slice(0, 3).map(r => `${r.label} ${r.count}칸`).join(" · ") || "후보 시간 없음"}`;
       const mergedSuggestions = new Map((acc.suggestions || []).map(s => [s.title, s]));
       (diag.suggestions || []).forEach(sug => {
         if (!mergedSuggestions.has(sug.title)) mergedSuggestions.set(sug.title, sug);
@@ -1590,11 +1763,12 @@ export function createAutoAssignAll(deps) {
     return `<div class="tt-auto-progress-failed"><b>미배치 원인 후보와 완화 제안</b><ul>${diagnostics.slice(0, limit).map(d => {
       const reason = d.topReasons?.[0];
       const sample = reason?.samples?.[0] ? ` · 예: ${reason.samples[0]}` : "";
-      const teacher = d.restrictedTeachers?.length ? ` · 제약교사: ${d.restrictedTeachers.join(", ")}` : "";
+      const teacher = d.restrictedTeachers?.length ? ` · 제약교사: ${d.restrictedTeachers.join(", ")}` : (d.teachers?.length ? ` · 교사: ${d.teachers.join(", ")}` : "");
+      const cls = d.classLabels ? ` · 대상: ${d.classLabels}` : "";
       const suggestionHtml = Array.isArray(d.suggestions) && d.suggestions.length
         ? `<div class="tt-auto-relax-suggestions"><b>풀어볼 조건</b><ol>${d.suggestions.slice(0, 3).map(s => `<li><span>${esc(s.title)}</span><em>${esc(s.detail)}${Number(s.availableAfter || 0) ? ` · 완화 시 ${Number(s.availableAfter || 0)}칸 가능` : ""}</em></li>`).join("")}</ol></div>`
         : "";
-      return `<li>${esc(d.name)}${d.occurrences > 1 ? ` ×${d.occurrences}` : ""} — ${esc(d.summary)}${esc(teacher)}${esc(sample)}${suggestionHtml}</li>`;
+      return `<li>${esc(d.name)}${d.occurrences > 1 ? ` ×${d.occurrences}` : ""} — ${esc(d.summary)}${esc(cls)}${esc(teacher)}${esc(sample)}${suggestionHtml}</li>`;
     }).join("")}${diagnostics.length > limit ? `<li>외 ${diagnostics.length - limit}개</li>` : ""}</ul></div>`;
   }
 
@@ -1602,7 +1776,7 @@ export function createAutoAssignAll(deps) {
     const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
-    const teachers  = splitTeacherNames(item.teacherName).filter(Boolean);
+    const teachers  = getTeachersForAutoItem(item);
 
     // 0. Pinned/fixed/protected entries protect their slot first.
     // entries() contains protected entries during auto assignment.
@@ -1777,6 +1951,37 @@ export function createAutoAssignAll(deps) {
     return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 10 + preferencePenalty + samePeriodLoad * 0.15 + Math.random();
   }
 
+  function scoreAutoSlotLight(item, slot, placed, checkOptions = {}) {
+    // 빠른/균형 배치용 경량 점수입니다.
+    // checkPlacementValid가 핵심 충돌을 이미 막으므로, 여기서는 전체 학급 통계 재계산 없이
+    // 같은 시간 밀집도·교사 일일 부하·학급 당일 부하만 가볍게 봅니다.
+    const existing = [...entries(), ...placed];
+    const weights = normalizeScoreWeights(checkOptions.scoringWeights);
+    const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
+    const dayEnts = existing.filter(e => e.day === slot.day);
+    const teachers = getTeachersForAutoItem(item);
+    const audience = audienceForPlacement(item);
+    let score = slotEnts.length * 110 + existing.filter(e => e.period === slot.period).length * 0.12;
+
+    const classLoad = dayEnts.reduce((sum, e) => sum + (audiencesConflict(audience, audienceForPlacement(e)) ? 1 : 0), 0);
+    score += classLoad * 8 * Math.max(1, weights.classFill || 1);
+
+    for (const teacher of teachers) {
+      score += getTeacherDayLoad(teacher, existing, slot.day) * 5 * Math.max(1, weights.teacherGap || 1);
+      score += teacherLimitPenalty(teacher, slot, existing);
+    }
+
+    // 오전 앞쪽만 과도하게 몰리지 않도록 약한 균형만 둡니다.
+    score += slot.period * 0.18 + slot.day * 0.05;
+    return score + Math.random();
+  }
+
+  function orderedFastSlots(baseSlots = []) {
+    // 35칸 전체 점수 계산을 피하고, 같은 교시를 요일별로 먼저 훑어
+    // 학급 주간 빈칸을 빠르게 채웁니다.
+    return [...baseSlots].sort((a, b) => (a.period - b.period) || (a.day - b.day));
+  }
+
   function selectCandidateWithExploration(candidates = [], checkOptions = {}) {
     if (!candidates.length) return null;
     const sorted = [...candidates].sort((a, b) => a.score - b.score);
@@ -1796,11 +2001,21 @@ export function createAutoAssignAll(deps) {
     return pool[index] || pool[0];
   }
 
-  function findBestAutoSlot(item, baseSlots, placed, checkOptions) {
+  function findBestAutoSlot(item, baseSlots, placed, checkOptions = {}) {
+    const profile = checkOptions.engineProfile || autoEngineProfileForMode(checkOptions.runAttempts);
+
+    if (profile.slotScoring === "first") {
+      for (const slot of orderedFastSlots(baseSlots)) {
+        if (checkPlacementValid(item, slot, placed, checkOptions)) return slot;
+      }
+      return null;
+    }
+
+    const scoreFn = profile.slotScoring === "light" ? scoreAutoSlotLight : scoreAutoSlot;
     const candidates = [];
     for (const slot of shuffle([...baseSlots])) {
       if (checkPlacementValid(item, slot, placed, checkOptions)) {
-        candidates.push({ slot, score: scoreAutoSlot(item, slot, placed, checkOptions) });
+        candidates.push({ slot, score: scoreFn(item, slot, placed, checkOptions) });
       }
     }
     return selectCandidateWithExploration(candidates, checkOptions)?.slot || null;
@@ -2171,12 +2386,12 @@ export function createAutoAssignAll(deps) {
     const remaining = [];
     const repaired = [];
     const orderedSlots = [...baseSlots].sort((a, b) => a.period - b.period || a.day - b.day);
-    const maxFailedToTry = options.runAttempts === 'deep' ? 40 : (options.runAttempts === 'fast' ? 12 : 24);
-    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 6 : (options.runAttempts === 'fast' ? 3 : 4);
-    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(24, orderedSlots.length) : (options.runAttempts === 'fast' ? Math.min(8, orderedSlots.length) : Math.min(10, orderedSlots.length));
-    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : (options.runAttempts === 'fast' ? 1 : 2);
-    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(14, orderedSlots.length) : (options.runAttempts === 'fast' ? Math.min(0, orderedSlots.length) : Math.min(6, orderedSlots.length));
-    const maxRepairAttempts = options.runAttempts === 'deep' ? 2200 : (options.runAttempts === 'fast' ? 250 : 700);
+    const maxFailedToTry = options.runAttempts === 'deep' ? 80 : (options.runAttempts === 'fast' ? 24 : 48);
+    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 8 : 5;
+    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(18, orderedSlots.length);
+    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 3 : 2;
+    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? Math.min(24, orderedSlots.length) : Math.min(12, orderedSlots.length);
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 6200 : (options.runAttempts === 'fast' ? 900 : 2600);
     let attempts = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
@@ -2272,17 +2487,22 @@ export function createAutoAssignAll(deps) {
 
   async function improveAutoPlacement(placed = [], baseSlots = [], options = {}, progressUpdater = null) {
     const current = [...placed];
-    const limit = options.runAttempts === "deep" ? 160 : (options.runAttempts === "fast" ? 35 : 70);
+    const profile = options.engineProfile || autoEngineProfileForMode(options.runAttempts);
+    const limit = Math.max(0, Number(profile.postProcessLimit) || 0);
+    const maxPasses = Math.max(0, Number(profile.postProcessPasses) || 0);
     let attempts = 0;
     let improved = 0;
     let bestScore = scoreScheduleQuality(current, options);
+    if (limit <= 0 || maxPasses <= 0) {
+      return { placed: current, improvedCount: 0, attempts: 0, qualityScore: Math.round(bestScore * 10) / 10 };
+    }
 
     const orderedSlots = [...baseSlots].sort((a, b) => {
       if (a.period !== b.period) return a.period - b.period;
       return a.day - b.day;
     });
 
-    for (let pass = 0; pass < 3 && attempts < limit; pass++) {
+    for (let pass = 0; pass < maxPasses && attempts < limit; pass++) {
       let passImproved = false;
       const blocks = shuffle(getMovableBlocks(current));
       for (const block of blocks) {
@@ -2831,26 +3051,81 @@ export function createAutoAssignAll(deps) {
     });
   }
 
-  function attemptsForMode(mode) {
+  function normalizeRunAttemptMode(mode) {
     const value = String(mode || "balanced");
-    // r18: r15의 학급공강/MRV 보강 이후 탐색량이 과도해져 전체 배치가 지나치게 느려졌습니다.
-    // 빠른/균형 모드는 운영 중 재시도 가능한 속도를 우선하고, 정교한 배치만 더 넓게 탐색합니다.
-    if (value === "fast") return [4, 2, 0];
-    if (value === "deep") return [18, 10, 4];
-    return [8, 4, 1];
+    if (value === "fast" || value === "deep") return value;
+    return "balanced";
+  }
+
+  function autoEngineProfileForMode(mode) {
+    const value = normalizeRunAttemptMode(mode);
+    if (value === "fast") {
+      return {
+        mode: "fast",
+        label: "빠른 경량 엔진",
+        useCandidateCountSort: false,
+        useLiveMrv: false,
+        slotScoring: "first",
+        enableSwapRepair: false,
+        enableFinalRepair: false,
+        finalRepairLimit: 0,
+        postProcessLimit: 0,
+        postProcessPasses: 0,
+        qualityClassCheck: false
+      };
+    }
+    if (value === "deep") {
+      return {
+        mode: "deep",
+        label: "정교한 정밀 엔진",
+        useCandidateCountSort: true,
+        useLiveMrv: true,
+        slotScoring: "full",
+        enableSwapRepair: true,
+        enableFinalRepair: true,
+        finalRepairLimit: Infinity,
+        postProcessLimit: 360,
+        postProcessPasses: 3,
+        qualityClassCheck: true
+      };
+    }
+    return {
+      mode: "balanced",
+      label: "균형 경량 엔진",
+      useCandidateCountSort: false,
+      useLiveMrv: false,
+      slotScoring: "light",
+      enableSwapRepair: true,
+      enableFinalRepair: true,
+      finalRepairLimit: 24,
+      postProcessLimit: 40,
+      postProcessPasses: 1,
+      qualityClassCheck: true
+    };
+  }
+
+  function attemptsForMode(mode) {
+    const value = normalizeRunAttemptMode(mode);
+    // r19: 빠른/균형 모드는 운영 중 바로 테스트할 수 있도록 초기 후보 수를 크게 줄입니다.
+    // 정교한 배치에서만 기존의 넓은 탐색을 유지합니다.
+    if (value === "fast") return [1, 1, 0];
+    if (value === "deep") return [60, 40, 18];
+    return [3, 2, 1];
   }
 
   function explorationOptionsForAttempt(mode, attempt = 0, stageIndex = 0) {
-    const value = String(mode || "balanced");
-    const warmup = attempt === 0 ? 0 : 1;
-    if (!warmup) return { slotRandomness: 0, topCandidateCount: 1 };
-    if (value === "fast") return { slotRandomness: 1, topCandidateCount: 2 };
-    if (value === "deep") {
-      const jitter = (attempt % 4) + stageIndex;
-      return { slotRandomness: Math.min(5, 1 + jitter), topCandidateCount: Math.min(6, 3 + (attempt % 3)) };
+    const value = normalizeRunAttemptMode(mode);
+    if (value === "fast") return { slotRandomness: 0, topCandidateCount: 1 };
+    if (value === "balanced") {
+      if (attempt === 0) return { slotRandomness: 0, topCandidateCount: 1 };
+      return { slotRandomness: Math.min(3, 1 + stageIndex), topCandidateCount: 3 };
     }
-    const jitter = (attempt % 3) + stageIndex;
-    return { slotRandomness: Math.min(3, 1 + jitter), topCandidateCount: Math.min(4, 2 + (attempt % 2)) };
+    const base = 6;
+    const warmup = attempt === 0 ? 0 : 1;
+    const jitter = (attempt % Math.max(2, base)) + stageIndex;
+    const slotRandomness = warmup ? Math.min(7, 1 + jitter) : 0;
+    const topCandidateCount = warmup ? Math.min(10, 2 + base + (attempt % 3)) : 1;
+    return { slotRandomness, topCandidateCount };
   }
 
   function compareAutoRunResults(a = {}, b = {}) {
@@ -3546,7 +3821,7 @@ export function createAutoAssignAll(deps) {
     await updateProgress({
       percent: 10,
       step: "배치 대상 분석",
-      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. 여러 초기 배치 후보를 만든 뒤 가장 좋은 결과를 선택합니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
+      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. ${engineProfile.label}으로 초기 배치 후보를 만듭니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
       log: restrictedTeacherNames.length
         ? `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")} · ${describeScoreWeights(options.scoringWeights)}`
         : `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 그룹 수업은 동시배정 단위로 계산합니다. · ${describeScoreWeights(options.scoringWeights)}`
@@ -3566,6 +3841,7 @@ export function createAutoAssignAll(deps) {
     });
 
     const attemptPlan = attemptsForMode(options.runAttempts);
+    const engineProfile = autoEngineProfileForMode(options.runAttempts);
     const stages = [
       { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
       { name:"relaxedSoft", label:"교사 일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
@@ -3592,7 +3868,7 @@ export function createAutoAssignAll(deps) {
         await updateProgress({
           percent: stagePercent,
           step: `자동배치 탐색 · ${stage.label}`,
-          detail: `초기배치 후보 ${attempt + 1} / ${stage.attempts} · 현재까지 최선 ${Math.max(0, bestScore)}개 배치 · ${attempt === 0 ? "최저점 우선" : "랜덤 후보 탐색"}`,
+          detail: `초기배치 후보 ${attempt + 1} / ${stage.attempts} · ${engineProfile.label} · 현재까지 최선 ${Math.max(0, bestScore)}개 배치`,
           placed: 0,
           best: Math.max(0, bestScore),
           failed: bestFailed.length,
@@ -3602,19 +3878,26 @@ export function createAutoAssignAll(deps) {
         const placed = [], failed = [];
         exploredInitialRuns++;
         const exploration = explorationOptionsForAttempt(options.runAttempts, attempt, stageIndex);
-        const stageAttemptOptions = { ...stage.options, ...exploration, attemptIndex: attempt, stageIndex, runAttempts: options.runAttempts };
+        const stageAttemptOptions = {
+          ...stage.options,
+          ...exploration,
+          runAttempts: options.runAttempts,
+          engineProfileLabel: engineProfile.label,
+          engineProfile,
+          useCandidateCountSort: engineProfile.useCandidateCountSort,
+          useLiveMrv: engineProfile.useLiveMrv,
+          attemptIndex: attempt,
+          stageIndex
+        };
 
         // ── Sort schedulable units by priority ───────────────────────
         // 1) 고정 수업은 위에서 이미 pinnedEntries로 보호
         // 2) 제약근무 교사 포함 수업은 일반 그룹/일반 카드보다 먼저 배치
         // 3) 같은 우선순위 안에서는 "후보 시간이 적은 수업"을 먼저 배치합니다.
         const candidateCountCache = new Map();
-        const runMode = String(options.runAttempts || "balanced");
-        // 빠른/균형 모드에서는 후보 슬롯 수 전수계산이 가장 큰 병목입니다.
-        // 정교한 배치의 첫 strict 시도에서만 제한적으로 사용하고, 그 외에는 우선순위/복잡도 점수로 정렬합니다.
-        const useCandidateCountProbe = runMode === "deep" && stageIndex === 0 && attempt === 0;
         const candidateCountForItem = (item) => {
-          if (!item || !useCandidateCountProbe) return 9999;
+          if (!item) return 9999;
+          if (!stageAttemptOptions.useCandidateCountSort) return 9999;
           const key = `${autoItemKey(item)}::${stage.name}`;
           if (candidateCountCache.has(key)) return candidateCountCache.get(key);
           let count = 0;
@@ -3625,15 +3908,15 @@ export function createAutoAssignAll(deps) {
           return count;
         };
         const candidateCountForGroupBlock = (block) => {
-          if (!useCandidateCountProbe) return 9999;
           const group = block?.group;
           const unitItems = block?.unitItems || [];
           if (!group || !unitItems.length) return 9999;
+          if (!stageAttemptOptions.useCandidateCountSort) return 9999;
           const cacheKey = `group:${group.id || group.name || "?"}::${stage.name}`;
           if (candidateCountCache.has(cacheKey)) return candidateCountCache.get(cacheKey);
           let minCount = 9999;
           const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
-          const samples = Math.max(1, Math.min(maxCredits || 1, 2));
+          const samples = Math.max(1, Math.min(maxCredits || 1, 5));
           for (let occurrence = 0; occurrence < samples; occurrence++) {
             const activeItems = unitItems
               .filter(u => occurrence < (Number(u.credits) || 0))
@@ -3785,34 +4068,33 @@ export function createAutoAssignAll(deps) {
 
         const placeStandaloneKeys = async (keys, phaseLabel) => {
           const pendingKeys = new Set(keys || []);
-          const useLiveMrv = String(options.runAttempts || "balanced") === "deep" && stageIndex === 0 && attempt === 0;
-          const liveCandidateCountCache = new Map();
           const liveCandidateCountForItem = (item) => {
-            if (!item || !useLiveMrv) return null;
-            const key = autoItemKey(item);
-            if (liveCandidateCountCache.has(key)) return liveCandidateCountCache.get(key);
+            if (!item || !stageAttemptOptions.useLiveMrv) return null;
             let count = 0;
             for (const slot of baseSlots) if (checkPlacementValid(item, slot, placed, stageAttemptOptions)) count += 1;
-            liveCandidateCountCache.set(key, count);
             return count;
           };
-          const standaloneSort = (a, b) => {
-            const ia = itemByKey.get(a);
-            const ib = itemByKey.get(b);
-            if (useLiveMrv) {
-              const acand = liveCandidateCountForItem(ia);
-              const bcand = liveCandidateCountForItem(ib);
+
+          const pickNextKey = () => {
+            const arr = [...pendingKeys];
+            if (!stageAttemptOptions.useLiveMrv) return arr[0];
+            return arr.sort((a, b) => {
+              const ia = itemByKey.get(a);
+              const ib = itemByKey.get(b);
+              const acand = liveCandidateCountForItem(ia) ?? 9999;
+              const bcand = liveCandidateCountForItem(ib) ?? 9999;
               if (acand !== bcand) return acand - bcand;
-            }
-            const ap = comparePriority(ia, ib);
-            if (ap !== 0) return ap;
-            const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
-            if (art !== 0) return art;
-            return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
+              const ap = comparePriority(ia, ib);
+              if (ap !== 0) return ap;
+              const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
+              if (art !== 0) return art;
+              return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
+            })[0];
           };
 
           while (pendingKeys.size) {
-            const key = [...pendingKeys].sort(standaloneSort)[0];
+            const key = pickNextKey();
+            if (!key) break;
             pendingKeys.delete(key);
 
             const item = itemByKey.get(key);
@@ -3820,10 +4102,11 @@ export function createAutoAssignAll(deps) {
             const pinned = pinnedByKey.get(key) || 0;
             while (pinned + (placedByKey.get(key) || 0) < required) {
               const candidateCount = liveCandidateCountForItem(item);
+              const candidateText = Number.isInteger(candidateCount) ? ` 후보 ${candidateCount}칸` : "";
               await yieldAutoAssign({
                 percent: stagePercent,
                 step: `${phaseLabel} · ${stage.label}`,
-                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.${candidateCount == null ? "" : ` 후보 ${candidateCount}칸`}${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
+                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.${candidateText}${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
                 placed: placed.length,
                 best: Math.max(0, bestScore),
                 failed: failed.length,
@@ -3887,7 +4170,7 @@ export function createAutoAssignAll(deps) {
             stageLabel: stage.label,
             attempt: attempt + 1,
             totalAttempts: stage.attempts,
-            exploration: stageAttemptOptions.slotRandomness ? `상위 ${stageAttemptOptions.topCandidateCount}개 후보 탐색` : "최저점 후보 우선",
+            exploration: `${engineProfile.label} · ${stageAttemptOptions.slotRandomness ? `상위 ${stageAttemptOptions.topCandidateCount}개 후보 탐색` : "기본 후보 우선"}`,
             qualityScore
           };
           await updateProgress({
@@ -3911,7 +4194,7 @@ export function createAutoAssignAll(deps) {
     // Greedy 자동배치가 막힌 경우, 기존 자동배치 수업 1개를 다른 칸으로 옮겨
     // 미배치 수업을 넣을 수 있는지 먼저 탐색합니다.
     let swapRepaired = [];
-    if (bestFailed.length) {
+    if (bestFailed.length && engineProfile.enableSwapRepair) {
       await updateProgress({
         percent: 82,
         step: "미배치 복구 탐색",
@@ -3936,6 +4219,17 @@ export function createAutoAssignAll(deps) {
         currentCard: "-",
         log: `Repair/Swap 복구 ${swapRepaired.length}건`
       }, true);
+    } else if (bestFailed.length) {
+      await updateProgress({
+        percent: 84,
+        step: "미배치 복구 건너뜀",
+        detail: `${engineProfile.label}에서는 속도를 위해 이동/교환 복구를 건너뜁니다. 남은 후보 ${bestFailed.length}개`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "-",
+        log: "빠른 배치: Repair/Swap 단계 생략"
+      }, true);
     }
 
     // ── Final repair pass ─────────────────────────────────────────
@@ -3955,30 +4249,49 @@ export function createAutoAssignAll(deps) {
 
     const forcedPlaced = [];
     const stillFailed = [];
-    for (const failedItem of bestFailed) {
-      const item = failedItem.item;
-      if (!item) {
-        stillFailed.push(failedItem);
-        continue;
+    if (engineProfile.enableFinalRepair && bestFailed.length) {
+      const limit = Number.isFinite(engineProfile.finalRepairLimit) ? engineProfile.finalRepairLimit : bestFailed.length;
+      const repairTargets = bestFailed.slice(0, limit);
+      const deferredTargets = bestFailed.slice(limit);
+      for (const failedItem of repairTargets) {
+        const item = failedItem.item;
+        if (!item) {
+          stillFailed.push(failedItem);
+          continue;
+        }
+        const slot = findLeastBadSlot(item, baseSlots, bestPlaced, { ...options, runAttempts: options.runAttempts, engineProfile });
+        const entry = slot ? makeAutoEntry(item, slot, bestPlaced) : null;
+        if (entry) {
+          entry.autoForced = true;
+          bestPlaced.push(entry);
+          forcedPlaced.push(failedItem);
+        } else {
+          stillFailed.push(failedItem);
+        }
+        await yieldAutoAssign({
+          percent: 86 + Math.min(9, forcedPlaced.length + stillFailed.length),
+          step: "미배치 보정 중",
+          detail: `${failedItem.name || "카드"} 보정 배치 결과를 반영하고 있습니다.`,
+          placed: bestPlaced.length,
+          best: bestPlaced.length,
+          failed: stillFailed.length + deferredTargets.length,
+          currentCard: failedItem.name || "보정 대상"
+        }, true);
       }
-      const slot = findLeastBadSlot(item, baseSlots, bestPlaced, options);
-      const entry = slot ? makeAutoEntry(item, slot, bestPlaced) : null;
-      if (entry) {
-        entry.autoForced = true;
-        bestPlaced.push(entry);
-        forcedPlaced.push(failedItem);
-      } else {
-        stillFailed.push(failedItem);
+      stillFailed.push(...deferredTargets);
+      if (deferredTargets.length) {
+        await updateProgress({
+          percent: 90,
+          step: "미배치 보정 제한",
+          detail: `${engineProfile.label}에서는 속도를 위해 보정 배치 ${repairTargets.length}개까지만 시도하고 ${deferredTargets.length}개는 미배치로 남깁니다.`,
+          placed: bestPlaced.length,
+          best: bestPlaced.length,
+          failed: stillFailed.length,
+          currentCard: "-"
+        }, true);
       }
-      await yieldAutoAssign({
-        percent: 86 + Math.min(9, forcedPlaced.length + stillFailed.length),
-        step: "미배치 보정 중",
-        detail: `${failedItem.name || "카드"} 보정 배치 결과를 반영하고 있습니다.`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: stillFailed.length,
-        currentCard: failedItem.name || "보정 대상"
-      }, true);
+    } else {
+      stillFailed.push(...bestFailed);
     }
     bestFailed = stillFailed;
 
@@ -3993,7 +4306,7 @@ export function createAutoAssignAll(deps) {
       log: "자동배치 후처리 단계 시작"
     }, true);
 
-    const improvement = await improveAutoPlacement(bestPlaced, baseSlots, options, updateProgress);
+    const improvement = await improveAutoPlacement(bestPlaced, baseSlots, { ...options, engineProfile }, updateProgress);
     bestPlaced = improvement.placed;
 
     const failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
@@ -4056,6 +4369,7 @@ export function createAutoAssignAll(deps) {
       placementModeLabel: modeText,
       selectedGrades: activeGrades.map(gradeDisplay).join(", "),
       runAttempts: options.runAttempts,
+      engineProfileLabel: engineProfile.label,
       keepPinned: options.keepPinned !== false,
       keepManual: options.keepManual !== false,
       placedCount: bestPlaced.length,
@@ -4155,10 +4469,16 @@ export function createAutoAssignAll(deps) {
       const restrictedList = (postValidation.restrictedTeachers?.issues || []).slice(0, 8)
         .map(row => `<li>${row.teacher}: ${row.issueParts.join(", ")}</li>`)
         .join("");
+      const cardList = (postValidation.cardCoverage?.shortRows || []).slice(0, 10)
+        .map(row => `<li>카드 부족 · ${String(row.title).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}${row.classLabels?.length ? ` ${String(row.classLabels.join(", ")).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}` : ""}: ${row.count}/${row.target}시수</li>`)
+        .join("");
+      const groupList = (postValidation.groupCoverage?.rows || []).slice(0, 8)
+        .map(row => `<li>그룹/묶음 · ${String(row.name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}: 문제 카드 ${row.issueCount}개${row.samples?.length ? ` (${String(row.samples.slice(0, 2).join(" / ")).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))})` : ""}</li>`)
+        .join("");
       const protectedList = (postValidation.protectedIntrusions?.samples || []).slice(0, 6)
         .map(text => `<li>${String(text).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
         .join("");
-      detailLines.push(`<div class="tt-auto-progress-failed"><b>검증 리포트</b><ul>${classList}${moreClass}${restrictedList}${protectedList}</ul></div>`);
+      detailLines.push(`<div class="tt-auto-progress-failed"><b>검증 리포트</b><ul>${classList}${moreClass}${cardList}${groupList}${restrictedList}${protectedList}</ul></div>`);
     }
     if (forcedPlaced.length) {
       detailLines.push(`⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`);
