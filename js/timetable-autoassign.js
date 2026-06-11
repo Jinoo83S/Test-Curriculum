@@ -85,6 +85,9 @@ export function createAutoAssignAll(deps) {
       finalMetrics: clone(meta.finalMetrics),
       baselineMetrics: clone(meta.baselineMetrics),
       qualityGate: clone(meta.qualityGate),
+      metricSource: String(meta.metricSource || ""),
+      metricCompleteness: String(meta.metricCompleteness || ""),
+      qualityBaselineSource: String(meta.qualityBaselineSource || ""),
       qualityBaselineSnapshotName: String(meta.qualityBaselineSnapshotName || ""),
       qualityBaselineValidationSummary: String(meta.qualityBaselineValidationSummary || ""),
       failedDiagnostics: Array.isArray(meta.failedDiagnostics) ? meta.failedDiagnostics.slice(0, 8).map(d => ({
@@ -104,23 +107,84 @@ export function createAutoAssignAll(deps) {
     };
   }
 
+  function extractAutoAssignMetricEvidence(version = {}) {
+    const meta = version?.autoAssignMeta || {};
+    const text = [version?.note, meta.validationSummary, meta.qualityBaselineValidationSummary].map(v => String(v || "")).join(" / ");
+    const n = value => Number.isFinite(Number(value)) ? Number(value) : 0;
+    const pick = (...values) => {
+      for (const value of values) {
+        if (Number.isFinite(Number(value))) return Number(value);
+      }
+      return 0;
+    };
+    const matchNum = regex => Number((text.match(regex) || [0, ""])[1]) || 0;
+    const hasMetaObject = !!(meta && typeof meta === "object" && Object.keys(meta).length);
+    const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
+    const hasCardEvidence = hasFinalMetrics
+      || Object.prototype.hasOwnProperty.call(meta, "cardCoverageIssueCount")
+      || Object.prototype.hasOwnProperty.call(meta, "cardShortageSlots")
+      || /카드\s*시수\s*\d+개/.test(text);
+    const hasGroupEvidence = hasFinalMetrics
+      || Object.prototype.hasOwnProperty.call(meta, "groupCoverageIssueCount")
+      || /그룹\/개별\s*\d+개/.test(text);
+    const hasFailedEvidence = hasFinalMetrics
+      || Object.prototype.hasOwnProperty.call(meta, "failedCount")
+      || Object.prototype.hasOwnProperty.call(meta, "failedUnitCount")
+      || /미배치\s*\d+개/.test(text);
+    const hasClassEvidence = hasFinalMetrics
+      || Object.prototype.hasOwnProperty.call(meta, "classSlotIssueCount")
+      || Object.prototype.hasOwnProperty.call(meta, "classIssueCount")
+      || /학급\s*시수\s*\d+개/.test(text)
+      || /검증\s*통과/.test(text);
+
+    const cardCoverageIssueCount = pick(meta.cardCoverageIssueCount, meta.finalMetrics?.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
+    const groupCoverageIssueCount = pick(meta.groupCoverageIssueCount, meta.finalMetrics?.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
+    const classSlotIssueCount = pick(meta.classSlotIssueCount, meta.classIssueCount, meta.finalMetrics?.classSlotIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
+    const failedCount = pick(meta.failedCount, meta.failedUnitCount, meta.finalMetrics?.failedCount, matchNum(/미배치\s*(\d+)개/));
+    const cardShortageSlots = pick(meta.cardShortageSlots, meta.finalMetrics?.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
+    const restrictedTeacherIssueCount = pick(meta.restrictedTeacherIssueCount, meta.finalMetrics?.restrictedTeacherIssueCount);
+    const missingRoomCount = pick(meta.missingRoomCount, meta.finalMetrics?.missingRoomCount);
+    const protectedIntrusionCount = pick(meta.protectedIntrusionCount, meta.finalMetrics?.protectedIntrusionCount);
+    const complete = !!(hasMetaObject && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence);
+    const legacyPartial = !complete && /자동배치/.test(String(version?.name || ""));
+    return {
+      complete,
+      legacyPartial,
+      hasFinalMetrics,
+      hasClassEvidence,
+      hasCardEvidence,
+      hasGroupEvidence,
+      hasFailedEvidence,
+      classSlotIssueCount,
+      cardCoverageIssueCount,
+      groupCoverageIssueCount,
+      failedCount,
+      cardShortageSlots,
+      restrictedTeacherIssueCount,
+      missingRoomCount,
+      protectedIntrusionCount,
+      qualityScore: Number.isFinite(Number(meta.finalMetrics?.qualityScore)) ? Number(meta.finalMetrics.qualityScore) : Infinity
+    };
+  }
+
+  function hasCompleteAutoAssignMetricEvidence(version = {}) {
+    return extractAutoAssignMetricEvidence(version).complete;
+  }
+
   function snapshotQualityScoreForPrune(v = {}) {
-    const m = v.autoAssignMeta || {};
+    const evidence = extractAutoAssignMetricEvidence(v);
     const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
-    let classIssues = n(m.classSlotIssueCount ?? m.classIssueCount);
-    let cardIssues = n(m.cardCoverageIssueCount);
-    let groupIssues = n(m.groupCoverageIssueCount);
-    let failed = n(m.failedCount ?? m.failedUnitCount);
-    let shortage = n(m.cardShortageSlots);
-    if (!classIssues && !cardIssues && !groupIssues && !failed && v.note) {
-      const text = String(v.note || "");
-      classIssues = Number((text.match(/학급\s*시수\s*(\d+)개/) || [0,0])[1]) || 0;
-      cardIssues = Number((text.match(/카드\s*시수\s*(\d+)개/) || [0,0])[1]) || 0;
-      groupIssues = Number((text.match(/그룹\/개별\s*(\d+)개/) || [0,0])[1]) || 0;
-      failed = Number((text.match(/미배치\s*(\d+)개/) || [0,0])[1]) || 0;
-      shortage = cardIssues;
-    }
-    return shortage * 100000 + cardIssues * 30000 + groupIssues * 12000 + classIssues * 4000 + failed * 1000 - n(v.entryCount) / 1000;
+    const incompletePenalty = evidence.complete ? 0 : 900000000;
+    return incompletePenalty
+      + evidence.cardShortageSlots * 100000
+      + evidence.cardCoverageIssueCount * 30000
+      + evidence.groupCoverageIssueCount * 12000
+      + evidence.classSlotIssueCount * 4000
+      + evidence.failedCount * 1000
+      + evidence.restrictedTeacherIssueCount * 250
+      + evidence.missingRoomCount * 500
+      + evidence.protectedIntrusionCount * 500
+      - n(v.entryCount) / 1000;
   }
 
   function compactBestAutoAssignSnapshot(version = {}) {
@@ -148,9 +212,11 @@ export function createAutoAssignAll(deps) {
 
   function updateBestAutoAssignSnapshot(domain, version = {}) {
     if (!domain || !version || !Array.isArray(version.entries) || !version.entries.length) return null;
+    if (!hasCompleteAutoAssignMetricEvidence(version)) return compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot || null);
     const candidate = compactBestAutoAssignSnapshot(version);
     if (!candidate) return null;
-    const current = compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot || null);
+    const currentRaw = domain.bestAutoAssignSnapshot || null;
+    const current = hasCompleteAutoAssignMetricEvidence(currentRaw) ? compactBestAutoAssignSnapshot(currentRaw) : null;
     if (!current || bestSnapshotQualityScore(candidate) < bestSnapshotQualityScore(current)) {
       candidate.name = candidate.name || "자동배치 최고 결과";
       candidate.bestSnapshot = true;
@@ -158,19 +224,24 @@ export function createAutoAssignAll(deps) {
       domain.bestAutoAssignSnapshot = candidate;
       return candidate;
     }
+    domain.bestAutoAssignSnapshot = current;
     return current;
   }
 
   function ensureBestAutoAssignSnapshot(domain) {
     if (!domain) return null;
+    if (domain.bestAutoAssignSnapshot && !hasCompleteAutoAssignMetricEvidence(domain.bestAutoAssignSnapshot)) {
+      domain.bestAutoAssignSnapshot = null;
+    }
     const savedBest = Array.isArray(domain.savedSchedules)
       ? domain.savedSchedules
           .filter(v => v && Array.isArray(v.entries) && v.entries.length)
           .filter(v => String(v.snapshotKind || "") === "result" || String(v.name || "").includes("자동배치 결과"))
+          .filter(hasCompleteAutoAssignMetricEvidence)
           .sort((a, b) => bestSnapshotQualityScore(a) - bestSnapshotQualityScore(b))[0]
       : null;
     if (savedBest) updateBestAutoAssignSnapshot(domain, savedBest);
-    if (domain.bestAutoAssignSnapshot && Array.isArray(domain.bestAutoAssignSnapshot.entries) && domain.bestAutoAssignSnapshot.entries.length) {
+    if (domain.bestAutoAssignSnapshot && hasCompleteAutoAssignMetricEvidence(domain.bestAutoAssignSnapshot) && Array.isArray(domain.bestAutoAssignSnapshot.entries) && domain.bestAutoAssignSnapshot.entries.length) {
       domain.bestAutoAssignSnapshot = compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot);
       return domain.bestAutoAssignSnapshot;
     }
@@ -191,7 +262,7 @@ export function createAutoAssignAll(deps) {
     const before = auto.filter(isBefore);
     const manual = all.filter(v => !isAuto(v));
     if (bestSnapshot) add(bestSnapshot);
-    after.slice().sort((a,b) => snapshotQualityScoreForPrune(a) - snapshotQualityScoreForPrune(b)).slice(0, 1).forEach(add);
+    after.slice().filter(hasCompleteAutoAssignMetricEvidence).sort((a,b) => snapshotQualityScoreForPrune(a) - snapshotQualityScoreForPrune(b)).slice(0, 1).forEach(add);
     after.slice().sort((a,b) => time(b) - time(a)).slice(0, 4).forEach(add);
     before.slice().sort((a,b) => time(b) - time(a)).slice(0, 1).forEach(add);
     manual.slice().sort((a,b) => time(b) - time(a)).slice(0, 2).forEach(add);
@@ -226,6 +297,7 @@ export function createAutoAssignAll(deps) {
       snapshotKind: kind,
       source: "autoassign",
       autoAssignMeta: compactAutoAssignSnapshotMeta(meta || {}),
+      cardGenerationMeta: appState.timetable?.cardGenerationMeta ? cloneAutoAssignData(appState.timetable.cardGenerationMeta) : null,
       entries: snapshotEntries,
     };
 
@@ -3551,6 +3623,10 @@ export function createAutoAssignAll(deps) {
         || (version.autoSnapshot === true && String(version.name || "").includes("자동배치 결과"))
         || (version.source === "autoassign" && String(version.name || "").includes("자동배치 결과"));
       if (!isAutoResult) return;
+      if (!hasCompleteAutoAssignMetricEvidence(version)) {
+        addTimetableLog?.("warn", "자동배치 보관본 제외", `${version.name || "이름 없는 보관본"}: 카드/그룹 검증 메타가 없어 최고 결과 후보에서 제외했습니다.`);
+        return;
+      }
       const snapshotEntries = normalizeSnapshotEntries(version.entries || []);
       if (!snapshotEntries.length) return;
       const meta = version.autoAssignMeta || {};
@@ -5251,16 +5327,36 @@ export function createAutoAssignAll(deps) {
         ts: Date.now(),
         rejectedByQualityGate: true,
         reason: "새 자동배치 결과가 이전 최고 자동배치 결과보다 검증 점수가 나빠 반영하지 않았습니다.",
+        rejectReason: "worse-than-complete-best-snapshot",
         activeGrades: activeGrades.map(gradeDisplay).join(", "),
         placementModeLabel: modeText,
         beforeValidation: preValidation,
         referenceValidation: qualityBaselineValidation,
         rejectedValidation: postValidation,
+        validationSummary: qualityBaselineValidation.summary || "이전 최고 결과 유지",
         beforeMetrics: baselineAutoRunMetrics,
+        currentBeforeMetrics: baselineAutoRunMetrics,
         referenceMetrics: qualityBaselineMetrics,
         rejectedMetrics: finalAutoRunMetrics,
-        referenceSource: qualityBaselineReference?.source || "current",
-        referenceSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
+        baselineMetrics: qualityBaselineMetrics,
+        finalMetrics: qualityBaselineMetrics,
+        classSlotIssueCount: Number(qualityBaselineMetrics.classSlotIssueCount || 0),
+        classIssueCount: Number(qualityBaselineMetrics.classSlotIssueCount || 0),
+        classShortCount: Number(qualityBaselineMetrics.classShortCount || 0),
+        classOverCount: Number(qualityBaselineMetrics.classOverCount || 0),
+        cardCoverageIssueCount: Number(qualityBaselineMetrics.cardCoverageIssueCount || 0),
+        groupCoverageIssueCount: Number(qualityBaselineMetrics.groupCoverageIssueCount || 0),
+        failedCount: Number(qualityBaselineMetrics.failedCount || 0),
+        failedUnitCount: Number(qualityBaselineMetrics.failedCount || 0),
+        cardShortageSlots: Number(qualityBaselineMetrics.cardShortageSlots || 0),
+        restrictedTeacherIssueCount: Number(qualityBaselineMetrics.restrictedTeacherIssueCount || 0),
+        protectedIntrusionCount: Number(qualityBaselineMetrics.protectedIntrusionCount || 0),
+        missingRoomCount: Number(qualityBaselineMetrics.missingRoomCount || 0),
+        metricSource: "qualityBaseline",
+        metricCompleteness: "complete",
+        qualityBaselineSource: qualityBaselineReference?.source || "current",
+        qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
+        qualityBaselineValidationSummary: qualityBaselineValidation.summary || "",
         restoredFromReference: qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot",
         comparisonSummary: `${qualityBaselineValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`
       };
@@ -5363,6 +5459,8 @@ export function createAutoAssignAll(deps) {
       comparisonSummary: `${preValidation.summary || "이전 상태"} → ${postValidation.summary || "결과 상태"}`,
       validationSummary: postValidation.summary,
       validationOk: postValidation.ok,
+      metricSource: "postValidation",
+      metricCompleteness: "complete",
       classSlotIssueCount: postValidation.classSlots?.issueCount || 0,
       cardCoverageIssueCount: postValidation.cardCoverage?.issueCount || 0,
       cardShortCount: postValidation.cardCoverage?.shortCount || 0,
@@ -5395,6 +5493,8 @@ export function createAutoAssignAll(deps) {
     if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
     if (afterAutoSnapshot) {
       try {
+        report.metricSource = "postValidation";
+        report.metricCompleteness = "complete";
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
         afterAutoSnapshot.note = [
           "자동 생성된 배치 보관본입니다.",

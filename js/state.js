@@ -670,6 +670,8 @@ function compactAutoAssignMetaForStorage(meta = null) {
     protectedIntrusionCount: Number(meta.protectedIntrusionCount || 0) || 0,
     missingRoomCount: Number(meta.missingRoomCount || 0) || 0,
     selectedAcceptedLabel: clean(meta.selectedAcceptedLabel),
+    metricSource: clean(meta.metricSource),
+    metricCompleteness: clean(meta.metricCompleteness),
     qualityBaselineSource: clean(meta.qualityBaselineSource),
     qualityBaselineSnapshotName: clean(meta.qualityBaselineSnapshotName),
     qualityBaselineValidationSummary: clean(meta.qualityBaselineValidationSummary),
@@ -692,32 +694,57 @@ function savedVersionTime(v = {}) {
   return Number.isFinite(t) ? t : 0;
 }
 
-function savedVersionQualityScore(v = {}) {
+function extractSavedVersionMetricEvidence(v = {}) {
   const m = v.autoAssignMeta || {};
+  const text = [v.note, m.validationSummary, m.qualityBaselineValidationSummary].map(x => String(x || "")).join(" / ");
   const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
-  let classIssues = n(m.classSlotIssueCount ?? m.classIssueCount);
-  let cardIssues = n(m.cardCoverageIssueCount);
-  let groupIssues = n(m.groupCoverageIssueCount);
-  let failed = n(m.failedCount ?? m.failedUnitCount);
-  let shortage = n(m.cardShortageSlots);
-  let restricted = n(m.restrictedTeacherIssueCount);
-  let rooms = n(m.missingRoomCount);
-  let protectedHits = n(m.protectedIntrusionCount);
+  const pick = (...values) => {
+    for (const value of values) if (Number.isFinite(Number(value))) return Number(value);
+    return 0;
+  };
+  const matchNum = regex => Number((text.match(regex) || [0, ""])[1]) || 0;
+  const hasMetaObject = !!(m && typeof m === "object" && Object.keys(m).length);
+  const hasFinalMetrics = !!(m.finalMetrics && typeof m.finalMetrics === "object");
+  const hasClassEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "classSlotIssueCount") || Object.prototype.hasOwnProperty.call(m, "classIssueCount") || /학급\s*시수\s*\d+개/.test(text) || /검증\s*통과/.test(text);
+  const hasCardEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "cardCoverageIssueCount") || Object.prototype.hasOwnProperty.call(m, "cardShortageSlots") || /카드\s*시수\s*\d+개/.test(text);
+  const hasGroupEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "groupCoverageIssueCount") || /그룹\/개별\s*\d+개/.test(text);
+  const hasFailedEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "failedCount") || Object.prototype.hasOwnProperty.call(m, "failedUnitCount") || /미배치\s*\d+개/.test(text);
+  const cardCoverageIssueCount = pick(m.cardCoverageIssueCount, m.finalMetrics?.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
+  const groupCoverageIssueCount = pick(m.groupCoverageIssueCount, m.finalMetrics?.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
+  const classSlotIssueCount = pick(m.classSlotIssueCount, m.classIssueCount, m.finalMetrics?.classSlotIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
+  const failedCount = pick(m.failedCount, m.failedUnitCount, m.finalMetrics?.failedCount, matchNum(/미배치\s*(\d+)개/));
+  const cardShortageSlots = pick(m.cardShortageSlots, m.finalMetrics?.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
+  return {
+    complete: !!(hasMetaObject && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence),
+    classSlotIssueCount,
+    cardCoverageIssueCount,
+    groupCoverageIssueCount,
+    failedCount,
+    cardShortageSlots,
+    restrictedTeacherIssueCount: pick(m.restrictedTeacherIssueCount, m.finalMetrics?.restrictedTeacherIssueCount),
+    missingRoomCount: pick(m.missingRoomCount, m.finalMetrics?.missingRoomCount),
+    protectedIntrusionCount: pick(m.protectedIntrusionCount, m.finalMetrics?.protectedIntrusionCount)
+  };
+}
 
-  if (v.note) {
-    const text = String(v.note || "");
-    const cls = text.match(/학급\s*시수\s*(\d+)개/);
-    const card = text.match(/카드\s*시수\s*(\d+)개/);
-    const group = text.match(/그룹\/개별\s*(\d+)개/);
-    const fail = text.match(/미배치\s*(\d+)개/);
-    if (!classIssues && cls) classIssues = Number(cls[1]) || 0;
-    if (!cardIssues && card) cardIssues = Number(card[1]) || 0;
-    if (!groupIssues && group) groupIssues = Number(group[1]) || 0;
-    if (!failed && fail) failed = Number(fail[1]) || 0;
-    if (!shortage && cardIssues) shortage = cardIssues;
-  }
+function hasCompleteSavedVersionMetrics(v = {}) {
+  return extractSavedVersionMetricEvidence(v).complete;
+}
 
-  return shortage * 100000 + cardIssues * 30000 + groupIssues * 12000 + classIssues * 4000 + failed * 1000 + restricted * 250 + rooms * 500 + protectedHits * 500 - n(v.entryCount) / 1000;
+function savedVersionQualityScore(v = {}) {
+  const evidence = extractSavedVersionMetricEvidence(v);
+  const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
+  const incompletePenalty = evidence.complete ? 0 : 900000000;
+  return incompletePenalty
+    + evidence.cardShortageSlots * 100000
+    + evidence.cardCoverageIssueCount * 30000
+    + evidence.groupCoverageIssueCount * 12000
+    + evidence.classSlotIssueCount * 4000
+    + evidence.failedCount * 1000
+    + evidence.restrictedTeacherIssueCount * 250
+    + evidence.missingRoomCount * 500
+    + evidence.protectedIntrusionCount * 500
+    - n(v.entryCount) / 1000;
 }
 
 function isAutoTimetableVersion(v = {}) {
@@ -745,7 +772,7 @@ function pruneSavedTimetableVersions(list = []) {
   const autoBefore = auto.filter(isBeforeAutoTimetableVersion);
   const manual = normalized.filter(v => !isAutoTimetableVersion(v));
 
-  autoAfter.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0] && add(autoAfter.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0]);
+  autoAfter.slice().filter(hasCompleteSavedVersionMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0] && add(autoAfter.slice().filter(hasCompleteSavedVersionMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0]);
   autoAfter.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_AUTO_AFTER_LIMIT).forEach(add);
   autoBefore.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_AUTO_BEFORE_LIMIT).forEach(add);
   manual.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_MANUAL_LIMIT).forEach(add);
@@ -785,6 +812,7 @@ function normalizeSavedTimetableVersion(item = {}) {
 
 function normalizeBestAutoAssignSnapshot(item = {}) {
   if (!item || !Array.isArray(item.entries) || !item.entries.length) return null;
+  if (!hasCompleteSavedVersionMetrics(item)) return null;
   const normalized = normalizeSavedTimetableVersion({
     ...item,
     autoSnapshot: true,
@@ -797,7 +825,7 @@ function normalizeBestAutoAssignSnapshot(item = {}) {
 
 function findBestAutoAssignSnapshotFromSaved(list = []) {
   const candidates = Array.isArray(list)
-    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && Array.isArray(v.entries) && v.entries.length)
+    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && Array.isArray(v.entries) && v.entries.length && hasCompleteSavedVersionMetrics(v))
     : [];
   if (!candidates.length) return null;
   const best = candidates.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0];
