@@ -666,6 +666,9 @@ function compactAutoAssignMetaForStorage(meta = null) {
     cardCoverageIssueCount: Number(meta.cardCoverageIssueCount ?? meta.finalMetrics?.cardCoverageIssueCount ?? 0) || 0,
     groupCoverageIssueCount: Number(meta.groupCoverageIssueCount ?? meta.finalMetrics?.groupCoverageIssueCount ?? 0) || 0,
     cardShortageSlots: Number(meta.cardShortageSlots ?? meta.finalMetrics?.cardShortageSlots ?? 0) || 0,
+    classTotal: Number(meta.classTotal ?? meta.finalMetrics?.classTotal ?? 0) || 0,
+    classTargetTotal: Number(meta.classTargetTotal ?? meta.finalMetrics?.classTargetTotal ?? 0) || 0,
+    classTargetGap: Number(meta.classTargetGap ?? meta.finalMetrics?.classTargetGap ?? 0) || 0,
     restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount || 0) || 0,
     protectedIntrusionCount: Number(meta.protectedIntrusionCount || 0) || 0,
     missingRoomCount: Number(meta.missingRoomCount || 0) || 0,
@@ -705,17 +708,32 @@ function extractSavedVersionMetricEvidence(v = {}) {
   const matchNum = regex => Number((text.match(regex) || [0, ""])[1]) || 0;
   const hasMetaObject = !!(m && typeof m === "object" && Object.keys(m).length);
   const hasFinalMetrics = !!(m.finalMetrics && typeof m.finalMetrics === "object");
-  const hasClassEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "classSlotIssueCount") || Object.prototype.hasOwnProperty.call(m, "classIssueCount") || /학급\s*시수\s*\d+개/.test(text) || /검증\s*통과/.test(text);
-  const hasCardEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "cardCoverageIssueCount") || Object.prototype.hasOwnProperty.call(m, "cardShortageSlots") || /카드\s*시수\s*\d+개/.test(text);
-  const hasGroupEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "groupCoverageIssueCount") || /그룹\/개별\s*\d+개/.test(text);
-  const hasFailedEvidence = hasFinalMetrics || Object.prototype.hasOwnProperty.call(m, "failedCount") || Object.prototype.hasOwnProperty.call(m, "failedUnitCount") || /미배치\s*\d+개/.test(text);
+  const metricCompleteness = clean(m.metricCompleteness);
+  const validationSummary = clean(m.validationSummary);
+  const hasClassTextEvidence = /학급\s*시수\s*\d+개/.test(text) || /검증\s*통과/.test(text);
+  const hasCardTextEvidence = /카드\s*시수\s*\d+개/.test(text);
+  const hasGroupTextEvidence = /그룹\/개별\s*\d+개/.test(text);
+  const hasFailedTextEvidence = /미배치\s*\d+개/.test(text);
+  // r33: 저장 압축 과정에서 생긴 0값 필드는 현대 검증 메타의 증거가 아닙니다.
+  // finalMetrics, metricCompleteness=complete, 또는 카드/그룹/학급 문장이 있는 validationSummary/note만 후보로 인정합니다.
+  const modernMetricEvidence = hasFinalMetrics || metricCompleteness === "complete" || (!!validationSummary && hasCardTextEvidence && hasGroupTextEvidence && hasClassTextEvidence);
+  const hasClassEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "classSlotIssueCount") || Object.prototype.hasOwnProperty.call(m, "classIssueCount") || hasClassTextEvidence);
+  const hasCardEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "cardCoverageIssueCount") || Object.prototype.hasOwnProperty.call(m, "cardShortageSlots") || hasCardTextEvidence);
+  const hasGroupEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "groupCoverageIssueCount") || hasGroupTextEvidence);
+  const hasFailedEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "failedCount") || Object.prototype.hasOwnProperty.call(m, "failedUnitCount") || hasFailedTextEvidence);
   const cardCoverageIssueCount = pick(m.cardCoverageIssueCount, m.finalMetrics?.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
   const groupCoverageIssueCount = pick(m.groupCoverageIssueCount, m.finalMetrics?.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
   const classSlotIssueCount = pick(m.classSlotIssueCount, m.classIssueCount, m.finalMetrics?.classSlotIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
   const failedCount = pick(m.failedCount, m.failedUnitCount, m.finalMetrics?.failedCount, matchNum(/미배치\s*(\d+)개/));
   const cardShortageSlots = pick(m.cardShortageSlots, m.finalMetrics?.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
+  const classTotal = pick(m.classTotal, m.finalMetrics?.classTotal);
+  const classTargetTotal = pick(m.classTargetTotal, m.finalMetrics?.classTargetTotal);
+  const classTargetGap = classTargetTotal > 0 ? Math.abs(classTargetTotal - classTotal) : 0;
   return {
-    complete: !!(hasMetaObject && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence),
+    complete: !!(hasMetaObject && modernMetricEvidence && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence),
+    modernMetricEvidence,
+    metricCompleteness,
+    validationSummary,
     classSlotIssueCount,
     cardCoverageIssueCount,
     groupCoverageIssueCount,
@@ -723,7 +741,10 @@ function extractSavedVersionMetricEvidence(v = {}) {
     cardShortageSlots,
     restrictedTeacherIssueCount: pick(m.restrictedTeacherIssueCount, m.finalMetrics?.restrictedTeacherIssueCount),
     missingRoomCount: pick(m.missingRoomCount, m.finalMetrics?.missingRoomCount),
-    protectedIntrusionCount: pick(m.protectedIntrusionCount, m.finalMetrics?.protectedIntrusionCount)
+    protectedIntrusionCount: pick(m.protectedIntrusionCount, m.finalMetrics?.protectedIntrusionCount),
+    classTotal,
+    classTargetTotal,
+    classTargetGap
   };
 }
 
@@ -735,7 +756,9 @@ function savedVersionQualityScore(v = {}) {
   const evidence = extractSavedVersionMetricEvidence(v);
   const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
   const incompletePenalty = evidence.complete ? 0 : 900000000;
+  const classTargetGap = Number(evidence.classTargetGap || 0);
   return incompletePenalty
+    + classTargetGap * 180000
     + evidence.cardShortageSlots * 100000
     + evidence.cardCoverageIssueCount * 30000
     + evidence.groupCoverageIssueCount * 12000
@@ -745,6 +768,20 @@ function savedVersionQualityScore(v = {}) {
     + evidence.missingRoomCount * 500
     + evidence.protectedIntrusionCount * 500
     - n(v.entryCount) / 1000;
+}
+
+function allowedSavedClassTargetGap(evidence = {}) {
+  const target = Number(evidence.classTargetTotal || 0);
+  return Math.max(8, Math.ceil(target * 0.025));
+}
+
+function hasStructurallyUsableSavedMetrics(v = {}) {
+  const evidence = extractSavedVersionMetricEvidence(v);
+  if (!evidence.complete) return false;
+  // old snapshots often have no finalMetrics/classTotal. They are allowed through state pruning
+  // only when actual autoassign can recompute them; bestAutoAssignSnapshot itself must not keep them.
+  if (!Number(evidence.classTargetTotal || 0)) return true;
+  return Number(evidence.classTargetGap || 0) <= allowedSavedClassTargetGap(evidence);
 }
 
 function isAutoTimetableVersion(v = {}) {
@@ -772,7 +809,7 @@ function pruneSavedTimetableVersions(list = []) {
   const autoBefore = auto.filter(isBeforeAutoTimetableVersion);
   const manual = normalized.filter(v => !isAutoTimetableVersion(v));
 
-  autoAfter.slice().filter(hasCompleteSavedVersionMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0] && add(autoAfter.slice().filter(hasCompleteSavedVersionMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0]);
+  autoAfter.slice().filter(hasStructurallyUsableSavedMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0] && add(autoAfter.slice().filter(hasStructurallyUsableSavedMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0]);
   autoAfter.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_AUTO_AFTER_LIMIT).forEach(add);
   autoBefore.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_AUTO_BEFORE_LIMIT).forEach(add);
   manual.slice().sort((a, b) => savedVersionTime(b) - savedVersionTime(a)).slice(0, TIMETABLE_MANUAL_LIMIT).forEach(add);
@@ -812,7 +849,7 @@ function normalizeSavedTimetableVersion(item = {}) {
 
 function normalizeBestAutoAssignSnapshot(item = {}) {
   if (!item || !Array.isArray(item.entries) || !item.entries.length) return null;
-  if (!hasCompleteSavedVersionMetrics(item)) return null;
+  if (!hasStructurallyUsableSavedMetrics(item)) return null;
   const normalized = normalizeSavedTimetableVersion({
     ...item,
     autoSnapshot: true,
@@ -825,11 +862,30 @@ function normalizeBestAutoAssignSnapshot(item = {}) {
 
 function findBestAutoAssignSnapshotFromSaved(list = []) {
   const candidates = Array.isArray(list)
-    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && Array.isArray(v.entries) && v.entries.length && hasCompleteSavedVersionMetrics(v))
+    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && Array.isArray(v.entries) && v.entries.length && hasStructurallyUsableSavedMetrics(v))
     : [];
   if (!candidates.length) return null;
   const best = candidates.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0];
   return normalizeBestAutoAssignSnapshot(best);
+}
+
+function normalizeCardGenerationMeta(raw = {}) {
+  if (raw.cardGenerationMeta && typeof raw.cardGenerationMeta === "object") return JSON.parse(JSON.stringify(raw.cardGenerationMeta));
+  const ttcards = Array.isArray(raw.ttcards) ? raw.ttcards : [];
+  if (!ttcards.length) return null;
+  return {
+    schemaVersion: "2026-06-11-card-meta-recovered-r33",
+    action: "recovered-placeholder",
+    checkedAt: "",
+    cardCount: ttcards.length,
+    generatedCardCount: ttcards.filter(c => c && c.source !== "manual" && c.isManual !== true).length,
+    manualCardCount: ttcards.filter(c => c && (c.source === "manual" || c.isManual === true)).length,
+    warningCount: null,
+    errorCount: null,
+    repairCount: null,
+    recovered: true,
+    note: "저장된 cardGenerationMeta가 비어 있어 카드 수만 복구한 추적용 메타입니다. 카드 데이터 새로고침 시 실제 검증 메타로 갱신됩니다."
+  };
 }
 
 
@@ -914,7 +970,7 @@ function normalizeTimetableDomain(raw = {}) {
     bestAutoAssignSnapshot: normalizeBestAutoAssignSnapshot(raw.bestAutoAssignSnapshot) || findBestAutoAssignSnapshotFromSaved(Array.isArray(raw.savedSchedules) ? raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length) : []),
     teacherConstraints: constraints,
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
-    cardGenerationMeta: raw.cardGenerationMeta && typeof raw.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(raw.cardGenerationMeta)) : null,
+    cardGenerationMeta: normalizeCardGenerationMeta(raw),
     autoAssignMeta: compactAutoAssignMetaForStorage(raw.autoAssignMeta),
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용

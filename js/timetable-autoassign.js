@@ -78,6 +78,9 @@ export function createAutoAssignAll(deps) {
       failedUnitCount: Number(meta.failedUnitCount ?? meta.failedCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
       failedCount: Number(meta.failedCount ?? meta.failedUnitCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
       cardShortageSlots: Number(meta.cardShortageSlots ?? meta.finalMetrics?.cardShortageSlots ?? 0) || 0,
+      classTotal: Number(meta.classTotal ?? meta.finalMetrics?.classTotal ?? 0) || 0,
+      classTargetTotal: Number(meta.classTargetTotal ?? meta.finalMetrics?.classTargetTotal ?? 0) || 0,
+      classTargetGap: Number(meta.classTargetGap ?? meta.finalMetrics?.classTargetGap ?? 0) || 0,
       restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount ?? meta.finalMetrics?.restrictedTeacherIssueCount ?? 0) || 0,
       missingRoomCount: Number(meta.missingRoomCount ?? meta.finalMetrics?.missingRoomCount ?? 0) || 0,
       protectedIntrusionCount: Number(meta.protectedIntrusionCount ?? meta.finalMetrics?.protectedIntrusionCount ?? 0) || 0,
@@ -120,22 +123,34 @@ export function createAutoAssignAll(deps) {
     const matchNum = regex => Number((text.match(regex) || [0, ""])[1]) || 0;
     const hasMetaObject = !!(meta && typeof meta === "object" && Object.keys(meta).length);
     const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
-    const hasCardEvidence = hasFinalMetrics
+    const metricCompleteness = String(meta.metricCompleteness || "").trim();
+    const validationSummary = String(meta.validationSummary || "").trim();
+    const hasCardTextEvidence = /카드\s*시수\s*\d+개/.test(text);
+    const hasGroupTextEvidence = /그룹\/개별\s*\d+개/.test(text);
+    const hasFailedTextEvidence = /미배치\s*\d+개/.test(text);
+    const hasClassTextEvidence = /학급\s*시수\s*\d+개/.test(text) || /검증\s*통과/.test(text);
+    // r33: state.js가 예전 자동배치 보관본을 압축하면서 없는 metric 필드를 0으로 채운 경우가 있습니다.
+    // 그런 0값 필드는 증거가 아닙니다. finalMetrics, metricCompleteness=complete, 또는 note/summary의 명시 문장만 현대 메타로 인정합니다.
+    const modernMetricEvidence = hasFinalMetrics || metricCompleteness === "complete" || (!!validationSummary && hasCardTextEvidence && hasGroupTextEvidence && hasClassTextEvidence);
+    const hasCardEvidence = modernMetricEvidence && (hasFinalMetrics
+      || metricCompleteness === "complete"
       || Object.prototype.hasOwnProperty.call(meta, "cardCoverageIssueCount")
       || Object.prototype.hasOwnProperty.call(meta, "cardShortageSlots")
-      || /카드\s*시수\s*\d+개/.test(text);
-    const hasGroupEvidence = hasFinalMetrics
+      || hasCardTextEvidence);
+    const hasGroupEvidence = modernMetricEvidence && (hasFinalMetrics
+      || metricCompleteness === "complete"
       || Object.prototype.hasOwnProperty.call(meta, "groupCoverageIssueCount")
-      || /그룹\/개별\s*\d+개/.test(text);
-    const hasFailedEvidence = hasFinalMetrics
+      || hasGroupTextEvidence);
+    const hasFailedEvidence = modernMetricEvidence && (hasFinalMetrics
+      || metricCompleteness === "complete"
       || Object.prototype.hasOwnProperty.call(meta, "failedCount")
       || Object.prototype.hasOwnProperty.call(meta, "failedUnitCount")
-      || /미배치\s*\d+개/.test(text);
-    const hasClassEvidence = hasFinalMetrics
+      || hasFailedTextEvidence);
+    const hasClassEvidence = modernMetricEvidence && (hasFinalMetrics
+      || metricCompleteness === "complete"
       || Object.prototype.hasOwnProperty.call(meta, "classSlotIssueCount")
       || Object.prototype.hasOwnProperty.call(meta, "classIssueCount")
-      || /학급\s*시수\s*\d+개/.test(text)
-      || /검증\s*통과/.test(text);
+      || hasClassTextEvidence);
 
     const cardCoverageIssueCount = pick(meta.cardCoverageIssueCount, meta.finalMetrics?.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
     const groupCoverageIssueCount = pick(meta.groupCoverageIssueCount, meta.finalMetrics?.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
@@ -145,12 +160,15 @@ export function createAutoAssignAll(deps) {
     const restrictedTeacherIssueCount = pick(meta.restrictedTeacherIssueCount, meta.finalMetrics?.restrictedTeacherIssueCount);
     const missingRoomCount = pick(meta.missingRoomCount, meta.finalMetrics?.missingRoomCount);
     const protectedIntrusionCount = pick(meta.protectedIntrusionCount, meta.finalMetrics?.protectedIntrusionCount);
-    const complete = !!(hasMetaObject && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence);
+    const complete = !!(hasMetaObject && modernMetricEvidence && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence);
     const legacyPartial = !complete && /자동배치/.test(String(version?.name || ""));
     return {
       complete,
       legacyPartial,
       hasFinalMetrics,
+      metricCompleteness,
+      validationSummary,
+      modernMetricEvidence,
       hasClassEvidence,
       hasCardEvidence,
       hasGroupEvidence,
@@ -3496,6 +3514,10 @@ export function createAutoAssignAll(deps) {
     const bGroupIssues = Number(b.groupCoverageIssueCount ?? 999999);
     if (aGroupIssues !== bGroupIssues) return aGroupIssues - bGroupIssues;
 
+    const aClassGap = Number(a.classTargetGap ?? (Number.isFinite(Number(a.classTargetTotal)) && Number.isFinite(Number(a.classTotal)) ? Math.abs(Number(a.classTargetTotal) - Number(a.classTotal)) : 999999));
+    const bClassGap = Number(b.classTargetGap ?? (Number.isFinite(Number(b.classTargetTotal)) && Number.isFinite(Number(b.classTotal)) ? Math.abs(Number(b.classTargetTotal) - Number(b.classTotal)) : 999999));
+    if (aClassGap !== bClassGap) return aClassGap - bClassGap;
+
     const aClassIssues = Number(a.classSlotIssueCount ?? 999999);
     const bClassIssues = Number(b.classSlotIssueCount ?? 999999);
     if (aClassIssues !== bClassIssues) return aClassIssues - bClassIssues;
@@ -3546,6 +3568,9 @@ export function createAutoAssignAll(deps) {
     const classIssues = cls.issues || [];
     const cardShortageSlots = (card.shortRows || []).reduce((sum, row) => sum + Math.max(0, -Number(row.diff || 0)), 0);
     const cardOverageSlots = (card.overRows || []).reduce((sum, row) => sum + Math.max(0, Number(row.diff || 0)), 0);
+    const classTotal = Number(cls.total || 0);
+    const classTargetTotal = Number(cls.targetTotal || 0);
+    const classTargetGap = classTargetTotal > 0 ? Math.abs(classTargetTotal - classTotal) : 999999;
     return {
       label: context.label || '',
       validationSummary: report.summary || '',
@@ -3566,9 +3591,25 @@ export function createAutoAssignAll(deps) {
       classSlotIssueCount: Number(cls.issueCount || 0),
       classShortCount: classIssues.filter(row => Number(row.diff || 0) < 0).length,
       classOverCount: classIssues.filter(row => Number(row.diff || 0) > 0).length,
-      classTotal: Number(cls.total || 0),
-      classTargetTotal: Number(cls.targetTotal || 0)
+      classTotal,
+      classTargetTotal,
+      classTargetGap
     };
+  }
+
+  function allowedClassTargetGap(metrics = {}) {
+    const target = Number(metrics.classTargetTotal || 0);
+    // 15개 반 × 35시수 = 525 기준에서는 12시수까지를 임시 최고 후보 허용 범위로 둡니다.
+    // 471/525처럼 구조적으로 무너진 과거 보관본은 여기서 제외됩니다.
+    return Math.max(8, Math.ceil(target * 0.025));
+  }
+
+  function isStructurallyUsableAutoMetrics(metrics = {}) {
+    const target = Number(metrics.classTargetTotal || 0);
+    const total = Number(metrics.classTotal || 0);
+    if (!target || !Number.isFinite(target) || !Number.isFinite(total)) return false;
+    const gap = Math.abs(target - total);
+    return gap <= allowedClassTargetGap(metrics);
   }
 
   function buildAutoRunMetricsForEntries(allEntries = [], scopeGrades = [], failedItems = [], context = {}) {
@@ -3597,6 +3638,7 @@ export function createAutoAssignAll(deps) {
       `카드문제 ${Number(metrics.cardCoverageIssueCount || 0)}개`,
       `그룹문제 ${Number(metrics.groupCoverageIssueCount || 0)}개`,
       `학급문제 ${Number(metrics.classSlotIssueCount || 0)}개`,
+      Number(metrics.classTargetTotal || 0) ? `학급합계 ${Number(metrics.classTotal || 0)}/${Number(metrics.classTargetTotal || 0)}` : '',
       `미배치 ${Number(metrics.failedCount || 0)}개`,
       Number(metrics.restrictedTeacherIssueCount || 0) ? `제약교사 ${Number(metrics.restrictedTeacherIssueCount || 0)}명` : '',
       Number(metrics.missingRoomCount || 0) ? `교실미배정 ${Number(metrics.missingRoomCount || 0)}개` : '',
@@ -3645,6 +3687,10 @@ export function createAutoAssignAll(deps) {
           ? Number(meta.finalMetrics.qualityScore)
           : (Number.isFinite(Number(meta.postProcessQualityScore)) ? Number(meta.postProcessQualityScore) : Infinity)
       });
+      if (!isStructurallyUsableAutoMetrics(metrics)) {
+        addTimetableLog?.("warn", "자동배치 보관본 제외", `${version.name || "이름 없는 보관본"}: 학급 합계 ${metrics.classTotal}/${metrics.classTargetTotal}로 목표와 차이가 커 최고 결과 후보에서 제외했습니다.`);
+        return;
+      }
       candidates.push({
         source: (version.bestSnapshot === true || String(version.source || "") === "autoassign-best") ? "bestSnapshot" : "savedSchedule",
         name: version.bestSnapshot === true ? `최고 보관본 · ${version.name || "자동배치 결과"}` : (version.name || "저장된 자동배치 결과"),
