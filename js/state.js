@@ -633,6 +633,19 @@ function safeJsonClone(value) {
 }
 
 
+function compactDiagnosticSuggestionForStorage(suggestion) {
+  if (suggestion == null) return "";
+  if (typeof suggestion !== "object") {
+    const text = clean(suggestion);
+    return text === "[object Object]" ? "" : text;
+  }
+  const title = clean(suggestion.title || suggestion.summary || "제안");
+  const detail = clean(suggestion.detail || "");
+  const available = Number(suggestion.availableAfter || 0) || 0;
+  const summary = clean(suggestion.summary || `${title}${detail ? `: ${detail}` : ""}${available ? ` · 완화 시 ${available}칸 가능` : ""}`);
+  return summary || title;
+}
+
 function compactResidualPuzzleReportForStorage(report = null) {
   if (!report || typeof report !== "object") return null;
   const rows = Array.isArray(report.rows) ? report.rows.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(row => ({
@@ -650,6 +663,24 @@ function compactResidualPuzzleReportForStorage(report = null) {
       reasonCodes: Array.isArray(slot?.reasonCodes) ? slot.reasonCodes.slice(0, 6).map(clean) : [],
       movableBlockCount: Number(slot?.movableBlockCount || 0) || 0,
       blockedBlockCount: Number(slot?.blockedBlockCount || 0) || 0,
+      executable: slot?.executable === true,
+      blockers: Array.isArray(slot?.blockers) ? slot.blockers.slice(0, 4).map(block => ({
+        key: clean(block?.key || ""),
+        names: Array.isArray(block?.names) ? block.names.slice(0, 4).map(clean) : [],
+        teachers: Array.isArray(block?.teachers) ? block.teachers.slice(0, 4).map(clean) : [],
+        classes: Array.isArray(block?.classes) ? block.classes.slice(0, 6).map(clean) : [],
+        movable: block?.movable === true,
+        moveCandidateCount: Number(block?.moveCandidateCount || 0) || 0,
+        moveCandidates: Array.isArray(block?.moveCandidates) ? block.moveCandidates.slice(0, 5).map(clean) : []
+      })) : []
+    })) : [],
+    executableOneMoveSlotCount: Number(row?.executableOneMoveSlotCount || 0) || 0,
+    executableOneMoveSlots: Array.isArray(row?.executableOneMoveSlots) ? row.executableOneMoveSlots.slice(0, 6).map(slot => ({
+      slot: clean(slot?.slot || ""),
+      reasonCodes: Array.isArray(slot?.reasonCodes) ? slot.reasonCodes.slice(0, 6).map(clean) : [],
+      movableBlockCount: Number(slot?.movableBlockCount || 0) || 0,
+      blockedBlockCount: Number(slot?.blockedBlockCount || 0) || 0,
+      executable: slot?.executable === true,
       blockers: Array.isArray(slot?.blockers) ? slot.blockers.slice(0, 4).map(block => ({
         key: clean(block?.key || ""),
         names: Array.isArray(block?.names) ? block.names.slice(0, 4).map(clean) : [],
@@ -663,7 +694,7 @@ function compactResidualPuzzleReportForStorage(report = null) {
     summary: clean(row?.summary || "")
   })) : [];
   return {
-    schemaVersion: clean(report.schemaVersion || "2026-06-11-residual-puzzle-report-r35"),
+    schemaVersion: clean(report.schemaVersion || "2026-06-11-residual-puzzle-report-r36"),
     generatedAt: clean(report.generatedAt || ""),
     targetCount: Number(report.targetCount || rows.length) || rows.length,
     summary: clean(report.summary || ""),
@@ -692,7 +723,7 @@ function compactAutoAssignMetaForStorage(meta = null) {
         missing: Number(d?.missing || d?.shortage || d?.missingCount || 0) || 0,
         candidateCount: Number(d?.candidateCount || d?.availableCount || 0) || 0,
         reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 6).map(clean) : [],
-        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 4).map(clean) : []
+        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 4).map(compactDiagnosticSuggestionForStorage).filter(Boolean) : []
       }))
     : [];
   const compactReasonSummary = Array.isArray(meta.failedReasonSummary)

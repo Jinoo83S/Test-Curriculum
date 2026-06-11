@@ -58,6 +58,32 @@ export function createAutoAssignAll(deps) {
     }).filter(entry => entry && (entry.templateId || entry.ttcardId || (entry.ttcardIds || []).length));
   }
 
+  function normalizeDiagnosticSuggestion(suggestion) {
+    if (suggestion == null) return null;
+    if (typeof suggestion !== "object") {
+      const text = String(suggestion || "").trim();
+      if (!text || text === "[object Object]") return null;
+      return { title: text, detail: "", summary: text, availableAfter: 0, priority: 9 };
+    }
+    const title = String(suggestion.title || suggestion.summary || "제안").trim();
+    const detail = String(suggestion.detail || "").trim();
+    const availableAfter = Number(suggestion.availableAfter || 0) || 0;
+    const summary = String(suggestion.summary || `${title}${detail ? `: ${detail}` : ""}${availableAfter ? ` · 완화 시 ${availableAfter}칸 가능` : ""}`).trim();
+    return {
+      title: title || "제안",
+      detail,
+      summary,
+      availableAfter,
+      priority: Number(suggestion.priority || 9) || 9,
+      gain: Number(suggestion.gain || 0) || 0
+    };
+  }
+
+  function formatDiagnosticSuggestion(suggestion) {
+    const normalized = normalizeDiagnosticSuggestion(suggestion);
+    return normalized ? normalized.summary : "";
+  }
+
 
   function compactAutoAssignSnapshotMeta(meta = {}) {
     const clone = value => {
@@ -76,11 +102,29 @@ export function createAutoAssignAll(deps) {
         directSlotCount: Number(row?.directSlotCount || 0) || 0,
         directSlots: Array.isArray(row?.directSlots) ? row.directSlots.slice(0, 8).map(x => String(x || "")) : [],
         oneMoveSlotCount: Number(row?.oneMoveSlotCount || 0) || 0,
+        executableOneMoveSlotCount: Number(row?.executableOneMoveSlotCount || 0) || 0,
         oneMoveSlots: Array.isArray(row?.oneMoveSlots) ? row.oneMoveSlots.slice(0, 6).map(slot => ({
           slot: String(slot?.slot || ""),
           reasonCodes: Array.isArray(slot?.reasonCodes) ? slot.reasonCodes.slice(0, 6).map(x => String(x || "")) : [],
           movableBlockCount: Number(slot?.movableBlockCount || 0) || 0,
           blockedBlockCount: Number(slot?.blockedBlockCount || 0) || 0,
+          executable: slot?.executable === true,
+          blockers: Array.isArray(slot?.blockers) ? slot.blockers.slice(0, 4).map(block => ({
+            key: String(block?.key || ""),
+            names: Array.isArray(block?.names) ? block.names.slice(0, 4).map(x => String(x || "")) : [],
+            teachers: Array.isArray(block?.teachers) ? block.teachers.slice(0, 4).map(x => String(x || "")) : [],
+            classes: Array.isArray(block?.classes) ? block.classes.slice(0, 6).map(x => String(x || "")) : [],
+            movable: block?.movable === true,
+            moveCandidateCount: Number(block?.moveCandidateCount || 0) || 0,
+            moveCandidates: Array.isArray(block?.moveCandidates) ? block.moveCandidates.slice(0, 5).map(x => String(x || "")) : []
+          })) : []
+        })) : [],
+        executableOneMoveSlots: Array.isArray(row?.executableOneMoveSlots) ? row.executableOneMoveSlots.slice(0, 6).map(slot => ({
+          slot: String(slot?.slot || ""),
+          reasonCodes: Array.isArray(slot?.reasonCodes) ? slot.reasonCodes.slice(0, 6).map(x => String(x || "")) : [],
+          movableBlockCount: Number(slot?.movableBlockCount || 0) || 0,
+          blockedBlockCount: Number(slot?.blockedBlockCount || 0) || 0,
+          executable: slot?.executable === true,
           blockers: Array.isArray(slot?.blockers) ? slot.blockers.slice(0, 4).map(block => ({
             key: String(block?.key || ""),
             names: Array.isArray(block?.names) ? block.names.slice(0, 4).map(x => String(x || "")) : [],
@@ -94,7 +138,7 @@ export function createAutoAssignAll(deps) {
         summary: String(row?.summary || "")
       })) : [];
       return {
-        schemaVersion: String(report.schemaVersion || "2026-06-11-residual-puzzle-report-r35"),
+        schemaVersion: String(report.schemaVersion || "2026-06-11-residual-puzzle-report-r36"),
         generatedAt: String(report.generatedAt || ""),
         targetCount: Number(report.targetCount || rows.length) || rows.length,
         summary: String(report.summary || ""),
@@ -148,13 +192,7 @@ export function createAutoAssignAll(deps) {
         missing: Number(d?.missing || d?.shortage || d?.missingCount || 0) || 0,
         candidateCount: Number(d?.candidateCount || d?.availableCount || 0) || 0,
         reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 4) : [],
-        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3).map(s => {
-          if (!s || typeof s !== "object") return String(s ?? "");
-          const title = String(s.title || s.summary || "제안").trim();
-          const detail = String(s.detail || "").trim();
-          const available = Number(s.availableAfter || 0);
-          return `${title}${detail ? `: ${detail}` : ""}${available ? ` · 완화 시 ${available}칸 가능` : ""}`;
-        }).filter(Boolean) : []
+        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3).map(formatDiagnosticSuggestion).filter(Boolean) : []
       })) : [],
       residualPuzzleReport: compactResidualPuzzle(meta.residualPuzzleReport)
     };
@@ -2170,7 +2208,16 @@ export function createAutoAssignAll(deps) {
     const orderedSlots = [...baseSlots].sort((a, b) => a.day - b.day || a.period - b.period);
     const reportRows = [];
     const sourceItems = Array.isArray(failedItems) ? failedItems : [];
-    for (const failedItem of sourceItems.slice(0, 20)) {
+    const byItemKey = new Map();
+    for (const failedItem of sourceItems) {
+      const item = failedItem?.item;
+      if (!item) continue;
+      const key = String(item.id || failedItem.key || failedItem.name || getAutoItemName(item) || "");
+      if (!key) continue;
+      if (!byItemKey.has(key)) byItemKey.set(key, failedItem);
+    }
+
+    for (const failedItem of [...byItemKey.values()].slice(0, 20)) {
       const item = failedItem?.item;
       if (!item) continue;
       const name = failedItem.name || getAutoItemName(item);
@@ -2180,7 +2227,8 @@ export function createAutoAssignAll(deps) {
       const placedSlots = placedSlotCountForAutoItem(item, placed);
       const missingSlots = Math.max(0, requiredCredits - placedSlots);
       const directSlots = [];
-      const oneMoveSlots = [];
+      const reviewOneMoveSlots = [];
+      const executableOneMoveSlots = [];
       const hardBlockedSlots = [];
       for (const slot of orderedSlots) {
         const analyzed = analyzePlacementSlot(item, slot, placed, options);
@@ -2192,15 +2240,19 @@ export function createAutoAssignAll(deps) {
         const blockers = getBlockingBlocksForSlot(item, slot, placed);
         const unmovableHard = [...codes].some(code => ["protectedSlot", "teacherUnavailable", "roomUnavailable", "duplicate", "groupExclusion", "compoundInternal", "compoundSibling"].includes(code));
         if (blockers.length && !unmovableHard) {
-          const blockerReports = blockers.slice(0, 4).map(block => summarizeBlockForResidualReport(block, slot, placed, orderedSlots, options));
+          const blockerReports = blockers.slice(0, 6).map(block => summarizeBlockForResidualReport(block, slot, placed, orderedSlots, options));
           const movableCount = blockerReports.filter(b => b.movable).length;
-          oneMoveSlots.push({
+          const executable = blockerReports.length > 0 && movableCount === blockerReports.length;
+          const row = {
             slot: formatSlotLabel(slot),
             reasonCodes: [...codes].filter(Boolean).slice(0, 6),
-            blockers: blockerReports,
+            blockers: blockerReports.slice(0, 4),
             movableBlockCount: movableCount,
-            blockedBlockCount: blockerReports.length
-          });
+            blockedBlockCount: blockerReports.length,
+            executable
+          };
+          reviewOneMoveSlots.push(row);
+          if (executable) executableOneMoveSlots.push(row);
         } else {
           hardBlockedSlots.push({
             slot: formatSlotLabel(slot),
@@ -2217,16 +2269,18 @@ export function createAutoAssignAll(deps) {
         missingSlots,
         directSlotCount: directSlots.length,
         directSlots: directSlots.slice(0, 8),
-        oneMoveSlotCount: oneMoveSlots.length,
-        oneMoveSlots: oneMoveSlots.slice(0, 6),
+        oneMoveSlotCount: reviewOneMoveSlots.length,
+        oneMoveSlots: reviewOneMoveSlots.slice(0, 6),
+        executableOneMoveSlotCount: executableOneMoveSlots.length,
+        executableOneMoveSlots: executableOneMoveSlots.slice(0, 6),
         hardBlockedSample: hardBlockedSlots.slice(0, 4),
         summary: directSlots.length
           ? `직접 배치 가능 ${directSlots.length}칸`
-          : (oneMoveSlots.length ? `1단계 이동 후보 ${oneMoveSlots.length}칸` : `직접/1단계 이동 후보 없음`)
+          : (executableOneMoveSlots.length ? `실행 가능한 1단계 이동 ${executableOneMoveSlots.length}칸` : `실행 가능한 직접/1단계 이동 없음 · 검토 후보 ${reviewOneMoveSlots.length}칸`)
       });
     }
     return {
-      schemaVersion: "2026-06-11-residual-puzzle-report-r35",
+      schemaVersion: "2026-06-11-residual-puzzle-report-r36",
       generatedAt: new Date().toISOString(),
       targetCount: reportRows.length,
       rows: reportRows,
@@ -2238,18 +2292,18 @@ export function createAutoAssignAll(deps) {
 
   function residualPuzzleReportToHtml(report = null, limit = 5) {
     if (!report || !Array.isArray(report.rows) || !report.rows.length) return "";
-    const esc = s => String(s ?? "").replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]));
+    const esc = str => String(str ?? "").replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]));
     const rows = report.rows.slice(0, limit).map(row => {
-      const firstMove = row.oneMoveSlots?.[0];
-      const blocker = firstMove?.blockers?.[0];
+      const firstMove = (row.executableOneMoveSlots || [])[0] || null;
+      const blocker = firstMove?.blockers?.find(b => b.movable) || firstMove?.blockers?.[0];
       const blockerText = blocker
-        ? ` · 차단: ${esc((blocker.names || []).join(", "))}${blocker.moveCandidates?.length ? ` → 이동후보 ${esc(blocker.moveCandidates.join(", "))}` : ""}`
+        ? ` · 이동: ${esc((blocker.names || []).join(", "))}${blocker.moveCandidates?.length ? ` → ${esc(blocker.moveCandidates.join(", "))}` : ""}`
         : "";
       const direct = row.directSlots?.length ? ` · 직접후보 ${esc(row.directSlots.join(", "))}` : "";
-      const move = firstMove ? ` · 1단계후보 ${esc(firstMove.slot)}${blockerText}` : "";
-      return `<li><b>${esc(row.name)}</b>${row.classLabels ? ` (${esc(row.classLabels)})` : ""}: ${esc(row.placedSlots)}/${esc(row.requiredCredits)}${row.missingSlots ? ` · ${esc(row.missingSlots)} 부족` : ""}${direct}${move || " · 직접/1단계 후보 없음"}</li>`;
+      const move = firstMove ? ` · 실행가능 1단계 ${esc(firstMove.slot)}${blockerText}` : ` · 실행가능 1단계 없음${Number(row.oneMoveSlotCount || 0) ? ` (검토 ${Number(row.oneMoveSlotCount || 0)}칸)` : ""}`;
+      return `<li><b>${esc(row.name)}</b>${row.classLabels ? ` (${esc(row.classLabels)})` : ""}: ${esc(row.placedSlots)}/${esc(row.requiredCredits)}${row.missingSlots ? ` · ${esc(row.missingSlots)} 부족` : ""}${direct}${move}</li>`;
     }).join("");
-    return `<div class="tt-auto-progress-failed"><b>r35 잔여 퍼즐 진단</b><ul>${rows}${report.rows.length > limit ? `<li>외 ${report.rows.length - limit}개</li>` : ""}</ul></div>`;
+    return `<div class="tt-auto-progress-failed"><b>r36 잔여 퍼즐 진단</b><ul>${rows}${report.rows.length > limit ? `<li>외 ${report.rows.length - limit}개</li>` : ""}</ul></div>`;
   }
 
   function diagnosticsToHtml(diagnostics = [], limit = 8) {
@@ -2261,7 +2315,11 @@ export function createAutoAssignAll(deps) {
       const teacher = d.restrictedTeachers?.length ? ` · 제약교사: ${d.restrictedTeachers.join(", ")}` : (d.teachers?.length ? ` · 교사: ${d.teachers.join(", ")}` : "");
       const cls = d.classLabels ? ` · 대상: ${d.classLabels}` : "";
       const suggestionHtml = Array.isArray(d.suggestions) && d.suggestions.length
-        ? `<div class="tt-auto-relax-suggestions"><b>풀어볼 조건</b><ol>${d.suggestions.slice(0, 3).map(s => `<li><span>${esc(s.title)}</span><em>${esc(s.detail)}${Number(s.availableAfter || 0) ? ` · 완화 시 ${Number(s.availableAfter || 0)}칸 가능` : ""}</em></li>`).join("")}</ol></div>`
+        ? `<div class="tt-auto-relax-suggestions"><b>풀어볼 조건</b><ol>${d.suggestions.slice(0, 3).map(s => {
+            const normalized = normalizeDiagnosticSuggestion(s);
+            if (!normalized) return "";
+            return `<li><span>${esc(normalized.title)}</span><em>${esc(normalized.detail)}${Number(normalized.availableAfter || 0) ? ` · 완화 시 ${Number(normalized.availableAfter || 0)}칸 가능` : ""}</em></li>`;
+          }).filter(Boolean).join("")}</ol></div>`
         : "";
       return `<li>${esc(d.name)}${d.occurrences > 1 ? ` ×${d.occurrences}` : ""} — ${esc(d.summary)}${esc(cls)}${esc(teacher)}${esc(sample)}${suggestionHtml}</li>`;
     }).join("")}${diagnostics.length > limit ? `<li>외 ${diagnostics.length - limit}개</li>` : ""}</ul></div>`;
