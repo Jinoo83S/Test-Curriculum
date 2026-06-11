@@ -632,6 +632,45 @@ function safeJsonClone(value) {
   catch (_) { return null; }
 }
 
+
+function compactResidualPuzzleReportForStorage(report = null) {
+  if (!report || typeof report !== "object") return null;
+  const rows = Array.isArray(report.rows) ? report.rows.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(row => ({
+    name: clean(row?.name || ""),
+    classLabels: clean(row?.classLabels || ""),
+    teachers: Array.isArray(row?.teachers) ? row.teachers.slice(0, 6).map(clean) : [],
+    requiredCredits: Number(row?.requiredCredits || 0) || 0,
+    placedSlots: Number(row?.placedSlots || 0) || 0,
+    missingSlots: Number(row?.missingSlots || 0) || 0,
+    directSlotCount: Number(row?.directSlotCount || 0) || 0,
+    directSlots: Array.isArray(row?.directSlots) ? row.directSlots.slice(0, 8).map(clean) : [],
+    oneMoveSlotCount: Number(row?.oneMoveSlotCount || 0) || 0,
+    oneMoveSlots: Array.isArray(row?.oneMoveSlots) ? row.oneMoveSlots.slice(0, 6).map(slot => ({
+      slot: clean(slot?.slot || ""),
+      reasonCodes: Array.isArray(slot?.reasonCodes) ? slot.reasonCodes.slice(0, 6).map(clean) : [],
+      movableBlockCount: Number(slot?.movableBlockCount || 0) || 0,
+      blockedBlockCount: Number(slot?.blockedBlockCount || 0) || 0,
+      blockers: Array.isArray(slot?.blockers) ? slot.blockers.slice(0, 4).map(block => ({
+        key: clean(block?.key || ""),
+        names: Array.isArray(block?.names) ? block.names.slice(0, 4).map(clean) : [],
+        teachers: Array.isArray(block?.teachers) ? block.teachers.slice(0, 4).map(clean) : [],
+        classes: Array.isArray(block?.classes) ? block.classes.slice(0, 6).map(clean) : [],
+        movable: block?.movable === true,
+        moveCandidateCount: Number(block?.moveCandidateCount || 0) || 0,
+        moveCandidates: Array.isArray(block?.moveCandidates) ? block.moveCandidates.slice(0, 5).map(clean) : []
+      })) : []
+    })) : [],
+    summary: clean(row?.summary || "")
+  })) : [];
+  return {
+    schemaVersion: clean(report.schemaVersion || "2026-06-11-residual-puzzle-report-r35"),
+    generatedAt: clean(report.generatedAt || ""),
+    targetCount: Number(report.targetCount || rows.length) || rows.length,
+    summary: clean(report.summary || ""),
+    rows
+  };
+}
+
 function compactAutoAssignMetaForStorage(meta = null) {
   if (!meta || typeof meta !== "object") return null;
   const cloneMetric = value => (value && typeof value === "object") ? safeJsonClone(value) : null;
@@ -697,6 +736,7 @@ function compactAutoAssignMetaForStorage(meta = null) {
     rejectReason: clean(meta.rejectReason),
     failedDiagnostics: compactDiagnostics,
     failedReasonSummary: compactReasonSummary,
+    residualPuzzleReport: compactResidualPuzzleReportForStorage(meta.residualPuzzleReport),
     missingRoomNames: Array.isArray(meta.missingRoomNames) ? meta.missingRoomNames.slice(0, 20).map(clean) : [],
     restrictedTeacherNames: Array.isArray(meta.restrictedTeacherNames) ? meta.restrictedTeacherNames.slice(0, 20).map(clean) : []
   };

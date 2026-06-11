@@ -64,6 +64,43 @@ export function createAutoAssignAll(deps) {
       if (!value || typeof value !== "object") return null;
       try { return JSON.parse(JSON.stringify(value)); } catch (_) { return null; }
     };
+    const compactResidualPuzzle = report => {
+      if (!report || typeof report !== "object") return null;
+      const rows = Array.isArray(report.rows) ? report.rows.slice(0, 12).map(row => ({
+        name: String(row?.name || ""),
+        classLabels: String(row?.classLabels || ""),
+        teachers: Array.isArray(row?.teachers) ? row.teachers.slice(0, 6).map(x => String(x || "")) : [],
+        requiredCredits: Number(row?.requiredCredits || 0) || 0,
+        placedSlots: Number(row?.placedSlots || 0) || 0,
+        missingSlots: Number(row?.missingSlots || 0) || 0,
+        directSlotCount: Number(row?.directSlotCount || 0) || 0,
+        directSlots: Array.isArray(row?.directSlots) ? row.directSlots.slice(0, 8).map(x => String(x || "")) : [],
+        oneMoveSlotCount: Number(row?.oneMoveSlotCount || 0) || 0,
+        oneMoveSlots: Array.isArray(row?.oneMoveSlots) ? row.oneMoveSlots.slice(0, 6).map(slot => ({
+          slot: String(slot?.slot || ""),
+          reasonCodes: Array.isArray(slot?.reasonCodes) ? slot.reasonCodes.slice(0, 6).map(x => String(x || "")) : [],
+          movableBlockCount: Number(slot?.movableBlockCount || 0) || 0,
+          blockedBlockCount: Number(slot?.blockedBlockCount || 0) || 0,
+          blockers: Array.isArray(slot?.blockers) ? slot.blockers.slice(0, 4).map(block => ({
+            key: String(block?.key || ""),
+            names: Array.isArray(block?.names) ? block.names.slice(0, 4).map(x => String(x || "")) : [],
+            teachers: Array.isArray(block?.teachers) ? block.teachers.slice(0, 4).map(x => String(x || "")) : [],
+            classes: Array.isArray(block?.classes) ? block.classes.slice(0, 6).map(x => String(x || "")) : [],
+            movable: block?.movable === true,
+            moveCandidateCount: Number(block?.moveCandidateCount || 0) || 0,
+            moveCandidates: Array.isArray(block?.moveCandidates) ? block.moveCandidates.slice(0, 5).map(x => String(x || "")) : []
+          })) : []
+        })) : [],
+        summary: String(row?.summary || "")
+      })) : [];
+      return {
+        schemaVersion: String(report.schemaVersion || "2026-06-11-residual-puzzle-report-r35"),
+        generatedAt: String(report.generatedAt || ""),
+        targetCount: Number(report.targetCount || rows.length) || rows.length,
+        summary: String(report.summary || ""),
+        rows
+      };
+    };
     const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
     const metricCompleteness = String(meta.metricCompleteness || (hasFinalMetrics ? "complete" : "") || "");
     // r34: r31~r33 저장 압축 과정에서 top-level 수치가 0으로 남고 finalMetrics에만
@@ -118,7 +155,8 @@ export function createAutoAssignAll(deps) {
           const available = Number(s.availableAfter || 0);
           return `${title}${detail ? `: ${detail}` : ""}${available ? ` · 완화 시 ${available}칸 가능` : ""}`;
         }).filter(Boolean) : []
-      })) : []
+      })) : [],
+      residualPuzzleReport: compactResidualPuzzle(meta.residualPuzzleReport)
     };
   }
 
@@ -2089,6 +2127,129 @@ export function createAutoAssignAll(deps) {
       acc.suggestionSummary = (acc.suggestions || []).map(s => s.summary || s.title).join(' / ');
     });
     return [...byName.values()].sort((a, b) => a.validSlots - b.validSlots || b.occurrences - a.occurrences || String(a.name).localeCompare(String(b.name), "ko"));
+  }
+
+
+
+  function summarizeBlockForResidualReport(block = {}, targetSlot = {}, current = [], orderedSlots = [], options = {}) {
+    const entriesList = Array.isArray(block.entries) ? block.entries : [];
+    const names = [...new Set(entriesList.map(e => getAutoItemName(e)).filter(Boolean))];
+    const teachers = [...new Set(entriesList.flatMap(e => splitTeacherNames(e.teacherName || "")).filter(Boolean))];
+    const classes = [...new Set(entriesList.flatMap(e => entryClassKeysForScoring(e).map(formatClassKeyForReport)).filter(Boolean))];
+    const blockIds = new Set(entriesList.map(e => e.id).filter(Boolean));
+    const withoutBlock = current.filter(e => !blockIds.has(e.id));
+    const moveCandidates = [];
+    for (const slot of orderedSlots) {
+      if (slot.day === targetSlot.day && slot.period === targetSlot.period) continue;
+      const moved = makeMovedBlockEntries(block, slot, withoutBlock, {
+        ...options,
+        runAttempts: "deep",
+        engineProfile: autoEngineProfileForMode("deep"),
+        respectUnavailable: true,
+        respectAssignedRoom: true,
+        // r35 diagnostic: hard conflict는 유지하고, 하루/연속 같은 soft limit만 별도 판단할 수 있게 합니다.
+        respectSoftLimits: options.respectSoftLimits !== false
+      });
+      if (moved) {
+        moveCandidates.push(formatSlotLabel(slot));
+        if (moveCandidates.length >= 5) break;
+      }
+    }
+    return {
+      key: String(block.key || ""),
+      names: names.slice(0, 4),
+      teachers: teachers.slice(0, 4),
+      classes: classes.slice(0, 6),
+      movable: moveCandidates.length > 0,
+      moveCandidateCount: moveCandidates.length,
+      moveCandidates
+    };
+  }
+
+  function buildResidualPuzzleReport(failedItems = [], baseSlots = [], placed = [], options = {}) {
+    const orderedSlots = [...baseSlots].sort((a, b) => a.day - b.day || a.period - b.period);
+    const reportRows = [];
+    const sourceItems = Array.isArray(failedItems) ? failedItems : [];
+    for (const failedItem of sourceItems.slice(0, 20)) {
+      const item = failedItem?.item;
+      if (!item) continue;
+      const name = failedItem.name || getAutoItemName(item);
+      const classLabels = classLabelSummaryForAutoItem(item);
+      const teachers = getTeachersForAutoItem(item);
+      const requiredCredits = targetCreditsForAutoItem(item);
+      const placedSlots = placedSlotCountForAutoItem(item, placed);
+      const missingSlots = Math.max(0, requiredCredits - placedSlots);
+      const directSlots = [];
+      const oneMoveSlots = [];
+      const hardBlockedSlots = [];
+      for (const slot of orderedSlots) {
+        const analyzed = analyzePlacementSlot(item, slot, placed, options);
+        if (analyzed.valid) {
+          directSlots.push(formatSlotLabel(slot));
+          continue;
+        }
+        const codes = new Set((analyzed.reasons || []).map(r => r.code));
+        const blockers = getBlockingBlocksForSlot(item, slot, placed);
+        const unmovableHard = [...codes].some(code => ["protectedSlot", "teacherUnavailable", "roomUnavailable", "duplicate", "groupExclusion", "compoundInternal", "compoundSibling"].includes(code));
+        if (blockers.length && !unmovableHard) {
+          const blockerReports = blockers.slice(0, 4).map(block => summarizeBlockForResidualReport(block, slot, placed, orderedSlots, options));
+          const movableCount = blockerReports.filter(b => b.movable).length;
+          oneMoveSlots.push({
+            slot: formatSlotLabel(slot),
+            reasonCodes: [...codes].filter(Boolean).slice(0, 6),
+            blockers: blockerReports,
+            movableBlockCount: movableCount,
+            blockedBlockCount: blockerReports.length
+          });
+        } else {
+          hardBlockedSlots.push({
+            slot: formatSlotLabel(slot),
+            reasons: (analyzed.reasons || []).slice(0, 3).map(r => `${r.label}${r.samples?.[0] ? `: ${r.samples[0]}` : ""}`)
+          });
+        }
+      }
+      reportRows.push({
+        name,
+        classLabels,
+        teachers,
+        requiredCredits,
+        placedSlots,
+        missingSlots,
+        directSlotCount: directSlots.length,
+        directSlots: directSlots.slice(0, 8),
+        oneMoveSlotCount: oneMoveSlots.length,
+        oneMoveSlots: oneMoveSlots.slice(0, 6),
+        hardBlockedSample: hardBlockedSlots.slice(0, 4),
+        summary: directSlots.length
+          ? `직접 배치 가능 ${directSlots.length}칸`
+          : (oneMoveSlots.length ? `1단계 이동 후보 ${oneMoveSlots.length}칸` : `직접/1단계 이동 후보 없음`)
+      });
+    }
+    return {
+      schemaVersion: "2026-06-11-residual-puzzle-report-r35",
+      generatedAt: new Date().toISOString(),
+      targetCount: reportRows.length,
+      rows: reportRows,
+      summary: reportRows.length
+        ? reportRows.map(r => `${r.name}: ${r.summary}`).join(" / ").slice(0, 1200)
+        : "잔여 미배치/카드 부족 없음"
+    };
+  }
+
+  function residualPuzzleReportToHtml(report = null, limit = 5) {
+    if (!report || !Array.isArray(report.rows) || !report.rows.length) return "";
+    const esc = s => String(s ?? "").replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]));
+    const rows = report.rows.slice(0, limit).map(row => {
+      const firstMove = row.oneMoveSlots?.[0];
+      const blocker = firstMove?.blockers?.[0];
+      const blockerText = blocker
+        ? ` · 차단: ${esc((blocker.names || []).join(", "))}${blocker.moveCandidates?.length ? ` → 이동후보 ${esc(blocker.moveCandidates.join(", "))}` : ""}`
+        : "";
+      const direct = row.directSlots?.length ? ` · 직접후보 ${esc(row.directSlots.join(", "))}` : "";
+      const move = firstMove ? ` · 1단계후보 ${esc(firstMove.slot)}${blockerText}` : "";
+      return `<li><b>${esc(row.name)}</b>${row.classLabels ? ` (${esc(row.classLabels)})` : ""}: ${esc(row.placedSlots)}/${esc(row.requiredCredits)}${row.missingSlots ? ` · ${esc(row.missingSlots)} 부족` : ""}${direct}${move || " · 직접/1단계 후보 없음"}</li>`;
+    }).join("");
+    return `<div class="tt-auto-progress-failed"><b>r35 잔여 퍼즐 진단</b><ul>${rows}${report.rows.length > limit ? `<li>외 ${report.rows.length - limit}개</li>` : ""}</ul></div>`;
   }
 
   function diagnosticsToHtml(diagnostics = [], limit = 8) {
@@ -5295,7 +5456,12 @@ export function createAutoAssignAll(deps) {
       }, true);
     }
 
-    let failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
+    const residualCoverageInfoForDiagnostics = makeCoverageShortageFailures(bestPlaced, bestFailed);
+    let residualFailedItemsForDiagnostics = residualCoverageInfoForDiagnostics.failures?.length
+      ? residualCoverageInfoForDiagnostics.failures
+      : bestFailed;
+    let failedDiagnostics = buildFailureDiagnostics(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
+    let residualPuzzleReport = buildResidualPuzzleReport(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
 
     await updateProgress({
       percent: 96,
@@ -5367,7 +5533,11 @@ export function createAutoAssignAll(deps) {
           forcedPlaced = baselineRepair.forced || [];
           names.length = 0;
           names.push(...new Set(bestFailed.map(f => f.name)));
-          failedDiagnostics = buildFailureDiagnostics(bestFailed, baseSlots, bestPlaced, bestStage?.options || options);
+          residualFailedItemsForDiagnostics = (makeCoverageShortageFailures(bestPlaced, bestFailed).failures || []).length
+            ? makeCoverageShortageFailures(bestPlaced, bestFailed).failures
+            : bestFailed;
+          failedDiagnostics = buildFailureDiagnostics(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || options);
+          residualPuzzleReport = buildResidualPuzzleReport(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || options);
           finalEntriesForValidation.length = 0;
           finalEntriesForValidation.push(...protectedEntries, ...bestPlaced);
           Object.assign(postValidation, baselineRepairValidation);
@@ -5383,6 +5553,13 @@ export function createAutoAssignAll(deps) {
       await persistTimetableNow();
       recomputeConflicts();
       renderAll();
+      const restoredAllForDiagnostics = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
+      const restoredProtectedIdsForDiagnostics = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
+      const restoredAutoPlacedForDiagnostics = restoredAllForDiagnostics.filter(e => !restoredProtectedIdsForDiagnostics.has(e.id));
+      const restoredCoverageForDiagnostics = makeCoverageShortageFailures(restoredAutoPlacedForDiagnostics, []);
+      const restoredFailedItemsForDiagnostics = restoredCoverageForDiagnostics.failures || [];
+      const restoredFailedDiagnostics = buildFailureDiagnostics(restoredFailedItemsForDiagnostics, baseSlots, restoredAutoPlacedForDiagnostics, bestStage?.options || options);
+      const restoredResidualPuzzleReport = buildResidualPuzzleReport(restoredFailedItemsForDiagnostics, baseSlots, restoredAutoPlacedForDiagnostics, bestStage?.options || options);
       const rejectReport = {
         ts: Date.now(),
         rejectedByQualityGate: true,
@@ -5418,7 +5595,10 @@ export function createAutoAssignAll(deps) {
         qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
         qualityBaselineValidationSummary: qualityBaselineValidation.summary || "",
         restoredFromReference: qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot",
-        comparisonSummary: `${qualityBaselineValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`
+        comparisonSummary: `${qualityBaselineValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`,
+        failedDiagnostics: restoredFailedDiagnostics,
+        failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
+        residualPuzzleReport: restoredResidualPuzzleReport
       };
       if (appState.timetable) appState.timetable.autoAssignMeta = rejectReport;
       setLastAutoAssignReport(rejectReport);
@@ -5438,8 +5618,9 @@ export function createAutoAssignAll(deps) {
           `<div><b>폐기된 결과</b> ${safeAutoHtml(postValidation.summary || "검증 정보 없음")}</div>`,
           `<div><b>기준 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(qualityBaselineMetrics))}</div>`,
           `<div><b>폐기 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(finalAutoRunMetrics))}</div>`,
-          `<div>새 자동배치가 이전 최고 자동배치 결과보다 카드/학급/미배치 검증 점수가 나빠 저장하지 않았습니다.</div>`
-        ].join(""),
+          `<div>새 자동배치가 이전 최고 자동배치 결과보다 카드/학급/미배치 검증 점수가 나빠 저장하지 않았습니다.</div>`,
+          residualPuzzleReportToHtml(restoredResidualPuzzleReport, 5)
+        ].filter(Boolean).join(""),
         placed: 0,
         best: 0,
         failed: names.length,
@@ -5498,6 +5679,7 @@ export function createAutoAssignAll(deps) {
       failedNames: names,
       failedDiagnostics,
       failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
+      residualPuzzleReport,
       outcomeAnalysis,
       placedBlockCount: outcomeAnalysis.placedBlockCount,
       placedGroupBlockCount: outcomeAnalysis.placedGroupBlockCount,
@@ -5631,6 +5813,7 @@ export function createAutoAssignAll(deps) {
         .join("");
       detailLines.push(`<div class="tt-auto-progress-failed"><b>검증 리포트</b><ul>${classList}${moreClass}${cardList}${groupList}${restrictedList}${protectedList}</ul></div>`);
     }
+    detailLines.push(residualPuzzleReportToHtml(residualPuzzleReport, 6));
     if (forcedPlaced.length) {
       detailLines.push(`⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`);
     }
