@@ -138,7 +138,7 @@ export function createAutoAssignAll(deps) {
         summary: String(row?.summary || "")
       })) : [];
       return {
-        schemaVersion: String(report.schemaVersion || "2026-06-11-residual-puzzle-report-r36"),
+        schemaVersion: String(report.schemaVersion || "2026-06-11-residual-puzzle-report-r37"),
         generatedAt: String(report.generatedAt || ""),
         targetCount: Number(report.targetCount || rows.length) || rows.length,
         summary: String(report.summary || ""),
@@ -2280,7 +2280,7 @@ export function createAutoAssignAll(deps) {
       });
     }
     return {
-      schemaVersion: "2026-06-11-residual-puzzle-report-r36",
+      schemaVersion: "2026-06-11-residual-puzzle-report-r37",
       generatedAt: new Date().toISOString(),
       targetCount: reportRows.length,
       rows: reportRows,
@@ -5143,6 +5143,197 @@ export function createAutoAssignAll(deps) {
       return { coverage, failures: result };
     };
 
+
+    const repairResidualByTwoCycleSwap = async (placed, failed, forced, labelPrefix = "r37 2단계 스왑복구") => {
+      // r37: 진단만 반복하지 않고, 실제로 한 칸을 비우는 2-cycle swap을 수행합니다.
+      // 방식: (A) 부족 카드가 들어갈 목표 슬롯 S를 잡고,
+      //      (B) 그 슬롯을 막는 비고정/비그룹 수업 B를 찾고,
+      //      (C) 같은 학급의 다른 수업 G와 B를 서로 교환한 뒤,
+      //      (D) 부족 카드를 S에 추가합니다.
+      // 이 방식은 현재 r36에서 막혀 있는 공통영어1 10A 같은 "교사 충돌 + 학급 만석" 케이스를 실제로 뚫습니다.
+      let currentPlaced = cloneAutoAssignData(placed || []) || [];
+      let currentFailed = [...(failed || [])];
+      let currentForced = [...(forced || [])];
+      const repaired = [];
+      const moveLogs = [];
+
+      const itemTeachers = item => getTeachersForAutoItem(item).filter(Boolean);
+      const itemClassKeys = item => {
+        const aud = audienceForPlacement(item);
+        return [...(aud?.classKeys || new Set())].filter(Boolean);
+      };
+      const entrySlot = e => ({ day: Number(e.day), period: Number(e.period) });
+      const sameSlot = (a, b) => Number(a?.day) === Number(b?.day) && Number(a?.period) === Number(b?.period);
+      const slotText = slot => `${["월","화","수","목","금"][Number(slot.day)] || "?"}${Number(slot.period) + 1}`;
+      const isMovableEntry = e => e && !e.pinned && !e.protected && !e.manualPinned && !e.fixed && !e.locked && !e.groupId;
+      const hasDuplicateCardAtSlot = (item, slot, list) => {
+        const ids = new Set(ttCardIdsFromPlacement(item));
+        if (!ids.size) return false;
+        return list.some(e => sameSlot(e, slot) && ttCardIdsFromPlacement(e).some(id => ids.has(id)));
+      };
+      const conflictsItemEntry = (item, entry) => {
+        if (!item || !entry) return false;
+        if (item.unitId && entry.unitId && item.unitId === entry.unitId) return false;
+        const sameGrp = sameActiveGroup(item, entry);
+        const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(entry);
+        const its = itemTeachers(item);
+        const ets = splitTeacherNames(entry.teacherName).filter(Boolean);
+        if (its.some(t => ets.includes(t)) && !conc) return true;
+        const ia = audienceForPlacement(item);
+        const ea = audienceForPlacement(entry);
+        if (audiencesConflict(ia, ea) && !conc) return true;
+        return false;
+      };
+      const movedEntry = (entry, slot, placedBase) => {
+        const raw = {
+          ...entry,
+          day: Number(slot.day),
+          period: Number(slot.period)
+        };
+        const roomed = applyAutoRoomToEntryData(raw, slot, placedBase || []);
+        return normalizeTimetableEntry({
+          ...entry,
+          ...roomed,
+          id: entry.id,
+          day: Number(slot.day),
+          period: Number(slot.period)
+        });
+      };
+      const validEntryAt = (entry, slot, placedBase, checkOptions) => {
+        const probe = movedEntry(entry, slot, placedBase);
+        return !!probe && checkPlacementValid(probe, slot, placedBase, checkOptions);
+      };
+      const countPlacedForItem = (item, list) => {
+        const ids = new Set(ttCardIdsFromPlacement(item));
+        if (!ids.size) return 0;
+        return list.reduce((sum, e) => sum + (ttCardIdsFromPlacement(e).some(id => ids.has(id)) ? 1 : 0), 0);
+      };
+
+      const checkOptions = {
+        ...(bestStage?.options || options),
+        runAttempts: "deep",
+        engineProfile: autoEngineProfileForMode("deep"),
+        respectSoftLimits: false,
+        respectUnavailable: true,
+        respectAssignedRoom: true
+      };
+
+      for (let pass = 0; pass < 4; pass++) {
+        const coverageInfo = makeCoverageShortageFailures(currentPlaced, currentFailed);
+        const failures = coverageInfo.failures || [];
+        if (!failures.length) break;
+        let changed = false;
+
+        for (const failedItem of failures) {
+          const item = failedItem?.item;
+          if (!item) continue;
+          const beforeCount = countPlacedForItem(item, currentPlaced);
+          const targetClasses = itemClassKeys(item);
+          const preferredSlots = baseSlots
+            .filter(slot => targetClasses.length && targetClasses.every(ck => {
+              return !currentPlaced.some(e => sameSlot(e, slot) && itemClassKeys(e).includes(ck));
+            }))
+            .concat(baseSlots)
+            .filter((slot, idx, arr) => arr.findIndex(s => sameSlot(s, slot)) === idx);
+
+          let accepted = null;
+
+          for (const targetSlot of preferredSlots) {
+            if (checkPlacementValid(item, targetSlot, currentPlaced, checkOptions)) {
+              const entry = makeAutoEntry(item, targetSlot, currentPlaced);
+              if (entry) {
+                accepted = {
+                  placed: [...currentPlaced, entry],
+                  log: `${failedItem.name || getAutoItemName(item)} 직접배치 → ${slotText(targetSlot)}`
+                };
+                break;
+              }
+            }
+
+            const slotEnts = currentPlaced.filter(e => sameSlot(e, targetSlot));
+            const blockers = slotEnts.filter(e => conflictsItemEntry(item, e) && isMovableEntry(e));
+            if (!blockers.length) continue;
+
+            for (const blocker of blockers) {
+              const blockerClasses = itemClassKeys(blocker);
+              if (blockerClasses.length !== 1) continue;
+              const blockerClass = blockerClasses[0];
+
+              const swapCandidates = currentPlaced.filter(e => {
+                if (!isMovableEntry(e) || e.id === blocker.id) return false;
+                if (sameSlot(e, targetSlot)) return false;
+                const classes = itemClassKeys(e);
+                return classes.length === 1 && classes[0] === blockerClass;
+              });
+
+              for (const swapper of swapCandidates) {
+                const swapSlot = entrySlot(swapper);
+                const base = currentPlaced.filter(e => e.id !== blocker.id && e.id !== swapper.id);
+                if (hasDuplicateCardAtSlot(blocker, swapSlot, base)) continue;
+                if (hasDuplicateCardAtSlot(swapper, targetSlot, base)) continue;
+
+                const movedBlocker = movedEntry(blocker, swapSlot, base);
+                if (!checkPlacementValid(movedBlocker, swapSlot, base, checkOptions)) continue;
+
+                const baseWithBlocker = [...base, movedBlocker];
+                const movedSwapper = movedEntry(swapper, targetSlot, baseWithBlocker);
+                if (!checkPlacementValid(movedSwapper, targetSlot, baseWithBlocker, checkOptions)) continue;
+
+                const baseWithSwap = [...baseWithBlocker, movedSwapper];
+                if (!checkPlacementValid(item, targetSlot, baseWithSwap, checkOptions)) continue;
+
+                const newEntry = makeAutoEntry(item, targetSlot, baseWithSwap);
+                if (!newEntry) continue;
+
+                const nextPlaced = [...baseWithSwap, newEntry];
+                const afterCount = countPlacedForItem(item, nextPlaced);
+                if (afterCount <= beforeCount) continue;
+
+                accepted = {
+                  placed: nextPlaced,
+                  log: `${failedItem.name || getAutoItemName(item)} 2단계 스왑복구: ${getAutoItemName(blocker)} ${slotText(targetSlot)}→${slotText(swapSlot)}, ${getAutoItemName(swapper)} ${slotText(swapSlot)}→${slotText(targetSlot)}, 부족카드 ${slotText(targetSlot)} 추가`
+                };
+                break;
+              }
+              if (accepted) break;
+            }
+            if (accepted) break;
+          }
+
+          if (accepted) {
+            currentPlaced = cloneAutoAssignData(accepted.placed) || accepted.placed;
+            currentFailed = (makeCoverageShortageFailures(currentPlaced, currentFailed).failures || []);
+            repaired.push(failedItem);
+            moveLogs.push(accepted.log);
+            changed = true;
+            await updateProgress({
+              percent: 87 + pass,
+              step: labelPrefix,
+              detail: accepted.log,
+              placed: currentPlaced.length,
+              best: currentPlaced.length,
+              failed: currentFailed.length,
+              currentCard: failedItem.name || getAutoItemName(item),
+              log: accepted.log
+            }, true);
+            break;
+          }
+        }
+
+        if (!changed) break;
+      }
+
+      const metrics = buildAutoRunMetricsForEntries([...protectedEntries, ...currentPlaced], activeGrades, currentFailed, {
+        protectedEntries,
+        placedCount: currentPlaced.length,
+        forcedCount: currentForced.length,
+        qualityScore: scoreScheduleQuality(currentPlaced, options),
+        label: labelPrefix
+      }).metrics;
+      return { placed: currentPlaced, failed: currentFailed, forced: currentForced, repaired, repairedCount: repaired.length, moveLogs, metrics };
+    };
+
+
     const repairCardCoverageShortagesIteratively = async (placed, failed, forced, labelPrefix = "카드시수 반복복구") => {
       let currentPlaced = cloneAutoAssignData(placed || []) || [];
       let currentFailed = [...(failed || [])];
@@ -5179,6 +5370,28 @@ export function createAutoAssignAll(deps) {
           respectUnavailable: true,
           respectAssignedRoom: true
         };
+
+        const twoCyclePack = await repairResidualByTwoCycleSwap(currentPlaced, [...currentFailed, ...coverageFailures], currentForced, `${labelPrefix} ${pass + 1}차 · 2단계스왑`);
+        totalAttempts += Number(twoCyclePack?.repairedCount || 0);
+        if (compareAutoRunResults(twoCyclePack.metrics, lastMetrics) < 0) {
+          const repairedNow = Math.max(1, Number(twoCyclePack.repairedCount || 0));
+          totalRepaired += repairedNow;
+          currentPlaced = cloneAutoAssignData(twoCyclePack.placed) || [];
+          currentFailed = [...(twoCyclePack.failed || [])];
+          lastMetrics = twoCyclePack.metrics;
+          await updateProgress({
+            percent: 88 + pass,
+            step: `${labelPrefix} 2단계 스왑개선`,
+            detail: `실제 스왑복구로 ${repairedNow}건을 개선했습니다. 남은 카드 부족 ${currentFailed.length}개`,
+            placed: currentPlaced.length,
+            best: currentPlaced.length,
+            failed: currentFailed.length,
+            currentCard: "2단계 스왑복구",
+            log: (twoCyclePack.moveLogs || []).join(" / ")
+          }, true);
+          if (!currentFailed.length) break;
+          continue;
+        }
         const tryRepairWithOptions = async (label, extraOptions = {}) => {
           const repair = await repairFailedItemsBySingleMove([...currentFailed, ...coverageFailures], baseSlots, currentPlaced, {
             ...repairBaseOptions,
