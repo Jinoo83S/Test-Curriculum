@@ -656,12 +656,16 @@ function compactAutoAssignMetaForStorage(meta = null) {
     ok: meta.ok === true,
     placedEntryCount: Number(meta.placedEntryCount || meta.entryCount || 0) || 0,
     placedBlockCount: Number(meta.placedBlockCount || 0) || 0,
-    failedUnitCount: Number(meta.failedUnitCount || 0) || 0,
+    failedUnitCount: Number(meta.failedUnitCount ?? meta.failedCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
+    failedCount: Number(meta.failedCount ?? meta.failedUnitCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
     failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,
-    classIssueCount: Number(meta.classIssueCount || 0) || 0,
-    cardCoverageIssueCount: Number(meta.cardCoverageIssueCount || 0) || 0,
-    groupCoverageIssueCount: Number(meta.groupCoverageIssueCount || 0) || 0,
-    cardShortageSlots: Number(meta.cardShortageSlots || 0) || 0,
+    classIssueCount: Number(meta.classIssueCount ?? meta.classSlotIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
+    classSlotIssueCount: Number(meta.classSlotIssueCount ?? meta.classIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
+    classShortCount: Number(meta.classShortCount ?? meta.finalMetrics?.classShortCount ?? 0) || 0,
+    classOverCount: Number(meta.classOverCount ?? meta.finalMetrics?.classOverCount ?? 0) || 0,
+    cardCoverageIssueCount: Number(meta.cardCoverageIssueCount ?? meta.finalMetrics?.cardCoverageIssueCount ?? 0) || 0,
+    groupCoverageIssueCount: Number(meta.groupCoverageIssueCount ?? meta.finalMetrics?.groupCoverageIssueCount ?? 0) || 0,
+    cardShortageSlots: Number(meta.cardShortageSlots ?? meta.finalMetrics?.cardShortageSlots ?? 0) || 0,
     restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount || 0) || 0,
     protectedIntrusionCount: Number(meta.protectedIntrusionCount || 0) || 0,
     missingRoomCount: Number(meta.missingRoomCount || 0) || 0,
@@ -691,26 +695,26 @@ function savedVersionTime(v = {}) {
 function savedVersionQualityScore(v = {}) {
   const m = v.autoAssignMeta || {};
   const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
-  let classIssues = n(m.classIssueCount);
+  let classIssues = n(m.classSlotIssueCount ?? m.classIssueCount);
   let cardIssues = n(m.cardCoverageIssueCount);
   let groupIssues = n(m.groupCoverageIssueCount);
-  let failed = n(m.failedUnitCount);
+  let failed = n(m.failedCount ?? m.failedUnitCount);
   let shortage = n(m.cardShortageSlots);
   let restricted = n(m.restrictedTeacherIssueCount);
   let rooms = n(m.missingRoomCount);
   let protectedHits = n(m.protectedIntrusionCount);
 
-  if (!classIssues && !cardIssues && !groupIssues && !failed && !shortage && v.note) {
+  if (v.note) {
     const text = String(v.note || "");
     const cls = text.match(/학급\s*시수\s*(\d+)개/);
     const card = text.match(/카드\s*시수\s*(\d+)개/);
     const group = text.match(/그룹\/개별\s*(\d+)개/);
     const fail = text.match(/미배치\s*(\d+)개/);
-    classIssues = cls ? Number(cls[1]) : 0;
-    cardIssues = card ? Number(card[1]) : 0;
-    groupIssues = group ? Number(group[1]) : 0;
-    failed = fail ? Number(fail[1]) : 0;
-    shortage = cardIssues;
+    if (!classIssues && cls) classIssues = Number(cls[1]) || 0;
+    if (!cardIssues && card) cardIssues = Number(card[1]) || 0;
+    if (!groupIssues && group) groupIssues = Number(group[1]) || 0;
+    if (!failed && fail) failed = Number(fail[1]) || 0;
+    if (!shortage && cardIssues) shortage = cardIssues;
   }
 
   return shortage * 100000 + cardIssues * 30000 + groupIssues * 12000 + classIssues * 4000 + failed * 1000 + restricted * 250 + rooms * 500 + protectedHits * 500 - n(v.entryCount) / 1000;
@@ -718,7 +722,7 @@ function savedVersionQualityScore(v = {}) {
 
 function isAutoTimetableVersion(v = {}) {
   const name = clean(v.name);
-  return v.autoSnapshot === true || clean(v.source) === "autoassign" || name.startsWith("자동배치 ");
+  return v.autoSnapshot === true || clean(v.source) === "autoassign" || clean(v.source) === "autoassign-best" || name.startsWith("자동배치 ");
 }
 
 function isBeforeAutoTimetableVersion(v = {}) {
@@ -778,6 +782,28 @@ function normalizeSavedTimetableVersion(item = {}) {
     entries,
   };
 }
+
+function normalizeBestAutoAssignSnapshot(item = {}) {
+  if (!item || !Array.isArray(item.entries) || !item.entries.length) return null;
+  const normalized = normalizeSavedTimetableVersion({
+    ...item,
+    autoSnapshot: true,
+    snapshotKind: item.snapshotKind || "result",
+    source: item.source || "autoassign-best",
+    name: item.name || "자동배치 최고 결과"
+  });
+  return normalized.entries.length ? { ...normalized, bestSnapshot: true, source: "autoassign-best" } : null;
+}
+
+function findBestAutoAssignSnapshotFromSaved(list = []) {
+  const candidates = Array.isArray(list)
+    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && Array.isArray(v.entries) && v.entries.length)
+    : [];
+  if (!candidates.length) return null;
+  const best = candidates.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0];
+  return normalizeBestAutoAssignSnapshot(best);
+}
+
 
 export function normalizeTimetableConstraint(c = {}) {
   const workType = TEACHER_WORK_TYPES.has(clean(c.workType)) ? clean(c.workType) : "fulltime";
@@ -857,6 +883,7 @@ function normalizeTimetableDomain(raw = {}) {
     savedSchedules: Array.isArray(raw.savedSchedules)
       ? pruneSavedTimetableVersions(raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length))
       : [],
+    bestAutoAssignSnapshot: normalizeBestAutoAssignSnapshot(raw.bestAutoAssignSnapshot) || findBestAutoAssignSnapshotFromSaved(Array.isArray(raw.savedSchedules) ? raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length) : []),
     teacherConstraints: constraints,
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: raw.cardGenerationMeta && typeof raw.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(raw.cardGenerationMeta)) : null,
@@ -1074,6 +1101,7 @@ function buildNormalizedDiagnostic(raw) {
     savedSchedules: splitMetaDoc?.data?.savedSchedules || [],
     cardGenerationMeta: splitMetaDoc?.data?.cardGenerationMeta || null,
     autoAssignMeta: splitMetaDoc?.data?.autoAssignMeta || null,
+    bestAutoAssignSnapshot: splitMetaDoc?.data?.bestAutoAssignSnapshot || null,
     entries: splitEntryDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
     ttcards: splitTtCardDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
   };
@@ -1369,7 +1397,8 @@ function markSplitBaselines(domain, normalized = normalizedForDomain(domain)) {
       ttcardGroups: n.ttcardGroups || [],
       savedSchedules: n.savedSchedules || [],
       cardGenerationMeta: n.cardGenerationMeta || null,
-      autoAssignMeta: n.autoAssignMeta || null
+      autoAssignMeta: n.autoAssignMeta || null,
+      bestAutoAssignSnapshot: n.bestAutoAssignSnapshot || null
     });
   }
 }
@@ -1520,7 +1549,8 @@ async function saveSplitDomain(domain, options = {}) {
         ttcardGroups: normalized.ttcardGroups || [],
         savedSchedules: normalized.savedSchedules || [],
         cardGenerationMeta: normalized.cardGenerationMeta || null,
-        autoAssignMeta: normalized.autoAssignMeta || null
+        autoAssignMeta: normalized.autoAssignMeta || null,
+        bestAutoAssignSnapshot: normalized.bestAutoAssignSnapshot || null
       },
       options
     );
@@ -1733,6 +1763,9 @@ async function applyTimetableSplitIfReady() {
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
     ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
     savedSchedules: timetableSplitCache.meta?.savedSchedules || [],
+    cardGenerationMeta: timetableSplitCache.meta?.cardGenerationMeta || null,
+    autoAssignMeta: timetableSplitCache.meta?.autoAssignMeta || null,
+    bestAutoAssignSnapshot: timetableSplitCache.meta?.bestAutoAssignSnapshot || null,
     entries: timetableSplitCache.entries,
     ttcards: timetableSplitCache.ttcards,
   };

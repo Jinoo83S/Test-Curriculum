@@ -69,14 +69,18 @@ export function createAutoAssignAll(deps) {
       activeGrades: Array.isArray(meta.activeGrades) ? meta.activeGrades.slice() : [],
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
-      classIssueCount: Number(meta.classIssueCount || meta.finalMetrics?.classIssues || 0) || 0,
-      cardCoverageIssueCount: Number(meta.cardCoverageIssueCount || meta.finalMetrics?.cardIssues || 0) || 0,
-      groupCoverageIssueCount: Number(meta.groupCoverageIssueCount || meta.finalMetrics?.groupIssues || 0) || 0,
-      failedUnitCount: Number(meta.failedUnitCount || meta.finalMetrics?.failed || 0) || 0,
-      cardShortageSlots: Number(meta.cardShortageSlots || meta.finalMetrics?.cardShortageSlots || 0) || 0,
-      restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount || meta.finalMetrics?.restrictedTeacherIssueCount || 0) || 0,
-      missingRoomCount: Number(meta.missingRoomCount || meta.finalMetrics?.missingRoomCount || 0) || 0,
-      protectedIntrusionCount: Number(meta.protectedIntrusionCount || meta.finalMetrics?.protectedIntrusionCount || 0) || 0,
+      classIssueCount: Number(meta.classIssueCount ?? meta.classSlotIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
+      classSlotIssueCount: Number(meta.classSlotIssueCount ?? meta.classIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
+      classShortCount: Number(meta.classShortCount ?? meta.finalMetrics?.classShortCount ?? 0) || 0,
+      classOverCount: Number(meta.classOverCount ?? meta.finalMetrics?.classOverCount ?? 0) || 0,
+      cardCoverageIssueCount: Number(meta.cardCoverageIssueCount ?? meta.finalMetrics?.cardCoverageIssueCount ?? 0) || 0,
+      groupCoverageIssueCount: Number(meta.groupCoverageIssueCount ?? meta.finalMetrics?.groupCoverageIssueCount ?? 0) || 0,
+      failedUnitCount: Number(meta.failedUnitCount ?? meta.failedCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
+      failedCount: Number(meta.failedCount ?? meta.failedUnitCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
+      cardShortageSlots: Number(meta.cardShortageSlots ?? meta.finalMetrics?.cardShortageSlots ?? 0) || 0,
+      restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount ?? meta.finalMetrics?.restrictedTeacherIssueCount ?? 0) || 0,
+      missingRoomCount: Number(meta.missingRoomCount ?? meta.finalMetrics?.missingRoomCount ?? 0) || 0,
+      protectedIntrusionCount: Number(meta.protectedIntrusionCount ?? meta.finalMetrics?.protectedIntrusionCount ?? 0) || 0,
       acceptedMetrics: clone(meta.acceptedMetrics),
       finalMetrics: clone(meta.finalMetrics),
       baselineMetrics: clone(meta.baselineMetrics),
@@ -103,10 +107,10 @@ export function createAutoAssignAll(deps) {
   function snapshotQualityScoreForPrune(v = {}) {
     const m = v.autoAssignMeta || {};
     const n = x => Number.isFinite(Number(x)) ? Number(x) : 0;
-    let classIssues = n(m.classIssueCount);
+    let classIssues = n(m.classSlotIssueCount ?? m.classIssueCount);
     let cardIssues = n(m.cardCoverageIssueCount);
     let groupIssues = n(m.groupCoverageIssueCount);
-    let failed = n(m.failedUnitCount);
+    let failed = n(m.failedCount ?? m.failedUnitCount);
     let shortage = n(m.cardShortageSlots);
     if (!classIssues && !cardIssues && !groupIssues && !failed && v.note) {
       const text = String(v.note || "");
@@ -119,10 +123,65 @@ export function createAutoAssignAll(deps) {
     return shortage * 100000 + cardIssues * 30000 + groupIssues * 12000 + classIssues * 4000 + failed * 1000 - n(v.entryCount) / 1000;
   }
 
+  function compactBestAutoAssignSnapshot(version = {}) {
+    if (!version || !Array.isArray(version.entries) || !version.entries.length) return null;
+    return {
+      id: version.id || uid("ttv_auto_best"),
+      name: version.name || "자동배치 최고 결과",
+      note: version.note || "자동배치 최고 품질 보관본입니다.",
+      createdAt: version.createdAt || new Date().toISOString(),
+      updatedAt: version.updatedAt || new Date().toISOString(),
+      periodCount: Math.max(1, Number(version.periodCount || ttConfig()?.periodCount || 7)),
+      entryCount: Number(version.entryCount || version.entries.length || 0),
+      autoSnapshot: true,
+      snapshotKind: "result",
+      source: "autoassign-best",
+      autoAssignMeta: compactAutoAssignSnapshotMeta(version.autoAssignMeta || {}),
+      entries: normalizeSnapshotEntries(version.entries || [])
+    };
+  }
+
+  function bestSnapshotQualityScore(version = {}) {
+    if (!version || !Array.isArray(version.entries) || !version.entries.length) return Infinity;
+    return snapshotQualityScoreForPrune(version);
+  }
+
+  function updateBestAutoAssignSnapshot(domain, version = {}) {
+    if (!domain || !version || !Array.isArray(version.entries) || !version.entries.length) return null;
+    const candidate = compactBestAutoAssignSnapshot(version);
+    if (!candidate) return null;
+    const current = compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot || null);
+    if (!current || bestSnapshotQualityScore(candidate) < bestSnapshotQualityScore(current)) {
+      candidate.name = candidate.name || "자동배치 최고 결과";
+      candidate.bestSnapshot = true;
+      candidate.source = "autoassign-best";
+      domain.bestAutoAssignSnapshot = candidate;
+      return candidate;
+    }
+    return current;
+  }
+
+  function ensureBestAutoAssignSnapshot(domain) {
+    if (!domain) return null;
+    const savedBest = Array.isArray(domain.savedSchedules)
+      ? domain.savedSchedules
+          .filter(v => v && Array.isArray(v.entries) && v.entries.length)
+          .filter(v => String(v.snapshotKind || "") === "result" || String(v.name || "").includes("자동배치 결과"))
+          .sort((a, b) => bestSnapshotQualityScore(a) - bestSnapshotQualityScore(b))[0]
+      : null;
+    if (savedBest) updateBestAutoAssignSnapshot(domain, savedBest);
+    if (domain.bestAutoAssignSnapshot && Array.isArray(domain.bestAutoAssignSnapshot.entries) && domain.bestAutoAssignSnapshot.entries.length) {
+      domain.bestAutoAssignSnapshot = compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot);
+      return domain.bestAutoAssignSnapshot;
+    }
+    return null;
+  }
+
   function pruneAutoAssignSnapshots(domain) {
     if (!domain || !Array.isArray(domain.savedSchedules)) return;
+    const bestSnapshot = ensureBestAutoAssignSnapshot(domain);
     const all = domain.savedSchedules.filter(v => v && Array.isArray(v.entries) && v.entries.length);
-    const isAuto = v => v.autoSnapshot === true || String(v.source || "") === "autoassign" || String(v.name || "").startsWith("자동배치 ");
+    const isAuto = v => v.autoSnapshot === true || String(v.source || "") === "autoassign" || String(v.source || "") === "autoassign-best" || String(v.name || "").startsWith("자동배치 ");
     const isBefore = v => String(v.snapshotKind || "") === "before" || String(v.name || "").startsWith("자동배치 전");
     const time = v => Date.parse(v.updatedAt || v.createdAt || 0) || 0;
     const byId = new Map();
@@ -131,6 +190,7 @@ export function createAutoAssignAll(deps) {
     const after = auto.filter(v => !isBefore(v));
     const before = auto.filter(isBefore);
     const manual = all.filter(v => !isAuto(v));
+    if (bestSnapshot) add(bestSnapshot);
     after.slice().sort((a,b) => snapshotQualityScoreForPrune(a) - snapshotQualityScoreForPrune(b)).slice(0, 1).forEach(add);
     after.slice().sort((a,b) => time(b) - time(a)).slice(0, 4).forEach(add);
     before.slice().sort((a,b) => time(b) - time(a)).slice(0, 1).forEach(add);
@@ -170,7 +230,8 @@ export function createAutoAssignAll(deps) {
     };
 
     // 저장 실패 방지: 자동배치 보관본은 entries가 커서 Firestore 문서/localStorage 한도를 쉽게 넘습니다.
-    // 이전 최고 결과 + 최근 결과만 남기고 즉시 정리합니다.
+    // r31: 자동배치 결과 중 최고 품질 보관본은 savedSchedules 정리와 별개로 별도 보존합니다.
+    if (kind === "result") updateBestAutoAssignSnapshot(domain, version);
     domain.savedSchedules = [version, ...(domain.savedSchedules || [])];
     pruneAutoAssignSnapshots(domain);
     return domain.savedSchedules.find(v => v.id === version.id) || version;
@@ -3477,10 +3538,16 @@ export function createAutoAssignAll(deps) {
     if (currentReference?.metrics) candidates.push(currentReference);
 
     const domain = ttDomain();
-    const schedules = Array.isArray(domain?.savedSchedules) ? domain.savedSchedules : [];
+    const bestSnapshot = ensureBestAutoAssignSnapshot(domain);
+    const schedules = [
+      ...(bestSnapshot ? [{ ...bestSnapshot, source: "autoassign-best", bestSnapshot: true }] : []),
+      ...(Array.isArray(domain?.savedSchedules) ? domain.savedSchedules : [])
+    ];
     schedules.forEach((version, index) => {
       if (!version || !Array.isArray(version.entries) || !version.entries.length) return;
       const isAutoResult = version.snapshotKind === "result"
+        || version.bestSnapshot === true
+        || String(version.source || "") === "autoassign-best"
         || (version.autoSnapshot === true && String(version.name || "").includes("자동배치 결과"))
         || (version.source === "autoassign" && String(version.name || "").includes("자동배치 결과"));
       if (!isAutoResult) return;
@@ -3503,8 +3570,8 @@ export function createAutoAssignAll(deps) {
           : (Number.isFinite(Number(meta.postProcessQualityScore)) ? Number(meta.postProcessQualityScore) : Infinity)
       });
       candidates.push({
-        source: "savedSchedule",
-        name: version.name || "저장된 자동배치 결과",
+        source: (version.bestSnapshot === true || String(version.source || "") === "autoassign-best") ? "bestSnapshot" : "savedSchedule",
+        name: version.bestSnapshot === true ? `최고 보관본 · ${version.name || "자동배치 결과"}` : (version.name || "저장된 자동배치 결과"),
         scheduleId: version.id || "",
         scheduleIndex: index,
         createdAt: version.createdAt || "",
@@ -4178,7 +4245,7 @@ export function createAutoAssignAll(deps) {
     const qualityBaselineReference = findBestSavedAutoAssignReference(activeGrades, currentQualityReference) || currentQualityReference;
     const qualityBaselineMetrics = qualityBaselineReference.metrics || baselineAutoRunMetrics;
     const qualityBaselineValidation = qualityBaselineReference.validation || preValidation;
-    if (qualityBaselineReference.source === "savedSchedule") {
+    if ((qualityBaselineReference.source === "savedSchedule" || qualityBaselineReference.source === "bestSnapshot")) {
       addTimetableLog(
         "auto",
         "자동배치 품질 기준",
@@ -5128,7 +5195,7 @@ export function createAutoAssignAll(deps) {
     // 이전 최고 보관본 자체를 기준으로 카드시수 반복복구를 한 번 더 시도합니다.
     // 목표는 이전 최고 상태를 출발점으로 삼아 남은 9~10개 미배치 단위를 실제로 줄이는 것입니다.
     let baselineRepairAdopted = false;
-    if (compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0 && qualityBaselineReference?.source === "savedSchedule" && Array.isArray(qualityBaselineReference.entries)) {
+    if (compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0 && (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") && Array.isArray(qualityBaselineReference.entries)) {
       const baselineAll = normalizeSnapshotEntries(qualityBaselineReference.entries) || [];
       const protectedIds = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
       const baselineAutoPlaced = baselineAll.filter(e => !protectedIds.has(e.id));
@@ -5175,7 +5242,7 @@ export function createAutoAssignAll(deps) {
     }
     const rejectWorseThanBaseline = !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
     if (rejectWorseThanBaseline) {
-      const restoreSource = qualityBaselineReference?.source === "savedSchedule" ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
+      const restoreSource = (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
       ttDomain().entries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
       await persistTimetableNow();
       recomputeConflicts();
@@ -5194,7 +5261,7 @@ export function createAutoAssignAll(deps) {
         rejectedMetrics: finalAutoRunMetrics,
         referenceSource: qualityBaselineReference?.source || "current",
         referenceSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
-        restoredFromReference: qualityBaselineReference?.source === "savedSchedule",
+        restoredFromReference: qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot",
         comparisonSummary: `${qualityBaselineValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`
       };
       if (appState.timetable) appState.timetable.autoAssignMeta = rejectReport;
@@ -5207,7 +5274,7 @@ export function createAutoAssignAll(deps) {
       await progress.complete({
         partial: true,
         title: "자동배치 결과 폐기",
-        subtitle: qualityBaselineReference?.source === "savedSchedule" ? "이전 최고 자동배치 결과가 더 좋아 그 보관본으로 복원했습니다." : "기존 시간표가 더 좋아 새 자동배치 결과를 반영하지 않았습니다.",
+        subtitle: (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? "이전 최고 자동배치 결과가 더 좋아 그 보관본으로 복원했습니다." : "기존 시간표가 더 좋아 새 자동배치 결과를 반영하지 않았습니다.",
         step: "결과 폐기",
         detailHtml: [
           `<div><b>품질 기준</b> ${safeAutoHtml(qualityBaselineReference?.name || "현재 시간표")}</div>`,
@@ -5335,6 +5402,8 @@ export function createAutoAssignAll(deps) {
           modeText ? `방식: ${modeText}` : "",
           report.validationSummary ? `검증: ${report.validationSummary}` : ""
         ].filter(Boolean).join(" / ");
+        updateBestAutoAssignSnapshot(ttDomain(), afterAutoSnapshot);
+        pruneAutoAssignSnapshots(ttDomain());
         await persistTimetableNow();
       } catch (_) {
         afterAutoSnapshot.autoAssignMeta = { validationSummary: report.validationSummary || "" };
