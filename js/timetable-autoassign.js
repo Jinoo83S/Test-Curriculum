@@ -64,32 +64,44 @@ export function createAutoAssignAll(deps) {
       if (!value || typeof value !== "object") return null;
       try { return JSON.parse(JSON.stringify(value)); } catch (_) { return null; }
     };
+    const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
+    const metricCompleteness = String(meta.metricCompleteness || (hasFinalMetrics ? "complete" : "") || "");
+    // r34: r31~r33 저장 압축 과정에서 top-level 수치가 0으로 남고 finalMetrics에만
+    // 실제 수치가 보존되는 경우가 있었습니다. 0은 '증거 없음'일 수 있으므로 finalMetrics를 우선합니다.
+    const metricNumber = (direct, final, fallback = 0) => {
+      const f = Number(final);
+      if (Number.isFinite(f)) return f;
+      const d = Number(direct);
+      if (Number.isFinite(d)) return d;
+      return fallback;
+    };
+    const final = meta.finalMetrics || {};
     return {
-      validationSummary: String(meta.validationSummary || ""),
+      validationSummary: String(meta.validationSummary || final.validationSummary || ""),
       activeGrades: Array.isArray(meta.activeGrades) ? meta.activeGrades.slice() : [],
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
-      classIssueCount: Number(meta.classIssueCount ?? meta.classSlotIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
-      classSlotIssueCount: Number(meta.classSlotIssueCount ?? meta.classIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
-      classShortCount: Number(meta.classShortCount ?? meta.finalMetrics?.classShortCount ?? 0) || 0,
-      classOverCount: Number(meta.classOverCount ?? meta.finalMetrics?.classOverCount ?? 0) || 0,
-      cardCoverageIssueCount: Number(meta.cardCoverageIssueCount ?? meta.finalMetrics?.cardCoverageIssueCount ?? 0) || 0,
-      groupCoverageIssueCount: Number(meta.groupCoverageIssueCount ?? meta.finalMetrics?.groupCoverageIssueCount ?? 0) || 0,
-      failedUnitCount: Number(meta.failedUnitCount ?? meta.failedCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
-      failedCount: Number(meta.failedCount ?? meta.failedUnitCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
-      cardShortageSlots: Number(meta.cardShortageSlots ?? meta.finalMetrics?.cardShortageSlots ?? 0) || 0,
-      classTotal: Number(meta.classTotal ?? meta.finalMetrics?.classTotal ?? 0) || 0,
-      classTargetTotal: Number(meta.classTargetTotal ?? meta.finalMetrics?.classTargetTotal ?? 0) || 0,
-      classTargetGap: Number(meta.classTargetGap ?? meta.finalMetrics?.classTargetGap ?? 0) || 0,
-      restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount ?? meta.finalMetrics?.restrictedTeacherIssueCount ?? 0) || 0,
-      missingRoomCount: Number(meta.missingRoomCount ?? meta.finalMetrics?.missingRoomCount ?? 0) || 0,
-      protectedIntrusionCount: Number(meta.protectedIntrusionCount ?? meta.finalMetrics?.protectedIntrusionCount ?? 0) || 0,
+      classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount),
+      classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount),
+      classShortCount: metricNumber(meta.classShortCount, final.classShortCount),
+      classOverCount: metricNumber(meta.classOverCount, final.classOverCount),
+      cardCoverageIssueCount: metricNumber(meta.cardCoverageIssueCount, final.cardCoverageIssueCount),
+      groupCoverageIssueCount: metricNumber(meta.groupCoverageIssueCount, final.groupCoverageIssueCount),
+      failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount),
+      failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount),
+      cardShortageSlots: metricNumber(meta.cardShortageSlots, final.cardShortageSlots),
+      classTotal: metricNumber(meta.classTotal, final.classTotal),
+      classTargetTotal: metricNumber(meta.classTargetTotal, final.classTargetTotal),
+      classTargetGap: metricNumber(meta.classTargetGap, final.classTargetGap),
+      restrictedTeacherIssueCount: metricNumber(meta.restrictedTeacherIssueCount, final.restrictedTeacherIssueCount),
+      missingRoomCount: metricNumber(meta.missingRoomCount, final.missingRoomCount),
+      protectedIntrusionCount: metricNumber(meta.protectedIntrusionCount, final.protectedIntrusionCount),
       acceptedMetrics: clone(meta.acceptedMetrics),
       finalMetrics: clone(meta.finalMetrics),
       baselineMetrics: clone(meta.baselineMetrics),
       qualityGate: clone(meta.qualityGate),
-      metricSource: String(meta.metricSource || ""),
-      metricCompleteness: String(meta.metricCompleteness || ""),
+      metricSource: String(meta.metricSource || (hasFinalMetrics ? "finalMetrics" : "")),
+      metricCompleteness,
       qualityBaselineSource: String(meta.qualityBaselineSource || ""),
       qualityBaselineSnapshotName: String(meta.qualityBaselineSnapshotName || ""),
       qualityBaselineValidationSummary: String(meta.qualityBaselineValidationSummary || ""),
@@ -152,14 +164,14 @@ export function createAutoAssignAll(deps) {
       || Object.prototype.hasOwnProperty.call(meta, "classIssueCount")
       || hasClassTextEvidence);
 
-    const cardCoverageIssueCount = pick(meta.cardCoverageIssueCount, meta.finalMetrics?.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
-    const groupCoverageIssueCount = pick(meta.groupCoverageIssueCount, meta.finalMetrics?.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
-    const classSlotIssueCount = pick(meta.classSlotIssueCount, meta.classIssueCount, meta.finalMetrics?.classSlotIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
-    const failedCount = pick(meta.failedCount, meta.failedUnitCount, meta.finalMetrics?.failedCount, matchNum(/미배치\s*(\d+)개/));
-    const cardShortageSlots = pick(meta.cardShortageSlots, meta.finalMetrics?.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
-    const restrictedTeacherIssueCount = pick(meta.restrictedTeacherIssueCount, meta.finalMetrics?.restrictedTeacherIssueCount);
-    const missingRoomCount = pick(meta.missingRoomCount, meta.finalMetrics?.missingRoomCount);
-    const protectedIntrusionCount = pick(meta.protectedIntrusionCount, meta.finalMetrics?.protectedIntrusionCount);
+    const cardCoverageIssueCount = pick(meta.finalMetrics?.cardCoverageIssueCount, meta.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
+    const groupCoverageIssueCount = pick(meta.finalMetrics?.groupCoverageIssueCount, meta.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
+    const classSlotIssueCount = pick(meta.finalMetrics?.classSlotIssueCount, meta.classSlotIssueCount, meta.classIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
+    const failedCount = pick(meta.finalMetrics?.failedCount, meta.failedCount, meta.failedUnitCount, matchNum(/미배치\s*(\d+)개/));
+    const cardShortageSlots = pick(meta.finalMetrics?.cardShortageSlots, meta.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
+    const restrictedTeacherIssueCount = pick(meta.finalMetrics?.restrictedTeacherIssueCount, meta.restrictedTeacherIssueCount);
+    const missingRoomCount = pick(meta.finalMetrics?.missingRoomCount, meta.missingRoomCount);
+    const protectedIntrusionCount = pick(meta.finalMetrics?.protectedIntrusionCount, meta.protectedIntrusionCount);
     const complete = !!(hasMetaObject && modernMetricEvidence && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence);
     const legacyPartial = !complete && /자동배치/.test(String(version?.name || ""));
     return {
@@ -2598,15 +2610,16 @@ export function createAutoAssignAll(deps) {
     return [...map.values()].filter(block => block.entries.length && Number.isInteger(block.entries[0].day) && Number.isInteger(block.entries[0].period));
   }
 
-  function makeMovedBlockEntries(block, slot, placedWithoutBlock = []) {
+  function makeMovedBlockEntries(block, slot, placedWithoutBlock = [], moveOptions = {}) {
     const moved = [];
+    const checkOptions = {
+      respectSoftLimits: moveOptions.respectSoftLimits !== false,
+      respectUnavailable: moveOptions.respectUnavailable !== false,
+      respectAssignedRoom: moveOptions.respectAssignedRoom !== false
+    };
     for (const original of block.entries) {
       const candidateData = { ...original, day: slot.day, period: slot.period };
-      if (!checkPlacementValid(candidateData, slot, [...placedWithoutBlock, ...moved], {
-        respectSoftLimits: true,
-        respectUnavailable: true,
-        respectAssignedRoom: true
-      })) return null;
+      if (!checkPlacementValid(candidateData, slot, [...placedWithoutBlock, ...moved], checkOptions)) return null;
       const normalized = normalizeTimetableEntry({
         ...original,
         ...applyAutoRoomToEntryData(candidateData, slot, [...placedWithoutBlock, ...moved]),
@@ -2700,7 +2713,7 @@ export function createAutoAssignAll(deps) {
       for (const moveSlot of moveSlots) {
         attempts++;
         const placedSoFar = [...baseWithoutBlockers, ...movedEntries];
-        const moved = makeMovedBlockEntries(block, moveSlot, placedSoFar);
+        const moved = makeMovedBlockEntries(block, moveSlot, placedSoFar, options);
         if (!moved) continue;
         search(idx + 1, [...movedEntries, ...moved]);
         // 균형/빠른 모드에서는 첫 안전 해답을 찾으면 더 깊은 불필요 탐색을 줄입니다.
@@ -2751,11 +2764,11 @@ export function createAutoAssignAll(deps) {
     // r30: 최종 목표는 모든 카드 시수 충족입니다. 남은 5~10시수 구간에서는
     // 초기 배치보다 복구 탐색 깊이가 더 중요하므로, 정교한 배치에서 1~다중 이동 탐색폭을 넓힙니다.
     const maxFailedToTry = options.runAttempts === 'deep' ? 360 : (options.runAttempts === 'fast' ? 48 : 120);
-    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 24 : 10;
-    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(30, orderedSlots.length);
-    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 5 : 3;
-    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(20, orderedSlots.length);
-    const maxRepairAttempts = options.runAttempts === 'deep' ? 120000 : (options.runAttempts === 'fast' ? 2400 : 12000);
+    const maxBlockersPerSlot = options.runAttempts === 'deep' ? 36 : 12;
+    const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(36, orderedSlots.length);
+    const maxEvacuateBlocks = options.runAttempts === 'deep' ? 7 : 4;
+    const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(28, orderedSlots.length);
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 240000 : (options.runAttempts === 'fast' ? 3600 : 18000);
     let attempts = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
@@ -2796,7 +2809,7 @@ export function createAutoAssignAll(deps) {
             attempts++;
             if (attempts >= maxRepairAttempts) break;
             if (moveSlot.day === targetSlot.day && moveSlot.period === targetSlot.period) continue;
-            const moved = makeMovedBlockEntries(block, moveSlot, withoutBlock);
+            const moved = makeMovedBlockEntries(block, moveSlot, withoutBlock, options);
             if (!moved) continue;
             const baseWithMoved = [...withoutBlock, ...moved];
             if (!checkPlacementValid(item, targetSlot, baseWithMoved, options)) continue;
@@ -4884,6 +4897,7 @@ export function createAutoAssignAll(deps) {
         const groupNames = (row.groupIds || []).map(id => ttGroups().find(g => g.id === id)?.name || "").join(" ");
         const text = `${title} ${groupNames} ${row.group || ""} ${row.track || ""}`;
         let score = 0;
+        if (/언어와\s*매체|공통영어1|변혁적\s*리더십|스토리텔링과\s*공연기획/i.test(text)) score -= 90;
         if (/문학|국어|한국어|영어|수학|사회|과학|화학|성경|종교/i.test(text)) score -= 20;
         if (/12영어|HS국어|MS국어|선택|사회|수학|영어/.test(text)) score -= 12;
         score -= Math.max(0, -Number(row.diff || 0)) * 8;
@@ -5436,13 +5450,9 @@ export function createAutoAssignAll(deps) {
     }
 
     bestPlaced.forEach(e => entries().push(e));
-    const afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), {
-      activeGrades,
-      modeText,
-      options,
-      validationSummary: postValidation.summary || (postValidation.ok ? "통과" : "확인 필요")
-    });
-    await persistTimetableNow();
+    let afterAutoSnapshot = null;
+    // r34: 결과 보관본은 finalMetrics가 들어간 report 생성 후 저장합니다.
+    // r33까지는 validationSummary만 가진 보관본이 먼저 저장되어 bestAutoAssignSnapshot의 수치가 0으로 압축될 수 있었습니다.
     recomputeConflicts();
 
     const missingRoomEntries = bestPlaced.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
@@ -5536,11 +5546,13 @@ export function createAutoAssignAll(deps) {
         acceptedLabel
       }
     };
+    report.metricSource = "postValidation";
+    report.metricCompleteness = "complete";
+    afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), report);
+    report.afterSnapshotName = afterAutoSnapshot?.name || "";
     if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
     if (afterAutoSnapshot) {
       try {
-        report.metricSource = "postValidation";
-        report.metricCompleteness = "complete";
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
         afterAutoSnapshot.note = [
           "자동 생성된 배치 보관본입니다.",
@@ -5550,11 +5562,11 @@ export function createAutoAssignAll(deps) {
         ].filter(Boolean).join(" / ");
         updateBestAutoAssignSnapshot(ttDomain(), afterAutoSnapshot);
         pruneAutoAssignSnapshots(ttDomain());
-        await persistTimetableNow();
       } catch (_) {
-        afterAutoSnapshot.autoAssignMeta = { validationSummary: report.validationSummary || "" };
+        afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
       }
     }
+    await persistTimetableNow();
     setLastAutoAssignReport(report);
     addTimetableLog(
       "auto",

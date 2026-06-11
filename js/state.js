@@ -635,6 +635,16 @@ function safeJsonClone(value) {
 function compactAutoAssignMetaForStorage(meta = null) {
   if (!meta || typeof meta !== "object") return null;
   const cloneMetric = value => (value && typeof value === "object") ? safeJsonClone(value) : null;
+  const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
+  const final = meta.finalMetrics || {};
+  // r34: 저장 압축 시 0으로 채워진 top-level 값보다 finalMetrics의 실제 검증 수치를 우선합니다.
+  const metricNumber = (direct, finalValue, fallback = 0) => {
+    const f = Number(finalValue);
+    if (Number.isFinite(f)) return f;
+    const d = Number(direct);
+    if (Number.isFinite(d)) return d;
+    return fallback;
+  };
   const compactDiagnostics = Array.isArray(meta.failedDiagnostics)
     ? meta.failedDiagnostics.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(d => ({
         key: clean(d?.key || d?.id || ""),
@@ -656,25 +666,25 @@ function compactAutoAssignMetaForStorage(meta = null) {
     ok: meta.ok === true,
     placedEntryCount: Number(meta.placedEntryCount || meta.entryCount || 0) || 0,
     placedBlockCount: Number(meta.placedBlockCount || 0) || 0,
-    failedUnitCount: Number(meta.failedUnitCount ?? meta.failedCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
-    failedCount: Number(meta.failedCount ?? meta.failedUnitCount ?? meta.finalMetrics?.failedCount ?? 0) || 0,
+    failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount),
+    failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount),
     failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,
-    classIssueCount: Number(meta.classIssueCount ?? meta.classSlotIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
-    classSlotIssueCount: Number(meta.classSlotIssueCount ?? meta.classIssueCount ?? meta.finalMetrics?.classSlotIssueCount ?? 0) || 0,
-    classShortCount: Number(meta.classShortCount ?? meta.finalMetrics?.classShortCount ?? 0) || 0,
-    classOverCount: Number(meta.classOverCount ?? meta.finalMetrics?.classOverCount ?? 0) || 0,
-    cardCoverageIssueCount: Number(meta.cardCoverageIssueCount ?? meta.finalMetrics?.cardCoverageIssueCount ?? 0) || 0,
-    groupCoverageIssueCount: Number(meta.groupCoverageIssueCount ?? meta.finalMetrics?.groupCoverageIssueCount ?? 0) || 0,
-    cardShortageSlots: Number(meta.cardShortageSlots ?? meta.finalMetrics?.cardShortageSlots ?? 0) || 0,
-    classTotal: Number(meta.classTotal ?? meta.finalMetrics?.classTotal ?? 0) || 0,
-    classTargetTotal: Number(meta.classTargetTotal ?? meta.finalMetrics?.classTargetTotal ?? 0) || 0,
-    classTargetGap: Number(meta.classTargetGap ?? meta.finalMetrics?.classTargetGap ?? 0) || 0,
-    restrictedTeacherIssueCount: Number(meta.restrictedTeacherIssueCount || 0) || 0,
-    protectedIntrusionCount: Number(meta.protectedIntrusionCount || 0) || 0,
-    missingRoomCount: Number(meta.missingRoomCount || 0) || 0,
+    classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount),
+    classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount),
+    classShortCount: metricNumber(meta.classShortCount, final.classShortCount),
+    classOverCount: metricNumber(meta.classOverCount, final.classOverCount),
+    cardCoverageIssueCount: metricNumber(meta.cardCoverageIssueCount, final.cardCoverageIssueCount),
+    groupCoverageIssueCount: metricNumber(meta.groupCoverageIssueCount, final.groupCoverageIssueCount),
+    cardShortageSlots: metricNumber(meta.cardShortageSlots, final.cardShortageSlots),
+    classTotal: metricNumber(meta.classTotal, final.classTotal),
+    classTargetTotal: metricNumber(meta.classTargetTotal, final.classTargetTotal),
+    classTargetGap: metricNumber(meta.classTargetGap, final.classTargetGap),
+    restrictedTeacherIssueCount: metricNumber(meta.restrictedTeacherIssueCount, final.restrictedTeacherIssueCount),
+    protectedIntrusionCount: metricNumber(meta.protectedIntrusionCount, final.protectedIntrusionCount),
+    missingRoomCount: metricNumber(meta.missingRoomCount, final.missingRoomCount),
     selectedAcceptedLabel: clean(meta.selectedAcceptedLabel),
-    metricSource: clean(meta.metricSource),
-    metricCompleteness: clean(meta.metricCompleteness),
+    metricSource: clean(meta.metricSource) || (hasFinalMetrics ? "finalMetrics" : ""),
+    metricCompleteness: clean(meta.metricCompleteness) || (hasFinalMetrics ? "complete" : ""), 
     qualityBaselineSource: clean(meta.qualityBaselineSource),
     qualityBaselineSnapshotName: clean(meta.qualityBaselineSnapshotName),
     qualityBaselineValidationSummary: clean(meta.qualityBaselineValidationSummary),
@@ -721,13 +731,13 @@ function extractSavedVersionMetricEvidence(v = {}) {
   const hasCardEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "cardCoverageIssueCount") || Object.prototype.hasOwnProperty.call(m, "cardShortageSlots") || hasCardTextEvidence);
   const hasGroupEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "groupCoverageIssueCount") || hasGroupTextEvidence);
   const hasFailedEvidence = modernMetricEvidence && (hasFinalMetrics || metricCompleteness === "complete" || Object.prototype.hasOwnProperty.call(m, "failedCount") || Object.prototype.hasOwnProperty.call(m, "failedUnitCount") || hasFailedTextEvidence);
-  const cardCoverageIssueCount = pick(m.cardCoverageIssueCount, m.finalMetrics?.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
-  const groupCoverageIssueCount = pick(m.groupCoverageIssueCount, m.finalMetrics?.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
-  const classSlotIssueCount = pick(m.classSlotIssueCount, m.classIssueCount, m.finalMetrics?.classSlotIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
-  const failedCount = pick(m.failedCount, m.failedUnitCount, m.finalMetrics?.failedCount, matchNum(/미배치\s*(\d+)개/));
-  const cardShortageSlots = pick(m.cardShortageSlots, m.finalMetrics?.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
-  const classTotal = pick(m.classTotal, m.finalMetrics?.classTotal);
-  const classTargetTotal = pick(m.classTargetTotal, m.finalMetrics?.classTargetTotal);
+  const cardCoverageIssueCount = pick(m.finalMetrics?.cardCoverageIssueCount, m.cardCoverageIssueCount, matchNum(/카드\s*시수\s*(\d+)개/));
+  const groupCoverageIssueCount = pick(m.finalMetrics?.groupCoverageIssueCount, m.groupCoverageIssueCount, matchNum(/그룹\/개별\s*(\d+)개/));
+  const classSlotIssueCount = pick(m.finalMetrics?.classSlotIssueCount, m.classSlotIssueCount, m.classIssueCount, matchNum(/학급\s*시수\s*(\d+)개/));
+  const failedCount = pick(m.finalMetrics?.failedCount, m.failedCount, m.failedUnitCount, matchNum(/미배치\s*(\d+)개/));
+  const cardShortageSlots = pick(m.finalMetrics?.cardShortageSlots, m.cardShortageSlots, cardCoverageIssueCount ? cardCoverageIssueCount : 0);
+  const classTotal = pick(m.finalMetrics?.classTotal, m.classTotal);
+  const classTargetTotal = pick(m.finalMetrics?.classTargetTotal, m.classTargetTotal);
   const classTargetGap = classTargetTotal > 0 ? Math.abs(classTargetTotal - classTotal) : 0;
   return {
     complete: !!(hasMetaObject && modernMetricEvidence && hasClassEvidence && hasCardEvidence && hasGroupEvidence && hasFailedEvidence),
@@ -739,9 +749,9 @@ function extractSavedVersionMetricEvidence(v = {}) {
     groupCoverageIssueCount,
     failedCount,
     cardShortageSlots,
-    restrictedTeacherIssueCount: pick(m.restrictedTeacherIssueCount, m.finalMetrics?.restrictedTeacherIssueCount),
-    missingRoomCount: pick(m.missingRoomCount, m.finalMetrics?.missingRoomCount),
-    protectedIntrusionCount: pick(m.protectedIntrusionCount, m.finalMetrics?.protectedIntrusionCount),
+    restrictedTeacherIssueCount: pick(m.finalMetrics?.restrictedTeacherIssueCount, m.restrictedTeacherIssueCount),
+    missingRoomCount: pick(m.finalMetrics?.missingRoomCount, m.missingRoomCount),
+    protectedIntrusionCount: pick(m.finalMetrics?.protectedIntrusionCount, m.protectedIntrusionCount),
     classTotal,
     classTargetTotal,
     classTargetGap
