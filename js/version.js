@@ -3,7 +3,7 @@
 // ================================================================
 // Update this value once per release. HTML entry points can override it by
 // setting window.HIS_APP_VERSION before loading app modules.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-12-canonical-meta-sync-r41b");
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-12-validator-cleanup-r41c");
 
 export function versioned(path) {
   const raw = String(path || "");

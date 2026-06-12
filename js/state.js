@@ -3,6 +3,7 @@
 // ================================================================
 import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS } from "./config.js";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
+import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js";
 import { canEdit } from "./auth.js";
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js";
 import {
@@ -779,7 +780,11 @@ function compactAutoAssignMetaForStorage(meta = null) {
     rejectReason: clean(meta.rejectReason),
     failedDiagnostics: compactDiagnostics,
     failedReasonSummary: compactReasonSummary,
-    residualPuzzleReport: compactResidualPuzzleReportForStorage(meta.residualPuzzleReport),
+    residualPuzzleReport: compactResidualPuzzleReportForStorage(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
+    validatorVersion: clean(meta.validatorVersion || TIMETABLE_VALIDATOR_VERSION),
+    experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
+    experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
+    experimentalResidualRepairSkipReason: clean(meta.experimentalResidualRepairSkipReason),
     missingRoomNames: Array.isArray(meta.missingRoomNames) ? meta.missingRoomNames.slice(0, 20).map(clean) : [],
     restrictedTeacherNames: Array.isArray(meta.restrictedTeacherNames) ? meta.restrictedTeacherNames.slice(0, 20).map(clean) : []
   };
@@ -920,7 +925,7 @@ function pruneSavedTimetableVersions(list = []) {
 
 function normalizeSavedTimetableVersion(item = {}) {
   const entries = Array.isArray(item.entries)
-    ? item.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
+    ? item.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter)
     : [];
   const createdAt = clean(item.createdAt) || new Date().toISOString();
   return {
@@ -1060,16 +1065,11 @@ function syncAutoAssignMetaToEquivalentSnapshots({ entries = [], bestSnapshot = 
   if (!hasCompleteTopAutoAssignMeta(meta) || !Array.isArray(entries) || !entries.length) {
     return { bestSnapshot, savedSchedules, meta };
   }
-  const sourceMeta = { ...meta };
-  const residualSchema = clean(sourceMeta.residualPuzzleReport?.schemaVersion);
-  if (sourceMeta.residualPuzzleReport && residualSchema && !/^2026-06-12/.test(residualSchema)) {
-    // 오래된 r36/r37 잔여 퍼즐 리포트는 현재 entries 기준이라고 보장할 수 없습니다.
-    // 수치 메타는 동기화하되, 잔여 리포트는 다음 자동배치 검증에서 재생성하게 비웁니다.
-    sourceMeta.residualPuzzleReport = null;
-  }
+  const sourceMeta = canonicalizeAutoAssignMeta({ ...meta }, { schemaVersion: TIMETABLE_VALIDATOR_VERSION });
+  sourceMeta.residualPuzzleReport = stripStaleResidualPuzzleReport(sourceMeta.residualPuzzleReport);
   const canonicalMeta = compactAutoAssignMetaForStorage({
     ...sourceMeta,
-    schemaVersion: clean(sourceMeta.schemaVersion) || "2026-06-12-state-canonical-meta-sync-r41b",
+    schemaVersion: clean(sourceMeta.schemaVersion) || TIMETABLE_VALIDATOR_VERSION,
     metricCompleteness: clean(sourceMeta.metricCompleteness) || "complete",
     metricSource: clean(sourceMeta.metricSource) || "canonicalEvaluation"
   });
@@ -1120,7 +1120,7 @@ function normalizeTimetableDomain(raw = {}) {
     || findBestAutoAssignSnapshotFromSaved(normalizedSavedSchedules);
   const normalizedMeta = compactAutoAssignMetaForStorage(raw.autoAssignMeta);
   let normalizedEntries = Array.isArray(raw.entries)
-    ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
+    ? raw.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter)
     : [];
 
   // r41: 품질 게이트가 후보를 폐기했다고 기록되어 있는데 현재 entries가
@@ -1130,7 +1130,7 @@ function normalizeTimetableDomain(raw = {}) {
       && /bestSnapshot|savedSchedule/.test(clean(normalizedMeta.qualityBaselineSource))
       && normalizedBestSnapshot?.entries?.length
       && normalizedEntries.length !== normalizedBestSnapshot.entries.length) {
-    normalizedEntries = normalizedBestSnapshot.entries.map(normalizeTimetableEntry).filter(e => e.templateId);
+    normalizedEntries = normalizedBestSnapshot.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter);
     normalizedMeta.stateSyncApplied = true;
     normalizedMeta.stateSyncReason = "rejected-candidate-entries-restored-from-best-snapshot";
     normalizedMeta.stateSyncEntryCount = normalizedEntries.length;

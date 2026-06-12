@@ -6,6 +6,8 @@
 // so the engine can still use the current app state, UI callbacks, and
 // shared occupancy logic without creating circular imports.
 
+import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
+
 export function createAutoAssignAll(deps) {
   const {
     GRADE_KEYS, canEdit, appState, scheduleSave, saveNow, normalizeTimetableEntry,
@@ -21,6 +23,13 @@ export function createAutoAssignAll(deps) {
   } = deps;
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
+
+  function experimentalResidualRepairEnabled(localOptions = {}) {
+    return isExperimentalResidualRepairEnabled({
+      ...localOptions,
+      engineProfile: localOptions.engineProfile || localOptions?.checkOptions?.engineProfile
+    });
+  }
 
   function withAutoSaveTimeout(promise, ms = 25000, label = "시간표 저장") {
     let timer = null;
@@ -205,7 +214,11 @@ export function createAutoAssignAll(deps) {
         reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 4) : [],
         suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3).map(formatDiagnosticSuggestion).filter(Boolean) : []
       })) : [],
-      residualPuzzleReport: compactResidualPuzzle(meta.residualPuzzleReport)
+      residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
+      validatorVersion: String(meta.validatorVersion || "2026-06-12-validator-cleanup-r41c"),
+      experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
+      experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
+      experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
     };
   }
 
@@ -418,7 +431,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-canonical-meta-sync-r41b",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-validator-cleanup-r41c",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -3493,7 +3506,7 @@ export function createAutoAssignAll(deps) {
           }
         }
 
-        if (!done && blockers.length && attempts < maxRepairAttempts && chainCalls < maxChainCalls && targetSlotIndex < maxChainTargetSlots) {
+        if (!done && experimentalResidualRepairEnabled({ ...options, engineProfile: options.engineProfile }) && blockers.length && attempts < maxRepairAttempts && chainCalls < maxChainCalls && targetSlotIndex < maxChainTargetSlots) {
           chainCalls++;
           const chainOptions = {
             ...options,
@@ -4157,7 +4170,12 @@ export function createAutoAssignAll(deps) {
         finalRepairLimit: 0,
         postProcessLimit: 0,
         postProcessPasses: 0,
-        qualityClassCheck: false
+        qualityClassCheck: false,
+        enableExperimentalResidualRepair: false,
+        enableResidualTwoCycleRepair: false,
+        enableEjectionChainRepair: false,
+        enableMinConflictsRepair: false,
+        enableForceResidualRepair: false
       };
     }
     if (value === "deep") {
@@ -4174,7 +4192,12 @@ export function createAutoAssignAll(deps) {
         finalRepairLimit: Infinity,
         postProcessLimit: 180,
         postProcessPasses: 2,
-        qualityClassCheck: true
+        qualityClassCheck: true,
+        enableExperimentalResidualRepair: false,
+        enableResidualTwoCycleRepair: false,
+        enableEjectionChainRepair: false,
+        enableMinConflictsRepair: false,
+        enableForceResidualRepair: false
       };
     }
     return {
@@ -4188,7 +4211,12 @@ export function createAutoAssignAll(deps) {
       finalRepairLimit: 24,
       postProcessLimit: 40,
       postProcessPasses: 1,
-      qualityClassCheck: true
+      qualityClassCheck: true,
+      enableExperimentalResidualRepair: false,
+      enableResidualTwoCycleRepair: false,
+      enableEjectionChainRepair: false,
+      enableMinConflictsRepair: false,
+      enableForceResidualRepair: false
     };
   }
 
@@ -5124,6 +5152,7 @@ export function createAutoAssignAll(deps) {
 
     const attemptPlan = attemptsForMode(options.runAttempts);
     const engineProfile = autoEngineProfileForMode(options.runAttempts);
+    const allowExperimentalResidualRepair = experimentalResidualRepairEnabled({ ...options, engineProfile });
 
     await updateProgress({
       percent: 10,
@@ -5867,9 +5896,11 @@ export function createAutoAssignAll(deps) {
           respectAssignedRoom: true
         };
 
-        const twoCyclePack = await repairResidualByTwoCycleSwap(currentPlaced, [...currentFailed, ...coverageFailures], currentForced, `${labelPrefix} ${pass + 1}차 · 2단계스왑`);
+        const twoCyclePack = allowExperimentalResidualRepair
+          ? await repairResidualByTwoCycleSwap(currentPlaced, [...currentFailed, ...coverageFailures], currentForced, `${labelPrefix} ${pass + 1}차 · 2단계스왑`)
+          : null;
         totalAttempts += Number(twoCyclePack?.repairedCount || 0);
-        if (compareAutoRunResults(twoCyclePack.metrics, lastMetrics) < 0) {
+        if (twoCyclePack?.metrics && compareAutoRunResults(twoCyclePack.metrics, lastMetrics) < 0) {
           const repairedNow = Math.max(1, Number(twoCyclePack.repairedCount || 0));
           totalRepaired += repairedNow;
           currentPlaced = cloneAutoAssignData(twoCyclePack.placed) || [];
@@ -6139,8 +6170,10 @@ export function createAutoAssignAll(deps) {
       considerAutoCandidate("최종 카드시수 반복복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
     }
 
-    const hardResidualRepair = await forceResidualCardShortagesSafely(bestPlaced, bestFailed, forcedPlaced, "r30 잔여 카드 완성복구");
-    if (compareAutoRunResults(hardResidualRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
+    const hardResidualRepair = allowExperimentalResidualRepair
+      ? await forceResidualCardShortagesSafely(bestPlaced, bestFailed, forcedPlaced, "r30 잔여 카드 완성복구")
+      : null;
+    if (hardResidualRepair?.metrics && compareAutoRunResults(hardResidualRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
       protectedEntries,
       placedCount: bestPlaced.length,
       forcedCount: forcedPlaced.length,
@@ -6160,7 +6193,7 @@ export function createAutoAssignAll(deps) {
     // ejection-chain/강제복구로도 남은 잔여 카드를, 충돌 허용 시드 + min-conflicts
     // 국소탐색으로 마지막 시도합니다. 공식 validator 기준으로 더 나빠지면
     // considerAutoCandidate가 채택하지 않으므로 기존 결과를 악화시키지 않습니다.
-    if (bestFailed.length && engineProfile.enableFinalRepair) {
+    if (allowExperimentalResidualRepair && bestFailed.length && engineProfile.enableFinalRepair) {
       await updateProgress({
         percent: 90,
         step: "r40 min-conflicts 잔여 탈출 준비",
@@ -6462,7 +6495,11 @@ export function createAutoAssignAll(deps) {
         comparisonSummary: `${restoredValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`,
         failedDiagnostics: restoredFailedDiagnostics,
         failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
-        residualPuzzleReport: restoredResidualPuzzleReport
+        residualPuzzleReport: restoredResidualPuzzleReport,
+        validatorVersion: "2026-06-12-validator-cleanup-r41c",
+        experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
+        experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
+        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "default-disabled-r41c-cleanup"
       };
       const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
       if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
@@ -6595,7 +6632,11 @@ export function createAutoAssignAll(deps) {
         postProcessReverted: !!improvement.revertedByQualityGate,
         revertedToAccepted: improvement.revertedToAccepted || "",
         acceptedLabel
-      }
+      },
+      validatorVersion: "2026-06-12-validator-cleanup-r41c",
+      experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
+      experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
+      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "default-disabled-r41c-cleanup"
     };
     report.metricSource = "postValidation";
     report.metricCompleteness = "complete";
