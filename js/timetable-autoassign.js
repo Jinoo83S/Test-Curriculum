@@ -206,16 +206,28 @@ export function createAutoAssignAll(deps) {
       qualityBaselineSource: String(meta.qualityBaselineSource || ""),
       qualityBaselineSnapshotName: String(meta.qualityBaselineSnapshotName || ""),
       qualityBaselineValidationSummary: String(meta.qualityBaselineValidationSummary || ""),
-      failedDiagnostics: Array.isArray(meta.failedDiagnostics) ? meta.failedDiagnostics.slice(0, 8).map(d => ({
-        key: String(d?.key || d?.id || ""),
-        name: String(d?.name || d?.title || ""),
-        missing: Number(d?.missing || d?.shortage || d?.missingCount || 0) || 0,
-        candidateCount: Number(d?.candidateCount || d?.availableCount || 0) || 0,
-        reasonSummary: Array.isArray(d?.reasonSummary) ? d.reasonSummary.slice(0, 4) : [],
-        suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3).map(formatDiagnosticSuggestion).filter(Boolean) : []
-      })) : [],
+      failedDiagnostics: Array.isArray(meta.failedDiagnostics) ? meta.failedDiagnostics.slice(0, 8).map(d => {
+        const missing = Number(d?.missing ?? d?.missingSlots ?? d?.shortage ?? d?.missingCount ?? 0) || 0;
+        const candidateCount = Number(d?.candidateCount ?? d?.validSlots ?? d?.availableCount ?? 0) || 0;
+        const reasonSummary = Array.isArray(d?.reasonSummary)
+          ? d.reasonSummary.slice(0, 4)
+          : (Array.isArray(d?.topReasons)
+            ? d.topReasons.slice(0, 4).map(r => `${r?.label || r?.code || "원인"} ${Number(r?.count || 0)}칸`).filter(Boolean)
+            : []);
+        return {
+          key: String(d?.key || d?.id || d?.ttcardId || ""),
+          name: String(d?.name || d?.title || ""),
+          summary: String(d?.summary || ""),
+          requiredCredits: Number(d?.requiredCredits ?? d?.required ?? 0) || 0,
+          placedSlots: Number(d?.placedSlots ?? d?.placed ?? 0) || 0,
+          missing,
+          candidateCount,
+          reasonSummary,
+          suggestions: Array.isArray(d?.suggestions) ? d.suggestions.slice(0, 3).map(formatDiagnosticSuggestion).filter(Boolean) : []
+        };
+      }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-12-validator-cleanup-r41c"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-12-잔여복구-진단수정-r41e"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -431,7 +443,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-validator-cleanup-r41c",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-잔여복구-진단수정-r41e",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -4216,11 +4228,11 @@ export function createAutoAssignAll(deps) {
         postProcessLimit: 180,
         postProcessPasses: 2,
         qualityClassCheck: true,
-        enableExperimentalResidualRepair: false,
-        enableResidualTwoCycleRepair: false,
-        enableEjectionChainRepair: false,
-        enableMinConflictsRepair: false,
-        enableForceResidualRepair: false
+        enableExperimentalResidualRepair: true,
+        enableResidualTwoCycleRepair: true,
+        enableEjectionChainRepair: true,
+        enableMinConflictsRepair: true,
+        enableForceResidualRepair: true
       };
     }
     return {
@@ -4235,11 +4247,11 @@ export function createAutoAssignAll(deps) {
       postProcessLimit: 40,
       postProcessPasses: 1,
       qualityClassCheck: true,
-      enableExperimentalResidualRepair: false,
-      enableResidualTwoCycleRepair: false,
-      enableEjectionChainRepair: false,
-      enableMinConflictsRepair: false,
-      enableForceResidualRepair: false
+      enableExperimentalResidualRepair: true,
+      enableResidualTwoCycleRepair: true,
+      enableEjectionChainRepair: true,
+      enableMinConflictsRepair: true,
+      enableForceResidualRepair: true
     };
   }
 
@@ -6519,10 +6531,10 @@ export function createAutoAssignAll(deps) {
         failedDiagnostics: restoredFailedDiagnostics,
         failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
         residualPuzzleReport: restoredResidualPuzzleReport,
-        validatorVersion: "2026-06-12-validator-cleanup-r41c",
+        validatorVersion: "2026-06-12-잔여복구-진단수정-r41e",
         experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
         experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "default-disabled-r41c-cleanup"
+        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41e"
       };
       const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
       if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
@@ -6656,10 +6668,10 @@ export function createAutoAssignAll(deps) {
         revertedToAccepted: improvement.revertedToAccepted || "",
         acceptedLabel
       },
-      validatorVersion: "2026-06-12-validator-cleanup-r41c",
+      validatorVersion: "2026-06-12-잔여복구-진단수정-r41e",
       experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
       experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "default-disabled-r41c-cleanup"
+      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41e"
     };
     report.metricSource = "postValidation";
     report.metricCompleteness = "complete";

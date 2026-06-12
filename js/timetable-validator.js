@@ -1,12 +1,12 @@
  // ================================================================
 // timetable-validator.js · Canonical timetable validation helpers
 // ================================================================
-// r41c: 자동배치/저장/복원 코드가 같은 기준을 보도록 하는 작고 순수한
+// r41e: 자동배치/저장/복원 코드가 같은 기준을 보도록 하는 작고 순수한
 // 검증 보조 모듈입니다. 무거운 시간표 검증은 timetable-autoassign.js의
 // 기존 validator를 사용하되, 저장 정합성과 실험 복구 격리 기준은 이 파일의
 // 함수만 사용합니다.
 
-export const TIMETABLE_VALIDATOR_VERSION = "2026-06-12-canonical-validator-r41c";
+export const TIMETABLE_VALIDATOR_VERSION = "2026-06-12-canonical-validator-r41e";
 export const EXPERIMENTAL_RESIDUAL_REPAIR_DEFAULT = false;
 
 export function cleanValidatorText(value) {
