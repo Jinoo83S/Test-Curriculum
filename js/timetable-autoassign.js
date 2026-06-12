@@ -3005,16 +3005,21 @@ export function createAutoAssignAll(deps) {
   }
 
   function tryEjectionChainForSlot(item, targetSlot, blockers = [], current = [], orderedSlots = [], options = {}, limits = {}) {
-    // r38: 깊이 1~2 이동으로 풀리지 않는 마지막 카드 부족을 위해 제한 깊이 ejection-chain을 수행합니다.
+    // r39: 브라우저 응답없음 방지를 위해 시간 예산을 둔 제한 깊이 ejection-chain을 수행합니다.
     // 목표 슬롯을 막는 블록을 다른 슬롯으로 밀어내고, 그 슬롯을 다시 막는 블록도 재귀적으로 밀어냅니다.
     const maxDepth = Math.max(1, Number(limits.maxDepth || 4));
     const maxAttempts = Math.max(100, Number(limits.maxAttempts || 20000));
     const maxBlockersPerNode = Math.max(1, Number(limits.maxBlockersPerNode || 4));
     const maxRootBlockers = Math.max(1, Number(limits.maxRootBlockers || 5));
+    const maxMillis = Math.max(80, Number(limits.maxMillis || 450));
+    const startedAt = Date.now();
     const slotList = [...(orderedSlots || [])];
     let attempts = 0;
     let best = null;
     let bestScore = Infinity;
+
+    const timeExceeded = () => Date.now() - startedAt >= maxMillis;
+    const budgetExceeded = () => attempts >= maxAttempts || timeExceeded();
 
     const rootBlockers = uniqueMovableBlocks(blockers.length ? blockers : getBlockingBlocksForSlot(item, targetSlot, current))
       .filter(isRepairBlockMovable)
@@ -3030,7 +3035,7 @@ export function createAutoAssignAll(deps) {
     });
 
     const tryPlaceFinalItem = (state, chain) => {
-      if (attempts >= maxAttempts) return;
+      if (budgetExceeded()) return;
       attempts++;
       if (!checkPlacementValid(item, targetSlot, state, options)) return;
       const entry = makeAutoEntry(item, targetSlot, state);
@@ -3052,13 +3057,14 @@ export function createAutoAssignAll(deps) {
 
     const visitedState = new Set();
     const moveBlockToSlot = (state, block, slot, depthLeft, chain, visited) => {
-      if (attempts >= maxAttempts) return null;
+      if (budgetExceeded()) return null;
       if (!isRepairBlockMovable(block)) return null;
       const visitKey = `${block.key}->${repairSlotKey(slot)}:${depthLeft}`;
       if (visited.has(visitKey)) return null;
       const nextVisited = new Set(visited);
       nextVisited.add(visitKey);
       attempts++;
+      if (timeExceeded()) return null;
 
       const base = removeRepairBlockFromEntries(state, block);
       const directMoved = makeMovedBlockEntries(block, slot, base, options);
@@ -3074,7 +3080,7 @@ export function createAutoAssignAll(deps) {
       if (!nodeBlockers.length) return null;
 
       const clearBlockers = (clearState, idx, clearChain, clearVisited) => {
-        if (attempts >= maxAttempts) return null;
+        if (budgetExceeded()) return null;
         if (idx >= nodeBlockers.length) {
           const movedAfterClear = makeMovedBlockEntries(block, slot, clearState, options);
           if (!movedAfterClear) return null;
@@ -3097,7 +3103,7 @@ export function createAutoAssignAll(deps) {
     };
 
     const clearRootBlockers = (state, idx, chain, visited, depthLeft) => {
-      if (attempts >= maxAttempts) return;
+      if (budgetExceeded()) return;
       if (idx >= rootBlockers.length) {
         tryPlaceFinalItem(state, chain);
         return;
@@ -3107,7 +3113,7 @@ export function createAutoAssignAll(deps) {
       const candidateSlots = rankRepairMoveSlotsForBlock(blocker, state, slotList, options, limits)
         .filter(s => repairSlotKey(s) !== repairSlotKey(targetSlot));
       for (const altSlot of candidateSlots) {
-        if (attempts >= maxAttempts) break;
+        if (budgetExceeded()) break;
         const chainKey = `${idx}:${blocker.key}:${repairSlotKey(altSlot)}:${depthLeft}`;
         if (visitedState.has(chainKey)) continue;
         visitedState.add(chainKey);
@@ -3166,8 +3172,13 @@ export function createAutoAssignAll(deps) {
     const maxMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(36, orderedSlots.length);
     const maxEvacuateBlocks = options.runAttempts === 'deep' ? 7 : 4;
     const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(28, orderedSlots.length);
-    const maxRepairAttempts = options.runAttempts === 'deep' ? 240000 : (options.runAttempts === 'fast' ? 3600 : 18000);
+    const maxRepairAttempts = options.runAttempts === 'deep' ? 90000 : (options.runAttempts === 'fast' ? 2400 : 9000);
+    const maxChainCalls = options.runAttempts === 'deep' ? 28 : (options.runAttempts === 'fast' ? 8 : 14);
+    const maxChainTargetSlots = options.runAttempts === 'deep' ? 14 : (options.runAttempts === 'fast' ? 5 : 8);
+    const maxChainAttemptsPerCall = options.runAttempts === 'deep' ? 2500 : (options.runAttempts === 'fast' ? 450 : 900);
+    const maxChainMillisPerCall = options.runAttempts === 'deep' ? 650 : (options.runAttempts === 'fast' ? 180 : 320);
     let attempts = 0;
+    let chainCalls = 0;
 
     for (let idx = 0; idx < failedItems.length; idx++) {
       const failedItem = failedItems[idx];
@@ -3191,7 +3202,8 @@ export function createAutoAssignAll(deps) {
       }
 
       const targetSlots = orderRepairTargetSlotsForItem(item, orderedSlots, current);
-      for (const targetSlot of targetSlots) {
+      for (let targetSlotIndex = 0; targetSlotIndex < targetSlots.length; targetSlotIndex++) {
+        const targetSlot = targetSlots[targetSlotIndex];
         if (done) break;
         const blockers = getBlockingBlocksForSlot(item, targetSlot, current).slice(0, maxBlockersPerSlot);
         if (!blockers.length) continue;
@@ -3238,7 +3250,8 @@ export function createAutoAssignAll(deps) {
           }
         }
 
-        if (!done && blockers.length && attempts < maxRepairAttempts) {
+        if (!done && blockers.length && attempts < maxRepairAttempts && chainCalls < maxChainCalls && targetSlotIndex < maxChainTargetSlots) {
+          chainCalls++;
           const chainOptions = {
             ...options,
             runAttempts: 'deep',
@@ -3248,13 +3261,25 @@ export function createAutoAssignAll(deps) {
             respectAssignedRoom: options.respectAssignedRoom !== false
           };
           const chain = tryEjectionChainForSlot(item, targetSlot, blockers, current, orderedSlots, chainOptions, {
-            maxDepth: options.runAttempts === 'deep' ? 6 : 4,
-            maxBranchSlots: options.runAttempts === 'deep' ? 22 : 14,
-            maxBlockersPerNode: options.runAttempts === 'deep' ? 5 : 3,
-            maxRootBlockers: options.runAttempts === 'deep' ? Math.min(6, maxEvacuateBlocks + 1) : Math.min(4, maxEvacuateBlocks + 1),
-            maxAttempts: Math.max(100, maxRepairAttempts - attempts)
+            maxDepth: options.runAttempts === 'deep' ? 5 : 3,
+            maxBranchSlots: options.runAttempts === 'deep' ? 12 : 7,
+            maxBlockersPerNode: options.runAttempts === 'deep' ? 3 : 2,
+            maxRootBlockers: options.runAttempts === 'deep' ? Math.min(4, maxEvacuateBlocks + 1) : Math.min(3, maxEvacuateBlocks + 1),
+            maxAttempts: Math.max(80, Math.min(maxChainAttemptsPerCall, maxRepairAttempts - attempts)),
+            maxMillis: maxChainMillisPerCall
           });
           attempts += Number(chain?.attempts || 0);
+          if (progressUpdater) {
+            await progressUpdater({
+              percent: 82,
+              step: 'r39 시간제한 연쇄 이동 탐색',
+              detail: `연쇄 이동 후보 ${chainCalls}/${maxChainCalls}회 확인 중입니다. 페이지 응답성을 위해 짧게 나누어 탐색합니다.`,
+              placed: current.length,
+              failed: Math.max(0, failedItems.length - repaired.length),
+              currentCard: failedItem.name || getAutoItemName(item),
+              log: `chain attempts ${Number(chain?.attempts || 0)}`
+            });
+          }
           if (chain?.entries?.length) {
             current.length = 0;
             current.push(...chain.entries);
@@ -3269,7 +3294,7 @@ export function createAutoAssignAll(deps) {
             if (progressUpdater) {
               await progressUpdater({
                 percent: 84,
-                step: 'r38 연쇄 이동 복구',
+                step: 'r39 시간제한 연쇄 이동 복구',
                 detail: `${failedItem.name || getAutoItemName(item)}: ${chain.chain?.length || 0}단계 연쇄 이동으로 ${['월','화','수','목','금'][Number(targetSlot.day)] || '?'}${Number(targetSlot.period) + 1} 배치`,
                 placed: current.length,
                 failed: Math.max(0, failedItems.length - repaired.length),
