@@ -2944,6 +2944,185 @@ export function createAutoAssignAll(deps) {
     return best ? { ...best, attempts } : { attempts };
   }
 
+  function isRepairBlockMovable(block = {}) {
+    const entries = block?.entries || [];
+    if (!entries.length) return false;
+    return entries.every(e => e && !e.pinned && !e.protected && !e.manualPinned && !e.fixed && !e.locked && !e.isProtected);
+  }
+
+  function repairSlotKey(slot = {}) {
+    return `${Number(slot.day)}:${Number(slot.period)}`;
+  }
+
+  function repairBlockOriginalSlotKey(block = {}) {
+    const first = block?.entries?.[0] || {};
+    return repairSlotKey(first);
+  }
+
+  function removeRepairBlockFromEntries(list = [], block = {}) {
+    const ids = new Set((block.entries || []).map(e => e.id).filter(Boolean));
+    return (list || []).filter(e => !ids.has(e.id));
+  }
+
+  function getBlockingBlocksForMovedBlock(block = {}, slot = {}, placed = []) {
+    const keys = new Set();
+    (block.entries || []).forEach((entry, index) => {
+      const probe = { ...entry, day: Number(slot.day), period: Number(slot.period) };
+      getBlockingBlocksForSlot(probe, slot, placed).forEach(b => {
+        if (b?.key && b.key !== block.key) keys.add(b.key);
+      });
+    });
+    if (!keys.size) return [];
+    return getMovableBlocks(placed).filter(b => keys.has(b.key));
+  }
+
+  function rankRepairMoveSlotsForBlock(block = {}, state = [], orderedSlots = [], options = {}, limits = {}) {
+    const maxBranchSlots = Math.max(4, Number(limits.maxBranchSlots || 16));
+    const originalKey = repairBlockOriginalSlotKey(block);
+    const withoutBlock = removeRepairBlockFromEntries(state, block);
+    const scored = [];
+    for (const slot of orderedSlots || []) {
+      const key = repairSlotKey(slot);
+      if (key === originalKey) continue;
+      const moved = makeMovedBlockEntries(block, slot, withoutBlock, options);
+      if (moved) {
+        scored.push({ slot, score: 0 });
+        continue;
+      }
+      const blockers = uniqueMovableBlocks(getBlockingBlocksForMovedBlock(block, slot, withoutBlock));
+      if (!blockers.length) {
+        scored.push({ slot, score: 9999 });
+        continue;
+      }
+      const unmovable = blockers.some(b => !isRepairBlockMovable(b));
+      const blockEntryCount = blockers.reduce((sum, b) => sum + (b.entries?.length || 0), 0);
+      scored.push({ slot, score: (unmovable ? 5000 : 100) + blockers.length * 12 + blockEntryCount });
+    }
+    return scored
+      .sort((a, b) => a.score - b.score || Number(a.slot.period) - Number(b.slot.period) || Number(a.slot.day) - Number(b.slot.day))
+      .slice(0, maxBranchSlots)
+      .map(row => row.slot);
+  }
+
+  function tryEjectionChainForSlot(item, targetSlot, blockers = [], current = [], orderedSlots = [], options = {}, limits = {}) {
+    // r38: 깊이 1~2 이동으로 풀리지 않는 마지막 카드 부족을 위해 제한 깊이 ejection-chain을 수행합니다.
+    // 목표 슬롯을 막는 블록을 다른 슬롯으로 밀어내고, 그 슬롯을 다시 막는 블록도 재귀적으로 밀어냅니다.
+    const maxDepth = Math.max(1, Number(limits.maxDepth || 4));
+    const maxAttempts = Math.max(100, Number(limits.maxAttempts || 20000));
+    const maxBlockersPerNode = Math.max(1, Number(limits.maxBlockersPerNode || 4));
+    const maxRootBlockers = Math.max(1, Number(limits.maxRootBlockers || 5));
+    const slotList = [...(orderedSlots || [])];
+    let attempts = 0;
+    let best = null;
+    let bestScore = Infinity;
+
+    const rootBlockers = uniqueMovableBlocks(blockers.length ? blockers : getBlockingBlocksForSlot(item, targetSlot, current))
+      .filter(isRepairBlockMovable)
+      .slice(0, maxRootBlockers);
+    if (!rootBlockers.length) return { attempts: 0 };
+
+    const logMove = (block, toSlot) => ({
+      blockKey: block.key,
+      title: getAutoItemName(block.entries?.[0] || {}),
+      from: repairBlockOriginalSlotKey(block),
+      to: repairSlotKey(toSlot),
+      movedCount: block.entries?.length || 0
+    });
+
+    const tryPlaceFinalItem = (state, chain) => {
+      if (attempts >= maxAttempts) return;
+      attempts++;
+      if (!checkPlacementValid(item, targetSlot, state, options)) return;
+      const entry = makeAutoEntry(item, targetSlot, state);
+      if (!entry) return;
+      const candidate = [...state, entry];
+      const score = scoreScheduleQuality(candidate, options);
+      if (score < bestScore) {
+        bestScore = score;
+        best = {
+          entries: candidate,
+          insertedEntry: entry,
+          movedBlockKeys: chain.map(c => c.blockKey),
+          chain,
+          score,
+          attempts
+        };
+      }
+    };
+
+    const visitedState = new Set();
+    const moveBlockToSlot = (state, block, slot, depthLeft, chain, visited) => {
+      if (attempts >= maxAttempts) return null;
+      if (!isRepairBlockMovable(block)) return null;
+      const visitKey = `${block.key}->${repairSlotKey(slot)}:${depthLeft}`;
+      if (visited.has(visitKey)) return null;
+      const nextVisited = new Set(visited);
+      nextVisited.add(visitKey);
+      attempts++;
+
+      const base = removeRepairBlockFromEntries(state, block);
+      const directMoved = makeMovedBlockEntries(block, slot, base, options);
+      if (directMoved) {
+        return { state: [...base, ...directMoved], chain: [...chain, logMove(block, slot)] };
+      }
+      if (depthLeft <= 0) return null;
+
+      let nodeBlockers = uniqueMovableBlocks(getBlockingBlocksForMovedBlock(block, slot, base));
+      if (!nodeBlockers.length) return null;
+      if (nodeBlockers.some(b => !isRepairBlockMovable(b))) return null;
+      nodeBlockers = nodeBlockers.slice(0, maxBlockersPerNode);
+      if (!nodeBlockers.length) return null;
+
+      const clearBlockers = (clearState, idx, clearChain, clearVisited) => {
+        if (attempts >= maxAttempts) return null;
+        if (idx >= nodeBlockers.length) {
+          const movedAfterClear = makeMovedBlockEntries(block, slot, clearState, options);
+          if (!movedAfterClear) return null;
+          return { state: [...clearState, ...movedAfterClear], chain: [...clearChain, logMove(block, slot)] };
+        }
+        const blocker = nodeBlockers[idx];
+        if (!isRepairBlockMovable(blocker)) return null;
+        const candidateSlots = rankRepairMoveSlotsForBlock(blocker, clearState, slotList, options, limits)
+          .filter(s => repairSlotKey(s) !== repairSlotKey(slot));
+        for (const altSlot of candidateSlots) {
+          const moved = moveBlockToSlot(clearState, blocker, altSlot, depthLeft - 1, clearChain, clearVisited);
+          if (!moved?.state) continue;
+          const rest = clearBlockers(moved.state, idx + 1, moved.chain, clearVisited);
+          if (rest?.state) return rest;
+        }
+        return null;
+      };
+
+      return clearBlockers(base, 0, chain, nextVisited);
+    };
+
+    const clearRootBlockers = (state, idx, chain, visited, depthLeft) => {
+      if (attempts >= maxAttempts) return;
+      if (idx >= rootBlockers.length) {
+        tryPlaceFinalItem(state, chain);
+        return;
+      }
+      const blocker = rootBlockers[idx];
+      if (!isRepairBlockMovable(blocker)) return;
+      const candidateSlots = rankRepairMoveSlotsForBlock(blocker, state, slotList, options, limits)
+        .filter(s => repairSlotKey(s) !== repairSlotKey(targetSlot));
+      for (const altSlot of candidateSlots) {
+        if (attempts >= maxAttempts) break;
+        const chainKey = `${idx}:${blocker.key}:${repairSlotKey(altSlot)}:${depthLeft}`;
+        if (visitedState.has(chainKey)) continue;
+        visitedState.add(chainKey);
+        const moved = moveBlockToSlot(state, blocker, altSlot, depthLeft, chain, visited);
+        if (!moved?.state) continue;
+        clearRootBlockers(moved.state, idx + 1, moved.chain, visited, depthLeft);
+        if (best && options.runAttempts !== "deep") break;
+      }
+    };
+
+    clearRootBlockers([...current], 0, [], new Set(), maxDepth);
+    return best ? { ...best, attempts } : { attempts };
+  }
+
+
 
   function orderRepairTargetSlotsForItem(item = {}, orderedSlots = [], placed = []) {
     const classKeys = [...classKeysForCapacity(item)].map(normalizeClassKeyForReportKey).filter(Boolean);
@@ -3056,6 +3235,48 @@ export function createAutoAssignAll(deps) {
             current.push(...multi.entries);
             repaired.push({ ...failedItem, repairMode: 'multi-move', movedBlocks: multi.movedBlockKeys || [] });
             done = true;
+          }
+        }
+
+        if (!done && blockers.length && attempts < maxRepairAttempts) {
+          const chainOptions = {
+            ...options,
+            runAttempts: 'deep',
+            engineProfile: autoEngineProfileForMode('deep'),
+            respectSoftLimits: false,
+            respectUnavailable: options.respectUnavailable !== false,
+            respectAssignedRoom: options.respectAssignedRoom !== false
+          };
+          const chain = tryEjectionChainForSlot(item, targetSlot, blockers, current, orderedSlots, chainOptions, {
+            maxDepth: options.runAttempts === 'deep' ? 6 : 4,
+            maxBranchSlots: options.runAttempts === 'deep' ? 22 : 14,
+            maxBlockersPerNode: options.runAttempts === 'deep' ? 5 : 3,
+            maxRootBlockers: options.runAttempts === 'deep' ? Math.min(6, maxEvacuateBlocks + 1) : Math.min(4, maxEvacuateBlocks + 1),
+            maxAttempts: Math.max(100, maxRepairAttempts - attempts)
+          });
+          attempts += Number(chain?.attempts || 0);
+          if (chain?.entries?.length) {
+            current.length = 0;
+            current.push(...chain.entries);
+            repaired.push({
+              ...failedItem,
+              repairMode: 'ejection-chain',
+              movedBlocks: chain.movedBlockKeys || [],
+              chainDepth: chain.chain?.length || 0,
+              chain: chain.chain || []
+            });
+            done = true;
+            if (progressUpdater) {
+              await progressUpdater({
+                percent: 84,
+                step: 'r38 연쇄 이동 복구',
+                detail: `${failedItem.name || getAutoItemName(item)}: ${chain.chain?.length || 0}단계 연쇄 이동으로 ${['월','화','수','목','금'][Number(targetSlot.day)] || '?'}${Number(targetSlot.period) + 1} 배치`,
+                placed: current.length,
+                failed: Math.max(0, failedItems.length - repaired.length),
+                currentCard: failedItem.name || getAutoItemName(item),
+                log: `ejection-chain ${chain.chain?.length || 0} moves`
+              });
+            }
           }
         }
 
