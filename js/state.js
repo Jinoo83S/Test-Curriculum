@@ -707,13 +707,25 @@ function compactAutoAssignMetaForStorage(meta = null) {
   const cloneMetric = value => (value && typeof value === "object") ? safeJsonClone(value) : null;
   const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
   const final = meta.finalMetrics || {};
-  // r34: 저장 압축 시 0으로 채워진 top-level 값보다 finalMetrics의 실제 검증 수치를 우선합니다.
+  const summaryText = clean(meta.validationSummary || final.validationSummary || meta.qualityBaselineValidationSummary || "");
+  const summaryCount = regex => Number((summaryText.match(regex) || [0, ""])[1]) || 0;
+  const summaryClassIssues = summaryCount(/학급\s*시수\s*(\d+)개/);
+  const summaryCardIssues = summaryCount(/카드\s*시수\s*(\d+)개/);
+  const summaryGroupIssues = summaryCount(/그룹\/개별\s*(\d+)개/);
+  const summaryFailedIssues = summaryCount(/미배치\s*(\d+)개/);
+  // r41: 오래된 보관본은 validationSummary에는 문제가 적혀 있는데 압축 필드가 0으로
+  // 남아 있을 수 있습니다. finalMetrics가 없고 metricCompleteness도 비어 있으면
+  // 0 필드보다 summary 문장을 신뢰합니다.
   const metricNumber = (direct, finalValue, fallback = 0) => {
     const f = Number(finalValue);
     if (Number.isFinite(f)) return f;
     const d = Number(direct);
-    if (Number.isFinite(d)) return d;
-    return fallback;
+    const fb = Number(fallback);
+    if (Number.isFinite(d)) {
+      if (d === 0 && Number.isFinite(fb) && fb > 0 && !hasFinalMetrics && !clean(meta.metricCompleteness)) return fb;
+      return d;
+    }
+    return Number.isFinite(fb) ? fb : 0;
   };
   const compactDiagnostics = Array.isArray(meta.failedDiagnostics)
     ? meta.failedDiagnostics.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(d => ({
@@ -732,20 +744,20 @@ function compactAutoAssignMetaForStorage(meta = null) {
   return {
     schemaVersion: clean(meta.schemaVersion),
     generatedAt: clean(meta.generatedAt) || clean(meta.at),
-    validationSummary: clean(meta.validationSummary),
+    validationSummary: summaryText,
     ok: meta.ok === true,
     placedEntryCount: Number(meta.placedEntryCount || meta.entryCount || 0) || 0,
     placedBlockCount: Number(meta.placedBlockCount || 0) || 0,
-    failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount),
-    failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount),
+    failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount, summaryFailedIssues),
+    failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount, summaryFailedIssues),
     failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,
-    classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount),
-    classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount),
+    classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount, summaryClassIssues),
+    classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount, summaryClassIssues),
     classShortCount: metricNumber(meta.classShortCount, final.classShortCount),
     classOverCount: metricNumber(meta.classOverCount, final.classOverCount),
-    cardCoverageIssueCount: metricNumber(meta.cardCoverageIssueCount, final.cardCoverageIssueCount),
-    groupCoverageIssueCount: metricNumber(meta.groupCoverageIssueCount, final.groupCoverageIssueCount),
-    cardShortageSlots: metricNumber(meta.cardShortageSlots, final.cardShortageSlots),
+    cardCoverageIssueCount: metricNumber(meta.cardCoverageIssueCount, final.cardCoverageIssueCount, summaryCardIssues),
+    groupCoverageIssueCount: metricNumber(meta.groupCoverageIssueCount, final.groupCoverageIssueCount, summaryGroupIssues),
+    cardShortageSlots: metricNumber(meta.cardShortageSlots, final.cardShortageSlots, summaryCardIssues),
     classTotal: metricNumber(meta.classTotal, final.classTotal),
     classTargetTotal: metricNumber(meta.classTargetTotal, final.classTargetTotal),
     classTargetGap: metricNumber(meta.classTargetGap, final.classTargetGap),
@@ -1026,6 +1038,30 @@ function normalizeTimetableDomain(raw = {}) {
       constraints[k] = normalizeTimetableConstraint(v);
     });
   }
+
+  const normalizedSavedSchedules = Array.isArray(raw.savedSchedules)
+    ? pruneSavedTimetableVersions(raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length))
+    : [];
+  const normalizedBestSnapshot = normalizeBestAutoAssignSnapshot(raw.bestAutoAssignSnapshot)
+    || findBestAutoAssignSnapshotFromSaved(normalizedSavedSchedules);
+  const normalizedMeta = compactAutoAssignMetaForStorage(raw.autoAssignMeta);
+  let normalizedEntries = Array.isArray(raw.entries)
+    ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
+    : [];
+
+  // r41: 품질 게이트가 후보를 폐기했다고 기록되어 있는데 현재 entries가
+  // best snapshot과 다른 경우, 로딩 단계에서 즉시 best snapshot으로 정합화합니다.
+  // 이 보정이 없으면 export 기준 entries와 autoAssignMeta가 서로 다른 결과를 가리킵니다.
+  if (normalizedMeta?.rejectedByQualityGate === true
+      && /bestSnapshot|savedSchedule/.test(clean(normalizedMeta.qualityBaselineSource))
+      && normalizedBestSnapshot?.entries?.length
+      && normalizedEntries.length !== normalizedBestSnapshot.entries.length) {
+    normalizedEntries = normalizedBestSnapshot.entries.map(normalizeTimetableEntry).filter(e => e.templateId);
+    normalizedMeta.stateSyncApplied = true;
+    normalizedMeta.stateSyncReason = "rejected-candidate-entries-restored-from-best-snapshot";
+    normalizedMeta.stateSyncEntryCount = normalizedEntries.length;
+  }
+
   return {
     config: {
       periodCount: pc,
@@ -1035,9 +1071,7 @@ function normalizeTimetableDomain(raw = {}) {
         ? raw.config.lunchAfterPeriod
         : null
     },
-    entries: Array.isArray(raw.entries)
-      ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId)
-      : [],
+    entries: normalizedEntries,
     ttcards: Array.isArray(raw.ttcards) ? raw.ttcards.map(normalizeTtCard) : [],
     // 시간표 전용 묶음수업/그룹 스냅샷입니다.
     // 예전 데이터 호환을 위해 raw.templateGroups도 한 번 수용합니다.
@@ -1045,14 +1079,12 @@ function normalizeTimetableDomain(raw = {}) {
       ? raw.ttcardGroups.map(normalizeTemplateGroup).filter(g => g.name)
       : (Array.isArray(raw.templateGroups) ? raw.templateGroups.map(normalizeTemplateGroup).filter(g => g.name) : []),
     // 배치된 시간표만 별도 저장한 버전 목록입니다. 카드/커리큘럼은 제외하고 entries만 보관합니다.
-    savedSchedules: Array.isArray(raw.savedSchedules)
-      ? pruneSavedTimetableVersions(raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length))
-      : [],
-    bestAutoAssignSnapshot: normalizeBestAutoAssignSnapshot(raw.bestAutoAssignSnapshot) || findBestAutoAssignSnapshotFromSaved(Array.isArray(raw.savedSchedules) ? raw.savedSchedules.map(normalizeSavedTimetableVersion).filter(v => v.entries.length) : []),
+    savedSchedules: normalizedSavedSchedules,
+    bestAutoAssignSnapshot: normalizedBestSnapshot,
     teacherConstraints: constraints,
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: normalizeCardGenerationMeta(raw),
-    autoAssignMeta: compactAutoAssignMetaForStorage(raw.autoAssignMeta),
+    autoAssignMeta: normalizedMeta,
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
     ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})

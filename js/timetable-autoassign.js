@@ -147,30 +147,41 @@ export function createAutoAssignAll(deps) {
     };
     const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
     const metricCompleteness = String(meta.metricCompleteness || (hasFinalMetrics ? "complete" : "") || "");
-    // r34: r31~r33 저장 압축 과정에서 top-level 수치가 0으로 남고 finalMetrics에만
-    // 실제 수치가 보존되는 경우가 있었습니다. 0은 '증거 없음'일 수 있으므로 finalMetrics를 우선합니다.
-    const metricNumber = (direct, final, fallback = 0) => {
-      const f = Number(final);
+    const final = meta.finalMetrics || {};
+    const summaryText = String(meta.validationSummary || final.validationSummary || meta.qualityBaselineValidationSummary || "");
+    const summaryCount = regex => Number((summaryText.match(regex) || [0, ""])[1]) || 0;
+    const summaryClassIssues = summaryCount(/학급\s*시수\s*(\d+)개/);
+    const summaryCardIssues = summaryCount(/카드\s*시수\s*(\d+)개/);
+    const summaryGroupIssues = summaryCount(/그룹\/개별\s*(\d+)개/);
+    const summaryFailedIssues = summaryCount(/미배치\s*(\d+)개/);
+    // r41: 오래된 best/saved 보관본은 validationSummary는 살아 있는데
+    // 압축 수치가 0으로 남아 있었습니다. finalMetrics가 없고 complete 메타도 없으면
+    // 0값보다 summary 문장을 우선합니다.
+    const metricNumber = (direct, finalValue, fallback = 0) => {
+      const f = Number(finalValue);
       if (Number.isFinite(f)) return f;
       const d = Number(direct);
-      if (Number.isFinite(d)) return d;
-      return fallback;
+      const fb = Number(fallback);
+      if (Number.isFinite(d)) {
+        if (d === 0 && Number.isFinite(fb) && fb > 0 && !hasFinalMetrics && metricCompleteness !== "complete") return fb;
+        return d;
+      }
+      return Number.isFinite(fb) ? fb : 0;
     };
-    const final = meta.finalMetrics || {};
     return {
-      validationSummary: String(meta.validationSummary || final.validationSummary || ""),
+      validationSummary: summaryText,
       activeGrades: Array.isArray(meta.activeGrades) ? meta.activeGrades.slice() : [],
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
-      classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount),
-      classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount),
+      classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount, summaryClassIssues),
+      classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount, summaryClassIssues),
       classShortCount: metricNumber(meta.classShortCount, final.classShortCount),
       classOverCount: metricNumber(meta.classOverCount, final.classOverCount),
-      cardCoverageIssueCount: metricNumber(meta.cardCoverageIssueCount, final.cardCoverageIssueCount),
-      groupCoverageIssueCount: metricNumber(meta.groupCoverageIssueCount, final.groupCoverageIssueCount),
-      failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount),
-      failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount),
-      cardShortageSlots: metricNumber(meta.cardShortageSlots, final.cardShortageSlots),
+      cardCoverageIssueCount: metricNumber(meta.cardCoverageIssueCount, final.cardCoverageIssueCount, summaryCardIssues),
+      groupCoverageIssueCount: metricNumber(meta.groupCoverageIssueCount, final.groupCoverageIssueCount, summaryGroupIssues),
+      failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount, summaryFailedIssues),
+      failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount, summaryFailedIssues),
+      cardShortageSlots: metricNumber(meta.cardShortageSlots, final.cardShortageSlots, summaryCardIssues),
       classTotal: metricNumber(meta.classTotal, final.classTotal),
       classTargetTotal: metricNumber(meta.classTargetTotal, final.classTargetTotal),
       classTargetGap: metricNumber(meta.classTargetGap, final.classTargetGap),
@@ -1116,6 +1127,22 @@ export function createAutoAssignAll(deps) {
     };
   }
 
+  function failedNamesFromCardCoverage(cardCoverage = {}) {
+    const rows = Array.isArray(cardCoverage.shortRows) ? cardCoverage.shortRows : [];
+    const names = [];
+    const seen = new Set();
+    rows.forEach(row => {
+      const title = String(row?.title || row?.name || row?.id || "카드").trim();
+      const cls = Array.isArray(row?.classLabels) ? row.classLabels.map(x => String(x || "").trim()).filter(Boolean).join(", ") : "";
+      const missing = Math.max(0, -Number(row?.diff || 0));
+      const name = `${title}${cls ? ` ${cls}` : ""}${missing > 1 ? ` ${missing}시수` : ""}`.trim();
+      if (!name || seen.has(name)) return;
+      seen.add(name);
+      names.push(name);
+    });
+    return names;
+  }
+
   function summarizeGroupCoverageValidation(cardCoverage = {}) {
     const issueRows = Array.isArray(cardCoverage.issues) ? cardCoverage.issues : [];
     const map = new Map();
@@ -1499,7 +1526,10 @@ export function createAutoAssignAll(deps) {
     const groupCoverage = summarizeGroupCoverageValidation(cardCoverage);
     const restrictedTeachers = buildRestrictedTeacherValidation(allEntries);
     const protectedIntrusions = buildProtectedIntrusionValidation(allEntries, options.protectedEntries || []);
-    const failedCount = Array.isArray(options.failedNames) ? options.failedNames.length : 0;
+    const providedFailedNames = Array.isArray(options.failedNames) ? options.failedNames.map(x => String(x || "").trim()).filter(Boolean) : [];
+    const derivedFailedNames = options.deriveFailedFromCardShortage ? failedNamesFromCardCoverage(cardCoverage) : [];
+    const finalFailedNames = providedFailedNames.length ? providedFailedNames : derivedFailedNames;
+    const failedCount = finalFailedNames.length;
     const missingRooms = (allEntries || []).filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
     const ok = classSlots.ok && cardCoverage.ok && restrictedTeachers.ok && protectedIntrusions.ok && failedCount === 0 && missingRooms.length === 0;
     const issueParts = [];
@@ -1522,7 +1552,7 @@ export function createAutoAssignAll(deps) {
       missingRoomCount: missingRooms.length,
       missingRoomNames: [...new Set(missingRooms.map(e => getAutoItemName(e)))].slice(0, 20),
       failedCount,
-      failedNames: options.failedNames || [],
+      failedNames: finalFailedNames,
       failedDiagnostics: options.failedDiagnostics || []
     };
   }
@@ -4252,18 +4282,20 @@ export function createAutoAssignAll(deps) {
     const report = buildScheduleVerificationReport(allEntries, {
       scopeGrades,
       protectedEntries: context.protectedEntries || [],
-      failedNames
+      failedNames,
+      deriveFailedFromCardShortage: context.deriveFailedFromCardShortage === true
     });
+    const finalFailedNames = Array.isArray(report.failedNames) ? report.failedNames : failedNames;
     return {
       report,
       metrics: buildAutoRunMetricsFromValidation(report, {
         label: context.label || '',
         placedCount: context.placedCount,
-        failedCount: failedNames.length,
+        failedCount: finalFailedNames.length,
         forcedCount: context.forcedCount,
         qualityScore: context.qualityScore
       }),
-      failedNames
+      failedNames: finalFailedNames
     };
   }
 
@@ -4311,12 +4343,14 @@ export function createAutoAssignAll(deps) {
       const validation = buildScheduleVerificationReport(snapshotEntries, {
         scopeGrades: activeGrades,
         failedNames,
+        deriveFailedFromCardShortage: true,
         failedDiagnostics: Array.isArray(meta.failedDiagnostics) ? meta.failedDiagnostics : []
       });
+      const validationFailedNames = Array.isArray(validation.failedNames) ? validation.failedNames : failedNames;
       const metrics = buildAutoRunMetricsFromValidation(validation, {
         label: version.name || `저장된 자동배치 ${index + 1}`,
         placedCount: Number(version.entryCount || snapshotEntries.length),
-        failedCount: failedNames.length || Number(meta.failedCount || meta.finalMetrics?.failedCount || 0),
+        failedCount: validationFailedNames.length || Number(meta.failedCount || meta.finalMetrics?.failedCount || 0),
         forcedCount: Number(meta.forcedCount || meta.finalMetrics?.forcedCount || 0),
         qualityScore: Number.isFinite(Number(meta.finalMetrics?.qualityScore))
           ? Number(meta.finalMetrics.qualityScore)
@@ -4336,6 +4370,7 @@ export function createAutoAssignAll(deps) {
         entries: snapshotEntries,
         validation,
         metrics,
+        failedNames: validationFailedNames,
         note: version.note || ""
       });
     });
@@ -5486,7 +5521,8 @@ export function createAutoAssignAll(deps) {
       placedCount: acceptedPlaced.length,
       forcedCount: 0,
       qualityScore: bestQualityScore,
-      label: acceptedLabel
+      label: acceptedLabel,
+      deriveFailedFromCardShortage: true
     }).metrics;
     const considerAutoCandidate = (label, placed, failed, forced = [], qualityScore = Infinity) => {
       const result = buildAutoRunMetricsForEntries([...protectedEntries, ...(placed || [])], activeGrades, failed || [], {
@@ -5494,7 +5530,8 @@ export function createAutoAssignAll(deps) {
         placedCount: (placed || []).length,
         forcedCount: (forced || []).length,
         qualityScore,
-        label
+        label,
+        deriveFailedFromCardShortage: true
       });
       if (compareAutoRunResults(result.metrics, acceptedMetrics) < 0) {
         acceptedPlaced = cloneAutoAssignData(placed || []) || [];
@@ -6222,12 +6259,13 @@ export function createAutoAssignAll(deps) {
       scopeGrades: activeGrades,
       protectedEntries,
       failedNames: names,
+      deriveFailedFromCardShortage: true,
       failedDiagnostics
     });
     let finalAutoRunMetrics = buildAutoRunMetricsFromValidation(postValidation, {
       label: "최종 결과",
       placedCount: bestPlaced.length,
-      failedCount: names.length,
+      failedCount: postValidation.failedCount || names.length,
       forcedCount: forcedPlaced.length,
       qualityScore: improvement.qualityScore
     });
@@ -6257,12 +6295,13 @@ export function createAutoAssignAll(deps) {
           scopeGrades: activeGrades,
           protectedEntries,
           failedNames: [...new Set((baselineRepair.failed || []).map(f => f.name))],
+          deriveFailedFromCardShortage: true,
           failedDiagnostics: buildFailureDiagnostics(baselineRepair.failed || [], baseSlots, baselineRepair.placed, bestStage?.options || options)
         });
         const baselineRepairMetrics = buildAutoRunMetricsFromValidation(baselineRepairValidation, {
           label: "이전 최고 직접복구 결과",
           placedCount: baselineRepair.placed.length,
-          failedCount: [...new Set((baselineRepair.failed || []).map(f => f.name))].length,
+          failedCount: baselineRepairValidation.failedCount || [...new Set((baselineRepair.failed || []).map(f => f.name))].length,
           forcedCount: 0,
           qualityScore: scoreScheduleQuality(baselineRepair.placed, options)
         });
@@ -6288,63 +6327,97 @@ export function createAutoAssignAll(deps) {
     const rejectWorseThanBaseline = !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
     if (rejectWorseThanBaseline) {
       const restoreSource = (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
-      ttDomain().entries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
-      await persistTimetableNow();
+      const restoredEntries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
+
+      // r41: entries를 객체 교체만 하지 않고 live 배열에도 강제로 반영합니다.
+      // 일부 UI/export 경로는 entries()가 반환한 배열 참조를 계속 보므로,
+      // meta는 best를 가리키는데 실제 entries는 폐기 후보인 상태가 남을 수 있었습니다.
+      const liveEntries = entries();
+      if (Array.isArray(liveEntries)) {
+        liveEntries.splice(0, liveEntries.length, ...restoredEntries);
+        if (ttDomain().entries !== liveEntries) ttDomain().entries = liveEntries;
+      } else {
+        ttDomain().entries = restoredEntries;
+      }
+
       recomputeConflicts();
       renderAll();
-      const restoredAllForDiagnostics = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
+
+      const restoredAllForDiagnostics = normalizeSnapshotEntries(entries()) || [];
       const restoredProtectedIdsForDiagnostics = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
       const restoredAutoPlacedForDiagnostics = restoredAllForDiagnostics.filter(e => !restoredProtectedIdsForDiagnostics.has(e.id));
       const restoredCoverageForDiagnostics = makeCoverageShortageFailures(restoredAutoPlacedForDiagnostics, []);
       const restoredFailedItemsForDiagnostics = restoredCoverageForDiagnostics.failures || [];
       const restoredFailedDiagnostics = buildFailureDiagnostics(restoredFailedItemsForDiagnostics, baseSlots, restoredAutoPlacedForDiagnostics, bestStage?.options || options);
+      const restoredFailedNames = [...new Set(restoredFailedItemsForDiagnostics.map(f => f.name).filter(Boolean))];
       const restoredResidualPuzzleReport = buildResidualPuzzleReport(restoredFailedItemsForDiagnostics, baseSlots, restoredAutoPlacedForDiagnostics, bestStage?.options || options);
+      const restoredValidation = buildScheduleVerificationReport(restoredAllForDiagnostics, {
+        scopeGrades: activeGrades,
+        protectedEntries,
+        failedNames: restoredFailedNames,
+        deriveFailedFromCardShortage: true,
+        failedDiagnostics: restoredFailedDiagnostics
+      });
+      const restoredMetrics = buildAutoRunMetricsFromValidation(restoredValidation, {
+        label: qualityBaselineReference?.name || "복원된 기준 결과",
+        placedCount: restoredAllForDiagnostics.length,
+        failedCount: restoredValidation.failedCount || restoredFailedNames.length,
+        forcedCount: 0,
+        qualityScore: qualityBaselineMetrics?.qualityScore
+      });
       const rejectReport = {
         ts: Date.now(),
+        schemaVersion: "2026-06-12-canonical-validator-state-sync-r41",
         rejectedByQualityGate: true,
         reason: "새 자동배치 결과가 이전 최고 자동배치 결과보다 검증 점수가 나빠 반영하지 않았습니다.",
         rejectReason: "worse-than-complete-best-snapshot",
         activeGrades: activeGrades.map(gradeDisplay).join(", "),
         placementModeLabel: modeText,
         beforeValidation: preValidation,
-        referenceValidation: qualityBaselineValidation,
+        referenceValidation: restoredValidation,
         rejectedValidation: postValidation,
-        validationSummary: qualityBaselineValidation.summary || "이전 최고 결과 유지",
+        validationSummary: restoredValidation.summary || "이전 최고 결과 유지",
         beforeMetrics: baselineAutoRunMetrics,
         currentBeforeMetrics: baselineAutoRunMetrics,
-        referenceMetrics: qualityBaselineMetrics,
+        referenceMetrics: restoredMetrics,
         rejectedMetrics: finalAutoRunMetrics,
-        baselineMetrics: qualityBaselineMetrics,
-        finalMetrics: qualityBaselineMetrics,
-        classSlotIssueCount: Number(qualityBaselineMetrics.classSlotIssueCount || 0),
-        classIssueCount: Number(qualityBaselineMetrics.classSlotIssueCount || 0),
-        classShortCount: Number(qualityBaselineMetrics.classShortCount || 0),
-        classOverCount: Number(qualityBaselineMetrics.classOverCount || 0),
-        cardCoverageIssueCount: Number(qualityBaselineMetrics.cardCoverageIssueCount || 0),
-        groupCoverageIssueCount: Number(qualityBaselineMetrics.groupCoverageIssueCount || 0),
-        failedCount: Number(qualityBaselineMetrics.failedCount || 0),
-        failedUnitCount: Number(qualityBaselineMetrics.failedCount || 0),
-        cardShortageSlots: Number(qualityBaselineMetrics.cardShortageSlots || 0),
-        restrictedTeacherIssueCount: Number(qualityBaselineMetrics.restrictedTeacherIssueCount || 0),
-        protectedIntrusionCount: Number(qualityBaselineMetrics.protectedIntrusionCount || 0),
-        missingRoomCount: Number(qualityBaselineMetrics.missingRoomCount || 0),
-        metricSource: "qualityBaseline",
+        baselineMetrics: restoredMetrics,
+        finalMetrics: restoredMetrics,
+        classSlotIssueCount: Number(restoredMetrics.classSlotIssueCount || 0),
+        classIssueCount: Number(restoredMetrics.classSlotIssueCount || 0),
+        classShortCount: Number(restoredMetrics.classShortCount || 0),
+        classOverCount: Number(restoredMetrics.classOverCount || 0),
+        cardCoverageIssueCount: Number(restoredMetrics.cardCoverageIssueCount || 0),
+        groupCoverageIssueCount: Number(restoredMetrics.groupCoverageIssueCount || 0),
+        failedCount: Number(restoredMetrics.failedCount || 0),
+        failedUnitCount: Number(restoredMetrics.failedCount || 0),
+        cardShortageSlots: Number(restoredMetrics.cardShortageSlots || 0),
+        restrictedTeacherIssueCount: Number(restoredMetrics.restrictedTeacherIssueCount || 0),
+        protectedIntrusionCount: Number(restoredMetrics.protectedIntrusionCount || 0),
+        missingRoomCount: Number(restoredMetrics.missingRoomCount || 0),
+        metricSource: "canonicalEvaluation",
         metricCompleteness: "complete",
         qualityBaselineSource: qualityBaselineReference?.source || "current",
         qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
-        qualityBaselineValidationSummary: qualityBaselineValidation.summary || "",
+        qualityBaselineValidationSummary: restoredValidation.summary || "",
         restoredFromReference: qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot",
-        comparisonSummary: `${qualityBaselineValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`,
+        restoredEntryCount: restoredAllForDiagnostics.length,
+        rejectedEntryCount: finalEntriesForValidation.length,
+        comparisonSummary: `${restoredValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`,
         failedDiagnostics: restoredFailedDiagnostics,
         failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
         residualPuzzleReport: restoredResidualPuzzleReport
       };
-      if (appState.timetable) appState.timetable.autoAssignMeta = rejectReport;
+      const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
+      if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
       setLastAutoAssignReport(rejectReport);
+
+      // r41: entries와 meta가 모두 동기화된 뒤 저장합니다.
+      await persistTimetableNow();
       addTimetableLog(
         "warn",
         "자동배치 결과 폐기",
-        `새 결과가 이전 최고 결과보다 나빠 반영하지 않았습니다. 기준: ${qualityBaselineReference?.name || "현재 시간표"} · ${formatAutoRunMetricSummary(qualityBaselineMetrics)} / 폐기: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
+        `새 결과가 이전 최고 결과보다 나빠 반영하지 않았습니다. 기준: ${qualityBaselineReference?.name || "현재 시간표"} · ${formatAutoRunMetricSummary(restoredMetrics)} / 폐기: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
       );
       await progress.complete({
         partial: true,
@@ -6353,16 +6426,16 @@ export function createAutoAssignAll(deps) {
         step: "결과 폐기",
         detailHtml: [
           `<div><b>품질 기준</b> ${safeAutoHtml(qualityBaselineReference?.name || "현재 시간표")}</div>`,
-          `<div><b>기준 상태</b> ${safeAutoHtml(qualityBaselineValidation.summary || "검증 정보 없음")}</div>`,
+          `<div><b>기준 상태</b> ${safeAutoHtml(restoredValidation.summary || "검증 정보 없음")}</div>`,
           `<div><b>폐기된 결과</b> ${safeAutoHtml(postValidation.summary || "검증 정보 없음")}</div>`,
-          `<div><b>기준 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(qualityBaselineMetrics))}</div>`,
+          `<div><b>기준 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(restoredMetrics))}</div>`,
           `<div><b>폐기 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(finalAutoRunMetrics))}</div>`,
           `<div>새 자동배치가 이전 최고 자동배치 결과보다 카드/학급/미배치 검증 점수가 나빠 저장하지 않았습니다.</div>`,
           residualPuzzleReportToHtml(restoredResidualPuzzleReport, 5)
         ].filter(Boolean).join(""),
         placed: 0,
         best: 0,
-        failed: names.length,
+        failed: restoredValidation.failedCount || restoredFailedNames.length,
         currentCard: "품질 게이트",
         closeLabel: "확인"
       });
