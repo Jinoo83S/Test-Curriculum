@@ -227,7 +227,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-12-교사파싱-잔여복구-r41f"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-12-35칸구조검산-잔여퍼즐-r42"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -443,7 +443,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-교사파싱-잔여복구-r41f",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-35칸구조검산-잔여퍼즐-r42",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1949,7 +1949,7 @@ export function createAutoAssignAll(deps) {
     }
 
     for (const e of slotEnts) {
-      const et = splitTeacherNames(e.teacherName || "").filter(Boolean);
+      const et = teacherNamesForPlacement(e);
       const overlapTeacher = teachers.find(t => et.includes(t));
       if (overlapTeacher && !(item.unitId && e.unitId && item.unitId === e.unitId)) {
         addReason(reasons, "teacherConflict", "교사 시간 충돌", `${formatSlotLabel(slot)} · ${overlapTeacher} / ${getAutoItemName(e)}`);
@@ -2393,7 +2393,7 @@ export function createAutoAssignAll(deps) {
       });
     }
     return {
-      schemaVersion: "2026-06-11-residual-puzzle-report-r37",
+      schemaVersion: "2026-06-12-residual-puzzle-report-r42",
       generatedAt: new Date().toISOString(),
       targetCount: reportRows.length,
       rows: reportRows,
@@ -2416,7 +2416,7 @@ export function createAutoAssignAll(deps) {
       const move = firstMove ? ` · 실행가능 1단계 ${esc(firstMove.slot)}${blockerText}` : ` · 실행가능 1단계 없음${Number(row.oneMoveSlotCount || 0) ? ` (검토 ${Number(row.oneMoveSlotCount || 0)}칸)` : ""}`;
       return `<li><b>${esc(row.name)}</b>${row.classLabels ? ` (${esc(row.classLabels)})` : ""}: ${esc(row.placedSlots)}/${esc(row.requiredCredits)}${row.missingSlots ? ` · ${esc(row.missingSlots)} 부족` : ""}${direct}${move}</li>`;
     }).join("");
-    return `<div class="tt-auto-progress-failed"><b>r36 잔여 퍼즐 진단</b><ul>${rows}${report.rows.length > limit ? `<li>외 ${report.rows.length - limit}개</li>` : ""}</ul></div>`;
+    return `<div class="tt-auto-progress-failed"><b>r42 잔여 퍼즐 진단</b><ul>${rows}${report.rows.length > limit ? `<li>외 ${report.rows.length - limit}개</li>` : ""}</ul></div>`;
   }
 
   function diagnosticsToHtml(diagnostics = [], limit = 8) {
@@ -2462,7 +2462,7 @@ export function createAutoAssignAll(deps) {
     // 1. Teacher conflict. Same concurrent group can share the time,
     //    but it cannot make one teacher teach two different entries.
     for (const e of slotEnts) {
-      const et = splitTeacherNames(e.teacherName).filter(Boolean);
+      const et = teacherNamesForPlacement(e);
       if (teachers.some(t => et.includes(t))) {
         if (item.unitId && e.unitId && item.unitId === e.unitId) continue;
         // 같은 동시배정 그룹 내부의 반복 교사는 하나의 통합 블록으로 봅니다.
@@ -2744,7 +2744,7 @@ export function createAutoAssignAll(deps) {
       const sameGrp = sameActiveGroup(item, e);
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
 
-      const et = splitTeacherNames(e.teacherName).filter(Boolean);
+      const et = teacherNamesForPlacement(e);
       if (teachers.some(t => et.includes(t))) {
         const sameGrpForTeacher = sameActiveGroup(item, e);
         const concForTeacher = sameGrpForTeacher && isConcurrentItem(item) && isConcurrentItem(e);
@@ -2846,9 +2846,12 @@ export function createAutoAssignAll(deps) {
   }
 
   function getTeacherNamesForScoring(entry = {}) {
+    // r42: entry.teachers 배열에도 "A · B" 같은 표시용 문자열이 남아 있을 수 있습니다.
+    // 점수/후처리에서도 실제 교사 단위로 재분해해야 마지막 잔여 복구가 같은 충돌 기준을 씁니다.
     return [...new Set([
       ...splitTeacherNames(entry.teacherName || ""),
-      ...(Array.isArray(entry.teachers) ? entry.teachers : [])
+      ...(Array.isArray(entry.teachers) ? entry.teachers.flatMap(t => splitTeacherNames(t)) : []),
+      ...getTeacherNamesFromCards((ttCardIdsFromPlacement(entry) || []).map(id => getTtCardById(id)).filter(Boolean))
     ].map(t => String(t || "").trim()).filter(Boolean))];
   }
 
@@ -3269,8 +3272,8 @@ export function createAutoAssignAll(deps) {
     const conc = sameGrp && isConcurrentItem(a) && isConcurrentItem(b);
     if (conc) return false;
     if (hasCompoundSiblingConflict(a, b)) return true;
-    const at = splitTeacherNames(a.teacherName).filter(Boolean);
-    const bt = splitTeacherNames(b.teacherName).filter(Boolean);
+    const at = teacherNamesForPlacement(a);
+    const bt = teacherNamesForPlacement(b);
     if (at.some(t => bt.includes(t))) return true;
     if (audiencesConflict(audienceForPlacement(a), audienceForPlacement(b))) return true;
     if (a.roomId && b.roomId && a.roomId === b.roomId && !sameUnitPlacement(a, b)) return true;
@@ -3342,18 +3345,44 @@ export function createAutoAssignAll(deps) {
     let working = cloneAutoAssignData(placed) || [];
     const seededIds = new Set();
 
+    const slotClassHitCount = (item, slot, list = []) => {
+      const classKeys = classKeysForCapacity(item).map(normalizeClassKeyForReportKey).filter(Boolean);
+      if (!classKeys.length) return 0;
+      const all = [...protectedBackdrop, ...(list || [])];
+      let hits = 0;
+      for (const cls of classKeys) {
+        if (all.some(e => e.day === slot.day && e.period === slot.period && classKeysForCapacity(e).map(normalizeClassKeyForReportKey).includes(cls))) hits++;
+      }
+      return hits;
+    };
+
+    const scoreSeedSlot = (item, pseudoBlock, slot, list = []) => {
+      const hard = blockConflictAtSlot(pseudoBlock, slot, list, protectedBackdrop);
+      const classHits = slotClassHitCount(item, slot, list);
+      const teachers = teacherNamesForPlacement(item);
+      const teacherBusy = teachers.reduce((n, teacher) => n + ([...protectedBackdrop, ...(list || [])].some(e => e.day === slot.day && e.period === slot.period && teacherNamesForPlacement(e).includes(teacher)) ? 1 : 0), 0);
+      // 핵심: 마지막 2%는 "아무 슬롯"이 아니라 해당 반의 비어 있는 35칸 구멍에 먼저 시드해야 합니다.
+      // hard conflict를 최우선으로 두되, 같은 반이 이미 찬 칸은 큰 패널티를 주어 학급 35칸 완성을 우선합니다.
+      return hard * 10000 + classHits * 1400 + teacherBusy * 300 + Number(slot.period || 0) * 3 + Number(slot.day || 0);
+    };
+
     // 1) 잔여 카드를 충돌 최소 슬롯에 강제 시드(충돌 허용).
+    // r42: 시드 위치를 무작위 최소충돌이 아니라 "부족 학급의 빈칸 우선"으로 잡습니다.
     for (const failedItem of targets) {
       const item = failedItem.item;
       const seedEntry = makeAutoEntry(item, orderedSlots[0], working);
       if (!seedEntry) continue;
       const pseudoBlock = { key: `seed:${seededIds.size}`, entries: [seedEntry] };
-      let bestSlot = null, bestC = Infinity;
+      let bestSlot = null, bestScore = Infinity;
       for (const slot of shuffle([...orderedSlots])) {
-        const c = blockConflictAtSlot(pseudoBlock, slot, working, protectedBackdrop);
-        if (c < bestC) { bestC = c; bestSlot = slot; if (c === 0) break; }
+        const score = scoreSeedSlot(item, pseudoBlock, slot, working);
+        if (score < bestScore) {
+          bestScore = score;
+          bestSlot = slot;
+          if (score === 0) break;
+        }
       }
-      if (!bestSlot || bestC >= 1e6) continue;
+      if (!bestSlot || bestScore >= 1e10) continue;
       const seeded = relocateBlockEntriesForced(pseudoBlock, bestSlot, working);
       seeded.forEach(e => { e.autoMinConflictSeed = true; seededIds.add(e.id); });
       working.push(...seeded);
@@ -3377,12 +3406,16 @@ export function createAutoAssignAll(deps) {
       const pick = conflicted[Math.floor(Math.random() * conflicted.length)];
       const base = removeRepairBlockFromEntries(working, pick);
       const curSlot = { day: pick.entries[0].day, period: pick.entries[0].period };
-      let target = curSlot, targetC = blockConflictAtSlot(pick, curSlot, base, protectedBackdrop);
+      let target = curSlot;
+      let targetC = blockConflictAtSlot(pick, curSlot, base, protectedBackdrop);
+      const classPenaltyForBlock = (slot) => (pick.entries || []).reduce((sum, entry) => sum + slotClassHitCount(entry, slot, base) * 250, 0);
+      let targetScore = targetC * 10000 + classPenaltyForBlock(curSlot);
       const explore = Math.random() < 0.15; // 15% 무작위 이동으로 국소최솟값 탈출
       for (const slot of shuffle([...orderedSlots])) {
         const c = blockConflictAtSlot(pick, slot, base, protectedBackdrop);
-        if (explore) { if (c < 1e6) { target = slot; targetC = c; break; } }
-        else if (c < targetC) { target = slot; targetC = c; if (c === 0) break; }
+        const score = c * 10000 + classPenaltyForBlock(slot) + Number(slot.period || 0) * 3 + Number(slot.day || 0);
+        if (explore) { if (c < 1e6) { target = slot; targetC = c; targetScore = score; break; } }
+        else if (score < targetScore) { target = slot; targetC = c; targetScore = score; if (score === 0) break; }
       }
       const moved = relocateBlockEntriesForced(pick, target, base);
       working = [...base, ...moved];
@@ -4877,6 +4910,23 @@ export function createAutoAssignAll(deps) {
         ? `${capacity.summary} · ${overText}${capacity.overRows.length > 8 ? " …" : ""}`
         : capacity.summary;
     addPrecheckItem(report, "학급 시수 가능성", capacity.shortRows.length ? "error" : (capacity.overRows.length ? "warn" : "ok"), "월~금 전체 시수 구성 가능 여부", capacityDetail);
+    // r42: 선생님이 지적한 핵심 검산입니다. 자동배정 엔진 문제가 맞는지,
+    // 아니면 카드/그룹 구조가 35칸을 애초에 만족하지 못하는지 먼저 분리합니다.
+    const exact35Rows = (capacity.rows || []).filter(row => Number(row.available) === Number(row.target));
+    const matrixSamples = (capacity.rows || [])
+      .filter(row => Number(row.available) !== Number(row.target))
+      .slice(0, 8)
+      .map(row => `${row.label}: ${row.available}/${row.target}`)
+      .join(" / ");
+    addPrecheckItem(
+      report,
+      "35칸 구조 검산",
+      capacity.ok ? "ok" : "error",
+      "7~12학년 모든 반 35칸 카드 구성",
+      capacity.ok
+        ? `${exact35Rows.length}/${capacity.rows.length}개 반이 카드/그룹 정규화 기준 ${capacity.targetPerClass}칸으로 맞습니다. 자동배정 실패가 나면 카드 수량보다 배치 solver/제약 충돌 문제로 봐야 합니다.`
+        : `${exact35Rows.length}/${capacity.rows.length}개 반만 ${capacity.targetPerClass}칸입니다. ${matrixSamples}${(capacity.rows || []).length > 8 ? " …" : ""}`
+    );
 
     const missingGroupRefs = [];
     const emptyGroups = [];
@@ -6244,8 +6294,10 @@ export function createAutoAssignAll(deps) {
         log: "r40 min-conflicts 잔여 탈출 시작"
       }, true);
       const mcLimits = {
-        maxMillis: options.runAttempts === "deep" ? 4000 : (options.runAttempts === "fast" ? 800 : 1800),
-        maxIters: options.runAttempts === "deep" ? 16000 : 6000
+        // r42: 마지막 잔여 5개는 단순 후보 부족이 아니라 연쇄 이동 퍼즐입니다.
+        // balanced/deep에서만 시간을 조금 더 주되, 내부 progress yield로 브라우저 응답성은 유지합니다.
+        maxMillis: options.runAttempts === "deep" ? 12000 : (options.runAttempts === "fast" ? 1000 : 6000),
+        maxIters: options.runAttempts === "deep" ? 36000 : 16000
       };
       const mc = await tryMinConflictsResidualEscape(bestFailed, baseSlots, bestPlaced, { ...(bestStage?.options || options), engineProfile }, updateProgress, mcLimits);
       if (mc?.placed) {
@@ -6535,10 +6587,10 @@ export function createAutoAssignAll(deps) {
         failedDiagnostics: restoredFailedDiagnostics,
         failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
         residualPuzzleReport: restoredResidualPuzzleReport,
-        validatorVersion: "2026-06-12-교사파싱-잔여복구-r41f",
+        validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
         experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
         experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41f"
+        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r42"
       };
       const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
       if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
@@ -6672,10 +6724,10 @@ export function createAutoAssignAll(deps) {
         revertedToAccepted: improvement.revertedToAccepted || "",
         acceptedLabel
       },
-      validatorVersion: "2026-06-12-교사파싱-잔여복구-r41f",
+      validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
       experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
       experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41f"
+      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r42"
     };
     report.metricSource = "postValidation";
     report.metricCompleteness = "complete";
