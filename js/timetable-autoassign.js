@@ -227,7 +227,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-12-잔여복구-진단수정-r41e"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-12-교사파싱-잔여복구-r41f"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -443,7 +443,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-잔여복구-진단수정-r41e",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-교사파싱-잔여복구-r41f",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -519,13 +519,15 @@ export function createAutoAssignAll(deps) {
     return c.isRestrictedWork === true || RESTRICTED_WORK_TYPES.has(normalizeWorkType(c.workType));
   };
   const getTeacherNamesFromCards = cards => [...new Set((cards || []).flatMap(card => [
-    ...(Array.isArray(card?.teachers) ? card.teachers : []),
+    ...(Array.isArray(card?.teachers) ? card.teachers.flatMap(t => splitTeacherNames(t)) : []),
     ...splitTeacherNames(card?.teacherName || "")
   ]).map(t => String(t || "").trim()).filter(Boolean))];
   const getTeachersForAutoItem = item => {
+    // r41f: teachers 배열 값도 표시용 "A · B" 문자열일 수 있으므로 반드시 재분해합니다.
+    // 이 값이 분해되지 않으면 잔여 복구가 실제 교사 충돌을 잘못 판단합니다.
     const names = [
-      ...(Array.isArray(item?.teachers) ? item.teachers : []),
-      ...splitTeacherNames(item?.teacherName || item?.teachers || ""),
+      ...(Array.isArray(item?.teachers) ? item.teachers.flatMap(t => splitTeacherNames(t)) : []),
+      ...splitTeacherNames(item?.teacherName || ""),
       ...getTeacherNamesFromCards(item?.ttcards || [])
     ];
     return [...new Set(names.map(t => String(t || "").trim()).filter(Boolean))];
@@ -688,7 +690,7 @@ export function createAutoAssignAll(deps) {
     if (!name || !entry) return false;
     const names = [
       ...splitTeacherNames(entry.teacherName || ""),
-      ...(Array.isArray(entry.teachers) ? entry.teachers : [])
+      ...(Array.isArray(entry.teachers) ? entry.teachers.flatMap(t => splitTeacherNames(t)) : [])
     ].map(t => String(t || "").trim()).filter(Boolean);
     return names.includes(name);
   };
@@ -926,7 +928,7 @@ export function createAutoAssignAll(deps) {
   function teacherNamesForPlacement(x = {}) {
     return [...new Set([
       ...splitTeacherNames(x.teacherName || ""),
-      ...(Array.isArray(x.teachers) ? x.teachers : []),
+      ...(Array.isArray(x.teachers) ? x.teachers.flatMap(t => splitTeacherNames(t)) : []),
       ...getTeacherNamesFromCards((ttCardIdsFromPlacement(x) || []).map(id => getTtCardById(id)).filter(Boolean))
     ].map(t => String(t || "").trim()).filter(Boolean))];
   }
@@ -2969,7 +2971,9 @@ export function createAutoAssignAll(deps) {
   function getBlockingBlocksForSlot(item, slot, placed = []) {
     const slotEnts = placed.filter(e => e.day === slot.day && e.period === slot.period);
     if (!slotEnts.length) return [];
-    const teachers = new Set(splitTeacherNames(item.teacherName || '').filter(Boolean));
+    // r41f: item.teacherName만 보지 말고 ttcardIds/teachers 배열까지 포함한
+    // 실제 교사 집합으로 차단 블록을 찾습니다.
+    const teachers = new Set(teacherNamesForPlacement(item));
     const itemAudience = audienceForPlacement(item);
     const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed);
     const blockedKeys = new Set();
@@ -2980,7 +2984,7 @@ export function createAutoAssignAll(deps) {
       const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(e);
       if (conc) return;
 
-      const eTeachers = splitTeacherNames(e.teacherName || '').filter(Boolean);
+      const eTeachers = teacherNamesForPlacement(e);
       const teacherHit = eTeachers.some(t => teachers.has(t));
       const classHit = audiencesConflict(itemAudience, audienceForPlacement(e));
       const roomHit = !!(candidateRoomData.roomId && e.roomId && candidateRoomData.roomId === e.roomId);
@@ -5737,7 +5741,7 @@ export function createAutoAssignAll(deps) {
         const sameGrp = sameActiveGroup(item, entry);
         const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(entry);
         const its = itemTeachers(item);
-        const ets = splitTeacherNames(entry.teacherName).filter(Boolean);
+        const ets = teacherNamesForPlacement(entry);
         if (its.some(t => ets.includes(t)) && !conc) return true;
         const ia = audienceForPlacement(item);
         const ea = audienceForPlacement(entry);
@@ -6531,10 +6535,10 @@ export function createAutoAssignAll(deps) {
         failedDiagnostics: restoredFailedDiagnostics,
         failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
         residualPuzzleReport: restoredResidualPuzzleReport,
-        validatorVersion: "2026-06-12-잔여복구-진단수정-r41e",
+        validatorVersion: "2026-06-12-교사파싱-잔여복구-r41f",
         experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
         experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41e"
+        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41f"
       };
       const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
       if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
@@ -6668,10 +6672,10 @@ export function createAutoAssignAll(deps) {
         revertedToAccepted: improvement.revertedToAccepted || "",
         acceptedLabel
       },
-      validatorVersion: "2026-06-12-잔여복구-진단수정-r41e",
+      validatorVersion: "2026-06-12-교사파싱-잔여복구-r41f",
       experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
       experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41e"
+      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r41f"
     };
     report.metricSource = "postValidation";
     report.metricCompleteness = "complete";

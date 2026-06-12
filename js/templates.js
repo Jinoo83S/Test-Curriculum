@@ -49,7 +49,10 @@ export function isSemesterDataSame(item) {
 
 /** Split a teacher field string into individual names */
 export function splitTeacherNames(str) {
-  return clean(str).split(/[,，]/).map(s => s.trim()).filter(Boolean);
+  // r41f: 일부 시간표 카드에는 표시용 교사 요약(예: "서지훈 · 박래희")이
+  // 그대로 저장되어 있습니다. 기존 콤마 전용 파서는 이를 한 명의 가짜 교사로
+  // 보아 잔여 복구/충돌 검사에서 실제 교사 충돌을 놓쳤습니다.
+  return clean(str).split(/[,，·]+/).map(s => s.trim()).filter(Boolean);
 }
 
 /** Return deduplicated list of all teacher names on this template */
