@@ -1020,6 +1020,80 @@ function normalizePeriodLabels(rawLabels, periodCount) {
   return labels.map((label, i) => label || `${i + 1}교시`);
 }
 
+
+function timetableEntrySignatureForMetaSync(entry = {}) {
+  const classKeys = Array.isArray(entry.audienceClassKeys) && entry.audienceClassKeys.length
+    ? entry.audienceClassKeys
+    : (Array.isArray(entry.classKeys) ? entry.classKeys : []);
+  const cardIds = Array.isArray(entry.ttcardIds) && entry.ttcardIds.length
+    ? entry.ttcardIds
+    : [entry.ttcardId || entry.templateId || ""].filter(Boolean);
+  return [
+    clean(entry.id),
+    clean(entry.day),
+    clean(entry.period),
+    clean(entry.groupId),
+    cardIds.slice().map(clean).sort().join("+"),
+    classKeys.slice().map(clean).sort().join("+"),
+    clean(entry.teacherName || entry.teacher),
+    clean(entry.roomId)
+  ].join("|");
+}
+
+function sameTimetableEntrySetForMetaSync(a = [], b = []) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  const aa = a.map(timetableEntrySignatureForMetaSync).sort();
+  const bb = b.map(timetableEntrySignatureForMetaSync).sort();
+  for (let i = 0; i < aa.length; i += 1) if (aa[i] !== bb[i]) return false;
+  return true;
+}
+
+function hasCompleteTopAutoAssignMeta(meta = {}) {
+  if (!meta || typeof meta !== "object") return false;
+  if (clean(meta.metricCompleteness) === "complete") return true;
+  if (meta.finalMetrics && typeof meta.finalMetrics === "object") return true;
+  const text = clean(meta.validationSummary || meta.qualityBaselineValidationSummary);
+  return /학급\s*시수\s*\d+개/.test(text) && /카드\s*시수\s*\d+개/.test(text) && /그룹\/개별\s*\d+개/.test(text);
+}
+
+function syncAutoAssignMetaToEquivalentSnapshots({ entries = [], bestSnapshot = null, savedSchedules = [], meta = null } = {}) {
+  if (!hasCompleteTopAutoAssignMeta(meta) || !Array.isArray(entries) || !entries.length) {
+    return { bestSnapshot, savedSchedules, meta };
+  }
+  const sourceMeta = { ...meta };
+  const residualSchema = clean(sourceMeta.residualPuzzleReport?.schemaVersion);
+  if (sourceMeta.residualPuzzleReport && residualSchema && !/^2026-06-12/.test(residualSchema)) {
+    // 오래된 r36/r37 잔여 퍼즐 리포트는 현재 entries 기준이라고 보장할 수 없습니다.
+    // 수치 메타는 동기화하되, 잔여 리포트는 다음 자동배치 검증에서 재생성하게 비웁니다.
+    sourceMeta.residualPuzzleReport = null;
+  }
+  const canonicalMeta = compactAutoAssignMetaForStorage({
+    ...sourceMeta,
+    schemaVersion: clean(sourceMeta.schemaVersion) || "2026-06-12-state-canonical-meta-sync-r41b",
+    metricCompleteness: clean(sourceMeta.metricCompleteness) || "complete",
+    metricSource: clean(sourceMeta.metricSource) || "canonicalEvaluation"
+  });
+  const apply = snapshot => {
+    if (!snapshot || !Array.isArray(snapshot.entries) || !snapshot.entries.length) return snapshot;
+    if (!sameTimetableEntrySetForMetaSync(snapshot.entries, entries)) return snapshot;
+    return {
+      ...snapshot,
+      entryCount: snapshot.entries.length,
+      updatedAt: clean(snapshot.updatedAt) || new Date().toISOString(),
+      autoAssignMeta: canonicalMeta,
+      note: [
+        "자동 생성된 배치 보관본입니다.",
+        clean(meta.activeGrades) ? `대상: ${clean(meta.activeGrades)}` : "",
+        clean(meta.placementModeLabel || meta.modeText) ? `방식: ${clean(meta.placementModeLabel || meta.modeText)}` : "",
+        canonicalMeta.validationSummary ? `검증: ${canonicalMeta.validationSummary}` : ""
+      ].filter(Boolean).join(" / ")
+    };
+  };
+  const nextBest = apply(bestSnapshot);
+  const nextSaved = Array.isArray(savedSchedules) ? savedSchedules.map(apply) : savedSchedules;
+  return { bestSnapshot: nextBest, savedSchedules: nextSaved, meta: canonicalMeta };
+}
+
 function normalizeTtCardTeacherOptions(raw = {}) {
   const allowedModes = new Set(["homeroom", "representative", "none"]);
   const mode = allowedModes.has(clean(raw.mode)) ? clean(raw.mode) : "none";
@@ -1062,6 +1136,13 @@ function normalizeTimetableDomain(raw = {}) {
     normalizedMeta.stateSyncEntryCount = normalizedEntries.length;
   }
 
+  const syncedAutoMetaRefs = syncAutoAssignMetaToEquivalentSnapshots({
+    entries: normalizedEntries,
+    bestSnapshot: normalizedBestSnapshot,
+    savedSchedules: normalizedSavedSchedules,
+    meta: normalizedMeta
+  });
+
   return {
     config: {
       periodCount: pc,
@@ -1079,12 +1160,12 @@ function normalizeTimetableDomain(raw = {}) {
       ? raw.ttcardGroups.map(normalizeTemplateGroup).filter(g => g.name)
       : (Array.isArray(raw.templateGroups) ? raw.templateGroups.map(normalizeTemplateGroup).filter(g => g.name) : []),
     // 배치된 시간표만 별도 저장한 버전 목록입니다. 카드/커리큘럼은 제외하고 entries만 보관합니다.
-    savedSchedules: normalizedSavedSchedules,
-    bestAutoAssignSnapshot: normalizedBestSnapshot,
+    savedSchedules: syncedAutoMetaRefs.savedSchedules,
+    bestAutoAssignSnapshot: syncedAutoMetaRefs.bestSnapshot,
     teacherConstraints: constraints,
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: normalizeCardGenerationMeta(raw),
-    autoAssignMeta: normalizedMeta,
+    autoAssignMeta: syncedAutoMetaRefs.meta,
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
     ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})

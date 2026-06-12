@@ -386,6 +386,62 @@ export function createAutoAssignAll(deps) {
     domain.savedSchedules = [...byId.values()].sort((a,b) => time(b) - time(a)).slice(0, 6);
   }
 
+
+  function autoEntrySignature(entry = {}) {
+    const classKeys = Array.isArray(entry.audienceClassKeys) && entry.audienceClassKeys.length
+      ? entry.audienceClassKeys
+      : (Array.isArray(entry.classKeys) ? entry.classKeys : []);
+    const cardIds = Array.isArray(entry.ttcardIds) && entry.ttcardIds.length
+      ? entry.ttcardIds
+      : [entry.ttcardId || entry.templateId || ""].filter(Boolean);
+    return [
+      String(entry.id || ""),
+      String(entry.day || ""),
+      String(entry.period || ""),
+      String(entry.groupId || ""),
+      cardIds.slice().map(x => String(x || "")).sort().join("+"),
+      classKeys.slice().map(x => String(x || "")).sort().join("+"),
+      String(entry.teacherName || entry.teacher || ""),
+      String(entry.roomId || "")
+    ].join("|");
+  }
+
+  function sameAutoEntrySet(a = [], b = []) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    const aa = a.map(autoEntrySignature).sort();
+    const bb = b.map(autoEntrySignature).sort();
+    for (let i = 0; i < aa.length; i += 1) if (aa[i] !== bb[i]) return false;
+    return true;
+  }
+
+  function attachCanonicalMetaToMatchingSnapshots(domain, canonicalMeta = {}, canonicalEntries = []) {
+    if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
+    const compact = compactAutoAssignSnapshotMeta({
+      ...canonicalMeta,
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-12-canonical-meta-sync-r41b",
+      metricCompleteness: canonicalMeta.metricCompleteness || "complete",
+      metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
+    });
+    const apply = snapshot => {
+      if (!snapshot || !Array.isArray(snapshot.entries) || !snapshot.entries.length) return false;
+      if (!sameAutoEntrySet(snapshot.entries, canonicalEntries)) return false;
+      snapshot.autoAssignMeta = compact;
+      snapshot.entryCount = snapshot.entries.length;
+      snapshot.updatedAt = new Date().toISOString();
+      snapshot.note = [
+        "자동 생성된 배치 보관본입니다.",
+        canonicalMeta.activeGrades ? `대상: ${canonicalMeta.activeGrades}` : "",
+        canonicalMeta.placementModeLabel || canonicalMeta.modeText ? `방식: ${canonicalMeta.placementModeLabel || canonicalMeta.modeText}` : "",
+        compact.validationSummary ? `검증: ${compact.validationSummary}` : ""
+      ].filter(Boolean).join(" / ");
+      return true;
+    };
+    if (domain.bestAutoAssignSnapshot) apply(domain.bestAutoAssignSnapshot);
+    if (Array.isArray(domain.savedSchedules)) {
+      domain.savedSchedules.forEach(snapshot => apply(snapshot));
+    }
+  }
+
   function saveAutoAssignScheduleSnapshot(kind, sourceEntries = [], meta = {}) {
     const snapshotEntries = normalizeSnapshotEntries(sourceEntries);
     if (!snapshotEntries.length) return null;
@@ -6410,9 +6466,10 @@ export function createAutoAssignAll(deps) {
       };
       const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
       if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
+      attachCanonicalMetaToMatchingSnapshots(ttDomain(), rejectReport, restoredAllForDiagnostics);
       setLastAutoAssignReport(rejectReport);
 
-      // r41: entries와 meta가 모두 동기화된 뒤 저장합니다.
+      // r41b: entries, top meta, best snapshot, savedSchedules 메타를 모두 같은 canonical 결과로 동기화한 뒤 저장합니다.
       await persistTimetableNow();
       addTimetableLog(
         "warn",
@@ -6545,6 +6602,7 @@ export function createAutoAssignAll(deps) {
     afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), report);
     report.afterSnapshotName = afterAutoSnapshot?.name || "";
     if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
+    attachCanonicalMetaToMatchingSnapshots(ttDomain(), report, entries());
     if (afterAutoSnapshot) {
       try {
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
