@@ -744,11 +744,13 @@ function compactAutoAssignMetaForStorage(meta = null) {
     : [];
   return {
     schemaVersion: clean(meta.schemaVersion),
-    generatedAt: clean(meta.generatedAt) || clean(meta.at),
+    generatedAt: clean(meta.generatedAt) || clean(meta.at) || clean(final.generatedAt),
     validationSummary: summaryText,
     ok: meta.ok === true,
-    placedEntryCount: Number(meta.placedEntryCount || meta.entryCount || 0) || 0,
-    placedBlockCount: Number(meta.placedBlockCount || 0) || 0,
+    // r41d: 최신 메타는 finalMetrics.placedCount만 가진 경우가 있습니다.
+    // 이 값을 놓치면 화면에는 배치가 500개 이상인데 보관/진단 메타에는 0개로 표시됩니다.
+    placedEntryCount: metricNumber(meta.placedEntryCount ?? meta.entryCount, final.placedCount ?? final.entryCount, 0),
+    placedBlockCount: metricNumber(meta.placedBlockCount, final.placedBlockCount),
     failedUnitCount: metricNumber(meta.failedUnitCount ?? meta.failedCount, final.failedCount, summaryFailedIssues),
     failedCount: metricNumber(meta.failedCount ?? meta.failedUnitCount, final.failedCount, summaryFailedIssues),
     failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,

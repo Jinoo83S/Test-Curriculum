@@ -3006,8 +3006,16 @@ export function createAutoAssignAll(deps) {
     let attempts = 0;
     let best = null;
     let bestScore = Infinity;
+    // r41d: 이 함수는 재귀+동기 탐색이라 한 번 폭발하면 82% 복구 단계에서
+    // 브라우저가 응답 없음으로 보입니다. 호출 1회당 시도/시간 예산을 강제해
+    // 답이 없는 슬롯은 빨리 포기하고 다음 복구 전략으로 넘깁니다.
+    const maxAttempts = Math.max(80, Number(limits.maxAttempts || 1200));
+    const maxMillis = Math.max(60, Number(limits.maxMillis || 220));
+    const startedAt = Date.now();
+    const budgetExceeded = () => attempts >= maxAttempts || (Date.now() - startedAt) >= maxMillis;
 
     const search = (idx, movedEntries) => {
+      if (budgetExceeded()) return;
       if (idx >= activeBlockers.length) {
         const candidateBase = [...baseWithoutBlockers, ...movedEntries];
         if (!checkPlacementValid(item, targetSlot, candidateBase, options)) return;
@@ -3029,6 +3037,7 @@ export function createAutoAssignAll(deps) {
 
       const block = activeBlockers[idx];
       for (const moveSlot of moveSlots) {
+        if (budgetExceeded()) break;
         attempts++;
         const placedSoFar = [...baseWithoutBlockers, ...movedEntries];
         const moved = makeMovedBlockEntries(block, moveSlot, placedSoFar, options);
@@ -3040,7 +3049,8 @@ export function createAutoAssignAll(deps) {
     };
 
     search(0, []);
-    return best ? { ...best, attempts } : { attempts };
+    const timedOut = budgetExceeded() && !best;
+    return best ? { ...best, attempts, timedOut: false } : { attempts, timedOut };
   }
 
   function isRepairBlockMovable(block = {}) {
@@ -3435,6 +3445,24 @@ export function createAutoAssignAll(deps) {
     const maxChainMillisPerCall = options.runAttempts === 'deep' ? 650 : (options.runAttempts === 'fast' ? 180 : 320);
     let attempts = 0;
     let chainCalls = 0;
+    let lastRepairYieldAt = Date.now();
+    let lastRepairYieldAttempts = 0;
+    const maybeYieldRepairProgress = async (failedItem = {}, phase = '미배치 복구 탐색', force = false) => {
+      if (!progressUpdater) return;
+      const now = Date.now();
+      const attemptDelta = attempts - lastRepairYieldAttempts;
+      if (!force && attemptDelta < 120 && (now - lastRepairYieldAt) < 450) return;
+      lastRepairYieldAt = now;
+      lastRepairYieldAttempts = attempts;
+      await progressUpdater({
+        percent: 83,
+        step: phase,
+        detail: `기존 수업 이동/교환으로 미배치 수업을 넣을 수 있는지 확인 중입니다. 시도 ${attempts.toLocaleString('ko-KR')}회 · 복구 ${repaired.length}건`,
+        placed: current.length,
+        failed: Math.max(0, failedItems.length - repaired.length),
+        currentCard: failedItem.name || getAutoItemName(failedItem.item || failedItem) || '-'
+      });
+    };
 
     for (let idx = 0; idx < failedItems.length; idx++) {
       const failedItem = failedItems[idx];
@@ -3473,6 +3501,7 @@ export function createAutoAssignAll(deps) {
 
           for (const moveSlot of moveSlots) {
             attempts++;
+            if (attempts % 120 === 0) await maybeYieldRepairProgress(failedItem);
             if (attempts >= maxRepairAttempts) break;
             if (moveSlot.day === targetSlot.day && moveSlot.period === targetSlot.period) continue;
             const moved = makeMovedBlockEntries(block, moveSlot, withoutBlock, options);
@@ -3495,9 +3524,12 @@ export function createAutoAssignAll(deps) {
         if (!done && blockers.length > 1 && blockers.length <= maxEvacuateBlocks && attempts < maxRepairAttempts) {
           const multi = tryEvacuateBlockingBlocksForSlot(item, targetSlot, blockers, current, orderedSlots, options, {
             maxBlocks: maxEvacuateBlocks,
-            maxMoveSlotsPerBlock: maxMultiMoveSlotsPerBlock
+            maxMoveSlotsPerBlock: maxMultiMoveSlotsPerBlock,
+            maxAttempts: Math.max(80, Math.min(options.runAttempts === 'deep' ? 3500 : 900, maxRepairAttempts - attempts)),
+            maxMillis: options.runAttempts === 'deep' ? 520 : (options.runAttempts === 'fast' ? 120 : 220)
           });
           attempts += Number(multi?.attempts || 0);
+          if (multi?.timedOut) await maybeYieldRepairProgress(failedItem, '다중 이동 후보 시간 제한', true);
           if (multi?.entries?.length) {
             current.length = 0;
             current.push(...multi.entries);
@@ -3561,16 +3593,7 @@ export function createAutoAssignAll(deps) {
           }
         }
 
-        if (progressUpdater && attempts && attempts % 60 === 0) {
-          await progressUpdater({
-            percent: 83,
-            step: '미배치 복구 탐색',
-            detail: `기존 수업 1개 이동으로 미배치 수업을 넣을 수 있는지 확인 중입니다. 복구 ${repaired.length}건`,
-            placed: current.length,
-            failed: Math.max(0, failedItems.length - repaired.length),
-            currentCard: failedItem.name || getAutoItemName(item)
-          });
-        }
+        await maybeYieldRepairProgress(failedItem);
       }
 
       if (!done) remaining.push(failedItem);
