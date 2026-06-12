@@ -3128,7 +3128,164 @@ export function createAutoAssignAll(deps) {
     return best ? { ...best, attempts } : { attempts };
   }
 
+  // ── r40: min-conflicts 잔여 탈출 스테이지 ────────────────────────────
+  // ejection-chain이 시간/깊이 예산 안에서 못 푸는 잔여 카드(특히 학년 전체
+  // 동시활동이 교사 단일 가용성을 막는 케이스)를 위해, "충돌을 허용한 채 일단
+  // 배치한 뒤 min-conflicts 국소탐색으로 충돌을 0으로 떨어뜨리는" 마지막 단계입니다.
+  // 핵심 안전장치는 호출부의 품질 게이트입니다. 이 함수는 후보만 만들고,
+  // 공식 validator 기준으로 더 나빠지면 호출부가 폐기하므로 기존 배치를 악화시킬 수 없습니다.
 
+  // 같은 슬롯에 있는 두 엔트리가 하드 충돌(교사/학급/교실)인지 검사합니다.
+  // checkPlacementValid의 충돌 의미를 슬롯이 동일하다는 가정 위에서 재사용합니다.
+  function entriesHardConflictSameSlot(a = {}, b = {}) {
+    if (a === b) return false;
+    if (a.unitId && b.unitId && a.unitId === b.unitId) return false;
+    const sameGrp = sameActiveGroup(a, b);
+    const conc = sameGrp && isConcurrentItem(a) && isConcurrentItem(b);
+    if (conc) return false;
+    if (hasCompoundSiblingConflict(a, b)) return true;
+    const at = splitTeacherNames(a.teacherName).filter(Boolean);
+    const bt = splitTeacherNames(b.teacherName).filter(Boolean);
+    if (at.some(t => bt.includes(t))) return true;
+    if (audiencesConflict(audienceForPlacement(a), audienceForPlacement(b))) return true;
+    if (a.roomId && b.roomId && a.roomId === b.roomId && !sameUnitPlacement(a, b)) return true;
+    return false;
+  }
+
+  // 슬롯 버킷 기반 하드 충돌 쌍 개수. protectedBackdrop(고정/보호)도 함께 셉니다.
+  function countStateConflicts(workingEntries = [], protectedBackdrop = []) {
+    const buckets = new Map();
+    const push = e => {
+      if (!Number.isInteger(e.day) || !Number.isInteger(e.period)) return;
+      const k = `${e.day}:${e.period}`;
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(e);
+    };
+    (protectedBackdrop || []).forEach(push);
+    (workingEntries || []).forEach(push);
+    let total = 0;
+    for (const list of buckets.values()) {
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          if (entriesHardConflictSameSlot(list[i], list[j])) total++;
+        }
+      }
+    }
+    return total;
+  }
+
+  // 한 블록(동시그룹/단위/단일 엔트리)을 slot으로 강제 이동시킵니다(충돌 허용).
+  // makeMovedBlockEntries와 달리 유효성 검사를 하지 않고 day/period/room만 재계산합니다.
+  function relocateBlockEntriesForced(block = {}, slot = {}, base = []) {
+    const out = [];
+    for (const original of block.entries || []) {
+      const candidateData = { ...original, day: Number(slot.day), period: Number(slot.period) };
+      const roomed = applyAutoRoomToEntryData(candidateData, slot, [...base, ...out]);
+      out.push(normalizeTimetableEntry({ ...original, ...roomed, id: original.id, day: Number(slot.day), period: Number(slot.period) }));
+    }
+    return out;
+  }
+
+  // block을 base(자기 자신 제외) 위에 놓았을 때 발생하는 하드 충돌 수.
+  function blockConflictAtSlot(block, slot, base, protectedBackdrop) {
+    const moved = relocateBlockEntriesForced(block, slot, base);
+    // 보호 슬롯 침범은 절대 금지 → 매우 큰 페널티로 사실상 배제.
+    for (const m of moved) {
+      if (strongProtectedSlotConflict(m, slot, base)) return 1e6;
+    }
+    const slotPeers = [...base, ...protectedBackdrop].filter(e => e.day === slot.day && e.period === slot.period);
+    let conflicts = 0;
+    for (const m of moved) {
+      for (const peer of slotPeers) {
+        if (entriesHardConflictSameSlot(m, peer)) conflicts++;
+      }
+    }
+    return conflicts;
+  }
+
+  async function tryMinConflictsResidualEscape(failedItems = [], baseSlots = [], placed = [], options = {}, progressUpdater = null, limits = {}) {
+    const targets = (failedItems || []).filter(f => f?.item);
+    if (!targets.length) return null;
+
+    const protectedBackdrop = [...entries()];
+    const orderedSlots = [...baseSlots];
+    const maxMillis = Math.max(300, Number(limits.maxMillis || 1500));
+    const maxIters = Math.max(200, Number(limits.maxIters || 6000));
+    const startedAt = Date.now();
+    const timeLeft = () => Date.now() - startedAt < maxMillis;
+
+    let working = cloneAutoAssignData(placed) || [];
+    const seededIds = new Set();
+
+    // 1) 잔여 카드를 충돌 최소 슬롯에 강제 시드(충돌 허용).
+    for (const failedItem of targets) {
+      const item = failedItem.item;
+      const seedEntry = makeAutoEntry(item, orderedSlots[0], working);
+      if (!seedEntry) continue;
+      const pseudoBlock = { key: `seed:${seededIds.size}`, entries: [seedEntry] };
+      let bestSlot = null, bestC = Infinity;
+      for (const slot of shuffle([...orderedSlots])) {
+        const c = blockConflictAtSlot(pseudoBlock, slot, working, protectedBackdrop);
+        if (c < bestC) { bestC = c; bestSlot = slot; if (c === 0) break; }
+      }
+      if (!bestSlot || bestC >= 1e6) continue;
+      const seeded = relocateBlockEntriesForced(pseudoBlock, bestSlot, working);
+      seeded.forEach(e => { e.autoMinConflictSeed = true; seededIds.add(e.id); });
+      working.push(...seeded);
+    }
+    if (!seededIds.size) return null;
+
+    // 2) min-conflicts 국소탐색: 충돌 블록을 최소 충돌 슬롯으로 이동. 가끔 무작위 이동으로 탈출.
+    let iters = 0;
+    let conflicts = countStateConflicts(working, protectedBackdrop);
+    let progressTick = 0;
+    while (conflicts > 0 && iters < maxIters && timeLeft()) {
+      iters++;
+      const blocks = getMovableBlocks(working).filter(isRepairBlockMovable);
+      // 현재 충돌에 가담 중인 블록만 후보로.
+      const conflicted = blocks.filter(b => {
+        const base = removeRepairBlockFromEntries(working, b);
+        const slot = { day: b.entries[0].day, period: b.entries[0].period };
+        return blockConflictAtSlot(b, slot, base, protectedBackdrop) > 0;
+      });
+      if (!conflicted.length) break;
+      const pick = conflicted[Math.floor(Math.random() * conflicted.length)];
+      const base = removeRepairBlockFromEntries(working, pick);
+      const curSlot = { day: pick.entries[0].day, period: pick.entries[0].period };
+      let target = curSlot, targetC = blockConflictAtSlot(pick, curSlot, base, protectedBackdrop);
+      const explore = Math.random() < 0.15; // 15% 무작위 이동으로 국소최솟값 탈출
+      for (const slot of shuffle([...orderedSlots])) {
+        const c = blockConflictAtSlot(pick, slot, base, protectedBackdrop);
+        if (explore) { if (c < 1e6) { target = slot; targetC = c; break; } }
+        else if (c < targetC) { target = slot; targetC = c; if (c === 0) break; }
+      }
+      const moved = relocateBlockEntriesForced(pick, target, base);
+      working = [...base, ...moved];
+      conflicts = countStateConflicts(working, protectedBackdrop);
+
+      if (progressUpdater && (++progressTick % 40 === 0)) {
+        await progressUpdater({
+          percent: 90,
+          step: 'r40 min-conflicts 잔여 탈출',
+          detail: `잔여 ${targets.length}시수 충돌 해소 중 · 남은 충돌 ${conflicts}건 (반복 ${iters})`,
+          placed: protectedBackdrop.length + working.length,
+          failed: targets.length,
+          currentCard: 'min-conflicts 탈출',
+          log: `min-conflicts iter ${iters} conflicts ${conflicts}`
+        });
+      }
+    }
+
+    if (conflicts > 0) return null; // 충돌을 다 못 없애면 폐기(호출부 변화 없음).
+
+    // 3) 시드가 모두 살아있는지 확인.
+    const survivingSeeds = working.filter(e => seededIds.has(e.id)).length;
+    if (survivingSeeds < seededIds.size) return null;
+
+    const placedOut = working.map(e => { const c = { ...e }; delete c.autoMinConflictSeed; return c; });
+    // failed 재계산은 호출부(autoAssignAll 스코프의 makeCoverageShortageFailures)에서 수행합니다.
+    return { placed: placedOut, repairedCount: seededIds.size, iters };
+  }
 
   function orderRepairTargetSlotsForItem(item = {}, orderedSlots = [], placed = []) {
     const classKeys = [...classKeysForCapacity(item)].map(normalizeClassKeyForReportKey).filter(Boolean);
@@ -5904,6 +6061,71 @@ export function createAutoAssignAll(deps) {
         swapRepaired.push(...Array.from({ length: Number(hardResidualRepair.forcedCount || 0) }, (_, i) => ({ name: `r30 잔여 카드 완성복구 ${i + 1}` })));
       }
       considerAutoCandidate("r30 잔여 카드 완성복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
+    }
+
+    // ── r40: min-conflicts 잔여 탈출 ──────────────────────────────
+    // ejection-chain/강제복구로도 남은 잔여 카드를, 충돌 허용 시드 + min-conflicts
+    // 국소탐색으로 마지막 시도합니다. 공식 validator 기준으로 더 나빠지면
+    // considerAutoCandidate가 채택하지 않으므로 기존 결과를 악화시키지 않습니다.
+    if (bestFailed.length && engineProfile.enableFinalRepair) {
+      await updateProgress({
+        percent: 90,
+        step: "r40 min-conflicts 잔여 탈출 준비",
+        detail: `남은 미배치 후보 ${bestFailed.length}개를 충돌 허용 후 min-conflicts로 해소 시도합니다.`,
+        placed: bestPlaced.length,
+        best: bestPlaced.length,
+        failed: bestFailed.length,
+        currentCard: "min-conflicts 탈출",
+        log: "r40 min-conflicts 잔여 탈출 시작"
+      }, true);
+      const mcLimits = {
+        maxMillis: options.runAttempts === "deep" ? 4000 : (options.runAttempts === "fast" ? 800 : 1800),
+        maxIters: options.runAttempts === "deep" ? 16000 : 6000
+      };
+      const mc = await tryMinConflictsResidualEscape(bestFailed, baseSlots, bestPlaced, { ...(bestStage?.options || options), engineProfile }, updateProgress, mcLimits);
+      if (mc?.placed) {
+        const mcFailed = makeCoverageShortageFailures(mc.placed, []).failures;
+        const mcMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...mc.placed], activeGrades, mcFailed, {
+          protectedEntries,
+          placedCount: mc.placed.length,
+          forcedCount: forcedPlaced.length,
+          qualityScore: scoreScheduleQuality(mc.placed, options),
+          label: "r40 min-conflicts 잔여 탈출"
+        }).metrics;
+        const beforeMcMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
+          protectedEntries,
+          placedCount: bestPlaced.length,
+          forcedCount: forcedPlaced.length,
+          qualityScore: scoreScheduleQuality(bestPlaced, options),
+          label: "r40 탈출 전"
+        }).metrics;
+        if (compareAutoRunResults(mcMetrics, beforeMcMetrics) < 0) {
+          bestPlaced = mc.placed;
+          bestFailed = mcFailed;
+          swapRepaired.push(...Array.from({ length: Math.max(0, Number(mc.repairedCount || 0)) }, (_, i) => ({ name: `r40 min-conflicts 잔여 탈출 ${i + 1}` })));
+          considerAutoCandidate("r40 min-conflicts 잔여 탈출", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
+          await updateProgress({
+            percent: 91,
+            step: "r40 min-conflicts 잔여 탈출 성공",
+            detail: `min-conflicts로 ${mc.repairedCount}시수를 충돌 없이 추가 배치했습니다. (반복 ${mc.iters})`,
+            placed: bestPlaced.length,
+            best: bestPlaced.length,
+            failed: bestFailed.length,
+            currentCard: "min-conflicts 탈출",
+            log: `r40 min-conflicts 성공: ${mc.repairedCount}시수`
+          }, true);
+        } else {
+          await updateProgress({
+            percent: 91,
+            step: "r40 min-conflicts 결과 보류",
+            detail: `min-conflicts 후보가 전체 검증 점수를 개선하지 못해 직전 결과를 유지합니다.`,
+            placed: bestPlaced.length,
+            best: bestPlaced.length,
+            failed: bestFailed.length,
+            currentCard: "min-conflicts 탈출"
+          }, true);
+        }
+      }
     }
 
     await updateProgress({
