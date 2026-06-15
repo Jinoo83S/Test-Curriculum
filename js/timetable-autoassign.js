@@ -201,6 +201,16 @@ export function createAutoAssignAll(deps) {
       finalMetrics: clone(meta.finalMetrics),
       baselineMetrics: clone(meta.baselineMetrics),
       qualityGate: clone(meta.qualityGate),
+      // r50: export는 timetable 도메인의 임의 top-level 필드를 보존하지 않을 수 있습니다.
+      // 그래서 후보/오류 계측은 반드시 autoAssignMeta 내부에도 압축해 함께 남깁니다.
+      autoAssignCandidate: clone(meta.autoAssignCandidate || meta.lastAutoAssignCandidate || meta.candidateTelemetry),
+      lastAutoAssignCandidate: clone(meta.lastAutoAssignCandidate || meta.autoAssignCandidate || meta.candidateTelemetry),
+      autoAssignCandidateLog: Array.isArray(meta.autoAssignCandidateLog)
+        ? meta.autoAssignCandidateLog.slice(0, 12).map(clone).filter(Boolean)
+        : [],
+      lastAutoAssignError: clone(meta.lastAutoAssignError || meta.autoAssignError),
+      autoAssignError: clone(meta.autoAssignError || meta.lastAutoAssignError),
+      telemetryStatus: String(meta.telemetryStatus || ""),
       metricSource: String(meta.metricSource || (hasFinalMetrics ? "finalMetrics" : "")),
       metricCompleteness,
       qualityBaselineSource: String(meta.qualityBaselineSource || ""),
@@ -6690,6 +6700,7 @@ export function createAutoAssignAll(deps) {
     });
     // 성공/폐기 경로 모두에서 호출되어, 선택된 결과와 무관하게 "새 후보 vs 기준" 숫자를
     // export(appState.timetable.autoAssignCandidateLog)와 인앱 로그에 남깁니다.
+    let lastCandidateTelemetryRecord = null;
     const recordCandidateTelemetry = (outcome) => {
       try {
         const record = {
@@ -6706,19 +6717,25 @@ export function createAutoAssignAll(deps) {
           freshCandidate: pickCandidateMetrics(freshCandidateMetrics),
           baseline: pickCandidateMetrics(qualityBaselineMetrics)
         };
-        if (appState.timetable) {
-          const log = Array.isArray(appState.timetable.autoAssignCandidateLog)
-            ? appState.timetable.autoAssignCandidateLog : [];
-          log.unshift(record);
-          appState.timetable.autoAssignCandidateLog = log.slice(0, 12);
-          appState.timetable.lastAutoAssignCandidate = record;
-        }
+        lastCandidateTelemetryRecord = record;
+        const applyTelemetry = target => {
+          if (!target || typeof target !== "object") return;
+          const log = Array.isArray(target.autoAssignCandidateLog)
+            ? target.autoAssignCandidateLog : [];
+          target.autoAssignCandidateLog = [record, ...log].slice(0, 12);
+          target.lastAutoAssignCandidate = record;
+        };
+        applyTelemetry(ttDomain?.());
+        applyTelemetry(appState.timetable);
         addTimetableLog(
           "auto",
           "후보 지표(계측)",
           `forwardCheck=${record.forwardCheck} · 결과=${outcome} · 새후보 배치 ${record.freshCandidate.placedCount}개 / 미배치 ${record.freshCandidate.failedCount}개 / 카드부족 ${record.freshCandidate.cardShortageSlots}시수 / 학급문제 ${record.freshCandidate.classSlotIssueCount}개 / 그룹문제 ${record.freshCandidate.groupCoverageIssueCount}개 (기준 보관본 '${record.baselineName}' 배치 ${record.baseline.placedCount}개·부족 ${record.baseline.cardShortageSlots}시수) · 기준대비 우수=${freshBeatsBaseline ? "예" : "아니오"}`
         );
-      } catch (_) {}
+        return record;
+      } catch (_) {
+        return null;
+      }
     };
 
     // r28: 새 전체 배치가 이전 최고보다 나쁠 때도 바로 폐기하지 않고,
@@ -6863,13 +6880,19 @@ export function createAutoAssignAll(deps) {
         experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
         experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r42"
       };
+      const rejectTelemetry = recordCandidateTelemetry("rejected-baseline-kept");
+      rejectReport.candidateTelemetry = rejectTelemetry || lastCandidateTelemetryRecord;
+      rejectReport.lastAutoAssignCandidate = rejectReport.candidateTelemetry;
+      rejectReport.autoAssignCandidate = rejectReport.candidateTelemetry;
+      rejectReport.autoAssignCandidateLog = Array.isArray(ttDomain()?.autoAssignCandidateLog) ? ttDomain().autoAssignCandidateLog : [];
+      rejectReport.telemetryStatus = "rejected-baseline-kept";
       const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
       if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
+      if (ttDomain() && ttDomain() !== appState.timetable) ttDomain().autoAssignMeta = compactRejectReport;
       attachCanonicalMetaToMatchingSnapshots(ttDomain(), rejectReport, restoredAllForDiagnostics);
       setLastAutoAssignReport(rejectReport);
 
       // r41b: entries, top meta, best snapshot, savedSchedules 메타를 모두 같은 canonical 결과로 동기화한 뒤 저장합니다.
-      recordCandidateTelemetry("rejected-baseline-kept");
       await persistTimetableNow();
       addTimetableLog(
         "warn",
@@ -6915,6 +6938,8 @@ export function createAutoAssignAll(deps) {
       missingRoomEntries
     });
     const conflictSummary = getConflictCounts();
+    const successTelemetryOutcome = freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : "baseline-kept");
+    const successTelemetry = recordCandidateTelemetry(successTelemetryOutcome);
     const report = {
       ts: Date.now(),
       activeGrades: activeGrades.map(gradeDisplay).join(", "),
@@ -6988,6 +7013,11 @@ export function createAutoAssignAll(deps) {
       finalMetrics: finalAutoRunMetrics,
       baselineMetrics: qualityBaselineMetrics,
       currentBeforeMetrics: baselineAutoRunMetrics,
+      candidateTelemetry: successTelemetry || lastCandidateTelemetryRecord,
+      lastAutoAssignCandidate: successTelemetry || lastCandidateTelemetryRecord,
+      autoAssignCandidate: successTelemetry || lastCandidateTelemetryRecord,
+      autoAssignCandidateLog: Array.isArray(ttDomain()?.autoAssignCandidateLog) ? ttDomain().autoAssignCandidateLog : [],
+      telemetryStatus: successTelemetryOutcome,
       qualityBaselineSource: qualityBaselineReference?.source || "current",
       qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
       qualityBaselineValidationSummary: qualityBaselineValidation.summary || "",
@@ -7022,7 +7052,6 @@ export function createAutoAssignAll(deps) {
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
       }
     }
-    recordCandidateTelemetry(freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : "baseline-kept"));
     await persistTimetableNow();
     setLastAutoAssignReport(report);
     addTimetableLog(
@@ -7176,8 +7205,19 @@ export function createAutoAssignAll(deps) {
           forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK
         };
         const domain = ttDomain?.();
-        if (domain && typeof domain === "object") domain.lastAutoAssignError = errorRecord;
-        if (appState.timetable && appState.timetable !== domain) appState.timetable.lastAutoAssignError = errorRecord;
+        const applyErrorTelemetry = target => {
+          if (!target || typeof target !== "object") return;
+          target.lastAutoAssignError = errorRecord;
+          const mergedMeta = {
+            ...(target.autoAssignMeta && typeof target.autoAssignMeta === "object" ? target.autoAssignMeta : {}),
+            lastAutoAssignError: errorRecord,
+            autoAssignError: errorRecord,
+            telemetryStatus: isCancel ? "cancelled" : "error"
+          };
+          target.autoAssignMeta = compactAutoAssignSnapshotMeta(mergedMeta);
+        };
+        applyErrorTelemetry(domain);
+        applyErrorTelemetry(appState.timetable);
       } catch (_) {}
       try { recomputeConflicts(); } catch (_) {}
       try { renderAll(); } catch (_) {}
