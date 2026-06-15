@@ -518,20 +518,97 @@ export function createAutoAssignAll(deps) {
     if (!c) return false;
     return c.isRestrictedWork === true || RESTRICTED_WORK_TYPES.has(normalizeWorkType(c.workType));
   };
+  const normalizeTeacherNameList = value => {
+    const raw = Array.isArray(value) ? value : [value];
+    return [...new Set(raw.flatMap(v => splitTeacherNames(v || "")).map(t => String(t || "").trim()).filter(Boolean))];
+  };
+
   const getTeacherNamesFromCards = cards => [...new Set((cards || []).flatMap(card => [
     ...(Array.isArray(card?.teachers) ? card.teachers.flatMap(t => splitTeacherNames(t)) : []),
     ...splitTeacherNames(card?.teacherName || "")
   ]).map(t => String(t || "").trim()).filter(Boolean))];
-  const getTeachersForAutoItem = item => {
-    // r41f: teachers 배열 값도 표시용 "A · B" 문자열일 수 있으므로 반드시 재분해합니다.
-    // 이 값이 분해되지 않으면 잔여 복구가 실제 교사 충돌을 잘못 판단합니다.
+
+  const TEACHER_ROLE_HARD_KEYS = [
+    "hardTeachers", "hardTeacherNames", "primaryTeachers", "primaryTeacherNames",
+    "requiredTeachers", "requiredTeacherNames", "exclusiveTeachers", "exclusiveTeacherNames",
+    "collisionTeachers", "collisionTeacherNames"
+  ];
+  const TEACHER_ROLE_NON_EXCLUSIVE_KEYS = [
+    "nonExclusiveTeachers", "nonExclusiveTeacherNames", "supportTeachers", "supportTeacherNames",
+    "coTeachers", "coTeacherNames", "assistantTeachers", "assistantTeacherNames",
+    "displayOnlyTeachers", "displayOnlyTeacherNames"
+  ];
+
+  const teacherRoleOverrideSources = () => [
+    ttDomain()?.teacherRoleOverrides,
+    ttDomain()?.teacherRoles,
+    globalThis.HIS_TEACHER_ROLE_OVERRIDES,
+    { nonExclusiveTeachers: globalThis.HIS_NON_EXCLUSIVE_TEACHERS, hardTeachers: globalThis.HIS_HARD_TEACHERS }
+  ].filter(src => src && typeof src === "object");
+
+  function teacherRoleLookupKeys(x = {}) {
+    const keys = new Set();
+    [x.id, x.ttcardId, x.templateId, x.compoundParentTemplateId, x.subject, x.name, x.title, x.nameKo, x.nameEn, x.teacherName].forEach(v => {
+      const s = String(v || "").trim();
+      if (s) keys.add(s);
+    });
+    ttCardIdsFromPlacement(x).forEach(id => {
+      const card = getTtCardById(id);
+      [id, card?.id, card?.templateId, card?.subject, card?.name, card?.title, card?.nameKo, card?.nameEn].forEach(v => {
+        const s = String(v || "").trim();
+        if (s) keys.add(s);
+      });
+    });
+    return [...keys];
+  }
+
+  function teacherRoleOverrideList(x = {}, mode = "hard") {
+    const keys = teacherRoleLookupKeys(x);
+    const directKeys = mode === "hard" ? TEACHER_ROLE_HARD_KEYS : TEACHER_ROLE_NON_EXCLUSIVE_KEYS;
+    const bucketKeys = mode === "hard" ? ["hardTeachers", "primaryTeachers", "requiredTeachers", "exclusiveTeachers"] : ["nonExclusiveTeachers", "supportTeachers", "coTeachers", "displayOnlyTeachers"];
+    const names = [];
+    const collect = value => names.push(...normalizeTeacherNameList(value));
+    for (const src of teacherRoleOverrideSources()) {
+      directKeys.forEach(k => collect(src?.[k]));
+      for (const bucketKey of bucketKeys) {
+        const bucket = src?.[bucketKey];
+        if (!bucket || typeof bucket !== "object" || Array.isArray(bucket)) continue;
+        keys.forEach(k => collect(bucket[k]));
+      }
+      keys.forEach(k => {
+        const item = src?.[k];
+        if (!item || typeof item !== "object") return;
+        directKeys.forEach(dk => collect(item[dk]));
+      });
+    }
+    return [...new Set(names.map(t => String(t || "").trim()).filter(Boolean))];
+  }
+
+  function allTeacherNamesForPlacement(x = {}) {
+    const cardIds = ttCardIdsFromPlacement(x);
+    const cards = Array.isArray(x?.ttcards) && x.ttcards.length ? x.ttcards : cardIds.map(id => getTtCardById(id)).filter(Boolean);
     const names = [
-      ...(Array.isArray(item?.teachers) ? item.teachers.flatMap(t => splitTeacherNames(t)) : []),
-      ...splitTeacherNames(item?.teacherName || ""),
-      ...getTeacherNamesFromCards(item?.ttcards || [])
+      ...(Array.isArray(x?.teachers) ? x.teachers.flatMap(t => splitTeacherNames(t)) : []),
+      ...splitTeacherNames(x?.teacherName || ""),
+      ...getTeacherNamesFromCards(cards)
     ];
     return [...new Set(names.map(t => String(t || "").trim()).filter(Boolean))];
-  };
+  }
+
+  function hardTeacherNamesForPlacement(x = {}) {
+    // r47: 다중교사 카드의 표시용 교사와 실제 시간 점유 교사를 분리할 수 있게 합니다.
+    // 기존 데이터는 그대로 두면 지금처럼 모든 교사를 hard 제약으로 봅니다(완전 하위호환).
+    // 단, 카드/템플릿/전역 override에 primaryTeachers 또는 nonExclusiveTeachers가 있으면
+    // 자동배정·충돌검사는 hard 교사만 사용합니다.
+    const all = allTeacherNamesForPlacement(x);
+    const explicitHard = teacherRoleOverrideList(x, "hard");
+    if (explicitHard.length) return explicitHard.filter(t => all.includes(t) || !all.length);
+    const soft = new Set(teacherRoleOverrideList(x, "nonExclusive"));
+    if (!soft.size) return all;
+    return all.filter(t => !soft.has(t));
+  }
+
+  const getTeachersForAutoItem = item => hardTeacherNamesForPlacement(item);
   const getRestrictedTeachersForAutoItem = item => getTeachersForAutoItem(item).filter(isRestrictedTeacher);
 
   function excludedGroupsForAutoItem(item = {}) {
@@ -926,11 +1003,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function teacherNamesForPlacement(x = {}) {
-    return [...new Set([
-      ...splitTeacherNames(x.teacherName || ""),
-      ...(Array.isArray(x.teachers) ? x.teachers.flatMap(t => splitTeacherNames(t)) : []),
-      ...getTeacherNamesFromCards((ttCardIdsFromPlacement(x) || []).map(id => getTtCardById(id)).filter(Boolean))
-    ].map(t => String(t || "").trim()).filter(Boolean))];
+    return hardTeacherNamesForPlacement(x);
   }
 
   function slotLabelForProtected(day, period) {
@@ -2573,7 +2646,7 @@ export function createAutoAssignAll(deps) {
 
   function getAutoItemDifficulty(item) {
     const audience = audienceForPlacement(item);
-    const teacherCount = splitTeacherNames(item.teacherName).filter(Boolean).length;
+    const teacherCount = hardTeacherNamesForPlacement(item).length;
     return teacherCount * 20 + audience.classKeys.size * 8;
   }
 
@@ -2760,7 +2833,7 @@ export function createAutoAssignAll(deps) {
     if (hasInternalCompoundSiblingConflict(item)) return Infinity;
     if (slotEnts.some(e => hasCompoundSiblingConflict(item, e))) return Infinity;
     const dayEnts = existing.filter(e => e.day === slot.day);
-    const teachers = splitTeacherNames(item.teacherName).filter(Boolean);
+    const teachers = hardTeacherNamesForPlacement(item);
     const itemAudience = audienceForPlacement(item);
 
     // 마지막 보정 단계에서도 교실 중복은 허용하지 않습니다.
@@ -2880,13 +2953,8 @@ export function createAutoAssignAll(deps) {
   }
 
   function getTeacherNamesForScoring(entry = {}) {
-    // r42: entry.teachers 배열에도 "A · B" 같은 표시용 문자열이 남아 있을 수 있습니다.
-    // 점수/후처리에서도 실제 교사 단위로 재분해해야 마지막 잔여 복구가 같은 충돌 기준을 씁니다.
-    return [...new Set([
-      ...splitTeacherNames(entry.teacherName || ""),
-      ...(Array.isArray(entry.teachers) ? entry.teachers.flatMap(t => splitTeacherNames(t)) : []),
-      ...getTeacherNamesFromCards((ttCardIdsFromPlacement(entry) || []).map(id => getTtCardById(id)).filter(Boolean))
-    ].map(t => String(t || "").trim()).filter(Boolean))];
+    // r47: 점수/후처리도 hard 교사 기준으로 맞춥니다.
+    return hardTeacherNamesForPlacement(entry);
   }
 
   function maxConsecutiveFromPeriods(periods = []) {
