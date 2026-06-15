@@ -5196,6 +5196,8 @@ export function createAutoAssignAll(deps) {
     const autoStartedAt = Date.now();
     const rollbackEntriesSnapshot = cloneAutoAssignData(entries());
     const beforeAutoSnapshot = saveAutoAssignScheduleSnapshot("before", rollbackEntriesSnapshot, { activeGrades, modeText, options });
+    // r46: 예외 발생 위치 추적용. catch에서 진단 메타에 기록합니다.
+    let autoAssignPhase = "초기화";
     if (beforeAutoSnapshot) {
       addTimetableLog("auto", "자동배치 전 배치 보관", `${beforeAutoSnapshot.name}으로 현재 배치를 저장했습니다.`);
       await persistTimetableNow();
@@ -5257,6 +5259,7 @@ export function createAutoAssignAll(deps) {
     // - keep: all current entries stay as protected entries and only missing cards are added.
     const pinnedEntries = [...protectedEntries];
     ttDomain().entries = [...protectedEntries];
+    autoAssignPhase = "배치 구성";
     await updateProgress({
       percent: 6,
       step: options.placementMode === "keep" ? "기존 배치 유지" : "보호 수업 유지",
@@ -5477,18 +5480,22 @@ export function createAutoAssignAll(deps) {
         const fcClassIndex = new Map();  // classKey -> [keys]
         const fcTeacherIndex = new Map();// teacher  -> [keys]
         if (fcEnabled) {
-          const pushIndex = (map, mapKey, value) => {
-            let arr = map.get(mapKey);
-            if (!arr) { arr = []; map.set(mapKey, arr); }
-            arr.push(value);
-          };
-          for (const [k, it] of itemByKey) {
-            const classes = new Set(classKeysForCapacity(it) || []);
-            const teachers = new Set((getTeachersForAutoItem(it) || []).filter(Boolean));
-            fcMeta.set(k, { classes, teachers });
-            for (const c of classes) pushIndex(fcClassIndex, c, k);
-            for (const t of teachers) pushIndex(fcTeacherIndex, t, k);
-          }
+          try {
+            const pushIndex = (map, mapKey, value) => {
+              let arr = map.get(mapKey);
+              if (!arr) { arr = []; map.set(mapKey, arr); }
+              arr.push(value);
+            };
+            for (const [k, it] of itemByKey) {
+              try {
+                const classes = new Set(classKeysForCapacity(it) || []);
+                const teachers = new Set((getTeachersForAutoItem(it) || []).filter(Boolean));
+                fcMeta.set(k, { classes, teachers });
+                for (const c of classes) pushIndex(fcClassIndex, c, k);
+                for (const t of teachers) pushIndex(fcTeacherIndex, t, k);
+              } catch (_) { /* 개별 항목 인덱싱 실패는 건너뜀(FC 정확도만 약간 저하) */ }
+            }
+          } catch (_) { /* 인덱스 구성 자체 실패 → FC는 사실상 비활성(일반 배치로 진행) */ }
         }
         const fcRemainingNeed = (k) =>
           (requiredByKey.get(k) || 0) - (pinnedByKey.get(k) || 0) - (placedByKey.get(k) || 0);
@@ -5496,43 +5503,49 @@ export function createAutoAssignAll(deps) {
         // item: 배치하려는 카드 또는 그룹 probe. currentKey: 일반 카드 루프의 현재 키(그룹이면 null).
         const buildForwardCheck = (item, currentKey = null) => {
           if (!fcEnabled) return null;
-          const ic = new Set(classKeysForCapacity(item) || []);
-          const itt = new Set((getTeachersForAutoItem(item) || []).filter(Boolean));
-          // 학급/교사를 공유하는 "아직 필요한" 키만 영향권으로 모읍니다(역인덱스 → 빠름).
-          const affected = [];
-          const seen = new Set();
-          const consider = (k) => {
-            if (k === currentKey || seen.has(k)) return;
-            seen.add(k);
-            if (fcRemainingNeed(k) <= 0) return;
-            affected.push(k);
-          };
-          for (const c of ic) for (const k of (fcClassIndex.get(c) || [])) consider(k);
-          for (const t of itt) for (const k of (fcTeacherIndex.get(t) || [])) consider(k);
-          if (!affected.length) return null;
-          // 영향권이 매우 크면 가장 제약이 빡빡할 가능성이 높은 일부만 검사(비용 상한).
-          const targets = affected.length > 14 ? affected.slice(0, 14) : affected;
-          return (slot) => {
-            const tentative = makeAutoEntry(item, slot, placed);
-            if (!tentative) return true;
-            const placedWith = [...placed, tentative];
-            for (const k of targets) {
-              const need = fcRemainingNeed(k);
-              if (need <= 0) continue;
-              const other = itemByKey.get(k);
-              if (!other) continue;
-              // 다중 시수 대응: 남은 필요 시수(need) 이상 후보 슬롯이 남는지 확인.
-              let avail = 0;
-              for (const s of baseSlots) {
-                if (checkPlacementValid(other, s, placedWith, stageAttemptOptions)) {
-                  avail += 1;
-                  if (avail >= need) break;
+          try {
+            const ic = new Set(classKeysForCapacity(item) || []);
+            const itt = new Set((getTeachersForAutoItem(item) || []).filter(Boolean));
+            // 학급/교사를 공유하는 "아직 필요한" 키만 영향권으로 모읍니다(역인덱스 → 빠름).
+            const affected = [];
+            const seen = new Set();
+            const consider = (k) => {
+              if (k === currentKey || seen.has(k)) return;
+              seen.add(k);
+              if (fcRemainingNeed(k) <= 0) return;
+              affected.push(k);
+            };
+            for (const c of ic) for (const k of (fcClassIndex.get(c) || [])) consider(k);
+            for (const t of itt) for (const k of (fcTeacherIndex.get(t) || [])) consider(k);
+            if (!affected.length) return null;
+            // 영향권이 매우 크면 가장 제약이 빡빡할 가능성이 높은 일부만 검사(비용 상한).
+            const targets = affected.length > 14 ? affected.slice(0, 14) : affected;
+            return (slot) => {
+              try {
+                const tentative = makeAutoEntry(item, slot, placed);
+                if (!tentative) return true;
+                const placedWith = [...placed, tentative];
+                for (const k of targets) {
+                  const need = fcRemainingNeed(k);
+                  if (need <= 0) continue;
+                  const other = itemByKey.get(k);
+                  if (!other) continue;
+                  // 다중 시수 대응: 남은 필요 시수(need) 이상 후보 슬롯이 남는지 확인.
+                  let avail = 0;
+                  for (const s of baseSlots) {
+                    if (checkPlacementValid(other, s, placedWith, stageAttemptOptions)) {
+                      avail += 1;
+                      if (avail >= need) break;
+                    }
+                  }
+                  if (avail < need) return false; // 이 슬롯에 두면 다른 카드가 시수 부족 → 데드엔드
                 }
-              }
-              if (avail < need) return false; // 이 슬롯에 두면 다른 카드가 시수 부족 → 데드엔드
-            }
-            return true;
-          };
+                return true;
+              } catch (_) { return true; } // 검사 실패 시 슬롯을 막지 않음(안전 폴백)
+            };
+          } catch (_) {
+            return null; // FC 구성 실패 → 일반 배치로 안전하게 폴백
+          }
         };
 
         const placeGroups = async (blocks, phaseLabel) => {
@@ -6554,6 +6567,7 @@ export function createAutoAssignAll(deps) {
 
     if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
 
+    autoAssignPhase = "검증/확정";
     const names = [...new Set(bestFailed.map(f => f.name))];
     const finalEntriesForValidation = [...protectedEntries, ...bestPlaced];
     const postValidation = buildScheduleVerificationReport(finalEntriesForValidation, {
@@ -7040,16 +7054,58 @@ export function createAutoAssignAll(deps) {
       }]
     });
     } catch (err) {
-      if (err?.message === "__AUTO_ASSIGN_CANCELLED__") {
-        addTimetableLog("auto", "자동 배치 취소", "사용자 요청으로 자동배치를 중단했습니다. 시간표에는 변경 사항을 반영하지 않았습니다.");
-        if (progress) await progress.cancel("사용자 요청으로 자동배치를 중단했습니다. 시간표에는 변경 사항을 반영하지 않았습니다.");
+      // ── r46 안전장치(데이터 손상 방지) ─────────────────────────────────────
+      // 자동배치는 시작 시 라이브 entries를 보호수업만 남기고 비웁니다(reset 모드).
+      // 그 이후 어떤 예외/취소가 발생해도, 여기서 반드시 "자동배치 전" 시간표로
+      // 복원한 뒤 저장합니다. (기존에는 복원이 없어 구성 중 예외가 나면 보호수업
+      // 32개만 남은 상태가 그대로 저장되었습니다.)
+      const isCancel = err?.message === "__AUTO_ASSIGN_CANCELLED__";
+      let restored = false;
+      try {
+        const snapshot = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
+        const liveEntries = entries();
+        if (Array.isArray(liveEntries)) {
+          liveEntries.splice(0, liveEntries.length, ...snapshot);
+          if (ttDomain().entries !== liveEntries) ttDomain().entries = liveEntries;
+        } else {
+          ttDomain().entries = snapshot;
+        }
+        restored = true;
+      } catch (restoreErr) {
+        console.error("Auto assign rollback restore failed:", restoreErr);
+        try { ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || []; restored = true; } catch (_) {}
+      }
+      // 진단 메타(다음 디버깅용) — export의 timetable.lastAutoAssignError 로 남습니다.
+      try {
+        if (appState.timetable) {
+          appState.timetable.lastAutoAssignError = {
+            ts: Date.now(),
+            generatedAt: new Date().toISOString(),
+            cancelled: isCancel,
+            phase: String(autoAssignPhase || ""),
+            message: isCancel ? "사용자 취소" : (err?.message || String(err)),
+            stackHead: isCancel ? "" : String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
+            restored,
+            restoredEntryCount: Array.isArray(entries()) ? entries().length : null,
+            appVersion: String(globalThis.HIS_APP_VERSION || ""),
+            forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK
+          };
+        }
+      } catch (_) {}
+      try { recomputeConflicts(); } catch (_) {}
+      try { renderAll(); } catch (_) {}
+      // 복원된 상태를 저장합니다(망가진 보호수업-only 상태가 저장되지 않도록).
+      try { await persistTimetableNow(); } catch (_) {}
+      if (isCancel) {
+        addTimetableLog("auto", "자동 배치 취소", `사용자 요청으로 중단하고 자동배치 전 시간표로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구 필요)"}.`);
+        if (progress) await progress.cancel(`자동배치를 중단하고 자동배치 전 시간표로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구하세요)"}.`);
       } else {
         console.error("Auto assign failed:", err);
-        addTimetableLog("error", "자동 배치 오류", err?.message || String(err));
+        addTimetableLog("error", "자동 배치 오류", `${err?.message || String(err)} · 단계: ${autoAssignPhase || "?"} · ${restored ? "자동배치 전 시간표로 복원함" : "복원 실패 - 보관본에서 수동 복구 필요"}`);
         if (progress) {
-          await progress.error(`자동 배치 중 오류가 발생했습니다. ${err?.message || String(err)} 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.`);
+          await progress.error(`자동 배치 중 오류가 발생했습니다. 시간표는 자동배치 전 상태로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구하세요)"}. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`);
         } else {
-          alert("자동 배치 중 오류가 발생했습니다. 하단 [로그] 탭과 콘솔 로그를 확인해 주세요.");
+          alert(`자동 배치 중 오류가 발생했습니다. 시간표를 자동배치 전 상태로 ${restored ? "복원했습니다" : "복원하지 못했습니다"}. 로그를 확인해 주세요.`);
         }
       }
     } finally {
