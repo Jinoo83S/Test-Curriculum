@@ -2577,6 +2577,18 @@ export function createAutoAssignAll(deps) {
     return teacherCount * 20 + audience.classKeys.size * 8;
   }
 
+  // 슬롯 점수 동점 시 결정적(deterministic) 미세 가산값입니다.
+  // 기존에는 Math.random()을 더해 실행마다 결과가 달라지고(미배치 수가 들쭉날쭉),
+  // forward-check가 같은 상태를 반복 평가할 수 없었습니다.
+  // (slot.day, slot.period) 기반의 아주 작은 안정값으로 대체해 재현성을 확보합니다.
+  // 멀티 시도(attempt>0)의 탐색 다양성은 selectCandidateWithExploration의
+  // slotRandomness가 그대로 담당하므로 탐색력은 유지됩니다.
+  function slotTieBreak(slot = {}) {
+    const d = Number(slot.day) || 0;
+    const p = Number(slot.period) || 0;
+    return (((d * 7 + p) % 37) * 0.0001);
+  }
+
   function scoreAutoSlot(item, slot, placed, checkOptions = {}) {
     const existing = [...entries(), ...placed];
     const weights = normalizeScoreWeights(checkOptions.scoringWeights);
@@ -2619,7 +2631,7 @@ export function createAutoAssignAll(deps) {
       if (nextMax >= 4) preferencePenalty += (nextMax - 3) * 12 * weights.teacherConsecutive;
     }
 
-    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 10 + preferencePenalty + samePeriodLoad * 0.15 + Math.random();
+    return exclusionPenalty + slotEnts.length * 100 + teacherLoad * 8 + teacherLimitLoad + classLoad * 10 + preferencePenalty + samePeriodLoad * 0.15 + slotTieBreak(slot);
   }
 
   function scoreAutoSlotLight(item, slot, placed, checkOptions = {}) {
@@ -2644,7 +2656,7 @@ export function createAutoAssignAll(deps) {
 
     // 오전 앞쪽만 과도하게 몰리지 않도록 약한 균형만 둡니다.
     score += slot.period * 0.18 + slot.day * 0.05;
-    return score + Math.random();
+    return score + slotTieBreak(slot);
   }
 
   function orderedFastSlots(baseSlots = []) {
@@ -2689,6 +2701,23 @@ export function createAutoAssignAll(deps) {
         candidates.push({ slot, score: scoreFn(item, slot, placed, checkOptions) });
       }
     }
+
+    // ── Forward-checking 데드엔드 회피 ──────────────────────────────────────
+    // 그리디 구성은 한 번 꽂으면 되돌리지 않으므로, 초반 카드가 다른 카드의
+    // 마지막 공통 빈칸을 점유하면 후속 카드가 영구 미배치가 됩니다.
+    // checkOptions.forwardCheck(slot)가 주어지면, 점수 상위 후보 중
+    // "다른 미배치 카드를 후보 0칸으로 만들지 않는" 슬롯을 우선 선택합니다.
+    // 전부 데드엔드를 유발하면(피할 수 없으면) 기존 점수 우선 로직으로 되돌립니다.
+    if (typeof checkOptions.forwardCheck === "function" && candidates.length > 1) {
+      const sorted = [...candidates].sort((a, b) => a.score - b.score);
+      const head = sorted.slice(0, 6);
+      const safe = head.filter(c => {
+        try { return checkOptions.forwardCheck(c.slot) !== false; }
+        catch { return true; }
+      });
+      if (safe.length) return selectCandidateWithExploration(safe, checkOptions)?.slot || null;
+    }
+
     return selectCandidateWithExploration(candidates, checkOptions)?.slot || null;
   }
 
@@ -2808,7 +2837,7 @@ export function createAutoAssignAll(deps) {
       if (filled >= targetPerClass) score += 650 * classFillWeights.classFill;
     }
 
-    return score + Math.random();
+    return score + slotTieBreak(slot);
   }
 
   function findLeastBadSlot(item, baseSlots, placed = [], options = {}) {
@@ -5504,6 +5533,61 @@ export function createAutoAssignAll(deps) {
 
         const placeStandaloneKeys = async (keys, phaseLabel) => {
           const pendingKeys = new Set(keys || []);
+
+          // ── Forward-checking 데드엔드 회피용 인덱스 ────────────────────────
+          // 각 미배치 키의 학급/교사 집합을 미리 캐싱해, 후보 슬롯이 다른 카드의
+          // 마지막 빈칸을 빼앗는지 빠르게 검사합니다.
+          // globalThis.HIS_DISABLE_FORWARD_CHECK = true 로 즉시 비활성화 가능합니다.
+          const forwardCheckEnabled = !globalThis.HIS_DISABLE_FORWARD_CHECK;
+          const fcKeyMeta = new Map();
+          if (forwardCheckEnabled) {
+            for (const k of keys || []) {
+              const it = itemByKey.get(k);
+              if (!it) continue;
+              fcKeyMeta.set(k, {
+                classes: new Set(classKeysForCapacity(it) || []),
+                teachers: new Set((getTeachersForAutoItem(it) || []).filter(Boolean))
+              });
+            }
+          }
+          const fcRemainingNeed = (k) =>
+            (requiredByKey.get(k) || 0) - (pinnedByKey.get(k) || 0) - (placedByKey.get(k) || 0);
+          const buildForwardCheck = (item, currentKey) => {
+            if (!forwardCheckEnabled) return null;
+            const ic = new Set(classKeysForCapacity(item) || []);
+            const itt = new Set((getTeachersForAutoItem(item) || []).filter(Boolean));
+            // 이 카드와 학급/교사를 공유하는 미배치 키만 영향권으로 봅니다.
+            const affected = [];
+            for (const k of pendingKeys) {
+              if (k === currentKey) continue;
+              if (fcRemainingNeed(k) <= 0) continue;
+              const m = fcKeyMeta.get(k);
+              if (!m) continue;
+              let overlap = false;
+              for (const c of m.classes) { if (ic.has(c)) { overlap = true; break; } }
+              if (!overlap) for (const t of m.teachers) { if (itt.has(t)) { overlap = true; break; } }
+              if (overlap) affected.push(k);
+              if (affected.length >= 12) break; // 비용 상한
+            }
+            if (!affected.length) return null;
+            return (slot) => {
+              const tentative = makeAutoEntry(item, slot, placed);
+              if (!tentative) return true;
+              const placedWith = [...placed, tentative];
+              for (const k of affected) {
+                if (fcRemainingNeed(k) <= 0) continue;
+                const other = itemByKey.get(k);
+                if (!other) continue;
+                let ok = false;
+                for (const s of baseSlots) {
+                  if (checkPlacementValid(other, s, placedWith, stageAttemptOptions)) { ok = true; break; }
+                }
+                if (!ok) return false; // 이 슬롯에 두면 다른 카드가 후보 0칸 → 데드엔드
+              }
+              return true;
+            };
+          };
+
           const liveCandidateCountForItem = (item) => {
             if (!item || !stageAttemptOptions.useLiveMrv) return null;
             let count = 0;
@@ -5548,7 +5632,11 @@ export function createAutoAssignAll(deps) {
                 failed: failed.length,
                 currentCard: getAutoItemName(item)
               });
-              const slot = findBestAutoSlot(item, baseSlots, placed, stageAttemptOptions);
+              const fc = buildForwardCheck(item, key);
+              const slot = findBestAutoSlot(
+                item, baseSlots, placed,
+                fc ? { ...stageAttemptOptions, forwardCheck: fc } : stageAttemptOptions
+              );
               if (!slot) {
                 // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
                 // break하면, 마지막 보정 단계가 1시수만 복구하고 나머지는 계속 하단에 남습니다.
