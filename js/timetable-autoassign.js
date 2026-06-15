@@ -2739,22 +2739,30 @@ export function createAutoAssignAll(deps) {
   }
 
   function selectCandidateWithExploration(candidates = [], checkOptions = {}) {
-    if (!candidates.length) return null;
-    const sorted = [...candidates].sort((a, b) => a.score - b.score);
+    // r48: r47에서 후보 배열에 undefined/비정상 score가 섞이면 sort 중
+    // "Cannot read properties of undefined (reading 'score')"로 전체 자동배정이 중단될 수 있었습니다.
+    // 후보 선택기는 절대 런을 죽이면 안 되므로, 유효 후보만 남기고 나머지는 버립니다.
+    const valid = (Array.isArray(candidates) ? candidates : [])
+      .filter(c => c && c.slot && Number.isFinite(Number(c.score)))
+      .map(c => ({ ...c, score: Number(c.score) }));
+    if (!valid.length) return null;
+
+    const sorted = [...valid].sort((a, b) => Number(a.score) - Number(b.score));
     const randomness = Math.max(0, Number(checkOptions.slotRandomness || 0));
     const topCandidateCount = Math.max(1, Math.min(12, Number(checkOptions.topCandidateCount || 1)));
-    if (!randomness || topCandidateCount <= 1) return sorted[0];
+    if (!randomness || topCandidateCount <= 1) return sorted[0] || null;
 
-    const bestScore = sorted[0].score;
+    const bestScore = Number(sorted[0]?.score);
+    if (!Number.isFinite(bestScore)) return sorted[0] || null;
     const tolerance = Math.max(4, randomness * 14);
     const pool = sorted
-      .filter(c => c.score <= bestScore + tolerance)
+      .filter(c => c && Number(c.score) <= bestScore + tolerance)
       .slice(0, topCandidateCount);
-    if (pool.length <= 1) return sorted[0];
+    if (pool.length <= 1) return sorted[0] || null;
 
     // 좋은 후보를 더 자주 고르되, 같은 점수대의 다른 후보도 일부 시도합니다.
     const index = Math.min(pool.length - 1, Math.floor(Math.pow(Math.random(), 1.8) * pool.length));
-    return pool[index] || pool[0];
+    return pool[index] || pool[0] || sorted[0] || null;
   }
 
   function findBestAutoSlot(item, baseSlots, placed, checkOptions = {}) {
@@ -2771,7 +2779,8 @@ export function createAutoAssignAll(deps) {
     const candidates = [];
     for (const slot of shuffle([...baseSlots])) {
       if (checkPlacementValid(item, slot, placed, checkOptions)) {
-        candidates.push({ slot, score: scoreFn(item, slot, placed, checkOptions) });
+        const score = scoreFn(item, slot, placed, checkOptions);
+        if (Number.isFinite(Number(score))) candidates.push({ slot, score: Number(score) });
       }
     }
 
@@ -2782,13 +2791,17 @@ export function createAutoAssignAll(deps) {
     // "다른 미배치 카드를 후보 0칸으로 만들지 않는" 슬롯을 우선 선택합니다.
     // 전부 데드엔드를 유발하면(피할 수 없으면) 기존 점수 우선 로직으로 되돌립니다.
     if (typeof checkOptions.forwardCheck === "function" && candidates.length > 1) {
-      const sorted = [...candidates].sort((a, b) => a.score - b.score);
+      const sorted = [...candidates]
+        .filter(c => c && c.slot && Number.isFinite(Number(c.score)))
+        .sort((a, b) => Number(a.score) - Number(b.score));
       // 점수 순으로 budget개까지 검사해, 안전한(데드엔드 미유발) 후보를 모읍니다.
-      // 안전 후보가 7번째 이후에 있어도 놓치지 않습니다.
-      const budget = Math.max(6, Math.min(sorted.length, Number(checkOptions.forwardCheckBudget) || 16));
+      // r48: 후보 수가 2~5개일 때도 budget을 6으로 키워 sorted[i]가 undefined가 되던 결함을 차단합니다.
+      const requestedBudget = Math.max(6, Number(checkOptions.forwardCheckBudget) || 16);
+      const budget = Math.min(sorted.length, requestedBudget);
       const safe = [];
       for (let i = 0; i < budget; i++) {
         const c = sorted[i];
+        if (!c || !c.slot) continue;
         let ok = true;
         try { ok = checkOptions.forwardCheck(c.slot) !== false; } catch { ok = true; }
         if (ok) safe.push(c);
@@ -2969,7 +2982,8 @@ export function createAutoAssignAll(deps) {
   }
 
   function scoreScheduleQuality(movable = [], options = {}) {
-    const all = [...entries(), ...(movable || [])];
+    // r48: 복구/후처리 중 null entry가 섞여도 품질점수 계산이 런을 중단하지 않게 방어합니다.
+    const all = [...entries(), ...(movable || [])].filter(Boolean);
     const weights = scoreOptionsFromAssignOptions(options);
     let score = 0;
 
@@ -3037,6 +3051,7 @@ export function createAutoAssignAll(deps) {
   function getMovableBlocks(placed = []) {
     const map = new Map();
     (placed || []).forEach((entry, index) => {
+      if (!entry) return;
       const key = entry.groupId
         ? `group:${entry.groupId}:${entry.day}:${entry.period}`
         : (entry.unitId ? `unit:${entry.unitId}:${entry.day}:${entry.period}` : `entry:${entry.id || index}`);
@@ -7145,20 +7160,21 @@ export function createAutoAssignAll(deps) {
       }
       // 진단 메타(다음 디버깅용) — export의 timetable.lastAutoAssignError 로 남습니다.
       try {
-        if (appState.timetable) {
-          appState.timetable.lastAutoAssignError = {
-            ts: Date.now(),
-            generatedAt: new Date().toISOString(),
-            cancelled: isCancel,
-            phase: String(autoAssignPhase || ""),
-            message: isCancel ? "사용자 취소" : (err?.message || String(err)),
-            stackHead: isCancel ? "" : String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-            restored,
-            restoredEntryCount: Array.isArray(entries()) ? entries().length : null,
-            appVersion: String(globalThis.HIS_APP_VERSION || ""),
-            forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK
-          };
-        }
+        const errorRecord = {
+          ts: Date.now(),
+          generatedAt: new Date().toISOString(),
+          cancelled: isCancel,
+          phase: String(autoAssignPhase || ""),
+          message: isCancel ? "사용자 취소" : (err?.message || String(err)),
+          stackHead: isCancel ? "" : String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
+          restored,
+          restoredEntryCount: Array.isArray(entries()) ? entries().length : null,
+          appVersion: String(globalThis.HIS_APP_VERSION || ""),
+          forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK
+        };
+        const domain = ttDomain?.();
+        if (domain && typeof domain === "object") domain.lastAutoAssignError = errorRecord;
+        if (appState.timetable && appState.timetable !== domain) appState.timetable.lastAutoAssignError = errorRecord;
       } catch (_) {}
       try { recomputeConflicts(); } catch (_) {}
       try { renderAll(); } catch (_) {}
