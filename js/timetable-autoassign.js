@@ -2710,11 +2710,16 @@ export function createAutoAssignAll(deps) {
     // 전부 데드엔드를 유발하면(피할 수 없으면) 기존 점수 우선 로직으로 되돌립니다.
     if (typeof checkOptions.forwardCheck === "function" && candidates.length > 1) {
       const sorted = [...candidates].sort((a, b) => a.score - b.score);
-      const head = sorted.slice(0, 6);
-      const safe = head.filter(c => {
-        try { return checkOptions.forwardCheck(c.slot) !== false; }
-        catch { return true; }
-      });
+      // 점수 순으로 budget개까지 검사해, 안전한(데드엔드 미유발) 후보를 모읍니다.
+      // 안전 후보가 7번째 이후에 있어도 놓치지 않습니다.
+      const budget = Math.max(6, Math.min(sorted.length, Number(checkOptions.forwardCheckBudget) || 16));
+      const safe = [];
+      for (let i = 0; i < budget; i++) {
+        const c = sorted[i];
+        let ok = true;
+        try { ok = checkOptions.forwardCheck(c.slot) !== false; } catch { ok = true; }
+        if (ok) safe.push(c);
+      }
       if (safe.length) return selectCandidateWithExploration(safe, checkOptions)?.slot || null;
     }
 
@@ -5459,6 +5464,77 @@ export function createAutoAssignAll(deps) {
         const normalKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
         const placedByKey = new Map();
 
+        // ── 공유 Forward-checking (그룹/일반 카드 공통) ───────────────────────
+        // r43은 일반 카드 루프에만 적용됐고 "후보 1칸이라도 남는가"만 봤습니다.
+        // r44에서는 (1) 동시배정 그룹 배치에도 적용하고,
+        // (2) 다중 시수 카드를 위해 "남은 필요 시수 이상 후보가 남는가"로 강화하며,
+        // (3) 영향권을 학급/교사 역인덱스로 빠르게 좁힙니다.
+        // 여전히 그리디용 경량 데드엔드 방지 필터이며, 전역 재배치(24블록 동시이동)나
+        // CP-SAT 완전배치를 대체하지 않습니다. 보호된 기존 배치는 풀지 않습니다.
+        // globalThis.HIS_DISABLE_FORWARD_CHECK = true 로 즉시 비활성화됩니다.
+        const fcEnabled = !globalThis.HIS_DISABLE_FORWARD_CHECK;
+        const fcMeta = new Map();        // key -> { classes:Set, teachers:Set }
+        const fcClassIndex = new Map();  // classKey -> [keys]
+        const fcTeacherIndex = new Map();// teacher  -> [keys]
+        if (fcEnabled) {
+          const pushIndex = (map, mapKey, value) => {
+            let arr = map.get(mapKey);
+            if (!arr) { arr = []; map.set(mapKey, arr); }
+            arr.push(value);
+          };
+          for (const [k, it] of itemByKey) {
+            const classes = new Set(classKeysForCapacity(it) || []);
+            const teachers = new Set((getTeachersForAutoItem(it) || []).filter(Boolean));
+            fcMeta.set(k, { classes, teachers });
+            for (const c of classes) pushIndex(fcClassIndex, c, k);
+            for (const t of teachers) pushIndex(fcTeacherIndex, t, k);
+          }
+        }
+        const fcRemainingNeed = (k) =>
+          (requiredByKey.get(k) || 0) - (pinnedByKey.get(k) || 0) - (placedByKey.get(k) || 0);
+
+        // item: 배치하려는 카드 또는 그룹 probe. currentKey: 일반 카드 루프의 현재 키(그룹이면 null).
+        const buildForwardCheck = (item, currentKey = null) => {
+          if (!fcEnabled) return null;
+          const ic = new Set(classKeysForCapacity(item) || []);
+          const itt = new Set((getTeachersForAutoItem(item) || []).filter(Boolean));
+          // 학급/교사를 공유하는 "아직 필요한" 키만 영향권으로 모읍니다(역인덱스 → 빠름).
+          const affected = [];
+          const seen = new Set();
+          const consider = (k) => {
+            if (k === currentKey || seen.has(k)) return;
+            seen.add(k);
+            if (fcRemainingNeed(k) <= 0) return;
+            affected.push(k);
+          };
+          for (const c of ic) for (const k of (fcClassIndex.get(c) || [])) consider(k);
+          for (const t of itt) for (const k of (fcTeacherIndex.get(t) || [])) consider(k);
+          if (!affected.length) return null;
+          // 영향권이 매우 크면 가장 제약이 빡빡할 가능성이 높은 일부만 검사(비용 상한).
+          const targets = affected.length > 14 ? affected.slice(0, 14) : affected;
+          return (slot) => {
+            const tentative = makeAutoEntry(item, slot, placed);
+            if (!tentative) return true;
+            const placedWith = [...placed, tentative];
+            for (const k of targets) {
+              const need = fcRemainingNeed(k);
+              if (need <= 0) continue;
+              const other = itemByKey.get(k);
+              if (!other) continue;
+              // 다중 시수 대응: 남은 필요 시수(need) 이상 후보 슬롯이 남는지 확인.
+              let avail = 0;
+              for (const s of baseSlots) {
+                if (checkPlacementValid(other, s, placedWith, stageAttemptOptions)) {
+                  avail += 1;
+                  if (avail >= need) break;
+                }
+              }
+              if (avail < need) return false; // 이 슬롯에 두면 다른 카드가 시수 부족 → 데드엔드
+            }
+            return true;
+          };
+        };
+
         const placeGroups = async (blocks, phaseLabel) => {
           // ── Place concurrent groups first: one independent occurrence per 시수 ──
           for (const { group, unitItems, restrictedTeachers = [] } of blocks) {
@@ -5488,7 +5564,11 @@ export function createAutoAssignAll(deps) {
               const probeCards = activeItems.flatMap(u => u.ttcards || []);
               const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
               const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
-              const foundSlot = probe ? findBestAutoSlot(probe, baseSlots, placed, stageAttemptOptions) : null;
+              const groupFc = probe ? buildForwardCheck(probe, null) : null;
+              const foundSlot = probe ? findBestAutoSlot(
+                probe, baseSlots, placed,
+                groupFc ? { ...stageAttemptOptions, forwardCheck: groupFc } : stageAttemptOptions
+              ) : null;
               if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed, stageAttemptOptions)) {
                 continue;
               }
@@ -5533,60 +5613,6 @@ export function createAutoAssignAll(deps) {
 
         const placeStandaloneKeys = async (keys, phaseLabel) => {
           const pendingKeys = new Set(keys || []);
-
-          // ── Forward-checking 데드엔드 회피용 인덱스 ────────────────────────
-          // 각 미배치 키의 학급/교사 집합을 미리 캐싱해, 후보 슬롯이 다른 카드의
-          // 마지막 빈칸을 빼앗는지 빠르게 검사합니다.
-          // globalThis.HIS_DISABLE_FORWARD_CHECK = true 로 즉시 비활성화 가능합니다.
-          const forwardCheckEnabled = !globalThis.HIS_DISABLE_FORWARD_CHECK;
-          const fcKeyMeta = new Map();
-          if (forwardCheckEnabled) {
-            for (const k of keys || []) {
-              const it = itemByKey.get(k);
-              if (!it) continue;
-              fcKeyMeta.set(k, {
-                classes: new Set(classKeysForCapacity(it) || []),
-                teachers: new Set((getTeachersForAutoItem(it) || []).filter(Boolean))
-              });
-            }
-          }
-          const fcRemainingNeed = (k) =>
-            (requiredByKey.get(k) || 0) - (pinnedByKey.get(k) || 0) - (placedByKey.get(k) || 0);
-          const buildForwardCheck = (item, currentKey) => {
-            if (!forwardCheckEnabled) return null;
-            const ic = new Set(classKeysForCapacity(item) || []);
-            const itt = new Set((getTeachersForAutoItem(item) || []).filter(Boolean));
-            // 이 카드와 학급/교사를 공유하는 미배치 키만 영향권으로 봅니다.
-            const affected = [];
-            for (const k of pendingKeys) {
-              if (k === currentKey) continue;
-              if (fcRemainingNeed(k) <= 0) continue;
-              const m = fcKeyMeta.get(k);
-              if (!m) continue;
-              let overlap = false;
-              for (const c of m.classes) { if (ic.has(c)) { overlap = true; break; } }
-              if (!overlap) for (const t of m.teachers) { if (itt.has(t)) { overlap = true; break; } }
-              if (overlap) affected.push(k);
-              if (affected.length >= 12) break; // 비용 상한
-            }
-            if (!affected.length) return null;
-            return (slot) => {
-              const tentative = makeAutoEntry(item, slot, placed);
-              if (!tentative) return true;
-              const placedWith = [...placed, tentative];
-              for (const k of affected) {
-                if (fcRemainingNeed(k) <= 0) continue;
-                const other = itemByKey.get(k);
-                if (!other) continue;
-                let ok = false;
-                for (const s of baseSlots) {
-                  if (checkPlacementValid(other, s, placedWith, stageAttemptOptions)) { ok = true; break; }
-                }
-                if (!ok) return false; // 이 슬롯에 두면 다른 카드가 후보 0칸 → 데드엔드
-              }
-              return true;
-            };
-          };
 
           const liveCandidateCountForItem = (item) => {
             if (!item || !stageAttemptOptions.useLiveMrv) return null;
