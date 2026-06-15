@@ -20,6 +20,16 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
   const result = new Map();
   entries.forEach(e => result.set(e.id, new Set()));
 
+  // r49: 교사 역할 분리. 호출자가 options.getHardTeachers(entry)를 주면, 자동배정 엔진과
+  // "동일한 기준"으로 시간 점유(주교사)만 충돌로 봅니다. 미제공 시 기존과 100% 동일.
+  const __getHard = (options && typeof options.getHardTeachers === "function") ? options.getHardTeachers : null;
+  const bindingTeachersForEntry = (e) => {
+    if (__getHard) {
+      try { const r = __getHard(e); if (Array.isArray(r)) return r; } catch (_) {}
+    }
+    return splitTeacherNames(e.teacherName || "");
+  };
+
   // Build lookup maps using new structure
   const tplGroupMap = new Map(templates.map(t => [t.id, t.calcGroupId || null]));
   const groupMap    = new Map(templateGroups.map(g => [g.id, g]));
@@ -162,9 +172,10 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         }
 
         // Teacher conflict (always applies — teachers can't be in two places)
+        // r49: 공동교사(비점유)는 제외하고 주교사만 비교합니다.
         if (a.teacherName && b.teacherName) {
-          const ta = splitTeacherNames(a.teacherName);
-          const tb = splitTeacherNames(b.teacherName);
+          const ta = bindingTeachersForEntry(a);
+          const tb = bindingTeachersForEntry(b);
           if (ta.some(t => tb.includes(t))) {
             result.get(a.id).add("teacher");
             result.get(b.id).add("teacher");

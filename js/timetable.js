@@ -1348,6 +1348,110 @@ function buildSchedulableItems() {
 }
 
 // ── Conflict recompute ────────────────────────────────────────────
+// ── r49: 교사 역할(주교사/공동교사) 해석 — 엔진과 동일 스키마(teacherRoleOverrides) ──
+// 자동배정 엔진(timetable-autoassign.js)이 읽는 것과 같은 override를 읽어, 충돌 패널도
+// 동일하게 "공동교사는 시간 점유에서 제외"합니다. override가 없으면 전원 점유(기존과 동일).
+const TT_NONEX_KEYS = ["nonExclusiveTeachers","nonExclusiveTeacherNames","supportTeachers","supportTeacherNames","coTeachers","coTeacherNames","assistantTeachers","assistantTeacherNames","displayOnlyTeachers","displayOnlyTeacherNames"];
+const TT_HARD_KEYS  = ["hardTeachers","hardTeacherNames","primaryTeachers","primaryTeacherNames","requiredTeachers","requiredTeacherNames","exclusiveTeachers","exclusiveTeacherNames","collisionTeachers","collisionTeacherNames"];
+function ttRoleSources() {
+  return [
+    ttDomain()?.teacherRoleOverrides,
+    ttDomain()?.teacherRoles,
+    globalThis.HIS_TEACHER_ROLE_OVERRIDES,
+    { nonExclusiveTeachers: globalThis.HIS_NON_EXCLUSIVE_TEACHERS, hardTeachers: globalThis.HIS_HARD_TEACHERS }
+  ].filter(s => s && typeof s === "object");
+}
+function ttNormNames(v) {
+  const raw = Array.isArray(v) ? v : [v];
+  return [...new Set(raw.flatMap(x => splitTeacherNames(x || "")).map(s => String(s).trim()).filter(Boolean))];
+}
+function ttRoleLookupKeys(e = {}) {
+  const ks = new Set();
+  [e.subject, e.teacherName, e.templateId, e.id, e.ttcardId, e.name, e.title].forEach(v => {
+    const s = String(v || "").trim(); if (s) ks.add(s);
+  });
+  // 엔트리에는 subject가 없으므로(카드에만 있음) 엔진과 동일하게 카드에서 subject/templateId를 끌어옵니다.
+  const cardIds = [...new Set([...(e.ttcardIds || []), e.ttcardId].filter(Boolean))];
+  cardIds.forEach(id => {
+    ks.add(String(id));
+    const card = getTtCardById(id);
+    [card?.subject, card?.templateId, card?.name, card?.title].forEach(v => {
+      const s = String(v || "").trim(); if (s) ks.add(s);
+    });
+  });
+  return [...ks];
+}
+function ttCollectRole(e, mode) {
+  const keys = ttRoleLookupKeys(e);
+  const directKeys = mode === "hard" ? TT_HARD_KEYS : TT_NONEX_KEYS;
+  const out = [];
+  for (const src of ttRoleSources()) {
+    directKeys.forEach(k => { if (src[k]) out.push(...ttNormNames(src[k])); });               // 전역 배열
+    for (const dk of directKeys) {                                                              // bucket[과목]
+      const bucket = src[dk];
+      if (bucket && typeof bucket === "object" && !Array.isArray(bucket)) {
+        keys.forEach(k => { if (bucket[k]) out.push(...ttNormNames(bucket[k])); });
+      }
+    }
+    keys.forEach(k => {                                                                         // src[과목].nonExclusiveTeachers
+      const item = src[k];
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        directKeys.forEach(dk => { if (item[dk]) out.push(...ttNormNames(item[dk])); });
+      }
+    });
+  }
+  return [...new Set(out)];
+}
+function resolveHardTeachersForEntry(e = {}) {
+  const all = splitTeacherNames(e.teacherName || "").map(s => String(s).trim()).filter(Boolean);
+  const explicitHard = ttCollectRole(e, "hard");
+  if (explicitHard.length) return explicitHard.filter(t => all.includes(t) || !all.length);
+  const soft = new Set(ttCollectRole(e, "nonExclusive"));
+  if (!soft.size) return all;
+  const hard = all.filter(t => !soft.has(t));
+  return hard.length ? hard : all; // zero-out 방지
+}
+
+// 콘솔 헬퍼: 과목 단위로 공동교사(비점유) 선언 → 즉시 충돌 재계산·저장. UI 없이 안전 적용.
+globalThis.HIS_setTeacherRole = function (subject, coTeacherNames) {
+  try {
+    const dom = ttDomain();
+    const map = dom.teacherRoleOverrides || (dom.teacherRoleOverrides = {});
+    const key = String(subject || "").trim();
+    if (!key) { console.warn("subject(과목명)가 비어 있습니다."); return map; }
+    if (coTeacherNames == null) {
+      delete map[key];
+      console.log("교사 역할 해제:", key);
+    } else {
+      const list = (Array.isArray(coTeacherNames) ? coTeacherNames : [coTeacherNames]).map(s => String(s).trim()).filter(Boolean);
+      map[key] = { nonExclusiveTeachers: list };
+      console.log("공동교사(시간 비점유) 지정:", key, "→", list);
+    }
+    try { recomputeConflicts(); } catch (_) {}
+    try { renderAll(); } catch (_) {}
+    try { scheduleSave(); } catch (_) { try { saveNow(); } catch (__) {} }
+    return JSON.parse(JSON.stringify(map));
+  } catch (e) { console.error("HIS_setTeacherRole 실패:", e); }
+};
+globalThis.HIS_showTeacherRoles = function () {
+  const map = ttDomain()?.teacherRoleOverrides || {};
+  console.log(JSON.parse(JSON.stringify(map)));
+  return map;
+};
+globalThis.HIS_listMultiTeacherCards = function () {
+  const seen = new Map();
+  (appState.timetable?.ttcards || []).forEach(c => {
+    const tn = String(c?.teacherName || "").trim();
+    if (tn && splitTeacherNames(tn).length > 1 && !seen.has(c.subject + "|" + tn)) {
+      seen.set(c.subject + "|" + tn, { 과목: c.subject || "", 교사: splitTeacherNames(tn).join(", ") });
+    }
+  });
+  const rows = [...seen.values()];
+  console.table(rows);
+  console.log("지정 예: HIS_setTeacherRole('" + (rows[0]?.과목 || "과목명") + "', ['공동교사1','공동교사2'])");
+  return rows;
+};
+
 function recomputeConflicts() {
   conflictMap   = detectConflicts(
     entries(),
@@ -1357,7 +1461,8 @@ function recomputeConflicts() {
     {
       getProtectedGrades: protectedGradesForEntry,
       getCompoundPartRefs: compoundPartRefsForPlacement,
-      rooms: getEffectiveRoomsForTimetable()
+      rooms: getEffectiveRoomsForTimetable(),
+      getHardTeachers: resolveHardTeachersForEntry
     }
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
@@ -1599,7 +1704,8 @@ function getManualPlacementBlock(candidates, options = {}) {
       {
         getProtectedGrades: protectedGradesForEntry,
         getCompoundPartRefs: compoundPartRefsForPlacement,
-        rooms: getEffectiveRoomsForTimetable()
+        rooms: getEffectiveRoomsForTimetable(),
+        getHardTeachers: resolveHardTeachersForEntry
       }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]

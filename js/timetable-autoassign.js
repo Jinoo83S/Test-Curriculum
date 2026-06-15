@@ -605,7 +605,10 @@ export function createAutoAssignAll(deps) {
     if (explicitHard.length) return explicitHard.filter(t => all.includes(t) || !all.length);
     const soft = new Set(teacherRoleOverrideList(x, "nonExclusive"));
     if (!soft.size) return all;
-    return all.filter(t => !soft.has(t));
+    const hard = all.filter(t => !soft.has(t));
+    // r49: 전원이 공동교사(soft)로 빠지면 그 카드는 시간충돌 보호를 잃습니다.
+    // 단독 수업이 무방비로 이중배정되는 것을 막기 위해, hard가 0명이면 전원 hard로 폴백합니다.
+    return hard.length ? hard : all;
   }
 
   const getTeachersForAutoItem = item => hardTeacherNamesForPlacement(item);
