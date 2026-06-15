@@ -5800,6 +5800,13 @@ export function createAutoAssignAll(deps) {
       }, true);
     }
 
+    // r45 계측: 이번 실행이 "막 구성한"(후처리 복구 이전) 후보 지표를 보존합니다.
+    const freshConstructedMetrics = {
+      placedCount: bestPlaced.length,
+      failedCount: bestFailed.length,
+      qualityScore: bestQualityScore
+    };
+
     let acceptedPlaced = cloneAutoAssignData(bestPlaced) || [];
     let acceptedFailed = [...bestFailed];
     let acceptedForced = [];
@@ -6564,6 +6571,56 @@ export function createAutoAssignAll(deps) {
       qualityScore: improvement.qualityScore
     });
 
+    // r45 계측: baseline 치환/폐기 이전의 "이번 실행이 생성한 후처리 후 후보" 지표를
+    // 별도로 보존합니다. (finalAutoRunMetrics는 이후 baseline 결과로 덮어쓰일 수 있음)
+    const freshCandidateMetrics = { ...finalAutoRunMetrics };
+    const freshBeatsBaseline = compareAutoRunResults(freshCandidateMetrics, qualityBaselineMetrics) < 0;
+    const pickCandidateMetrics = (m = {}) => ({
+      placedCount: Number(m.placedCount || 0),
+      classTotal: Number(m.classTotal || 0),
+      classTargetTotal: Number(m.classTargetTotal || 0),
+      failedCount: Number(m.failedCount || 0),
+      cardShortageSlots: Number(m.cardShortageSlots || 0),
+      cardCoverageIssueCount: Number(m.cardCoverageIssueCount || 0),
+      classSlotIssueCount: Number(m.classSlotIssueCount || 0),
+      groupCoverageIssueCount: Number(m.groupCoverageIssueCount || 0),
+      restrictedTeacherIssueCount: Number(m.restrictedTeacherIssueCount || 0),
+      qualityScore: Number(m.qualityScore || 0),
+      validationSummary: String(m.validationSummary || "")
+    });
+    // 성공/폐기 경로 모두에서 호출되어, 선택된 결과와 무관하게 "새 후보 vs 기준" 숫자를
+    // export(appState.timetable.autoAssignCandidateLog)와 인앱 로그에 남깁니다.
+    const recordCandidateTelemetry = (outcome) => {
+      try {
+        const record = {
+          ts: Date.now(),
+          generatedAt: new Date().toISOString(),
+          appVersion: String(globalThis.HIS_APP_VERSION || ""),
+          forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK,
+          runMode: String(options.runAttempts || "balanced"),
+          exploredInitialRuns,
+          outcome,
+          freshBeatsBaseline,
+          baselineName: qualityBaselineReference?.name || "",
+          freshConstructed: freshConstructedMetrics,
+          freshCandidate: pickCandidateMetrics(freshCandidateMetrics),
+          baseline: pickCandidateMetrics(qualityBaselineMetrics)
+        };
+        if (appState.timetable) {
+          const log = Array.isArray(appState.timetable.autoAssignCandidateLog)
+            ? appState.timetable.autoAssignCandidateLog : [];
+          log.unshift(record);
+          appState.timetable.autoAssignCandidateLog = log.slice(0, 12);
+          appState.timetable.lastAutoAssignCandidate = record;
+        }
+        addTimetableLog(
+          "auto",
+          "후보 지표(계측)",
+          `forwardCheck=${record.forwardCheck} · 결과=${outcome} · 새후보 배치 ${record.freshCandidate.placedCount}개 / 미배치 ${record.freshCandidate.failedCount}개 / 카드부족 ${record.freshCandidate.cardShortageSlots}시수 / 학급문제 ${record.freshCandidate.classSlotIssueCount}개 / 그룹문제 ${record.freshCandidate.groupCoverageIssueCount}개 (기준 보관본 '${record.baselineName}' 배치 ${record.baseline.placedCount}개·부족 ${record.baseline.cardShortageSlots}시수) · 기준대비 우수=${freshBeatsBaseline ? "예" : "아니오"}`
+        );
+      } catch (_) {}
+    };
+
     // r28: 새 전체 배치가 이전 최고보다 나쁠 때도 바로 폐기하지 않고,
     // 이전 최고 보관본 자체를 기준으로 카드시수 반복복구를 한 번 더 시도합니다.
     // 목표는 이전 최고 상태를 출발점으로 삼아 남은 9~10개 미배치 단위를 실제로 줄이는 것입니다.
@@ -6712,6 +6769,7 @@ export function createAutoAssignAll(deps) {
       setLastAutoAssignReport(rejectReport);
 
       // r41b: entries, top meta, best snapshot, savedSchedules 메타를 모두 같은 canonical 결과로 동기화한 뒤 저장합니다.
+      recordCandidateTelemetry("rejected-baseline-kept");
       await persistTimetableNow();
       addTimetableLog(
         "warn",
@@ -6864,6 +6922,7 @@ export function createAutoAssignAll(deps) {
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
       }
     }
+    recordCandidateTelemetry(freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : "baseline-kept"));
     await persistTimetableNow();
     setLastAutoAssignReport(report);
     addTimetableLog(
