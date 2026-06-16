@@ -38,10 +38,15 @@ export const initialLoad = {
 // ── Per-domain save timers ────────────────────────────────────────
 const saveTimers = {};
 const dirtyDomains = new Set();
+const queuedSaveOptions = {};
+const activeSavePromises = {};
+const domainEditRevisions = {};
 // 자동저장 지연 시간은 운영/로컬 개발 환경을 분리합니다.
-// 운영에서는 데이터 유실 위험을 줄이기 위해 짧게, 로컬 개발에서는 드래그/입력 테스트 여유를 둡니다.
-export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 10000 : 2000;
-export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 1500 : 350;
+// r64: Firestore 저장 중 사용자가 계속 편집하면 이전 저장 응답/원격 스냅샷이
+//      최신 로컬 편집을 덮어쓸 수 있습니다. 운영 자동저장은 충분히 기다리고,
+//      저장 중 새 편집은 큐에 넣어 저장 완료 후 한 번 더 저장합니다.
+export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 12000 : 6000;
+export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 3000 : 1800;
 const AUTO_SAVE_KEY = "his_auto_save_v1";
 
 
@@ -244,7 +249,7 @@ export function setAutoSaveEnabled(enabled) {
   });
   if (enabled) {
     dirtyDomains.forEach(domain => {
-      saveTimers[domain] = setTimeout(() => saveNow(domain), 1000);
+      saveTimers[domain] = setTimeout(() => saveNow(domain), SAVE_DELAY_MS);
     });
   }
   _onSaveStatus?.("mode", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains() });
@@ -254,8 +259,23 @@ export function getDirtyDomains() {
   return [...dirtyDomains];
 }
 
+function bumpDomainEditRevision(domain) {
+  domainEditRevisions[domain] = (domainEditRevisions[domain] || 0) + 1;
+  return domainEditRevisions[domain];
+}
+
+function mergeSaveOptions(prev = {}, next = {}) {
+  return {
+    ...prev,
+    ...next,
+    force: !!(prev.force || next.force),
+    throwOnError: !!(prev.throwOnError || next.throwOnError)
+  };
+}
+
 export function scheduleSave(domain, options = {}) {
   if (!canEdit() || !initialLoad[domain]) return;
+  bumpDomainEditRevision(domain);
   dirtyDomains.add(domain);
 
   if (!isAutoSaveEnabled()) {
@@ -265,7 +285,14 @@ export function scheduleSave(domain, options = {}) {
     return;
   }
 
-  _onSaveStatus?.("saving", { autoSave: true, dirtyDomains: getDirtyDomains() });
+  // 저장 중에는 새 타이머를 여러 개 만들지 않고 다음 저장으로 큐잉합니다.
+  if (activeSavePromises[domain]) {
+    queuedSaveOptions[domain] = mergeSaveOptions(queuedSaveOptions[domain], options?.saveOptions || {});
+    _onSaveStatus?.("dirty", { autoSave: true, dirtyDomains: getDirtyDomains(), queuedDomain: domain });
+    return activeSavePromises[domain];
+  }
+
+  _onSaveStatus?.("dirty", { autoSave: true, dirtyDomains: getDirtyDomains() });
   clearTimeout(saveTimers[domain]);
   const requestedDelay = Number(options?.delayMs);
   const delayMs = options?.immediate ? 0 : (Number.isFinite(requestedDelay) ? Math.max(0, requestedDelay) : SAVE_DELAY_MS);
@@ -276,55 +303,96 @@ export function scheduleFastSave(domain, options = {}) {
   return scheduleSave(domain, { ...options, delayMs: options.delayMs ?? FAST_SAVE_DELAY_MS });
 }
 
-export async function saveNow(domain, options = {}) {
-  if (!canEdit() || !initialLoad[domain]) return false;
-  clearTimeout(saveTimers[domain]);
-  delete saveTimers[domain];
-
-  const normalized = normalizedForDomain(domain);
-  if (!options.force && !domainChanged(domain, normalized)) {
-    dirtyDomains.delete(domain);
-    _onSaveStatus?.("skipped", { domain, dirtyDomains: getDirtyDomains() });
-    return true;
+async function performDomainSave(domain, normalized, options = {}) {
+  if (LOCAL_DEV_MODE) {
+    saveLocalDomain(domain, normalized);
+    return { local: true };
   }
 
-  if (LOCAL_DEV_MODE) {
+  if (SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
+    await saveSplitDomain(domain, { force: !!options.force, normalized });
+    return { split: true };
+  }
+
+  // Ordinary domains, or split domains temporarily running in legacy fallback mode.
+  await setDoc(refs[domain], { ...normalized, updatedAt: serverTimestamp() });
+  recordFirestoreUsage("writes", 1, `save: boards/${domain}`, { operation: "setDoc" });
+  return { legacy: true };
+}
+
+async function runSaveLoop(domain) {
+  let allOk = true;
+
+  while (queuedSaveOptions[domain]) {
+    const options = queuedSaveOptions[domain] || {};
+    delete queuedSaveOptions[domain];
+    clearTimeout(saveTimers[domain]);
+    delete saveTimers[domain];
+
+    const normalized = normalizedForDomain(domain);
+    const snapshotFingerprint = fp(normalized);
+    const snapshotRevision = domainEditRevisions[domain] || 0;
+
+    if (!options.force && !domainChanged(domain, normalized)) {
+      if (!queuedSaveOptions[domain]) {
+        dirtyDomains.delete(domain);
+        _onSaveStatus?.("skipped", { domain, dirtyDomains: getDirtyDomains() });
+      }
+      continue;
+    }
+
+    _onSaveStatus?.("saving", { autoSave: isAutoSaveEnabled(), domain, dirtyDomains: getDirtyDomains() });
+
     try {
-      saveLocalDomain(domain, normalized);
+      const result = await performDomainSave(domain, normalized, options);
       markDomainSaved(domain, normalized);
+
+      const latestNormalized = normalizedForDomain(domain);
+      const changedDuringSave = (domainEditRevisions[domain] || 0) !== snapshotRevision || fp(latestNormalized) !== snapshotFingerprint;
+
+      if (changedDuringSave || domainChanged(domain, latestNormalized) || queuedSaveOptions[domain]) {
+        // 저장 중 새 편집이 생겼으면 기존 저장 완료 상태로 dirty를 지우지 않습니다.
+        // 바로 다음 루프에서 최신 상태를 다시 저장합니다.
+        dirtyDomains.add(domain);
+        queuedSaveOptions[domain] = mergeSaveOptions(queuedSaveOptions[domain], {});
+        _onSaveStatus?.("dirty", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains(), queuedDomain: domain });
+        continue;
+      }
+
       dirtyDomains.delete(domain);
-      _onSaveStatus?.("saved", { domain, local: true, dirtyDomains: getDirtyDomains() });
-      console.info(`[Local dev save] ${domain} 저장 완료`);
-      return true;
+      _onSaveStatus?.("saved", { domain, local: !!result.local, dirtyDomains: getDirtyDomains() });
+      console.info(`[${result.local ? "Local dev" : "Firestore"} save] ${domain} 저장 완료`);
     } catch (e) {
+      allOk = false;
       dirtyDomains.add(domain);
-      console.error(`Local save failed [${domain}]:`, e);
+      console.error(`${LOCAL_DEV_MODE ? "Local save" : "Save"} failed [${domain}]:`, e);
       _onSaveStatus?.("error", e);
       if (options.throwOnError) throw e;
-      return false;
+      break;
     }
   }
 
-  try {
-    if (SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
-      await saveSplitDomain(domain, { force: !!options.force, normalized });
-    } else {
-      // Ordinary domains, or split domains temporarily running in legacy fallback mode.
-      await setDoc(refs[domain], { ...normalized, updatedAt: serverTimestamp() });
-      recordFirestoreUsage("writes", 1, `save: boards/${domain}`, { operation: "setDoc" });
-    }
-    markDomainSaved(domain, normalized);
-    dirtyDomains.delete(domain);
-    _onSaveStatus?.("saved", { domain, dirtyDomains: getDirtyDomains() });
-    console.info(`[Firestore save] ${domain} 저장 완료`);
-    return true;
-  } catch (e) {
-    dirtyDomains.add(domain);
-    console.error(`Save failed [${domain}]:`, e);
-    _onSaveStatus?.("error", e);
-    if (options.throwOnError) throw e;
-    return false;
+  return allOk;
+}
+
+export async function saveNow(domain, options = {}) {
+  if (!canEdit() || !initialLoad[domain]) return false;
+
+  clearTimeout(saveTimers[domain]);
+  delete saveTimers[domain];
+  dirtyDomains.add(domain);
+  queuedSaveOptions[domain] = mergeSaveOptions(queuedSaveOptions[domain], options);
+
+  if (activeSavePromises[domain]) {
+    _onSaveStatus?.("dirty", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains(), queuedDomain: domain });
+    return activeSavePromises[domain];
   }
+
+  activeSavePromises[domain] = runSaveLoop(domain).finally(() => {
+    delete activeSavePromises[domain];
+  });
+
+  return activeSavePromises[domain];
 }
 
 export async function flushPendingSaves(options = {}) {
@@ -1588,7 +1656,9 @@ function sameDomainData(a, b) {
 function hasUnsavedLocalChanges(domain) {
   if (LOCAL_DEV_MODE) return false;
   if (!initialLoad[domain]) return false;
-  if (!dirtyDomains.has(domain)) return false;
+  if (!dirtyDomains.has(domain) && !activeSavePromises[domain] && !queuedSaveOptions[domain]) return false;
+  // 저장 중/저장 대기 중에는 원격 스냅샷이 편집 중인 로컬 상태를 덮지 못하게 보호합니다.
+  if (activeSavePromises[domain] || queuedSaveOptions[domain]) return true;
   // dirtyDomains can contain a domain even when the current data eventually
   // became identical to the saved baseline. Only protect truly changed data.
   return domainChanged(domain);
