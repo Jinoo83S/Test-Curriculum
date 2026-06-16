@@ -5075,10 +5075,12 @@ export function createAutoAssignAll(deps) {
     const map = new Map();
     const add = (teacher, count, sample) => {
       if (!teacher || !isRestrictedTeacher(teacher)) return;
+      const amount = Math.max(0, Number(count) || 0);
+      if (!amount) return;
       if (!map.has(teacher)) map.set(teacher, { teacher, target: 0, samples: [] });
       const row = map.get(teacher);
-      row.target += count;
-      if (sample && row.samples.length < 5) row.samples.push(sample);
+      row.target += amount;
+      if (sample && row.samples.length < 5 && !row.samples.includes(sample)) row.samples.push(sample);
     };
 
     standalone.forEach(item => {
@@ -5086,14 +5088,39 @@ export function createAutoAssignAll(deps) {
       getTeachersForAutoItem(item).forEach(t => add(t, 1, name));
     });
 
+    // r65: 제약교사 사전점검은 "그룹 전체 교사 × 그룹 시수"로 계산하면 안 됩니다.
+    // 특히 미적분(2)+심화물리(2)처럼 compound option이 들어간 동시배정 그룹은
+    // 1~2회차에는 미적분 교사, 3~4회차에는 심화물리 교사만 실제 점유합니다.
+    // 자동배치 본체와 동일하게 회차별 active card를 만든 뒤 그 회차의 hard teacher만 1시수로 더합니다.
     groupBlocks.forEach(block => {
       const { group, unitItems } = block || {};
-      const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
-      const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
-      const groupSlotCount = Math.max(1, isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
       const sample = group?.name || group?.groupName || "그룹 수업";
-      getTeachersForAutoItem(block).forEach(t => add(t, groupSlotCount, sample));
-      (unitItems || []).forEach(unit => getTeachersForAutoItem(unit).forEach(t => add(t, Math.max(1, Number(unit?.credits) || 1), sample)));
+      const normalizedUnits = unitItems || [];
+      const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
+
+      if (isConcurrent) {
+        const maxCredits = Math.max(0, ...normalizedUnits.map(u => Math.max(0, Number(u?.credits) || 0)));
+        for (let occurrence = 0; occurrence < maxCredits; occurrence++) {
+          const activeCards = normalizedUnits
+            .filter(u => occurrence < Math.max(0, Number(u?.credits) || 0))
+            .map(u => getGroupItemForOccurrence(u, occurrence))
+            .flatMap(u => u?.ttcards || [])
+            .filter(Boolean);
+          if (!activeCards.length) continue;
+          const probeItem = makePlacementFromGroupItem(group, { ttcards: activeCards }) || { ttcards: activeCards };
+          getTeachersForAutoItem(probeItem).forEach(t => add(t, 1, sample));
+        }
+        return;
+      }
+
+      normalizedUnits.forEach(unit => {
+        const credits = Math.max(0, Number(unit?.credits) || 0);
+        for (let occurrence = 0; occurrence < credits; occurrence++) {
+          const occurrenceItem = getGroupItemForOccurrence(unit, occurrence);
+          const placement = makePlacementFromGroupItem(group, occurrenceItem) || occurrenceItem || unit;
+          getTeachersForAutoItem(placement).forEach(t => add(t, 1, sample));
+        }
+      });
     });
 
     return [...map.values()];
@@ -5777,19 +5804,22 @@ export function createAutoAssignAll(deps) {
             const needSlots = Math.max(0, maxCredits - alreadyPinned);
 
             for (let slot_i = 0; slot_i < needSlots; slot_i++) {
+              const activeItems = unitItems
+                .filter(u => slot_i < u.credits)
+                .map(u => getGroupItemForOccurrence(u, slot_i))
+                .filter(u => (u.ttcards || []).length);
+              const activeRestrictedTeachers = [...new Set(activeItems
+                .flatMap(u => getRestrictedTeachersForAutoItem(makePlacementFromGroupItem(group, u) || u))
+                .filter(Boolean))];
               await yieldAutoAssign({
                 percent: stagePercent,
                 step: `${phaseLabel} · ${stage.label}`,
-                detail: `${group.name || "그룹"} ${slot_i + 1} / ${needSlots}회차를 배치하고 있습니다.${restrictedTeachers.length ? ` (${describeRestrictedTeachers(restrictedTeachers)})` : ""}`,
+                detail: `${group.name || "그룹"} ${slot_i + 1} / ${needSlots}회차를 배치하고 있습니다.${activeRestrictedTeachers.length ? ` (${describeRestrictedTeachers(activeRestrictedTeachers)})` : ""}`,
                 placed: placed.length,
                 best: Math.max(0, bestScore),
                 failed: failed.length,
                 currentCard: group.name || "그룹 수업"
               });
-              const activeItems = unitItems
-                .filter(u => slot_i < u.credits)
-                .map(u => getGroupItemForOccurrence(u, slot_i))
-                .filter(u => (u.ttcards || []).length);
               if (!activeItems.length) continue;
               // 동시배정 그룹은 한 회차에 여러 과목/교사가 함께 움직일 수 있으므로,
               // 첫 카드만으로 후보 시간을 검사하면 제약교사 조건을 놓칠 수 있습니다.
