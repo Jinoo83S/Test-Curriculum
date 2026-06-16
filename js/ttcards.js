@@ -2,7 +2,7 @@
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
-import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js";
 import { canEdit } from "./auth.js";
 import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js";
 import {
@@ -1487,6 +1487,7 @@ function renderTtCardTeacherOptionsPanel(container) {
 // ── Group Manager (moved here from templates.js) ──────────────────
 let _groupManagerLevel = "전체";
 let _groupReviewVisible = false;
+let _groupReviewOpenClassKey = null;
 let _currentDrag = null;
 
 function setDrag(d) { _currentDrag = d; }
@@ -1561,70 +1562,199 @@ function getGradeKeysForGroupReview() {
   return [...GRADE_KEYS];
 }
 
-function buildGroupCreditReviewRows() {
-  const allCards = getTtCards().filter(c => gmLevelFilter(c));
-  const groupedIds = getGroupedCardIdSet(grps());
-  return getGradeKeysForGroupReview().map(gradeKey => {
-    const gradeCards = allCards.filter(c => c.gradeKey === gradeKey);
-    const groupedCards = gradeCards.filter(c => groupedIds.has(c.id));
-    const unassignedCards = gradeCards.filter(c => !groupedIds.has(c.id));
-    const groupIdsForGrade = new Set();
-    grps().forEach(g => {
-      const hasGradeCard = getGroupActiveCards(g).some(c => c.gradeKey === gradeKey);
-      if (hasGradeCard) groupIdsForGrade.add(g.id);
+function getReviewClassRows() {
+  const gradeOrder = new Map(GRADE_KEYS.map((g, idx) => [g, idx]));
+  return (appState.classes?.classes || [])
+    .filter(cls => getGradeKeysForGroupReview().includes(cls.grade))
+    .map(cls => {
+      const gradeKey = cls.grade;
+      const className = clean(cls.name);
+      const classKey = normalizeStoredClassKey(`${gradeDisplay(gradeKey)}:${className}`, gradeKey);
+      const classLabel = `${gradeDisplay(gradeKey)}${className}`;
+      return { gradeKey, className, classKey, classLabel, classId: cls.id };
+    })
+    .filter(row => row.classKey)
+    .sort((a, b) => {
+      const ga = gradeOrder.get(a.gradeKey) ?? 999;
+      const gb = gradeOrder.get(b.gradeKey) ?? 999;
+      if (ga !== gb) return ga - gb;
+      return String(a.className).localeCompare(String(b.className), "ko", { numeric: true });
     });
-    const sumCredits = cards => cards.reduce((sum, card) => sum + getGmCardCredit(card), 0);
+}
+
+function getCardReviewClassKeys(card) {
+  const pair = normalizeClassPairs({
+    classKeys: card?.classKeys || [],
+    classLabels: card?.classLabels || [],
+    fallbackGradeKey: card?.gradeKey || "",
+  });
+  return new Set(pair.classKeys || []);
+}
+
+function cardTargetsReviewClass(card, classKey) {
+  if (!card || !classKey) return false;
+  return getCardReviewClassKeys(card).has(classKey);
+}
+
+function getCardGroupReviewInfo(cardId) {
+  const out = [];
+  (grps() || []).forEach(group => {
+    if (!group || !cardId || (group.excludedCardIds || []).includes(cardId)) return;
+    let matched = false;
+    (group.units || []).forEach((unit, idx) => {
+      if ((unit.ttcardIds || []).includes(cardId)) {
+        matched = true;
+        const unitName = clean(unit.name) || `묶음수업 ${idx + 1}`;
+        out.push({ id: group.id, name: clean(group.name) || "이름 없는 그룹", unitName, inUnit: true });
+      }
+    });
+    if ((group.poolCardIds || []).includes(cardId)) {
+      matched = true;
+      out.push({ id: group.id, name: clean(group.name) || "이름 없는 그룹", unitName: "그룹 카드", inUnit: false });
+    }
+    // 일부 오래된 그룹 데이터는 poolCardIds 없이 unit에만 들어갈 수 있으므로 matched만으로 판단합니다.
+  });
+  const seen = new Set();
+  return out.filter(info => {
+    const key = `${info.id}::${info.unitName}::${info.inUnit}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function getCardGroupReviewLabel(cardId) {
+  const info = getCardGroupReviewInfo(cardId);
+  if (!info.length) return "그룹 없음";
+  return info.map(g => g.inUnit ? `${g.name} · ${g.unitName}` : g.name).join(", ");
+}
+
+function buildClassCreditReviewRows() {
+  const allCards = getTtCards().filter(c => gmLevelFilter(c));
+  return getReviewClassRows().map(cls => {
+    const cards = allCards
+      .filter(card => cardTargetsReviewClass(card, cls.classKey))
+      .sort((a, b) => {
+        const ga = getCardGroupReviewLabel(a.id);
+        const gb = getCardGroupReviewLabel(b.id);
+        if (ga !== gb) return ga.localeCompare(gb, "ko");
+        return getTtCardLabel(a).localeCompare(getTtCardLabel(b), "ko");
+      });
+    const groups = new Map();
+    cards.forEach(card => {
+      getCardGroupReviewInfo(card.id).forEach(info => {
+        if (!groups.has(info.id)) groups.set(info.id, info.name);
+      });
+    });
+    const totalCredits = cards.reduce((sum, card) => sum + getGmCardCredit(card), 0);
     return {
-      gradeKey,
-      gradeLabel: gradeDisplay(gradeKey),
-      totalCredits: sumCredits(gradeCards),
-      groupedCredits: sumCredits(groupedCards),
-      unassignedCredits: sumCredits(unassignedCards),
-      cardCount: gradeCards.length,
-      groupedCardCount: groupedCards.length,
-      unassignedCardCount: unassignedCards.length,
-      groupCount: groupIdsForGrade.size,
+      ...cls,
+      totalCredits,
+      cardCount: cards.length,
+      groupCount: groups.size,
+      groupNames: [...groups.values()].sort((a, b) => a.localeCompare(b, "ko")),
+      cards,
     };
   });
 }
 
-function createGroupReviewPanel() {
+function createClassReviewDetail(row) {
+  const wrap = document.createElement("div");
+  wrap.className = "group-review-detail";
+  if (!row.cards.length) {
+    wrap.textContent = "이 반에 연결된 시간표 카드가 없습니다.";
+    return wrap;
+  }
+
+  const table = document.createElement("table");
+  table.className = "group-review-detail-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>카드</th>
+        <th>시수</th>
+        <th>교사</th>
+        <th>대상</th>
+        <th>그룹</th>
+      </tr>
+    </thead>
+  `;
+  const tbody = document.createElement("tbody");
+  row.cards.forEach(card => {
+    const tr = document.createElement("tr");
+    const subject = clean(card.subject) || getTtCardLabel(card);
+    const teacher = clean(card.teacherName) || clean(card.teachers) || "-";
+    const target = (card.classLabels || []).join(", ") || row.classLabel;
+    const groupLabel = getCardGroupReviewLabel(card.id);
+    tr.innerHTML = `
+      <td><strong>${escapeHtml(subject)}</strong><div class="group-review-detail-sub">${escapeHtml(card.id || "")}</div></td>
+      <td>${escapeHtml(formatGmCreditValue(getGmCardCredit(card)))}</td>
+      <td>${escapeHtml(teacher)}</td>
+      <td>${escapeHtml(target)}</td>
+      <td>${escapeHtml(groupLabel)}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  return wrap;
+}
+
+function createGroupReviewPanel(onStructureChange = () => {}) {
   const panel = document.createElement("div");
   panel.className = "group-review-panel";
 
   const title = document.createElement("div");
   title.className = "group-review-title";
-  title.textContent = "학년별 시수 검토";
+  title.textContent = "반별 시수 검토";
   const desc = document.createElement("div");
   desc.className = "group-review-desc";
-  desc.textContent = "전체 카드 시수, 현재 그룹에 포함된 시수, 미배정 카드 시수를 시간표 카드 기준으로 계산합니다.";
+  desc.textContent = "각 반이 실제로 포함된 시간표 카드의 총 시수를 표시합니다. 배정/미배정 상태는 계산하지 않습니다.";
   panel.append(title, desc);
 
   const table = document.createElement("table");
-  table.className = "group-review-table";
+  table.className = "group-review-table group-review-class-table";
   table.innerHTML = `
     <thead>
       <tr>
-        <th>학년</th>
-        <th>전체 카드</th>
-        <th>그룹 포함</th>
-        <th>미배정</th>
+        <th>반</th>
+        <th>총 시수</th>
+        <th>카드</th>
         <th>관련 그룹</th>
+        <th>상세</th>
       </tr>
     </thead>
   `;
   const tbody = document.createElement("tbody");
-  buildGroupCreditReviewRows().forEach(row => {
+  buildClassCreditReviewRows().forEach(row => {
     const tr = document.createElement("tr");
-    const statusClass = row.unassignedCredits > 0 ? " warn" : " ok";
+    const groupPreview = row.groupNames.length
+      ? row.groupNames.slice(0, 3).join(", ") + (row.groupNames.length > 3 ? ` 외 ${row.groupNames.length - 3}개` : "")
+      : "-";
     tr.innerHTML = `
-      <td>${row.gradeLabel}학년</td>
-      <td>${formatGmCreditValue(row.totalCredits)}시수 <span class="group-review-muted">${row.cardCount}장</span></td>
-      <td>${formatGmCreditValue(row.groupedCredits)}시수 <span class="group-review-muted">${row.groupedCardCount}장</span></td>
-      <td class="group-review-unassigned${statusClass}">${formatGmCreditValue(row.unassignedCredits)}시수 <span class="group-review-muted">${row.unassignedCardCount}장</span></td>
-      <td>${row.groupCount}개</td>
+      <td><strong>${escapeHtml(row.classLabel)}</strong></td>
+      <td>${escapeHtml(formatGmCreditValue(row.totalCredits))}시수</td>
+      <td>${row.cardCount}장</td>
+      <td><span class="group-review-muted">${row.groupCount}개</span> ${escapeHtml(groupPreview)}</td>
+      <td></td>
     `;
+    const btnCell = tr.lastElementChild;
+    const detailBtn = makeBtn(_groupReviewOpenClassKey === row.classKey ? "닫기" : "상세보기", "group-review-detail-btn", () => {
+      _groupReviewOpenClassKey = _groupReviewOpenClassKey === row.classKey ? null : row.classKey;
+      onStructureChange();
+    });
+    btnCell.appendChild(detailBtn);
     tbody.appendChild(tr);
+
+    if (_groupReviewOpenClassKey === row.classKey) {
+      const detailTr = document.createElement("tr");
+      detailTr.className = "group-review-detail-row";
+      const td = document.createElement("td");
+      td.colSpan = 5;
+      td.appendChild(createClassReviewDetail(row));
+      detailTr.appendChild(td);
+      tbody.appendChild(detailTr);
+    }
   });
   table.appendChild(tbody);
   panel.appendChild(table);
@@ -1996,7 +2126,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
   filterBar.appendChild(reviewBtn);
 
   board.appendChild(filterBar);
-  if (_groupReviewVisible) board.appendChild(createGroupReviewPanel());
+  if (_groupReviewVisible) board.appendChild(createGroupReviewPanel(onStructureChange));
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";
 

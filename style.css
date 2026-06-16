@@ -7978,3 +7978,85 @@ body.his-dev-tools-off .developer-toggle-btn {
 }
 .group-review-unassigned.ok { color: #047857; font-weight: 700; }
 .group-review-unassigned.warn { color: #b45309; font-weight: 800; }
+
+/* r58 · Group manager per-class credit review */
+.group-review-class-table th:nth-child(1),
+.group-review-class-table td:nth-child(1) {
+  width: 80px;
+}
+.group-review-class-table th:nth-child(2),
+.group-review-class-table td:nth-child(2),
+.group-review-class-table th:nth-child(3),
+.group-review-class-table td:nth-child(3) {
+  width: 90px;
+}
+.group-review-class-table th:nth-child(5),
+.group-review-class-table td:nth-child(5) {
+  width: 86px;
+  text-align: center;
+}
+.group-review-detail-btn {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.group-review-detail-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+.group-review-detail-row td {
+  background: #fff7ed;
+  padding: 9px !important;
+  white-space: normal !important;
+}
+.group-review-detail {
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: #fff;
+  overflow: auto;
+  max-height: 320px;
+}
+.group-review-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+  font-size: 11px;
+}
+.group-review-detail-table th,
+.group-review-detail-table td {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+.group-review-detail-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 900;
+}
+.group-review-detail-table tr:last-child td {
+  border-bottom: none;
+}
+.group-review-detail-table td:nth-child(2) {
+  text-align: center;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.group-review-detail-sub {
+  margin-top: 2px;
+  color: #94a3b8;
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
