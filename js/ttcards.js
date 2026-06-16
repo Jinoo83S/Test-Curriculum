@@ -1486,6 +1486,7 @@ function renderTtCardTeacherOptionsPanel(container) {
 
 // ── Group Manager (moved here from templates.js) ──────────────────
 let _groupManagerLevel = "전체";
+let _groupReviewVisible = false;
 let _currentDrag = null;
 
 function setDrag(d) { _currentDrag = d; }
@@ -1497,6 +1498,137 @@ function gmLevelFilter(card) {
   if (_groupManagerLevel === "중등") return ["7학년","8학년","9학년"].includes(card.gradeKey);
   if (_groupManagerLevel === "고등") return ["10학년","11학년","12학년"].includes(card.gradeKey);
   return true;
+}
+
+function formatGmCreditValue(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0";
+  return Number.isInteger(n) ? String(n) : String(Math.round(n * 10) / 10).replace(/\.0$/, "");
+}
+
+function getGmCardCredit(card) {
+  if (!card) return 0;
+  // 시간표 카드에 저장된 스냅샷을 우선 사용합니다.
+  // 창체는 시간표상 1시수 카드로 배치되므로 표시도 1로 통일합니다.
+  if (isChanCheCategory(card.category)) return 1;
+  const stored = parseCreditValue(card.credits);
+  if (stored > 0) return stored;
+  const row = (appState.curriculum?.gradeBoards?.[card.gradeKey] || [])
+    .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
+  return getEffectiveCredit(row);
+}
+
+function getGroupActiveCardIds(group) {
+  if (!group) return [];
+  const excluded = new Set(group.excludedCardIds || []);
+  const ids = [];
+  const add = id => {
+    if (!id || excluded.has(id) || ids.includes(id)) return;
+    ids.push(id);
+  };
+  (group.units || []).forEach(unit => (unit.ttcardIds || []).forEach(add));
+  (group.poolCardIds || []).forEach(add);
+  return ids;
+}
+
+function getGroupActiveCards(group) {
+  return getGroupActiveCardIds(group)
+    .map(id => getTtCardById(id))
+    .filter(Boolean);
+}
+
+function getGroupCreditLabel(group) {
+  const credits = [...new Set(getGroupActiveCards(group)
+    .map(getGmCardCredit)
+    .filter(v => Number.isFinite(v) && v > 0)
+    .map(formatGmCreditValue))]
+    .sort((a, b) => Number(a) - Number(b));
+  if (!credits.length) return "-";
+  return credits.join(", ");
+}
+
+function getGroupedCardIdSet(groups = grps()) {
+  const set = new Set();
+  (groups || []).forEach(group => {
+    getGroupActiveCardIds(group).forEach(id => set.add(id));
+  });
+  return set;
+}
+
+function getGradeKeysForGroupReview() {
+  if (_groupManagerLevel === "중등") return ["7학년", "8학년", "9학년"];
+  if (_groupManagerLevel === "고등") return ["10학년", "11학년", "12학년"];
+  return [...GRADE_KEYS];
+}
+
+function buildGroupCreditReviewRows() {
+  const allCards = getTtCards().filter(c => gmLevelFilter(c));
+  const groupedIds = getGroupedCardIdSet(grps());
+  return getGradeKeysForGroupReview().map(gradeKey => {
+    const gradeCards = allCards.filter(c => c.gradeKey === gradeKey);
+    const groupedCards = gradeCards.filter(c => groupedIds.has(c.id));
+    const unassignedCards = gradeCards.filter(c => !groupedIds.has(c.id));
+    const groupIdsForGrade = new Set();
+    grps().forEach(g => {
+      const hasGradeCard = getGroupActiveCards(g).some(c => c.gradeKey === gradeKey);
+      if (hasGradeCard) groupIdsForGrade.add(g.id);
+    });
+    const sumCredits = cards => cards.reduce((sum, card) => sum + getGmCardCredit(card), 0);
+    return {
+      gradeKey,
+      gradeLabel: gradeDisplay(gradeKey),
+      totalCredits: sumCredits(gradeCards),
+      groupedCredits: sumCredits(groupedCards),
+      unassignedCredits: sumCredits(unassignedCards),
+      cardCount: gradeCards.length,
+      groupedCardCount: groupedCards.length,
+      unassignedCardCount: unassignedCards.length,
+      groupCount: groupIdsForGrade.size,
+    };
+  });
+}
+
+function createGroupReviewPanel() {
+  const panel = document.createElement("div");
+  panel.className = "group-review-panel";
+
+  const title = document.createElement("div");
+  title.className = "group-review-title";
+  title.textContent = "학년별 시수 검토";
+  const desc = document.createElement("div");
+  desc.className = "group-review-desc";
+  desc.textContent = "전체 카드 시수, 현재 그룹에 포함된 시수, 미배정 카드 시수를 시간표 카드 기준으로 계산합니다.";
+  panel.append(title, desc);
+
+  const table = document.createElement("table");
+  table.className = "group-review-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>학년</th>
+        <th>전체 카드</th>
+        <th>그룹 포함</th>
+        <th>미배정</th>
+        <th>관련 그룹</th>
+      </tr>
+    </thead>
+  `;
+  const tbody = document.createElement("tbody");
+  buildGroupCreditReviewRows().forEach(row => {
+    const tr = document.createElement("tr");
+    const statusClass = row.unassignedCredits > 0 ? " warn" : " ok";
+    tr.innerHTML = `
+      <td>${row.gradeLabel}학년</td>
+      <td>${formatGmCreditValue(row.totalCredits)}시수 <span class="group-review-muted">${row.cardCount}장</span></td>
+      <td>${formatGmCreditValue(row.groupedCredits)}시수 <span class="group-review-muted">${row.groupedCardCount}장</span></td>
+      <td class="group-review-unassigned${statusClass}">${formatGmCreditValue(row.unassignedCredits)}시수 <span class="group-review-muted">${row.unassignedCardCount}장</span></td>
+      <td>${row.groupCount}개</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  panel.appendChild(table);
+  return panel;
 }
 
 function createTtCardChip(card, opts = {}) {
@@ -1676,9 +1808,14 @@ function createGroupBlockGM(groupId, onStructureChange) {
   nameInp.value = grpObj.name; nameInp.placeholder = "그룹 이름"; nameInp.disabled = !canEdit();
   nameInp.addEventListener("change", e => { renameTtCardGroup(groupId, e.target.value); });
 
+  const creditBadge = document.createElement("span");
+  creditBadge.className = "group-credit-badge";
+  creditBadge.textContent = getGroupCreditLabel(grpObj);
+  creditBadge.title = "이 그룹에 포함된 시간표 카드의 시수";
+
   const delBtn = makeBtn("×", "group-col-del-btn group-col-del-x", () => { deleteTtCardGroup(groupId); onStructureChange(); });
   delBtn.disabled = !canEdit(); delBtn.title = "그룹 삭제";
-  hdr.append(dragHandle, colBtn, nameInp, delBtn); block.appendChild(hdr);
+  hdr.append(dragHandle, colBtn, nameInp, creditBadge, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
   hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
@@ -1851,7 +1988,15 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
     scheduleSave("timetable"); onStructureChange();
   }); resetAllBtn.disabled = !canEdit();
   filterBar.appendChild(resetAllBtn);
+
+  const reviewBtn = makeBtn(_groupReviewVisible ? "검토 닫기" : "검토", "group-review-btn" + (_groupReviewVisible ? " active" : ""), () => {
+    _groupReviewVisible = !_groupReviewVisible;
+    onStructureChange();
+  });
+  filterBar.appendChild(reviewBtn);
+
   board.appendChild(filterBar);
+  if (_groupReviewVisible) board.appendChild(createGroupReviewPanel());
 
   const layout = document.createElement("div"); layout.className = "group-manager-layout";
 

@@ -7895,3 +7895,86 @@ body.his-dev-tools-off .developer-toggle-btn {
   border-radius: 999px !important;
   font-weight: 900 !important;
 }
+
+/* r57 · Group manager credit review */
+.group-credit-badge {
+  flex: 0 0 auto;
+  min-width: 24px;
+  max-width: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid #93c5fd;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group-review-btn {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.group-review-btn:hover,
+.group-review-btn.active {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
+.group-review-panel {
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  background: #fffbeb;
+  padding: 10px 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .06);
+}
+.group-review-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #78350f;
+  margin-bottom: 3px;
+}
+.group-review-desc {
+  font-size: 11px;
+  color: #92400e;
+  margin-bottom: 8px;
+}
+.group-review-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+}
+.group-review-table th,
+.group-review-table td {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 7px 9px;
+  text-align: left;
+  white-space: nowrap;
+}
+.group-review-table th {
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 800;
+}
+.group-review-table tr:last-child td { border-bottom: none; }
+.group-review-muted {
+  color: #94a3b8;
+  font-size: 11px;
+  margin-left: 3px;
+}
+.group-review-unassigned.ok { color: #047857; font-weight: 700; }
+.group-review-unassigned.warn { color: #b45309; font-weight: 800; }
