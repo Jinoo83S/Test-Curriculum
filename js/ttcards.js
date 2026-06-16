@@ -470,7 +470,7 @@ function guardGeneratedCards(cards, previousCount = 0, action = "refresh") {
 }
 
 
-const CARD_GENERATION_META_VERSION = "2026-06-10-card-generation-integrity-r25";
+const CARD_GENERATION_META_VERSION = "2026-06-16-card-reference-migration-r56";
 const CARD_GENERATION_ISSUE_LIMIT = 80;
 
 function normalizeStoredClassKey(key, fallbackGradeKey = "") {
@@ -638,6 +638,304 @@ function repairTtCardIntegrity(card, meta, { action = "refresh" } = {}) {
   return card;
 }
 
+
+function cardPartSignature(card) {
+  return clean(card?.compoundPartId) || "";
+}
+
+function cardClassKeySet(card, fallbackGradeKey = "") {
+  return new Set((card?.classKeys || [])
+    .map(k => normalizeStoredClassKey(k, fallbackGradeKey || card?.gradeKey))
+    .filter(Boolean));
+}
+
+function currentCardsForSameSource(card, cards = []) {
+  const partSig = cardPartSignature(card);
+  return (cards || []).filter(c =>
+    c?.templateId === card?.templateId &&
+    c?.gradeKey === card?.gradeKey &&
+    cardPartSignature(c) === partSig
+  );
+}
+
+function isLegacyWholeGradeReferenceCandidate(card) {
+  if (!card?.templateId || !card?.gradeKey) return false;
+  const tpl = getTemplateById(card.templateId);
+  const row = getCurriculumRowForCard(card.gradeKey, card.templateId);
+  if (!tpl || !row) return false;
+  const keys = cardClassKeySet(card, card.gradeKey);
+  if (keys.size <= 1) return false;
+  // r55 이전에는 창체/자율/진로/동아리 명칭만으로 전체학년 카드가 만들어졌습니다.
+  // 그런 카드 ID가 r55 이후 반별 section 0 카드 ID와 충돌할 수 있으므로,
+  // 기존 참조를 현재 반별 카드 전체로 확장합니다.
+  return isProtectedWholeGradeLabel(row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn);
+}
+
+function findCurrentCardsCoveredByLegacyCard(oldCard, currentCards = []) {
+  const oldKeys = cardClassKeySet(oldCard, oldCard?.gradeKey);
+  if (!oldKeys.size) return [];
+  return currentCardsForSameSource(oldCard, currentCards).filter(card => {
+    const nowKeys = cardClassKeySet(card, card?.gradeKey);
+    if (!nowKeys.size) return false;
+    return [...nowKeys].some(key => oldKeys.has(key));
+  });
+}
+
+function buildCardReferenceMigrationMap(currentCards = [], previousCards = []) {
+  const currentById = new Map((currentCards || []).filter(c => c?.id).map(c => [c.id, c]));
+  const map = new Map();
+
+  (previousCards || []).forEach(oldCard => {
+    if (!oldCard?.id) return;
+    const currentSameId = currentById.get(oldCard.id);
+    if (!isLegacyWholeGradeReferenceCandidate(oldCard)) {
+      if (!currentSameId) {
+        const fallback = findCurrentCardsCoveredByLegacyCard(oldCard, currentCards);
+        if (fallback.length) map.set(oldCard.id, fallback.map(c => c.id));
+      }
+      return;
+    }
+
+    const expanded = findCurrentCardsCoveredByLegacyCard(oldCard, currentCards);
+    if (expanded.length > 1) {
+      map.set(oldCard.id, expanded.map(c => c.id));
+    } else if (!currentSameId && expanded.length === 1) {
+      map.set(oldCard.id, [expanded[0].id]);
+    }
+  });
+
+  return map;
+}
+
+function uniqueValidCardRefs(list = [], validIds = new Set()) {
+  const seen = new Set();
+  const out = [];
+  (list || []).forEach(id => {
+    const v = clean(id);
+    if (!v || seen.has(v) || (validIds.size && !validIds.has(v))) return;
+    seen.add(v);
+    out.push(v);
+  });
+  return out;
+}
+
+function migrateCardRefList(list = [], migrationMap = new Map(), validIds = new Set()) {
+  const expanded = [];
+  let changed = false;
+  (list || []).forEach(id => {
+    const v = clean(id);
+    if (!v) return;
+    const replacement = migrationMap.get(v);
+    if (replacement && replacement.length) {
+      expanded.push(...replacement);
+      if (replacement.length !== 1 || replacement[0] !== v) changed = true;
+    } else {
+      expanded.push(v);
+    }
+  });
+  const normalized = uniqueValidCardRefs(expanded, validIds);
+  if (normalized.length !== (list || []).length || normalized.some((id, idx) => id !== (list || [])[idx])) changed = true;
+  return { list: normalized, changed };
+}
+
+function migrateTimetableCardReferencesForRegeneration(cards = [], previousCards = [], meta) {
+  const migrationMap = buildCardReferenceMigrationMap(cards, previousCards);
+  if (!migrationMap.size) return 0;
+  const validIds = new Set((cards || []).map(c => c?.id).filter(Boolean));
+  let changed = 0;
+
+  (appState.timetable.ttcardGroups || []).forEach(group => {
+    const pool = migrateCardRefList(group.poolCardIds || [], migrationMap, validIds);
+    if (pool.changed) {
+      group.poolCardIds = pool.list;
+      meta.repairedGroupIds.add(group.id || group.name || "group");
+      changed += 1;
+    }
+    const excluded = migrateCardRefList(group.excludedCardIds || [], migrationMap, validIds);
+    if (excluded.changed) {
+      group.excludedCardIds = excluded.list;
+      meta.repairedGroupIds.add(group.id || group.name || "group");
+      changed += 1;
+    }
+    (group.units || []).forEach(unit => {
+      const migrated = migrateCardRefList(unit.ttcardIds || [], migrationMap, validIds);
+      if (migrated.changed) {
+        unit.ttcardIds = migrated.list;
+        meta.repairedGroupIds.add(group.id || group.name || "group");
+        changed += 1;
+      }
+    });
+  });
+
+  (appState.timetable.entries || []).forEach(entry => {
+    const ids = [...(entry.ttcardIds || []), entry.ttcardId].filter(Boolean);
+    if (!ids.length) return;
+    const migrated = migrateCardRefList(ids, migrationMap, validIds);
+    if (migrated.changed) {
+      entry.ttcardIds = migrated.list;
+      entry.ttcardId = null;
+      changed += 1;
+    }
+  });
+
+  if (changed) {
+    pushCardGenerationIssue(meta, "warning", "legacy-whole-grade-card-refs-migrated",
+      `이전 전체학년 카드 참조를 현재 반별 카드 참조로 이관했습니다.`, { repaired: true, changedCount: changed });
+  }
+  return changed;
+}
+
+function classKeyForClassId(classId) {
+  const cls = (appState.classes?.classes || []).find(c => c.id === classId);
+  if (!cls) return "";
+  return classKeyOf(cls.grade, cls.name);
+}
+
+function classKeyForRoomId(roomId) {
+  const room = (appState.rooms?.rooms || []).find(r => r.id === roomId);
+  return room?.homeRoomClassId ? classKeyForClassId(room.homeRoomClassId) : "";
+}
+
+function inferEntryClassKeys(entry) {
+  const fromRoom = classKeyForRoomId(entry?.roomId);
+  if (fromRoom) return [fromRoom];
+  return (entry?.audienceClassKeys || []).map(k => normalizeStoredClassKey(k, entry?.gradeKey)).filter(Boolean);
+}
+
+
+function collectEntriesForGroupReferenceRecovery() {
+  // 자동 복구는 현재 시간표에 실제 배치되어 있는 entry만 사용합니다.
+  // 과거 savedSchedules/bestSnapshot은 오래된 자동배치 결과일 수 있으므로
+  // 사용자 지정 그룹을 임의로 재구성하는 근거로 쓰지 않습니다.
+  return (appState.timetable?.entries || []).filter(entry => entry && clean(entry.groupId));
+}
+
+
+function restoreEmptyGroupPoolFromPlacedEntries(cards = [], meta) {
+  const validIds = new Set((cards || []).map(c => c?.id).filter(Boolean));
+  const byGroup = new Map();
+  collectEntriesForGroupReferenceRecovery().forEach(entry => {
+    const gid = clean(entry?.groupId);
+    if (!gid) return;
+    if (!byGroup.has(gid)) byGroup.set(gid, []);
+    byGroup.get(gid).push(entry);
+  });
+
+  let restoredCount = 0;
+  (appState.timetable.ttcardGroups || []).forEach(group => {
+    const hasPool = (group.poolCardIds || []).some(id => validIds.has(id));
+    const hasUnitRefs = (group.units || []).some(unit => (unit.ttcardIds || []).some(id => validIds.has(id)));
+    if (hasPool || hasUnitRefs) return;
+
+    const relatedEntries = byGroup.get(group.id) || [];
+    if (!relatedEntries.length) return;
+
+    const templateIds = new Set();
+    const classKeys = new Set();
+    relatedEntries.forEach(entry => {
+      (entry.templateIds || []).forEach(id => id && templateIds.add(id));
+      (entry.ttcardIds || []).forEach(id => {
+        const card = cards.find(c => c.id === id);
+        if (card?.templateId) templateIds.add(card.templateId);
+      });
+      inferEntryClassKeys(entry).forEach(k => k && classKeys.add(k));
+    });
+    if (!templateIds.size) return;
+
+    const restored = cards.filter(card => {
+      if (!templateIds.has(card.templateId)) return false;
+      if (!classKeys.size) return true;
+      const keys = cardClassKeySet(card, card.gradeKey);
+      return [...keys].some(key => classKeys.has(key));
+    }).map(card => card.id);
+
+    const unique = uniqueValidCardRefs(restored, validIds);
+    if (!unique.length) return;
+
+    group.poolCardIds = unique;
+    meta.repairedGroupIds.add(group.id || group.name || "group");
+    restoredCount += 1;
+  });
+
+  if (restoredCount) {
+    pushCardGenerationIssue(meta, "warning", "empty-group-pool-restored-from-entries",
+      `배치된 그룹 entry를 기준으로 비어 있던 그룹카드 참조를 복구했습니다.`, { repaired: true, groupCount: restoredCount });
+  }
+  return restoredCount;
+}
+
+function expandLegacySplitRefsWithinGroupScope(cards = [], meta) {
+  const validIds = new Set((cards || []).map(c => c?.id).filter(Boolean));
+  const cardById = new Map((cards || []).filter(c => c?.id).map(c => [c.id, c]));
+  let changed = 0;
+
+  const expandList = (list = [], scopeKeys = new Set()) => {
+    const out = [];
+    let localChanged = false;
+    (list || []).forEach(id => {
+      const card = cardById.get(id);
+      if (!card) return;
+      const tpl = getTemplateById(card.templateId);
+      const row = getCurriculumRowForCard(card.gradeKey, card.templateId);
+      const shouldConsider = tpl && row && isProtectedWholeGradeLabel(row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn);
+      const siblings = shouldConsider
+        ? currentCardsForSameSource(card, cards).filter(sib => {
+            const keys = cardClassKeySet(sib, sib.gradeKey);
+            return !scopeKeys.size || [...keys].some(key => scopeKeys.has(key));
+          })
+        : [];
+      if (siblings.length > 1 && (card.classKeys || []).length <= 1) {
+        out.push(...siblings.map(s => s.id));
+        localChanged = true;
+      } else {
+        out.push(id);
+      }
+    });
+    const normalized = uniqueValidCardRefs(out, validIds);
+    return { list: normalized, changed: localChanged || normalized.length !== (list || []).length };
+  };
+
+  (appState.timetable.ttcardGroups || []).forEach(group => {
+    const scopeKeys = new Set();
+    (group.poolCardIds || []).forEach(id => {
+      const card = cardById.get(id);
+      cardClassKeySet(card, card?.gradeKey).forEach(k => scopeKeys.add(k));
+    });
+    (group.units || []).forEach(unit => (unit.ttcardIds || []).forEach(id => {
+      const card = cardById.get(id);
+      cardClassKeySet(card, card?.gradeKey).forEach(k => scopeKeys.add(k));
+    }));
+
+    const pool = expandList(group.poolCardIds || [], scopeKeys);
+    if (pool.changed) {
+      group.poolCardIds = pool.list;
+      meta.repairedGroupIds.add(group.id || group.name || "group");
+      changed += 1;
+    }
+    const excluded = expandList(group.excludedCardIds || [], scopeKeys);
+    if (excluded.changed) {
+      group.excludedCardIds = excluded.list;
+      meta.repairedGroupIds.add(group.id || group.name || "group");
+      changed += 1;
+    }
+    (group.units || []).forEach(unit => {
+      const unitRefs = expandList(unit.ttcardIds || [], scopeKeys);
+      if (unitRefs.changed) {
+        unit.ttcardIds = unitRefs.list;
+        meta.repairedGroupIds.add(group.id || group.name || "group");
+        changed += 1;
+      }
+    });
+  });
+
+  if (changed) {
+    pushCardGenerationIssue(meta, "warning", "legacy-split-group-refs-expanded",
+      `반별로 분리된 창체/진로/동아리 계열 카드 참조를 같은 그룹 범위 안에서 확장했습니다.`, { repaired: true, changedCount: changed });
+  }
+  return changed;
+}
+
+
 function repairTtCardGroupReferences(cards, meta) {
   const validIds = new Set((cards || []).map(c => c?.id).filter(Boolean));
   const uniqueRefs = list => {
@@ -723,6 +1021,9 @@ function validateAndRepairTtCardGeneration(cards = [], { action = "refresh", pre
     return repairTtCardIntegrity(card, meta, { action });
   }).filter(Boolean);
 
+  migrateTimetableCardReferencesForRegeneration(repairedCards, previous, meta);
+  restoreEmptyGroupPoolFromPlacedEntries(repairedCards, meta);
+  expandLegacySplitRefsWithinGroupScope(repairedCards, meta);
   repairTtCardGroupReferences(repairedCards, meta);
   repairTimetableEntryAudienceFromCards(repairedCards, meta);
 
@@ -746,6 +1047,9 @@ function cardGenerationMetaAlertSuffix() {
   if (meta.warningCount) parts.push(`경고 ${meta.warningCount}건`);
   if (meta.errorCount) parts.push(`오류 ${meta.errorCount}건`);
   if (!parts.length) return "\n\n생성검증: 정상";
+  if (!meta.errorCount) {
+    return `\n\n생성검증: 자동 정리 ${meta.repairCount || meta.warningCount}건 · 오류 없음\n자세한 내용은 내보낸 JSON의 data.timetable.cardGenerationMeta에서 확인할 수 있습니다.`;
+  }
   return `\n\n생성검증: ${parts.join(" · ")}\n자세한 내용은 내보낸 JSON의 data.timetable.cardGenerationMeta에서 확인할 수 있습니다.`;
 }
 
