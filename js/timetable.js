@@ -1553,19 +1553,66 @@ function recomputeConflicts() {
 }
 
 // ── Grid rendering ────────────────────────────────────────────────
+function getContextMenuEntryCardFromEvent(ev) {
+  const grid = ttGrid();
+  if (!grid) return null;
+
+  const directTarget = ev.target && ev.target.nodeType === 1
+    ? ev.target
+    : ev.target?.parentElement || null;
+  const directCard = directTarget?.closest?.(".tt-entry-card[data-entry-id]");
+  if (directCard && grid.contains(directCard)) return directCard;
+
+  const path = typeof ev.composedPath === "function" ? ev.composedPath() : [];
+  for (const node of path) {
+    if (!node || node.nodeType !== 1) continue;
+    if (node.matches?.(".tt-entry-card[data-entry-id]") && grid.contains(node)) return node;
+    const card = node.closest?.(".tt-entry-card[data-entry-id]");
+    if (card && grid.contains(card)) return card;
+  }
+  return null;
+}
+
+let lastEntryContextMenuAt = 0;
+let lastEntryContextMenuKey = "";
+function openEntryContextMenuFromDomEvent(ev, source = "contextmenu") {
+  if (source !== "contextmenu" && ev.button !== 2) return false;
+  const card = getContextMenuEntryCardFromEvent(ev);
+  if (!card) return false;
+
+  const entryId = clean(card.dataset.entryId || "");
+  const entry = entries().find(e => e.id === entryId);
+  if (!entry) return false;
+
+  ev.preventDefault?.();
+  ev.stopPropagation?.();
+  ev.stopImmediatePropagation?.();
+
+  const now = Date.now();
+  const key = `${entry.id}|${Math.round(ev.clientX)}|${Math.round(ev.clientY)}`;
+  if (source === "contextmenu" && lastEntryContextMenuKey === key && now - lastEntryContextMenuAt < 450) {
+    return true;
+  }
+  lastEntryContextMenuAt = now;
+  lastEntryContextMenuKey = key;
+
+  showEntryContextMenu(entry, ev.clientX, ev.clientY);
+  return true;
+}
+
 function ensureTimetableContextMenuDelegation() {
   const grid = ttGrid();
   if (!grid || timetableContextMenuDelegationInstalled) return;
   timetableContextMenuDelegationInstalled = true;
-  grid.addEventListener("contextmenu", ev => {
-    const card = ev.target?.closest?.(".tt-entry-card[data-entry-id]");
-    if (!card || !grid.contains(card)) return;
-    const entryId = card.dataset.entryId;
-    const entry = entries().find(e => e.id === entryId);
-    if (!entry) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    showEntryContextMenu(entry, ev.clientX, ev.clientY);
+
+  // Capture both browser contextmenu and the right-button mouse down.
+  // In some Chromium/WebView states the card-level contextmenu listener is skipped
+  // after drag/re-render, but mousedown still arrives. This keeps the edit menu reliable.
+  document.addEventListener("contextmenu", ev => {
+    openEntryContextMenuFromDomEvent(ev, "contextmenu");
+  }, true);
+  document.addEventListener("mousedown", ev => {
+    openEntryContextMenuFromDomEvent(ev, "mousedown");
   }, true);
 }
 
@@ -2507,13 +2554,17 @@ function buildEntryCard(entry, opts = {}) {
     showEntryDetail(entry);
   });
 
-  // Right-click → context menu
+  card.dataset.entryId = entry.id;
+
+  // Right-click → context menu. Keep this direct listener, but route it through
+  // the same robust opener used by the document-level fallback.
   card.addEventListener("contextmenu", ev => {
-    ev.preventDefault();
-    showEntryContextMenu(entry, ev.clientX, ev.clientY);
+    openEntryContextMenuFromDomEvent(ev, "contextmenu");
+  });
+  card.addEventListener("mousedown", ev => {
+    openEntryContextMenuFromDomEvent(ev, "mousedown");
   });
 
-  card.dataset.entryId = entry.id;
   card.draggable = canEdit() && !entry.pinned;
   card.addEventListener("dragstart", ev => {
     if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
