@@ -8105,3 +8105,82 @@ body.his-dev-tools-off .developer-toggle-btn {
   font-weight: 800;
   vertical-align: middle;
 }
+
+/* r60 · Compound subject option display in group manager */
+.gm-card-compound {
+  border-left-color: #9333ea !important;
+  background: #faf5ff;
+}
+.gm-card-compound .gm-card-subject {
+  color: #581c87;
+}
+.gm-card-compound-parts {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px dashed #d8b4fe;
+  display: grid;
+  gap: 3px;
+}
+.gm-card-compound-part {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 10px;
+  color: #6b21a8;
+}
+.gm-card-compound-part span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+.gm-card-compound-part em {
+  color: #64748b;
+  font-style: normal;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gm-card-compound-part b {
+  color: #7e22ce;
+  font-weight: 900;
+}
+.group-review-detail-compound {
+  display: block;
+  padding: 4px 0;
+}
+.group-review-detail-compound > strong {
+  display: block;
+  margin-bottom: 2px;
+}
+.group-review-compound-parts {
+  margin-top: 4px;
+  display: grid;
+  gap: 2px;
+}
+.group-review-compound-part {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  max-width: 430px;
+  font-size: 10px;
+  color: #64748b;
+}
+.group-review-compound-part span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+  color: #334155;
+}
+.group-review-compound-part em {
+  font-style: normal;
+  color: #64748b;
+}
+.group-review-compound-part b {
+  color: #7e22ce;
+  font-weight: 900;
+}

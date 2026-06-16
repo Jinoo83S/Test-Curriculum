@@ -1538,9 +1538,67 @@ function getGroupActiveCards(group) {
     .filter(Boolean);
 }
 
+function getCompoundOptionKey(card) {
+  if (!card?.compoundParentTemplateId) return "";
+  const classKey = (card.classKeys || []).map(clean).filter(Boolean).sort().join(",");
+  const classLabel = (card.classLabels || []).map(clean).filter(Boolean).sort().join(",");
+  return [
+    "compound",
+    card.compoundParentTemplateId,
+    card.gradeKey || "",
+    card.sectionIdx ?? 0,
+    classKey || classLabel || ""
+  ].join("::");
+}
+
+function sortCompoundPartCards(cards = []) {
+  return [...(cards || [])].filter(Boolean).sort((a, b) => {
+    const ai = Number.isInteger(a.compoundPartIndex) ? a.compoundPartIndex : 999;
+    const bi = Number.isInteger(b.compoundPartIndex) ? b.compoundPartIndex : 999;
+    if (ai !== bi) return ai - bi;
+    return getTtCardLabel(a).localeCompare(getTtCardLabel(b), "ko", { numeric: true });
+  });
+}
+
+function makeGroupReviewOptions(cards = []) {
+  const options = [];
+  const compoundBuckets = new Map();
+  (cards || []).filter(Boolean).forEach(card => {
+    const cKey = getCompoundOptionKey(card);
+    if (!cKey) {
+      options.push({
+        kind: "card",
+        key: `card:${card.id}`,
+        cards: [card],
+        title: getReviewCardDisplay(card).subject,
+        credits: getGmCardCredit(card),
+      });
+      return;
+    }
+    if (!compoundBuckets.has(cKey)) compoundBuckets.set(cKey, []);
+    compoundBuckets.get(cKey).push(card);
+  });
+
+  compoundBuckets.forEach(bucket => {
+    const ordered = sortCompoundPartCards(bucket);
+    const parentTpl = getTemplateById(ordered[0]?.compoundParentTemplateId || ordered[0]?.templateId);
+    const title = ordered.map(card => getReviewCardDisplay(card).subject).filter(Boolean).join("+")
+      || (parentTpl ? getTemplateCardTitle(parentTpl) : "복합 과목");
+    options.push({
+      kind: "compound",
+      key: getCompoundOptionKey(ordered[0]),
+      cards: ordered,
+      title,
+      credits: ordered.reduce((sum, card) => sum + getGmCardCredit(card), 0),
+    });
+  });
+
+  return options.sort((a, b) => a.title.localeCompare(b.title, "ko", { numeric: true }));
+}
+
 function getGroupCreditLabel(group) {
-  const credits = [...new Set(getGroupActiveCards(group)
-    .map(getGmCardCredit)
+  const credits = [...new Set(makeGroupReviewOptions(getGroupActiveCards(group))
+    .map(option => option.credits)
     .filter(v => Number.isFinite(v) && v > 0)
     .map(formatGmCreditValue))]
     .sort((a, b) => Number(a) - Number(b));
@@ -1644,14 +1702,16 @@ function getGroupReviewCardsForClass(group, classKey) {
 
 function getGroupReviewCreditInfo(group, classKey) {
   const cards = getGroupReviewCardsForClass(group, classKey);
-  const numericCredits = cards
-    .map(getGmCardCredit)
+  const options = makeGroupReviewOptions(cards);
+  const numericCredits = options
+    .map(option => option.credits)
     .filter(v => Number.isFinite(v) && v > 0);
   const uniqueCredits = [...new Set(numericCredits.map(formatGmCreditValue))]
     .sort((a, b) => Number(a) - Number(b));
   const countedCredit = numericCredits.length ? Math.max(...numericCredits) : 0;
   return {
     cards,
+    options,
     countedCredit,
     creditLabel: uniqueCredits.length ? uniqueCredits.join(", ") : "-",
     mixed: uniqueCredits.length > 1,
@@ -1734,7 +1794,16 @@ function createClassReviewDetail(row) {
     row.groupRows.forEach(group => {
       const tr = document.createElement("tr");
       const mixedNote = group.mixed ? ` <span class="group-review-mixed">카드시수 ${escapeHtml(group.creditLabel)}</span>` : "";
-      const cardsHtml = group.cards.map(card => {
+      const cardsHtml = (group.options || []).map(option => {
+        if (option.kind === "compound" && option.cards.length > 1) {
+          const target = [...new Set(option.cards.flatMap(card => card.classLabels || []).map(clean).filter(Boolean))].join(", ") || "-";
+          const parts = option.cards.map(card => {
+            const info = getReviewCardDisplay(card);
+            return `<div class="group-review-compound-part"><span>${escapeHtml(info.subject)}</span><em>${escapeHtml(info.teacher)}</em><b>${escapeHtml(formatGmCreditValue(getGmCardCredit(card)))}시수</b></div>`;
+          }).join("");
+          return `<div class="group-review-detail-card group-review-detail-compound"><strong>${escapeHtml(option.title)}</strong><span>${escapeHtml(formatGmCreditValue(option.credits))}시수 · ${escapeHtml(target)}</span><div class="group-review-compound-parts">${parts}</div></div>`;
+        }
+        const card = option.cards[0];
         const info = getReviewCardDisplay(card);
         return `<div class="group-review-detail-card"><strong>${escapeHtml(info.subject)}</strong><span>${escapeHtml(info.target)}</span></div>`;
       }).join("");
@@ -1859,6 +1928,47 @@ function createTtCardChip(card, opts = {}) {
 
   chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: card.id }); chip.classList.add("dragging"); });
   chip.addEventListener("dragend",   () => { setDrag(null); chip.classList.remove("dragging"); });
+  return chip;
+}
+
+function createCompoundOptionChip(option, opts = {}) {
+  const { onDeleteAll, showDelete = false } = opts;
+  const cards = sortCompoundPartCards(option?.cards || []);
+  const first = cards[0] || {};
+  const chip = document.createElement("div");
+  chip.className = "gm-card gm-card-compound lang-both";
+  chip.draggable = false;
+  chip.dataset.compoundOptionKey = option?.key || "";
+
+  const r1 = document.createElement("div"); r1.className = "gm-card-r1";
+  const subjectEl = document.createElement("div"); subjectEl.className = "gm-card-subject";
+  subjectEl.textContent = option?.title || "복합 과목";
+  const gradeChip = document.createElement("span"); gradeChip.className = "gm-card-grade";
+  gradeChip.textContent = gradeDisplay(first.gradeKey);
+  const secLbl = [...new Set(cards.flatMap(card => card.classLabels || []).map(clean).filter(Boolean))].join(", ") || getSectionLabelFromRoster(first);
+  if (secLbl) { const sb = document.createElement("span"); sb.className = "gm-card-sec"; sb.textContent = secLbl; r1.append(subjectEl, gradeChip, sb); }
+  else { r1.append(subjectEl, gradeChip); }
+
+  const r2 = document.createElement("div"); r2.className = "gm-card-r2";
+  const tchEl = document.createElement("div"); tchEl.className = "gm-card-teacher";
+  tchEl.textContent = `${formatGmCreditValue(option?.credits || 0)}시수 · 복합 ${cards.length}파트`;
+  r2.appendChild(tchEl);
+  if (showDelete && canEdit() && onDeleteAll) {
+    const del = document.createElement("button"); del.type = "button"; del.className = "gm-card-del"; del.textContent = "×";
+    del.title = "복합 과목 전체를 이 그룹에서 제외";
+    del.onclick = (e) => { e.stopPropagation(); onDeleteAll(cards); };
+    r2.appendChild(del);
+  }
+
+  const parts = document.createElement("div"); parts.className = "gm-card-compound-parts";
+  cards.forEach(card => {
+    const info = getReviewCardDisplay(card);
+    const part = document.createElement("div"); part.className = "gm-card-compound-part";
+    part.innerHTML = `<span>${escapeHtml(info.subject)}</span><em>${escapeHtml(info.teacher)}</em><b>${escapeHtml(formatGmCreditValue(getGmCardCredit(card)))}시수</b>`;
+    parts.appendChild(part);
+  });
+
+  chip.append(r1, r2, parts);
   return chip;
 }
 
@@ -2049,19 +2159,39 @@ function createGroupBlockGM(groupId, onStructureChange) {
     const ph = document.createElement("div"); ph.className = "group-pool-empty-hint";
     ph.textContent = "미배정 카드를 여기로 드래그"; poolCards.appendChild(ph);
   } else {
-    poolIds.forEach(id => {
-      const card = getTtCardById(id); if (!card) return;
+    const poolOptions = makeGroupReviewOptions(poolIds.map(id => getTtCardById(id)).filter(Boolean));
+    poolOptions.forEach(option => {
+      if (option.kind === "compound" && option.cards.length > 1) {
+        const chip = createCompoundOptionChip(option, {
+          showDelete: true,
+          onDeleteAll: (cards) => {
+            if (!canEdit()) return;
+            const title = option.title || "복합 과목";
+            if (!confirm(`"${title}" 복합 과목을 이 자동 그룹에서 제외할까요?
+구성 카드 ${cards.length}개가 함께 미배정 카드로 이동합니다.`)) return;
+            cards.forEach(card => excludeCardFromGroup(groupId, card.id));
+            scheduleSave("timetable");
+            onStructureChange();
+          }
+        });
+        poolCards.appendChild(chip);
+        return;
+      }
+
+      const card = option.cards[0];
+      if (!card) return;
       const chip = createTtCardChip(card, {
         showDelete: true,
         onDelete: (c) => {
           if (!canEdit()) return;
-          if (!confirm(`"${getTtCardLabel(c)}" 카드를 이 자동 그룹에서 제외할까요?\n카드 자체는 삭제되지 않고 미배정 카드로 이동합니다.`)) return;
+          if (!confirm(`"${getTtCardLabel(c)}" 카드를 이 자동 그룹에서 제외할까요?
+카드 자체는 삭제되지 않고 미배정 카드로 이동합니다.`)) return;
           excludeCardFromGroup(groupId, c.id);
           scheduleSave("timetable");
           onStructureChange();
         }
       });
-      chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: id }); chip.classList.add("dragging"); });
+      chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: card.id }); chip.classList.add("dragging"); });
       chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
       poolCards.appendChild(chip);
     });

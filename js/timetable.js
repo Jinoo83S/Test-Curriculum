@@ -1265,14 +1265,97 @@ function setLunchConfig(afterPeriod, show) {
 }
 
 // ── Data helpers ──────────────────────────────────────────────────
+function compoundOptionKeyForGroupCard(card) {
+  if (!card?.compoundParentTemplateId) return "";
+  const classKey = (card.classKeys || []).map(clean).filter(Boolean).sort().join(",");
+  const classLabel = (card.classLabels || []).map(clean).filter(Boolean).sort().join(",");
+  return [
+    "compound",
+    card.compoundParentTemplateId,
+    card.gradeKey || "",
+    card.sectionIdx ?? 0,
+    classKey || classLabel || ""
+  ].join("::");
+}
+
+function sortCompoundGroupCards(cards = []) {
+  return [...(cards || [])].filter(Boolean).sort((a, b) => {
+    const ai = Number.isInteger(a.compoundPartIndex) ? a.compoundPartIndex : 999;
+    const bi = Number.isInteger(b.compoundPartIndex) ? b.compoundPartIndex : 999;
+    if (ai !== bi) return ai - bi;
+    return String(a.subject || a.id || "").localeCompare(String(b.subject || b.id || ""), "ko", { numeric: true });
+  });
+}
+
+function groupCreditForCards(cards = []) {
+  const optionCredits = [];
+  const compoundBuckets = new Map();
+  (cards || []).filter(Boolean).forEach(card => {
+    const key = compoundOptionKeyForGroupCard(card);
+    if (!key) {
+      const credits = Number(getCreditsForTtCard(card)) || 0;
+      if (credits > 0) optionCredits.push(credits);
+      return;
+    }
+    if (!compoundBuckets.has(key)) compoundBuckets.set(key, []);
+    compoundBuckets.get(key).push(card);
+  });
+  compoundBuckets.forEach(bucket => {
+    const total = bucket.reduce((sum, card) => sum + (Number(getCreditsForTtCard(card)) || 0), 0);
+    if (total > 0) optionCredits.push(total);
+  });
+  return Math.max(1, ...optionCredits.filter(v => v > 0));
+}
+
+function selectGroupCardsForOccurrence(cards = [], occurrenceIndex = 0) {
+  const normalCards = [];
+  const compoundBuckets = new Map();
+  const occ = Math.max(0, Number(occurrenceIndex) || 0);
+  (cards || []).filter(Boolean).forEach(card => {
+    const key = compoundOptionKeyForGroupCard(card);
+    if (!key) {
+      if (occ < Math.max(0, Number(getCreditsForTtCard(card)) || 0)) normalCards.push(card);
+      return;
+    }
+    if (!compoundBuckets.has(key)) compoundBuckets.set(key, []);
+    compoundBuckets.get(key).push(card);
+  });
+
+  const selectedCompoundCards = [];
+  compoundBuckets.forEach(bucket => {
+    const ordered = sortCompoundGroupCards(bucket)
+      .map(card => ({ card, credits: Math.max(0, Number(getCreditsForTtCard(card)) || 0) }))
+      .filter(row => row.credits > 0);
+    const total = ordered.reduce((sum, row) => sum + row.credits, 0);
+    if (!total) return;
+    let cursor = occ % total;
+    for (const row of ordered) {
+      if (cursor < row.credits) {
+        selectedCompoundCards.push(row.card);
+        return;
+      }
+      cursor -= row.credits;
+    }
+  });
+  return [...normalCards, ...selectedCompoundCards];
+}
+
+function nextManualGroupOccurrenceIndex(groupId, groupCredit = 1) {
+  const total = Math.max(1, Number(groupCredit) || 1);
+  const placedCount = (entries() || []).filter(entry => entry?.groupId === groupId).length;
+  return placedCount % total;
+}
+
 function placeGroupAt(groupId, day, period) {
   const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === groupId);
   if (!grp) return false;
 
-  // 그룹카드는 화면에서 하나의 카드로 보이므로, 배치도 하나의 aggregate entry로 저장합니다.
-  // 이렇게 해야 7AB/8AB/9AB 같은 그룹에서 특정 반(예: 8B)이 누락되지 않고
-  // 상세정보·전체반 시간표·자동배치가 같은 기준(ttcardIds 전체)을 보게 됩니다.
-  const cards = getGroupCards(grp);
+  // 그룹카드는 화면에서 하나의 카드로 보이지만, 복합 과목은 한 회차에 모든 파트를 동시에 넣으면 안 됩니다.
+  // 예: 미적분(2)+심화물리(2)는 1~2회차 미적분, 3~4회차 심화물리처럼 순차 점유합니다.
+  const allCards = getGroupCards(grp);
+  const groupCredit = groupCreditForCards(allCards);
+  const occurrenceIndex = nextManualGroupOccurrenceIndex(grp.id, groupCredit);
+  const cards = selectGroupCardsForOccurrence(allCards, occurrenceIndex);
   const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id, groupName: grp.name || "" });
   if (!data) return false;
   return !!addEntry(data);
@@ -1294,7 +1377,7 @@ function buildSchedulableItems() {
     if (!groupCards.length) return;
     groupCards.forEach(c => groupedCardIds.add(c.id));
 
-    const credits = Math.max(1, ...groupCards.map(getCreditsForTtCard).filter(v => v > 0));
+    const credits = groupCreditForCards(groupCards);
     const teachers = [...new Set(groupCards.flatMap(getTeachersForTtCard).filter(Boolean))].join(",");
     groupBlocks.push({
       group,
