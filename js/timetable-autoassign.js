@@ -650,61 +650,10 @@ export function createAutoAssignAll(deps) {
     return score;
   }
 
-  function autoItemPriorityText(item = {}) {
-    const cards = Array.isArray(item?.ttcards)
-      ? item.ttcards
-      : ttCardIdsFromPlacement(item).map(id => getTtCardById?.(id)).filter(Boolean);
-    return [
-      item.name, item.title, item.label, item.subject, item.subjectEn,
-      item.group, item.groupName, item.track, item.category,
-      item.nameKo, item.nameEn,
-      ...cards.map(c => [c.subject, c.label, c.groupName, c.track, c.group, c.nameKo, c.nameEn].filter(Boolean).join(" "))
-    ].filter(Boolean).join(" ");
-  }
-
-  function autoItemClassCount(item = {}) {
-    return new Set(classKeysForCapacity(item).filter(Boolean)).size;
-  }
-
-  function autoItemTeacherCount(item = {}) {
-    return new Set(getTeachersForAutoItem(item).filter(Boolean)).size;
-  }
-
-  function getStructuralAutoItemRank(item = {}) {
-    const text = autoItemPriorityText(item);
-    const classCount = autoItemClassCount(item);
-    const teacherCount = autoItemTeacherCount(item);
-    const credits = Math.max(0, Number(item?.credits || targetCreditsForAutoItem(item) || 0));
-
-    // r51: ASC 연동 없이 현재 카드 데이터만으로 마지막 2% 퍼즐을 줄입니다.
-    // 여러 반이 동시에 차는 창체/리더십/진로 계열은 뒤로 밀리면 공통 빈칸이 사라지므로
-    // 일반 단일반 교과보다 먼저 배치해야 합니다.
-    if (classCount >= 3 && /리더십|Leadership|진로|Vision|소명|선교|Missional|자율|동아리|채플|Chapel|Club/i.test(text)) return 0;
-    if (classCount >= 3 && /성품|공동체|Community|Character|Research|Presentation|자율연구|Independent/i.test(text)) return 1;
-    if (classCount >= 2 && /스토리텔링|공연기획|Performance|Music\s*and\s*Art/i.test(text)) return 2;
-    if (/HS\s*국어|고등\s*국어|언어와\s*매체|문학|공통국어|한국어/i.test(text) && (classCount >= 1 || teacherCount >= 1)) return 3;
-    if (/공통영어1|English\s*10|영어\s*I|영어\s*독해|English\s*12/i.test(text) && (classCount >= 1 || teacherCount >= 1)) return 4;
-    if (teacherCount >= 2 && credits >= 2) return 5;
-    if (classCount >= 2) return 6;
-    return 99;
-  }
-
-  function structuralAutoItemPriority(item = {}) {
-    const rank = getStructuralAutoItemRank(item);
-    if (rank >= 99) return 0;
-    const classCount = autoItemClassCount(item);
-    const teacherCount = autoItemTeacherCount(item);
-    const credits = Math.max(0, Number(item?.credits || targetCreditsForAutoItem(item) || 0));
-    return 50000 - rank * 3500 + classCount * 700 + teacherCount * 500 + credits * 80 + getAutoItemDifficulty(item);
-  }
-
   const annotateRestrictedAutoItem = item => {
     const restrictedTeachers = getRestrictedTeachersForAutoItem(item);
     const excludedGroups = excludedGroupsForAutoItem(item);
     const excludedGroupPriority = excludedCardPriorityForAutoItem(item);
-    const structuralRank = getStructuralAutoItemRank(item);
-    const hasStructuralPriority = structuralRank < 99;
-    const structuralPriority = structuralAutoItemPriority(item);
     return {
       ...item,
       hasRestrictedTeacher: restrictedTeachers.length > 0,
@@ -713,11 +662,8 @@ export function createAutoAssignAll(deps) {
       excludedGroupNames: excludedGroups.map(group => group.name || group.groupName || group.label || group.id).filter(Boolean),
       isExcludedGroupFollowup: excludedGroupPriority > 0,
       excludedGroupPriority,
-      hasStructuralPriority,
-      structuralRank,
-      structuralPriority,
-      // 0은 핵심 동시/전체/희소 카드, 1은 그룹 후속 필수카드/제약근무 교사, 2는 일반 자동배치 대상입니다.
-      priorityTier: hasStructuralPriority ? 0 : (excludedGroupPriority > 0 ? 1 : (restrictedTeachers.length > 0 ? 1 : 2))
+      // 0은 핵심 동시배정 그룹, 1은 그룹 후속 필수카드/제약근무 교사, 2는 일반 자동배치 대상입니다.
+      priorityTier: excludedGroupPriority > 0 ? 1 : (restrictedTeachers.length > 0 ? 1 : 2)
     };
   };
 
@@ -745,10 +691,8 @@ export function createAutoAssignAll(deps) {
     if (/MS\s*국어|중등\s*국어/i.test(text)) return 1;
     if (/국어|한국어|Korean/i.test(text) && classCount >= 3) return 2;
     if (/선택/.test(text) && classCount >= 2) return 3;
-    if (/리더십|Leadership|진로|Vision|소명|선교|Missional|성품|공동체|Character|Community/i.test(text) && classCount >= 2) return 4;
-    if (/채플|CA|SA|자율|동아리|Chapel|Club/i.test(text)) return 5;
-    if (/스토리텔링|공연기획|Performance|Music\s*and\s*Art/i.test(text) && classCount >= 2) return 6;
-    if (cards.length >= 4 || classCount >= 4 || teacherCount >= 4) return 7;
+    if (/채플|CA|SA|자율|동아리|Chapel|Club/i.test(text)) return 4;
+    if (cards.length >= 4 || classCount >= 4 || teacherCount >= 4) return 5;
     return 99;
   }
 
@@ -3521,9 +3465,7 @@ export function createAutoAssignAll(deps) {
     const targets = (failedItems || []).filter(f => f?.item);
     if (!targets.length) return null;
 
-    const protectedBackdrop = Array.isArray(options.protectedEntries)
-      ? cloneAutoAssignData(options.protectedEntries)
-      : [...entries()];
+    const protectedBackdrop = [...entries()];
     const orderedSlots = [...baseSlots];
     const maxMillis = Math.max(300, Number(limits.maxMillis || 1500));
     const maxIters = Math.max(200, Number(limits.maxIters || 6000));
@@ -3676,10 +3618,10 @@ export function createAutoAssignAll(deps) {
     const maxEvacuateBlocks = options.runAttempts === 'deep' ? 7 : 4;
     const maxMultiMoveSlotsPerBlock = options.runAttempts === 'deep' ? orderedSlots.length : Math.min(28, orderedSlots.length);
     const maxRepairAttempts = options.runAttempts === 'deep' ? 90000 : (options.runAttempts === 'fast' ? 2400 : 9000);
-    const maxChainCalls = options.runAttempts === 'deep' ? 48 : (options.runAttempts === 'fast' ? 8 : 22);
-    const maxChainTargetSlots = options.runAttempts === 'deep' ? orderedSlots.length : (options.runAttempts === 'fast' ? 5 : 16);
-    const maxChainAttemptsPerCall = options.runAttempts === 'deep' ? 6500 : (options.runAttempts === 'fast' ? 450 : 1600);
-    const maxChainMillisPerCall = options.runAttempts === 'deep' ? 1500 : (options.runAttempts === 'fast' ? 180 : 520);
+    const maxChainCalls = options.runAttempts === 'deep' ? 28 : (options.runAttempts === 'fast' ? 8 : 14);
+    const maxChainTargetSlots = options.runAttempts === 'deep' ? 14 : (options.runAttempts === 'fast' ? 5 : 8);
+    const maxChainAttemptsPerCall = options.runAttempts === 'deep' ? 2500 : (options.runAttempts === 'fast' ? 450 : 900);
+    const maxChainMillisPerCall = options.runAttempts === 'deep' ? 650 : (options.runAttempts === 'fast' ? 180 : 320);
     let attempts = 0;
     let chainCalls = 0;
     let lastRepairYieldAt = Date.now();
@@ -5565,8 +5507,6 @@ export function createAutoAssignAll(deps) {
           if (/MS\s*국어|중등\s*국어/i.test(nameText)) bonus += 12000;
           if (group.isConcurrent || group.groupType === "concurrent") bonus += 8000;
           if (/선택/.test(nameText)) bonus += 6200;
-          if (/리더십|Leadership|진로|Vision|소명|선교|Missional|성품|공동체|Character|Community/i.test(nameText)) bonus += 9000;
-          if (/스토리텔링|공연기획|Performance|Music\s*and\s*Art/i.test(nameText)) bonus += 7600;
           if (/채플|자율|동아리|CA|SA|Chapel|Club/i.test(nameText)) bonus += 5200;
           if (/국어|한국어|영어|Korean|English/i.test(nameText)) bonus += 4200;
           // 여러 반·여러 교사·여러 카드가 동시에 움직이는 그룹은 뒤로 밀리면 거의 배치가 불가능해집니다.
@@ -5605,10 +5545,6 @@ export function createAutoAssignAll(deps) {
           const ib = itemByKey.get(b);
           const ap = comparePriority(ia, ib);
           if (ap !== 0) return ap;
-          const structuralRank = Number(ia?.structuralRank ?? 99) - Number(ib?.structuralRank ?? 99);
-          if (structuralRank !== 0) return structuralRank;
-          const structuralPriority = Number(ib?.structuralPriority || 0) - Number(ia?.structuralPriority || 0);
-          if (structuralPriority !== 0) return structuralPriority;
           const excludedPriority = Number(ib?.excludedGroupPriority || 0) - Number(ia?.excludedGroupPriority || 0);
           if (excludedPriority !== 0) return excludedPriority;
           const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
@@ -5621,12 +5557,10 @@ export function createAutoAssignAll(deps) {
         const structuralGroupBlocks = orderedGroups.filter(block => block.hasStructuralPriority || block.priorityTier === 0);
         const restrictedGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && block.hasRestrictedTeacher);
         const normalGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && !block.hasRestrictedTeacher);
-        const structuralStandaloneKeys = orderedKeys.filter(key => itemByKey.get(key)?.hasStructuralPriority);
-        const structuralStandaloneKeySet = new Set(structuralStandaloneKeys);
-        const excludedFollowupKeys = orderedKeys.filter(key => !structuralStandaloneKeySet.has(key) && itemByKey.get(key)?.isExcludedGroupFollowup);
+        const excludedFollowupKeys = orderedKeys.filter(key => itemByKey.get(key)?.isExcludedGroupFollowup);
         const excludedFollowupKeySet = new Set(excludedFollowupKeys);
-        const restrictedKeys = orderedKeys.filter(key => !structuralStandaloneKeySet.has(key) && !excludedFollowupKeySet.has(key) && itemByKey.get(key)?.hasRestrictedTeacher);
-        const normalKeys = orderedKeys.filter(key => !structuralStandaloneKeySet.has(key) && !excludedFollowupKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
+        const restrictedKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && itemByKey.get(key)?.hasRestrictedTeacher);
+        const normalKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
         const placedByKey = new Map();
 
         // ── 공유 Forward-checking (그룹/일반 카드 공통) ───────────────────────
@@ -5859,7 +5793,6 @@ export function createAutoAssignAll(deps) {
         // 고정 수업 다음: 큰 동시배정 그룹을 먼저 배치합니다.
         // 제약교사 일반카드가 10A/11A/12A의 희소 슬롯을 먼저 점유하면 HS국어 같은 그룹은 나중에 복구가 거의 불가능합니다.
         await placeGroups(structuralGroupBlocks, "핵심 동시배정 그룹 선배치");
-        await placeStandaloneKeys(structuralStandaloneKeys, "핵심 전체/희소 카드 선배치");
         await placeStandaloneKeys(excludedFollowupKeys, "그룹 후속 필수카드 선배치");
         await placeGroups(restrictedGroupBlocks, "제약교사 그룹 우선 배치");
         await placeStandaloneKeys(restrictedKeys, "제약교사 일반 카드 우선 배치");
@@ -6593,10 +6526,10 @@ export function createAutoAssignAll(deps) {
       const mcLimits = {
         // r42: 마지막 잔여 5개는 단순 후보 부족이 아니라 연쇄 이동 퍼즐입니다.
         // balanced/deep에서만 시간을 조금 더 주되, 내부 progress yield로 브라우저 응답성은 유지합니다.
-        maxMillis: options.runAttempts === "deep" ? 20000 : (options.runAttempts === "fast" ? 1000 : 9000),
-        maxIters: options.runAttempts === "deep" ? 60000 : 24000
+        maxMillis: options.runAttempts === "deep" ? 12000 : (options.runAttempts === "fast" ? 1000 : 6000),
+        maxIters: options.runAttempts === "deep" ? 36000 : 16000
       };
-      const mc = await tryMinConflictsResidualEscape(bestFailed, baseSlots, bestPlaced, { ...(bestStage?.options || options), engineProfile, protectedEntries }, updateProgress, mcLimits);
+      const mc = await tryMinConflictsResidualEscape(bestFailed, baseSlots, bestPlaced, { ...(bestStage?.options || options), engineProfile }, updateProgress, mcLimits);
       if (mc?.placed) {
         const mcFailed = makeCoverageShortageFailures(mc.placed, []).failures;
         const mcMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...mc.placed], activeGrades, mcFailed, {

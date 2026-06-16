@@ -2310,6 +2310,32 @@ const {
   showEntryDetail,
 } = ttDetailHandlers;
 
+function openEntryContextMenuSafely(entry, ev) {
+  if (!entry || !ev) return;
+  ev.preventDefault?.();
+  ev.stopPropagation?.();
+  try {
+    showEntryContextMenu(entry, ev.clientX ?? 0, ev.clientY ?? 0);
+  } catch (error) {
+    console.error("[timetable] context menu failed", error);
+    try {
+      showEntryDetail(entry);
+    } catch (detailError) {
+      console.error("[timetable] context menu fallback failed", detailError);
+    }
+  }
+}
+
+// r52: 카드 내부 요소가 렌더링을 덮거나 이벤트 버블링이 달라져도
+// 시간표 수업 카드 우클릭 메뉴가 사라지지 않도록 문서 캡처 단계에서 한 번 더 보강합니다.
+document.addEventListener("contextmenu", ev => {
+  const card = ev.target?.closest?.(".tt-entry-card[data-entry-id]");
+  if (!card) return;
+  const entry = entries().find(item => item?.id === card.dataset.entryId);
+  if (!entry) return;
+  openEntryContextMenuSafely(entry, ev);
+}, true);
+
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;
   const title     = entryTitle(entry);
@@ -2406,8 +2432,7 @@ function buildEntryCard(entry, opts = {}) {
 
   // Right-click → context menu
   card.addEventListener("contextmenu", ev => {
-    ev.preventDefault();
-    showEntryContextMenu(entry, ev.clientX, ev.clientY);
+    openEntryContextMenuSafely(entry, ev);
   });
 
   card.dataset.entryId = entry.id;
