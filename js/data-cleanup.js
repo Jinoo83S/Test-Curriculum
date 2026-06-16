@@ -62,11 +62,12 @@ function isWholeGradeLikeCard(card = {}) {
     card.subject, card.subjectEn, card.label, card.nameKo, card.nameEn,
     card.category, card.track, card.group
   ].map(clean).filter(Boolean).join(" ");
-  return !!card.gradeKey && (
-    !!card.isWholeGrade ||
-    isChanCheCategory(card.category) ||
-    isProtectedWholeGradeLabel(labelText)
-  );
+  if (!card.gradeKey) return false;
+  if (card.isWholeGrade) return true;
+  const hasStoredAudience = (Array.isArray(card.classKeys) && card.classKeys.length)
+    || (Array.isArray(card.classLabels) && card.classLabels.length);
+  if (hasStoredAudience) return false;
+  return isProtectedWholeGradeLabel(labelText);
 }
 
 function duplicateKeyForWholeCard(card = {}) {

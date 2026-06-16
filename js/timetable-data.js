@@ -78,15 +78,21 @@ export function getGroupNameForTemplate(gradeKey, templateId) {
 export function isWholeGradeTtCard(card) {
   if (!card?.templateId || !card?.gradeKey) return false;
   if (card.isWholeGrade) return true;
+
+  // 카드가 이미 특정 반 대상(classKeys/classLabels)을 가지고 있으면 그 저장값을 우선합니다.
+  // 제목이 "채플"이어도 사용자가/생성기가 반별 카드로 만든 경우 전체학년으로 되돌리지 않습니다.
+  const hasStoredAudience = (Array.isArray(card.classKeys) && card.classKeys.length)
+    || (Array.isArray(card.classLabels) && card.classLabels.length);
+  if (hasStoredAudience) return false;
+
   const title = getTtCardTitleSnapshot(card);
   const category = clean(card.category || getCategoryForTemplate(card.gradeKey, card.templateId));
   const groupName = clean(card.group || getGroupNameForTemplate(card.gradeKey, card.templateId));
   const track = clean(card.track || getTrackForTemplate(card.gradeKey, card.templateId));
   const label = [title, category, groupName, track, card.label].join(" ");
 
-  // 창체/채플/CA/SA/MS채플처럼 실제로 해당 학년 전체가 동시에 듣는 수업만
-  // 모든 반을 점유하도록 봅니다.
-  return isChanCheCategory(category) || isProtectedWholeGradeLabel(label);
+  // 저장 대상 반이 없는 과거 데이터에 한해 명시적 전체학년 표현을 fallback으로 사용합니다.
+  return isProtectedWholeGradeLabel(label);
 }
 
 export function getCategoryColor(category) {
@@ -255,9 +261,7 @@ export function getTtCardClassInfos(card) {
   };
   if (stored.length && (card.isManual || card.manualEdited)) return normalizeStoredInfos();
 
-  const explicitWhole = !!card.isWholeGrade || isChanCheCategory(card.category) || isProtectedWholeGradeLabel(
-    card.subject, card.subjectEn, card.label, card.category, card.track, card.group, card.nameKo, card.nameEn
-  );
+  const explicitWhole = isWholeGradeTtCard(card);
 
   // 전체학년/채플/창체 계열 카드는 과거 저장값에 7A만 남아 있어도
   // 현재 학급 목록 기준으로 해당 학년 전체 반을 우선 점유하게 합니다.
@@ -481,9 +485,7 @@ export function calculateClassCreditSummary(ttcards = getTtCards(), groups = app
       card.subject, card.subjectEn, card.label,
       card.category, card.track, card.group, card.nameKo, card.nameEn
     ].map(clean).filter(Boolean).join(" ");
-    const isWhole = isWholeGradeTtCard(card)
-      || isChanCheCategory(card.category)
-      || isProtectedWholeGradeLabel(label);
+    const isWhole = isWholeGradeTtCard(card);
     if (!isWhole) return "";
     const base = card.compoundParentTemplateId || card.templateId || clean(card.subject) || clean(card.label);
     const grade = clean(card.gradeKey);

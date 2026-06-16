@@ -63,7 +63,11 @@ export function getEffectiveCredit(rowOrCredits, category = "") {
 export function isProtectedWholeGradeLabel(...values) {
   const text = values.map(clean).filter(Boolean).join(" ");
   if (!text) return false;
-  return /(창체|채플|chapel|ms\s*채플|자율|동아리|전체|전학년|whole\s*grade|all\s*grade)/i.test(text);
+  // 전체 학년으로 고정해야 하는 표현만 보호합니다.
+  // "창체", "자율", "동아리" 같은 큰 분류명은 반별 수업에도 쓰이므로
+  // 이 함수에서 전체학년으로 판정하지 않습니다. 실제 전체/반별 여부는 카드 생성 시
+  // 수강명단의 sectionIdx/classId 구조를 우선해 결정합니다.
+  return /(채플|chapel|ms\s*채플|전체\s*(학년|반)?|전학년|학년\s*전체|whole\s*grade|all\s*grade)/i.test(text);
 }
 
 export function languageClass(lang) {

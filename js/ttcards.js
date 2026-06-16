@@ -237,20 +237,71 @@ function getCurriculumRowForCard(gradeKey, templateId) {
   return (appState.curriculum?.gradeBoards?.[gradeKey] || [])
     .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId) || null;
 }
-function isWholeGradeRow(row, tpl) {
-  return isChanCheCategory(row?.category) || isProtectedWholeGradeLabel(row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn);
+function getRosterSectionClassMap(templateId, gradeKey) {
+  const out = new Map();
+  const classes = appState.classes?.classes || [];
+  const classById = new Map(classes.map(cls => [cls.id, cls]));
+  (appState.rosters?.rosters?.[templateId] || []).forEach(re => {
+    const cls = classById.get(re.classId);
+    if (!cls || cls.grade !== gradeKey) return;
+    const sectionIdx = Number.isInteger(re.sectionIdx) ? re.sectionIdx : (parseInt(re.sectionIdx, 10) || 0);
+    if (!out.has(sectionIdx)) out.set(sectionIdx, new Set());
+    const key = classKeyOf(gradeKey, cls.name || sectionLabel(sectionIdx));
+    if (key) out.get(sectionIdx).add(key);
+  });
+  return out;
+}
+
+function rosterSectionCoversWholeGrade(templateId, gradeKey, sectionIdx = 0) {
+  const sectionMap = getRosterSectionClassMap(templateId, gradeKey);
+  const sectionClasses = sectionMap.get(sectionIdx) || new Set();
+  if (!sectionClasses.size) return false;
+  const gradeClassKeys = getGradeClasses(gradeKey)
+    .map((cls, idx) => classKeyOf(gradeKey, cls.name || sectionLabel(idx)))
+    .filter(Boolean);
+  return gradeClassKeys.length > 1
+    && sectionClasses.size >= gradeClassKeys.length
+    && gradeClassKeys.every(key => sectionClasses.has(key));
+}
+
+function isWholeGradeRow(row, tpl, gradeKey = "", sectionIdx = 0) {
+  if (!row || !tpl) return false;
+
+  // 수강명단이 있으면 이름/분류가 아니라 실제 sectionIdx/classId 구조가 우선입니다.
+  // - 한 section에 해당 학년 모든 반이 들어 있으면 전체학년 카드
+  // - section 0/1/2가 각각 A/B/C처럼 나뉘어 있으면 반별 카드
+  const rosterSections = getRosterSectionClassMap(tpl.id, gradeKey);
+  if (gradeKey && rosterSections.size) {
+    if (rosterSections.size !== 1) return false;
+    const onlySectionIdx = [...rosterSections.keys()][0];
+    return rosterSectionCoversWholeGrade(tpl.id, gradeKey, onlySectionIdx);
+  }
+
+  // 수강명단이 아직 없을 때만 명시적인 전체학년 표현을 보조 기준으로 사용합니다.
+  return isProtectedWholeGradeLabel(row?.category, row?.track, row?.group, tpl?.nameKo, tpl?.nameEn);
+}
+
+function getGeneratedSectionCountForRow(templateId, gradeKey, row, tpl) {
+  const rosterSections = getRosterSectionClassMap(templateId, gradeKey);
+  if (rosterSections.size) {
+    const firstSectionIdx = [...rosterSections.keys()].sort((a, b) => a - b)[0] ?? 0;
+    if (rosterSections.size === 1 && rosterSectionCoversWholeGrade(templateId, gradeKey, firstSectionIdx)) return 1;
+    const maxSectionIdx = Math.max(...rosterSections.keys());
+    return Math.max(1, maxSectionIdx + 1, rosterSections.size);
+  }
+  return isWholeGradeRow(row, tpl, gradeKey, 0) ? 1 : Math.max(1, getClassCount(templateId));
 }
 function resolveCardAudience({ templateId, gradeKey, sectionIdx }) {
   const classes = appState.classes?.classes || [];
   const classKeys = new Set(), classLabels = new Set();
   const row = getCurriculumRowForCard(gradeKey, templateId);
   const tpl = getTemplateById(templateId);
-  const whole = isWholeGradeRow(row, tpl);
+  const whole = isWholeGradeRow(row, tpl, gradeKey, sectionIdx);
   const gradeClasses = getGradeClasses(gradeKey);
 
-  // 창체·채플·자율·동아리처럼 실제 운영상 학년 전체가 동시에 점유되는 카드는
-  // 수강명단이 일부 반(A반 등)만 들어 있어도 학년 전체 반을 우선 대상에 넣습니다.
-  // 이렇게 해야 전체보기/충돌검사/시수진단이 "A반 카드"로 오인하지 않습니다.
+  // 수강명단 구조상 한 section이 해당 학년 전체 반을 덮는 경우에만
+  // 학년 전체 반을 대상에 넣습니다. 분류명이 창체/자율/진로/동아리라는 이유만으로
+  // 반별 수업을 통합하지 않습니다.
   if (whole) {
     gradeClasses.forEach(cls => {
       const sec = cls.name || sectionLabel(sectionIdx ?? 0);
@@ -315,7 +366,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     classLabels: audience.classLabels.length ? audience.classLabels : (existing?.classLabels || []),
     // 학생 key는 시간표 카드에 저장하지 않습니다. 학급/반 점유는 classKeys만 사용합니다.
     studentKeys: [],
-    isWholeGrade: row ? isWholeGradeRow(row, tpl) : !!existing?.isWholeGrade,
+    isWholeGrade: row ? isWholeGradeRow(row, tpl, gradeKey, sectionIdx) : !!existing?.isWholeGrade,
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,
     compoundParentTemplateId: isCompoundPart ? templateId : null,
@@ -366,12 +417,9 @@ function buildAllGeneratedTtCards(existing = new Map()) {
         seenTpl.add(tplId);
 
         const tpl = getTemplateById(tplId);
-        const wholeGrade = isWholeGradeRow(row, tpl);
-        // 창체·채플·자율·동아리·진로 등 학년 전체가 같은 시간에 움직이는 과목은
-        // 수강명단/반수 기준으로 _0, _1, _2 카드를 만들지 않고 학년당 대표 카드 1개만 생성합니다.
-        // 대상 반 정보는 resolveCardAudience()가 해당 학년 전체 반으로 넣어주기 때문에
-        // 충돌 검사와 시수 계산은 여전히 모든 반을 점유하는 것으로 처리됩니다.
-        const cc = wholeGrade ? 1 : Math.max(1, getClassCount(tplId));
+        // 카드 개수는 커리큘럼 원본 + 수강명단 sectionIdx 구조에서만 결정합니다.
+        // 분류명이 창체/자율/진로/동아리라는 이유만으로 반별 수업을 통합하지 않습니다.
+        const cc = getGeneratedSectionCountForRow(tplId, gradeKey, row, tpl);
 
         for (let i = 0; i < cc; i++) {
           const built = buildGeneratedCardsForTemplate({ templateId: tplId, gradeKey, sectionIdx: i, existing });
@@ -500,7 +548,7 @@ function repairTtCardIntegrity(card, meta, { action = "refresh" } = {}) {
   if (!card) return null;
   const tpl = getTemplateById(card.templateId);
   const row = getCurriculumRowForCard(card.gradeKey, card.templateId);
-  const expectedWhole = row ? isWholeGradeRow(row, tpl) : false;
+  const expectedWhole = row ? isWholeGradeRow(row, tpl, card.gradeKey, card.sectionIdx ?? 0) : false;
   const manual = isManualTtCard(card) || !!card.isManual;
   const beforeKeys = [...(card.classKeys || [])];
   const beforeLabels = [...(card.classLabels || [])];
@@ -540,9 +588,9 @@ function repairTtCardIntegrity(card, meta, { action = "refresh" } = {}) {
 
   // 3) 수동 수정/수동 생성 카드에 남은 isWholeGrade 잔여값을 정리합니다.
   //    예: classKeys는 12:A 하나뿐인데 isWholeGrade=true인 오래된 HR/수동 카드.
-  if (!expectedWhole && card.isWholeGrade && (card.classKeys || []).length <= 1) {
+  if (!expectedWhole && card.isWholeGrade && (shouldFollowGeneratedAudience || (card.classKeys || []).length <= 1)) {
     card.isWholeGrade = false;
-    pushCardGenerationIssue(meta, "warning", "stale-whole-grade-flag-repaired", `${getTtCardLabel(card)}: 한 학급 카드에 남아 있던 전체학년 플래그를 해제했습니다.`, { cardId: card.id, repaired: true });
+    pushCardGenerationIssue(meta, "warning", "stale-whole-grade-flag-repaired", `${getTtCardLabel(card)}: 원본 수강명단 기준 반별 카드이므로 전체학년 플래그를 해제했습니다.`, { cardId: card.id, repaired: true });
   }
 
   // 4) 교사 문자열과 배열을 동기화합니다. 다중교사는 splitTeacherNames 기준입니다.
