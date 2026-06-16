@@ -659,214 +659,168 @@ export function resetRooms() {
   return true;
 }
 
+function summarizeRoomUsage(options = {}) {
+  const allEntries = getRoomStatusEntries(options);
+  const assignedEntries = allEntries.filter(e => e.roomId);
+  const unassignedEntries = allEntries.filter(e => !e.roomId);
+  const activeRoomIds = new Set(assignedEntries.map(e => e.roomId).filter(Boolean));
+  return {
+    roomCount: getRooms().length,
+    usedRoomCount: activeRoomIds.size,
+    assignedCount: assignedEntries.length,
+    unassignedCount: unassignedEntries.length,
+    overlapCount: countRoomOverlaps(allEntries),
+    homeRoomCount: getRooms().filter(r => clean(r.homeRoomClassId)).length,
+    teacherRoomCount: getRooms().filter(r => clean(r.teacherName)).length,
+    unavailableRoomCount: 0,
+  };
+}
+
+function formatRoomSummaryLine(room = {}) {
+  const parts = [];
+  if (room.type) parts.push(room.type);
+  if (room.capacity) parts.push(`${room.capacity}명`);
+  if (room.grade) parts.push(room.grade.replace("학년", "학년 전용"));
+  const home = getHomeRoomLabelByClassId(room.homeRoomClassId);
+  if (home) parts.push(`홈룸 ${home}`);
+  if (room.teacherName) parts.push(`담당 ${room.teacherName}`);
+  return parts.join(" · ") || "기본 정보 없음";
+}
+
+function openRoomManagerModal(sourceContainer, onUpdate, options = {}) {
+  document.getElementById("room-manager-modal")?.remove();
+  ensureRoomAssignmentStatusStyles();
+
+  const overlay = document.createElement("div");
+  overlay.id = "room-manager-modal";
+  overlay.className = "room-manager-modal-backdrop";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:2500;background:rgba(15,23,42,.34);display:flex;align-items:center;justify-content:center;padding:20px;";
+
+  const modal = document.createElement("div");
+  modal.className = "room-manager-modal";
+  modal.style.cssText = "width:min(1320px,96vw);height:min(860px,90vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden;";
+
+  const head = document.createElement("div");
+  head.style.cssText = "flex:0 0 auto;height:50px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid #e2e8f0;background:#f8fbff;";
+  const title = document.createElement("div");
+  title.innerHTML = `<strong style="font-size:16px;font-weight:950;color:#0f172a">교실 관리</strong><span style="margin-left:8px;font-size:11px;font-weight:800;color:#64748b">교실 정보와 교실 불가시간을 팝업에서 편집합니다.</span>`;
+  const closeBtn = makeBtn("×", "his-ui-btn his-ui-icon-btn", () => overlay.remove());
+  closeBtn.style.cssText = "width:32px;height:32px;border-radius:10px;font-size:18px;font-weight:900";
+  head.append(title, closeBtn);
+
+  const body = document.createElement("div");
+  body.className = "room-manager-modal-body";
+  body.style.cssText = "flex:1;min-height:0;overflow:auto;padding:12px;background:#f8fafc;";
+
+  const rerenderModal = () => {
+    body.innerHTML = "";
+    const content = document.createElement("div");
+    content.className = "room-manager-modal-content";
+    content.style.cssText = "display:flex;flex-direction:column;gap:10px;min-height:0;";
+    body.appendChild(content);
+
+    renderRoomsFullPageView(content, () => {
+      onUpdate?.();
+      rerenderModal();
+      if (sourceContainer) renderRoomsView(sourceContainer, onUpdate, options);
+    }, { ...options, mode: "full" });
+
+    if (typeof options.renderRoomUnavailableManager === "function") {
+      const unavailableWrap = document.createElement("div");
+      unavailableWrap.className = "room-manager-unavailable-wrap";
+      unavailableWrap.style.cssText = "margin-top:10px;";
+      content.appendChild(unavailableWrap);
+      options.renderRoomUnavailableManager(unavailableWrap);
+    }
+  };
+
+  overlay.addEventListener("click", ev => {
+    if (ev.target === overlay) overlay.remove();
+  });
+  document.addEventListener("keydown", function esc(ev) {
+    if (ev.key === "Escape") {
+      overlay.remove();
+      document.removeEventListener("keydown", esc);
+    }
+  });
+
+  modal.append(head, body);
+  overlay.appendChild(modal);
+  document.body.appendChild(overlay);
+  rerenderModal();
+}
+
 function renderRoomsCompactView(container, onUpdate, options = {}) {
   container.innerHTML = "";
   container.classList.add("rooms-view-panel");
   ensureRoomAssignmentStatusStyles();
 
-  const teacherNames = Array.isArray(options.teacherNames) ? options.teacherNames : [];
-  const onTeacherRoomChange = typeof options.onTeacherRoomChange === "function" ? options.onTeacherRoomChange : null;
-
+  const summary = summarizeRoomUsage(options);
   const hdr = document.createElement("div");
   hdr.className = "rooms-header his-room-main-header";
-  hdr.style.cssText = "margin:0 0 4px!important;padding:4px 7px!important;min-height:34px!important;border-radius:8px!important;gap:6px!important;";
+  hdr.style.cssText = "margin:0 0 6px!important;padding:7px 9px!important;min-height:40px!important;border-radius:10px!important;gap:8px!important;";
   const titleWrap = document.createElement("div");
   titleWrap.className = "rooms-title-wrap";
-  titleWrap.style.cssText = "display:flex!important;flex-direction:column!important;justify-content:center!important;gap:0!important;";
-  titleWrap.innerHTML = `<span class="his-room-card-kicker" style="font-size:8px;line-height:1;margin:0 0 1px;">Room</span><h3 style="font-size:12px;line-height:1.1;margin:0;">교실 관리</h3>`;
+  titleWrap.innerHTML = `<span class="his-room-card-kicker" style="font-size:8px;line-height:1;margin:0 0 1px;">Room</span><h3 style="font-size:13px;line-height:1.1;margin:0;">교실 관리 요약</h3><p style="margin:2px 0 0;font-size:10px;color:#64748b">하단에서는 확인만 하고, 편집은 팝업에서 진행합니다.</p>`;
 
   const actions = document.createElement("div");
   actions.className = "rooms-header-actions";
-  actions.style.cssText = "display:flex!important;align-items:center!important;gap:4px!important;";
-  const addBtn = makeBtn("+ 교실 추가", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => {
+  actions.style.cssText = "display:flex!important;align-items:center!important;gap:5px!important;";
+  const openBtn = makeBtn("교실 편집", "his-ui-btn his-ui-btn-primary his-ui-btn-compact", () => openRoomManagerModal(container, onUpdate, options));
+  const addBtn = makeBtn("+ 추가", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+    if (!canEdit()) return;
     addRoom({ name: `교실 ${getRooms().length + 1}` });
+    scheduleSave("rooms");
     onUpdate?.();
     renderRoomsView(container, onUpdate, options);
+    openRoomManagerModal(container, onUpdate, options);
   });
   addBtn.disabled = !canEdit();
-  addBtn.style.cssText = "height:24px!important;padding:0 7px!important;font-size:10px!important;border-radius:7px!important;line-height:1!important;";
-  actions.append(addBtn);
+  actions.append(openBtn, addBtn);
   hdr.append(titleWrap, actions);
   container.appendChild(hdr);
 
-  if (teacherNames.length) {
-    const dl = document.createElement("datalist");
-    dl.id = "room-teacher-list";
-    teacherNames.forEach(name => {
-      const o = document.createElement("option");
-      o.value = name;
-      dl.appendChild(o);
-    });
-    container.appendChild(dl);
-  }
+  const stats = document.createElement("div");
+  stats.className = "room-assignment-stats room-management-summary-stats";
+  stats.style.cssText = "padding:0 0 6px;display:flex;gap:5px;flex-wrap:wrap;";
+  [
+    ["등록 교실", summary.roomCount, ""],
+    ["사용 교실", summary.usedRoomCount, ""],
+    ["홈룸 연결", summary.homeRoomCount, ""],
+    ["담당교사", summary.teacherRoomCount, ""],
+    ["교실 배정", summary.assignedCount, ""],
+    ["미배정", summary.unassignedCount, summary.unassignedCount ? "warn" : ""],
+    ["중복 슬롯", summary.overlapCount, summary.overlapCount ? "warn" : ""],
+  ].forEach(([label, value, cls]) => {
+    const item = document.createElement("span");
+    item.className = `room-assignment-stat ${cls || ""}`.trim();
+    item.innerHTML = `${label} <b>${value}</b>`;
+    stats.appendChild(item);
+  });
+  container.appendChild(stats);
 
-  const layout = document.createElement("div");
-  layout.className = "rooms-management-layout";
-
-  const assignmentPane = document.createElement("div");
-  assignmentPane.className = "rooms-assignment-pane";
-  appendRoomAssignmentStatus(assignmentPane, options);
-  layout.appendChild(assignmentPane);
-
-  const editorPane = document.createElement("div");
-  editorPane.className = "rooms-editor-pane";
-  const editorCard = document.createElement("section");
-  editorCard.className = "room-editor-card";
-
-  const editorHead = document.createElement("div");
-  editorHead.className = "room-editor-card-head";
-  editorHead.innerHTML = `
-    <div>
-      <strong>교실 편집</strong>
-      <span>필요 정보만 수정합니다.</span>
-    </div>`;
-  editorCard.appendChild(editorHead);
+  const list = document.createElement("div");
+  list.className = "room-management-summary-list";
+  list.style.cssText = "display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;max-height:156px;overflow:auto;padding:2px 2px 6px;";
 
   if (!getRooms().length) {
-    const e = document.createElement("div");
-    e.className = "rooms-editor-empty";
-    e.textContent = "등록된 교실이 없습니다. 상단의 + 교실 추가 버튼으로 추가하세요.";
-    editorCard.appendChild(e);
+    const empty = document.createElement("div");
+    empty.className = "rooms-editor-empty";
+    empty.style.cssText = "grid-column:1/-1;margin:0;";
+    empty.textContent = "등록된 교실이 없습니다. 오른쪽의 + 추가 또는 교실 편집을 눌러 등록하세요.";
+    list.appendChild(empty);
   } else {
-    const list = document.createElement("div");
-    list.className = "room-editor-list";
-    const homeRoomOptions = getHomeRoomClassOptions();
-
     getRooms().forEach(room => {
-      const item = document.createElement("div");
-      item.className = "room-editor-item";
-
-      const top = document.createElement("div");
-      top.className = "room-editor-item-top";
-      const nameInput = document.createElement("input");
-      nameInput.className = "room-editor-name";
-      nameInput.type = "text";
-      nameInput.value = room.name || "";
-      nameInput.placeholder = "교실 이름";
-      nameInput.disabled = !canEdit();
-      nameInput.addEventListener("change", e => {
-        updateRoom(room.id, "name", e.target.value);
-        onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
-      });
-      top.appendChild(nameInput);
-
-      const delBtn = makeBtn("×", "his-ui-btn his-ui-icon-btn his-ui-btn-danger stu-del-btn", () => {
-        if (deleteRoom(room.id)) {
-          onUpdate?.();
-          renderRoomsView(container, onUpdate, options);
-        }
-      });
-      delBtn.disabled = !canEdit();
-      delBtn.title = "교실 삭제";
-      top.appendChild(delBtn);
-      item.appendChild(top);
-
-      const fields = document.createElement("div");
-      fields.className = "room-editor-fields";
-
-      const makeField = (labelText, control, wide = false) => {
-        const field = document.createElement("div");
-        field.className = "room-editor-field" + (wide ? " wide" : "");
-        const label = document.createElement("label");
-        label.textContent = labelText;
-        field.append(label, control);
-        fields.appendChild(field);
-      };
-
-      const capacityInput = document.createElement("input");
-      capacityInput.type = "number";
-      capacityInput.min = "0";
-      capacityInput.value = room.capacity || "";
-      capacityInput.placeholder = "0";
-      capacityInput.disabled = !canEdit();
-      capacityInput.addEventListener("change", e => {
-        updateRoom(room.id, "capacity", parseInt(e.target.value, 10) || 0);
-        onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
-      });
-      makeField("수용인원", capacityInput);
-
-      const gradeSel = document.createElement("select");
-      gradeSel.disabled = !canEdit();
-      [{ v:"", l:"공용" }, ...GRADE_KEYS.map(g => ({ v:g, l:g.replace("학년", "") }))].forEach(({ v, l }) => {
-        const o = document.createElement("option");
-        o.value = v;
-        o.textContent = l;
-        if (v === room.grade) o.selected = true;
-        gradeSel.appendChild(o);
-      });
-      gradeSel.addEventListener("change", e => {
-        updateRoom(room.id, "grade", e.target.value);
-        onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
-      });
-      makeField("전용학년", gradeSel);
-
-      const homeRoomSel = document.createElement("select");
-      homeRoomSel.disabled = !canEdit();
-      const emptyHomeOpt = document.createElement("option");
-      emptyHomeOpt.value = "";
-      emptyHomeOpt.textContent = "없음";
-      if (!room.homeRoomClassId) emptyHomeOpt.selected = true;
-      homeRoomSel.appendChild(emptyHomeOpt);
-      homeRoomOptions.forEach(opt => {
-        const o = document.createElement("option");
-        o.value = opt.id;
-        o.textContent = opt.label;
-        if (opt.id === room.homeRoomClassId) o.selected = true;
-        homeRoomSel.appendChild(o);
-      });
-      if (room.homeRoomClassId && !getHomeRoomLabelByClassId(room.homeRoomClassId)) {
-        const o = document.createElement("option");
-        o.value = room.homeRoomClassId;
-        o.textContent = "삭제된 반";
-        o.selected = true;
-        homeRoomSel.appendChild(o);
-      }
-      homeRoomSel.addEventListener("change", e => {
-        setRoomHomeRoomClass(room.id, e.target.value);
-        onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
-      });
-      makeField("홈룸", homeRoomSel);
-
-      const teacherInput = document.createElement("input");
-      teacherInput.type = "text";
-      teacherInput.value = room.teacherName || "";
-      teacherInput.placeholder = "예: 김OO";
-      teacherInput.disabled = !canEdit();
-      teacherInput.setAttribute("list", "room-teacher-list");
-      teacherInput.addEventListener("change", e => {
-        const teacherName = clean(e.target.value);
-        updateRoom(room.id, "teacherName", teacherName);
-        onTeacherRoomChange?.(room.id, teacherName);
-        onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
-      });
-      makeField("담당 교사", teacherInput);
-
-      const noteInput = document.createElement("input");
-      noteInput.type = "text";
-      noteInput.value = room.note || "";
-      noteInput.placeholder = "메모";
-      noteInput.disabled = !canEdit();
-      noteInput.addEventListener("change", e => {
-        updateRoom(room.id, "note", e.target.value);
-        onUpdate?.();
-        renderRoomsView(container, onUpdate, options);
-      });
-      makeField("메모", noteInput, true);
-
-      item.appendChild(fields);
-      list.appendChild(item);
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "room-summary-card";
+      card.style.cssText = "text-align:left;border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;cursor:pointer;box-shadow:0 1px 4px rgba(15,23,42,.035);min-width:0;";
+      card.innerHTML = `<strong style="display:block;font-size:12px;font-weight:950;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${clean(room.name) || room.id}</strong><span style="display:block;margin-top:3px;font-size:10px;font-weight:750;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${formatRoomSummaryLine(room)}</span>`;
+      card.addEventListener("click", () => openRoomManagerModal(container, onUpdate, options));
+      list.appendChild(card);
     });
-    editorCard.appendChild(list);
   }
-
-  editorPane.appendChild(editorCard);
-  layout.appendChild(editorPane);
-  container.appendChild(layout);
+  container.appendChild(list);
 }
 
 

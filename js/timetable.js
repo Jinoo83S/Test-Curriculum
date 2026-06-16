@@ -87,6 +87,7 @@ let currentTeacher = "";
 let currentRoom    = "";
 let teacherPickerOutsideHandlerInstalled = false;
 let roomPickerOutsideHandlerInstalled = false;
+let timetableContextMenuDelegationInstalled = false;
 let dragData       = null;
 let dragPreviewRaf = 0;
 let dragPreviewToken = 0;
@@ -1552,7 +1553,24 @@ function recomputeConflicts() {
 }
 
 // ── Grid rendering ────────────────────────────────────────────────
+function ensureTimetableContextMenuDelegation() {
+  const grid = ttGrid();
+  if (!grid || timetableContextMenuDelegationInstalled) return;
+  timetableContextMenuDelegationInstalled = true;
+  grid.addEventListener("contextmenu", ev => {
+    const card = ev.target?.closest?.(".tt-entry-card[data-entry-id]");
+    if (!card || !grid.contains(card)) return;
+    const entryId = card.dataset.entryId;
+    const entry = entries().find(e => e.id === entryId);
+    if (!entry) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    showEntryContextMenu(entry, ev.clientX, ev.clientY);
+  }, true);
+}
+
 function renderGrid() {
+  ensureTimetableContextMenuDelegation();
   renderTimetableGrid({
     wrap: ttGrid(),
     currentView,
@@ -2895,9 +2913,9 @@ function renderAll() {
         captureTimetableUndo("교실 담당 교사 수정");
         syncTeacherHomeRoomFromRoom(roomId, teacherName);
         recomputeConflicts();
-      }
+      },
+      renderRoomUnavailableManager: target => renderRoomUnavailableManager(target)
     });
-    renderRoomUnavailableManager(roomsEl);
   }
 
   const logsEl = $("ttLogsContent");
