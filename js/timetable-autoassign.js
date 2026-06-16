@@ -182,6 +182,8 @@ export function createAutoAssignAll(deps) {
       activeGrades: Array.isArray(meta.activeGrades) ? meta.activeGrades.slice() : [],
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
+      autoSourceSignature: String(meta.autoSourceSignature || meta.sourceSignature || ""),
+      autoSourceSummary: String(meta.autoSourceSummary || ""),
       classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount, summaryClassIssues),
       classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount, summaryClassIssues),
       classShortCount: metricNumber(meta.classShortCount, final.classShortCount),
@@ -352,6 +354,8 @@ export function createAutoAssignAll(deps) {
       autoSnapshot: true,
       snapshotKind: "result",
       source: "autoassign-best",
+      autoSourceSignature: version.autoSourceSignature || version.autoAssignMeta?.autoSourceSignature || "",
+      autoSourceSummary: version.autoSourceSummary || version.autoAssignMeta?.autoSourceSummary || "",
       autoAssignMeta: compactAutoAssignSnapshotMeta(version.autoAssignMeta || {}),
       entries: normalizeSnapshotEntries(version.entries || [])
     };
@@ -362,13 +366,101 @@ export function createAutoAssignAll(deps) {
     return snapshotQualityScoreForPrune(version);
   }
 
+  function stableAutoSourceStringify(value) {
+    if (Array.isArray(value)) return `[${value.map(stableAutoSourceStringify).join(",")}]`;
+    if (value && typeof value === "object") {
+      return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableAutoSourceStringify(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value ?? null);
+  }
+
+  function buildCurrentAutoSourceSignature() {
+    const cardIdsInGroups = new Set();
+    const groups = (ttGroups() || []).map(group => {
+      const units = (group.units || []).map(unit => {
+        const ttcardIds = (unit.ttcardIds || []).map(id => String(id || "")).filter(Boolean).sort();
+        ttcardIds.forEach(id => cardIdsInGroups.add(id));
+        return {
+          id: String(unit.id || ""),
+          name: String(unit.name || ""),
+          ttcardIds,
+          templateIds: (unit.templateIds || []).map(id => String(id || "")).filter(Boolean).sort()
+        };
+      }).sort((a, b) => stableAutoSourceStringify(a).localeCompare(stableAutoSourceStringify(b)));
+      (group.poolCardIds || []).forEach(id => cardIdsInGroups.add(String(id || "")));
+      (group.excludedCardIds || []).forEach(id => cardIdsInGroups.add(String(id || "")));
+      return {
+        id: String(group.id || ""),
+        name: String(group.name || group.groupName || ""),
+        groupType: String(group.groupType || ""),
+        isConcurrent: group.isConcurrent === true,
+        isCrossGrade: group.isCrossGrade === true,
+        units,
+        poolCardIds: (group.poolCardIds || []).map(id => String(id || "")).filter(Boolean).sort(),
+        excludedCardIds: (group.excludedCardIds || []).map(id => String(id || "")).filter(Boolean).sort(),
+        linkedGroupId: String(group.linkedGroupId || "")
+      };
+    }).sort((a, b) => String(a.id || a.name).localeCompare(String(b.id || b.name)));
+
+    const cards = (ttDomain()?.ttcards || []).map(card => ({
+      id: String(card.id || ""),
+      templateId: String(card.templateId || ""),
+      gradeKey: String(card.gradeKey || ""),
+      sectionIdx: Number(card.sectionIdx ?? 0),
+      credits: Math.max(0, Number(card.credits ?? getCreditsForTtCard?.(card) ?? 0)),
+      classKeys: (card.classKeys || []).map(x => String(x || "")).filter(Boolean).sort(),
+      studentKeys: (card.studentKeys || []).map(x => String(x || "")).filter(Boolean).sort(),
+      teachers: getTeachersForTtCard(card).map(x => String(x || "")).filter(Boolean).sort(),
+      isWholeGrade: card.isWholeGrade === true,
+      isManual: card.isManual === true || String(card.id || "").startsWith("ttc_manual"),
+      groupIds: [...new Set((ttGroups() || [])
+        .filter(group => {
+          const ids = [
+            ...(group.poolCardIds || []),
+            ...(group.excludedCardIds || []),
+            ...(group.units || []).flatMap(unit => unit.ttcardIds || [])
+          ].map(id => String(id || ""));
+          return ids.includes(String(card.id || ""));
+        })
+        .map(group => String(group.id || ""))
+        .filter(Boolean))].sort()
+    })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+
+    return stableAutoSourceStringify({
+      schema: "auto-source-signature-r54",
+      periodCount: Math.max(1, Number(ttConfig()?.periodCount || 7)),
+      cardCount: cards.length,
+      groupCount: groups.length,
+      cards,
+      groups
+    });
+  }
+
+  function currentAutoSourceSummary() {
+    const cardCount = (ttDomain()?.ttcards || []).length;
+    const groupCount = (ttGroups() || []).length;
+    const manualCount = (ttDomain()?.ttcards || []).filter(card => card?.isManual === true || String(card?.id || "").startsWith("ttc_manual")).length;
+    return `카드 ${cardCount}개 · 그룹 ${groupCount}개${manualCount ? ` · 수동카드 ${manualCount}개` : ""}`;
+  }
+
+  function autoSourceSignatureForSnapshot(version = {}) {
+    return String(version?.autoSourceSignature || version?.autoAssignMeta?.autoSourceSignature || version?.autoAssignMeta?.sourceSignature || "");
+  }
+
+  function snapshotMatchesCurrentAutoSource(version = {}) {
+    if (!version || !Array.isArray(version.entries) || !version.entries.length) return false;
+    const snapshotSignature = autoSourceSignatureForSnapshot(version);
+    if (!snapshotSignature) return false;
+    return snapshotSignature === buildCurrentAutoSourceSignature();
+  }
+
   function updateBestAutoAssignSnapshot(domain, version = {}) {
     if (!domain || !version || !Array.isArray(version.entries) || !version.entries.length) return null;
     if (!hasCompleteAutoAssignMetricEvidence(version)) return compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot || null);
     const candidate = compactBestAutoAssignSnapshot(version);
     if (!candidate) return null;
     const currentRaw = domain.bestAutoAssignSnapshot || null;
-    const current = hasCompleteAutoAssignMetricEvidence(currentRaw) ? compactBestAutoAssignSnapshot(currentRaw) : null;
+    const current = (hasCompleteAutoAssignMetricEvidence(currentRaw) && snapshotMatchesCurrentAutoSource(currentRaw)) ? compactBestAutoAssignSnapshot(currentRaw) : null;
     if (!current || bestSnapshotQualityScore(candidate) < bestSnapshotQualityScore(current)) {
       candidate.name = candidate.name || "자동배치 최고 결과";
       candidate.bestSnapshot = true;
@@ -382,18 +474,20 @@ export function createAutoAssignAll(deps) {
 
   function ensureBestAutoAssignSnapshot(domain) {
     if (!domain) return null;
-    if (domain.bestAutoAssignSnapshot && !hasCompleteAutoAssignMetricEvidence(domain.bestAutoAssignSnapshot)) {
-      domain.bestAutoAssignSnapshot = null;
-    }
     const savedBest = Array.isArray(domain.savedSchedules)
       ? domain.savedSchedules
           .filter(v => v && Array.isArray(v.entries) && v.entries.length)
           .filter(v => String(v.snapshotKind || "") === "result" || String(v.name || "").includes("자동배치 결과"))
           .filter(hasCompleteAutoAssignMetricEvidence)
+          .filter(snapshotMatchesCurrentAutoSource)
           .sort((a, b) => bestSnapshotQualityScore(a) - bestSnapshotQualityScore(b))[0]
       : null;
     if (savedBest) updateBestAutoAssignSnapshot(domain, savedBest);
-    if (domain.bestAutoAssignSnapshot && hasCompleteAutoAssignMetricEvidence(domain.bestAutoAssignSnapshot) && Array.isArray(domain.bestAutoAssignSnapshot.entries) && domain.bestAutoAssignSnapshot.entries.length) {
+    if (domain.bestAutoAssignSnapshot
+      && hasCompleteAutoAssignMetricEvidence(domain.bestAutoAssignSnapshot)
+      && snapshotMatchesCurrentAutoSource(domain.bestAutoAssignSnapshot)
+      && Array.isArray(domain.bestAutoAssignSnapshot.entries)
+      && domain.bestAutoAssignSnapshot.entries.length) {
       domain.bestAutoAssignSnapshot = compactBestAutoAssignSnapshot(domain.bestAutoAssignSnapshot);
       return domain.bestAutoAssignSnapshot;
     }
@@ -504,7 +598,13 @@ export function createAutoAssignAll(deps) {
       autoSnapshot: true,
       snapshotKind: kind,
       source: "autoassign",
-      autoAssignMeta: compactAutoAssignSnapshotMeta(meta || {}),
+      autoSourceSignature: buildCurrentAutoSourceSignature(),
+      autoSourceSummary: currentAutoSourceSummary(),
+      autoAssignMeta: compactAutoAssignSnapshotMeta({
+        ...(meta || {}),
+        autoSourceSignature: buildCurrentAutoSourceSignature(),
+        autoSourceSummary: currentAutoSourceSummary()
+      }),
       cardGenerationMeta: appState.timetable?.cardGenerationMeta ? cloneAutoAssignData(appState.timetable.cardGenerationMeta) : null,
       entries: snapshotEntries,
     };
@@ -2524,7 +2624,27 @@ export function createAutoAssignAll(deps) {
     }).join("")}${diagnostics.length > limit ? `<li>외 ${diagnostics.length - limit}개</li>` : ""}</ul></div>`;
   }
 
+  function isAllowedAutoPlacementSource(item = {}) {
+    const activeCardIds = new Set((ttDomain()?.ttcards || []).map(card => String(card?.id || "")).filter(Boolean));
+    if (!activeCardIds.size) return true;
+    const ids = ttCardIdsFromPlacement(item).map(id => String(id || "")).filter(Boolean);
+    if (!ids.length) return false;
+    if (ids.some(id => !activeCardIds.has(id))) return false;
+    if (item.groupId) {
+      const group = (ttGroups() || []).find(g => String(g?.id || "") === String(item.groupId || ""));
+      if (!group) return false;
+      const groupIds = new Set([
+        ...(group.poolCardIds || []),
+        ...(group.excludedCardIds || []),
+        ...(group.units || []).flatMap(unit => unit.ttcardIds || [])
+      ].map(id => String(id || "")).filter(Boolean));
+      if (groupIds.size && ids.some(id => !groupIds.has(id))) return false;
+    }
+    return true;
+  }
+
   function checkPlacementValid(item, slot, placed, options = {}) {
+    if (!isAllowedAutoPlacementSource(item)) return false;
     const { respectSoftLimits = true, respectUnavailable = true, respectAssignedRoom = true } = options;
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
@@ -2826,7 +2946,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function makeAutoEntry(item, slot, placed = []) {
-    if (!item || !slot) return null;
+    if (!item || !slot || !isAllowedAutoPlacementSource(item)) return null;
     return normalizeTimetableEntry({
       id: uid("ent"),
       ...applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed)
@@ -4622,6 +4742,10 @@ export function createAutoAssignAll(deps) {
         addTimetableLog?.("warn", "자동배치 보관본 제외", `${version.name || "이름 없는 보관본"}: 카드/그룹 검증 메타가 없어 최고 결과 후보에서 제외했습니다.`);
         return;
       }
+      if (!snapshotMatchesCurrentAutoSource(version)) {
+        addTimetableLog?.("warn", "자동배치 보관본 제외", `${version.name || "이름 없는 보관본"}: 현재 시간표 카드/그룹 구성과 달라 이번 자동배치 기준에서 제외했습니다.`);
+        return;
+      }
       const snapshotEntries = normalizeSnapshotEntries(version.entries || []);
       if (!snapshotEntries.length) return;
       const meta = version.autoAssignMeta || {};
@@ -5991,7 +6115,7 @@ export function createAutoAssignAll(deps) {
     const repairResidualByTwoCycleSwap = async (placed, failed, forced, labelPrefix = "r37 2단계 스왑복구") => {
       // r37: 진단만 반복하지 않고, 실제로 한 칸을 비우는 2-cycle swap을 수행합니다.
       // 방식: (A) 부족 카드가 들어갈 목표 슬롯 S를 잡고,
-      //      (B) 그 슬롯을 막는 비고정/비그룹 수업 B를 찾고,
+      //      (B) 그 슬롯을 막는 비고정 수업/그룹 블록 B를 찾고,
       //      (C) 같은 학급의 다른 수업 G와 B를 서로 교환한 뒤,
       //      (D) 부족 카드를 S에 추가합니다.
       // 이 방식은 현재 r36에서 막혀 있는 공통영어1 10A 같은 "교사 충돌 + 학급 만석" 케이스를 실제로 뚫습니다.
@@ -6009,7 +6133,7 @@ export function createAutoAssignAll(deps) {
       const entrySlot = e => ({ day: Number(e.day), period: Number(e.period) });
       const sameSlot = (a, b) => Number(a?.day) === Number(b?.day) && Number(a?.period) === Number(b?.period);
       const slotText = slot => `${["월","화","수","목","금"][Number(slot.day)] || "?"}${Number(slot.period) + 1}`;
-      const isMovableEntry = e => e && !e.pinned && !e.protected && !e.manualPinned && !e.fixed && !e.locked && !e.groupId;
+      const isMovableEntry = e => e && !e.pinned && !e.protected && !e.manualPinned && !e.fixed && !e.locked && !e.isProtected && isAllowedAutoPlacementSource(e);
       const hasDuplicateCardAtSlot = (item, slot, list) => {
         const ids = new Set(ttCardIdsFromPlacement(item));
         if (!ids.size) return false;
@@ -6841,6 +6965,8 @@ export function createAutoAssignAll(deps) {
         rejectReason: "worse-than-complete-best-snapshot",
         activeGrades: activeGrades.map(gradeDisplay).join(", "),
         placementModeLabel: modeText,
+        autoSourceSignature: buildCurrentAutoSourceSignature(),
+        autoSourceSummary: currentAutoSourceSummary(),
         beforeValidation: preValidation,
         referenceValidation: restoredValidation,
         rejectedValidation: postValidation,
@@ -6878,7 +7004,7 @@ export function createAutoAssignAll(deps) {
         validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
         experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
         experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r42"
+        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r54"
       };
       const rejectTelemetry = recordCandidateTelemetry("rejected-baseline-kept");
       rejectReport.candidateTelemetry = rejectTelemetry || lastCandidateTelemetryRecord;
@@ -6966,6 +7092,8 @@ export function createAutoAssignAll(deps) {
       scoringProfile: options.scoringProfile || "balanced",
       scoringWeights: options.scoringWeights,
       scoringSummary: describeScoreWeights(options.scoringWeights),
+      autoSourceSignature: buildCurrentAutoSourceSignature(),
+      autoSourceSummary: currentAutoSourceSummary(),
       initialRunCount: exploredInitialRuns,
       initialBestQualityScore: bestQualityScore,
       initialBestAttemptInfo: bestAttemptInfo,
@@ -7029,7 +7157,7 @@ export function createAutoAssignAll(deps) {
       validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
       experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
       experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r42"
+      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r54"
     };
     report.metricSource = "postValidation";
     report.metricCompleteness = "complete";
