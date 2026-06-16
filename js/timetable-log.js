@@ -134,7 +134,7 @@ export function createTimetableLogHandlers({
     const failureDiagHtml = failureDiagnostics.length
       ? `<div class="tt-log-failure-diag">
           <div class="tt-log-subtitle">미배치 원인 후보 및 완화 제안</div>
-          ${failureDiagnostics.slice(0, 12).map(d => {
+          ${failureDiagnostics.slice(0, 12).map((d, idx) => {
             const reasons = Array.isArray(d.topReasons) ? d.topReasons.slice(0, 3) : [];
             const reasonHtml = reasons.length
               ? `<ul>${reasons.map(r => {
@@ -149,12 +149,17 @@ export function createTimetableLogHandlers({
             const suggestionHtml = suggestions.length
               ? `<div class="tt-log-relax-suggestions"><div class="tt-log-subtitle tiny">풀어볼 조건</div><ol>${suggestions.map(s => `<li><b>${escapeHtml(s.title || "조건 조정")}</b><span>${escapeHtml(s.detail || "")}${Number(s.availableAfter || 0) ? ` · 완화 시 ${Number(s.availableAfter || 0)}칸 가능` : ""}</span></li>`).join("")}</ol></div>`
               : "";
-            return `<div class="tt-log-diag-item">
-              <div class="tt-log-diag-title"><b>${escapeHtml(d.name || "미확인 카드")}</b>${d.occurrences > 1 ? ` <span class="tt-log-muted">×${d.occurrences}</span>` : ""}${restricted}</div>
-              <div class="tt-log-muted">${escapeHtml(d.summary || `가능 ${d.validSlots ?? 0}/${d.totalSlots ?? "?"}칸`)}</div>
-              ${reasonHtml}
-              ${suggestionHtml}
-            </div>`;
+            const summary = escapeHtml(d.summary || `가능 ${d.validSlots ?? 0}/${d.totalSlots ?? "?"}칸`);
+            return `<details class="tt-log-diag-item" ${idx === 0 ? "open" : ""}>
+              <summary class="tt-log-diag-summary">
+                <span class="tt-log-diag-title"><b>${escapeHtml(d.name || "미확인 카드")}</b>${d.occurrences > 1 ? ` <span class="tt-log-muted">×${d.occurrences}</span>` : ""}${restricted}</span>
+                <span class="tt-log-diag-summary-text">${summary}</span>
+              </summary>
+              <div class="tt-log-diag-detail">
+                ${reasonHtml}
+                ${suggestionHtml}
+              </div>
+            </details>`;
           }).join("")}
           ${failureDiagnostics.length > 12 ? `<div class="tt-log-muted">외 ${failureDiagnostics.length - 12}개</div>` : ""}
         </div>`
