@@ -276,6 +276,11 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   bottom.title = roomText;
 
   card.append(top, mid, bottom);
+  const contextEntry = summary.entries?.[0];
+  if (contextEntry?.id) {
+    card.dataset.entryId = contextEntry.id;
+    card.dataset.ttEntryId = contextEntry.id;
+  }
   if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · ${subjectText}`;
   else card.title = [subjectText, teacherText, roomText].filter(Boolean).join(" · ");
 

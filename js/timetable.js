@@ -1553,44 +1553,87 @@ function recomputeConflicts() {
 }
 
 // ── Grid rendering ────────────────────────────────────────────────
+const ENTRY_CONTEXT_SELECTOR = [
+  ".tt-entry-card[data-entry-id]",
+  ".tt-all-summary-card[data-entry-id]",
+  "[data-tt-entry-id]",
+  "[data-entry-id]"
+].join(",");
+
+function isEventInsideTimetableGrid(ev) {
+  const grid = ttGrid();
+  if (!grid) return false;
+  const target = ev.target && ev.target.nodeType === 1
+    ? ev.target
+    : ev.target?.parentElement || null;
+  if (target && grid.contains(target)) return true;
+  if (Number.isFinite(ev.clientX) && Number.isFinite(ev.clientY)) {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    if (el && grid.contains(el)) return true;
+  }
+  return false;
+}
+
 function getContextMenuEntryCardFromEvent(ev) {
   const grid = ttGrid();
   if (!grid) return null;
 
+  const findIn = node => {
+    if (!node || node.nodeType !== 1) return null;
+    if (node.matches?.(ENTRY_CONTEXT_SELECTOR) && grid.contains(node)) return node;
+    const card = node.closest?.(ENTRY_CONTEXT_SELECTOR);
+    return card && grid.contains(card) ? card : null;
+  };
+
   const directTarget = ev.target && ev.target.nodeType === 1
     ? ev.target
     : ev.target?.parentElement || null;
-  const directCard = directTarget?.closest?.(".tt-entry-card[data-entry-id]");
-  if (directCard && grid.contains(directCard)) return directCard;
+  const directCard = findIn(directTarget);
+  if (directCard) return directCard;
 
   const path = typeof ev.composedPath === "function" ? ev.composedPath() : [];
   for (const node of path) {
-    if (!node || node.nodeType !== 1) continue;
-    if (node.matches?.(".tt-entry-card[data-entry-id]") && grid.contains(node)) return node;
-    const card = node.closest?.(".tt-entry-card[data-entry-id]");
-    if (card && grid.contains(card)) return card;
+    const card = findIn(node);
+    if (card) return card;
+  }
+
+  if (Number.isFinite(ev.clientX) && Number.isFinite(ev.clientY)) {
+    const el = document.elementFromPoint(ev.clientX, ev.clientY);
+    const card = findIn(el);
+    if (card) return card;
   }
   return null;
+}
+
+function getEntryIdFromContextMenuNode(node) {
+  if (!node) return "";
+  return clean(node.dataset?.entryId || node.dataset?.ttEntryId || "");
 }
 
 let lastEntryContextMenuAt = 0;
 let lastEntryContextMenuKey = "";
 function openEntryContextMenuFromDomEvent(ev, source = "contextmenu") {
   if (source !== "contextmenu" && ev.button !== 2) return false;
-  const card = getContextMenuEntryCardFromEvent(ev);
-  if (!card) return false;
 
-  const entryId = clean(card.dataset.entryId || "");
-  const entry = entries().find(e => e.id === entryId);
-  if (!entry) return false;
-
+  // 시간표 영역 안의 우클릭은 먼저 브라우저 기본 메뉴를 막습니다.
+  // 기존 방식은 카드 식별에 실패하면 preventDefault가 실행되지 않아
+  // Windows/Chrome 기본 우클릭 메뉴가 떠버렸습니다.
+  const insideGrid = isEventInsideTimetableGrid(ev);
+  if (!insideGrid) return false;
   ev.preventDefault?.();
   ev.stopPropagation?.();
   ev.stopImmediatePropagation?.();
 
+  const card = getContextMenuEntryCardFromEvent(ev);
+  if (!card) return true;
+
+  const entryId = getEntryIdFromContextMenuNode(card);
+  const entry = entries().find(e => e.id === entryId);
+  if (!entry) return true;
+
   const now = Date.now();
   const key = `${entry.id}|${Math.round(ev.clientX)}|${Math.round(ev.clientY)}`;
-  if (source === "contextmenu" && lastEntryContextMenuKey === key && now - lastEntryContextMenuAt < 450) {
+  if (lastEntryContextMenuKey === key && now - lastEntryContextMenuAt < 450) {
     return true;
   }
   lastEntryContextMenuAt = now;
@@ -1601,19 +1644,18 @@ function openEntryContextMenuFromDomEvent(ev, source = "contextmenu") {
 }
 
 function ensureTimetableContextMenuDelegation() {
-  const grid = ttGrid();
-  if (!grid || timetableContextMenuDelegationInstalled) return;
+  if (timetableContextMenuDelegationInstalled) return;
   timetableContextMenuDelegationInstalled = true;
 
-  // Capture both browser contextmenu and the right-button mouse down.
-  // In some Chromium/WebView states the card-level contextmenu listener is skipped
-  // after drag/re-render, but mousedown still arrives. This keeps the edit menu reliable.
-  document.addEventListener("contextmenu", ev => {
-    openEntryContextMenuFromDomEvent(ev, "contextmenu");
-  }, true);
-  document.addEventListener("mousedown", ev => {
-    openEntryContextMenuFromDomEvent(ev, "mousedown");
-  }, true);
+  // document/window 양쪽 캡처에 설치합니다.
+  // 일부 레이아웃에서는 #ttGrid가 다시 렌더링되거나 요약 카드가 들어오면서
+  // 카드 자체 리스너가 붙지 않는 경우가 있어 전역 캡처가 가장 안전합니다.
+  const handler = ev => openEntryContextMenuFromDomEvent(ev, "contextmenu");
+  const downHandler = ev => openEntryContextMenuFromDomEvent(ev, "mousedown");
+  window.addEventListener("contextmenu", handler, true);
+  document.addEventListener("contextmenu", handler, true);
+  window.addEventListener("mousedown", downHandler, true);
+  document.addEventListener("mousedown", downHandler, true);
 }
 
 function renderGrid() {
