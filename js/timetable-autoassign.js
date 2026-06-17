@@ -115,6 +115,59 @@ export function createAutoAssignAll(deps) {
       .join(", ");
   }
 
+  function autoAssignModeLabel(mode = "balanced") {
+    const value = String(mode || "balanced");
+    if (value === "fast") return "빠른 점검";
+    if (value === "deep") return "정교한 배치";
+    return "균형 배치";
+  }
+
+  function autoAssignResultKind({ runMode = "balanced", incomplete = false, runtimeError = false, cancelled = false } = {}) {
+    const modeLabel = autoAssignModeLabel(runMode);
+    if (runtimeError) {
+      return {
+        status: "program-error",
+        title: "자동배치 프로그램 오류",
+        subtitle: "계산 또는 저장 중 예외가 발생했습니다. 마지막 후보가 있으면 화면에 표시합니다.",
+        step: "프로그램 오류",
+        logType: "error",
+        logTitle: "자동배치 프로그램 오류"
+      };
+    }
+    if (cancelled) {
+      return {
+        status: "cancelled",
+        title: "자동배치 취소됨",
+        subtitle: "사용자가 중단했습니다. 마지막 후보가 있으면 화면에 표시합니다.",
+        step: "취소",
+        logType: "warn",
+        logTitle: "자동배치 취소"
+      };
+    }
+    if (incomplete) {
+      return {
+        status: "incomplete",
+        title: `${modeLabel} 결과 표시 · 확인 필요`,
+        subtitle: runMode === "fast"
+          ? "프로그램 오류는 없지만 빠른 점검 특성상 미배치/충돌/시수 확인 항목이 남을 수 있습니다."
+          : "프로그램 오류는 없고, 배치 결과 중 미배치/충돌/시수 확인 항목이 남아 있습니다.",
+        step: "배치 미완성",
+        logType: "warn",
+        logTitle: `${modeLabel} 배치 미완성`
+      };
+    }
+    return {
+      status: "complete",
+      title: `${modeLabel} 완료`,
+      subtitle: runMode === "fast"
+        ? "빠른 점검에서 프로그램 오류 없이 배치와 검증을 통과했습니다."
+        : "자동배치가 완료되었고 검증을 통과했습니다.",
+      step: "완료",
+      logType: "auto",
+      logTitle: `${modeLabel} 완료`
+    };
+  }
+
 
   function compactAutoAssignSnapshotMeta(meta = {}) {
     const clone = value => {
@@ -201,6 +254,11 @@ export function createAutoAssignAll(deps) {
     };
     return {
       validationSummary: summaryText,
+      ok: meta.ok === true,
+      resultStatus: String(meta.resultStatus || ""),
+      resultStatusLabel: String(meta.resultStatusLabel || ""),
+      placementIncomplete: meta.placementIncomplete === true,
+      programError: meta.programError === true,
       activeGrades: normalizeAutoActiveGrades(meta.activeGrades),
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
@@ -4359,7 +4417,7 @@ export function createAutoAssignAll(deps) {
         cancelBtn.style.display = "none";
         badgeEl.textContent = "CANCELLED";
         titleEl.textContent = "자동배치 취소됨";
-        subtitleEl.textContent = "시간표에는 변경 사항을 반영하지 않았습니다.";
+        subtitleEl.textContent = "중단 시점의 마지막 후보가 있으면 화면에 유지합니다.";
         stepEl.textContent = "취소 완료";
         detailEl.textContent = message;
         closeBtn.disabled = false;
@@ -4371,9 +4429,9 @@ export function createAutoAssignAll(deps) {
         cancelBtn.disabled = true;
         cancelBtn.style.display = "none";
         badgeEl.textContent = "ERROR";
-        titleEl.textContent = "자동배치 오류";
-        subtitleEl.textContent = "진행 중 오류가 발생했습니다.";
-        stepEl.textContent = "오류";
+        titleEl.textContent = "자동배치 프로그램 오류";
+        subtitleEl.textContent = "계산 또는 저장 중 예외가 발생했습니다.";
+        stepEl.textContent = "프로그램 오류";
         detailEl.textContent = message || "자동배치 중 오류가 발생했습니다.";
         closeBtn.disabled = false;
         await waitForBrowser();
@@ -5467,13 +5525,14 @@ export function createAutoAssignAll(deps) {
       protectedEntries
     });
     const precheckCounts = precheckReport.counts || {};
+    const precheckHasIssues = (precheckCounts.error || 0) || (precheckCounts.warn || 0);
     addTimetableLog(
-      (precheckCounts.error || 0) ? "error" : ((precheckCounts.warn || 0) ? "warn" : "auto"),
+      precheckHasIssues ? "warn" : "auto",
       "자동배치 사전 점검",
-      `오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 정보 ${precheckCounts.info || 0}개 · 정상 ${precheckCounts.ok || 0}개`
+      `점검 오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 정보 ${precheckCounts.info || 0}개 · 정상 ${precheckCounts.ok || 0}개${isFastCheckRun ? " · 빠른 점검은 확인용으로 계속 진행" : ""}`
     );
-    if ((precheckCounts.error || 0) > 0) {
-      const proceedOnErrors = confirm(`자동배치 사전 점검에서 오류 ${precheckCounts.error}개가 발견되었습니다.\n빠른 점검은 실행 오류 확인용이므로 계속할 수 있지만, 균형/정교한 배치 전에는 [사전 점검] 버튼으로 상세를 확인하는 것이 안전합니다.\n\n계속 실행할까요?`);
+    if (!isFastCheckRun && (precheckCounts.error || 0) > 0) {
+      const proceedOnErrors = confirm(`자동배치 사전 점검에서 점검 오류 ${precheckCounts.error}개가 발견되었습니다.\n이는 프로그램 오류가 아니라 데이터/제약 조건 확인 항목입니다.\n균형/정교한 배치 전에는 [사전 점검] 버튼으로 상세를 확인하는 것이 안전합니다.\n\n그래도 계속 실행할까요?`);
       if (!proceedOnErrors) return;
     }
 
@@ -7211,6 +7270,8 @@ export function createAutoAssignAll(deps) {
       missingRoomEntries
     });
     const conflictSummary = getConflictCounts();
+    const autoAssignIncomplete = !!names.length || !postValidation.ok || !!missingRoomEntries.length || Number(conflictSummary.totalAffected || 0) > 0;
+    const resultKind = autoAssignResultKind({ runMode, incomplete: autoAssignIncomplete });
     const successTelemetryOutcome = freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : (worseThanBaseline ? "fresh-displayed-no-rollback" : "baseline-kept"));
     const successTelemetry = recordCandidateTelemetry(successTelemetryOutcome);
     const report = {
@@ -7245,6 +7306,11 @@ export function createAutoAssignAll(deps) {
       initialRunCount: exploredInitialRuns,
       initialBestQualityScore: bestQualityScore,
       initialBestAttemptInfo: bestAttemptInfo,
+      ok: !autoAssignIncomplete,
+      resultStatus: resultKind.status,
+      resultStatusLabel: resultKind.title,
+      placementIncomplete: autoAssignIncomplete,
+      programError: false,
       failedCount: names.length,
       failedNames: names,
       failedDiagnostics,
@@ -7338,9 +7404,9 @@ export function createAutoAssignAll(deps) {
     }
     setLastAutoAssignReport(report);
     addTimetableLog(
-      "auto",
-      names.length ? "자동 배치 부분 완료" : "자동 배치 완료",
-      `정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 이동/교환 복구 ${swapRepaired.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 초기후보 ${exploredInitialRuns}회 · 탐색: ${bestStage.label}`
+      resultKind.logType,
+      resultKind.logTitle,
+      `프로그램 오류 없음 · 정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 이동/교환 복구 ${swapRepaired.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 초기후보 ${exploredInitialRuns}회 · 탐색: ${bestStage.label}`
     );
     addTimetableLog(
       outcomeAnalysis.failedUnitCount ? "warn" : "auto",
@@ -7367,6 +7433,7 @@ export function createAutoAssignAll(deps) {
       `<b>미배치</b> ${names.length}개`,
       `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
       `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
+      `<b>결과 판정</b> ${resultKind.status === "complete" ? "완료" : "배치 미완성 · 프로그램 오류 아님"}`,
       `<b>검증 결과</b> ${postValidation.ok ? "통과" : postValidation.summary}`,
       `<b>학급 시수</b> ${postValidation.classSlots?.total ?? "-"}/${postValidation.classSlots?.targetTotal ?? "-"}시수`,
       `<b>배치 방식</b> ${modeText}`,
@@ -7378,6 +7445,9 @@ export function createAutoAssignAll(deps) {
       restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
       `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
     ];
+    if (autoAssignIncomplete) {
+      detailLines.push(`이 결과는 <b>프로그램 오류</b>가 아니라 <b>배치 미완성/확인 필요 상태</b>입니다. 마지막으로 계산된 결과를 시간표에 표시했습니다.`);
+    }
     detailLines.push(buildAutoAssignComparisonHtml(preValidation, postValidation));
     detailLines.push(buildAutoAssignOutcomeHtml(outcomeAnalysis));
     if (!postValidation.ok) {
@@ -7423,37 +7493,17 @@ export function createAutoAssignAll(deps) {
     detailLines.push(`자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.`);
 
     await progress.complete({
-      partial: !!names.length || !postValidation.ok,
-      title: names.length || !postValidation.ok ? "자동배치 확인 필요" : "자동배치 완료",
-      subtitle: names.length ? "일부 카드는 직접 확인이 필요합니다." : (!postValidation.ok ? "배치는 완료되었지만 검증 항목 확인이 필요합니다." : "모든 대상 슬롯을 배치했고 검증을 통과했습니다."),
-      step: names.length || !postValidation.ok ? "확인 필요" : "완료",
+      partial: autoAssignIncomplete,
+      title: resultKind.title,
+      subtitle: resultKind.subtitle,
+      step: resultKind.step,
       detailHtml: detailLines.filter(Boolean).map(line => `<div>${line}</div>`).join(""),
       placed: bestPlaced.length,
       best: bestPlaced.length,
       failed: names.length,
       currentCard: "-",
-      closeLabel: "적용하고 닫기",
-      actions: [{
-        label: "되돌리기",
-        danger: true,
-        onClick: async ({ close, button }) => {
-          if (rollbackConsumed) return;
-          if (!confirm("이번 자동배치 결과를 되돌리고, 자동배치 전 시간표로 복원할까요?")) return;
-          rollbackConsumed = true;
-          if (button) { button.disabled = true; button.textContent = "되돌리는 중..."; }
-          ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
-          if (!isFastCheckRun) {
-            await persistTimetableNow();
-          } else {
-            addTimetableLog("auto", "빠른 점검 되돌리기", "빠른 점검 결과를 메모리에서 되돌렸습니다. Firestore 저장은 생략했습니다.");
-          }
-          recomputeConflicts();
-          renderAll();
-          addTimetableLog("undo", "자동배치 결과 되돌리기", "자동배치 전 시간표 상태로 복원했습니다.");
-          setLastAutoAssignReport({ ...report, rolledBack: true, rolledBackAt: Date.now() });
-          close?.();
-        }
-      }]
+      closeLabel: "결과 확인",
+      actions: []
     });
     } catch (err) {
       const isCancel = err?.message === "__AUTO_ASSIGN_CANCELLED__";
@@ -7488,6 +7538,10 @@ export function createAutoAssignAll(deps) {
             ...(target.autoAssignMeta && typeof target.autoAssignMeta === "object" ? target.autoAssignMeta : {}),
             lastAutoAssignError: errorRecord,
             autoAssignError: errorRecord,
+            resultStatus: isCancel ? "cancelled" : "program-error",
+            resultStatusLabel: isCancel ? "자동배치 취소됨" : "자동배치 프로그램 오류",
+            placementIncomplete: false,
+            programError: !isCancel,
             telemetryStatus: isCancel ? "cancelled-last-result-displayed" : "error-last-result-displayed",
             autoRollbackDisabled: true,
             displayedLastResult: !!displayed.applied,
@@ -7521,20 +7575,20 @@ export function createAutoAssignAll(deps) {
         console.error("Auto assign failed:", err);
         addTimetableLog(
           "error",
-          "자동 배치 오류",
+          "자동배치 프로그램 오류",
           `${err?.message || String(err)} · 단계: ${autoAssignPhase || "?"} · 자동 롤백 안 함 · ${displayed.applied ? `마지막 결과 표시(${displayed.entryCount}개)` : "표시할 후보 없음"}`
         );
         if (progress) {
           await progress.error(
             displayed.applied
-              ? `자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않고 마지막으로 나온 결과를 시간표에 표시했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
-              : `자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않았지만, 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
+              ? `자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않고 마지막으로 나온 결과를 시간표에 표시했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
+              : `자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않았지만, 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
           );
         } else {
           alert(
             displayed.applied
-              ? "자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않고 마지막 결과를 시간표에 표시했습니다. 로그를 확인해 주세요."
-              : "자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않았지만 표시할 후보가 없습니다. 로그를 확인해 주세요."
+              ? "자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않고 마지막 결과를 시간표에 표시했습니다. 로그를 확인해 주세요."
+              : "자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않았지만 표시할 후보가 없습니다. 로그를 확인해 주세요."
           );
         }
       }
