@@ -4875,10 +4875,11 @@ export function createAutoAssignAll(deps) {
             <section class="tt-auto-option-section">
               <h4>배치 강도</h4>
               <select id="ttAutoRunAttempts" class="tt-auto-select">
-                <option value="fast" ${defaults.runAttempts === "fast" ? "selected" : ""}>빠른 배치</option>
+                <option value="fast" ${defaults.runAttempts === "fast" ? "selected" : ""}>빠른 점검</option>
                 <option value="balanced" ${defaults.runAttempts !== "fast" && defaults.runAttempts !== "deep" ? "selected" : ""}>균형 배치</option>
                 <option value="deep" ${defaults.runAttempts === "deep" ? "selected" : ""}>정교한 배치</option>
               </select>
+              <p class="tt-auto-option-help">빠른 점검은 프로그램 오류 확인용이며 결과 보관본을 만들지 않습니다. 실제 기본 실행은 균형 배치입니다. 정교한 배치는 균형 배치 후 충돌·미배치가 많을 때만 사용하세요.</p>
             </section>
             <section class="tt-auto-option-section tt-auto-score-section">
               <div class="tt-auto-option-title-row">
@@ -5410,6 +5411,9 @@ export function createAutoAssignAll(deps) {
     const options = await openAutoAssignOptionsDialog(availableGrades, AUTO_ASSIGN_DEFAULT_OPTIONS);
     if (!options) return;
     options.selectedGrades = normalizeAutoActiveGrades(options.selectedGrades);
+    options.runAttempts = normalizeRunAttemptMode(options.runAttempts);
+    const runMode = options.runAttempts;
+    const isFastCheckRun = runMode === "fast";
     options.scoringWeights = scoreOptionsFromAssignOptions(options);
 
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
@@ -5457,6 +5461,7 @@ export function createAutoAssignAll(deps) {
       `잠금 카드 유지: ${options.keepPinned !== false ? "예" : "아니오"}`,
       `수동 카드 유지: ${options.keepManual !== false ? "예" : "아니오"}`,
       `점수 기준: ${describeScoreWeights(options.scoringWeights)}`,
+      isFastCheckRun ? "빠른 점검: 오류 확인용이며 자동배치 보관본을 저장하지 않습니다." : "",
       "",
       "계속할까요?"
     ].join("\n");
@@ -5468,12 +5473,13 @@ export function createAutoAssignAll(deps) {
 
     const autoStartedAt = Date.now();
     const rollbackEntriesSnapshot = cloneAutoAssignData(entries());
-    const beforeAutoSnapshot = saveAutoAssignScheduleSnapshot("before", rollbackEntriesSnapshot, { activeGrades, modeText, options });
+    const beforeAutoSnapshot = isFastCheckRun ? null : saveAutoAssignScheduleSnapshot("before", rollbackEntriesSnapshot, { activeGrades, modeText, options });
     // r46: 예외 발생 위치 추적용. catch에서 진단 메타에 기록합니다.
     let autoAssignPhase = "초기화";
     if (beforeAutoSnapshot) {
-      addTimetableLog("auto", "자동배치 전 배치 보관", `${beforeAutoSnapshot.name}으로 현재 배치를 저장했습니다.`);
-      await persistTimetableNow();
+      addTimetableLog("auto", "자동배치 전 배치 보관", `${beforeAutoSnapshot.name}으로 현재 배치를 메모리 보관했습니다. 저장은 자동배치 완료 후 한 번만 수행합니다.`);
+    } else if (isFastCheckRun) {
+      addTimetableLog("auto", "빠른 점검 모드", "빠른 점검은 오류 확인용이므로 자동배치 전/후 보관본 저장을 생략합니다. 복원은 실행 중 메모리 스냅샷으로 처리합니다.");
     }
     let rollbackConsumed = false;
     let autoAssignCancelled = false;
@@ -5516,7 +5522,9 @@ export function createAutoAssignAll(deps) {
       validation: preValidation,
       metrics: baselineAutoRunMetrics
     };
-    const qualityBaselineReference = findBestSavedAutoAssignReference(activeGrades, currentQualityReference) || currentQualityReference;
+    const qualityBaselineReference = isFastCheckRun
+      ? currentQualityReference
+      : (findBestSavedAutoAssignReference(activeGrades, currentQualityReference) || currentQualityReference);
     const qualityBaselineMetrics = qualityBaselineReference.metrics || baselineAutoRunMetrics;
     const qualityBaselineValidation = qualityBaselineReference.validation || preValidation;
     if ((qualityBaselineReference.source === "savedSchedule" || qualityBaselineReference.source === "bestSnapshot")) {
@@ -6922,7 +6930,7 @@ export function createAutoAssignAll(deps) {
     // 이전 최고 보관본 자체를 기준으로 카드시수 반복복구를 한 번 더 시도합니다.
     // 목표는 이전 최고 상태를 출발점으로 삼아 남은 9~10개 미배치 단위를 실제로 줄이는 것입니다.
     let baselineRepairAdopted = false;
-    if (compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0 && (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") && Array.isArray(qualityBaselineReference.entries)) {
+    if (!isFastCheckRun && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0 && (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") && Array.isArray(qualityBaselineReference.entries)) {
       const baselineAll = normalizeSnapshotEntries(qualityBaselineReference.entries) || [];
       const protectedIds = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
       const baselineAutoPlaced = baselineAll.filter(e => !protectedIds.has(e.id));
@@ -6972,7 +6980,7 @@ export function createAutoAssignAll(deps) {
         }
       }
     }
-    const rejectWorseThanBaseline = !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
+    const rejectWorseThanBaseline = !isFastCheckRun && !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
     if (rejectWorseThanBaseline) {
       const restoreSource = (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
       const restoredEntries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
@@ -7137,6 +7145,7 @@ export function createAutoAssignAll(deps) {
       placementModeLabel: modeText,
       selectedGrades: activeGrades.slice(),
       runAttempts: options.runAttempts,
+      fastCheckRun: isFastCheckRun,
       engineProfileLabel: engineProfile.label,
       keepPinned: options.keepPinned !== false,
       keepManual: options.keepManual !== false,
@@ -7217,8 +7226,9 @@ export function createAutoAssignAll(deps) {
     };
     report.metricSource = "postValidation";
     report.metricCompleteness = "complete";
-    afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), report);
+    afterAutoSnapshot = isFastCheckRun ? null : saveAutoAssignScheduleSnapshot("result", entries(), report);
     report.afterSnapshotName = afterAutoSnapshot?.name || "";
+    if (isFastCheckRun) addTimetableLog("auto", "빠른 점검 결과", "빠른 점검 결과는 현재 화면과 결과 메타에만 반영하고 자동배치 보관본은 만들지 않습니다.");
     if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
     attachCanonicalMetaToMatchingSnapshots(ttDomain(), report, entries());
     if (afterAutoSnapshot) {
@@ -7271,7 +7281,7 @@ export function createAutoAssignAll(deps) {
       `<b>검증 결과</b> ${postValidation.ok ? "통과" : postValidation.summary}`,
       `<b>학급 시수</b> ${postValidation.classSlots?.total ?? "-"}/${postValidation.classSlots?.targetTotal ?? "-"}시수`,
       `<b>배치 방식</b> ${modeText}`,
-      beforeAutoSnapshot ? `<b>자동 보관</b> 전: ${safeAutoHtml(beforeAutoSnapshot.name)} / 결과: ${safeAutoHtml(afterAutoSnapshot?.name || "저장 실패")}` : null,
+      isFastCheckRun ? `<b>자동 보관</b> 빠른 점검 모드로 보관본 저장 생략` : (beforeAutoSnapshot ? `<b>자동 보관</b> 전: ${safeAutoHtml(beforeAutoSnapshot.name)} / 결과: ${safeAutoHtml(afterAutoSnapshot?.name || "저장 실패")}` : null),
       `<b>탐색 방식</b> ${bestStage.label}`,
       `<b>초기배치 후보</b> ${exploredInitialRuns}회 중 ${bestAttemptInfo.stageLabel} ${bestAttemptInfo.attempt}/${bestAttemptInfo.totalAttempts} 선택 · ${bestAttemptInfo.exploration} · 품질 ${bestAttemptInfo.qualityScore ?? "-"}`,
       `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
