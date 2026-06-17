@@ -1084,7 +1084,7 @@ export function createTimetableSidebarHandlers(deps) {
       const classLabels = compactClassLabelGroups(
         detailItems.flatMap(item => classLabelsFromDetailItem(item))
       );
-      const card = buildSidebarCard({ title, teachers, gradeKeys, classLabels, credits, assigned, isDone, gradeColor, groupName: grp.name, detailItems, sortGroup: getSortGroupForCards(grpCards, grp.name), sortRoom: collectRoomNamesForEntries(relatedEntries).join(", ") });
+      const card = buildSidebarCard({ title, teachers, gradeKeys, classLabels, credits, assigned, isDone, gradeColor, groupName: grp.name, groupId: grp.id, detailItems, sortGroup: getSortGroupForCards(grpCards, grp.name), sortRoom: collectRoomNamesForEntries(relatedEntries).join(", ") });
       card.dataset.groupId = grp.id;
       card.style.outline = "1.5px solid " + gradeColor.border;
       if (!isDone) {
@@ -3040,7 +3040,7 @@ export function createTimetableSidebarHandlers(deps) {
       .join(" / ") || "묶음수업";
   }
 
-  function buildSidebarCard({ title, teachers, gradeKeys, classLabels = [], credits, assigned, isDone, gradeColor, sectionIdx, groupName, detailItems = [], sortGroup = "", sortRoom = "" }) {
+  function buildSidebarCard({ title, teachers, gradeKeys, classLabels = [], credits, assigned, isDone, gradeColor, sectionIdx, groupName, groupId = "", detailItems = [], sortGroup = "", sortRoom = "" }) {
     const card = document.createElement("div");
     card.className = "tt-subject-card tt-sc-compact" + (isDone ? " tt-subject-done" : "");
     card.style.borderLeftColor = isDone ? "#22c55e" : gradeColor.border;
@@ -3104,7 +3104,7 @@ export function createTimetableSidebarHandlers(deps) {
 
     card.addEventListener("click", ev => {
       if (ev.defaultPrevented) return;
-      showSidebarCardDetail({ title, teachers: uniqueTeachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, detailItems });
+      showSidebarCardDetail({ title, teachers: uniqueTeachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, groupId, detailItems });
     });
 
     return card;

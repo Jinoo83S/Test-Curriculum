@@ -202,19 +202,238 @@ function getRoomRuleHint(rule, roomId = "") {
   return "지정 교실, 홈룸, 교사 교실 순서로 자동 추천합니다.";
 }
 
-function appendCardRoomRuleEditor(box, detailItems, ctx, modal) {
-  const cardIds = [...new Set((detailItems || []).map(i => i.ttcardId || i.id).filter(Boolean))];
+function roomNameForId(roomId = "") {
+  const id = clean(roomId);
+  if (!id) return "";
+  return getRooms().find(x => x.id === id)?.name || id;
+}
+
+function makeTinyButton(label, onClick, { primary = false } = {}) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.style.cssText = [
+    "padding:5px 8px",
+    `border:1px solid ${primary ? "#2563eb" : "#cbd5e1"}`,
+    "border-radius:6px",
+    `background:${primary ? "#2563eb" : "#fff"}`,
+    `color:${primary ? "white" : "#334155"}`,
+    "font-size:11px",
+    "font-weight:900",
+    "cursor:pointer",
+    "white-space:nowrap"
+  ].join(";");
+  btn.textContent = label;
+  btn.onclick = onClick;
+  return btn;
+}
+
+function cardRoomSummaryText(card = {}) {
+  const rule = normalizeRoomRule(card.roomRule);
+  if (rule === "fixed") return `고정: ${roomNameForId(card.fixedRoomId) || "교실 미지정"}`;
+  return ROOM_RULE_LABELS[rule] || ROOM_RULE_LABELS.auto;
+}
+function splitTeacherNamesLocal(value = "") {
+  return String(value || "")
+    .split(/[,，·/]+/)
+    .map(x => clean(x))
+    .filter(Boolean);
+}
+
+
+
+function getCardsCommonRoomRule(cards = []) {
+  const valid = (cards || []).filter(Boolean);
+  if (!valid.length) return { rule: "auto", fixedRoomId: "", mixed: false };
+  const rules = [...new Set(valid.map(card => normalizeRoomRule(card.roomRule)))];
+  const fixedIds = [...new Set(valid.map(card => clean(card.fixedRoomId)).filter(Boolean))];
+  return {
+    rule: rules.length === 1 ? rules[0] : "auto",
+    fixedRoomId: fixedIds.length === 1 ? fixedIds[0] : "",
+    mixed: rules.length > 1 || fixedIds.length > 1
+  };
+}
+
+function targetRoomSummaryText(cards = []) {
+  const valid = (cards || []).filter(Boolean);
+  if (!valid.length) return ROOM_RULE_LABELS.auto;
+  const common = getCardsCommonRoomRule(valid);
+  if (common.mixed) return "혼합 규칙";
+  return cardRoomSummaryText(valid[0]);
+}
+
+function buildRoomRuleTargets(items = [], groupId = "") {
+  const validItems = (items || []).filter(x => x.card?.id);
+  const byCardId = new Map(validItems.map(x => [x.card.id, x]));
+  const targets = [];
+  const used = new Set();
+  const group = (appState.timetable?.ttcardGroups || []).find(g => g.id === groupId);
+
+  (group?.units || []).forEach((unit, idx) => {
+    const ids = [...new Set((unit.ttcardIds || []).filter(id => byCardId.has(id)) )];
+    if (!ids.length) return;
+    ids.forEach(id => used.add(id));
+    const unitItems = ids.map(id => byCardId.get(id)).filter(Boolean);
+    const names = unitItems.map(x => x.item.title || x.item.subject || x.card.label || x.card.subject || "-");
+    const teachers = [...new Set(unitItems.flatMap(x => x.item.teachers?.length ? x.item.teachers : (x.card.teachers || splitTeacherNamesLocal(x.card.teacherName || ""))).filter(Boolean))];
+    const classLabels = compactInlineLabels(unitItems.flatMap(x => {
+      if (x.item.classLabels?.length) return x.item.classLabels;
+      if (x.card.classLabels?.length) return x.card.classLabels;
+      return [x.item.sectionLabel || sectionLabel(x.item.sectionIdx ?? x.card.sectionIdx ?? 0)];
+    }));
+    targets.push({
+      kind: "unit",
+      ids,
+      cards: unitItems.map(x => x.card),
+      title: names.join(" / ") || unit.name || `수업 묶음 ${idx + 1}`,
+      sub: `${classLabels || "-"} · ${teachers.join(", ") || "교사 없음"}`
+    });
+  });
+
+  validItems.forEach(({ item, card }) => {
+    if (used.has(card.id)) return;
+    const cls = formatClassLabelList(
+      item.gradeKey || card.gradeKey,
+      item.classLabels?.length ? item.classLabels : (card.classLabels?.length ? card.classLabels : [item.sectionLabel || sectionLabel(item.sectionIdx ?? card.sectionIdx ?? 0)])
+    );
+    targets.push({
+      kind: "card",
+      ids: [card.id],
+      cards: [card],
+      title: item.title || item.subject || card.label || card.subject || "-",
+      sub: `${cls} · ${(item.teachers || card.teachers || []).join(", ") || card.teacherName || "교사 없음"}`
+    });
+  });
+
+  return targets;
+}
+
+function compactInlineLabels(labels = []) {
+  const cleaned = [...new Set((labels || []).map(clean).filter(Boolean))];
+  return cleaned.join(", ");
+}
+
+function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
+  const items = (detailItems || [])
+    .map(item => ({ item, card: getTtCardById(item.ttcardId || item.id) }))
+    .filter(x => x.card?.id);
+  const cardIds = [...new Set(items.map(x => x.card.id))];
   if (!cardIds.length || !canEdit()) return;
-  const first = getTtCardById(cardIds[0]);
+
+  const first = items[0]?.card;
   const sameRule = cardIds.every(id => normalizeRoomRule(getTtCardById(id)?.roomRule) === normalizeRoomRule(first?.roomRule));
   const sameRoom = cardIds.every(id => clean(getTtCardById(id)?.fixedRoomId) === clean(first?.fixedRoomId));
 
   const section = document.createElement("div");
   section.style.cssText = "margin:12px 0 10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc";
+
   const h = document.createElement("div");
-  h.style.cssText = "font-size:12px;font-weight:800;color:#334155;margin-bottom:6px";
-  h.textContent = cardIds.length > 1 ? "과목카드 교실 규칙 · 구성 카드 전체 적용" : "과목카드 교실 규칙";
+  h.style.cssText = "font-size:12px;font-weight:900;color:#334155;margin-bottom:5px";
+  h.textContent = cardIds.length > 1 ? "과목카드 교실 규칙" : "과목카드 교실 규칙";
   section.appendChild(h);
+
+  const intro = document.createElement("div");
+  intro.style.cssText = "font-size:10px;color:#64748b;line-height:1.45;margin-bottom:8px";
+  intro.textContent = cardIds.length > 1
+    ? "그룹은 같은 시간에 묶고, 교실은 구성 카드별로 따로 지정합니다. 전체 적용은 필요할 때만 사용하세요."
+    : "이 과목카드가 자동배치될 때 사용할 교실 규칙입니다.";
+  section.appendChild(intro);
+
+  const targets = buildRoomRuleTargets(items, groupId);
+
+  // 그룹/다중 카드용: 수업 묶음 또는 구성 카드별 개별 교실 규칙 편집
+  if (targets.length > 1) {
+    const listTitle = document.createElement("div");
+    listTitle.style.cssText = "margin:8px 0 6px;font-size:11px;font-weight:900;color:#1e293b";
+    listTitle.textContent = targets.some(t => t.kind === "unit") ? "수업 묶음별 교실 지정" : "구성 카드별 교실 지정";
+    section.appendChild(listTitle);
+
+    const list = document.createElement("div");
+    list.style.cssText = "display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto;overscroll-behavior:contain;padding-right:2px";
+
+    targets.forEach(target => {
+      const row = document.createElement("div");
+      row.style.cssText = "padding:8px;border:1px solid #e5e7eb;border-radius:8px;background:white";
+
+      const top = document.createElement("div");
+      top.style.cssText = "display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:6px";
+
+      const main = document.createElement("div");
+      main.style.cssText = "min-width:0;flex:1";
+      const name = document.createElement("div");
+      name.style.cssText = "font-size:12px;font-weight:900;color:#1e293b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      name.textContent = target.title || "-";
+      name.title = name.textContent;
+
+      const sub = document.createElement("div");
+      sub.style.cssText = "font-size:10px;color:#64748b;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      sub.textContent = target.sub || "-";
+      sub.title = sub.textContent;
+      main.append(name, sub);
+
+      const summary = document.createElement("span");
+      summary.style.cssText = "font-size:10px;font-weight:900;color:#334155;background:#e2e8f0;border-radius:999px;padding:2px 7px;white-space:nowrap";
+      summary.textContent = targetRoomSummaryText(target.cards);
+      top.append(main, summary);
+      row.appendChild(top);
+
+      const controls = document.createElement("div");
+      controls.style.cssText = "display:grid;grid-template-columns:minmax(110px,1fr) minmax(110px,1fr) auto;gap:6px;align-items:end";
+
+      const common = getCardsCommonRoomRule(target.cards);
+      const ruleBox = document.createElement("div");
+      const ruleLabel = document.createElement("label");
+      ruleLabel.style.cssText = "display:block;margin-bottom:3px;font-size:10px;color:#6b7280;font-weight:800";
+      ruleLabel.textContent = "배정 방식";
+      const ruleSel = makeRoomRuleSelect(common.rule || "auto");
+      ruleSel.style.fontSize = "11px";
+      ruleBox.append(ruleLabel, ruleSel);
+
+      const roomBox = document.createElement("div");
+      const roomLabel = document.createElement("label");
+      roomLabel.style.cssText = "display:block;margin-bottom:3px;font-size:10px;color:#6b7280;font-weight:800";
+      roomLabel.textContent = "지정 교실";
+      const roomSel = makeRoomSelect(common.fixedRoomId || "");
+      roomSel.style.fontSize = "11px";
+      roomBox.append(roomLabel, roomSel);
+
+      const saveBtn = makeTinyButton("저장", () => {
+        if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
+          alert("지정 교실 고정은 교실을 선택해야 합니다.");
+          return;
+        }
+        const ok = ctx.setTtCardRoomPreference?.(target.ids, ruleSel.value, roomSel.value);
+        if (ok) {
+          const refreshedCards = target.ids.map(id => getTtCardById(id)).filter(Boolean);
+          summary.textContent = targetRoomSummaryText(refreshedCards);
+          ctx.renderAll?.();
+        }
+      }, { primary: true });
+
+      const refreshRow = () => {
+        roomBox.style.display = normalizeRoomRule(ruleSel.value) === "fixed" ? "block" : "none";
+        saveBtn.title = getRoomRuleHint(ruleSel.value, roomSel.value);
+      };
+      ruleSel.addEventListener("change", refreshRow);
+      roomSel.addEventListener("change", refreshRow);
+      refreshRow();
+
+      controls.append(ruleBox, roomBox, saveBtn);
+      row.appendChild(controls);
+      list.appendChild(row);
+    });
+    section.appendChild(list);
+  }
+
+  // 전체 적용은 유지하되, 다중 카드에서는 보조 기능으로 아래쪽에 둡니다.
+  const bulk = document.createElement("div");
+  bulk.style.cssText = targets.length > 1
+    ? "margin-top:10px;padding-top:9px;border-top:1px dashed #cbd5e1"
+    : "";
+
+  const bulkTitle = document.createElement("div");
+  bulkTitle.style.cssText = "font-size:11px;font-weight:900;color:#334155;margin-bottom:6px";
+  bulkTitle.textContent = targets.length > 1 ? "전체 구성 카드에 한 번에 적용" : "교실 규칙 지정";
+  bulk.appendChild(bulkTitle);
 
   const ruleSel = makeRoomRuleSelect(sameRule ? first?.roomRule : "auto");
   ruleSel.disabled = !canEdit();
@@ -234,7 +453,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal) {
   ruleLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
   ruleLabel.textContent = "배정 방식";
   ruleWrap.append(ruleLabel, ruleSel);
-  section.appendChild(ruleWrap);
+  bulk.appendChild(ruleWrap);
 
   const roomWrap = document.createElement("div");
   roomWrap.style.marginBottom = "6px";
@@ -242,12 +461,12 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal) {
   roomLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:700";
   roomLabel.textContent = "지정 교실";
   roomWrap.append(roomLabel, roomSel);
-  section.appendChild(roomWrap);
+  bulk.appendChild(roomWrap);
 
   const apply = document.createElement("button");
   apply.type = "button";
   apply.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer";
-  apply.textContent = "교실 규칙 저장";
+  apply.textContent = targets.length > 1 ? "전체 구성 카드에 적용" : "교실 규칙 저장";
   apply.onclick = () => {
     if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
       alert("지정 교실 고정은 교실을 선택해야 합니다.");
@@ -262,7 +481,9 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal) {
   ruleSel.addEventListener("change", refreshHint);
   roomSel.addEventListener("change", refreshHint);
   refreshHint();
-  section.append(hint, apply);
+  bulk.append(hint, apply);
+  section.appendChild(bulk);
+
   box.appendChild(section);
 }
 
@@ -371,7 +592,7 @@ export function createTimetableDetailHandlers(ctx) {
   const ttConfig = () => ctx.ttConfig();
   const currentGrade = () => ctx.currentGrade();
 
-  function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, detailItems = [] }) {
+  function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, groupId = "", detailItems = [] }) {
     const { modal, box, closeBtn } = makeModal({ maxWidth: 460, minWidth: 300 });
 
     const firstGrade = gradeKeys[0] || currentGrade();
@@ -440,7 +661,7 @@ export function createTimetableDetailHandlers(ctx) {
       box.appendChild(list);
     }
 
-    appendCardRoomRuleEditor(box, detailItems, ctx, modal);
+    appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId);
 
     if (credits > 0) {
       const pct = Math.min(100, Math.round((assigned / credits) * 100));
