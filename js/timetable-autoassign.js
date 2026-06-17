@@ -204,7 +204,7 @@ export function createAutoAssignAll(deps) {
       activeGrades: normalizeAutoActiveGrades(meta.activeGrades),
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
-      autoSourceSignature: String(meta.autoSourceSignature || meta.sourceSignature || ""),
+      autoSourceSignature: compactAutoSourceSignature(meta.autoSourceSignature || meta.sourceSignature || ""),
       autoSourceSummary: String(meta.autoSourceSummary || ""),
       classIssueCount: metricNumber(meta.classIssueCount ?? meta.classSlotIssueCount, final.classSlotIssueCount, summaryClassIssues),
       classSlotIssueCount: metricNumber(meta.classSlotIssueCount ?? meta.classIssueCount, final.classSlotIssueCount, summaryClassIssues),
@@ -376,7 +376,7 @@ export function createAutoAssignAll(deps) {
       autoSnapshot: true,
       snapshotKind: "result",
       source: "autoassign-best",
-      autoSourceSignature: version.autoSourceSignature || version.autoAssignMeta?.autoSourceSignature || "",
+      autoSourceSignature: compactAutoSourceSignature(version.autoSourceSignature || version.autoAssignMeta?.autoSourceSignature || ""),
       autoSourceSummary: version.autoSourceSummary || version.autoAssignMeta?.autoSourceSummary || "",
       autoAssignMeta: compactAutoAssignSnapshotMeta(version.autoAssignMeta || {}),
       entries: normalizeSnapshotEntries(version.entries || [])
@@ -394,6 +394,24 @@ export function createAutoAssignAll(deps) {
       return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableAutoSourceStringify(value[key])}`).join(",")}}`;
     }
     return JSON.stringify(value ?? null);
+  }
+
+  function autoSourceTinyHash(text = "") {
+    // FNV-1a 32bit, deterministic and synchronous.
+    let hash = 2166136261;
+    const str = String(text || "");
+    for (let i = 0; i < str.length; i += 1) {
+      hash ^= str.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function compactAutoSourceSignature(value = "") {
+    const text = String(value || "");
+    if (!text) return "";
+    if (text.startsWith("sig:")) return text;
+    return `sig:${text.length}:${autoSourceTinyHash(text)}`;
   }
 
   function buildCurrentAutoSourceSignature() {
@@ -448,14 +466,14 @@ export function createAutoAssignAll(deps) {
         .filter(Boolean))].sort()
     })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
-    return stableAutoSourceStringify({
+    return compactAutoSourceSignature(stableAutoSourceStringify({
       schema: "auto-source-signature-r54",
       periodCount: Math.max(1, Number(ttConfig()?.periodCount || 7)),
       cardCount: cards.length,
       groupCount: groups.length,
       cards,
       groups
-    });
+    }));
   }
 
   function currentAutoSourceSummary() {
@@ -466,7 +484,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function autoSourceSignatureForSnapshot(version = {}) {
-    return String(version?.autoSourceSignature || version?.autoAssignMeta?.autoSourceSignature || version?.autoAssignMeta?.sourceSignature || "");
+    return compactAutoSourceSignature(version?.autoSourceSignature || version?.autoAssignMeta?.autoSourceSignature || version?.autoAssignMeta?.sourceSignature || "");
   }
 
   function snapshotMatchesCurrentAutoSource(version = {}) {
@@ -5448,8 +5466,16 @@ export function createAutoAssignAll(deps) {
       options,
       protectedEntries
     });
-    const precheckProceed = await openAutoAssignPrecheckDialog(precheckReport, { allowProceed: true });
-    if (!precheckProceed) return;
+    const precheckCounts = precheckReport.counts || {};
+    addTimetableLog(
+      (precheckCounts.error || 0) ? "error" : ((precheckCounts.warn || 0) ? "warn" : "auto"),
+      "자동배치 사전 점검",
+      `오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 정보 ${precheckCounts.info || 0}개 · 정상 ${precheckCounts.ok || 0}개`
+    );
+    if ((precheckCounts.error || 0) > 0) {
+      const proceedOnErrors = confirm(`자동배치 사전 점검에서 오류 ${precheckCounts.error}개가 발견되었습니다.\n빠른 점검은 실행 오류 확인용이므로 계속할 수 있지만, 균형/정교한 배치 전에는 [사전 점검] 버튼으로 상세를 확인하는 것이 안전합니다.\n\n계속 실행할까요?`);
+      if (!proceedOnErrors) return;
+    }
 
     const modeText = options.placementMode === "keep" ? "현재 배치 유지 + 미배치만 배치" : "선택 범위 초기화 후 배치";
     const confirmText = [
@@ -7083,7 +7109,11 @@ export function createAutoAssignAll(deps) {
       setLastAutoAssignReport(rejectReport);
 
       // r41b: entries, top meta, best snapshot, savedSchedules 메타를 모두 같은 canonical 결과로 동기화한 뒤 저장합니다.
-      await persistTimetableNow();
+      if (!isFastCheckRun) {
+        await persistTimetableNow();
+      } else {
+        addTimetableLog("auto", "빠른 점검 저장 생략", "빠른 점검은 실행 오류 확인용이므로 결과 폐기/복원 상태를 Firestore에 저장하지 않습니다.");
+      }
       addTimetableLog(
         "warn",
         "자동배치 결과 폐기",
@@ -7246,7 +7276,11 @@ export function createAutoAssignAll(deps) {
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
       }
     }
-    await persistTimetableNow();
+    if (!isFastCheckRun) {
+      await persistTimetableNow();
+    } else {
+      addTimetableLog("auto", "빠른 점검 저장 생략", "빠른 점검 결과는 현재 화면과 메모리에만 반영하고 Firestore 저장은 생략했습니다.");
+    }
     setLastAutoAssignReport(report);
     addTimetableLog(
       "auto",
@@ -7353,7 +7387,11 @@ export function createAutoAssignAll(deps) {
           rollbackConsumed = true;
           if (button) { button.disabled = true; button.textContent = "되돌리는 중..."; }
           ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
-          await persistTimetableNow();
+          if (!isFastCheckRun) {
+            await persistTimetableNow();
+          } else {
+            addTimetableLog("auto", "빠른 점검 되돌리기", "빠른 점검 결과를 메모리에서 되돌렸습니다. Firestore 저장은 생략했습니다.");
+          }
           recomputeConflicts();
           renderAll();
           addTimetableLog("undo", "자동배치 결과 되돌리기", "자동배치 전 시간표 상태로 복원했습니다.");
@@ -7416,7 +7454,11 @@ export function createAutoAssignAll(deps) {
       try { recomputeConflicts(); } catch (_) {}
       try { renderAll(); } catch (_) {}
       // 복원된 상태를 저장합니다(망가진 보호수업-only 상태가 저장되지 않도록).
-      try { await persistTimetableNow(); } catch (_) {}
+      if (!isFastCheckRun) {
+        try { await persistTimetableNow(); } catch (_) {}
+      } else {
+        try { addTimetableLog("auto", "빠른 점검 복원 저장 생략", "빠른 점검 오류 후 자동배치 전 상태로 메모리 복원했습니다. Firestore 저장은 생략했습니다."); } catch (_) {}
+      }
       if (isCancel) {
         addTimetableLog("auto", "자동 배치 취소", `사용자 요청으로 중단하고 자동배치 전 시간표로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구 필요)"}.`);
         if (progress) await progress.cancel(`자동배치를 중단하고 자동배치 전 시간표로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구하세요)"}.`);

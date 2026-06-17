@@ -696,12 +696,30 @@ const TIMETABLE_MANUAL_LIMIT = 1;
 const TIMETABLE_META_DIAGNOSTIC_LIMIT = 12;
 // Firestore single document hard limit is 1MiB. Keep timetableMeta well below it
 // because Firestore adds field/index overhead beyond raw JSON size.
-const TIMETABLE_META_FIRESTORE_SAFE_BYTES = 760000;
+const TIMETABLE_META_FIRESTORE_SAFE_BYTES = 700000;
 
 function safeJsonClone(value) {
   if (value == null || typeof value !== "object") return value ?? null;
   try { return JSON.parse(JSON.stringify(value)); }
   catch (_) { return null; }
+}
+
+
+function autoSourceTinyHash(text = "") {
+  let hash = 2166136261;
+  const str = String(text || "");
+  for (let i = 0; i < str.length; i += 1) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function compactAutoSourceSignature(value = "") {
+  const text = clean(value);
+  if (!text) return "";
+  if (text.startsWith("sig:")) return text;
+  return `sig:${text.length}:${autoSourceTinyHash(text)}`;
 }
 
 
@@ -791,7 +809,7 @@ function formatAutoMetaGrades(value = []) {
 }
 
 function savedAutoSourceSignature(v = {}) {
-  return clean(v.autoSourceSignature || v.sourceSignature || v.autoAssignMeta?.autoSourceSignature || v.autoAssignMeta?.sourceSignature);
+  return compactAutoSourceSignature(v.autoSourceSignature || v.sourceSignature || v.autoAssignMeta?.autoSourceSignature || v.autoAssignMeta?.sourceSignature);
 }
 
 function savedAutoSourceSummary(v = {}) {
@@ -845,7 +863,7 @@ function compactAutoAssignMetaForStorage(meta = null) {
     modeText: clean(meta.modeText),
     placementModeLabel: clean(meta.placementModeLabel || meta.modeText),
     options: meta.options && typeof meta.options === "object" ? safeJsonClone(meta.options) : null,
-    autoSourceSignature: clean(meta.autoSourceSignature || meta.sourceSignature),
+    autoSourceSignature: compactAutoSourceSignature(meta.autoSourceSignature || meta.sourceSignature),
     autoSourceSummary: clean(meta.autoSourceSummary),
     stageName: clean(meta.stageName),
     stageLabel: clean(meta.stageLabel),
@@ -1049,7 +1067,7 @@ function compactAutoAssignMetaForMetaDoc(meta = null) {
     selectedGrades: normalizeAutoMetaGrades(compact.selectedGrades || compact.activeGrades),
     modeText: clean(compact.modeText),
     placementModeLabel: clean(compact.placementModeLabel || compact.modeText),
-    autoSourceSignature: clean(compact.autoSourceSignature || compact.sourceSignature),
+    autoSourceSignature: compactAutoSourceSignature(compact.autoSourceSignature || compact.sourceSignature),
     autoSourceSummary: clean(compact.autoSourceSummary),
     validationSummary: clean(compact.validationSummary),
     ok: compact.ok === true,
@@ -1080,6 +1098,52 @@ function compactAutoAssignMetaForMetaDoc(meta = null) {
   };
 }
 
+function compactSavedScheduleForMetaDoc(version = {}) {
+  const compactMeta = compactAutoAssignMetaForStorage(version.autoAssignMeta);
+  return {
+    id: clean(version.id) || uid("ttv"),
+    name: clean(version.name) || "저장된 배치",
+    note: clean(version.note),
+    createdAt: clean(version.createdAt),
+    updatedAt: clean(version.updatedAt),
+    periodCount: Math.max(1, Math.min(12, parseInt(version.periodCount) || 7)),
+    entryCount: Number(version.entryCount || (Array.isArray(version.entries) ? version.entries.length : 0)) || 0,
+    autoSnapshot: version.autoSnapshot === true,
+    snapshotKind: clean(version.snapshotKind),
+    source: clean(version.source),
+    autoSourceSignature: savedAutoSourceSignature(version),
+    autoSourceSummary: savedAutoSourceSummary(version),
+    autoAssignMeta: compactMeta ? {
+      schemaVersion: clean(compactMeta.schemaVersion),
+      generatedAt: clean(compactMeta.generatedAt),
+      activeGrades: normalizeAutoMetaGrades(compactMeta.activeGrades),
+      selectedGrades: normalizeAutoMetaGrades(compactMeta.selectedGrades || compactMeta.activeGrades),
+      modeText: clean(compactMeta.modeText),
+      placementModeLabel: clean(compactMeta.placementModeLabel || compactMeta.modeText),
+      autoSourceSignature: compactAutoSourceSignature(compactMeta.autoSourceSignature || compactMeta.sourceSignature),
+      autoSourceSummary: clean(compactMeta.autoSourceSummary),
+      validationSummary: clean(compactMeta.validationSummary),
+      ok: compactMeta.ok === true,
+      placedEntryCount: Number(compactMeta.placedEntryCount || 0) || 0,
+      failedCount: Number(compactMeta.failedCount || compactMeta.failedUnitCount || 0) || 0,
+      classSlotIssueCount: Number(compactMeta.classSlotIssueCount || compactMeta.classIssueCount || 0) || 0,
+      cardCoverageIssueCount: Number(compactMeta.cardCoverageIssueCount || 0) || 0,
+      groupCoverageIssueCount: Number(compactMeta.groupCoverageIssueCount || 0) || 0,
+      classTotal: Number(compactMeta.classTotal || 0) || 0,
+      classTargetTotal: Number(compactMeta.classTargetTotal || 0) || 0,
+      classTargetGap: Number(compactMeta.classTargetGap || 0) || 0,
+      cardShortageSlots: Number(compactMeta.cardShortageSlots || 0) || 0,
+      restrictedTeacherIssueCount: Number(compactMeta.restrictedTeacherIssueCount || 0) || 0,
+      missingRoomCount: Number(compactMeta.missingRoomCount || 0) || 0,
+      protectedIntrusionCount: Number(compactMeta.protectedIntrusionCount || 0) || 0,
+      metricCompleteness: clean(compactMeta.metricCompleteness),
+      metricSource: clean(compactMeta.metricSource)
+    } : null,
+    cardGenerationMeta: version.cardGenerationMeta && typeof version.cardGenerationMeta === "object" ? safeJsonClone(version.cardGenerationMeta) : null,
+    entries: Array.isArray(version.entries) ? version.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter) : []
+  };
+}
+
 function compactTimetableMetaScheduleCandidates(list = []) {
   const schedules = Array.isArray(list) ? list.filter(v => v && Array.isArray(v.entries) && v.entries.length) : [];
   const isAuto = v => isAutoTimetableVersion(v);
@@ -1088,7 +1152,7 @@ function compactTimetableMetaScheduleCandidates(list = []) {
   const byId = new Map();
   const add = v => {
     if (!v || !v.id || byId.has(v.id)) return;
-    byId.set(v.id, { ...v, autoAssignMeta: compactAutoAssignMetaForStorage(v.autoAssignMeta) });
+    byId.set(v.id, compactSavedScheduleForMetaDoc(v));
   };
 
   const auto = schedules.filter(isAuto);
