@@ -5505,11 +5505,52 @@ export function createAutoAssignAll(deps) {
     if (beforeAutoSnapshot) {
       addTimetableLog("auto", "자동배치 전 배치 보관", `${beforeAutoSnapshot.name}으로 현재 배치를 메모리 보관했습니다. 저장은 자동배치 완료 후 한 번만 수행합니다.`);
     } else if (isFastCheckRun) {
-      addTimetableLog("auto", "빠른 점검 모드", "빠른 점검은 오류 확인용이므로 자동배치 전/후 보관본 저장을 생략합니다. 복원은 실행 중 메모리 스냅샷으로 처리합니다.");
+      addTimetableLog("auto", "빠른 점검 모드", "빠른 점검은 오류 확인용이므로 자동배치 전/후 보관본 저장을 생략합니다. 실패해도 자동 롤백하지 않고 마지막 배치 결과를 화면에 남깁니다.");
     }
     let rollbackConsumed = false;
     let autoAssignCancelled = false;
     const progress = createAutoAssignProgressDialog(autoTargetSlots, () => { autoAssignCancelled = true; });
+    let lastAutoAssignResultSnapshot = null;
+    let lastAutoAssignResultLabel = "";
+    let lastAutoAssignResultFailedCount = 0;
+    const rememberAutoAssignResult = (label, placed = [], failed = []) => {
+      const placedClone = cloneAutoAssignData(placed || []) || [];
+      if (!placedClone.length) return false;
+      lastAutoAssignResultSnapshot = cloneAutoAssignData([...protectedEntries, ...placedClone]) || [];
+      lastAutoAssignResultLabel = label || "자동배치 진행 결과";
+      lastAutoAssignResultFailedCount = Array.isArray(failed) ? failed.length : 0;
+      return true;
+    };
+    const applyLastAutoAssignResultToLiveEntries = () => {
+      const current = normalizeSnapshotEntries(entries()) || [];
+      if (current.length > protectedEntries.length) {
+        lastAutoAssignResultSnapshot = cloneAutoAssignData(current) || [];
+        lastAutoAssignResultLabel = lastAutoAssignResultLabel || "현재 표시 중인 자동배치 결과";
+        return {
+          applied: true,
+          label: lastAutoAssignResultLabel,
+          entryCount: current.length,
+          fromCurrent: true
+        };
+      }
+      const snapshot = normalizeSnapshotEntries(lastAutoAssignResultSnapshot || []) || [];
+      if (!snapshot.length) {
+        return { applied: false, label: "", entryCount: current.length, fromCurrent: false };
+      }
+      const liveEntries = entries();
+      if (Array.isArray(liveEntries)) {
+        liveEntries.splice(0, liveEntries.length, ...snapshot);
+        if (ttDomain().entries !== liveEntries) ttDomain().entries = liveEntries;
+      } else {
+        ttDomain().entries = snapshot;
+      }
+      return {
+        applied: true,
+        label: lastAutoAssignResultLabel || "마지막 자동배치 결과",
+        entryCount: snapshot.length,
+        fromCurrent: false
+      };
+    };
     let lastProgressAt = 0;
     const updateProgress = async (data = {}, force = false) => {
       const now = Date.now();
@@ -6054,6 +6095,7 @@ export function createAutoAssignAll(deps) {
           bestScore  = placed.length;
           bestPlaced = placed;
           bestFailed = failed;
+          rememberAutoAssignResult(`초기배치 후보 · ${stage.label}`, bestPlaced, bestFailed);
           bestStage  = { ...stage, options: stageAttemptOptions };
           bestQualityScore = qualityScore;
           bestAttemptInfo = {
@@ -6157,6 +6199,7 @@ export function createAutoAssignAll(deps) {
         acceptedForced = [...(forced || [])];
         acceptedLabel = label;
         acceptedMetrics = result.metrics;
+        rememberAutoAssignResult(label, acceptedPlaced, acceptedFailed);
       }
       return result.metrics;
     };
@@ -7006,7 +7049,17 @@ export function createAutoAssignAll(deps) {
         }
       }
     }
-    const rejectWorseThanBaseline = !isFastCheckRun && !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
+    rememberAutoAssignResult("최종 자동배치 후보", bestPlaced, bestFailed);
+
+    const worseThanBaseline = !isFastCheckRun && !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
+    if (worseThanBaseline) {
+      addTimetableLog(
+        "warn",
+        "자동배치 품질 기준 참고",
+        `새 결과가 이전 기준보다 나쁠 수 있지만 자동 롤백하지 않고 마지막 결과를 시간표에 표시합니다. 기준: ${qualityBaselineReference?.name || "현재 시간표"} · ${formatAutoRunMetricSummary(qualityBaselineMetrics)} / 새 결과: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
+      );
+    }
+    const rejectWorseThanBaseline = false;
     if (rejectWorseThanBaseline) {
       const restoreSource = (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
       const restoredEntries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
@@ -7158,7 +7211,7 @@ export function createAutoAssignAll(deps) {
       missingRoomEntries
     });
     const conflictSummary = getConflictCounts();
-    const successTelemetryOutcome = freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : "baseline-kept");
+    const successTelemetryOutcome = freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : (worseThanBaseline ? "fresh-displayed-no-rollback" : "baseline-kept"));
     const successTelemetry = recordCandidateTelemetry(successTelemetryOutcome);
     const report = {
       ts: Date.now(),
@@ -7247,7 +7300,9 @@ export function createAutoAssignAll(deps) {
       qualityGate: {
         postProcessReverted: !!improvement.revertedByQualityGate,
         revertedToAccepted: improvement.revertedToAccepted || "",
-        acceptedLabel
+        acceptedLabel,
+        worseThanBaseline: !!worseThanBaseline,
+        autoRollbackDisabled: true
       },
       validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
       experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
@@ -7401,28 +7456,14 @@ export function createAutoAssignAll(deps) {
       }]
     });
     } catch (err) {
-      // ── r46 안전장치(데이터 손상 방지) ─────────────────────────────────────
-      // 자동배치는 시작 시 라이브 entries를 보호수업만 남기고 비웁니다(reset 모드).
-      // 그 이후 어떤 예외/취소가 발생해도, 여기서 반드시 "자동배치 전" 시간표로
-      // 복원한 뒤 저장합니다. (기존에는 복원이 없어 구성 중 예외가 나면 보호수업
-      // 32개만 남은 상태가 그대로 저장되었습니다.)
       const isCancel = err?.message === "__AUTO_ASSIGN_CANCELLED__";
-      let restored = false;
+      let displayed = { applied: false, label: "", entryCount: Array.isArray(entries()) ? entries().length : null, fromCurrent: false };
       try {
-        const snapshot = cloneAutoAssignData(rollbackEntriesSnapshot) || [];
-        const liveEntries = entries();
-        if (Array.isArray(liveEntries)) {
-          liveEntries.splice(0, liveEntries.length, ...snapshot);
-          if (ttDomain().entries !== liveEntries) ttDomain().entries = liveEntries;
-        } else {
-          ttDomain().entries = snapshot;
-        }
-        restored = true;
-      } catch (restoreErr) {
-        console.error("Auto assign rollback restore failed:", restoreErr);
-        try { ttDomain().entries = cloneAutoAssignData(rollbackEntriesSnapshot) || []; restored = true; } catch (_) {}
+        displayed = applyLastAutoAssignResultToLiveEntries();
+      } catch (displayErr) {
+        console.error("Auto assign last-result display failed:", displayErr);
       }
-      // 진단 메타(다음 디버깅용) — export의 timetable.lastAutoAssignError 로 남습니다.
+
       try {
         const errorRecord = {
           ts: Date.now(),
@@ -7431,8 +7472,11 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: isCancel ? "사용자 취소" : (err?.message || String(err)),
           stackHead: isCancel ? "" : String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          restored,
-          restoredEntryCount: Array.isArray(entries()) ? entries().length : null,
+          autoRollbackDisabled: true,
+          displayedLastResult: !!displayed.applied,
+          displayedResultLabel: displayed.label || "",
+          displayedEntryCount: displayed.entryCount,
+          displayedFailedCount: lastAutoAssignResultFailedCount,
           appVersion: String(globalThis.HIS_APP_VERSION || ""),
           forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK
         };
@@ -7444,31 +7488,54 @@ export function createAutoAssignAll(deps) {
             ...(target.autoAssignMeta && typeof target.autoAssignMeta === "object" ? target.autoAssignMeta : {}),
             lastAutoAssignError: errorRecord,
             autoAssignError: errorRecord,
-            telemetryStatus: isCancel ? "cancelled" : "error"
+            telemetryStatus: isCancel ? "cancelled-last-result-displayed" : "error-last-result-displayed",
+            autoRollbackDisabled: true,
+            displayedLastResult: !!displayed.applied,
+            displayedResultLabel: displayed.label || ""
           };
           target.autoAssignMeta = compactAutoAssignSnapshotMeta(mergedMeta);
         };
         applyErrorTelemetry(domain);
         applyErrorTelemetry(appState.timetable);
       } catch (_) {}
+
       try { recomputeConflicts(); } catch (_) {}
       try { renderAll(); } catch (_) {}
-      // 복원된 상태를 저장합니다(망가진 보호수업-only 상태가 저장되지 않도록).
-      if (!isFastCheckRun) {
-        try { await persistTimetableNow(); } catch (_) {}
-      } else {
-        try { addTimetableLog("auto", "빠른 점검 복원 저장 생략", "빠른 점검 오류 후 자동배치 전 상태로 메모리 복원했습니다. Firestore 저장은 생략했습니다."); } catch (_) {}
-      }
+
       if (isCancel) {
-        addTimetableLog("auto", "자동 배치 취소", `사용자 요청으로 중단하고 자동배치 전 시간표로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구 필요)"}.`);
-        if (progress) await progress.cancel(`자동배치를 중단하고 자동배치 전 시간표로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구하세요)"}.`);
+        addTimetableLog(
+          "auto",
+          "자동 배치 취소",
+          displayed.applied
+            ? `사용자 요청으로 중단했습니다. 자동 롤백하지 않고 ${displayed.label || "마지막 자동배치 결과"}를 화면에 남겼습니다.`
+            : "사용자 요청으로 중단했습니다. 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다."
+        );
+        if (progress) {
+          await progress.cancel(
+            displayed.applied
+              ? `자동배치를 중단했습니다. 자동 롤백하지 않고 마지막 결과를 시간표에 표시했습니다.`
+              : "자동배치를 중단했습니다. 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다."
+          );
+        }
       } else {
         console.error("Auto assign failed:", err);
-        addTimetableLog("error", "자동 배치 오류", `${err?.message || String(err)} · 단계: ${autoAssignPhase || "?"} · ${restored ? "자동배치 전 시간표로 복원함" : "복원 실패 - 보관본에서 수동 복구 필요"}`);
+        addTimetableLog(
+          "error",
+          "자동 배치 오류",
+          `${err?.message || String(err)} · 단계: ${autoAssignPhase || "?"} · 자동 롤백 안 함 · ${displayed.applied ? `마지막 결과 표시(${displayed.entryCount}개)` : "표시할 후보 없음"}`
+        );
         if (progress) {
-          await progress.error(`자동 배치 중 오류가 발생했습니다. 시간표는 자동배치 전 상태로 ${restored ? "복원했습니다" : "복원하지 못했습니다(보관본에서 복구하세요)"}. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`);
+          await progress.error(
+            displayed.applied
+              ? `자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않고 마지막으로 나온 결과를 시간표에 표시했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
+              : `자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않았지만, 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
+          );
         } else {
-          alert(`자동 배치 중 오류가 발생했습니다. 시간표를 자동배치 전 상태로 ${restored ? "복원했습니다" : "복원하지 못했습니다"}. 로그를 확인해 주세요.`);
+          alert(
+            displayed.applied
+              ? "자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않고 마지막 결과를 시간표에 표시했습니다. 로그를 확인해 주세요."
+              : "자동 배치 중 오류가 발생했습니다. 자동 롤백하지 않았지만 표시할 후보가 없습니다. 로그를 확인해 주세요."
+          );
         }
       }
     } finally {

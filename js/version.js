@@ -3,7 +3,7 @@
 // ================================================================
 // Update this value once per release. HTML entry points can override it by
 // setting window.HIS_APP_VERSION before loading app modules.
-export const APP_VERSION = "2026-06-17-자동배치저장차단-서명압축-r70";
+export const APP_VERSION = "2026-06-17-자동배치결과유지-r71";
 
 export function versioned(path) {
   const raw = String(path || "");
