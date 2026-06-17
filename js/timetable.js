@@ -152,6 +152,89 @@ function isVisible(el) {
   return !!el && !el.classList.contains("hidden");
 }
 
+function installTimetableScrollIsolation() {
+  if (document.documentElement.dataset.ttScrollIsolationR73 === "1") return;
+  document.documentElement.dataset.ttScrollIsolationR73 = "1";
+
+  const normalizeWheelDelta = (ev, axis = "y", baseEl = null) => {
+    const raw = axis === "x" ? ev.deltaX : ev.deltaY;
+    if (!raw) return 0;
+    if (ev.deltaMode === 1) return raw * 32;
+    if (ev.deltaMode === 2) return raw * Math.max(1, baseEl?.clientHeight || window.innerHeight || 600);
+    return raw;
+  };
+  const maxTop = el => Math.max(0, (el?.scrollHeight || 0) - (el?.clientHeight || 0));
+  const maxLeft = el => Math.max(0, (el?.scrollWidth || 0) - (el?.clientWidth || 0));
+  const canScroll = (el, dy, dx = 0) => {
+    if (!el) return false;
+    const my = maxTop(el);
+    const mx = maxLeft(el);
+    const yOk = Math.abs(dy) > Math.abs(dx) && my > 1 && ((dy > 0 && el.scrollTop < my - 1) || (dy < 0 && el.scrollTop > 1));
+    const xOk = Math.abs(dx) >= Math.abs(dy) && mx > 1 && ((dx > 0 && el.scrollLeft < mx - 1) || (dx < 0 && el.scrollLeft > 1));
+    return yOk || xOk;
+  };
+  const scrollElement = (el, dy, dx = 0) => {
+    if (!el) return false;
+    const beforeTop = el.scrollTop;
+    const beforeLeft = el.scrollLeft;
+    if (Math.abs(dx) > Math.abs(dy)) {
+      const mx = maxLeft(el);
+      el.scrollLeft = Math.max(0, Math.min(mx, beforeLeft + dx));
+    } else {
+      const my = maxTop(el);
+      el.scrollTop = Math.max(0, Math.min(my, beforeTop + dy));
+    }
+    return el.scrollTop !== beforeTop || el.scrollLeft !== beforeLeft;
+  };
+  const isScrollableByStyle = el => {
+    if (!el || !(el instanceof Element)) return false;
+    const cs = window.getComputedStyle(el);
+    return /(auto|scroll|overlay)/.test(`${cs.overflowY} ${cs.overflowX} ${cs.overflow}`);
+  };
+  const findScrollable = (target, boundary, dy, dx = 0, fallback = null) => {
+    let el = target instanceof Element ? target : null;
+    while (el && el !== document.body && el !== document.documentElement) {
+      if (boundary && !boundary.contains(el)) break;
+      if (isScrollableByStyle(el) && canScroll(el, dy, dx)) return el;
+      el = el.parentElement;
+    }
+    return fallback && canScroll(fallback, dy, dx) ? fallback : fallback;
+  };
+
+  const grid = document.getElementById("ttGrid");
+  if (grid) {
+    grid.addEventListener("wheel", ev => {
+      if (ev.ctrlKey) return;
+      const dy = normalizeWheelDelta(ev, "y", grid);
+      const dx = normalizeWheelDelta(ev, "x", grid);
+      const scroller = findScrollable(ev.target, grid, dy, dx, grid);
+      if (scrollElement(scroller, dy, dx)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    }, { capture: true, passive: false });
+  }
+
+  const bottom = document.getElementById("ttBottom");
+  if (bottom) {
+    bottom.addEventListener("wheel", ev => {
+      if (ev.ctrlKey) return;
+      if (!(ev.target instanceof Element) || !bottom.contains(ev.target)) return;
+      const dy = normalizeWheelDelta(ev, "y", bottom);
+      const dx = normalizeWheelDelta(ev, "x", bottom);
+      const activeTab = [...bottom.querySelectorAll(".tt-bottom-content > div")]
+        .find(el => !el.classList.contains("hidden"));
+      const fallback = activeTab || bottom.querySelector(".tt-bottom-content") || bottom.querySelector(".tt-bottom-scroll");
+      const scroller = findScrollable(ev.target, bottom, dy, dx, fallback);
+      scrollElement(scroller, dy, dx);
+      // 하단바 안에서 발생한 wheel은 항상 하단바 내부에서만 소비한다.
+      // 내부 스크롤 끝에서 body/#ttGrid로 연쇄 이동하는 것을 막는다.
+      ev.preventDefault();
+      ev.stopPropagation();
+    }, { capture: true, passive: false });
+  }
+}
+
 function activateBottomTab(tabName) {
   window._ttBottomToggle?.show?.();
   const btn = document.querySelector(`.tt-bottom-tab-btn[data-tab="${tabName}"]`);
@@ -3507,4 +3590,5 @@ window._ttApplyPeriod = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?
       }
     });
   }
+installTimetableScrollIsolation();
 renderAll();
