@@ -94,6 +94,28 @@ export function createAutoAssignAll(deps) {
   }
 
 
+  function normalizeAutoActiveGrades(value = []) {
+    if (Array.isArray(value)) return value.map(v => String(v || "").trim()).filter(Boolean);
+    if (value instanceof Set) return Array.from(value).map(v => String(v || "").trim()).filter(Boolean);
+    if (typeof value === "string") {
+      return value.split(/[,/|·]+/).map(v => v.trim()).filter(Boolean);
+    }
+    if (value && typeof value === "object") {
+      if (Array.isArray(value.activeGrades)) return normalizeAutoActiveGrades(value.activeGrades);
+      if (Array.isArray(value.selectedGrades)) return normalizeAutoActiveGrades(value.selectedGrades);
+      return Object.values(value).map(v => String(v || "").trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function formatAutoActiveGrades(value = []) {
+    return normalizeAutoActiveGrades(value)
+      .map(g => typeof gradeDisplay === "function" ? gradeDisplay(g) : g)
+      .filter(Boolean)
+      .join(", ");
+  }
+
+
   function compactAutoAssignSnapshotMeta(meta = {}) {
     const clone = value => {
       if (!value || typeof value !== "object") return null;
@@ -179,7 +201,7 @@ export function createAutoAssignAll(deps) {
     };
     return {
       validationSummary: summaryText,
-      activeGrades: Array.isArray(meta.activeGrades) ? meta.activeGrades.slice() : [],
+      activeGrades: normalizeAutoActiveGrades(meta.activeGrades),
       modeText: String(meta.modeText || ""),
       options: clone(meta.options),
       autoSourceSignature: String(meta.autoSourceSignature || meta.sourceSignature || ""),
@@ -559,7 +581,7 @@ export function createAutoAssignAll(deps) {
       snapshot.updatedAt = new Date().toISOString();
       snapshot.note = [
         "자동 생성된 배치 보관본입니다.",
-        canonicalMeta.activeGrades ? `대상: ${canonicalMeta.activeGrades}` : "",
+        formatAutoActiveGrades(canonicalMeta.activeGrades) ? `대상: ${formatAutoActiveGrades(canonicalMeta.activeGrades)}` : "",
         canonicalMeta.placementModeLabel || canonicalMeta.modeText ? `방식: ${canonicalMeta.placementModeLabel || canonicalMeta.modeText}` : "",
         compact.validationSummary ? `검증: ${compact.validationSummary}` : ""
       ].filter(Boolean).join(" / ");
@@ -580,7 +602,7 @@ export function createAutoAssignAll(deps) {
 
     const now = new Date();
     const modeLabel = meta.modeText || (meta.options?.placementMode === "keep" ? "현재 배치 유지" : "초기화 후 배치");
-    const grades = (meta.activeGrades || []).map(g => typeof gradeDisplay === "function" ? gradeDisplay(g) : g).filter(Boolean).join(", ");
+    const grades = formatAutoActiveGrades(meta.activeGrades);
     const label = kind === "before" ? "자동배치 전" : "자동배치 결과";
     const version = {
       id: uid(`ttv_auto_${kind}`),
@@ -6993,7 +7015,7 @@ export function createAutoAssignAll(deps) {
         rejectedByQualityGate: true,
         reason: "새 자동배치 결과가 이전 최고 자동배치 결과보다 검증 점수가 나빠 반영하지 않았습니다.",
         rejectReason: "worse-than-complete-best-snapshot",
-        activeGrades: activeGrades.map(gradeDisplay).join(", "),
+        activeGrades: activeGrades.slice(),
         placementModeLabel: modeText,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
@@ -7098,7 +7120,7 @@ export function createAutoAssignAll(deps) {
     const successTelemetry = recordCandidateTelemetry(successTelemetryOutcome);
     const report = {
       ts: Date.now(),
-      activeGrades: activeGrades.map(gradeDisplay).join(", "),
+      activeGrades: activeGrades.slice(),
       stageName: bestStage.name,
       stageLabel: bestStage.label,
       totalTarget: autoTargetSlots,
@@ -7109,7 +7131,7 @@ export function createAutoAssignAll(deps) {
       clearedCount: willClearCount,
       placementMode: options.placementMode,
       placementModeLabel: modeText,
-      selectedGrades: activeGrades.map(gradeDisplay).join(", "),
+      selectedGrades: activeGrades.slice(),
       runAttempts: options.runAttempts,
       engineProfileLabel: engineProfile.label,
       keepPinned: options.keepPinned !== false,
