@@ -2539,3 +2539,106 @@ body {
     min-height: 280px !important;
   }
 }
+
+
+/* ────────────────────────────────────────────────────────────────
+   r74 · Whole-page scroll restored + bottom inner scroll guarded
+   - 전체 페이지 스크롤을 다시 살린다.
+   - 시간표 영역과 하단바 내부 목록은 필요할 때만 자체 스크롤한다.
+   - 로그/충돌표 내부 스크롤이 움직일 때는 상위 스크롤로 연쇄되지 않는다.
+   ──────────────────────────────────────────────────────────────── */
+html {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+body {
+  height: auto !important;
+  min-height: 100vh !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.tt-topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1200 !important;
+  flex: 0 0 auto !important;
+}
+.tt-toolbar {
+  position: sticky !important;
+  top: 44px !important;
+  z-index: 1190 !important;
+  flex: 0 0 auto !important;
+}
+.tt-body {
+  flex: 0 0 auto !important;
+  min-height: min(560px, max(360px, calc(100vh - var(--tt-bottom-current-height, 260px) - 160px))) !important;
+  height: auto !important;
+  overflow: visible !important;
+  overscroll-behavior: auto !important;
+}
+#ttGrid {
+  flex: 0 0 auto !important;
+  width: 100% !important;
+  height: min(680px, max(360px, calc(100vh - var(--tt-bottom-current-height, 260px) - 145px))) !important;
+  min-height: 360px !important;
+  max-height: none !important;
+  overflow: auto !important;
+  overscroll-behavior: contain !important;
+  scrollbar-gutter: stable both-edges;
+}
+.tt-bottom {
+  flex: 0 0 var(--tt-bottom-current-height, 260px) !important;
+  height: var(--tt-bottom-current-height, 260px) !important;
+  min-height: 0 !important;
+  max-height: min(72vh, 760px) !important;
+  overflow: hidden !important;
+}
+.tt-bottom-scroll {
+  height: 100% !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  overscroll-behavior: contain !important;
+}
+.tt-bottom-content {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.tt-bottom-content > div {
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: auto !important;
+  overscroll-behavior: contain !important;
+}
+#ttLogsContent {
+  overflow: hidden !important;
+}
+#ttLogsContent .tt-log-grid {
+  height: calc(100% - 48px) !important;
+  min-height: 0 !important;
+  align-items: stretch !important;
+}
+#ttLogsContent .tt-log-card {
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+#ttLogsContent .tt-log-card-body,
+#ttLogsContent .tt-log-table-wrap,
+#ttLogsContent .tt-log-failure-diag {
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: auto !important;
+  overscroll-behavior: contain !important;
+}
+@media (max-height: 760px) {
+  .tt-body { min-height: 320px !important; }
+  #ttGrid { height: 340px !important; min-height: 320px !important; }
+}

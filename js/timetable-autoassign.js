@@ -4291,6 +4291,7 @@ export function createAutoAssignAll(deps) {
     const cancelBtn = overlay.querySelector(".tt-auto-progress-cancel");
     const logEl = overlay.querySelector(".tt-auto-progress-log");
     const cardEl = overlay.querySelector(".tt-auto-progress-card");
+    const actionsEl = overlay.querySelector(".tt-auto-progress-actions");
 
     // Strong inline styling: the dialog must stay readable even if an older
     // cached style.css is still being served by GitHub Pages.
@@ -4314,8 +4315,7 @@ export function createAutoAssignAll(deps) {
       overlay.querySelectorAll(".tt-auto-progress-stats b").forEach(el => el.style.cssText = "display:block;margin-top:2px;color:#0f172a;font-size:15px;");
       if (currentEl) currentEl.style.cssText = "margin:12px 24px 0;padding:9px 11px;border-radius:12px;background:#eff6ff;color:#1e40af;font-size:13px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
       if (logEl) logEl.style.cssText = "margin:12px 24px 0;padding:10px 12px;border-radius:12px;background:#f8fafc;border:1px dashed #cbd5e1;font-size:12px;line-height:1.55;color:#64748b;max-height:110px;overflow:auto;";
-      const actions = overlay.querySelector(".tt-auto-progress-actions");
-      if (actions) actions.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin:16px 24px 22px;";
+      if (actionsEl) actionsEl.style.cssText = "display:flex;justify-content:flex-end;gap:8px;margin:16px 24px 22px;";
       if (cancelBtn) cancelBtn.style.cssText = "border:0;border-radius:10px;color:#fff;font-weight:900;padding:9px 16px;cursor:pointer;background:#dc2626;";
       if (closeBtn) closeBtn.style.cssText = "border:0;border-radius:10px;color:#fff;font-weight:900;padding:9px 16px;cursor:pointer;background:#173b68;";
     }
@@ -4385,7 +4385,7 @@ export function createAutoAssignAll(deps) {
         if (data.best !== undefined) stat("best", data.best);
         if (data.failed !== undefined) stat("failed", data.failed);
         if (data.currentCard !== undefined) currentEl.textContent = `현재 카드: ${data.currentCard || "-"}`;
-        actions?.querySelectorAll?.('[data-auto-extra-action="1"]')?.forEach(btn => btn.remove());
+        actionsEl?.querySelectorAll?.('[data-auto-extra-action="1"]')?.forEach(btn => btn.remove());
         const extraActions = Array.isArray(data.actions) ? data.actions : [];
         extraActions.forEach(action => {
           const btn = document.createElement("button");
@@ -4404,11 +4404,11 @@ export function createAutoAssignAll(deps) {
               alert(e?.message || String(e));
             }
           });
-          actions?.insertBefore(btn, closeBtn);
+          actionsEl?.insertBefore(btn, closeBtn);
         });
         closeBtn.textContent = data.closeLabel || "닫기";
         closeBtn.disabled = false;
-        (extraActions[0] ? actions?.querySelector('[data-auto-extra-action="1"]') : closeBtn)?.focus?.();
+        (extraActions[0] ? actionsEl?.querySelector('[data-auto-extra-action="1"]') : closeBtn)?.focus?.();
         await waitForBrowser();
       },
       async cancel(message = "사용자 요청으로 자동배치를 취소했습니다.") {

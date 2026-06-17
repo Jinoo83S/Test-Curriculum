@@ -153,8 +153,8 @@ function isVisible(el) {
 }
 
 function installTimetableScrollIsolation() {
-  if (document.documentElement.dataset.ttScrollIsolationR73 === "1") return;
-  document.documentElement.dataset.ttScrollIsolationR73 = "1";
+  if (document.documentElement.dataset.ttScrollIsolationR74 === "1") return;
+  document.documentElement.dataset.ttScrollIsolationR74 = "1";
 
   const normalizeWheelDelta = (ev, axis = "y", baseEl = null) => {
     const raw = axis === "x" ? ev.deltaX : ev.deltaY;
@@ -226,11 +226,13 @@ function installTimetableScrollIsolation() {
         .find(el => !el.classList.contains("hidden"));
       const fallback = activeTab || bottom.querySelector(".tt-bottom-content") || bottom.querySelector(".tt-bottom-scroll");
       const scroller = findScrollable(ev.target, bottom, dy, dx, fallback);
-      scrollElement(scroller, dy, dx);
-      // 하단바 안에서 발생한 wheel은 항상 하단바 내부에서만 소비한다.
-      // 내부 스크롤 끝에서 body/#ttGrid로 연쇄 이동하는 것을 막는다.
-      ev.preventDefault();
-      ev.stopPropagation();
+      // r74: 실제 내부 스크롤이 움직인 경우에만 이벤트를 소비한다.
+      // 로그/표 안에서 스크롤할 때는 연쇄 이동을 막고, 스크롤할 곳이 없을 때는
+      // 전체 페이지 스크롤을 허용해 시간표와 하단바를 함께 오가며 볼 수 있게 한다.
+      if (scroller && canScroll(scroller, dy, dx) && scrollElement(scroller, dy, dx)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
     }, { capture: true, passive: false });
   }
 }
