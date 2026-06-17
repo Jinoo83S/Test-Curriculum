@@ -771,6 +771,30 @@ function compactResidualPuzzleReportForStorage(report = null) {
   };
 }
 
+function normalizeAutoMetaGrades(value = []) {
+  if (Array.isArray(value)) return value.map(v => clean(v)).filter(Boolean);
+  if (value instanceof Set) return Array.from(value).map(v => clean(v)).filter(Boolean);
+  if (typeof value === "string") return value.split(/[,/|·]+/).map(v => clean(v)).filter(Boolean);
+  if (value && typeof value === "object") {
+    if (Array.isArray(value.activeGrades)) return normalizeAutoMetaGrades(value.activeGrades);
+    if (Array.isArray(value.selectedGrades)) return normalizeAutoMetaGrades(value.selectedGrades);
+    return Object.values(value).map(v => clean(v)).filter(Boolean);
+  }
+  return [];
+}
+
+function formatAutoMetaGrades(value = []) {
+  return normalizeAutoMetaGrades(value).join(", ");
+}
+
+function savedAutoSourceSignature(v = {}) {
+  return clean(v.autoSourceSignature || v.sourceSignature || v.autoAssignMeta?.autoSourceSignature || v.autoAssignMeta?.sourceSignature);
+}
+
+function savedAutoSourceSummary(v = {}) {
+  return clean(v.autoSourceSummary || v.autoAssignMeta?.autoSourceSummary);
+}
+
 function compactAutoAssignMetaForStorage(meta = null) {
   if (!meta || typeof meta !== "object") return null;
   const cloneMetric = value => (value && typeof value === "object") ? safeJsonClone(value) : null;
@@ -813,6 +837,15 @@ function compactAutoAssignMetaForStorage(meta = null) {
   return {
     schemaVersion: clean(meta.schemaVersion),
     generatedAt: clean(meta.generatedAt) || clean(meta.at) || clean(final.generatedAt),
+    activeGrades: normalizeAutoMetaGrades(meta.activeGrades),
+    selectedGrades: normalizeAutoMetaGrades(meta.selectedGrades || meta.activeGrades),
+    modeText: clean(meta.modeText),
+    placementModeLabel: clean(meta.placementModeLabel || meta.modeText),
+    options: meta.options && typeof meta.options === "object" ? safeJsonClone(meta.options) : null,
+    autoSourceSignature: clean(meta.autoSourceSignature || meta.sourceSignature),
+    autoSourceSummary: clean(meta.autoSourceSummary),
+    stageName: clean(meta.stageName),
+    stageLabel: clean(meta.stageLabel),
     validationSummary: summaryText,
     ok: meta.ok === true,
     // r41d: 최신 메타는 finalMetrics.placedCount만 가진 경우가 있습니다.
@@ -1009,6 +1042,8 @@ function normalizeSavedTimetableVersion(item = {}) {
     autoSnapshot: !!item.autoSnapshot,
     snapshotKind: clean(item.snapshotKind),
     source: clean(item.source),
+    autoSourceSignature: savedAutoSourceSignature(item),
+    autoSourceSummary: savedAutoSourceSummary(item),
     autoAssignMeta: compactAutoAssignMetaForStorage(item.autoAssignMeta),
     cardGenerationMeta: item.cardGenerationMeta && typeof item.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(item.cardGenerationMeta)) : null,
     entries,
@@ -1017,6 +1052,9 @@ function normalizeSavedTimetableVersion(item = {}) {
 
 function normalizeBestAutoAssignSnapshot(item = {}) {
   if (!item || !Array.isArray(item.entries) || !item.entries.length) return null;
+  // r67: 카드/그룹 구성이 달라진 구형 자동배치 보관본을 자동 기준으로 쓰지 않도록
+  // source signature가 없는 보관본은 best snapshot으로 승격하지 않습니다.
+  if (!savedAutoSourceSignature(item)) return null;
   if (!hasStructurallyUsableSavedMetrics(item)) return null;
   const normalized = normalizeSavedTimetableVersion({
     ...item,
@@ -1030,7 +1068,7 @@ function normalizeBestAutoAssignSnapshot(item = {}) {
 
 function findBestAutoAssignSnapshotFromSaved(list = []) {
   const candidates = Array.isArray(list)
-    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && Array.isArray(v.entries) && v.entries.length && hasStructurallyUsableSavedMetrics(v))
+    ? list.filter(v => v && !isBeforeAutoTimetableVersion(v) && isAutoTimetableVersion(v) && savedAutoSourceSignature(v) && Array.isArray(v.entries) && v.entries.length && hasStructurallyUsableSavedMetrics(v))
     : [];
   if (!candidates.length) return null;
   const best = candidates.slice().sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b))[0];
@@ -1151,9 +1189,11 @@ function syncAutoAssignMetaToEquivalentSnapshots({ entries = [], bestSnapshot = 
       entryCount: snapshot.entries.length,
       updatedAt: clean(snapshot.updatedAt) || new Date().toISOString(),
       autoAssignMeta: canonicalMeta,
+      autoSourceSignature: savedAutoSourceSignature({ autoAssignMeta: canonicalMeta }),
+      autoSourceSummary: savedAutoSourceSummary({ autoAssignMeta: canonicalMeta }),
       note: [
         "자동 생성된 배치 보관본입니다.",
-        clean(meta.activeGrades) ? `대상: ${clean(meta.activeGrades)}` : "",
+        formatAutoMetaGrades(canonicalMeta.activeGrades) ? `대상: ${formatAutoMetaGrades(canonicalMeta.activeGrades)}` : "",
         clean(meta.placementModeLabel || meta.modeText) ? `방식: ${clean(meta.placementModeLabel || meta.modeText)}` : "",
         canonicalMeta.validationSummary ? `검증: ${canonicalMeta.validationSummary}` : ""
       ].filter(Boolean).join(" / ")

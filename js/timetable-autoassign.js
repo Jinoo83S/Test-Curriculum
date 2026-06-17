@@ -1243,7 +1243,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function getReportClassRows(scopeGrades = []) {
-    const scope = new Set((scopeGrades || []).map(g => String(g || "").trim()).filter(Boolean));
+    const scope = new Set(normalizeAutoActiveGrades(scopeGrades));
     return (appState.classes?.classes || [])
       .map((cls, idx) => {
         const gradeKey = cls.grade || cls.gradeKey || "";
@@ -1345,7 +1345,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function getActiveTtCardsForValidation(scopeGrades = []) {
-    const scope = new Set((scopeGrades || []).map(g => String(g || "").trim()).filter(Boolean));
+    const scope = new Set(normalizeAutoActiveGrades(scopeGrades));
     return (ttDomain().ttcards || [])
       .filter(card => card && card.id)
       .filter(card => !scope.size || scope.has(card.gradeKey) || (card.gradeKeys || []).some(g => scope.has(g)))
@@ -4409,7 +4409,8 @@ export function createAutoAssignAll(deps) {
   };
 
   function gradeSetFromList(list = []) {
-    const set = new Set((list || []).filter(g => GRADE_KEYS.includes(g)));
+    const normalized = normalizeAutoActiveGrades(list);
+    const set = new Set(normalized.filter(g => GRADE_KEYS.includes(g)));
     return set.size ? set : new Set(GRADE_KEYS);
   }
 
@@ -5167,13 +5168,13 @@ export function createAutoAssignAll(deps) {
   }
 
   function getActiveCardsForGrades(cards = [], activeGrades = []) {
-    const set = new Set((activeGrades || []).filter(Boolean));
+    const set = new Set(normalizeAutoActiveGrades(activeGrades));
     if (!set.size) return cards;
     return (cards || []).filter(card => set.has(card.gradeKey) || (card.gradeKeys || []).some(g => set.has(g)));
   }
 
   function buildAutoAssignPrecheckReport(context = {}) {
-    const {
+    let {
       standalone = [],
       groupBlocks = [],
       activeGrades = [],
@@ -5181,6 +5182,8 @@ export function createAutoAssignAll(deps) {
       protectedEntries = [],
       availableGrades = [],
     } = context;
+    activeGrades = normalizeAutoActiveGrades(activeGrades);
+    availableGrades = normalizeAutoActiveGrades(availableGrades);
     const report = {
       version: 1,
       mode: "his-autoassign-precheck",
@@ -5379,7 +5382,7 @@ export function createAutoAssignAll(deps) {
       alert("시간표 사전작업에서 생성된 과목 카드가 없습니다.");
       return;
     }
-    const options = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, selectedGrades: availableGrades };
+    const options = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, selectedGrades: normalizeAutoActiveGrades(availableGrades) };
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
     const protectedEntries = computeProtectedEntries(entries(), options);
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
@@ -5406,6 +5409,7 @@ export function createAutoAssignAll(deps) {
 
     const options = await openAutoAssignOptionsDialog(availableGrades, AUTO_ASSIGN_DEFAULT_OPTIONS);
     if (!options) return;
+    options.selectedGrades = normalizeAutoActiveGrades(options.selectedGrades);
     options.scoringWeights = scoreOptionsFromAssignOptions(options);
 
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
@@ -5446,7 +5450,7 @@ export function createAutoAssignAll(deps) {
     const modeText = options.placementMode === "keep" ? "현재 배치 유지 + 미배치만 배치" : "선택 범위 초기화 후 배치";
     const confirmText = [
       `자동 배치를 시작합니다.`,
-      `대상: ${activeGrades.map(gradeDisplay).join(", ")}`,
+      `대상: ${formatAutoActiveGrades(activeGrades)}`,
       `방식: ${modeText}`,
       options.placementMode === "reset" ? `초기화 대상 배치: ${willClearCount}개` : `보호되는 기존 배치: ${protectedEntries.length}개`,
       `고정/보호 슬롯: ${protectedSummary.slots}칸`,
@@ -5493,10 +5497,10 @@ export function createAutoAssignAll(deps) {
       placed: 0,
       best: 0,
       failed: 0,
-      log: `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`
+      log: `대상 학년: ${formatAutoActiveGrades(activeGrades)}`
     }, true);
     captureTimetableUndo("자동 배정");
-    addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${activeGrades.map(gradeDisplay).join(", ")}`);
+    addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${formatAutoActiveGrades(activeGrades)}`);
     const preValidation = buildScheduleVerificationReport(entries(), { scopeGrades: activeGrades });
     const baselineAutoRunMetrics = buildAutoRunMetricsFromValidation(preValidation, {
       label: '자동배치 전',
@@ -7222,7 +7226,7 @@ export function createAutoAssignAll(deps) {
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
         afterAutoSnapshot.note = [
           "자동 생성된 배치 보관본입니다.",
-          activeGrades.length ? `대상: ${activeGrades.map(gradeDisplay).join(", ")}` : "",
+          normalizeAutoActiveGrades(activeGrades).length ? `대상: ${formatAutoActiveGrades(activeGrades)}` : "",
           modeText ? `방식: ${modeText}` : "",
           report.validationSummary ? `검증: ${report.validationSummary}` : ""
         ].filter(Boolean).join(" / ");
