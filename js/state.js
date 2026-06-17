@@ -689,11 +689,14 @@ const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "o
 
 
 
-const TIMETABLE_SAVED_VERSION_LIMIT = 6;
-const TIMETABLE_AUTO_AFTER_LIMIT = 4;
+const TIMETABLE_SAVED_VERSION_LIMIT = 3;
+const TIMETABLE_AUTO_AFTER_LIMIT = 1;
 const TIMETABLE_AUTO_BEFORE_LIMIT = 1;
-const TIMETABLE_MANUAL_LIMIT = 3;
+const TIMETABLE_MANUAL_LIMIT = 1;
 const TIMETABLE_META_DIAGNOSTIC_LIMIT = 12;
+// Firestore single document hard limit is 1MiB. Keep timetableMeta well below it
+// because Firestore adds field/index overhead beyond raw JSON size.
+const TIMETABLE_META_FIRESTORE_SAFE_BYTES = 760000;
 
 function safeJsonClone(value) {
   if (value == null || typeof value !== "object") return value ?? null;
@@ -1024,6 +1027,114 @@ function pruneSavedTimetableVersions(list = []) {
   return [...byId.values()]
     .sort((a, b) => savedVersionTime(b) - savedVersionTime(a))
     .slice(0, TIMETABLE_SAVED_VERSION_LIMIT);
+}
+
+
+function jsonByteSize(value) {
+  try {
+    return new TextEncoder().encode(JSON.stringify(value)).length;
+  } catch (_) {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+function compactAutoAssignMetaForMetaDoc(meta = null) {
+  const compact = compactAutoAssignMetaForStorage(meta);
+  if (!compact) return null;
+  if (jsonByteSize(compact) <= 140000) return compact;
+  return {
+    schemaVersion: clean(compact.schemaVersion),
+    generatedAt: clean(compact.generatedAt),
+    activeGrades: normalizeAutoMetaGrades(compact.activeGrades),
+    selectedGrades: normalizeAutoMetaGrades(compact.selectedGrades || compact.activeGrades),
+    modeText: clean(compact.modeText),
+    placementModeLabel: clean(compact.placementModeLabel || compact.modeText),
+    autoSourceSignature: clean(compact.autoSourceSignature || compact.sourceSignature),
+    autoSourceSummary: clean(compact.autoSourceSummary),
+    validationSummary: clean(compact.validationSummary),
+    ok: compact.ok === true,
+    placedEntryCount: Number(compact.placedEntryCount || 0) || 0,
+    failedUnitCount: Number(compact.failedUnitCount || compact.failedCount || 0) || 0,
+    failedCount: Number(compact.failedCount || compact.failedUnitCount || 0) || 0,
+    classIssueCount: Number(compact.classIssueCount || compact.classSlotIssueCount || 0) || 0,
+    classSlotIssueCount: Number(compact.classSlotIssueCount || compact.classIssueCount || 0) || 0,
+    cardCoverageIssueCount: Number(compact.cardCoverageIssueCount || 0) || 0,
+    groupCoverageIssueCount: Number(compact.groupCoverageIssueCount || 0) || 0,
+    cardShortageSlots: Number(compact.cardShortageSlots || 0) || 0,
+    classTotal: Number(compact.classTotal || 0) || 0,
+    classTargetTotal: Number(compact.classTargetTotal || 0) || 0,
+    classTargetGap: Number(compact.classTargetGap || 0) || 0,
+    restrictedTeacherIssueCount: Number(compact.restrictedTeacherIssueCount || 0) || 0,
+    protectedIntrusionCount: Number(compact.protectedIntrusionCount || 0) || 0,
+    missingRoomCount: Number(compact.missingRoomCount || 0) || 0,
+    metricSource: clean(compact.metricSource),
+    metricCompleteness: clean(compact.metricCompleteness),
+    qualityBaselineSource: clean(compact.qualityBaselineSource),
+    qualityBaselineSnapshotName: clean(compact.qualityBaselineSnapshotName),
+    qualityBaselineValidationSummary: clean(compact.qualityBaselineValidationSummary),
+    rejectedByQualityGate: compact.rejectedByQualityGate === true,
+    rejectReason: clean(compact.rejectReason),
+    failedDiagnostics: Array.isArray(compact.failedDiagnostics) ? compact.failedDiagnostics.slice(0, 4) : [],
+    failedReasonSummary: Array.isArray(compact.failedReasonSummary) ? compact.failedReasonSummary.slice(0, 4).map(clean) : [],
+    validatorVersion: clean(compact.validatorVersion || TIMETABLE_VALIDATOR_VERSION)
+  };
+}
+
+function compactTimetableMetaScheduleCandidates(list = []) {
+  const schedules = Array.isArray(list) ? list.filter(v => v && Array.isArray(v.entries) && v.entries.length) : [];
+  const isAuto = v => isAutoTimetableVersion(v);
+  const isBefore = v => isBeforeAutoTimetableVersion(v);
+  const time = v => savedVersionTime(v);
+  const byId = new Map();
+  const add = v => {
+    if (!v || !v.id || byId.has(v.id)) return;
+    byId.set(v.id, { ...v, autoAssignMeta: compactAutoAssignMetaForStorage(v.autoAssignMeta) });
+  };
+
+  const auto = schedules.filter(isAuto);
+  const after = auto.filter(v => !isBefore(v));
+  const before = auto.filter(isBefore);
+  const manual = schedules.filter(v => !isAuto(v));
+
+  // 1) 최신 자동배치 전 상태: 실패 시 복원 기준으로 가장 중요합니다.
+  before.slice().sort((a, b) => time(b) - time(a)).slice(0, 1).forEach(add);
+  // 2) 최신 자동배치 결과: 사용자가 방금 실행한 결과 확인용입니다.
+  after.slice().sort((a, b) => time(b) - time(a)).slice(0, 1).forEach(add);
+  // 3) 품질상 가장 좋은 자동배치 결과: 최신 결과와 다를 때만 후보로 둡니다.
+  after.slice().filter(hasStructurallyUsableSavedMetrics).sort((a, b) => savedVersionQualityScore(a) - savedVersionQualityScore(b)).slice(0, 1).forEach(add);
+  // 4) 수동 저장본은 사용자가 만든 기록일 가능성이 있어 마지막으로 1개만 시도합니다.
+  manual.slice().sort((a, b) => time(b) - time(a)).slice(0, 1).forEach(add);
+
+  return [...byId.values()].sort((a, b) => time(b) - time(a));
+}
+
+function buildTimetableMetaStorageDoc(normalized = {}) {
+  const n = normalizeTimetableDomain(normalized || {});
+  const base = {
+    config: n.config,
+    teacherConstraints: n.teacherConstraints,
+    ttcardGroups: n.ttcardGroups || [],
+    savedSchedules: [],
+    cardGenerationMeta: n.cardGenerationMeta || null,
+    autoAssignMeta: compactAutoAssignMetaForMetaDoc(n.autoAssignMeta),
+    bestAutoAssignSnapshot: null
+  };
+
+  const candidates = compactTimetableMetaScheduleCandidates(n.savedSchedules || []);
+  const selected = [];
+  for (const candidate of candidates) {
+    const trial = { ...base, savedSchedules: [...selected, candidate] };
+    if (jsonByteSize(trial) <= TIMETABLE_META_FIRESTORE_SAFE_BYTES) selected.push(candidate);
+  }
+  base.savedSchedules = selected;
+
+  const best = n.bestAutoAssignSnapshot || null;
+  if (best && Array.isArray(best.entries) && best.entries.length && !selected.some(v => v.id === best.id)) {
+    const trial = { ...base, bestAutoAssignSnapshot: best };
+    if (jsonByteSize(trial) <= TIMETABLE_META_FIRESTORE_SAFE_BYTES) base.bestAutoAssignSnapshot = best;
+  }
+
+  return base;
 }
 
 function normalizeSavedTimetableVersion(item = {}) {
@@ -1781,15 +1892,7 @@ function markSplitBaselines(domain, normalized = normalizedForDomain(domain)) {
     const n = normalizeTimetableDomain(normalized);
     splitDocFingerprints.timetable.timetableEntries = mapFromItems(n.entries, item => item);
     splitDocFingerprints.timetable.ttcards = mapFromItems(n.ttcards, item => item);
-    splitDocFingerprints.timetable.timetableMeta = fp({
-      config: n.config,
-      teacherConstraints: n.teacherConstraints,
-      ttcardGroups: n.ttcardGroups || [],
-      savedSchedules: n.savedSchedules || [],
-      cardGenerationMeta: n.cardGenerationMeta || null,
-      autoAssignMeta: n.autoAssignMeta || null,
-      bestAutoAssignSnapshot: n.bestAutoAssignSnapshot || null
-    });
+    splitDocFingerprints.timetable.timetableMeta = fp(buildTimetableMetaStorageDoc(n));
   }
 }
 
@@ -1933,15 +2036,7 @@ async function saveSplitDomain(domain, options = {}) {
     const metaWrites = await commitChangedDoc(
       ["timetable", "timetableMeta"],
       splitRefs.timetableMeta,
-      {
-        config: normalized.config,
-        teacherConstraints: normalized.teacherConstraints,
-        ttcardGroups: normalized.ttcardGroups || [],
-        savedSchedules: normalized.savedSchedules || [],
-        cardGenerationMeta: normalized.cardGenerationMeta || null,
-        autoAssignMeta: normalized.autoAssignMeta || null,
-        bestAutoAssignSnapshot: normalized.bestAutoAssignSnapshot || null
-      },
+      buildTimetableMetaStorageDoc(normalized),
       options
     );
     console.info(`[Firestore save] timetable split writes: entries ${entryWrites}, cards ${cardWrites}, meta ${metaWrites}`);
