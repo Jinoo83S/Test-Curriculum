@@ -14,6 +14,24 @@ import { getTtCardById } from "./ttcards.js";
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;
 const HOME_ROOM_ROOM_SELECT_VALUE = "__homeroom__";
+const DETAIL_MODAL_OFFSET_STEP = 22;
+const DETAIL_MODAL_OFFSET_CYCLE = 5;
+const DETAIL_MODAL_MARGIN = 12;
+
+function getOpenDetailModalPositionIndex() {
+  return document.querySelectorAll(".tt-entry-detail-floating-modal").length % DETAIL_MODAL_OFFSET_CYCLE;
+}
+
+function getInitialModalPosition(maxWidth = 440) {
+  const safeWidth = Math.min(Number(maxWidth) || 440, Math.max(280, window.innerWidth - DETAIL_MODAL_MARGIN * 2));
+  const idx = getOpenDetailModalPositionIndex();
+  const baseLeft = Math.round((window.innerWidth - safeWidth) / 2);
+  const baseTop = Math.max(DETAIL_MODAL_MARGIN, Math.round(window.innerHeight * 0.08));
+  return {
+    left: Math.max(DETAIL_MODAL_MARGIN, baseLeft + idx * DETAIL_MODAL_OFFSET_STEP),
+    top: Math.max(DETAIL_MODAL_MARGIN, baseTop + idx * DETAIL_MODAL_OFFSET_STEP),
+  };
+}
 
 function bringModalToFront(modal) {
   if (!modal) return;
@@ -34,13 +52,14 @@ function clampModalPosition(modal) {
 
 function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } = {}) {
   const seq = detailModalSeq++;
+  const { left, top } = getInitialModalPosition(maxWidth);
   const modal = document.createElement("div");
   modal.id = `tt-entry-detail-modal-${Date.now()}-${seq}`;
   modal.className = "tt-entry-detail-floating-modal";
   modal.style.cssText = [
     "position:fixed",
-    `left:${Math.max(12, Math.round((window.innerWidth - maxWidth) / 2) + seq * 28)}px`,
-    `top:${Math.max(12, 34 + seq * 24)}px`,
+    `left:${left}px`,
+    `top:${top}px`,
     "width:max-content",
     "max-width:calc(100vw - 24px)",
     "z-index:" + (++detailModalTopZ),
@@ -90,7 +109,16 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   closeBtn.type = "button";
   closeBtn.style.cssText = "position:absolute;top:4px;right:8px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1;z-index:2";
   closeBtn.textContent = "×";
-  closeBtn.onclick = () => modal.remove();
+
+  let resizeHandler = null;
+  function closeModal() {
+    if (resizeHandler) {
+      window.removeEventListener("resize", resizeHandler);
+      resizeHandler = null;
+    }
+    modal.remove();
+  }
+  closeBtn.onclick = closeModal;
 
   let dragState = null;
   dragHandle.addEventListener("pointerdown", ev => {
@@ -115,7 +143,10 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   dragHandle.addEventListener("pointercancel", endDrag);
 
   modal.addEventListener("pointerdown", () => bringModalToFront(modal));
-  window.addEventListener("resize", () => clampModalPosition(modal), { passive: true });
+  resizeHandler = () => clampModalPosition(modal);
+  window.addEventListener("resize", resizeHandler, { passive: true });
+
+  requestAnimationFrame(() => clampModalPosition(modal));
 
   box.append(dragHandle, closeBtn);
   modal.appendChild(box);
