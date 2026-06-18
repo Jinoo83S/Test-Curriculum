@@ -18,6 +18,9 @@ export function createTimetableConstraintsHandlers({
   recomputeConflicts,
   renderAll,
   getConstraintMap,
+  entryTitle = null,
+  getEntryClassSummary = null,
+  getRoomDisplayName = null,
   $,
 }) {
   function ensureConstraint(teacher) {
@@ -444,7 +447,7 @@ export function createTimetableConstraintsHandlers({
     style.textContent = `
       .tt-con-launch-card{margin:10px 14px;padding:14px 16px;border:1px solid #dbe4f0;border-radius:14px;background:linear-gradient(180deg,#fff,#f8fbff);display:flex;align-items:center;justify-content:space-between;gap:16px;box-shadow:0 8px 22px rgba(15,23,42,.06)}
       .tt-con-launch-card h3{margin:0 0 4px;font-size:14px;font-weight:900;color:#0f172a}.tt-con-launch-card p{margin:0;font-size:12px;color:#64748b}.tt-con-launch-stats{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.tt-con-launch-chip{font-size:11px;font-weight:800;border:1px solid #dbe4f0;border-radius:999px;padding:4px 8px;background:#fff;color:#334155}.tt-con-open-btn{height:32px;padding:0 14px;border:0;border-radius:10px;background:#2563eb;color:#fff;font-weight:900;font-size:12px;cursor:pointer;white-space:nowrap}.tt-con-open-btn:disabled{opacity:.45;cursor:not-allowed}
-      .ttc-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px}.ttc-modal{width:min(1480px,92vw);height:min(820px,82vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}.ttc-modal-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e2e8f0;background:#f8fbff}.ttc-modal-title{font-size:16px;font-weight:950;color:#0f172a}.ttc-modal-sub{font-size:11px;color:#64748b;margin-left:8px;font-weight:700}.ttc-close{width:30px;height:30px;border:0;border-radius:9px;background:#eef2f7;color:#64748b;font-size:18px;font-weight:900;cursor:pointer}.ttc-body{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(470px,1fr) 330px;gap:0}.ttc-left,.ttc-center,.ttc-right{min-height:0;overflow:auto}.ttc-left{border-right:1px solid #e2e8f0;background:#f8fafc;padding:12px}.ttc-center{padding:14px 16px;background:#fff}.ttc-right{border-left:1px solid #e2e8f0;background:#fbfdff;padding:14px}.ttc-search{width:100%;height:32px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px;font-weight:700;background:#fff}.ttc-filter-row{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px}.ttc-filter{height:24px;border:1px solid #dbe4f0;border-radius:999px;background:#fff;color:#475569;font-size:10.5px;font-weight:900;padding:0 8px;cursor:pointer}.ttc-filter.active{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-teacher-list{display:flex;flex-direction:column;gap:5px}.ttc-teacher-item{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;text-align:left;cursor:pointer}.ttc-teacher-item.active{border-color:#2563eb;background:#eff6ff}.ttc-teacher-name{font-size:12px;font-weight:950;color:#0f172a}.ttc-teacher-meta{margin-top:3px;font-size:10.5px;color:#64748b;display:flex;gap:6px;align-items:center}.ttc-warn{color:#b45309;font-weight:900}.ttc-ok{color:#15803d;font-weight:900}.ttc-section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ttc-section-title h4{margin:0;font-size:14px;font-weight:950;color:#0f172a}.ttc-section-title span{font-size:11px;color:#64748b;font-weight:800}.ttc-time-grid{display:grid;grid-template-columns:46px repeat(5,1fr);gap:6px}.ttc-time-cell,.ttc-time-head,.ttc-time-period{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}.ttc-time-head{background:#173b68;color:#fff}.ttc-time-period{background:#f1f5f9;color:#475569}.ttc-time-cell{border:1px solid #dbe4f0;background:#f8fafc;color:#94a3b8;cursor:pointer}.ttc-time-cell:hover{border-color:#60a5fa;background:#eff6ff}.ttc-time-cell.unavailable{border-color:#ef4444;background:#fee2e2;color:#b91c1c}.ttc-time-cell.busy{box-shadow:inset 0 -3px 0 #93c5fd}.ttc-legend{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}.ttc-legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-2px}.ttc-form-card{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:12px;margin-bottom:12px}.ttc-form-card h4{margin:0 0 10px;font-size:13px;font-weight:950;color:#0f172a}.ttc-field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.ttc-field label{font-size:11px;font-weight:900;color:#475569}.ttc-field input,.ttc-field select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px;font-size:12px;font-weight:750}.ttc-inline{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ttc-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:850;color:#334155;margin:4px 0 10px}.ttc-btn-row{display:flex;gap:6px;flex-wrap:wrap}.ttc-btn{height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-size:11.5px;font-weight:900;padding:0 10px;cursor:pointer}.ttc-btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-btn.ghost{background:#f8fafc}.ttc-btn.danger{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.ttc-btn:disabled,.ttc-time-cell:disabled{opacity:.45;cursor:not-allowed}.ttc-footer{border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}.ttc-bulk-title{font-size:12px;font-weight:950;color:#0f172a;margin-bottom:5px}.ttc-bulk-grid{display:grid;grid-template-columns:28px repeat(5,28px);gap:3px}.ttc-bulk-grid div,.ttc-bulk-grid button{height:24px;border-radius:6px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center}.ttc-bulk-grid div{background:#e2e8f0;color:#475569}.ttc-bulk-grid button{border:1px solid #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer}.ttc-bulk-grid button.selected{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-bulk-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ttc-mini-field{display:flex;flex-direction:column;gap:4px}.ttc-mini-field span{font-size:10px;font-weight:900;color:#64748b}.ttc-mini-field input{width:58px;height:28px;border:1px solid #cbd5e1;border-radius:8px;padding:0 7px;font-size:12px;font-weight:850}.ttc-empty{font-size:12px;color:#94a3b8;text-align:center;padding:28px 0}.ttc-assist{font-size:11px;color:#64748b;line-height:1.5;margin-top:6px}
+      .ttc-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:2600;display:flex;align-items:center;justify-content:center;padding:24px}.ttc-modal{width:min(1540px,96vw);height:min(880px,90vh);background:#fff;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 70px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}.ttc-modal-head{height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:1px solid #e2e8f0;background:#f8fbff}.ttc-modal-title{font-size:16px;font-weight:950;color:#0f172a}.ttc-modal-sub{font-size:11px;color:#64748b;margin-left:8px;font-weight:700}.ttc-close{width:30px;height:30px;border:0;border-radius:9px;background:#eef2f7;color:#64748b;font-size:18px;font-weight:900;cursor:pointer}.ttc-body{flex:1;min-height:0;display:grid;grid-template-columns:260px minmax(520px,1fr) 370px;gap:0}.ttc-left,.ttc-center,.ttc-right{min-height:0;overflow:auto}.ttc-left{border-right:1px solid #e2e8f0;background:#f8fafc;padding:12px}.ttc-center{padding:14px 16px;background:#fff}.ttc-right{border-left:1px solid #e2e8f0;background:#fbfdff;padding:14px}.ttc-search{width:100%;height:32px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px;font-weight:700;background:#fff}.ttc-filter-row{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0 10px}.ttc-filter{height:24px;border:1px solid #dbe4f0;border-radius:999px;background:#fff;color:#475569;font-size:10.5px;font-weight:900;padding:0 8px;cursor:pointer}.ttc-filter.active{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-teacher-list{display:flex;flex-direction:column;gap:5px}.ttc-teacher-item{border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;text-align:left;cursor:pointer}.ttc-teacher-item.active{border-color:#2563eb;background:#eff6ff}.ttc-teacher-name{font-size:12px;font-weight:950;color:#0f172a}.ttc-teacher-meta{margin-top:3px;font-size:10.5px;color:#64748b;display:flex;gap:6px;align-items:center}.ttc-warn{color:#b45309;font-weight:900}.ttc-ok{color:#15803d;font-weight:900}.ttc-section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.ttc-section-title h4{margin:0;font-size:14px;font-weight:950;color:#0f172a}.ttc-section-title span{font-size:11px;color:#64748b;font-weight:800}.ttc-time-grid{display:grid;grid-template-columns:46px repeat(5,1fr);gap:6px}.ttc-time-cell,.ttc-time-head,.ttc-time-period{height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900}.ttc-time-head{background:#173b68;color:#fff}.ttc-time-period{background:#f1f5f9;color:#475569}.ttc-time-cell{border:1px solid #dbe4f0;background:#f8fafc;color:#94a3b8;cursor:pointer}.ttc-time-cell:hover{border-color:#60a5fa;background:#eff6ff}.ttc-time-cell.unavailable{border-color:#ef4444;background:#fee2e2;color:#b91c1c}.ttc-time-cell.busy{box-shadow:inset 0 -3px 0 #93c5fd}.ttc-legend{display:flex;gap:10px;align-items:center;margin-top:10px;font-size:11px;font-weight:800;color:#64748b}.ttc-legend i{display:inline-block;width:12px;height:12px;border-radius:4px;margin-right:4px;vertical-align:-2px}.ttc-form-card{border:1px solid #e2e8f0;border-radius:14px;background:#fff;padding:12px;margin-bottom:12px}.ttc-card-list{display:flex;flex-direction:column;gap:7px;max-height:310px;overflow:auto;padding-right:3px}.ttc-assigned-card{border:1px solid #e2e8f0;border-radius:11px;background:#f8fafc;padding:8px 9px}.ttc-assigned-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.ttc-assigned-title{font-size:12px;font-weight:950;color:#0f172a;line-height:1.25}.ttc-assigned-slot{font-size:10px;font-weight:950;color:#1d4ed8;background:#eff6ff;border:1px solid #bfdbfe;border-radius:999px;padding:2px 6px;white-space:nowrap}.ttc-assigned-meta{margin-top:4px;font-size:10.5px;font-weight:750;color:#64748b;line-height:1.35}.ttc-summary-strip{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}.ttc-summary-chip{border:1px solid #dbe4f0;border-radius:999px;background:#fff;padding:4px 8px;font-size:11px;font-weight:900;color:#334155}.ttc-form-card h4{margin:0 0 10px;font-size:13px;font-weight:950;color:#0f172a}.ttc-field{display:flex;flex-direction:column;gap:5px;margin-bottom:9px}.ttc-field label{font-size:11px;font-weight:900;color:#475569}.ttc-field input,.ttc-field select{height:32px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 9px;font-size:12px;font-weight:750}.ttc-inline{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ttc-check{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:850;color:#334155;margin:4px 0 10px}.ttc-btn-row{display:flex;gap:6px;flex-wrap:wrap}.ttc-btn{height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#334155;font-size:11.5px;font-weight:900;padding:0 10px;cursor:pointer}.ttc-btn.primary{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-btn.ghost{background:#f8fafc}.ttc-btn.danger{background:#fee2e2;color:#b91c1c;border-color:#fecaca}.ttc-btn:disabled,.ttc-time-cell:disabled{opacity:.45;cursor:not-allowed}.ttc-footer{border-top:1px solid #e2e8f0;background:#f8fafc;padding:10px 14px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}.ttc-bulk-title{font-size:12px;font-weight:950;color:#0f172a;margin-bottom:5px}.ttc-bulk-grid{display:grid;grid-template-columns:28px repeat(5,28px);gap:3px}.ttc-bulk-grid div,.ttc-bulk-grid button{height:24px;border-radius:6px;font-size:10px;font-weight:900;display:flex;align-items:center;justify-content:center}.ttc-bulk-grid div{background:#e2e8f0;color:#475569}.ttc-bulk-grid button{border:1px solid #cbd5e1;background:#fff;color:#94a3b8;cursor:pointer}.ttc-bulk-grid button.selected{background:#2563eb;color:#fff;border-color:#2563eb}.ttc-bulk-controls{display:flex;gap:8px;flex-wrap:wrap;align-items:end}.ttc-mini-field{display:flex;flex-direction:column;gap:4px}.ttc-mini-field span{font-size:10px;font-weight:900;color:#64748b}.ttc-mini-field input{width:58px;height:28px;border:1px solid #cbd5e1;border-radius:8px;padding:0 7px;font-size:12px;font-weight:850}.ttc-empty{font-size:12px;color:#94a3b8;text-align:center;padding:28px 0}.ttc-assist{font-size:11px;color:#64748b;line-height:1.5;margin-top:6px}
       .ttc-room-unavailable-card{background:#fffdf7;border-color:#fde68a}.ttc-room-unavailable-card .ttc-time-grid{grid-template-columns:38px repeat(5,1fr);gap:4px}.ttc-room-unavailable-card .ttc-time-cell,.ttc-room-unavailable-card .ttc-time-head,.ttc-room-unavailable-card .ttc-time-period{height:32px;font-size:10.5px}.ttc-room-time-title{margin-top:6px;margin-bottom:8px}.ttc-room-time-title h4{font-size:12px}
       @media (max-width:1100px){.ttc-body{grid-template-columns:210px 1fr}.ttc-right{grid-column:1 / -1;border-left:0;border-top:1px solid #e2e8f0}.ttc-modal{height:90vh}.ttc-footer{grid-template-columns:1fr}}
     `;
@@ -644,6 +647,84 @@ export function createTimetableConstraintsHandlers({
     legend.className = "ttc-legend";
     legend.innerHTML = `<span><i style="background:#f8fafc;border:1px solid #cbd5e1"></i>가능</span><span><i style="background:#fee2e2;border:1px solid #ef4444"></i>불가</span><span><i style="background:#dbeafe"></i>수업 배정 있음</span>`;
     container.appendChild(legend);
+  }
+
+  function formatAssignedEntryTitle(entry) {
+    if (typeof entryTitle === "function") return entryTitle(entry);
+    return clean(entry?.title || entry?.subject || entry?.cardTitle || entry?.groupName || "수업");
+  }
+
+  function formatAssignedEntryClass(entry) {
+    if (typeof getEntryClassSummary === "function") return getEntryClassSummary(entry);
+    return clean(entry?.classSummary || entry?.className || entry?.classLabel || entry?.grade || "");
+  }
+
+  function formatAssignedEntryRoom(entry) {
+    if (typeof getRoomDisplayName === "function") return getRoomDisplayName(entry?.roomId);
+    if (!entry?.roomId) return "교실 없음";
+    return getRooms().find(r => r.id === entry.roomId)?.name || entry.roomId;
+  }
+
+  function getTeacherAssignedEntries(teacher) {
+    return entries()
+      .filter(e => splitTeacherNames(e.teacherName).includes(teacher))
+      .slice()
+      .sort((a, b) => (Number(a.day) - Number(b.day)) || (Number(a.period) - Number(b.period)) || formatAssignedEntryTitle(a).localeCompare(formatAssignedEntryTitle(b), "ko"));
+  }
+
+  function renderTeacherAssignedCards(container, teacher, dayLabels, periods) {
+    const listEntries = getTeacherAssignedEntries(teacher);
+    const card = document.createElement("div");
+    card.className = "ttc-form-card ttc-assigned-card-panel";
+    card.innerHTML = `<h4>배정된 시간표 카드</h4>`;
+
+    const strip = document.createElement("div");
+    strip.className = "ttc-summary-strip";
+    const slots = new Set(listEntries.map(e => `${Number(e.day)}:${Number(e.period)}`));
+    const rooms = new Set(listEntries.map(e => e.roomId).filter(Boolean));
+    [
+      ["카드", `${listEntries.length}개`],
+      ["시간", `${slots.size}칸`],
+      ["교실", rooms.size ? `${rooms.size}개` : "없음"],
+    ].forEach(([label, value]) => {
+      const chip = document.createElement("span");
+      chip.className = "ttc-summary-chip";
+      chip.textContent = `${label} ${value}`;
+      strip.appendChild(chip);
+    });
+    card.appendChild(strip);
+
+    const list = document.createElement("div");
+    list.className = "ttc-card-list";
+    if (!listEntries.length) {
+      const empty = document.createElement("div");
+      empty.className = "ttc-empty";
+      empty.style.padding = "12px 0";
+      empty.textContent = "현재 시간표에 배정된 카드가 없습니다.";
+      list.appendChild(empty);
+    } else {
+      listEntries.forEach(entry => {
+        const item = document.createElement("div");
+        item.className = "ttc-assigned-card";
+        const day = dayLabels[Number(entry.day)] || "-";
+        const period = Number.isInteger(Number(entry.period)) ? `${Number(entry.period) + 1}교시` : "-";
+        const classText = formatAssignedEntryClass(entry);
+        const roomText = formatAssignedEntryRoom(entry);
+        item.innerHTML = `
+          <div class="ttc-assigned-card-head">
+            <div class="ttc-assigned-title">${escapeText(formatAssignedEntryTitle(entry))}</div>
+            <div class="ttc-assigned-slot">${escapeText(day)} ${escapeText(period)}</div>
+          </div>
+          <div class="ttc-assigned-meta">${escapeText(classText || "반 정보 없음")} · ${escapeText(roomText)}</div>`;
+        list.appendChild(item);
+      });
+    }
+    card.appendChild(list);
+    const assist = document.createElement("div");
+    assist.className = "ttc-assist";
+    assist.textContent = "교사 불가시간을 조정할 때 현재 배정된 카드와 바로 비교할 수 있습니다.";
+    card.appendChild(assist);
+    container.appendChild(card);
   }
 
   function renderTeacherSettings(container, teacher, rooms) {
@@ -1073,7 +1154,7 @@ export function createTimetableConstraintsHandlers({
     overlay.innerHTML = `
       <div class="ttc-modal" role="dialog" aria-modal="true" aria-label="교사 조건 관리">
         <div class="ttc-modal-head">
-          <div><span class="ttc-modal-title">교사 조건 관리</span><span class="ttc-modal-sub">교사별 수업 가능 시간, 시수 제한, 담당 교실 설정</span></div>
+          <div><span class="ttc-modal-title">교사 조건 관리</span><span class="ttc-modal-sub">가능 시간 · 시수 제한 · 담당 교실 · 배정 카드 확인</span></div>
           <button type="button" class="ttc-close" aria-label="닫기">×</button>
         </div>
         <div class="ttc-body"><div class="ttc-left"></div><div class="ttc-center"></div><div class="ttc-right"></div></div>
@@ -1094,7 +1175,7 @@ export function createTimetableConstraintsHandlers({
     renderTeacherList(left, allTeachers);
     renderTeacherTimeGrid(center, constraintModalState.teacher, dayLabels, periods);
     renderTeacherSettings(right, constraintModalState.teacher, rooms);
-    renderRoomAvailabilitySettings(right, rooms, dayLabels, periods);
+    renderTeacherAssignedCards(right, constraintModalState.teacher, dayLabels, periods);
     renderBulkFooter(footer, allTeachers, dayLabels, periods);
     restoreConstraintModalScroll(overlay, scrollSnap);
   }

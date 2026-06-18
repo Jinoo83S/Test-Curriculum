@@ -2914,6 +2914,9 @@ constraintsPanelApi = createTimetableConstraintsHandlers({
   recomputeConflicts,
   renderAll: () => renderAll(),
   getConstraintMap: () => constraintMap,
+  entryTitle,
+  getEntryClassSummary,
+  getRoomDisplayName,
   $
 });
 
@@ -3043,6 +3046,9 @@ function renderRoomUnavailableManager(container) {
           if (!on) next.push({ day, period });
           setRoomUnavailableSlots(roomId, next);
           recomputeConflicts();
+          // 기존에는 저장은 되었지만 현재 팝업의 표시는 renderAll()의 보호 로직 때문에
+          // 즉시 갱신되지 않았습니다. 교실 불가시간 표만 먼저 다시 그린 뒤 전체 화면을 동기화합니다.
+          renderGrid();
           renderAll();
         });
         grid.appendChild(btn);
@@ -3080,6 +3086,8 @@ function renderAll() {
   if (isVisible(roomsEl)) {
     subscribeOptionalTimetableDomains();
     renderRoomsView(roomsEl, renderAll, {
+      timetableMode: true,
+      hideSetupTools: true,
       teacherNames: getAllTimetableTeachers(),
       entries: entries(),
       periodLabels: ttConfig().periodLabels,

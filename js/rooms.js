@@ -703,7 +703,7 @@ function openRoomManagerModal(sourceContainer, onUpdate, options = {}) {
   const head = document.createElement("div");
   head.style.cssText = "flex:0 0 auto;height:50px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 16px;border-bottom:1px solid #e2e8f0;background:#f8fbff;";
   const title = document.createElement("div");
-  title.innerHTML = `<strong style="font-size:16px;font-weight:950;color:#0f172a">교실 관리</strong><span style="margin-left:8px;font-size:11px;font-weight:800;color:#64748b">교실 정보와 교실 불가시간을 팝업에서 편집합니다.</span>`;
+  title.innerHTML = `<strong style="font-size:16px;font-weight:950;color:#0f172a">교실 관리</strong><span style="margin-left:8px;font-size:11px;font-weight:800;color:#64748b">교실 정보와 불가시간을 한 화면에서 편집합니다.</span>`;
   const closeBtn = makeBtn("×", "his-ui-btn his-ui-icon-btn", () => overlay.remove());
   closeBtn.style.cssText = "width:32px;height:32px;border-radius:10px;font-size:18px;font-weight:900";
   head.append(title, closeBtn);
@@ -719,18 +719,37 @@ function openRoomManagerModal(sourceContainer, onUpdate, options = {}) {
     content.style.cssText = "display:flex;flex-direction:column;gap:10px;min-height:0;";
     body.appendChild(content);
 
-    renderRoomsFullPageView(content, () => {
+    const rerenderSource = () => {
       onUpdate?.();
       rerenderModal();
       if (sourceContainer) renderRoomsView(sourceContainer, onUpdate, options);
-    }, { ...options, mode: "full" });
+    };
 
-    if (typeof options.renderRoomUnavailableManager === "function") {
-      const unavailableWrap = document.createElement("div");
-      unavailableWrap.className = "room-manager-unavailable-wrap";
-      unavailableWrap.style.cssText = "margin-top:10px;";
-      content.appendChild(unavailableWrap);
-      options.renderRoomUnavailableManager(unavailableWrap);
+    const hasUnavailable = typeof options.renderRoomUnavailableManager === "function";
+    if (options.timetableMode && hasUnavailable) {
+      const split = document.createElement("div");
+      split.className = "room-manager-modal-split";
+      split.style.cssText = "display:grid;grid-template-columns:minmax(660px,1.45fr) minmax(360px,.8fr);gap:12px;align-items:start;min-height:0;";
+      const editPane = document.createElement("div");
+      editPane.className = "room-manager-edit-pane";
+      editPane.style.cssText = "min-width:0;min-height:0;";
+      const unavailablePane = document.createElement("div");
+      unavailablePane.className = "room-manager-unavailable-pane";
+      unavailablePane.style.cssText = "min-width:0;min-height:0;position:sticky;top:0;";
+      split.append(editPane, unavailablePane);
+      content.appendChild(split);
+
+      renderRoomsFullPageView(editPane, rerenderSource, { ...options, mode: "full", hideSetupTools: true, renderRoomUnavailableManager: null });
+      options.renderRoomUnavailableManager(unavailablePane);
+    } else {
+      renderRoomsFullPageView(content, rerenderSource, { ...options, mode: "full" });
+      if (hasUnavailable) {
+        const unavailableWrap = document.createElement("div");
+        unavailableWrap.className = "room-manager-unavailable-wrap";
+        unavailableWrap.style.cssText = "margin-top:10px;";
+        content.appendChild(unavailableWrap);
+        options.renderRoomUnavailableManager(unavailableWrap);
+      }
     }
   };
 
@@ -816,7 +835,10 @@ function renderRoomsCompactView(container, onUpdate, options = {}) {
       card.className = "room-summary-card";
       card.style.cssText = "text-align:left;border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px 9px;cursor:pointer;box-shadow:0 1px 4px rgba(15,23,42,.035);min-width:0;";
       card.innerHTML = `<strong style="display:block;font-size:12px;font-weight:950;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${clean(room.name) || room.id}</strong><span style="display:block;margin-top:3px;font-size:10px;font-weight:750;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${formatRoomSummaryLine(room)}</span>`;
-      card.addEventListener("click", () => openRoomManagerModal(container, onUpdate, options));
+      card.addEventListener("click", () => {
+        if (room.id) localStorage.setItem("his:tt:roomUnavailable:selected", room.id);
+        openRoomManagerModal(container, onUpdate, options);
+      });
       list.appendChild(card);
     });
   }
@@ -863,12 +885,15 @@ function renderRoomsFullPageView(container, onUpdate, options = {}) {
   hdr.append(titleWrap, actions);
   container.appendChild(hdr);
 
-  const toolsRow = document.createElement("div");
-  toolsRow.className = "rooms-tools-row rooms-fullpage-tools";
-  toolsRow._roomsRoot = container;
-  appendRoomTypeManager(toolsRow, onUpdate, options);
-  appendRoomPasteArea(toolsRow, onUpdate, options);
-  container.appendChild(toolsRow);
+  const hideSetupTools = options.hideSetupTools === true || options.timetableMode === true;
+  if (!hideSetupTools) {
+    const toolsRow = document.createElement("div");
+    toolsRow.className = "rooms-tools-row rooms-fullpage-tools";
+    toolsRow._roomsRoot = container;
+    appendRoomTypeManager(toolsRow, onUpdate, options);
+    appendRoomPasteArea(toolsRow, onUpdate, options);
+    container.appendChild(toolsRow);
+  }
 
   appendRoomAssignmentStatus(container, options);
 
