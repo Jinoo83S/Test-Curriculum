@@ -870,6 +870,226 @@ function renderConstraintsPanel() {
   return constraintsPanelApi?.renderConstraintsPanel();
 }
 
+function ensureTeacherCardsBottomTab() {
+  const tab = document.querySelector(".tt-bottom-tab");
+  const content = document.querySelector(".tt-bottom-content");
+  if (!tab || !content) return;
+  if (!document.querySelector('.tt-bottom-tab-btn[data-tab="teacherCards"]')) {
+    const btn = document.createElement("button");
+    btn.className = "tt-bottom-tab-btn";
+    btn.dataset.tab = "teacherCards";
+    btn.type = "button";
+    btn.textContent = "👨‍🏫 교사별 카드";
+    const constraintsBtn = tab.querySelector('.tt-bottom-tab-btn[data-tab="constraints"]');
+    constraintsBtn?.after(btn) || tab.appendChild(btn);
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+      const tabMap = { subjects:"ttSubjectsContent", constraints:"ttConstraintsContent", teacherCards:"ttTeacherCardsContent", rooms:"ttRoomsContent", logs:"ttLogsContent" };
+      Object.entries(tabMap).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== "teacherCards"));
+      subscribeOptionalTimetableDomains();
+      setTimeout(() => renderAll(), 0);
+    });
+  }
+  if (!$("ttTeacherCardsContent")) {
+    const div = document.createElement("div");
+    div.id = "ttTeacherCardsContent";
+    div.className = "hidden";
+    const rooms = $("ttRoomsContent");
+    if (rooms) content.insertBefore(div, rooms);
+    else content.appendChild(div);
+  }
+}
+
+function getTeacherNamesForCard(card) {
+  return [...new Set([
+    ...getTeachersForTtCard(card),
+    ...splitTeacherNames(card?.teacherName || "")
+  ].map(clean).filter(Boolean))];
+}
+
+function getGroupInfoForTeacherCard(cardId) {
+  if (!cardId) return { groupName: "", unitName: "" };
+  for (const group of (appState.timetable?.ttcardGroups || [])) {
+    const inPool = (group.poolCardIds || []).includes(cardId) || (group.excludedCardIds || []).includes(cardId);
+    const unit = (group.units || []).find(u => (u.ttcardIds || []).includes(cardId));
+    if (inPool || unit) {
+      return {
+        groupName: group.name || "그룹",
+        unitName: unit ? getUnitDisplayTitle(unit) : ""
+      };
+    }
+  }
+  return { groupName: "", unitName: "" };
+}
+
+function getPlacedOccurrencesForTeacherCard(card) {
+  if (!card?.id) return [];
+  const cardClassKeys = new Set(getTtCardClassInfos(card).map(info => classKey(info)).filter(Boolean));
+  const slotSeen = new Set();
+  const placed = [];
+  entries().forEach(entry => {
+    const ids = ttCardIdsFromPlacement(entry);
+    let matched = ids.includes(card.id);
+    if (!matched && card.templateId && entryTemplateIds(entry).includes(card.templateId) && entryHasGrade(entry, card.gradeKey)) {
+      const entryKeys = Array.isArray(entry.audienceClassKeys) ? entry.audienceClassKeys.map(clean).filter(Boolean) : [];
+      matched = !entryKeys.length || entryKeys.some(key => cardClassKeys.has(key));
+    }
+    if (!matched) return;
+    const key = `${entry.day}:${entry.period}`;
+    if (slotSeen.has(key)) return;
+    slotSeen.add(key);
+    placed.push(entry);
+  });
+  return placed.sort((a, b) => a.day - b.day || a.period - b.period);
+}
+
+function renderTeacherCardsPanel() {
+  ensureTeacherCardsBottomTab();
+  const panel = $("ttTeacherCardsContent");
+  if (!panel) return;
+  const allCards = appState.timetable?.ttcards || [];
+  const teacherNames = [...new Set([
+    ...getAllTimetableTeachers(),
+    ...allCards.flatMap(getTeacherNamesForCard),
+    ...entries().flatMap(entryTeachers)
+  ].map(clean).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+  if (!teacherCardsSelectedName || !teacherNames.includes(teacherCardsSelectedName)) {
+    teacherCardsSelectedName = teacherNames[0] || "";
+  }
+
+  panel.innerHTML = "";
+  panel.className = panel.className.replace(/hidden/g, "").trim();
+  panel.classList.add("tt-teacher-card-panel");
+
+  const wrap = document.createElement("div");
+  wrap.className = "tt-teacher-card-wrap";
+
+  const left = document.createElement("aside");
+  left.className = "tt-teacher-card-left";
+  const search = document.createElement("input");
+  search.type = "search";
+  search.placeholder = "교사 검색";
+  search.className = "tt-teacher-card-search";
+  const list = document.createElement("div");
+  list.className = "tt-teacher-card-list";
+  left.append(search, list);
+
+  const right = document.createElement("section");
+  right.className = "tt-teacher-card-right";
+
+  const renderTeacherList = () => {
+    const q = clean(search.value).toLocaleLowerCase("ko");
+    list.innerHTML = "";
+    teacherNames
+      .filter(name => !q || name.toLocaleLowerCase("ko").includes(q))
+      .forEach(name => {
+        const teacherCards = allCards.filter(card => getTeacherNamesForCard(card).includes(name));
+        const teacherEntries = entries().filter(entry => entryTeachers(entry).includes(name));
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "tt-teacher-card-teacher" + (name === teacherCardsSelectedName ? " active" : "");
+        btn.innerHTML = `<strong>${escapeHtml(name)}</strong><span>${teacherCards.length}카드 · ${teacherEntries.length}배치</span>`;
+        btn.addEventListener("click", () => {
+          teacherCardsSelectedName = name;
+          renderTeacherList();
+          renderTeacherDetail();
+        });
+        list.appendChild(btn);
+      });
+  };
+
+  const renderTeacherDetail = () => {
+    const teacher = teacherCardsSelectedName;
+    const teacherCards = allCards
+      .filter(card => getTeacherNamesForCard(card).includes(teacher))
+      .sort((a, b) => {
+        const ga = GRADE_KEYS.indexOf(a.gradeKey) - GRADE_KEYS.indexOf(b.gradeKey);
+        if (ga) return ga;
+        const ta = describeTtCard(a).title;
+        const tb = describeTtCard(b).title;
+        return ta.localeCompare(tb, "ko", { numeric:true, sensitivity:"base" });
+      });
+    const teacherEntries = entries()
+      .filter(entry => entryTeachers(entry).includes(teacher))
+      .sort((a, b) => a.day - b.day || a.period - b.period || entryTitle(a).localeCompare(entryTitle(b), "ko"));
+    const totalCredits = teacherCards.reduce((sum, card) => sum + (Number(getCreditsForTtCard(card)) || 0), 0);
+    const placedSlots = new Set(teacherEntries.map(e => `${e.day}:${e.period}`)).size;
+    const dayLabels = ["월", "화", "수", "목", "금"];
+    const periodLabels = ttConfig().periodLabels || [];
+
+    right.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "tt-teacher-card-head";
+    head.innerHTML = `<div><strong>${escapeHtml(teacher || "교사 없음")}</strong><span>생성 카드 ${teacherCards.length}개 · 기준 시수 ${totalCredits} · 현재 배치 ${placedSlots}칸</span></div>`;
+    right.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "tt-teacher-card-body";
+
+    const cardSection = document.createElement("div");
+    cardSection.className = "tt-teacher-card-section";
+    cardSection.innerHTML = `<h4>시간표 카드</h4>`;
+    const cardList = document.createElement("div");
+    cardList.className = "tt-teacher-card-cardlist";
+
+    if (!teacherCards.length) {
+      const empty = document.createElement("div");
+      empty.className = "tt-teacher-card-empty";
+      empty.textContent = "이 교사에게 연결된 시간표 카드가 없습니다.";
+      cardList.appendChild(empty);
+    } else {
+      teacherCards.forEach(card => {
+        const desc = describeTtCard(card);
+        const groupInfo = getGroupInfoForTeacherCard(card.id);
+        const placed = getPlacedOccurrencesForTeacherCard(card);
+        const credits = Number(getCreditsForTtCard(card)) || 0;
+        const roomLabel = card.fixedRoomId ? getRoomDisplayName(card.fixedRoomId) : "교실 자동";
+        const row = document.createElement("div");
+        row.className = "tt-teacher-card-row" + (placed.length >= credits && credits > 0 ? " done" : "");
+        const classLabels = getTtCardClassLabels(card).length ? getTtCardClassLabels(card).join(", ") : getEntryClassSummary({ ttcardIds:[card.id], gradeKey:card.gradeKey });
+        row.innerHTML = `
+          <div class="tt-teacher-card-main">
+            <strong>${escapeHtml(desc.title)}</strong>
+            <span>${escapeHtml(classLabels || "반 정보 없음")} · ${escapeHtml(groupInfo.groupName || "그룹 없음")}${groupInfo.unitName ? " · " + escapeHtml(groupInfo.unitName) : ""}</span>
+            <em>${escapeHtml(roomLabel)}</em>
+          </div>
+          <div class="tt-teacher-card-count"><b>${placed.length}</b>/<span>${credits || "-"}</span></div>`;
+        cardList.appendChild(row);
+      });
+    }
+    cardSection.appendChild(cardList);
+
+    const entrySection = document.createElement("div");
+    entrySection.className = "tt-teacher-card-section";
+    entrySection.innerHTML = `<h4>현재 배정</h4>`;
+    const entryList = document.createElement("div");
+    entryList.className = "tt-teacher-card-entrylist";
+    if (!teacherEntries.length) {
+      const empty = document.createElement("div");
+      empty.className = "tt-teacher-card-empty";
+      empty.textContent = "현재 시간표에 배정된 수업이 없습니다.";
+      entryList.appendChild(empty);
+    } else {
+      teacherEntries.forEach(entry => {
+        const row = document.createElement("div");
+        row.className = "tt-teacher-card-entry";
+        row.innerHTML = `<b>${escapeHtml(dayLabels[entry.day] || "?")} ${escapeHtml(periodLabels[entry.period] || `${entry.period + 1}교시`)}</b><span>${escapeHtml(entryTitle(entry))}</span><em>${escapeHtml(getEntryClassSummary(entry))} · ${escapeHtml(getRoomDisplayName(entry.roomId))}</em>`;
+        entryList.appendChild(row);
+      });
+    }
+    entrySection.appendChild(entryList);
+
+    body.append(cardSection, entrySection);
+    right.appendChild(body);
+  };
+
+  search.addEventListener("input", renderTeacherList);
+  wrap.append(left, right);
+  panel.appendChild(wrap);
+  renderTeacherList();
+  renderTeacherDetail();
+}
+
 function syncTeacherHomeRoomFromRoom(roomId, teacherName) {
   return constraintsPanelApi?.syncTeacherHomeRoomFromRoom(roomId, teacherName);
 }
@@ -3068,6 +3288,7 @@ function renderScheduleControls() {
 }
 
 function renderAll() {
+  ensureTeacherCardsBottomTab();
   recomputeConflicts();
   renderViewSelectors();
   renderScheduleControls();
@@ -3081,6 +3302,12 @@ function renderAll() {
   }
 
   renderConflictBar();
+
+  const teacherCardsEl = $("ttTeacherCardsContent");
+  if (isVisible(teacherCardsEl)) {
+    subscribeOptionalTimetableDomains();
+    renderTeacherCardsPanel();
+  }
 
   const roomsEl = $("ttRoomsContent");
   if (isVisible(roomsEl)) {
@@ -3533,9 +3760,9 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const tab = btn.dataset.tab;
     document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
-    const tabMap = { subjects:"ttSubjectsContent", constraints:"ttConstraintsContent", rooms:"ttRoomsContent", logs:"ttLogsContent" };
+    const tabMap = { subjects:"ttSubjectsContent", constraints:"ttConstraintsContent", teacherCards:"ttTeacherCardsContent", rooms:"ttRoomsContent", logs:"ttLogsContent" };
     Object.entries(tabMap).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== tab));
-    if (tab === "constraints" || tab === "rooms") subscribeOptionalTimetableDomains();
+    if (tab === "constraints" || tab === "teacherCards" || tab === "rooms") subscribeOptionalTimetableDomains();
     if (tab === "logs") window._ttBottomToggle?.show?.();
     // hidden 클래스가 먼저 바뀐 뒤 렌더링해야 isVisible()이 정확히 동작합니다.
     setTimeout(() => renderAll(), 0);

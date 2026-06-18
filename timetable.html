@@ -1047,12 +1047,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="tt-bottom-tab">
       <button class="tt-bottom-tab-btn active" data-tab="subjects">📚 과목 카드</button>
       <button class="tt-bottom-tab-btn"         data-tab="constraints">👩‍🏫 교사 조건</button>
+      <button class="tt-bottom-tab-btn"         data-tab="teacherCards">👨‍🏫 교사별 카드</button>
       <button class="tt-bottom-tab-btn"         data-tab="rooms">🏫 교실 관리</button>
       <button class="tt-bottom-tab-btn"         data-tab="logs">🧾 로그</button>
     </div>
     <div class="tt-bottom-content">
       <div id="ttSubjectsContent"></div>
       <div id="ttConstraintsContent" class="hidden"></div>
+      <div id="ttTeacherCardsContent" class="hidden"></div>
       <div id="ttRoomsContent" class="hidden"></div>
       <div id="ttLogsContent" class="hidden"></div>
     </div>
@@ -1071,10 +1073,11 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
     document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     const t = btn.dataset.tab;
-    document.getElementById("ttSubjectsContent").classList.toggle("hidden", t !== "subjects");
-    document.getElementById("ttConstraintsContent").classList.toggle("hidden", t !== "constraints");
-    document.getElementById("ttRoomsContent").classList.toggle("hidden", t !== "rooms");
-    document.getElementById("ttLogsContent").classList.toggle("hidden", t !== "logs");
+    document.getElementById("ttSubjectsContent")?.classList.toggle("hidden", t !== "subjects");
+    document.getElementById("ttConstraintsContent")?.classList.toggle("hidden", t !== "constraints");
+    document.getElementById("ttTeacherCardsContent")?.classList.toggle("hidden", t !== "teacherCards");
+    document.getElementById("ttRoomsContent")?.classList.toggle("hidden", t !== "rooms");
+    document.getElementById("ttLogsContent")?.classList.toggle("hidden", t !== "logs");
   });
 });
 

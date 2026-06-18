@@ -72,43 +72,79 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
     "background:white",
     "border:1px solid #dbe4f0",
     "border-radius:12px",
-    "padding:34px 20px 18px",
+    "padding:0 20px 18px",
     `min-width:${minWidth}px`,
     `max-width:min(${maxWidth}px,calc(100vw - 24px))`,
     "max-height:calc(100vh - 32px)",
     "overflow-y:auto",
     "box-shadow:0 18px 55px rgba(15,23,42,.28)",
     "font-size:13px",
-    "position:relative"
+    "position:relative",
+    "scrollbar-gutter:stable"
   ].join(";");
 
   const dragHandle = document.createElement("div");
   dragHandle.className = "tt-detail-drag-handle";
   dragHandle.style.cssText = [
-    "position:absolute",
+    "position:sticky",
     "left:0",
     "right:0",
     "top:0",
-    "height:26px",
+    "height:34px",
     "display:flex",
     "align-items:center",
-    "padding:0 38px 0 12px",
-    "border-bottom:1px solid #eef2f7",
+    "gap:8px",
+    "margin:0 -20px 14px",
+    "padding:0 44px 0 14px",
+    "border-bottom:1px solid #dbe4f0",
     "border-radius:12px 12px 0 0",
-    "background:linear-gradient(180deg,#f8fbff,#f1f5f9)",
-    "color:#64748b",
-    "font-size:11px",
+    "background:linear-gradient(180deg,#f8fbff,#eef5ff)",
+    "color:#0f172a",
+    "font-size:12px",
     "font-weight:900",
     "cursor:move",
     "user-select:none",
-    "box-sizing:border-box"
+    "box-sizing:border-box",
+    "z-index:5",
+    "box-shadow:0 2px 8px rgba(15,23,42,.06)"
   ].join(";");
-  dragHandle.textContent = title;
+
+  const titleText = document.createElement("span");
+  titleText.className = "tt-detail-title-text";
+  titleText.style.cssText = "min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;";
+  titleText.textContent = title;
+  titleText.title = title;
+  dragHandle.appendChild(titleText);
 
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
-  closeBtn.style.cssText = "position:absolute;top:4px;right:8px;border:none;background:transparent;font-size:18px;cursor:pointer;color:#9ca3af;line-height:1;z-index:2";
+  closeBtn.className = "tt-detail-close-btn";
+  closeBtn.style.cssText = [
+    "position:sticky",
+    "top:3px",
+    "float:right",
+    "margin-top:3px",
+    "margin-right:-14px",
+    "width:28px",
+    "height:28px",
+    "border:1px solid #dbe4f0",
+    "border-radius:999px",
+    "background:#ffffff",
+    "font-size:18px",
+    "font-weight:900",
+    "cursor:pointer",
+    "color:#64748b",
+    "line-height:1",
+    "z-index:7",
+    "box-shadow:0 2px 8px rgba(15,23,42,.08)"
+  ].join(";");
   closeBtn.textContent = "×";
+
+  const setTitle = value => {
+    const text = clean(value) || "배치 상세";
+    titleText.textContent = text;
+    titleText.title = text;
+  };
 
   let resizeHandler = null;
   function closeModal() {
@@ -150,7 +186,7 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
 
   box.append(dragHandle, closeBtn);
   modal.appendChild(box);
-  return { modal, box, closeBtn };
+  return { modal, box, closeBtn, setTitle };
 }
 
 const ROOM_RULE_LABELS = {
@@ -624,7 +660,8 @@ export function createTimetableDetailHandlers(ctx) {
   const currentGrade = () => ctx.currentGrade();
 
   function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, groupId = "", detailItems = [] }) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 460, minWidth: 300 });
+    const { modal, box, closeBtn, setTitle } = makeModal({ maxWidth: 460, minWidth: 300, title: `배치 상세 · ${title || "과목카드"}` });
+    setTitle(`배치 상세 · ${title || "과목카드"}`);
 
     const firstGrade = gradeKeys[0] || currentGrade();
     const gc = ctx.getGradeColor(firstGrade);
@@ -709,8 +746,10 @@ export function createTimetableDetailHandlers(ctx) {
   }
 
   function showEntryDetailByUnit(unit, group, gradeKeys) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 340, minWidth: 260 });
-    box.insertAdjacentHTML("beforeend", `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${getUnitDisplayTitle(unit)}</div>
+    const unitTitle = getUnitDisplayTitle(unit);
+    const { modal, box, closeBtn, setTitle } = makeModal({ maxWidth: 340, minWidth: 260, title: `배치 상세 · ${unitTitle}` });
+    setTitle(`배치 상세 · ${unitTitle}`);
+    box.insertAdjacentHTML("beforeend", `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${unitTitle}</div>
       <div style="font-size:11px;color:#6b7280;margin-bottom:4px">그룹: ${group?.name || "-"}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">${gradeKeys.map(g => `<span style="background:${ctx.getGradeColor(g).border};color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">${gradeDisplay(g)}</span>`).join("")}</div>`);
     box.appendChild(closeBtn);
@@ -886,14 +925,16 @@ export function createTimetableDetailHandlers(ctx) {
   }
 
   function showSubjectAssignmentHistory(entry) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 440, minWidth: 300 });
+    const historyTitle = `${entryTitle(entry)} — 배정 현황`;
+    const { modal, box, closeBtn, setTitle } = makeModal({ maxWidth: 440, minWidth: 300, title: historyTitle });
+    setTitle(historyTitle);
     const gradeKeys = entryGradeKeys(entry);
     const gc = ctx.getGradeColor(gradeKeys[0] || currentGrade());
     box.style.borderTop = `4px solid ${gc.border}`;
 
     const titleEl = document.createElement("div");
     titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:12px;color:#1e3a5f;padding-right:24px";
-    titleEl.textContent = `${entryTitle(entry)} — 배정 현황`;
+    titleEl.textContent = historyTitle;
     box.appendChild(titleEl);
 
     const tplId = entry.templateId || entry.templateIds?.[0];
@@ -963,7 +1004,9 @@ export function createTimetableDetailHandlers(ctx) {
   }
 
   function showEntryDetail(entry) {
-    const { modal, box, closeBtn } = makeModal({ maxWidth: 400, minWidth: 300 });
+    const detailTitle = `배치 상세 · ${entryTitle(entry)}`;
+    const { modal, box, closeBtn, setTitle } = makeModal({ maxWidth: 400, minWidth: 300, title: detailTitle });
+    setTitle(detailTitle);
     const gradeKeys = entryGradeKeys(entry);
     const gc = ctx.getGradeColor(gradeKeys[0] || currentGrade());
     box.style.borderTop = `4px solid ${gc.border}`;
