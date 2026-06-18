@@ -822,6 +822,85 @@ export function createAutoAssignAll(deps) {
   const getTeachersForAutoItem = item => hardTeacherNamesForPlacement(item);
   const getRestrictedTeachersForAutoItem = item => getTeachersForAutoItem(item).filter(isRestrictedTeacher);
 
+  function autoItemGradeNumbers(item = {}) {
+    const nums = new Set();
+    const add = value => {
+      const m = String(value || "").match(/(\d{1,2})/);
+      if (m) nums.add(Number(m[1]));
+    };
+    add(item.gradeKey);
+    (item.gradeKeys || []).forEach(add);
+    (item.ttcards || []).forEach(card => {
+      add(card?.gradeKey);
+      (card?.gradeKeys || []).forEach(add);
+      (card?.classKeys || card?.audienceClassKeys || []).forEach(add);
+      (card?.classLabels || []).forEach(add);
+    });
+    ttCardIdsFromPlacement(item).forEach(id => {
+      const card = getTtCardById(id);
+      if (!card) return;
+      add(card.gradeKey);
+      (card.gradeKeys || []).forEach(add);
+      (card.classKeys || card.audienceClassKeys || []).forEach(add);
+      (card.classLabels || []).forEach(add);
+    });
+    (item.classKeys || item.audienceClassKeys || []).forEach(add);
+    (item.classLabels || []).forEach(add);
+    return [...nums].sort((a, b) => a - b);
+  }
+
+  function autoItemBottleneckText(item = {}) {
+    const parts = [
+      getAutoItemName(item),
+      item.subject, item.name, item.title, item.nameKo, item.nameEn,
+      item.group, item.groupName, item.track, item.label,
+      item.templateId ? getTemplateCardTitle(getTemplateById(item.templateId)) : ""
+    ];
+    (item.ttcards || []).forEach(card => parts.push(
+      card?.subject, card?.name, card?.title, card?.nameKo, card?.nameEn,
+      card?.group, card?.groupName, card?.track, card ? describeTtCard(card).title : ""
+    ));
+    ttCardIdsFromPlacement(item).forEach(id => {
+      const card = getTtCardById(id);
+      if (card) parts.push(card.subject, card.name, card.title, card.nameKo, card.nameEn, card.group, card.groupName, card.track, describeTtCard(card).title);
+    });
+    return parts.map(v => String(v || "")).filter(Boolean).join(" ");
+  }
+
+  function getBottleneckAutoItemRank(item = {}) {
+    const text = autoItemBottleneckText(item);
+    const textLower = text.toLowerCase();
+    const classCount = new Set(classKeysForCapacity(item)).size;
+    const teacherCount = new Set(getTeachersForAutoItem(item)).size;
+    const grades = autoItemGradeNumbers(item);
+    const maxGrade = grades.length ? Math.max(...grades) : 0;
+
+    // r79: ASC가 해결한 구조를 참고해 "나중에 남으면 사실상 후보가 사라지는" 병목을 먼저 잡습니다.
+    // 데이터 자체를 ASC에 맞추는 것이 아니라, 자동배치 순서에서 큰 동시수업/희소카드를 보호합니다.
+    if (classCount >= 3 && /(11\s*체육|체육|sports|physical\s*education|\bpe\b)/i.test(text)) return 0;
+    if (classCount >= 3 && /(섬김|리더십|leadership|servant|transformational)/i.test(text)) return 1;
+    if (classCount >= 3 && /(채플|chapel|자율|동아리|club|ca\b|sa\b)/i.test(text)) return 2;
+    if (classCount >= 3 && /(국어|한국어|korean)/i.test(text)) return 3;
+    if (classCount >= 3 && /(영어|english)/i.test(text)) return 4;
+    if (classCount >= 3 && /(수학|math|algebra|calculus|geometry|statistics)/i.test(text)) return 5;
+    if (classCount >= 3) return 6;
+
+    // 12학년 영어처럼 단일반 카드라도 특정 교사·학년의 시수가 촘촘한 카드는 후순위로 밀리면 마지막 1시수가 남습니다.
+    if (maxGrade >= 12 && /(영어\s*독해|english\s*12|english)/i.test(textLower)) return 20;
+    if (maxGrade >= 11 && /(체육|sports|physical\s*education|\bpe\b|리더십|leadership)/i.test(textLower)) return 21;
+    if (teacherCount >= 2 && classCount >= 2) return 30;
+    return 99;
+  }
+
+  function getBottleneckAutoItemPriority(item = {}) {
+    const rank = getBottleneckAutoItemRank(item);
+    if (rank >= 99) return 0;
+    const classCount = new Set(classKeysForCapacity(item)).size;
+    const teacherCount = new Set(getTeachersForAutoItem(item)).size;
+    const difficulty = getAutoItemDifficulty(item);
+    return 60000 - rank * 1800 + classCount * 650 + teacherCount * 420 + difficulty;
+  }
+
   function excludedGroupsForAutoItem(item = {}) {
     const cardIds = ttCardIdsFromPlacement(item).filter(Boolean);
     if (!cardIds.length) return [];
@@ -852,6 +931,9 @@ export function createAutoAssignAll(deps) {
     const restrictedTeachers = getRestrictedTeachersForAutoItem(item);
     const excludedGroups = excludedGroupsForAutoItem(item);
     const excludedGroupPriority = excludedCardPriorityForAutoItem(item);
+    const bottleneckRank = getBottleneckAutoItemRank(item);
+    const bottleneckPriority = getBottleneckAutoItemPriority(item);
+    const hasBottleneckPriority = bottleneckRank < 99;
     return {
       ...item,
       hasRestrictedTeacher: restrictedTeachers.length > 0,
@@ -860,8 +942,13 @@ export function createAutoAssignAll(deps) {
       excludedGroupNames: excludedGroups.map(group => group.name || group.groupName || group.label || group.id).filter(Boolean),
       isExcludedGroupFollowup: excludedGroupPriority > 0,
       excludedGroupPriority,
-      // 0은 핵심 동시배정 그룹, 1은 그룹 후속 필수카드/제약근무 교사, 2는 일반 자동배치 대상입니다.
-      priorityTier: excludedGroupPriority > 0 ? 1 : (restrictedTeachers.length > 0 ? 1 : 2)
+      hasBottleneckPriority,
+      bottleneckRank,
+      bottleneckPriority,
+      // 0은 큰 동시수업/전체학급 병목, 1은 그룹 후속 필수카드/제약근무/단일반 희소카드, 2는 일반 대상입니다.
+      priorityTier: hasBottleneckPriority && bottleneckRank <= 10
+        ? 0
+        : (excludedGroupPriority > 0 || restrictedTeachers.length > 0 || bottleneckPriority > 0 ? 1 : 2)
     };
   };
 
@@ -884,13 +971,17 @@ export function createAutoAssignAll(deps) {
     const teacherCount = new Set(getTeacherNamesFromCards(cards)).size;
 
     // 실제 HIS 시간표에서 먼저 자리를 잡아야 하는 뼈대 그룹입니다.
-    // 특히 HS국어는 10A/11A/12A와 여러 교사가 얽혀 있어, 제약교사 일반카드보다 뒤로 밀리면 거의 항상 실패합니다.
+    // r79: ASC가 보여준 병목은 선택묶음보다 "11체육/리더십/전체학급"을 늦게 배치한 데서 발생했습니다.
+    // ASC 데이터를 복사하지 않고, 같은 유형의 병목 그룹을 우선 배치하도록 순서만 강화합니다.
     if (/HS\s*국어|고등\s*국어/i.test(text)) return 0;
-    if (/MS\s*국어|중등\s*국어/i.test(text)) return 1;
-    if (/국어|한국어|Korean/i.test(text) && classCount >= 3) return 2;
-    if (/선택/.test(text) && classCount >= 2) return 3;
-    if (/채플|CA|SA|자율|동아리|Chapel|Club/i.test(text)) return 4;
-    if (cards.length >= 4 || classCount >= 4 || teacherCount >= 4) return 5;
+    if (classCount >= 3 && /(11\s*체육|체육|sports|physical\s*education|pe)/i.test(text)) return 1;
+    if (classCount >= 3 && /(섬김|리더십|leadership|servant|transformational)/i.test(text)) return 2;
+    if (/MS\s*국어|중등\s*국어/i.test(text)) return 3;
+    if (/국어|한국어|Korean/i.test(text) && classCount >= 3) return 4;
+    if (/채플|CA|SA|자율|동아리|Chapel|Club/i.test(text)) return 5;
+    if (classCount >= 3 && /(영어|English)/i.test(text)) return 6;
+    if (/선택/.test(text) && classCount >= 2) return 7;
+    if (cards.length >= 4 || classCount >= 4 || teacherCount >= 4) return 8;
     return 99;
   }
 
@@ -2836,6 +2927,8 @@ export function createAutoAssignAll(deps) {
   }
   function autoItemKey(item) {
     if (item.ttcardId) return `ttc:${item.ttcardId}`;
+    const ids = ttCardIdsFromPlacement(item).filter(Boolean);
+    if (ids.length) return `ttcs:${ids.slice().sort().join("+")}`;
     return `tpl:${item.templateId || ""}:${item.gradeKey || ""}:${item.sectionIdx ?? 0}`;
   }
 
@@ -4603,10 +4696,10 @@ export function createAutoAssignAll(deps) {
       return {
         mode: "deep",
         label: "정교한 안정 엔진",
-        // r23: 브라우저 프리징의 원인이 된 전수 MRV/전체 통계 점수 계산은 초기 배치에서 끕니다.
-        // 핵심 그룹 우선순위 + 여러 초기 후보 + 복구 단계로 품질을 확보하고, UI 응답성을 우선 보장합니다.
-        useCandidateCountSort: false,
-        useLiveMrv: false,
+        // r79: 병목 수업을 뒤로 미루지 않도록 후보 수 기반 정렬/MRV를 다시 켭니다.
+        // 전체 전수탐색이 아니라 초기 후보 수와 현재 후보 수만 사용하므로 품질을 높이면서도 브라우저 응답성을 유지합니다.
+        useCandidateCountSort: true,
+        useLiveMrv: true,
         slotScoring: "light",
         enableSwapRepair: true,
         enableFinalRepair: true,
@@ -4624,8 +4717,8 @@ export function createAutoAssignAll(deps) {
     return {
       mode: "balanced",
       label: "균형 경량 엔진",
-      useCandidateCountSort: false,
-      useLiveMrv: false,
+      useCandidateCountSort: true,
+      useLiveMrv: true,
       slotScoring: "light",
       enableSwapRepair: true,
       enableFinalRepair: true,
@@ -4648,8 +4741,8 @@ export function createAutoAssignAll(deps) {
     if (value === "fast") return [1, 1, 0];
     // r23: 60+40+18회는 브라우저 단일 스레드에서 실제 운영 데이터 기준으로 과합니다.
     // 정교한 모드는 1차 후보를 19회로 제한하고, 남은 품질은 복구/후처리에서 보정합니다.
-    if (value === "deep") return [10, 6, 3];
-    return [3, 2, 1];
+    if (value === "deep") return [14, 8, 4];
+    return [6, 4, 2];
   }
 
   function explorationOptionsForAttempt(mode, attempt = 0, stageIndex = 0) {
@@ -5815,10 +5908,12 @@ export function createAutoAssignAll(deps) {
           const structuralRank = getStructuralGroupRank(block);
           if (structuralRank < 99) bonus += 25000 - structuralRank * 1800;
           if (/HS\s*국어|고등\s*국어/i.test(nameText)) bonus += 18000;
+          if (/(11\s*체육|체육|sports|physical\s*education|\bpe\b)/i.test(nameText) && classKeys.size >= 3) bonus += 17000;
+          if (/(섬김|리더십|leadership|servant|transformational)/i.test(nameText) && classKeys.size >= 3) bonus += 16000;
           if (/MS\s*국어|중등\s*국어/i.test(nameText)) bonus += 12000;
           if (group.isConcurrent || group.groupType === "concurrent") bonus += 8000;
+          if (/채플|자율|동아리|CA|SA|Chapel|Club/i.test(nameText)) bonus += 7200;
           if (/선택/.test(nameText)) bonus += 6200;
-          if (/채플|자율|동아리|CA|SA|Chapel|Club/i.test(nameText)) bonus += 5200;
           if (/국어|한국어|영어|Korean|English/i.test(nameText)) bonus += 4200;
           // 여러 반·여러 교사·여러 카드가 동시에 움직이는 그룹은 뒤로 밀리면 거의 배치가 불가능해집니다.
           bonus += classKeys.size * 220 + teachers.size * 320 + cards.length * 60;
@@ -5856,6 +5951,10 @@ export function createAutoAssignAll(deps) {
           const ib = itemByKey.get(b);
           const ap = comparePriority(ia, ib);
           if (ap !== 0) return ap;
+          const bottleneckRank = Number(ia?.bottleneckRank ?? 99) - Number(ib?.bottleneckRank ?? 99);
+          if (bottleneckRank !== 0) return bottleneckRank;
+          const bottleneckPriority = Number(ib?.bottleneckPriority || 0) - Number(ia?.bottleneckPriority || 0);
+          if (bottleneckPriority !== 0) return bottleneckPriority;
           const excludedPriority = Number(ib?.excludedGroupPriority || 0) - Number(ia?.excludedGroupPriority || 0);
           if (excludedPriority !== 0) return excludedPriority;
           const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
@@ -5870,8 +5969,10 @@ export function createAutoAssignAll(deps) {
         const normalGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && !block.hasRestrictedTeacher);
         const excludedFollowupKeys = orderedKeys.filter(key => itemByKey.get(key)?.isExcludedGroupFollowup);
         const excludedFollowupKeySet = new Set(excludedFollowupKeys);
-        const restrictedKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && itemByKey.get(key)?.hasRestrictedTeacher);
-        const normalKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
+        const bottleneckKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && itemByKey.get(key)?.hasBottleneckPriority);
+        const bottleneckKeySet = new Set(bottleneckKeys);
+        const restrictedKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !bottleneckKeySet.has(key) && itemByKey.get(key)?.hasRestrictedTeacher);
+        const normalKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !bottleneckKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
         const placedByKey = new Map();
 
         // ── 공유 Forward-checking (그룹/일반 카드 공통) ───────────────────────
@@ -6050,11 +6151,15 @@ export function createAutoAssignAll(deps) {
             return arr.sort((a, b) => {
               const ia = itemByKey.get(a);
               const ib = itemByKey.get(b);
+              const ap = comparePriority(ia, ib);
+              if (ap !== 0) return ap;
+              const rank = Number(ia?.bottleneckRank ?? 99) - Number(ib?.bottleneckRank ?? 99);
+              if (rank !== 0) return rank;
+              const bp = Number(ib?.bottleneckPriority || 0) - Number(ia?.bottleneckPriority || 0);
+              if (bp !== 0) return bp;
               const acand = liveCandidateCountForItem(ia) ?? 9999;
               const bcand = liveCandidateCountForItem(ib) ?? 9999;
               if (acand !== bcand) return acand - bcand;
-              const ap = comparePriority(ia, ib);
-              if (ap !== 0) return ap;
               const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
               if (art !== 0) return art;
               return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
@@ -6107,6 +6212,7 @@ export function createAutoAssignAll(deps) {
         // 고정 수업 다음: 큰 동시배정 그룹을 먼저 배치합니다.
         // 제약교사 일반카드가 10A/11A/12A의 희소 슬롯을 먼저 점유하면 HS국어 같은 그룹은 나중에 복구가 거의 불가능합니다.
         await placeGroups(structuralGroupBlocks, "핵심 동시배정 그룹 선배치");
+        await placeStandaloneKeys(bottleneckKeys, "병목 카드 선배치");
         await placeStandaloneKeys(excludedFollowupKeys, "그룹 후속 필수카드 선배치");
         await placeGroups(restrictedGroupBlocks, "제약교사 그룹 우선 배치");
         await placeStandaloneKeys(restrictedKeys, "제약교사 일반 카드 우선 배치");
