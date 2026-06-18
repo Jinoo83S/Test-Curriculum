@@ -4716,21 +4716,27 @@ export function createAutoAssignAll(deps) {
     }
     return {
       mode: "balanced",
-      label: "균형 경량 엔진",
+      label: "균형 병목 우선 엔진",
+      // r80: r79의 병목 우선순위는 유지하되, 균형 모드에서는 매 배치마다
+      // 전체 후보를 다시 세는 live MRV를 끕니다. 시작 시 후보 수 기반 정렬은 유지해
+      // 11체육/리더십/12영어 같은 희소 카드를 먼저 보호합니다.
       useCandidateCountSort: true,
-      useLiveMrv: true,
+      useLiveMrv: false,
+      candidateProbeSampleLimit: 2,
       slotScoring: "light",
       enableSwapRepair: true,
       enableFinalRepair: true,
-      finalRepairLimit: 24,
-      postProcessLimit: 40,
+      finalRepairLimit: 32,
+      postProcessLimit: 35,
       postProcessPasses: 1,
       qualityClassCheck: true,
-      enableExperimentalResidualRepair: true,
-      enableResidualTwoCycleRepair: true,
-      enableEjectionChainRepair: true,
-      enableMinConflictsRepair: true,
-      enableForceResidualRepair: true
+      // r80: ejection-chain/min-conflicts 계열은 정교한 배치에 남깁니다.
+      // 균형 배치는 병목 선배치 + 단일/다중 이동 복구까지만 수행해 운영 속도를 확보합니다.
+      enableExperimentalResidualRepair: false,
+      enableResidualTwoCycleRepair: false,
+      enableEjectionChainRepair: false,
+      enableMinConflictsRepair: false,
+      enableForceResidualRepair: false
     };
   }
 
@@ -4742,7 +4748,9 @@ export function createAutoAssignAll(deps) {
     // r23: 60+40+18회는 브라우저 단일 스레드에서 실제 운영 데이터 기준으로 과합니다.
     // 정교한 모드는 1차 후보를 19회로 제한하고, 남은 품질은 복구/후처리에서 보정합니다.
     if (value === "deep") return [14, 8, 4];
-    return [6, 4, 2];
+    // r80: 균형 배치는 r79의 병목 선배치 전략은 유지하되 초기 후보 반복 수를 줄입니다.
+    // 정교한 배치가 깊은 탐색을 맡고, 균형은 운영 중 테스트 가능한 속도를 우선합니다.
+    return [4, 3, 1];
   }
 
   function explorationOptionsForAttempt(mode, attempt = 0, stageIndex = 0) {
@@ -4750,7 +4758,7 @@ export function createAutoAssignAll(deps) {
     if (value === "fast") return { slotRandomness: 0, topCandidateCount: 1 };
     if (value === "balanced") {
       if (attempt === 0) return { slotRandomness: 0, topCandidateCount: 1 };
-      return { slotRandomness: Math.min(3, 1 + stageIndex), topCandidateCount: 3 };
+      return { slotRandomness: Math.min(2, 1 + stageIndex), topCandidateCount: 2 };
     }
     const base = 6;
     const warmup = attempt === 0 ? 0 : 1;
@@ -5880,7 +5888,8 @@ export function createAutoAssignAll(deps) {
           if (candidateCountCache.has(cacheKey)) return candidateCountCache.get(cacheKey);
           let minCount = 9999;
           const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
-          const samples = Math.max(1, Math.min(maxCredits || 1, 5));
+          const probeLimit = Math.max(1, Number(stageAttemptOptions.candidateProbeSampleLimit || 5) || 5);
+          const samples = Math.max(1, Math.min(maxCredits || 1, probeLimit));
           for (let occurrence = 0; occurrence < samples; occurrence++) {
             const activeItems = unitItems
               .filter(u => occurrence < (Number(u.credits) || 0))
@@ -6934,7 +6943,7 @@ export function createAutoAssignAll(deps) {
     // ejection-chain/강제복구로도 남은 잔여 카드를, 충돌 허용 시드 + min-conflicts
     // 국소탐색으로 마지막 시도합니다. 공식 validator 기준으로 더 나빠지면
     // considerAutoCandidate가 채택하지 않으므로 기존 결과를 악화시키지 않습니다.
-    if (allowExperimentalResidualRepair && bestFailed.length && engineProfile.enableFinalRepair) {
+    if (allowExperimentalResidualRepair && bestFailed.length && engineProfile.enableFinalRepair && engineProfile.enableMinConflictsRepair) {
       await updateProgress({
         percent: 90,
         step: "r40 min-conflicts 잔여 탈출 준비",
