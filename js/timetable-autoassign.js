@@ -5610,13 +5610,556 @@ export function createAutoAssignAll(deps) {
     await openAutoAssignPrecheckDialog(report, { allowProceed: false });
   }
 
+  // ── r86 fresh auto-placement engine ─────────────────────────────
+  // 기존 자동배치의 “한 번 꽂고 막히면 진단” 흐름을 대체하는 새 코어입니다.
+  // 원칙: 같은 시간에 함께 움직여야 하는 수업은 block으로 묶고,
+  // 직접 배치가 막히면 blocker block을 실제로 빼서 다른 슬롯으로 재삽입합니다.
+  function freshBlockCardIds(block = {}) {
+    return [...new Set((block.items || [])
+      .flatMap(item => ttCardIdsFromPlacement(item) || [])
+      .filter(Boolean))];
+  }
+
+  function freshBlockTeacherNames(block = {}) {
+    return [...new Set((block.items || []).flatMap(item => hardTeacherNamesForPlacement(item)).filter(Boolean))];
+  }
+
+  function freshBlockAudienceKeys(block = {}) {
+    const out = new Set();
+    (block.items || []).forEach(item => {
+      const aud = audienceForPlacement(item);
+      (aud?.classKeys || new Set()).forEach(k => out.add(k));
+    });
+    return [...out].filter(Boolean);
+  }
+
+  function freshBlockName(block = {}) {
+    return block.name || getAutoItemName(block.primaryItem || block.items?.[0] || {}) || block.key || "수업";
+  }
+
+  function freshStableHash(value = "") {
+    const s = String(value || "");
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  function freshSlotSortValue(slot = {}, salt = "") {
+    // 월1→금7 고정 정렬에 작은 deterministic salt를 섞어, 재현성은 유지하면서
+    // 같은 점수 후보가 한 슬롯에 몰리는 현상을 줄입니다.
+    const base = (Number(slot.period) || 0) * 10 + (Number(slot.day) || 0);
+    const jitter = freshStableHash(`${salt}:${slot.day}:${slot.period}`) % 997;
+    return base * 1000 + jitter / 997;
+  }
+
+  function freshBaseSlots() {
+    const periodCount = Math.max(1, parseInt(ttConfig()?.periodCount, 10) || 7);
+    const days = [0, 1, 2, 3, 4];
+    const slots = [];
+    days.forEach(day => {
+      for (let period = 0; period < periodCount; period++) slots.push({ day, period });
+    });
+    return slots;
+  }
+
+  function freshBuildGroupPlacementItems(group, activeItems = []) {
+    const activeList = (activeItems || []).filter(Boolean);
+    if (!activeList.length) return [];
+    const seenCardIds = new Set();
+    const activeCards = [];
+    activeList.forEach(item => {
+      (item.ttcards || []).forEach(card => {
+        if (!card?.id || seenCardIds.has(card.id)) return;
+        seenCardIds.add(card.id);
+        activeCards.push(card);
+      });
+    });
+    if (!activeCards.length) return [];
+
+    const batches = getGroupRoomBatches(group, activeCards);
+    const placementItems = [];
+    for (const cards of batches.length ? batches : [activeCards]) {
+      const batchIds = new Set((cards || []).map(c => c.id).filter(Boolean));
+      const unit = (group?.units || []).find(u => {
+        const ids = new Set(u.ttcardIds || []);
+        return batchIds.size && [...batchIds].every(id => ids.has(id));
+      }) || null;
+      const sourceItem = activeList.find(item => (item.ttcards || []).some(c => batchIds.has(c.id))) || activeList[0];
+      const item = makePlacementFromGroupItem(group, { ...sourceItem, unit, ttcards: cards });
+      if (item) placementItems.push(annotateRestrictedAutoItem(item));
+    }
+    return placementItems;
+  }
+
+  function freshMakeStandaloneBlock(item = {}, index = 0) {
+    const annotated = annotateRestrictedAutoItem(item);
+    const cardIds = ttCardIdsFromPlacement(annotated).filter(Boolean);
+    const name = getAutoItemName(annotated);
+    return {
+      key: `fresh:S:${autoItemKey(annotated)}:${index}`,
+      kind: "standalone",
+      name,
+      primaryItem: annotated,
+      items: [annotated],
+      cardIds,
+      occurrence: index + 1,
+      groupId: null
+    };
+  }
+
+  function freshMakeGroupBlocks(groupBlock = {}, blockIndex = 0) {
+    const { group, unitItems = [] } = groupBlock || {};
+    if (!group || !unitItems.length) return [];
+    const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
+    const credits = unitItems.map(u => Math.max(0, Number(u?.credits) || 0));
+    const blocks = [];
+    if (isConcurrent) {
+      const maxCredits = Math.max(0, ...credits);
+      for (let occ = 0; occ < maxCredits; occ++) {
+        const activeItems = unitItems
+          .map(u => getGroupItemForOccurrence(u, occ))
+          .filter(u => (u.ttcards || []).length);
+        const items = freshBuildGroupPlacementItems(group, activeItems);
+        if (!items.length) continue;
+        const cardIds = [...new Set(items.flatMap(item => ttCardIdsFromPlacement(item)).filter(Boolean))];
+        const name = `${group.name || "동시수업 그룹"} ${occ + 1}`;
+        blocks.push({
+          key: `fresh:G:${group.id || blockIndex}:${occ}`,
+          kind: "group",
+          name,
+          group,
+          groupId: group.id || null,
+          occurrence: occ + 1,
+          primaryItem: items[0],
+          items,
+          activeItems,
+          cardIds
+        });
+      }
+      return blocks;
+    }
+
+    // 비동시 그룹은 unit별·회차별로 독립 block으로 처리합니다.
+    unitItems.forEach((unitItem, unitIdx) => {
+      const count = Math.max(0, Number(unitItem?.credits) || 0);
+      for (let occ = 0; occ < count; occ++) {
+        const active = getGroupItemForOccurrence(unitItem, occ);
+        const items = freshBuildGroupPlacementItems(group, [active]);
+        if (!items.length) continue;
+        blocks.push({
+          key: `fresh:G:${group.id || blockIndex}:${unitIdx}:${occ}`,
+          kind: "group-unit",
+          name: `${group.name || unitItem.name || "그룹 수업"} ${occ + 1}`,
+          group,
+          groupId: group.id || null,
+          occurrence: occ + 1,
+          primaryItem: items[0],
+          items,
+          activeItems: [active],
+          cardIds: [...new Set(items.flatMap(item => ttCardIdsFromPlacement(item)).filter(Boolean))]
+        });
+      }
+    });
+    return blocks;
+  }
+
+  function freshProtectedCardCoverage(protectedEntries = []) {
+    const slotSets = new Map();
+    (protectedEntries || []).forEach(entry => {
+      const slot = `${entry.day}:${entry.period}`;
+      ttCardIdsFromPlacement(entry).forEach(id => {
+        if (!id) return;
+        if (!slotSets.has(id)) slotSets.set(id, new Set());
+        slotSets.get(id).add(slot);
+      });
+    });
+    const counts = new Map();
+    slotSets.forEach((set, id) => counts.set(id, set.size));
+    return counts;
+  }
+
+  function freshRemoveCoveredBlocks(blocks = [], protectedEntries = []) {
+    const coverage = freshProtectedCardCoverage(protectedEntries);
+    const kept = [];
+    const skipped = [];
+    for (const block of blocks) {
+      const ids = freshBlockCardIds(block);
+      if (ids.length && ids.every(id => (coverage.get(id) || 0) > 0)) {
+        ids.forEach(id => coverage.set(id, Math.max(0, (coverage.get(id) || 0) - 1)));
+        skipped.push(block);
+      } else {
+        kept.push(block);
+      }
+    }
+    return { kept, skipped };
+  }
+
+  function freshBuildBlocks(standalone = [], groupBlocks = [], protectedEntries = []) {
+    const blocks = [];
+    standalone.forEach((item, index) => blocks.push(freshMakeStandaloneBlock(item, index)));
+    groupBlocks.forEach((block, index) => blocks.push(...freshMakeGroupBlocks(block, index)));
+    const filtered = blocks.filter(block => block.items?.length && isAllowedAutoPlacementSource(block.primaryItem || block.items[0] || {}));
+    return freshRemoveCoveredBlocks(filtered, protectedEntries);
+  }
+
+  function freshMakeBlockEntries(block = {}, slot = {}, placed = [], checkOptions = {}) {
+    const pending = [];
+    for (const rawItem of block.items || []) {
+      const item = annotateRestrictedAutoItem(rawItem);
+      if (!checkPlacementValid(item, slot, [...placed, ...pending], checkOptions)) return null;
+      const entry = makeAutoEntry(item, slot, [...placed, ...pending]);
+      if (!entry) return null;
+      pending.push(normalizeTimetableEntry({
+        ...entry,
+        autoBlockKey: block.key,
+        autoEngine: "fresh-csp-r86",
+        autoGroupBlock: block.kind !== "standalone",
+        autoOccurrence: block.occurrence || 1
+      }));
+    }
+    return pending.length ? pending : null;
+  }
+
+  function freshDirectCandidateCount(block, baseSlots, placed, checkOptions = {}) {
+    let count = 0;
+    for (const slot of baseSlots) {
+      if (freshMakeBlockEntries(block, slot, placed, checkOptions)) count += 1;
+    }
+    return count;
+  }
+
+  function freshBlockDifficulty(block, initialCandidateCount = 99) {
+    const teacherCount = freshBlockTeacherNames(block).length;
+    const classCount = freshBlockAudienceKeys(block).length;
+    const cardCount = freshBlockCardIds(block).length;
+    const restrictedCount = (block.items || []).filter(item => getRestrictedTeachersForAutoItem(item).length).length;
+    const groupBonus = block.kind === "standalone" ? 0 : 220;
+    const bottleneckBonus = getBottleneckAutoItemPriority(block.primaryItem || {}) * -1;
+    return (1000 - Math.min(999, initialCandidateCount) * 12)
+      + groupBonus
+      + teacherCount * 55
+      + classCount * 45
+      + cardCount * 25
+      + restrictedCount * 120
+      + bottleneckBonus;
+  }
+
+  function freshOrderBlocks(blocks = [], baseSlots = [], checkOptions = {}) {
+    return blocks.map((block, idx) => {
+      const candidateCount = freshDirectCandidateCount(block, baseSlots, [], checkOptions);
+      return { block, idx, candidateCount, difficulty: freshBlockDifficulty(block, candidateCount) };
+    }).sort((a, b) => {
+      if (a.candidateCount !== b.candidateCount) return a.candidateCount - b.candidateCount;
+      if (b.difficulty !== a.difficulty) return b.difficulty - a.difficulty;
+      return String(freshBlockName(a.block)).localeCompare(String(freshBlockName(b.block)), "ko", { numeric: true }) || a.idx - b.idx;
+    }).map(x => ({ ...x.block, initialCandidateCount: x.candidateCount, freshDifficulty: x.difficulty }));
+  }
+
+  function freshSlotScore(block = {}, slot = {}, placed = [], checkOptions = {}) {
+    let score = freshSlotSortValue(slot, block.key);
+    const items = block.items || [];
+    for (const item of items) {
+      try { score += scoreAutoSlotLight(item, slot, placed, checkOptions); }
+      catch (_) { score += 1000; }
+    }
+    // 학급이 이미 꽉 찬 요일보다 비어 있는 요일을 선호합니다.
+    const existing = [...entries(), ...(placed || [])];
+    const classStats = buildClassSlotStatsForEntries(existing);
+    for (const cls of freshBlockAudienceKeys(block)) {
+      score += classDayLoadFromStats(classStats, cls, slot.day) * 18;
+    }
+    return Number.isFinite(score) ? score : 999999;
+  }
+
+  function freshOrderSlots(block, baseSlots, placed, checkOptions = {}, { forDisplacement = false, lockKeys = new Set() } = {}) {
+    const rows = baseSlots.map(slot => {
+      const direct = freshMakeBlockEntries(block, slot, placed, checkOptions);
+      const blockers = direct ? [] : (forDisplacement ? freshInferBlockers(block, slot, placed, lockKeys, checkOptions) : []);
+      return {
+        slot,
+        direct: !!direct,
+        blockers,
+        score: freshSlotScore(block, slot, placed, checkOptions) + blockers.length * 850 + (direct ? 0 : 120)
+      };
+    });
+    rows.sort((a, b) => {
+      if (a.direct !== b.direct) return a.direct ? -1 : 1;
+      if (a.blockers.length !== b.blockers.length) return a.blockers.length - b.blockers.length;
+      return a.score - b.score;
+    });
+    return rows;
+  }
+
+  function freshEntryTeacherSet(entry = {}) {
+    return new Set(teacherNamesForPlacement(entry));
+  }
+
+  function freshItemTeacherSet(item = {}) {
+    return new Set(hardTeacherNamesForPlacement(item));
+  }
+
+  function freshSameConcurrentGroup(item = {}, entry = {}) {
+    return sameActiveGroup(item, entry) && isConcurrentItem(item) && isConcurrentItem(entry);
+  }
+
+  function freshItemConflictsWithEntry(item = {}, entry = {}, slot = {}, placed = []) {
+    if (!entry || entry.day !== slot.day || entry.period !== slot.period) return false;
+    if (hasAutoGroupExclusionSlotConflict(item, entry)) return true;
+    if (hasInternalCompoundSiblingConflict(item) || hasCompoundSiblingConflict(item, entry)) return true;
+
+    const itemTeachers = freshItemTeacherSet(item);
+    const entryTeachers = freshEntryTeacherSet(entry);
+    for (const t of itemTeachers) {
+      if (entryTeachers.has(t) && !freshSameConcurrentGroup(item, entry)) return true;
+    }
+
+    const itemAudience = audienceForPlacement(item);
+    const entryAudience = audienceForPlacement(entry);
+    if (audiencesConflict(itemAudience, entryAudience) && !freshSameConcurrentGroup(item, entry)) return true;
+
+    const roomed = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed || []);
+    if (roomed.roomId && entry.roomId && roomed.roomId === entry.roomId && !sameUnitPlacement(item, entry)) return true;
+    return false;
+  }
+
+  function freshInferBlockers(block = {}, slot = {}, placed = [], lockKeys = new Set(), checkOptions = {}) {
+    const sameSlot = (placed || []).filter(e => e.day === slot.day && e.period === slot.period && e.autoBlockKey && !lockKeys.has(e.autoBlockKey));
+    const blockers = new Set();
+    for (const item of block.items || []) {
+      for (const entry of sameSlot) {
+        if (freshItemConflictsWithEntry(item, entry, slot, placed)) blockers.add(entry.autoBlockKey);
+      }
+    }
+
+    if (blockers.size) return [...blockers];
+
+    // 불가 원인이 복합적인 경우에는 같은 슬롯 block을 하나씩 제거해 실제로 열리는 blocker만 찾습니다.
+    const sameSlotKeys = [...new Set(sameSlot.map(e => e.autoBlockKey).filter(Boolean))];
+    for (const key of sameSlotKeys) {
+      const reduced = placed.filter(e => e.autoBlockKey !== key);
+      if (freshMakeBlockEntries(block, slot, reduced, checkOptions)) return [key];
+    }
+    if (sameSlotKeys.length <= 5) {
+      const reduced = placed.filter(e => !sameSlotKeys.includes(e.autoBlockKey));
+      if (freshMakeBlockEntries(block, slot, reduced, checkOptions)) return sameSlotKeys;
+    }
+    return [];
+  }
+
+  function freshRemoveBlockEntries(placed = [], blockKey = "") {
+    const removed = [];
+    for (let i = placed.length - 1; i >= 0; i--) {
+      if (placed[i]?.autoBlockKey === blockKey) removed.push(...placed.splice(i, 1));
+    }
+    return removed.reverse();
+  }
+
+  function freshRestorePlaced(placed = [], snapshot = []) {
+    placed.splice(0, placed.length, ...snapshot.map(e => ({ ...e })));
+  }
+
+  function freshPushEntries(placed = [], entriesToPush = []) {
+    entriesToPush.forEach(e => placed.push(e));
+  }
+
+  function freshTryDirectPlace(block, placed, baseSlots, checkOptions = {}) {
+    for (const row of freshOrderSlots(block, baseSlots, placed, checkOptions)) {
+      const entriesToPush = freshMakeBlockEntries(block, row.slot, placed, checkOptions);
+      if (!entriesToPush) continue;
+      freshPushEntries(placed, entriesToPush);
+      return { ok: true, slot: row.slot, displaced: 0 };
+    }
+    return { ok: false };
+  }
+
+  function freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, checkOptions = {}, limits = {}, depth = 0, lockKeys = new Set()) {
+    const direct = freshTryDirectPlace(block, placed, baseSlots, checkOptions);
+    if (direct.ok) return direct;
+    if (depth <= 0) return { ok: false };
+
+    const maxBlockers = Math.max(1, Number(limits.maxBlockersPerMove || 4));
+    const candidateBudget = Math.max(4, Number(limits.displacementSlotBudget || 18));
+    const rows = freshOrderSlots(block, baseSlots, placed, checkOptions, { forDisplacement: true, lockKeys })
+      .filter(row => row.blockers.length && row.blockers.length <= maxBlockers)
+      .slice(0, candidateBudget);
+
+    for (const row of rows) {
+      const snapshot = placed.map(e => ({ ...e }));
+      const blockerKeys = [...new Set(row.blockers)].sort((a, b) => {
+        const ba = blockByKey.get(a);
+        const bb = blockByKey.get(b);
+        return (Number(bb?.freshDifficulty || 0) - Number(ba?.freshDifficulty || 0));
+      });
+      blockerKeys.forEach(key => freshRemoveBlockEntries(placed, key));
+      const entriesToPush = freshMakeBlockEntries(block, row.slot, placed, checkOptions);
+      if (!entriesToPush) {
+        freshRestorePlaced(placed, snapshot);
+        continue;
+      }
+      freshPushEntries(placed, entriesToPush);
+
+      let ok = true;
+      let displaced = blockerKeys.length;
+      const nextLocks = new Set([...lockKeys, block.key]);
+      for (const key of blockerKeys) {
+        const blocker = blockByKey.get(key);
+        if (!blocker) continue;
+        const moved = freshPlaceWithDisplacement(blocker, placed, baseSlots, blockByKey, checkOptions, limits, depth - 1, nextLocks);
+        if (!moved.ok) { ok = false; break; }
+        displaced += Number(moved.displaced || 0);
+      }
+      if (ok) return { ok: true, slot: row.slot, displaced };
+      freshRestorePlaced(placed, snapshot);
+    }
+    return { ok: false };
+  }
+
+  function freshCoverageFailureItemsFromValidation(validation = {}, blockByCardId = new Map()) {
+    const failures = [];
+    (validation.cardCoverage?.shortRows || []).forEach(row => {
+      const shortage = Math.max(0, -Number(row.diff || 0));
+      const block = blockByCardId.get(row.id);
+      const item = block?.primaryItem;
+      for (let i = 0; i < shortage; i++) {
+        if (item) failures.push(makeFailedPlacement(`${row.title}${row.classLabels?.length ? ` ${row.classLabels.join(", ")}` : ""}`, item, {
+          source: "freshCoverageShortage",
+          ttcardId: row.id,
+          occurrence: (row.count || 0) + i + 1,
+          required: row.target
+        }));
+      }
+    });
+    return failures;
+  }
+
+  async function runFreshAutoPlacementEngine(context = {}) {
+    const {
+      standalone = [], groupBlocks = [], protectedEntries = [], activeGrades = [], options = {}, updateProgress = null
+    } = context;
+    const baseSlots = freshBaseSlots();
+    const strictOptions = {
+      ...options,
+      respectSoftLimits: true,
+      respectUnavailable: true,
+      respectAssignedRoom: true,
+      engineProfile: autoEngineProfileForMode(options.runAttempts)
+    };
+    const relaxedOptions = {
+      ...strictOptions,
+      respectSoftLimits: false
+    };
+    const { kept: rawBlocks, skipped } = freshBuildBlocks(standalone, groupBlocks, protectedEntries);
+    const orderedBlocks = freshOrderBlocks(rawBlocks, baseSlots, strictOptions);
+    const blockByKey = new Map(orderedBlocks.map(block => [block.key, block]));
+    const blockByCardId = new Map();
+    orderedBlocks.forEach(block => freshBlockCardIds(block).forEach(id => { if (!blockByCardId.has(id)) blockByCardId.set(id, block); }));
+
+    const mode = String(options.runAttempts || "balanced");
+    const limits = mode === "fast"
+      ? { depth: 2, relaxedDepth: 2, maxBlockersPerMove: 3, displacementSlotBudget: 10 }
+      : mode === "deep"
+        ? { depth: 5, relaxedDepth: 6, maxBlockersPerMove: 7, displacementSlotBudget: 35 }
+        : { depth: 4, relaxedDepth: 5, maxBlockersPerMove: 5, displacementSlotBudget: 24 };
+
+    const placed = [];
+    const failedBlocks = [];
+    let displacedMoves = 0;
+    let directPlaced = 0;
+    let swapPlaced = 0;
+    let lastYield = 0;
+    const total = orderedBlocks.length;
+
+    for (let i = 0; i < orderedBlocks.length; i++) {
+      const block = orderedBlocks[i];
+      const result = freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, strictOptions, limits, limits.depth, new Set());
+      if (result.ok) {
+        if (result.displaced) { swapPlaced += 1; displacedMoves += result.displaced; }
+        else directPlaced += 1;
+      } else {
+        failedBlocks.push(block);
+      }
+      if (updateProgress && (Date.now() - lastYield > 120 || i === orderedBlocks.length - 1)) {
+        lastYield = Date.now();
+        await updateProgress({
+          percent: 8 + Math.round((i + 1) / Math.max(1, total) * 58),
+          step: "새 자동배치 엔진",
+          detail: `제약이 강한 수업부터 배치 중입니다. block ${i + 1}/${total}`,
+          placed: protectedEntries.length + placed.length,
+          best: protectedEntries.length + placed.length,
+          failed: failedBlocks.length,
+          currentCard: freshBlockName(block)
+        });
+      }
+    }
+
+    // 첫 패스 실패분은 소프트 제한을 완화하고 더 깊은 displacement로 재삽입합니다.
+    const stillFailed = [];
+    for (let i = 0; i < failedBlocks.length; i++) {
+      const block = failedBlocks[i];
+      const result = freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, relaxedOptions, limits, limits.relaxedDepth, new Set());
+      if (result.ok) {
+        swapPlaced += 1;
+        displacedMoves += Math.max(1, Number(result.displaced || 0));
+      } else {
+        stillFailed.push(block);
+      }
+      if (updateProgress && (i % 3 === 0 || i === failedBlocks.length - 1)) {
+        await updateProgress({
+          percent: 68 + Math.round((i + 1) / Math.max(1, failedBlocks.length || 1) * 18),
+          step: "전역 교환 복구",
+          detail: `미배치 block을 다른 block과 교환하며 복구 중입니다. ${i + 1}/${failedBlocks.length}`,
+          placed: protectedEntries.length + placed.length,
+          best: protectedEntries.length + placed.length,
+          failed: stillFailed.length + Math.max(0, failedBlocks.length - i - 1),
+          currentCard: freshBlockName(block)
+        }, true);
+      }
+    }
+
+    const failedItems = stillFailed.map(block => makeFailedPlacement(freshBlockName(block), block.primaryItem || block.items?.[0], {
+      source: "freshEngineUnplacedBlock",
+      blockKey: block.key,
+      occurrence: block.occurrence || 1,
+      groupId: block.groupId || ""
+    })).filter(f => f.item);
+
+    const validation = buildScheduleVerificationReport([...protectedEntries, ...placed], {
+      scopeGrades: activeGrades,
+      protectedEntries,
+      failedNames: [...new Set(failedItems.map(f => f.name))],
+      deriveFailedFromCardShortage: true
+    });
+    const coverageFailures = freshCoverageFailureItemsFromValidation(validation, blockByCardId);
+    const mergedFailed = coverageFailures.length ? coverageFailures : failedItems;
+
+    return {
+      placed,
+      failedBlocks: stillFailed,
+      failedItems: mergedFailed,
+      rawFailedItems: failedItems,
+      validation,
+      baseSlots,
+      skippedProtectedBlocks: skipped.length,
+      stats: {
+        engine: "fresh-csp-displacement-r86",
+        totalBlocks: orderedBlocks.length,
+        directPlaced,
+        swapPlaced,
+        displacedMoves,
+        skippedProtectedBlocks: skipped.length,
+        failedBlockCount: stillFailed.length,
+        baseSlotCount: baseSlots.length
+      }
+    };
+  }
+
   async function autoAssignAll() {
     if (!canEdit()) return;
     if (autoAssignRunning) { alert("자동 배치가 이미 진행 중입니다."); return; }
 
-    // 커리큘럼/템플릿 실시간 의존성을 끊었기 때문에, 자동배치 대상도
-    // appState.curriculum.gradeBoards가 아니라 시간표 사전작업에서 생성된
-    // timetable.ttcards / timetable.ttcardGroups 스냅샷 기준으로 판단합니다.
     const rawItems = buildSchedulableItems();
     let standalone = (rawItems.standalone || []).map(annotateRestrictedAutoItem);
     let groupBlocks = (rawItems.groupBlocks || []).map(annotateRestrictedGroupBlock);
@@ -5631,30 +6174,23 @@ export function createAutoAssignAll(deps) {
     if (!options) return;
     options.selectedGrades = normalizeAutoActiveGrades(options.selectedGrades);
     options.runAttempts = normalizeRunAttemptMode(options.runAttempts);
+    options.scoringWeights = scoreOptionsFromAssignOptions(options);
     const runMode = options.runAttempts;
     const isFastCheckRun = runMode === "fast";
-    options.scoringWeights = scoreOptionsFromAssignOptions(options);
 
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
     const protectedEntries = computeProtectedEntries(entries(), options);
     const protectedSummary = protectedSlotSummary(protectedEntries);
     const willClearCount = Math.max(0, entries().length - protectedEntries.length);
-    const restrictedStandaloneCount = standalone.filter(item => item.hasRestrictedTeacher).length;
-    const restrictedGroupCount = groupBlocks.filter(block => block.hasRestrictedTeacher).length;
-    const restrictedTeacherNames = [...new Set([
-      ...standalone.flatMap(item => item.restrictedTeachers || []),
-      ...groupBlocks.flatMap(block => block.restrictedTeachers || [])
-    ])];
     const groupTargetSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
       const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
       const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
       return sum + (isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
     }, 0);
     const autoTargetSlots = standalone.length + groupTargetSlots;
-    const autoItemCount = autoTargetSlots;
 
-    if (!autoItemCount || !activeGrades.length) {
+    if (!autoTargetSlots || !activeGrades.length) {
       alert("선택한 학년에 자동 배치할 과목 카드가 없습니다.");
       return;
     }
@@ -5672,25 +6208,24 @@ export function createAutoAssignAll(deps) {
     addTimetableLog(
       precheckHasIssues ? "warn" : "auto",
       "자동배치 사전 점검",
-      `점검 오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 정보 ${precheckCounts.info || 0}개 · 정상 ${precheckCounts.ok || 0}개${isFastCheckRun ? " · 빠른 점검은 확인용으로 계속 진행" : ""}`
+      `점검 오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 정보 ${precheckCounts.info || 0}개 · 정상 ${precheckCounts.ok || 0}개`
     );
     if (!isFastCheckRun && (precheckCounts.error || 0) > 0) {
-      const proceedOnErrors = confirm(`자동배치 사전 점검에서 점검 오류 ${precheckCounts.error}개가 발견되었습니다.\n이는 프로그램 오류가 아니라 데이터/제약 조건 확인 항목입니다.\n균형/정교한 배치 전에는 [사전 점검] 버튼으로 상세를 확인하는 것이 안전합니다.\n\n그래도 계속 실행할까요?`);
+      const proceedOnErrors = confirm(`자동배치 사전 점검에서 점검 오류 ${precheckCounts.error}개가 발견되었습니다.\n데이터/제약 조건 확인 항목입니다.\n\n그래도 새 자동배치 엔진을 실행할까요?`);
       if (!proceedOnErrors) return;
     }
 
     const modeText = options.placementMode === "keep" ? "현재 배치 유지 + 미배치만 배치" : "선택 범위 초기화 후 배치";
     const confirmText = [
-      `자동 배치를 시작합니다.`,
+      "새 자동배치 엔진으로 전체 배치를 시작합니다.",
       `대상: ${formatAutoActiveGrades(activeGrades)}`,
       `방식: ${modeText}`,
       options.placementMode === "reset" ? `초기화 대상 배치: ${willClearCount}개` : `보호되는 기존 배치: ${protectedEntries.length}개`,
       `고정/보호 슬롯: ${protectedSummary.slots}칸`,
-      `잠금 카드 유지: ${options.keepPinned !== false ? "예" : "아니오"}`,
-      `수동 카드 유지: ${options.keepManual !== false ? "예" : "아니오"}`,
+      `탐색 모드: ${autoAssignModeLabel(runMode)}`,
       `점수 기준: ${describeScoreWeights(options.scoringWeights)}`,
-      isFastCheckRun ? "빠른 점검: 오류 확인용이며 자동배치 보관본을 저장하지 않습니다." : "",
       "",
+      "기존 그리디 엔진 대신 block-CSP + 전역 교환 복구 엔진을 사용합니다.",
       "계속할까요?"
     ].join("\n");
     if (!confirm(confirmText)) return;
@@ -5702,2056 +6237,293 @@ export function createAutoAssignAll(deps) {
     const autoStartedAt = Date.now();
     const rollbackEntriesSnapshot = cloneAutoAssignData(entries());
     const beforeAutoSnapshot = isFastCheckRun ? null : saveAutoAssignScheduleSnapshot("before", rollbackEntriesSnapshot, { activeGrades, modeText, options });
-    // r46: 예외 발생 위치 추적용. catch에서 진단 메타에 기록합니다.
     let autoAssignPhase = "초기화";
-    if (beforeAutoSnapshot) {
-      addTimetableLog("auto", "자동배치 전 배치 보관", `${beforeAutoSnapshot.name}으로 현재 배치를 메모리 보관했습니다. 저장은 자동배치 완료 후 한 번만 수행합니다.`);
-    } else if (isFastCheckRun) {
-      addTimetableLog("auto", "빠른 점검 모드", "빠른 점검은 오류 확인용이므로 자동배치 전/후 보관본 저장을 생략합니다. 실패해도 자동 롤백하지 않고 마지막 배치 결과를 화면에 남깁니다.");
-    }
-    let rollbackConsumed = false;
     let autoAssignCancelled = false;
     const progress = createAutoAssignProgressDialog(autoTargetSlots, () => { autoAssignCancelled = true; });
-    let lastAutoAssignResultSnapshot = null;
-    let lastAutoAssignResultLabel = "";
-    let lastAutoAssignResultFailedCount = 0;
-    const rememberAutoAssignResult = (label, placed = [], failed = []) => {
-      const placedClone = cloneAutoAssignData(placed || []) || [];
-      if (!placedClone.length) return false;
-      lastAutoAssignResultSnapshot = cloneAutoAssignData([...protectedEntries, ...placedClone]) || [];
-      lastAutoAssignResultLabel = label || "자동배치 진행 결과";
-      lastAutoAssignResultFailedCount = Array.isArray(failed) ? failed.length : 0;
-      return true;
-    };
-    const applyLastAutoAssignResultToLiveEntries = () => {
-      const current = normalizeSnapshotEntries(entries()) || [];
-      if (current.length > protectedEntries.length) {
-        lastAutoAssignResultSnapshot = cloneAutoAssignData(current) || [];
-        lastAutoAssignResultLabel = lastAutoAssignResultLabel || "현재 표시 중인 자동배치 결과";
-        return {
-          applied: true,
-          label: lastAutoAssignResultLabel,
-          entryCount: current.length,
-          fromCurrent: true
-        };
-      }
-      const snapshot = normalizeSnapshotEntries(lastAutoAssignResultSnapshot || []) || [];
-      if (!snapshot.length) {
-        return { applied: false, label: "", entryCount: current.length, fromCurrent: false };
-      }
-      const liveEntries = entries();
-      if (Array.isArray(liveEntries)) {
-        liveEntries.splice(0, liveEntries.length, ...snapshot);
-        if (ttDomain().entries !== liveEntries) ttDomain().entries = liveEntries;
-      } else {
-        ttDomain().entries = snapshot;
-      }
-      return {
-        applied: true,
-        label: lastAutoAssignResultLabel || "마지막 자동배치 결과",
-        entryCount: snapshot.length,
-        fromCurrent: false
-      };
-    };
-    let lastProgressAt = 0;
     const updateProgress = async (data = {}, force = false) => {
-      const now = Date.now();
       if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
-      if (!force && now - lastProgressAt < 120) return false;
-      lastProgressAt = now;
       await progress.update({ total: autoTargetSlots, ...data });
       return true;
     };
 
     try {
-    await updateProgress({
-      percent: 2,
-      step: "초기화",
-      detail: "기존 배치와 고정 수업을 확인하고 있습니다.",
-      currentCard: "-",
-      placed: 0,
-      best: 0,
-      failed: 0,
-      log: `대상 학년: ${formatAutoActiveGrades(activeGrades)}`
-    }, true);
-    captureTimetableUndo("자동 배정");
-    addTimetableLog("auto", "자동 배치 시작", `대상 학년: ${formatAutoActiveGrades(activeGrades)}`);
-    const preValidation = buildScheduleVerificationReport(entries(), { scopeGrades: activeGrades });
-    const baselineAutoRunMetrics = buildAutoRunMetricsFromValidation(preValidation, {
-      label: '자동배치 전',
-      placedCount: rollbackEntriesSnapshot.length,
-      failedCount: 0,
-      forcedCount: 0,
-      qualityScore: Infinity
-    });
-    const currentQualityReference = {
-      source: "current",
-      name: "자동배치 전 현재 시간표",
-      entries: cloneAutoAssignData(rollbackEntriesSnapshot) || [],
-      validation: preValidation,
-      metrics: baselineAutoRunMetrics
-    };
-    const qualityBaselineReference = isFastCheckRun
-      ? currentQualityReference
-      : (findBestSavedAutoAssignReference(activeGrades, currentQualityReference) || currentQualityReference);
-    const qualityBaselineMetrics = qualityBaselineReference.metrics || baselineAutoRunMetrics;
-    const qualityBaselineValidation = qualityBaselineReference.validation || preValidation;
-    if ((qualityBaselineReference.source === "savedSchedule" || qualityBaselineReference.source === "bestSnapshot")) {
-      addTimetableLog(
-        "auto",
-        "자동배치 품질 기준",
-        `이전 최고 자동배치 보관본 '${qualityBaselineReference.name}'을 품질 기준으로 사용합니다. ${formatAutoRunMetricSummary(qualityBaselineMetrics)}`
-      );
-    }
-
-    // Preserve entries according to the selected auto-assign options.
-    // - reset: selected range is cleared, but locked/manual/out-of-range entries can be protected.
-    // - keep: all current entries stay as protected entries and only missing cards are added.
-    const pinnedEntries = [...protectedEntries];
-    ttDomain().entries = [...protectedEntries];
-    autoAssignPhase = "배치 구성";
-    await updateProgress({
-      percent: 6,
-      step: options.placementMode === "keep" ? "기존 배치 유지" : "보호 수업 유지",
-      detail: options.placementMode === "keep"
-        ? `기존 배치 ${protectedEntries.length}개를 유지하고 미배치 대상만 준비합니다. 보호 슬롯 ${protectedSummary.slots}칸을 후보에서 제외합니다.`
-        : `보호된 배치 ${protectedEntries.length}개를 유지하고 ${willClearCount}개 배치를 초기화했습니다. 보호 슬롯 ${protectedSummary.slots}칸을 후보에서 제외합니다.`,
-      placed: 0,
-      best: 0,
-      failed: 0
-    }, true);
-    const pc = ttConfig().periodCount;
-    const baseSlots = [];
-    for (let day = 0; day < 5; day++) {
-      for (let period = 0; period < pc; period++) baseSlots.push({ day, period });
-    }
-
-    const attemptPlan = attemptsForMode(options.runAttempts);
-    const engineProfile = autoEngineProfileForMode(options.runAttempts);
-    const allowExperimentalResidualRepair = experimentalResidualRepairEnabled({ ...options, engineProfile });
-
-    await updateProgress({
-      percent: 10,
-      step: "배치 대상 분석",
-      detail: `일반 카드 ${standalone.length}개, 그룹 ${groupBlocks.length}개를 분석했습니다. ${engineProfile.label}으로 초기 배치 후보를 만듭니다. 제약근무 교사 대상: 일반 ${restrictedStandaloneCount}개, 그룹 ${restrictedGroupCount}개.`,
-      log: restrictedTeacherNames.length
-        ? `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 고정 수업 다음 우선 배치: ${restrictedTeacherNames.join(", ")} · ${describeScoreWeights(options.scoringWeights)}`
-        : `고정/보호 슬롯 ${protectedSummary.slots}칸 제외 · 그룹 수업은 동시배정 단위로 계산합니다. · ${describeScoreWeights(options.scoringWeights)}`
-    }, true);
-
-    const requiredByKey = new Map();
-    const itemByKey = new Map();
-    standalone.forEach(item => {
-      const key = autoItemKey(item);
-      requiredByKey.set(key, (requiredByKey.get(key) || 0) + 1);
-      if (!itemByKey.has(key)) itemByKey.set(key, item);
-    });
-
-    const pinnedByKey = new Map();
-    itemByKey.forEach((item, key) => {
-      pinnedByKey.set(key, pinnedEntries.filter(e => entryMatchesAutoItem(e, item)).length);
-    });
-
-    const stages = [
-      { name:"strict", label:"교사 제약 포함", attempts:attemptPlan[0], options:{ respectSoftLimits:true,  respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
-      { name:"relaxedSoft", label:"교사 일일/연속 제한 완화", attempts:attemptPlan[1], options:{ respectSoftLimits:false, respectUnavailable:true,  respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
-      { name:"relaxedUnavailable", label:"불가시간 완화 · 교실 유지", attempts:attemptPlan[2], options:{ respectSoftLimits:false, respectUnavailable:false, respectAssignedRoom:true,  scoringWeights: options.scoringWeights } },
-    ];
-
-    let bestPlaced = [], bestFailed = [], bestScore = -1, bestStage = stages[0];
-    let bestQualityScore = Infinity;
-    let bestAttemptInfo = { stageLabel: stages[0]?.label || "", attempt: 0, totalAttempts: 0, exploration: "기본" };
-    let exploredInitialRuns = 0;
-    let autoOps = 0;
-    const yieldAutoAssign = async (data = null, force = false) => {
-      if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
-      autoOps++;
-      if (data) {
-        const updated = await updateProgress(data, force);
-        // 진행률 갱신이 120ms 쓰로틀에 걸려도 일정 간격으로 이벤트 루프를 양보합니다.
-        // 이것이 없으면 정교한 배치에서 계산은 진행 중인데 브라우저가 멈춘 것처럼 보입니다.
-        if (!updated && autoOps % 10 === 0) await waitForBrowser();
-      } else if (autoOps % 10 === 0) await waitForBrowser();
-      if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
-    };
-
-    for (let stageIndex = 0; stageIndex < stages.length; stageIndex++) {
-      const stage = stages[stageIndex];
-      for (let attempt = 0; attempt < stage.attempts; attempt++) {
-        const stagePercent = 12 + Math.min(68, ((stageIndex / stages.length) * 68) + ((attempt / Math.max(1, stage.attempts)) * (68 / stages.length)));
-        await updateProgress({
-          percent: stagePercent,
-          step: `자동배치 탐색 · ${stage.label}`,
-          detail: `초기배치 후보 ${attempt + 1} / ${stage.attempts} · ${engineProfile.label} · 현재까지 최선 ${Math.max(0, bestScore)}개 배치`,
-          placed: 0,
-          best: Math.max(0, bestScore),
-          failed: bestFailed.length,
-          currentCard: "-",
-          log: attempt === 0 ? `${stage.label} 단계 시작` : null
-        }, true);
-        const placed = [], failed = [];
-        exploredInitialRuns++;
-        const exploration = explorationOptionsForAttempt(options.runAttempts, attempt, stageIndex);
-        const stageAttemptOptions = {
-          ...stage.options,
-          ...exploration,
-          runAttempts: options.runAttempts,
-          engineProfileLabel: engineProfile.label,
-          engineProfile,
-          useCandidateCountSort: engineProfile.useCandidateCountSort,
-          useLiveMrv: engineProfile.useLiveMrv,
-          attemptIndex: attempt,
-          stageIndex
-        };
-
-        // ── Sort schedulable units by priority ───────────────────────
-        // 1) 고정 수업은 위에서 이미 pinnedEntries로 보호
-        // 2) 제약근무 교사 포함 수업은 일반 그룹/일반 카드보다 먼저 배치
-        // 3) 같은 우선순위 안에서는 "후보 시간이 적은 수업"을 먼저 배치합니다.
-        const candidateCountCache = new Map();
-        const candidateCountForItem = (item) => {
-          if (!item) return 9999;
-          if (!stageAttemptOptions.useCandidateCountSort) return 9999;
-          const key = `${autoItemKey(item)}::${stage.name}`;
-          if (candidateCountCache.has(key)) return candidateCountCache.get(key);
-          let count = 0;
-          for (const slot of baseSlots) {
-            if (checkPlacementValid(item, slot, placed, stageAttemptOptions)) count += 1;
-          }
-          candidateCountCache.set(key, count);
-          return count;
-        };
-        const candidateCountForGroupBlock = (block) => {
-          const group = block?.group;
-          const unitItems = block?.unitItems || [];
-          if (!group || !unitItems.length) return 9999;
-          if (!stageAttemptOptions.useCandidateCountSort) return 9999;
-          const cacheKey = `group:${group.id || group.name || "?"}::${stage.name}`;
-          if (candidateCountCache.has(cacheKey)) return candidateCountCache.get(cacheKey);
-          let minCount = 9999;
-          const maxCredits = Math.max(0, ...unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
-          const probeLimit = Math.max(1, Number(stageAttemptOptions.candidateProbeSampleLimit || 5) || 5);
-          const samples = Math.max(1, Math.min(maxCredits || 1, probeLimit));
-          for (let occurrence = 0; occurrence < samples; occurrence++) {
-            const activeItems = unitItems
-              .filter(u => occurrence < (Number(u.credits) || 0))
-              .map(u => getGroupItemForOccurrence(u, occurrence))
-              .filter(u => (u.ttcards || []).length);
-            if (!activeItems.length) continue;
-            const probeCards = activeItems.flatMap(u => u.ttcards || []);
-            const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
-            const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
-            if (!probe) continue;
-            minCount = Math.min(minCount, candidateCountForItem(probe));
-          }
-          candidateCountCache.set(cacheKey, minCount);
-          return minCount;
-        };
-
-        const groupBlockSpecialPriority = block => {
-          const group = block?.group || {};
-          const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
-          const teachers = new Set(getTeacherNamesFromCards(cards).filter(Boolean));
-          const classKeys = new Set(cards.flatMap(card => card.classKeys || []).filter(Boolean));
-          const nameText = [group.name, group.label, group.groupName, ...cards.map(c => [c.group, c.groupName, c.track, c.subject, c.label].filter(Boolean).join(' '))]
-            .filter(Boolean).join(' ');
-          let bonus = 0;
-          const structuralRank = getStructuralGroupRank(block);
-          if (structuralRank < 99) bonus += 25000 - structuralRank * 1800;
-          if (/HS\s*국어|고등\s*국어/i.test(nameText)) bonus += 18000;
-          if (/(11\s*체육|체육|sports|physical\s*education|\bpe\b)/i.test(nameText) && classKeys.size >= 3) bonus += 17000;
-          if (/(섬김|리더십|leadership|servant|transformational)/i.test(nameText) && classKeys.size >= 3) bonus += 16000;
-          if (/MS\s*국어|중등\s*국어/i.test(nameText)) bonus += 12000;
-          if (group.isConcurrent || group.groupType === "concurrent") bonus += 8000;
-          if (/채플|자율|동아리|CA|SA|Chapel|Club/i.test(nameText)) bonus += 7200;
-          if (/선택/.test(nameText)) bonus += 6200;
-          if (/국어|한국어|영어|Korean|English/i.test(nameText)) bonus += 4200;
-          // 여러 반·여러 교사·여러 카드가 동시에 움직이는 그룹은 뒤로 밀리면 거의 배치가 불가능해집니다.
-          bonus += classKeys.size * 220 + teachers.size * 320 + cards.length * 60;
-          return bonus;
-        };
-
-        const groupBlockComplexity = block => {
-          const cards = (block?.unitItems || []).flatMap(u => u.ttcards || []).filter(Boolean);
-          const teachers = new Set(getTeacherNamesFromCards(cards).filter(Boolean));
-          const classKeys = new Set(cards.flatMap(card => card.classKeys || []).filter(Boolean));
-          const maxCredits = Math.max(0, ...(block?.unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
-          // 여러 학년·반·교사가 동시에 움직이는 그룹을 먼저 배치해야 후반부 카드 부족/미배치가 줄어듭니다.
-          return groupBlockSpecialPriority(block) + teachers.size * 100 + classKeys.size * 12 + cards.length * 5 + maxCredits;
-        };
-
-        const orderedGroups = shuffle([...groupBlocks]).sort((a, b) => {
-          const ac = Math.max(0, ...a.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
-          const bc = Math.max(0, ...b.unitItems.map(u => Math.max(0, Number(u.credits) || 0)));
-          const ap = comparePriority(a, b);
-          if (ap !== 0) return ap;
-          const art = (b.restrictedTeachers || []).length - (a.restrictedTeachers || []).length;
-          if (art !== 0) return art;
-          const special = groupBlockSpecialPriority(b) - groupBlockSpecialPriority(a);
-          if (special !== 0) return special;
-          const acand = candidateCountForGroupBlock(a);
-          const bcand = candidateCountForGroupBlock(b);
-          if (acand !== bcand) return acand - bcand;
-          const complexity = groupBlockComplexity(b) - groupBlockComplexity(a);
-          if (complexity !== 0) return complexity;
-          return bc - ac;
-        });
-
-        const orderedKeys = shuffle([...requiredByKey.keys()]).sort((a, b) => {
-          const ia = itemByKey.get(a);
-          const ib = itemByKey.get(b);
-          const ap = comparePriority(ia, ib);
-          if (ap !== 0) return ap;
-          const bottleneckRank = Number(ia?.bottleneckRank ?? 99) - Number(ib?.bottleneckRank ?? 99);
-          if (bottleneckRank !== 0) return bottleneckRank;
-          const bottleneckPriority = Number(ib?.bottleneckPriority || 0) - Number(ia?.bottleneckPriority || 0);
-          if (bottleneckPriority !== 0) return bottleneckPriority;
-          const excludedPriority = Number(ib?.excludedGroupPriority || 0) - Number(ia?.excludedGroupPriority || 0);
-          if (excludedPriority !== 0) return excludedPriority;
-          const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
-          if (art !== 0) return art;
-          const acand = candidateCountForItem(ia);
-          const bcand = candidateCountForItem(ib);
-          if (acand !== bcand) return acand - bcand;
-          return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
-        });
-        const structuralGroupBlocks = orderedGroups.filter(block => block.hasStructuralPriority || block.priorityTier === 0);
-        const restrictedGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && block.hasRestrictedTeacher);
-        const normalGroupBlocks = orderedGroups.filter(block => !(block.hasStructuralPriority || block.priorityTier === 0) && !block.hasRestrictedTeacher);
-        const excludedFollowupKeys = orderedKeys.filter(key => itemByKey.get(key)?.isExcludedGroupFollowup);
-        const excludedFollowupKeySet = new Set(excludedFollowupKeys);
-        const bottleneckKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && itemByKey.get(key)?.hasBottleneckPriority);
-        const bottleneckKeySet = new Set(bottleneckKeys);
-        const restrictedKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !bottleneckKeySet.has(key) && itemByKey.get(key)?.hasRestrictedTeacher);
-        const normalKeys = orderedKeys.filter(key => !excludedFollowupKeySet.has(key) && !bottleneckKeySet.has(key) && !itemByKey.get(key)?.hasRestrictedTeacher);
-        const placedByKey = new Map();
-
-        // ── 공유 Forward-checking (그룹/일반 카드 공통) ───────────────────────
-        // r43은 일반 카드 루프에만 적용됐고 "후보 1칸이라도 남는가"만 봤습니다.
-        // r44에서는 (1) 동시배정 그룹 배치에도 적용하고,
-        // (2) 다중 시수 카드를 위해 "남은 필요 시수 이상 후보가 남는가"로 강화하며,
-        // (3) 영향권을 학급/교사 역인덱스로 빠르게 좁힙니다.
-        // 여전히 그리디용 경량 데드엔드 방지 필터이며, 전역 재배치(24블록 동시이동)나
-        // CP-SAT 완전배치를 대체하지 않습니다. 보호된 기존 배치는 풀지 않습니다.
-        // globalThis.HIS_DISABLE_FORWARD_CHECK = true 로 즉시 비활성화됩니다.
-        const fcEnabled = !globalThis.HIS_DISABLE_FORWARD_CHECK;
-        const fcMeta = new Map();        // key -> { classes:Set, teachers:Set }
-        const fcClassIndex = new Map();  // classKey -> [keys]
-        const fcTeacherIndex = new Map();// teacher  -> [keys]
-        if (fcEnabled) {
-          try {
-            const pushIndex = (map, mapKey, value) => {
-              let arr = map.get(mapKey);
-              if (!arr) { arr = []; map.set(mapKey, arr); }
-              arr.push(value);
-            };
-            for (const [k, it] of itemByKey) {
-              try {
-                const classes = new Set(classKeysForCapacity(it) || []);
-                const teachers = new Set((getTeachersForAutoItem(it) || []).filter(Boolean));
-                fcMeta.set(k, { classes, teachers });
-                for (const c of classes) pushIndex(fcClassIndex, c, k);
-                for (const t of teachers) pushIndex(fcTeacherIndex, t, k);
-              } catch (_) { /* 개별 항목 인덱싱 실패는 건너뜀(FC 정확도만 약간 저하) */ }
-            }
-          } catch (_) { /* 인덱스 구성 자체 실패 → FC는 사실상 비활성(일반 배치로 진행) */ }
-        }
-        const fcRemainingNeed = (k) =>
-          (requiredByKey.get(k) || 0) - (pinnedByKey.get(k) || 0) - (placedByKey.get(k) || 0);
-
-        // item: 배치하려는 카드 또는 그룹 probe. currentKey: 일반 카드 루프의 현재 키(그룹이면 null).
-        const buildForwardCheck = (item, currentKey = null) => {
-          if (!fcEnabled) return null;
-          try {
-            const ic = new Set(classKeysForCapacity(item) || []);
-            const itt = new Set((getTeachersForAutoItem(item) || []).filter(Boolean));
-            // 학급/교사를 공유하는 "아직 필요한" 키만 영향권으로 모읍니다(역인덱스 → 빠름).
-            const affected = [];
-            const seen = new Set();
-            const consider = (k) => {
-              if (k === currentKey || seen.has(k)) return;
-              seen.add(k);
-              if (fcRemainingNeed(k) <= 0) return;
-              affected.push(k);
-            };
-            for (const c of ic) for (const k of (fcClassIndex.get(c) || [])) consider(k);
-            for (const t of itt) for (const k of (fcTeacherIndex.get(t) || [])) consider(k);
-            if (!affected.length) return null;
-            // 영향권이 매우 크면 가장 제약이 빡빡할 가능성이 높은 일부만 검사(비용 상한).
-            const targets = affected.length > 14 ? affected.slice(0, 14) : affected;
-            return (slot) => {
-              try {
-                const tentative = makeAutoEntry(item, slot, placed);
-                if (!tentative) return true;
-                const placedWith = [...placed, tentative];
-                for (const k of targets) {
-                  const need = fcRemainingNeed(k);
-                  if (need <= 0) continue;
-                  const other = itemByKey.get(k);
-                  if (!other) continue;
-                  // 다중 시수 대응: 남은 필요 시수(need) 이상 후보 슬롯이 남는지 확인.
-                  let avail = 0;
-                  for (const s of baseSlots) {
-                    if (checkPlacementValid(other, s, placedWith, stageAttemptOptions)) {
-                      avail += 1;
-                      if (avail >= need) break;
-                    }
-                  }
-                  if (avail < need) return false; // 이 슬롯에 두면 다른 카드가 시수 부족 → 데드엔드
-                }
-                return true;
-              } catch (_) { return true; } // 검사 실패 시 슬롯을 막지 않음(안전 폴백)
-            };
-          } catch (_) {
-            return null; // FC 구성 실패 → 일반 배치로 안전하게 폴백
-          }
-        };
-
-        const placeGroups = async (blocks, phaseLabel) => {
-          // ── Place concurrent groups first: one independent occurrence per 시수 ──
-          for (const { group, unitItems, restrictedTeachers = [] } of blocks) {
-            if (!(group.isConcurrent || group.groupType === "concurrent")) continue;
-            const maxCredits = Math.max(0, ...(unitItems || []).map(u => Math.max(0, Number(u.credits) || 0)));
-            const alreadyPinned = countPinnedGroupSlots(group, unitItems, pinnedEntries);
-            const needSlots = Math.max(0, maxCredits - alreadyPinned);
-
-            for (let slot_i = 0; slot_i < needSlots; slot_i++) {
-              const activeItems = unitItems
-                .filter(u => slot_i < u.credits)
-                .map(u => getGroupItemForOccurrence(u, slot_i))
-                .filter(u => (u.ttcards || []).length);
-              const activeRestrictedTeachers = [...new Set(activeItems
-                .flatMap(u => getRestrictedTeachersForAutoItem(makePlacementFromGroupItem(group, u) || u))
-                .filter(Boolean))];
-              await yieldAutoAssign({
-                percent: stagePercent,
-                step: `${phaseLabel} · ${stage.label}`,
-                detail: `${group.name || "그룹"} ${slot_i + 1} / ${needSlots}회차를 배치하고 있습니다.${activeRestrictedTeachers.length ? ` (${describeRestrictedTeachers(activeRestrictedTeachers)})` : ""}`,
-                placed: placed.length,
-                best: Math.max(0, bestScore),
-                failed: failed.length,
-                currentCard: group.name || "그룹 수업"
-              });
-              if (!activeItems.length) continue;
-              // 동시배정 그룹은 한 회차에 여러 과목/교사가 함께 움직일 수 있으므로,
-              // 첫 카드만으로 후보 시간을 검사하면 제약교사 조건을 놓칠 수 있습니다.
-              // 해당 회차의 모든 활성 카드를 합친 probe로 교사·학생·교실 제약을 함께 검사합니다.
-              const probeCards = activeItems.flatMap(u => u.ttcards || []);
-              const probeItem = makePlacementFromGroupItem(group, { ttcards: probeCards });
-              const probe = probeItem ? annotateRestrictedAutoItem(probeItem) : null;
-              const groupFc = probe ? buildForwardCheck(probe, null) : null;
-              const foundSlot = probe ? findBestAutoSlot(
-                probe, baseSlots, placed,
-                groupFc ? { ...stageAttemptOptions, forwardCheck: groupFc } : stageAttemptOptions
-              ) : null;
-              if (foundSlot && placeAutoGroupSlot(group, activeItems, foundSlot, placed, stageAttemptOptions)) {
-                continue;
-              }
-              activeItems.forEach(groupItem => {
-                const item = makePlacementFromGroupItem(group, groupItem);
-                failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, item ? annotateRestrictedAutoItem(item) : item, { groupId: group.id }));
-              });
-            }
-          }
-
-          // ── Place non-concurrent groups independently (legacy safety) ─────────
-          for (const { group, unitItems, restrictedTeachers = [] } of blocks) {
-            if (group.isConcurrent || group.groupType === "concurrent") continue;
-            for (const groupItem of unitItems) {
-              const pinnedSlots = countPinnedGroupSlots(group, [groupItem], pinnedEntries);
-              const needSlots = Math.max(0, groupItem.credits - pinnedSlots);
-              for (let i = 0; i < needSlots; i++) {
-                await yieldAutoAssign({
-                  percent: stagePercent,
-                  step: `${phaseLabel} · ${stage.label}`,
-                  detail: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"} 배치 중${restrictedTeachers.length ? ` (${describeRestrictedTeachers(restrictedTeachers)})` : ""}`,
-                  placed: placed.length,
-                  best: Math.max(0, bestScore),
-                  failed: failed.length,
-                  currentCard: `${group.name || "그룹"} - ${groupItem.name || "그룹 카드"}`
-                });
-                const occurrenceGroupItem = getGroupItemForOccurrence(groupItem, i);
-                if (!(occurrenceGroupItem.ttcards || []).length) continue;
-                const item = makePlacementFromGroupItem(group, occurrenceGroupItem);
-                const checkedItem = item ? annotateRestrictedAutoItem(item) : null;
-                const slot = checkedItem ? findBestAutoSlot(checkedItem, baseSlots, placed, stageAttemptOptions) : null;
-                if (slot) {
-                  const entry = makeAutoEntry(checkedItem, slot, placed);
-                  if (entry) placed.push(entry);
-                } else {
-                  failed.push(makeFailedPlacement(`${group.name} - ${groupItem.name || "그룹 카드"}`, checkedItem, { groupId: group.id }));
-                }
-              }
-            }
-          }
-        };
-
-        const placeStandaloneKeys = async (keys, phaseLabel) => {
-          const pendingKeys = new Set(keys || []);
-
-          const liveCandidateCountForItem = (item) => {
-            if (!item || !stageAttemptOptions.useLiveMrv) return null;
-            let count = 0;
-            for (const slot of baseSlots) if (checkPlacementValid(item, slot, placed, stageAttemptOptions)) count += 1;
-            return count;
-          };
-
-          const pickNextKey = () => {
-            const arr = [...pendingKeys];
-            if (!stageAttemptOptions.useLiveMrv) return arr[0];
-            return arr.sort((a, b) => {
-              const ia = itemByKey.get(a);
-              const ib = itemByKey.get(b);
-              const ap = comparePriority(ia, ib);
-              if (ap !== 0) return ap;
-              const rank = Number(ia?.bottleneckRank ?? 99) - Number(ib?.bottleneckRank ?? 99);
-              if (rank !== 0) return rank;
-              const bp = Number(ib?.bottleneckPriority || 0) - Number(ia?.bottleneckPriority || 0);
-              if (bp !== 0) return bp;
-              const acand = liveCandidateCountForItem(ia) ?? 9999;
-              const bcand = liveCandidateCountForItem(ib) ?? 9999;
-              if (acand !== bcand) return acand - bcand;
-              const art = (ib?.restrictedTeachers || []).length - (ia?.restrictedTeachers || []).length;
-              if (art !== 0) return art;
-              return getAutoItemDifficulty(ib) - getAutoItemDifficulty(ia);
-            })[0];
-          };
-
-          while (pendingKeys.size) {
-            const key = pickNextKey();
-            if (!key) break;
-            pendingKeys.delete(key);
-
-            const item = itemByKey.get(key);
-            const required = requiredByKey.get(key) || 0;
-            const pinned = pinnedByKey.get(key) || 0;
-            while (pinned + (placedByKey.get(key) || 0) < required) {
-              const candidateCount = liveCandidateCountForItem(item);
-              const candidateText = Number.isInteger(candidateCount) ? ` 후보 ${candidateCount}칸` : "";
-              await yieldAutoAssign({
-                percent: stagePercent,
-                step: `${phaseLabel} · ${stage.label}`,
-                detail: `${getAutoItemName(item)} 배치 위치를 찾고 있습니다.${candidateText}${item?.hasRestrictedTeacher ? ` (${describeRestrictedTeachers(item.restrictedTeachers)})` : ""}`,
-                placed: placed.length,
-                best: Math.max(0, bestScore),
-                failed: failed.length,
-                currentCard: getAutoItemName(item)
-              });
-              const fc = buildForwardCheck(item, key);
-              const slot = findBestAutoSlot(
-                item, baseSlots, placed,
-                fc ? { ...stageAttemptOptions, forwardCheck: fc } : stageAttemptOptions
-              );
-              if (!slot) {
-                // 같은 카드가 2시수 이상 필요한데 첫 미배치 시점에서 1개만 failed에 넣고
-                // break하면, 마지막 보정 단계가 1시수만 복구하고 나머지는 계속 하단에 남습니다.
-                // 현재 남은 필요 시수만큼 failed를 기록해 final repair가 전부 처리하게 합니다.
-                const already = pinned + (placedByKey.get(key) || 0);
-                const remaining = Math.max(1, required - already);
-                for (let miss = 0; miss < remaining; miss++) {
-                  failed.push(makeFailedPlacement(getAutoItemName(item), item, { occurrence: already + miss + 1, required }));
-                }
-                break;
-              }
-              const entry = makeAutoEntry(item, slot, placed);
-              if (entry) placed.push(entry);
-              placedByKey.set(key, (placedByKey.get(key) || 0) + 1);
-            }
-          }
-        };
-
-        // 고정 수업 다음: 큰 동시배정 그룹을 먼저 배치합니다.
-        // 제약교사 일반카드가 10A/11A/12A의 희소 슬롯을 먼저 점유하면 HS국어 같은 그룹은 나중에 복구가 거의 불가능합니다.
-        await placeGroups(structuralGroupBlocks, "핵심 동시배정 그룹 선배치");
-        await placeStandaloneKeys(bottleneckKeys, "병목 카드 선배치");
-        await placeStandaloneKeys(excludedFollowupKeys, "그룹 후속 필수카드 선배치");
-        await placeGroups(restrictedGroupBlocks, "제약교사 그룹 우선 배치");
-        await placeStandaloneKeys(restrictedKeys, "제약교사 일반 카드 우선 배치");
-        await placeGroups(normalGroupBlocks, "그룹 수업 배치");
-        await placeStandaloneKeys(normalKeys, "일반 카드 배치");
-
-        const qualityScore = Math.round(scoreScheduleQuality(placed, { ...options, scoringWeights: stageAttemptOptions.scoringWeights }) * 10) / 10;
-        const currentClassSlots = classSlotIssueCountForCandidate(placed, activeGrades);
-        const currentCardSlots = cardCoverageIssueCountForCandidate(placed, activeGrades);
-        const bestClassSlots = bestScore < 0
-          ? { issueCount: 999999, shortCount: 999999, overCount: 999999 }
-          : classSlotIssueCountForCandidate(bestPlaced, activeGrades);
-        const bestCardSlots = bestScore < 0
-          ? { issueCount: 999999, shortCount: 999999, overCount: 999999, shortageSlots: 999999, overageSlots: 999999 }
-          : cardCoverageIssueCountForCandidate(bestPlaced, activeGrades);
-        const currentRun = {
-          placedCount: placed.length,
-          failedCount: failed.length,
-          qualityScore,
-          forcedCount: 0,
-          cardCoverageIssueCount: currentCardSlots.issueCount,
-          cardShortCount: currentCardSlots.shortCount,
-          cardOverCount: currentCardSlots.overCount,
-          cardShortageSlots: currentCardSlots.shortageSlots,
-          cardOverageSlots: currentCardSlots.overageSlots,
-          classSlotIssueCount: currentClassSlots.issueCount,
-          classShortCount: currentClassSlots.shortCount,
-          classOverCount: currentClassSlots.overCount
-        };
-        const bestRun = {
-          placedCount: bestPlaced.length,
-          failedCount: bestFailed.length,
-          qualityScore: bestQualityScore,
-          forcedCount: 0,
-          cardCoverageIssueCount: bestCardSlots.issueCount,
-          cardShortCount: bestCardSlots.shortCount,
-          cardOverCount: bestCardSlots.overCount,
-          cardShortageSlots: bestCardSlots.shortageSlots,
-          cardOverageSlots: bestCardSlots.overageSlots,
-          classSlotIssueCount: bestClassSlots.issueCount,
-          classShortCount: bestClassSlots.shortCount,
-          classOverCount: bestClassSlots.overCount
-        };
-        if (bestScore < 0 || compareAutoRunResults(currentRun, bestRun) < 0) {
-          bestScore  = placed.length;
-          bestPlaced = placed;
-          bestFailed = failed;
-          rememberAutoAssignResult(`초기배치 후보 · ${stage.label}`, bestPlaced, bestFailed);
-          bestStage  = { ...stage, options: stageAttemptOptions };
-          bestQualityScore = qualityScore;
-          bestAttemptInfo = {
-            stageLabel: stage.label,
-            attempt: attempt + 1,
-            totalAttempts: stage.attempts,
-            exploration: `${engineProfile.label} · ${stageAttemptOptions.slotRandomness ? `상위 ${stageAttemptOptions.topCandidateCount}개 후보 탐색` : "기본 후보 우선"}`,
-            qualityScore
-          };
-          await updateProgress({
-            percent: stagePercent,
-            step: `최선 초기배치 갱신 · ${stage.label}`,
-            detail: `현재 최선: ${bestPlaced.length}개 배치, 미배치 후보 ${bestFailed.length}개, 카드시수 부족 ${currentCardSlots.shortageSlots}시수, 학급시수 문제 ${currentClassSlots.issueCount}개, 품질점수 ${qualityScore}`,
-            placed: placed.length,
-            best: bestPlaced.length,
-            failed: bestFailed.length,
-            log: `최선 초기배치 갱신: ${bestPlaced.length}개 배치 · 미배치 ${bestFailed.length}개 · 카드시수 부족 ${currentCardSlots.shortageSlots}시수 · 학급시수 문제 ${currentClassSlots.issueCount}개 · 품질 ${qualityScore}`
-          }, true);
-        }
-        // 완전 배치 후보가 나와도 같은 단계의 남은 초기 후보를 계속 비교해 품질이 더 좋은 배치를 찾습니다.
-        // 단, 빠른 배치는 최소 3회 이후 완전 배치가 나오면 시간을 절약합니다.
-        if (!failed.length && String(options.runAttempts || "balanced") === "fast" && attempt >= 2) break;
-      }
-      if (!bestFailed.length) break;
-    }
-
-    const appendCardShortageFailures = () => {
-      const coverage = buildCardCoverageValidation([...protectedEntries, ...bestPlaced], activeGrades);
-      const failedByKey = new Map();
-      bestFailed.forEach(failedItem => {
-        if (!failedItem?.item) return;
-        const key = autoItemKey(failedItem.item);
-        failedByKey.set(key, (failedByKey.get(key) || 0) + 1);
-      });
-      let added = 0;
-      (coverage.shortRows || []).forEach(row => {
-        const key = `ttc:${row.id}`;
-        const item = itemByKey.get(key);
-        if (!item) return;
-        const shortage = Math.max(0, -Number(row.diff || 0));
-        const already = failedByKey.get(key) || 0;
-        const need = Math.max(0, shortage - already);
-        for (let i = 0; i < need; i++) {
-          bestFailed.push(makeFailedPlacement(`${row.title}${row.classLabels?.length ? ` ${row.classLabels.join(", ")}` : ""}`, item, {
-            source: "cardCoverageShortage",
-            ttcardId: row.id,
-            occurrence: (row.count || 0) + i + 1,
-            required: row.target
-          }));
-          added += 1;
-        }
-      });
-      return added;
-    };
-
-    const addedCoverageFailures = appendCardShortageFailures();
-    if (addedCoverageFailures) {
       await updateProgress({
-        percent: 81,
-        step: "카드 시수 부족 보정 대상 추가",
-        detail: `초기 탐색 후 카드별 부족 ${addedCoverageFailures}시수를 미배치 복구 대상으로 승격했습니다.`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "카드 시수 보정",
-        log: `카드 시수 부족 ${addedCoverageFailures}시수 복구 대상 추가`
+        percent: 2,
+        step: "초기화",
+        detail: "기존 배치와 보호 수업을 분리하고 새 엔진 입력 block을 구성합니다.",
+        placed: 0,
+        best: 0,
+        failed: 0,
+        currentCard: "-",
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r86`
       }, true);
-    }
 
-    // r45 계측: 이번 실행이 "막 구성한"(후처리 복구 이전) 후보 지표를 보존합니다.
-    const freshConstructedMetrics = {
-      placedCount: bestPlaced.length,
-      failedCount: bestFailed.length,
-      qualityScore: bestQualityScore
-    };
+      captureTimetableUndo("자동 배정");
+      addTimetableLog("auto", "새 자동배치 엔진 시작", `대상 학년: ${formatAutoActiveGrades(activeGrades)} · ${modeText}`);
+      const preValidation = buildScheduleVerificationReport(entries(), { scopeGrades: activeGrades });
 
-    let acceptedPlaced = cloneAutoAssignData(bestPlaced) || [];
-    let acceptedFailed = [...bestFailed];
-    let acceptedForced = [];
-    let acceptedLabel = "초기 최선 배치";
-    let acceptedMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...acceptedPlaced], activeGrades, acceptedFailed, {
-      protectedEntries,
-      placedCount: acceptedPlaced.length,
-      forcedCount: 0,
-      qualityScore: bestQualityScore,
-      label: acceptedLabel,
-      deriveFailedFromCardShortage: true
-    }).metrics;
-    const considerAutoCandidate = (label, placed, failed, forced = [], qualityScore = Infinity) => {
-      const result = buildAutoRunMetricsForEntries([...protectedEntries, ...(placed || [])], activeGrades, failed || [], {
+      ttDomain().entries = [...protectedEntries];
+      autoAssignPhase = "새 엔진 배치";
+      await updateProgress({
+        percent: 6,
+        step: options.placementMode === "keep" ? "기존 배치 유지" : "보호 수업 유지",
+        detail: options.placementMode === "keep"
+          ? `기존 배치 ${protectedEntries.length}개를 보호하고 부족한 block만 추가합니다.`
+          : `보호된 배치 ${protectedEntries.length}개를 유지하고 ${willClearCount}개 배치를 초기화했습니다.`,
+        placed: protectedEntries.length,
+        best: protectedEntries.length,
+        failed: 0
+      }, true);
+
+      const engineResult = await runFreshAutoPlacementEngine({
+        standalone,
+        groupBlocks,
         protectedEntries,
-        placedCount: (placed || []).length,
-        forcedCount: (forced || []).length,
-        qualityScore,
-        label,
+        activeGrades,
+        options,
+        updateProgress
+      });
+      const placed = cloneAutoAssignData(engineResult.placed || []) || [];
+      const failedItems = [...(engineResult.failedItems || [])];
+      const failedNames = [...new Set(failedItems.map(f => f.name).filter(Boolean))];
+      const allFinalEntries = normalizeSnapshotEntries([...protectedEntries, ...placed]);
+
+      autoAssignPhase = "검증/확정";
+      ttDomain().entries = allFinalEntries;
+      recomputeConflicts();
+      const conflictSummary = getConflictCounts();
+      const finalValidation = buildScheduleVerificationReport(allFinalEntries, {
+        scopeGrades: activeGrades,
+        protectedEntries,
+        failedNames,
         deriveFailedFromCardShortage: true
       });
-      if (compareAutoRunResults(result.metrics, acceptedMetrics) < 0) {
-        acceptedPlaced = cloneAutoAssignData(placed || []) || [];
-        acceptedFailed = [...(failed || [])];
-        acceptedForced = [...(forced || [])];
-        acceptedLabel = label;
-        acceptedMetrics = result.metrics;
-        rememberAutoAssignResult(label, acceptedPlaced, acceptedFailed);
-      }
-      return result.metrics;
-    };
-
-    const makeCoverageShortageFailures = (placed, seedFailed = []) => {
-      const coverage = buildCardCoverageValidation([...protectedEntries, ...(placed || [])], activeGrades);
-      const failedByKey = new Map();
-      (seedFailed || []).forEach(failedItem => {
-        if (!failedItem?.item) return;
-        const key = autoItemKey(failedItem.item);
-        failedByKey.set(key, (failedByKey.get(key) || 0) + 1);
+      const finalMetrics = buildAutoRunMetricsFromValidation(finalValidation, {
+        label: "새 엔진 최종 결과",
+        placedCount: placed.length,
+        failedCount: finalValidation.failedCount || failedNames.length,
+        forcedCount: 0,
+        qualityScore: scoreScheduleQuality(placed, options)
       });
-      const priorityForRow = row => {
-        const title = `${row.title || ""} ${(row.classLabels || []).join(" ")}`;
-        const groupNames = (row.groupIds || []).map(id => ttGroups().find(g => g.id === id)?.name || "").join(" ");
-        const text = `${title} ${groupNames} ${row.group || ""} ${row.track || ""}`;
-        let score = 0;
-        if (/언어와\s*매체|공통영어1|변혁적\s*리더십|스토리텔링과\s*공연기획/i.test(text)) score -= 90;
-        if (/문학|국어|한국어|영어|수학|사회|과학|화학|성경|종교/i.test(text)) score -= 20;
-        if (/12영어|HS국어|MS국어|선택|사회|수학|영어/.test(text)) score -= 12;
-        score -= Math.max(0, -Number(row.diff || 0)) * 8;
-        return score;
-      };
-      const rows = [...(coverage.shortRows || [])].sort((a, b) => priorityForRow(a) - priorityForRow(b) || String(a.title).localeCompare(String(b.title), "ko"));
-      const result = [];
-      rows.forEach(row => {
-        const key = `ttc:${row.id}`;
-        const item = itemByKey.get(key);
-        if (!item) return;
-        const shortage = Math.max(0, -Number(row.diff || 0));
-        const already = failedByKey.get(key) || 0;
-        const need = Math.max(0, shortage - already);
-        for (let i = 0; i < need; i++) {
-          result.push(makeFailedPlacement(`${row.title}${row.classLabels?.length ? ` ${row.classLabels.join(", ")}` : ""}`, item, {
-            source: "iterativeCardCoverageRepair",
-            ttcardId: row.id,
-            occurrence: (row.count || 0) + i + 1,
-            required: row.target
-          }));
-        }
-      });
-      return { coverage, failures: result };
-    };
 
-
-    const repairResidualByTwoCycleSwap = async (placed, failed, forced, labelPrefix = "r37 2단계 스왑복구") => {
-      // r37: 진단만 반복하지 않고, 실제로 한 칸을 비우는 2-cycle swap을 수행합니다.
-      // 방식: (A) 부족 카드가 들어갈 목표 슬롯 S를 잡고,
-      //      (B) 그 슬롯을 막는 비고정 수업/그룹 블록 B를 찾고,
-      //      (C) 같은 학급의 다른 수업 G와 B를 서로 교환한 뒤,
-      //      (D) 부족 카드를 S에 추가합니다.
-      // 이 방식은 현재 r36에서 막혀 있는 공통영어1 10A 같은 "교사 충돌 + 학급 만석" 케이스를 실제로 뚫습니다.
-      let currentPlaced = cloneAutoAssignData(placed || []) || [];
-      let currentFailed = [...(failed || [])];
-      let currentForced = [...(forced || [])];
-      const repaired = [];
-      const moveLogs = [];
-
-      const itemTeachers = item => getTeachersForAutoItem(item).filter(Boolean);
-      const itemClassKeys = item => {
-        const aud = audienceForPlacement(item);
-        return [...(aud?.classKeys || new Set())].filter(Boolean);
-      };
-      const entrySlot = e => ({ day: Number(e.day), period: Number(e.period) });
-      const sameSlot = (a, b) => Number(a?.day) === Number(b?.day) && Number(a?.period) === Number(b?.period);
-      const slotText = slot => `${["월","화","수","목","금"][Number(slot.day)] || "?"}${Number(slot.period) + 1}`;
-      const isMovableEntry = e => e && !e.pinned && !e.protected && !e.manualPinned && !e.fixed && !e.locked && !e.isProtected && isAllowedAutoPlacementSource(e);
-      const hasDuplicateCardAtSlot = (item, slot, list) => {
-        const ids = new Set(ttCardIdsFromPlacement(item));
-        if (!ids.size) return false;
-        return list.some(e => sameSlot(e, slot) && ttCardIdsFromPlacement(e).some(id => ids.has(id)));
-      };
-      const conflictsItemEntry = (item, entry) => {
-        if (!item || !entry) return false;
-        if (item.unitId && entry.unitId && item.unitId === entry.unitId) return false;
-        const sameGrp = sameActiveGroup(item, entry);
-        const conc = sameGrp && isConcurrentItem(item) && isConcurrentItem(entry);
-        const its = itemTeachers(item);
-        const ets = teacherNamesForPlacement(entry);
-        if (its.some(t => ets.includes(t)) && !conc) return true;
-        const ia = audienceForPlacement(item);
-        const ea = audienceForPlacement(entry);
-        if (audiencesConflict(ia, ea) && !conc) return true;
-        return false;
-      };
-      const movedEntry = (entry, slot, placedBase) => {
-        const raw = {
-          ...entry,
-          day: Number(slot.day),
-          period: Number(slot.period)
-        };
-        const roomed = applyAutoRoomToEntryData(raw, slot, placedBase || []);
-        return normalizeTimetableEntry({
-          ...entry,
-          ...roomed,
-          id: entry.id,
-          day: Number(slot.day),
-          period: Number(slot.period)
-        });
-      };
-      const validEntryAt = (entry, slot, placedBase, checkOptions) => {
-        const probe = movedEntry(entry, slot, placedBase);
-        return !!probe && checkPlacementValid(probe, slot, placedBase, checkOptions);
-      };
-      const countPlacedForItem = (item, list) => {
-        const ids = new Set(ttCardIdsFromPlacement(item));
-        if (!ids.size) return 0;
-        return list.reduce((sum, e) => sum + (ttCardIdsFromPlacement(e).some(id => ids.has(id)) ? 1 : 0), 0);
-      };
-
-      const checkOptions = {
-        ...(bestStage?.options || options),
-        runAttempts: "deep",
-        engineProfile: autoEngineProfileForMode("deep"),
+      const missingRoomEntries = allFinalEntries.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
+      const missingRoomNames = missingRoomEntries.map(e => getAutoItemName(e));
+      const failedDiagnostics = buildFailureDiagnostics(failedItems, engineResult.baseSlots || freshBaseSlots(), placed, {
+        ...options,
         respectSoftLimits: false,
         respectUnavailable: true,
         respectAssignedRoom: true
-      };
-
-      for (let pass = 0; pass < 4; pass++) {
-        const coverageInfo = makeCoverageShortageFailures(currentPlaced, currentFailed);
-        const failures = coverageInfo.failures || [];
-        if (!failures.length) break;
-        let changed = false;
-
-        for (const failedItem of failures) {
-          const item = failedItem?.item;
-          if (!item) continue;
-          const beforeCount = countPlacedForItem(item, currentPlaced);
-          const targetClasses = itemClassKeys(item);
-          const preferredSlots = baseSlots
-            .filter(slot => targetClasses.length && targetClasses.every(ck => {
-              return !currentPlaced.some(e => sameSlot(e, slot) && itemClassKeys(e).includes(ck));
-            }))
-            .concat(baseSlots)
-            .filter((slot, idx, arr) => arr.findIndex(s => sameSlot(s, slot)) === idx);
-
-          let accepted = null;
-
-          for (const targetSlot of preferredSlots) {
-            if (checkPlacementValid(item, targetSlot, currentPlaced, checkOptions)) {
-              const entry = makeAutoEntry(item, targetSlot, currentPlaced);
-              if (entry) {
-                accepted = {
-                  placed: [...currentPlaced, entry],
-                  log: `${failedItem.name || getAutoItemName(item)} 직접배치 → ${slotText(targetSlot)}`
-                };
-                break;
-              }
-            }
-
-            const slotEnts = currentPlaced.filter(e => sameSlot(e, targetSlot));
-            const blockers = slotEnts.filter(e => conflictsItemEntry(item, e) && isMovableEntry(e));
-            if (!blockers.length) continue;
-
-            for (const blocker of blockers) {
-              const blockerClasses = itemClassKeys(blocker);
-              if (blockerClasses.length !== 1) continue;
-              const blockerClass = blockerClasses[0];
-
-              const swapCandidates = currentPlaced.filter(e => {
-                if (!isMovableEntry(e) || e.id === blocker.id) return false;
-                if (sameSlot(e, targetSlot)) return false;
-                const classes = itemClassKeys(e);
-                return classes.length === 1 && classes[0] === blockerClass;
-              });
-
-              for (const swapper of swapCandidates) {
-                const swapSlot = entrySlot(swapper);
-                const base = currentPlaced.filter(e => e.id !== blocker.id && e.id !== swapper.id);
-                if (hasDuplicateCardAtSlot(blocker, swapSlot, base)) continue;
-                if (hasDuplicateCardAtSlot(swapper, targetSlot, base)) continue;
-
-                const movedBlocker = movedEntry(blocker, swapSlot, base);
-                if (!checkPlacementValid(movedBlocker, swapSlot, base, checkOptions)) continue;
-
-                const baseWithBlocker = [...base, movedBlocker];
-                const movedSwapper = movedEntry(swapper, targetSlot, baseWithBlocker);
-                if (!checkPlacementValid(movedSwapper, targetSlot, baseWithBlocker, checkOptions)) continue;
-
-                const baseWithSwap = [...baseWithBlocker, movedSwapper];
-                if (!checkPlacementValid(item, targetSlot, baseWithSwap, checkOptions)) continue;
-
-                const newEntry = makeAutoEntry(item, targetSlot, baseWithSwap);
-                if (!newEntry) continue;
-
-                const nextPlaced = [...baseWithSwap, newEntry];
-                const afterCount = countPlacedForItem(item, nextPlaced);
-                if (afterCount <= beforeCount) continue;
-
-                accepted = {
-                  placed: nextPlaced,
-                  log: `${failedItem.name || getAutoItemName(item)} 2단계 스왑복구: ${getAutoItemName(blocker)} ${slotText(targetSlot)}→${slotText(swapSlot)}, ${getAutoItemName(swapper)} ${slotText(swapSlot)}→${slotText(targetSlot)}, 부족카드 ${slotText(targetSlot)} 추가`
-                };
-                break;
-              }
-              if (accepted) break;
-            }
-            if (accepted) break;
-          }
-
-          if (accepted) {
-            currentPlaced = cloneAutoAssignData(accepted.placed) || accepted.placed;
-            currentFailed = (makeCoverageShortageFailures(currentPlaced, currentFailed).failures || []);
-            repaired.push(failedItem);
-            moveLogs.push(accepted.log);
-            changed = true;
-            await updateProgress({
-              percent: 87 + pass,
-              step: labelPrefix,
-              detail: accepted.log,
-              placed: currentPlaced.length,
-              best: currentPlaced.length,
-              failed: currentFailed.length,
-              currentCard: failedItem.name || getAutoItemName(item),
-              log: accepted.log
-            }, true);
-            break;
-          }
-        }
-
-        if (!changed) break;
-      }
-
-      const metrics = buildAutoRunMetricsForEntries([...protectedEntries, ...currentPlaced], activeGrades, currentFailed, {
-        protectedEntries,
-        placedCount: currentPlaced.length,
-        forcedCount: currentForced.length,
-        qualityScore: scoreScheduleQuality(currentPlaced, options),
-        label: labelPrefix
-      }).metrics;
-      return { placed: currentPlaced, failed: currentFailed, forced: currentForced, repaired, repairedCount: repaired.length, moveLogs, metrics };
-    };
-
-
-    const repairCardCoverageShortagesIteratively = async (placed, failed, forced, labelPrefix = "카드시수 반복복구") => {
-      let currentPlaced = cloneAutoAssignData(placed || []) || [];
-      let currentFailed = [...(failed || [])];
-      let currentForced = [...(forced || [])];
-      let totalRepaired = 0;
-      let totalAttempts = 0;
-      let lastMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...currentPlaced], activeGrades, currentFailed, {
-        protectedEntries,
-        placedCount: currentPlaced.length,
-        forcedCount: currentForced.length,
-        qualityScore: scoreScheduleQuality(currentPlaced, options),
-        label: `${labelPrefix} 전`
-      }).metrics;
-
-      // r30: 카드 부족 복구는 한 번의 이동으로 해결되지 않는 경우가 많습니다.
-      // 개선되는 동안 최대 10차까지 반복합니다.
-      for (let pass = 0; pass < 10; pass++) {
-        const { coverage, failures: coverageFailures } = makeCoverageShortageFailures(currentPlaced, currentFailed);
-        if (!coverageFailures.length) break;
-        await updateProgress({
-          percent: 86 + pass,
-          step: `${labelPrefix} ${pass + 1}차`,
-          detail: `카드 부족 ${coverage.shortCount || 0}개 · 부족시수 ${coverageFailures.length}시수를 이동복구 대상으로 다시 투입합니다.`,
-          placed: currentPlaced.length,
-          best: currentPlaced.length,
-          failed: coverageFailures.length,
-          currentCard: "카드시수 반복복구",
-          log: `${labelPrefix}: 부족 ${coverageFailures.length}시수 재복구 시작`
-        }, true);
-        const repairBaseOptions = {
-          ...(bestStage?.options || options),
-          runAttempts: "deep",
-          engineProfile: autoEngineProfileForMode("deep"),
-          respectUnavailable: true,
-          respectAssignedRoom: true
-        };
-
-        const twoCyclePack = allowExperimentalResidualRepair && engineProfile?.enableResidualTwoCycleRepair === true
-          ? await repairResidualByTwoCycleSwap(currentPlaced, [...currentFailed, ...coverageFailures], currentForced, `${labelPrefix} ${pass + 1}차 · 2단계스왑`)
-          : null;
-        totalAttempts += Number(twoCyclePack?.repairedCount || 0);
-        if (twoCyclePack?.metrics && compareAutoRunResults(twoCyclePack.metrics, lastMetrics) < 0) {
-          const repairedNow = Math.max(1, Number(twoCyclePack.repairedCount || 0));
-          totalRepaired += repairedNow;
-          currentPlaced = cloneAutoAssignData(twoCyclePack.placed) || [];
-          currentFailed = [...(twoCyclePack.failed || [])];
-          lastMetrics = twoCyclePack.metrics;
-          await updateProgress({
-            percent: 88 + pass,
-            step: `${labelPrefix} 2단계 스왑개선`,
-            detail: `실제 스왑복구로 ${repairedNow}건을 개선했습니다. 남은 카드 부족 ${currentFailed.length}개`,
-            placed: currentPlaced.length,
-            best: currentPlaced.length,
-            failed: currentFailed.length,
-            currentCard: "2단계 스왑복구",
-            log: (twoCyclePack.moveLogs || []).join(" / ")
-          }, true);
-          if (!currentFailed.length) break;
-          continue;
-        }
-        const tryRepairWithOptions = async (label, extraOptions = {}) => {
-          const repair = await repairFailedItemsBySingleMove([...currentFailed, ...coverageFailures], baseSlots, currentPlaced, {
-            ...repairBaseOptions,
-            ...extraOptions
-          }, updateProgress);
-          const nextPlaced = repair.placed || currentPlaced;
-          const nextCoverageInfo = makeCoverageShortageFailures(nextPlaced, repair.remaining || []);
-          const nextFailed = nextCoverageInfo.failures;
-          const nextMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...nextPlaced], activeGrades, nextFailed, {
-            protectedEntries,
-            placedCount: nextPlaced.length,
-            forcedCount: currentForced.length,
-            qualityScore: scoreScheduleQuality(nextPlaced, options),
-            label
-          }).metrics;
-          return { repair, nextPlaced, nextFailed, nextMetrics };
-        };
-
-        let repairPack = await tryRepairWithOptions(`${labelPrefix} ${pass + 1}차`, { respectSoftLimits: true });
-        totalAttempts += Number(repairPack.repair?.attempts || 0);
-        // 엄격 복구가 개선되지 않으면, 교사 하루/연속 같은 소프트 제한만 완화해 한 번 더 탐색합니다.
-        // 교사 불가시간·교실 불가시간·학급/교실/고정 충돌은 여전히 금지합니다.
-        if (compareAutoRunResults(repairPack.nextMetrics, lastMetrics) >= 0) {
-          const relaxedPack = await tryRepairWithOptions(`${labelPrefix} ${pass + 1}차 · 소프트완화`, { respectSoftLimits: false });
-          totalAttempts += Number(relaxedPack.repair?.attempts || 0);
-          if (compareAutoRunResults(relaxedPack.nextMetrics, repairPack.nextMetrics) < 0) repairPack = relaxedPack;
-        }
-        const repair = repairPack.repair;
-        const nextPlaced = repairPack.nextPlaced;
-        const nextFailed = repairPack.nextFailed;
-        const nextMetrics = repairPack.nextMetrics;
-        if (compareAutoRunResults(nextMetrics, lastMetrics) < 0) {
-          const repairedNow = Math.max(0, (coverageFailures.length + currentFailed.length) - nextFailed.length);
-          totalRepaired += repairedNow;
-          currentPlaced = cloneAutoAssignData(nextPlaced) || [];
-          currentFailed = [...nextFailed];
-          lastMetrics = nextMetrics;
-          await updateProgress({
-            percent: 88 + pass,
-            step: `${labelPrefix} 개선`,
-            detail: `반복복구로 ${repairedNow}시수를 개선했습니다. 남은 카드 부족 ${currentFailed.length}개`,
-            placed: currentPlaced.length,
-            best: currentPlaced.length,
-            failed: currentFailed.length,
-            currentCard: "카드시수 반복복구",
-            log: `${labelPrefix}: ${repairedNow}시수 개선, 남은 부족 ${currentFailed.length}`
-          }, true);
-          if (!currentFailed.length) break;
-        } else {
-          await updateProgress({
-            percent: 88 + pass,
-            step: `${labelPrefix} 보류`,
-            detail: `반복복구 후보가 전체 검증 점수를 개선하지 못해 직전 상태를 유지합니다.`,
-            placed: currentPlaced.length,
-            best: currentPlaced.length,
-            failed: currentFailed.length,
-            currentCard: "카드시수 반복복구"
-          }, true);
-          break;
-        }
-      }
-      return { placed: currentPlaced, failed: currentFailed, forced: currentForced, repairedCount: totalRepaired, attempts: totalAttempts, metrics: lastMetrics };
-    };
-
-
-
-    const forceResidualCardShortagesSafely = async (placed, failed, forced, labelPrefix = "잔여 카드 강제복구") => {
-      // 마지막 잔여 카드만 대상으로 합니다. 기존 final repair보다 더 명시적으로
-      // cardCoverage.shortRows를 다시 읽고, 안전 슬롯이 있는 경우 그 슬롯에 직접 삽입합니다.
-      // strongProtected/동일카드/학급/교사/교실 hard conflict는 forcedSlotScore에서 계속 차단합니다.
-      let currentPlaced = cloneAutoAssignData(placed || []) || [];
-      let currentFailed = [...(failed || [])];
-      let currentForced = [...(forced || [])];
-      let totalForced = 0;
-      for (let pass = 0; pass < 3; pass++) {
-        const { coverage, failures } = makeCoverageShortageFailures(currentPlaced, currentFailed);
-        if (!failures.length) break;
-        let changed = 0;
-        await updateProgress({
-          percent: 92 + pass,
-          step: `${labelPrefix} ${pass + 1}차`,
-          detail: `남은 카드 부족 ${coverage.shortCount || 0}개 · ${failures.length}시수를 안전 슬롯에 직접 보정합니다.`,
-          placed: currentPlaced.length,
-          best: currentPlaced.length,
-          failed: failures.length,
-          currentCard: "잔여 카드 강제복구",
-          log: `${labelPrefix}: ${failures.length}시수 직접 보정 시도`
-        }, true);
-        for (const failedItem of failures) {
-          const item = failedItem?.item;
-          if (!item) continue;
-          const slot = findLeastBadSlot(item, baseSlots, currentPlaced, {
-            ...(bestStage?.options || options),
-            runAttempts: "deep",
-            engineProfile: autoEngineProfileForMode("deep"),
-            respectSoftLimits: false,
-            respectUnavailable: true,
-            respectAssignedRoom: true
-          });
-          const entry = slot ? makeAutoEntry(item, slot, currentPlaced) : null;
-          if (!entry) continue;
-          entry.autoForced = true;
-          entry.autoRepairMode = "r30-card-completion";
-          currentPlaced.push(entry);
-          currentForced.push(failedItem);
-          changed += 1;
-          totalForced += 1;
-          await yieldAutoAssign({
-            percent: 93 + pass,
-            step: `${labelPrefix} 중`,
-            detail: `${failedItem.name || getAutoItemName(item)} 잔여 시수를 보정했습니다.`,
-            placed: currentPlaced.length,
-            best: currentPlaced.length,
-            failed: Math.max(0, failures.length - changed),
-            currentCard: failedItem.name || getAutoItemName(item)
-          });
-        }
-        const next = makeCoverageShortageFailures(currentPlaced, []);
-        currentFailed = next.failures;
-        if (!changed) break;
-      }
-      const metrics = buildAutoRunMetricsForEntries([...protectedEntries, ...currentPlaced], activeGrades, currentFailed, {
-        protectedEntries,
-        placedCount: currentPlaced.length,
-        forcedCount: currentForced.length,
-        qualityScore: scoreScheduleQuality(currentPlaced, options),
-        label: labelPrefix
-      }).metrics;
-      return { placed: currentPlaced, failed: currentFailed, forced: currentForced, forcedCount: totalForced, metrics };
-    };
-
-    // ── Repair pass ───────────────────────────────────────────────
-    // Greedy 자동배치가 막힌 경우, 기존 자동배치 수업 1개를 다른 칸으로 옮겨
-    // 미배치 수업을 넣을 수 있는지 먼저 탐색합니다.
-    let swapRepaired = [];
-    if (bestFailed.length && engineProfile.enableSwapRepair) {
-      await updateProgress({
-        percent: 82,
-        step: "미배치 복구 탐색",
-        detail: `미배치 후보 ${bestFailed.length}개를 기존 수업 이동/교환 방식으로 먼저 복구합니다.`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "-",
-        log: "Repair/Swap 1차 복구 단계 시작"
-      }, true);
-      const repair = await repairFailedItemsBySingleMove(bestFailed, baseSlots, bestPlaced, {
-        ...(bestStage?.options || options),
-        runAttempts: options.runAttempts,
-        engineProfile
-      }, updateProgress);
-      bestPlaced = repair.placed;
-      bestFailed = repair.remaining;
-      swapRepaired = repair.repaired || [];
-      await updateProgress({
-        percent: 84,
-        step: "미배치 복구 완료",
-        detail: `이동/교환으로 ${swapRepaired.length}개를 복구했습니다. 남은 후보 ${bestFailed.length}개`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "-",
-        log: `Repair/Swap 복구 ${swapRepaired.length}건`
-      }, true);
-    } else if (bestFailed.length) {
-      await updateProgress({
-        percent: 84,
-        step: "미배치 복구 건너뜀",
-        detail: `${engineProfile.label}에서는 속도를 위해 이동/교환 복구를 건너뜁니다. 남은 후보 ${bestFailed.length}개`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "-",
-        log: "빠른 배치: Repair/Swap 단계 생략"
-      }, true);
-    }
-
-    // ── Final repair pass ─────────────────────────────────────────
-    // 그래도 못 넣은 카드는 최소 충돌 보정 배치를 시도합니다.
-    // 단, 보호 슬롯·동일 카드 중복·교사 중복·학급 중복·교실 중복은 만들지 않습니다.
-    // 배치 가능한 안전 슬롯이 없으면 무리하게 겹쳐 넣지 않고 미배치로 남깁니다.
-    await updateProgress({
-      percent: 85,
-      step: "미배치 보정 준비",
-      detail: `남은 미배치 후보 ${bestFailed.length}개를 최소 충돌 위치에 보정 배치합니다.`,
-      placed: bestPlaced.length,
-      best: bestPlaced.length,
-      failed: bestFailed.length,
-      currentCard: "-",
-      log: bestFailed.length ? "보정 배치 단계 시작" : "보정 배치 대상 없음"
-    }, true);
-
-    let forcedPlaced = [];
-    const stillFailed = [];
-    if (engineProfile.enableFinalRepair && bestFailed.length) {
-      const limit = Number.isFinite(engineProfile.finalRepairLimit) ? engineProfile.finalRepairLimit : bestFailed.length;
-      const repairTargets = bestFailed.slice(0, limit);
-      const deferredTargets = bestFailed.slice(limit);
-      for (const failedItem of repairTargets) {
-        const item = failedItem.item;
-        if (!item) {
-          stillFailed.push(failedItem);
-          continue;
-        }
-        const slot = findLeastBadSlot(item, baseSlots, bestPlaced, { ...options, runAttempts: options.runAttempts, engineProfile });
-        const entry = slot ? makeAutoEntry(item, slot, bestPlaced) : null;
-        if (entry) {
-          entry.autoForced = true;
-          bestPlaced.push(entry);
-          forcedPlaced.push(failedItem);
-        } else {
-          stillFailed.push(failedItem);
-        }
-        await yieldAutoAssign({
-          percent: 86 + Math.min(9, forcedPlaced.length + stillFailed.length),
-          step: "미배치 보정 중",
-          detail: `${failedItem.name || "카드"} 보정 배치 결과를 반영하고 있습니다.`,
-          placed: bestPlaced.length,
-          best: bestPlaced.length,
-          failed: stillFailed.length + deferredTargets.length,
-          currentCard: failedItem.name || "보정 대상"
-        }, true);
-      }
-      stillFailed.push(...deferredTargets);
-      if (deferredTargets.length) {
-        await updateProgress({
-          percent: 90,
-          step: "미배치 보정 제한",
-          detail: `${engineProfile.label}에서는 속도를 위해 보정 배치 ${repairTargets.length}개까지만 시도하고 ${deferredTargets.length}개는 미배치로 남깁니다.`,
-          placed: bestPlaced.length,
-          best: bestPlaced.length,
-          failed: stillFailed.length,
-          currentCard: "-"
-        }, true);
-      }
-    } else {
-      stillFailed.push(...bestFailed);
-    }
-    bestFailed = stillFailed;
-
-    const iterativeCoverageRepair = await repairCardCoverageShortagesIteratively(bestPlaced, bestFailed, forcedPlaced, "최종 카드시수 반복복구");
-    if (compareAutoRunResults(iterativeCoverageRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
-      protectedEntries,
-      placedCount: bestPlaced.length,
-      forcedCount: forcedPlaced.length,
-      qualityScore: scoreScheduleQuality(bestPlaced, options),
-      label: "반복복구 전"
-    }).metrics) < 0) {
-      bestPlaced = iterativeCoverageRepair.placed;
-      bestFailed = iterativeCoverageRepair.failed;
-      forcedPlaced = iterativeCoverageRepair.forced;
-      swapRepaired.push(...Array.from({ length: Math.max(0, Number(iterativeCoverageRepair.repairedCount || 0)) }, (_, i) => ({ name: `카드시수 반복복구 ${i + 1}` })));
-      considerAutoCandidate("최종 카드시수 반복복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
-    }
-
-    const hardResidualRepair = allowExperimentalResidualRepair && engineProfile?.enableForceResidualRepair === true
-      ? await forceResidualCardShortagesSafely(bestPlaced, bestFailed, forcedPlaced, "r30 잔여 카드 완성복구")
-      : null;
-    if (hardResidualRepair?.metrics && compareAutoRunResults(hardResidualRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
-      protectedEntries,
-      placedCount: bestPlaced.length,
-      forcedCount: forcedPlaced.length,
-      qualityScore: scoreScheduleQuality(bestPlaced, options),
-      label: "r30 잔여복구 전"
-    }).metrics) < 0) {
-      bestPlaced = hardResidualRepair.placed;
-      bestFailed = hardResidualRepair.failed;
-      forcedPlaced = hardResidualRepair.forced;
-      if (Number(hardResidualRepair.forcedCount || 0)) {
-        swapRepaired.push(...Array.from({ length: Number(hardResidualRepair.forcedCount || 0) }, (_, i) => ({ name: `r30 잔여 카드 완성복구 ${i + 1}` })));
-      }
-      considerAutoCandidate("r30 잔여 카드 완성복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
-    }
-
-    // ── r40: min-conflicts 잔여 탈출 ──────────────────────────────
-    // ejection-chain/강제복구로도 남은 잔여 카드를, 충돌 허용 시드 + min-conflicts
-    // 국소탐색으로 마지막 시도합니다. 공식 validator 기준으로 더 나빠지면
-    // considerAutoCandidate가 채택하지 않으므로 기존 결과를 악화시키지 않습니다.
-    if (allowExperimentalResidualRepair && bestFailed.length && engineProfile.enableFinalRepair && engineProfile.enableMinConflictsRepair) {
-      await updateProgress({
-        percent: 90,
-        step: "r40 min-conflicts 잔여 탈출 준비",
-        detail: `남은 미배치 후보 ${bestFailed.length}개를 충돌 허용 후 min-conflicts로 해소 시도합니다.`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "min-conflicts 탈출",
-        log: "r40 min-conflicts 잔여 탈출 시작"
-      }, true);
-      const mcLimits = {
-        // r42: 마지막 잔여 5개는 단순 후보 부족이 아니라 연쇄 이동 퍼즐입니다.
-        // balanced/deep에서만 시간을 조금 더 주되, 내부 progress yield로 브라우저 응답성은 유지합니다.
-        maxMillis: options.runAttempts === "deep" ? 12000 : (options.runAttempts === "fast" ? 1000 : 6000),
-        maxIters: options.runAttempts === "deep" ? 36000 : 16000
-      };
-      const mc = await tryMinConflictsResidualEscape(bestFailed, baseSlots, bestPlaced, { ...(bestStage?.options || options), engineProfile }, updateProgress, mcLimits);
-      if (mc?.placed) {
-        const mcFailed = makeCoverageShortageFailures(mc.placed, []).failures;
-        const mcMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...mc.placed], activeGrades, mcFailed, {
-          protectedEntries,
-          placedCount: mc.placed.length,
-          forcedCount: forcedPlaced.length,
-          qualityScore: scoreScheduleQuality(mc.placed, options),
-          label: "r40 min-conflicts 잔여 탈출"
-        }).metrics;
-        const beforeMcMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
-          protectedEntries,
-          placedCount: bestPlaced.length,
-          forcedCount: forcedPlaced.length,
-          qualityScore: scoreScheduleQuality(bestPlaced, options),
-          label: "r40 탈출 전"
-        }).metrics;
-        if (compareAutoRunResults(mcMetrics, beforeMcMetrics) < 0) {
-          bestPlaced = mc.placed;
-          bestFailed = mcFailed;
-          swapRepaired.push(...Array.from({ length: Math.max(0, Number(mc.repairedCount || 0)) }, (_, i) => ({ name: `r40 min-conflicts 잔여 탈출 ${i + 1}` })));
-          considerAutoCandidate("r40 min-conflicts 잔여 탈출", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
-          await updateProgress({
-            percent: 91,
-            step: "r40 min-conflicts 잔여 탈출 성공",
-            detail: `min-conflicts로 ${mc.repairedCount}시수를 충돌 없이 추가 배치했습니다. (반복 ${mc.iters})`,
-            placed: bestPlaced.length,
-            best: bestPlaced.length,
-            failed: bestFailed.length,
-            currentCard: "min-conflicts 탈출",
-            log: `r40 min-conflicts 성공: ${mc.repairedCount}시수`
-          }, true);
-        } else {
-          await updateProgress({
-            percent: 91,
-            step: "r40 min-conflicts 결과 보류",
-            detail: `min-conflicts 후보가 전체 검증 점수를 개선하지 못해 직전 결과를 유지합니다.`,
-            placed: bestPlaced.length,
-            best: bestPlaced.length,
-            failed: bestFailed.length,
-            currentCard: "min-conflicts 탈출"
-          }, true);
-        }
-      }
-    }
-
-    await updateProgress({
-      percent: 91,
-      step: "자동배치 후처리",
-      detail: `배치된 수업을 안전하게 재배치해 설정한 점수 기준을 개선합니다. (${describeScoreWeights(options.scoringWeights)})`,
-      placed: bestPlaced.length,
-      best: bestPlaced.length,
-      failed: bestFailed.length,
-      currentCard: "후처리",
-      log: "자동배치 후처리 단계 시작"
-    }, true);
-
-    const beforePostProcessPlaced = cloneAutoAssignData(bestPlaced) || [];
-    const beforePostProcessFailed = [...bestFailed];
-    const beforePostProcessForced = [...forcedPlaced];
-    const beforePostProcessMetrics = considerAutoCandidate("보정/복구 후", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
-    let improvement = await improveAutoPlacement(bestPlaced, baseSlots, { ...options, engineProfile }, updateProgress);
-    bestPlaced = improvement.placed;
-    const afterPostProcessMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
-      protectedEntries,
-      placedCount: bestPlaced.length,
-      forcedCount: forcedPlaced.length,
-      qualityScore: improvement.qualityScore,
-      label: "후처리 결과"
-    }).metrics;
-    if (compareAutoRunResults(afterPostProcessMetrics, beforePostProcessMetrics) > 0) {
-      bestPlaced = beforePostProcessPlaced;
-      bestFailed = beforePostProcessFailed;
-      forcedPlaced = beforePostProcessForced;
-      improvement = { ...improvement, placed: bestPlaced, improvedCount: 0, revertedByQualityGate: true };
-      await updateProgress({
-        percent: 95,
-        step: "후처리 결과 폐기",
-        detail: `후처리 후 검증 점수가 나빠져 이전 복구 결과로 되돌렸습니다. (${formatAutoRunMetricSummary(beforePostProcessMetrics)})`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "품질 게이트",
-        log: `후처리 결과 폐기 · ${formatAutoRunMetricSummary(afterPostProcessMetrics)} → ${formatAutoRunMetricSummary(beforePostProcessMetrics)}`
-      }, true);
-    } else {
-      considerAutoCandidate("후처리 결과", bestPlaced, bestFailed, forcedPlaced, improvement.qualityScore);
-    }
-
-    const finalCandidateMetrics = buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
-      protectedEntries,
-      placedCount: bestPlaced.length,
-      forcedCount: forcedPlaced.length,
-      qualityScore: improvement.qualityScore,
-      label: "최종 후보"
-    }).metrics;
-    if (compareAutoRunResults(finalCandidateMetrics, acceptedMetrics) > 0) {
-      bestPlaced = cloneAutoAssignData(acceptedPlaced) || [];
-      bestFailed = [...acceptedFailed];
-      forcedPlaced = [...acceptedForced];
-      improvement = { ...improvement, placed: bestPlaced, improvedCount: 0, revertedToAccepted: acceptedLabel };
-      await updateProgress({
-        percent: 95,
-        step: "최선 결과 복원",
-        detail: `복구/후처리 과정에서 전체 검증 점수가 나빠져 ${acceptedLabel}로 복원했습니다. (${formatAutoRunMetricSummary(acceptedMetrics)})`,
-        placed: bestPlaced.length,
-        best: bestPlaced.length,
-        failed: bestFailed.length,
-        currentCard: "품질 게이트",
-        log: `최선 결과 복원: ${formatAutoRunMetricSummary(finalCandidateMetrics)} → ${formatAutoRunMetricSummary(acceptedMetrics)}`
-      }, true);
-    }
-
-    const residualCoverageInfoForDiagnostics = makeCoverageShortageFailures(bestPlaced, bestFailed);
-    let residualFailedItemsForDiagnostics = residualCoverageInfoForDiagnostics.failures?.length
-      ? residualCoverageInfoForDiagnostics.failures
-      : bestFailed;
-    let failedDiagnostics = buildFailureDiagnostics(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
-    let residualPuzzleReport = buildResidualPuzzleReport(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || stages[0].options);
-
-    await updateProgress({
-      percent: 96,
-      step: "결과 반영",
-      detail: improvement.improvedCount
-        ? `후처리 개선 ${improvement.improvedCount}건을 반영하고 충돌을 재계산합니다.`
-        : "배치 결과를 시간표에 반영하고 충돌을 재계산합니다.",
-      placed: bestPlaced.length,
-      best: bestPlaced.length,
-      failed: bestFailed.length,
-      currentCard: "-"
-    }, true);
-
-    if (autoAssignCancelled || progress?.isCancelled?.()) throw new Error("__AUTO_ASSIGN_CANCELLED__");
-
-    autoAssignPhase = "검증/확정";
-    const names = [...new Set(bestFailed.map(f => f.name))];
-    const finalEntriesForValidation = [...protectedEntries, ...bestPlaced];
-    const postValidation = buildScheduleVerificationReport(finalEntriesForValidation, {
-      scopeGrades: activeGrades,
-      protectedEntries,
-      failedNames: names,
-      deriveFailedFromCardShortage: true,
-      failedDiagnostics
-    });
-    let finalAutoRunMetrics = buildAutoRunMetricsFromValidation(postValidation, {
-      label: "최종 결과",
-      placedCount: bestPlaced.length,
-      failedCount: postValidation.failedCount || names.length,
-      forcedCount: forcedPlaced.length,
-      qualityScore: improvement.qualityScore
-    });
-
-    // r45 계측: baseline 치환/폐기 이전의 "이번 실행이 생성한 후처리 후 후보" 지표를
-    // 별도로 보존합니다. (finalAutoRunMetrics는 이후 baseline 결과로 덮어쓰일 수 있음)
-    const freshCandidateMetrics = { ...finalAutoRunMetrics };
-    const freshBeatsBaseline = compareAutoRunResults(freshCandidateMetrics, qualityBaselineMetrics) < 0;
-    const pickCandidateMetrics = (m = {}) => ({
-      placedCount: Number(m.placedCount || 0),
-      classTotal: Number(m.classTotal || 0),
-      classTargetTotal: Number(m.classTargetTotal || 0),
-      failedCount: Number(m.failedCount || 0),
-      cardShortageSlots: Number(m.cardShortageSlots || 0),
-      cardCoverageIssueCount: Number(m.cardCoverageIssueCount || 0),
-      classSlotIssueCount: Number(m.classSlotIssueCount || 0),
-      groupCoverageIssueCount: Number(m.groupCoverageIssueCount || 0),
-      restrictedTeacherIssueCount: Number(m.restrictedTeacherIssueCount || 0),
-      qualityScore: Number(m.qualityScore || 0),
-      validationSummary: String(m.validationSummary || "")
-    });
-    // 성공/폐기 경로 모두에서 호출되어, 선택된 결과와 무관하게 "새 후보 vs 기준" 숫자를
-    // export(appState.timetable.autoAssignCandidateLog)와 인앱 로그에 남깁니다.
-    let lastCandidateTelemetryRecord = null;
-    const recordCandidateTelemetry = (outcome) => {
-      try {
-        const record = {
-          ts: Date.now(),
-          generatedAt: new Date().toISOString(),
-          appVersion: String(globalThis.HIS_APP_VERSION || ""),
-          forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK,
-          runMode: String(options.runAttempts || "balanced"),
-          exploredInitialRuns,
-          outcome,
-          freshBeatsBaseline,
-          baselineName: qualityBaselineReference?.name || "",
-          freshConstructed: freshConstructedMetrics,
-          freshCandidate: pickCandidateMetrics(freshCandidateMetrics),
-          baseline: pickCandidateMetrics(qualityBaselineMetrics)
-        };
-        lastCandidateTelemetryRecord = record;
-        const applyTelemetry = target => {
-          if (!target || typeof target !== "object") return;
-          const log = Array.isArray(target.autoAssignCandidateLog)
-            ? target.autoAssignCandidateLog : [];
-          target.autoAssignCandidateLog = [record, ...log].slice(0, 12);
-          target.lastAutoAssignCandidate = record;
-        };
-        applyTelemetry(ttDomain?.());
-        applyTelemetry(appState.timetable);
-        addTimetableLog(
-          "auto",
-          "후보 지표(계측)",
-          `forwardCheck=${record.forwardCheck} · 결과=${outcome} · 새후보 배치 ${record.freshCandidate.placedCount}개 / 미배치 ${record.freshCandidate.failedCount}개 / 카드부족 ${record.freshCandidate.cardShortageSlots}시수 / 학급문제 ${record.freshCandidate.classSlotIssueCount}개 / 그룹문제 ${record.freshCandidate.groupCoverageIssueCount}개 (기준 보관본 '${record.baselineName}' 배치 ${record.baseline.placedCount}개·부족 ${record.baseline.cardShortageSlots}시수) · 기준대비 우수=${freshBeatsBaseline ? "예" : "아니오"}`
-        );
-        return record;
-      } catch (_) {
-        return null;
-      }
-    };
-
-    // r28: 새 전체 배치가 이전 최고보다 나쁠 때도 바로 폐기하지 않고,
-    // 이전 최고 보관본 자체를 기준으로 카드시수 반복복구를 한 번 더 시도합니다.
-    // 목표는 이전 최고 상태를 출발점으로 삼아 남은 9~10개 미배치 단위를 실제로 줄이는 것입니다.
-    let baselineRepairAdopted = false;
-    if (!isFastCheckRun && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0 && (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") && Array.isArray(qualityBaselineReference.entries)) {
-      const baselineAll = normalizeSnapshotEntries(qualityBaselineReference.entries) || [];
-      const protectedIds = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
-      const baselineAutoPlaced = baselineAll.filter(e => !protectedIds.has(e.id));
-      const baselineCoverageInfo = makeCoverageShortageFailures(baselineAutoPlaced, []);
-      if (baselineCoverageInfo.failures.length) {
-        await updateProgress({
-          percent: 96,
-          step: "이전 최고 결과 직접복구",
-          detail: `새 결과가 기준보다 나빠, 이전 최고 보관본의 남은 카드 부족 ${baselineCoverageInfo.failures.length}시수를 직접 복구합니다.`,
-          placed: baselineAutoPlaced.length,
-          best: baselineAutoPlaced.length,
-          failed: baselineCoverageInfo.failures.length,
-          currentCard: "이전 최고 직접복구",
-          log: "이전 최고 보관본 기준 반복복구 시작"
-        }, true);
-        const baselineRepair = await repairCardCoverageShortagesIteratively(baselineAutoPlaced, baselineCoverageInfo.failures, [], "이전최고 직접복구");
-        const baselineRepairValidation = buildScheduleVerificationReport([...protectedEntries, ...baselineRepair.placed], {
-          scopeGrades: activeGrades,
-          protectedEntries,
-          failedNames: [...new Set((baselineRepair.failed || []).map(f => f.name))],
-          deriveFailedFromCardShortage: true,
-          failedDiagnostics: buildFailureDiagnostics(baselineRepair.failed || [], baseSlots, baselineRepair.placed, bestStage?.options || options)
-        });
-        const baselineRepairMetrics = buildAutoRunMetricsFromValidation(baselineRepairValidation, {
-          label: "이전 최고 직접복구 결과",
-          placedCount: baselineRepair.placed.length,
-          failedCount: baselineRepairValidation.failedCount || [...new Set((baselineRepair.failed || []).map(f => f.name))].length,
-          forcedCount: 0,
-          qualityScore: scoreScheduleQuality(baselineRepair.placed, options)
-        });
-        if (compareAutoRunResults(baselineRepairMetrics, qualityBaselineMetrics) < 0 && compareAutoRunResults(baselineRepairMetrics, finalAutoRunMetrics) <= 0) {
-          bestPlaced = baselineRepair.placed;
-          bestFailed = baselineRepair.failed || [];
-          forcedPlaced = baselineRepair.forced || [];
-          names.length = 0;
-          names.push(...new Set(bestFailed.map(f => f.name)));
-          residualFailedItemsForDiagnostics = (makeCoverageShortageFailures(bestPlaced, bestFailed).failures || []).length
-            ? makeCoverageShortageFailures(bestPlaced, bestFailed).failures
-            : bestFailed;
-          failedDiagnostics = buildFailureDiagnostics(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || options);
-          residualPuzzleReport = buildResidualPuzzleReport(residualFailedItemsForDiagnostics, baseSlots, bestPlaced, bestStage?.options || options);
-          finalEntriesForValidation.length = 0;
-          finalEntriesForValidation.push(...protectedEntries, ...bestPlaced);
-          Object.assign(postValidation, baselineRepairValidation);
-          finalAutoRunMetrics = baselineRepairMetrics;
-          baselineRepairAdopted = true;
-        }
-      }
-    }
-    rememberAutoAssignResult("최종 자동배치 후보", bestPlaced, bestFailed);
-
-    const worseThanBaseline = !isFastCheckRun && !baselineRepairAdopted && compareAutoRunResults(finalAutoRunMetrics, qualityBaselineMetrics) > 0;
-    if (worseThanBaseline) {
-      addTimetableLog(
-        "warn",
-        "자동배치 품질 기준 참고",
-        `새 결과가 이전 기준보다 나쁠 수 있지만 자동 롤백하지 않고 마지막 결과를 시간표에 표시합니다. 기준: ${qualityBaselineReference?.name || "현재 시간표"} · ${formatAutoRunMetricSummary(qualityBaselineMetrics)} / 새 결과: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
-      );
-    }
-    const rejectWorseThanBaseline = false;
-    if (rejectWorseThanBaseline) {
-      const restoreSource = (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? qualityBaselineReference.entries : rollbackEntriesSnapshot;
-      const restoredEntries = normalizeSnapshotEntries(restoreSource || rollbackEntriesSnapshot) || [];
-
-      // r41: entries를 객체 교체만 하지 않고 live 배열에도 강제로 반영합니다.
-      // 일부 UI/export 경로는 entries()가 반환한 배열 참조를 계속 보므로,
-      // meta는 best를 가리키는데 실제 entries는 폐기 후보인 상태가 남을 수 있었습니다.
-      const liveEntries = entries();
-      if (Array.isArray(liveEntries)) {
-        liveEntries.splice(0, liveEntries.length, ...restoredEntries);
-        if (ttDomain().entries !== liveEntries) ttDomain().entries = liveEntries;
-      } else {
-        ttDomain().entries = restoredEntries;
-      }
-
-      recomputeConflicts();
-      renderAll();
-
-      const restoredAllForDiagnostics = normalizeSnapshotEntries(entries()) || [];
-      const restoredProtectedIdsForDiagnostics = new Set((protectedEntries || []).map(e => e.id).filter(Boolean));
-      const restoredAutoPlacedForDiagnostics = restoredAllForDiagnostics.filter(e => !restoredProtectedIdsForDiagnostics.has(e.id));
-      const restoredCoverageForDiagnostics = makeCoverageShortageFailures(restoredAutoPlacedForDiagnostics, []);
-      const restoredFailedItemsForDiagnostics = restoredCoverageForDiagnostics.failures || [];
-      const restoredFailedDiagnostics = buildFailureDiagnostics(restoredFailedItemsForDiagnostics, baseSlots, restoredAutoPlacedForDiagnostics, bestStage?.options || options);
-      const restoredFailedNames = [...new Set(restoredFailedItemsForDiagnostics.map(f => f.name).filter(Boolean))];
-      const restoredResidualPuzzleReport = buildResidualPuzzleReport(restoredFailedItemsForDiagnostics, baseSlots, restoredAutoPlacedForDiagnostics, bestStage?.options || options);
-      const restoredValidation = buildScheduleVerificationReport(restoredAllForDiagnostics, {
-        scopeGrades: activeGrades,
-        protectedEntries,
-        failedNames: restoredFailedNames,
-        deriveFailedFromCardShortage: true,
-        failedDiagnostics: restoredFailedDiagnostics
       });
-      const restoredMetrics = buildAutoRunMetricsFromValidation(restoredValidation, {
-        label: qualityBaselineReference?.name || "복원된 기준 결과",
-        placedCount: restoredAllForDiagnostics.length,
-        failedCount: restoredValidation.failedCount || restoredFailedNames.length,
-        forcedCount: 0,
-        qualityScore: qualityBaselineMetrics?.qualityScore
+      const residualPuzzleReport = buildResidualPuzzleReport(failedItems, engineResult.baseSlots || freshBaseSlots(), placed, {
+        ...options,
+        respectSoftLimits: false,
+        respectUnavailable: true,
+        respectAssignedRoom: true
       });
-      const rejectReport = {
+      const outcomeAnalysis = summarizeAutoAssignOutcome({
+        placedEntries: placed,
+        failedItems,
+        forcedEntries: [],
+        protectedEntries,
+        missingRoomEntries
+      });
+      const autoAssignIncomplete = !finalValidation.ok || failedNames.length > 0 || (finalValidation.cardCoverage?.shortCount || 0) > 0 || (finalValidation.classSlots?.issueCount || 0) > 0;
+      const resultKind = autoAssignResultKind({ runMode, incomplete: autoAssignIncomplete });
+
+      const report = {
         ts: Date.now(),
-        schemaVersion: "2026-06-12-canonical-validator-state-sync-r41",
-        rejectedByQualityGate: true,
-        reason: "새 자동배치 결과가 이전 최고 자동배치 결과보다 검증 점수가 나빠 반영하지 않았습니다.",
-        rejectReason: "worse-than-complete-best-snapshot",
         activeGrades: activeGrades.slice(),
+        selectedGrades: activeGrades.slice(),
+        runAttempts: options.runAttempts,
+        fastCheckRun: isFastCheckRun,
+        placementMode: options.placementMode,
         placementModeLabel: modeText,
+        totalTarget: autoTargetSlots,
+        protectedCount: protectedEntries.length,
+        protectedSlotCount: protectedSummary.slots,
+        clearedCount: willClearCount,
+        keepPinned: options.keepPinned !== false,
+        keepManual: options.keepManual !== false,
+        scoringProfile: options.scoringProfile || "balanced",
+        scoringWeights: options.scoringWeights,
+        scoringSummary: describeScoreWeights(options.scoringWeights),
+        engineProfileLabel: "새 엔진: block-CSP + 전역 교환 복구 r86",
+        engineStats: engineResult.stats,
+        placedCount: placed.length,
+        forcedCount: 0,
+        ok: !autoAssignIncomplete,
+        resultStatus: resultKind.status,
+        resultStatusLabel: resultKind.title,
+        placementIncomplete: autoAssignIncomplete,
+        programError: false,
+        failedCount: failedNames.length,
+        failedNames,
+        failedDiagnostics,
+        failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
+        residualPuzzleReport,
+        outcomeAnalysis,
+        placedBlockCount: outcomeAnalysis.placedBlockCount,
+        placedGroupBlockCount: outcomeAnalysis.placedGroupBlockCount,
+        placedStandaloneBlockCount: outcomeAnalysis.placedStandaloneBlockCount,
+        placedCardCount: outcomeAnalysis.placedCardCount,
+        failedUnitCount: outcomeAnalysis.failedUnitCount,
+        failedOccurrenceCount: outcomeAnalysis.failedOccurrenceCount,
+        topFailedUnits: outcomeAnalysis.topFailedUnits,
+        durationMs: Date.now() - autoStartedAt,
+        conflictTotal: conflictSummary.totalAffected,
+        conflictCounts: conflictSummary.counts,
+        preValidation,
+        postValidation: finalValidation,
+        comparisonSummary: `${preValidation.summary || "이전 상태"} → ${finalValidation.summary || "결과 상태"}`,
+        validationSummary: finalValidation.summary,
+        validationOk: finalValidation.ok,
+        metricSource: "postValidation",
+        metricCompleteness: "complete",
+        classSlotIssueCount: finalValidation.classSlots?.issueCount || 0,
+        cardCoverageIssueCount: finalValidation.cardCoverage?.issueCount || 0,
+        cardShortCount: finalValidation.cardCoverage?.shortCount || 0,
+        cardOverCount: finalValidation.cardCoverage?.overCount || 0,
+        cardShortageSlots: (finalValidation.cardCoverage?.shortRows || []).reduce((sum, row) => sum + Math.max(0, -Number(row.diff || 0)), 0),
+        restrictedTeacherIssueCount: finalValidation.restrictedTeachers?.issueCount || 0,
+        protectedIntrusionCount: finalValidation.protectedIntrusions?.total || 0,
+        missingRoomCount: missingRoomEntries.length,
+        missingRoomNames,
+        beforeSnapshotName: beforeAutoSnapshot?.name || "",
+        afterSnapshotName: "",
+        finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        beforeValidation: preValidation,
-        referenceValidation: restoredValidation,
-        rejectedValidation: postValidation,
-        validationSummary: restoredValidation.summary || "이전 최고 결과 유지",
-        beforeMetrics: baselineAutoRunMetrics,
-        currentBeforeMetrics: baselineAutoRunMetrics,
-        referenceMetrics: restoredMetrics,
-        rejectedMetrics: finalAutoRunMetrics,
-        baselineMetrics: restoredMetrics,
-        finalMetrics: restoredMetrics,
-        classSlotIssueCount: Number(restoredMetrics.classSlotIssueCount || 0),
-        classIssueCount: Number(restoredMetrics.classSlotIssueCount || 0),
-        classShortCount: Number(restoredMetrics.classShortCount || 0),
-        classOverCount: Number(restoredMetrics.classOverCount || 0),
-        cardCoverageIssueCount: Number(restoredMetrics.cardCoverageIssueCount || 0),
-        groupCoverageIssueCount: Number(restoredMetrics.groupCoverageIssueCount || 0),
-        failedCount: Number(restoredMetrics.failedCount || 0),
-        failedUnitCount: Number(restoredMetrics.failedCount || 0),
-        cardShortageSlots: Number(restoredMetrics.cardShortageSlots || 0),
-        restrictedTeacherIssueCount: Number(restoredMetrics.restrictedTeacherIssueCount || 0),
-        protectedIntrusionCount: Number(restoredMetrics.protectedIntrusionCount || 0),
-        missingRoomCount: Number(restoredMetrics.missingRoomCount || 0),
-        metricSource: "canonicalEvaluation",
-        metricCompleteness: "complete",
-        qualityBaselineSource: qualityBaselineReference?.source || "current",
-        qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
-        qualityBaselineValidationSummary: restoredValidation.summary || "",
-        restoredFromReference: qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot",
-        restoredEntryCount: restoredAllForDiagnostics.length,
-        rejectedEntryCount: finalEntriesForValidation.length,
-        comparisonSummary: `${restoredValidation.summary || "이전 최고 상태"} 유지 · 폐기 후보: ${postValidation.summary || "결과 상태"}`,
-        failedDiagnostics: restoredFailedDiagnostics,
-        failedReasonSummary: restoredFailedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
-        residualPuzzleReport: restoredResidualPuzzleReport,
-        validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
-        experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
-        experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-        experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r54"
+        telemetryStatus: "fresh-csp-displacement-r86",
+        qualityGate: {
+          worseThanBaseline: false,
+          autoRollbackDisabled: true,
+          reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
+        },
+        validatorVersion: "2026-06-19-fresh-csp-displacement-r86"
       };
-      const rejectTelemetry = recordCandidateTelemetry("rejected-baseline-kept");
-      rejectReport.candidateTelemetry = rejectTelemetry || lastCandidateTelemetryRecord;
-      rejectReport.lastAutoAssignCandidate = rejectReport.candidateTelemetry;
-      rejectReport.autoAssignCandidate = rejectReport.candidateTelemetry;
-      rejectReport.autoAssignCandidateLog = Array.isArray(ttDomain()?.autoAssignCandidateLog) ? ttDomain().autoAssignCandidateLog : [];
-      rejectReport.telemetryStatus = "rejected-baseline-kept";
-      const compactRejectReport = compactAutoAssignSnapshotMeta(rejectReport);
-      if (appState.timetable) appState.timetable.autoAssignMeta = compactRejectReport;
-      if (ttDomain() && ttDomain() !== appState.timetable) ttDomain().autoAssignMeta = compactRejectReport;
-      attachCanonicalMetaToMatchingSnapshots(ttDomain(), rejectReport, restoredAllForDiagnostics);
-      setLastAutoAssignReport(rejectReport);
 
-      // r41b: entries, top meta, best snapshot, savedSchedules 메타를 모두 같은 canonical 결과로 동기화한 뒤 저장합니다.
+      let afterAutoSnapshot = null;
       if (!isFastCheckRun) {
-        await persistTimetableNow();
-      } else {
-        addTimetableLog("auto", "빠른 점검 저장 생략", "빠른 점검은 실행 오류 확인용이므로 결과 폐기/복원 상태를 Firestore에 저장하지 않습니다.");
+        afterAutoSnapshot = saveAutoAssignScheduleSnapshot("result", entries(), report);
+        report.afterSnapshotName = afterAutoSnapshot?.name || "";
       }
-      addTimetableLog(
-        "warn",
-        "자동배치 결과 폐기",
-        `새 결과가 이전 최고 결과보다 나빠 반영하지 않았습니다. 기준: ${qualityBaselineReference?.name || "현재 시간표"} · ${formatAutoRunMetricSummary(restoredMetrics)} / 폐기: ${formatAutoRunMetricSummary(finalAutoRunMetrics)}`
-      );
-      await progress.complete({
-        partial: true,
-        title: "자동배치 결과 폐기",
-        subtitle: (qualityBaselineReference?.source === "savedSchedule" || qualityBaselineReference?.source === "bestSnapshot") ? "이전 최고 자동배치 결과가 더 좋아 그 보관본으로 복원했습니다." : "기존 시간표가 더 좋아 새 자동배치 결과를 반영하지 않았습니다.",
-        step: "결과 폐기",
-        detailHtml: [
-          `<div><b>품질 기준</b> ${safeAutoHtml(qualityBaselineReference?.name || "현재 시간표")}</div>`,
-          `<div><b>기준 상태</b> ${safeAutoHtml(restoredValidation.summary || "검증 정보 없음")}</div>`,
-          `<div><b>폐기된 결과</b> ${safeAutoHtml(postValidation.summary || "검증 정보 없음")}</div>`,
-          `<div><b>기준 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(restoredMetrics))}</div>`,
-          `<div><b>폐기 점수</b> ${safeAutoHtml(formatAutoRunMetricSummary(finalAutoRunMetrics))}</div>`,
-          `<div>새 자동배치가 이전 최고 자동배치 결과보다 카드/학급/미배치 검증 점수가 나빠 저장하지 않았습니다.</div>`,
-          residualPuzzleReportToHtml(restoredResidualPuzzleReport, 5)
-        ].filter(Boolean).join(""),
-        placed: 0,
-        best: 0,
-        failed: restoredValidation.failedCount || restoredFailedNames.length,
-        currentCard: "품질 게이트",
-        closeLabel: "확인"
-      });
-      return;
-    }
-
-    bestPlaced.forEach(e => entries().push(e));
-    let afterAutoSnapshot = null;
-    // r34: 결과 보관본은 finalMetrics가 들어간 report 생성 후 저장합니다.
-    // r33까지는 validationSummary만 가진 보관본이 먼저 저장되어 bestAutoAssignSnapshot의 수치가 0으로 압축될 수 있었습니다.
-    recomputeConflicts();
-
-    const missingRoomEntries = bestPlaced.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
-    const missingRoomNames = [...new Set(missingRoomEntries.map(e => getAutoItemName(e)))];
-    const outcomeAnalysis = summarizeAutoAssignOutcome({
-      placedEntries: bestPlaced,
-      failedItems: bestFailed,
-      forcedEntries: forcedPlaced,
-      protectedEntries,
-      missingRoomEntries
-    });
-    const conflictSummary = getConflictCounts();
-    const autoAssignIncomplete = !!names.length || !postValidation.ok || !!missingRoomEntries.length || Number(conflictSummary.totalAffected || 0) > 0;
-    const resultKind = autoAssignResultKind({ runMode, incomplete: autoAssignIncomplete });
-    const successTelemetryOutcome = freshBeatsBaseline ? "fresh-adopted" : (baselineRepairAdopted ? "baseline-repair-adopted" : (worseThanBaseline ? "fresh-displayed-no-rollback" : "baseline-kept"));
-    const successTelemetry = recordCandidateTelemetry(successTelemetryOutcome);
-    const report = {
-      ts: Date.now(),
-      activeGrades: activeGrades.slice(),
-      stageName: bestStage.name,
-      stageLabel: bestStage.label,
-      totalTarget: autoTargetSlots,
-      pinnedCount: pinnedEntries.filter(e => e.pinned).length,
-      protectedCount: protectedEntries.length,
-      protectedSlotCount: protectedSummary.slots,
-      protectedManualCount: protectedSummary.manual,
-      clearedCount: willClearCount,
-      placementMode: options.placementMode,
-      placementModeLabel: modeText,
-      selectedGrades: activeGrades.slice(),
-      runAttempts: options.runAttempts,
-      fastCheckRun: isFastCheckRun,
-      engineProfileLabel: engineProfile.label,
-      keepPinned: options.keepPinned !== false,
-      keepManual: options.keepManual !== false,
-      placedCount: bestPlaced.length,
-      forcedCount: forcedPlaced.length,
-      postProcessImprovedCount: improvement.improvedCount,
-      postProcessAttempts: improvement.attempts,
-      postProcessQualityScore: improvement.qualityScore,
-      scoringProfile: options.scoringProfile || "balanced",
-      scoringWeights: options.scoringWeights,
-      scoringSummary: describeScoreWeights(options.scoringWeights),
-      autoSourceSignature: buildCurrentAutoSourceSignature(),
-      autoSourceSummary: currentAutoSourceSummary(),
-      initialRunCount: exploredInitialRuns,
-      initialBestQualityScore: bestQualityScore,
-      initialBestAttemptInfo: bestAttemptInfo,
-      ok: !autoAssignIncomplete,
-      resultStatus: resultKind.status,
-      resultStatusLabel: resultKind.title,
-      placementIncomplete: autoAssignIncomplete,
-      programError: false,
-      failedCount: names.length,
-      failedNames: names,
-      failedDiagnostics,
-      failedReasonSummary: failedDiagnostics.slice(0, 8).map(d => `${d.name}: ${d.summary}${d.suggestionSummary ? ` / 제안: ${d.suggestionSummary}` : ""}`),
-      residualPuzzleReport,
-      outcomeAnalysis,
-      placedBlockCount: outcomeAnalysis.placedBlockCount,
-      placedGroupBlockCount: outcomeAnalysis.placedGroupBlockCount,
-      placedStandaloneBlockCount: outcomeAnalysis.placedStandaloneBlockCount,
-      placedCardCount: outcomeAnalysis.placedCardCount,
-      failedUnitCount: outcomeAnalysis.failedUnitCount,
-      failedOccurrenceCount: outcomeAnalysis.failedOccurrenceCount,
-      topFailedUnits: outcomeAnalysis.topFailedUnits,
-      forcedNames: [...new Set(forcedPlaced.map(f => f.name))],
-      durationMs: Date.now() - autoStartedAt,
-      conflictTotal: conflictSummary.totalAffected,
-      conflictCounts: conflictSummary.counts,
-      preValidation,
-      postValidation,
-      comparisonSummary: `${preValidation.summary || "이전 상태"} → ${postValidation.summary || "결과 상태"}`,
-      validationSummary: postValidation.summary,
-      validationOk: postValidation.ok,
-      metricSource: "postValidation",
-      metricCompleteness: "complete",
-      classSlotIssueCount: postValidation.classSlots?.issueCount || 0,
-      cardCoverageIssueCount: postValidation.cardCoverage?.issueCount || 0,
-      cardShortCount: postValidation.cardCoverage?.shortCount || 0,
-      cardOverCount: postValidation.cardCoverage?.overCount || 0,
-      cardShortageSlots: (postValidation.cardCoverage?.shortRows || []).reduce((sum, row) => sum + Math.max(0, -Number(row.diff || 0)), 0),
-      restrictedTeacherIssueCount: postValidation.restrictedTeachers?.issueCount || 0,
-      protectedIntrusionCount: postValidation.protectedIntrusions?.total || 0,
-      missingRoomCount: missingRoomEntries.length,
-      missingRoomNames,
-      restrictedTeacherCount: restrictedTeacherNames.length,
-      restrictedTeacherNames,
-      restrictedStandaloneCount,
-      restrictedGroupCount,
-      beforeSnapshotName: beforeAutoSnapshot?.name || "",
-      afterSnapshotName: afterAutoSnapshot?.name || "",
-      selectedAcceptedLabel: acceptedLabel,
-      acceptedMetrics,
-      finalMetrics: finalAutoRunMetrics,
-      baselineMetrics: qualityBaselineMetrics,
-      currentBeforeMetrics: baselineAutoRunMetrics,
-      candidateTelemetry: successTelemetry || lastCandidateTelemetryRecord,
-      lastAutoAssignCandidate: successTelemetry || lastCandidateTelemetryRecord,
-      autoAssignCandidate: successTelemetry || lastCandidateTelemetryRecord,
-      autoAssignCandidateLog: Array.isArray(ttDomain()?.autoAssignCandidateLog) ? ttDomain().autoAssignCandidateLog : [],
-      telemetryStatus: successTelemetryOutcome,
-      qualityBaselineSource: qualityBaselineReference?.source || "current",
-      qualityBaselineSnapshotName: qualityBaselineReference?.name || "자동배치 전 현재 시간표",
-      qualityBaselineValidationSummary: qualityBaselineValidation.summary || "",
-      qualityGate: {
-        postProcessReverted: !!improvement.revertedByQualityGate,
-        revertedToAccepted: improvement.revertedToAccepted || "",
-        acceptedLabel,
-        worseThanBaseline: !!worseThanBaseline,
-        autoRollbackDisabled: true
-      },
-      validatorVersion: "2026-06-12-35칸구조검산-잔여퍼즐-r42",
-      experimentalResidualRepairEnabled: allowExperimentalResidualRepair,
-      experimentalResidualRepairSkipped: !allowExperimentalResidualRepair,
-      experimentalResidualRepairSkipReason: allowExperimentalResidualRepair ? "" : "profile-gated-r54"
-    };
-    report.metricSource = "postValidation";
-    report.metricCompleteness = "complete";
-    afterAutoSnapshot = isFastCheckRun ? null : saveAutoAssignScheduleSnapshot("result", entries(), report);
-    report.afterSnapshotName = afterAutoSnapshot?.name || "";
-    if (isFastCheckRun) addTimetableLog("auto", "빠른 점검 결과", "빠른 점검 결과는 현재 화면과 결과 메타에만 반영하고 자동배치 보관본은 만들지 않습니다.");
-    if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
-    attachCanonicalMetaToMatchingSnapshots(ttDomain(), report, entries());
-    if (afterAutoSnapshot) {
-      try {
+      if (appState.timetable) appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
+      attachCanonicalMetaToMatchingSnapshots(ttDomain(), report, entries());
+      if (afterAutoSnapshot) {
         afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
         afterAutoSnapshot.note = [
-          "자동 생성된 배치 보관본입니다.",
+          "새 자동배치 엔진으로 생성된 배치 보관본입니다.",
           normalizeAutoActiveGrades(activeGrades).length ? `대상: ${formatAutoActiveGrades(activeGrades)}` : "",
           modeText ? `방식: ${modeText}` : "",
           report.validationSummary ? `검증: ${report.validationSummary}` : ""
         ].filter(Boolean).join(" / ");
         updateBestAutoAssignSnapshot(ttDomain(), afterAutoSnapshot);
         pruneAutoAssignSnapshots(ttDomain());
-      } catch (_) {
-        afterAutoSnapshot.autoAssignMeta = compactAutoAssignSnapshotMeta(report);
       }
-    }
-    if (!isFastCheckRun) {
-      await persistTimetableNow();
-    } else {
-      addTimetableLog("auto", "빠른 점검 저장 생략", "빠른 점검 결과는 현재 화면과 메모리에만 반영하고 Firestore 저장은 생략했습니다.");
-    }
-    setLastAutoAssignReport(report);
-    addTimetableLog(
-      resultKind.logType,
-      resultKind.logTitle,
-      `프로그램 오류 없음 · 정상 배치 ${bestPlaced.length - forcedPlaced.length}개, 이동/교환 복구 ${swapRepaired.length}개, 보정 배치 ${forcedPlaced.length}개, 후처리 개선 ${improvement.improvedCount}건, 미배치 ${names.length}개, 교실 미배정 ${missingRoomEntries.length}개, 충돌 ${conflictSummary.totalAffected}건 · ${modeText} · 초기후보 ${exploredInitialRuns}회 · 탐색: ${bestStage.label}`
-    );
-    addTimetableLog(
-      outcomeAnalysis.failedUnitCount ? "warn" : "auto",
-      "자동배치 결과 분석",
-      `수업 블록 ${outcomeAnalysis.placedBlockCount}개(그룹 ${outcomeAnalysis.placedGroupBlockCount}, 일반 ${outcomeAnalysis.placedStandaloneBlockCount}) · 배치 카드 ${outcomeAnalysis.placedCardCount}개 · 미배치 유닛 ${outcomeAnalysis.failedUnitCount}개 / ${outcomeAnalysis.failedOccurrenceCount}회차`
-    );
-    if (afterAutoSnapshot) {
-      addTimetableLog("auto", "자동배치 결과 배치 보관", `${afterAutoSnapshot.name}으로 결과 배치를 저장했습니다. [배치 보관]에서 비교/복구할 수 있습니다.`);
-    }
-    if (missingRoomEntries.length) {
+
+      if (!isFastCheckRun) await persistTimetableNow();
+      else addTimetableLog("auto", "빠른 점검 저장 생략", "빠른 점검 결과는 현재 화면과 메모리에만 반영하고 Firestore 저장은 생략했습니다.");
+      setLastAutoAssignReport(report);
+      renderAll();
+
       addTimetableLog(
-        "warn",
-        "교실 미배정 수업 확인 필요",
-        `${missingRoomNames.slice(0, 12).join(", ")}${missingRoomNames.length > 12 ? ` 외 ${missingRoomNames.length - 12}개` : ""}`
+        resultKind.logType,
+        resultKind.logTitle,
+        `새 엔진 완료 · block ${engineResult.stats.totalBlocks}개 중 실패 ${engineResult.stats.failedBlockCount}개 · 직접 ${engineResult.stats.directPlaced}개 · 교환복구 ${engineResult.stats.swapPlaced}개 · 이동 ${engineResult.stats.displacedMoves}회 · 미배치 ${failedNames.length}개 · 충돌 ${conflictSummary.totalAffected}건`
       );
-    }
-    renderAll();
+      addTimetableLog(
+        outcomeAnalysis.failedUnitCount ? "warn" : "auto",
+        "자동배치 결과 분석",
+        `수업 블록 ${outcomeAnalysis.placedBlockCount}개(그룹 ${outcomeAnalysis.placedGroupBlockCount}, 일반 ${outcomeAnalysis.placedStandaloneBlockCount}) · 배치 카드 ${outcomeAnalysis.placedCardCount}개 · 미배치 유닛 ${outcomeAnalysis.failedUnitCount}개 / ${outcomeAnalysis.failedOccurrenceCount}회차`
+      );
 
-    const detailLines = [
-      `<b>정상 배치</b> ${bestPlaced.length - forcedPlaced.length}개`,
-      `<b>이동/교환 복구</b> ${swapRepaired.length}개`,
-      `<b>보정 배치</b> ${forcedPlaced.length}개`,
-      `<b>후처리 개선</b> ${improvement.improvedCount}건`,
-      `<b>미배치</b> ${names.length}개`,
-      `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
-      `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
-      `<b>결과 판정</b> ${resultKind.status === "complete" ? "완료" : "배치 미완성 · 프로그램 오류 아님"}`,
-      `<b>검증 결과</b> ${postValidation.ok ? "통과" : postValidation.summary}`,
-      `<b>학급 시수</b> ${postValidation.classSlots?.total ?? "-"}/${postValidation.classSlots?.targetTotal ?? "-"}시수`,
-      `<b>배치 방식</b> ${modeText}`,
-      isFastCheckRun ? `<b>자동 보관</b> 빠른 점검 모드로 보관본 저장 생략` : (beforeAutoSnapshot ? `<b>자동 보관</b> 전: ${safeAutoHtml(beforeAutoSnapshot.name)} / 결과: ${safeAutoHtml(afterAutoSnapshot?.name || "저장 실패")}` : null),
-      `<b>탐색 방식</b> ${bestStage.label}`,
-      `<b>초기배치 후보</b> ${exploredInitialRuns}회 중 ${bestAttemptInfo.stageLabel} ${bestAttemptInfo.attempt}/${bestAttemptInfo.totalAttempts} 선택 · ${bestAttemptInfo.exploration} · 품질 ${bestAttemptInfo.qualityScore ?? "-"}`,
-      `<b>보호된 기존 배치</b> ${protectedEntries.length}개`,
-      `<b>고정/보호 슬롯 제외</b> ${protectedSummary.slots}칸`,
-      restrictedTeacherNames.length ? `<b>제약교사 우선 배치</b> ${restrictedTeacherNames.join(", ")} · 일반 ${restrictedStandaloneCount}개 / 그룹 ${restrictedGroupCount}개` : null,
-      `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`
-    ];
-    if (autoAssignIncomplete) {
-      detailLines.push(`이 결과는 <b>프로그램 오류</b>가 아니라 <b>배치 미완성/확인 필요 상태</b>입니다. 마지막으로 계산된 결과를 시간표에 표시했습니다.`);
-    }
-    detailLines.push(buildAutoAssignComparisonHtml(preValidation, postValidation));
-    detailLines.push(buildAutoAssignOutcomeHtml(outcomeAnalysis));
-    if (!postValidation.ok) {
-      const issueRows = postValidation.classSlots?.issues || [];
-      const classList = issueRows.slice(0, 10)
-        .map(row => `<li>${formatClassKeyForReport(row.key)}: ${row.count}/${row.target}시수 (${row.diff < 0 ? Math.abs(row.diff) + " 부족" : row.diff + " 초과"})</li>`)
-        .join("");
-      const moreClass = issueRows.length > 10 ? `<li>외 ${issueRows.length - 10}개 학급</li>` : "";
-      const restrictedList = (postValidation.restrictedTeachers?.issues || []).slice(0, 8)
-        .map(row => `<li>${row.teacher}: ${row.issueParts.join(", ")}</li>`)
-        .join("");
-      const cardList = (postValidation.cardCoverage?.shortRows || []).slice(0, 10)
-        .map(row => `<li>카드 부족 · ${String(row.title).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}${row.classLabels?.length ? ` ${String(row.classLabels.join(", ")).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}` : ""}: ${row.count}/${row.target}시수</li>`)
-        .join("");
-      const groupList = (postValidation.groupCoverage?.rows || []).slice(0, 8)
-        .map(row => `<li>그룹/묶음 · ${String(row.name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}: 문제 카드 ${row.issueCount}개${row.samples?.length ? ` (${String(row.samples.slice(0, 2).join(" / ")).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))})` : ""}</li>`)
-        .join("");
-      const protectedList = (postValidation.protectedIntrusions?.samples || []).slice(0, 6)
-        .map(text => `<li>${String(text).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
-        .join("");
-      detailLines.push(`<div class="tt-auto-progress-failed"><b>검증 리포트</b><ul>${classList}${moreClass}${cardList}${groupList}${restrictedList}${protectedList}</ul></div>`);
-    }
-    detailLines.push(residualPuzzleReportToHtml(residualPuzzleReport, 6));
-    if (forcedPlaced.length) {
-      detailLines.push(`⚠️ ${forcedPlaced.length}개는 미배치 방지를 위해 최소 충돌 위치에 보정 배치했습니다. 충돌 색상과 상세창을 확인해 주세요.`);
-    }
-    if (missingRoomEntries.length) {
-      const missingList = missingRoomNames.slice(0, 12)
-        .map(name => `<li>${String(name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
-        .join("");
-      const moreMissing = missingRoomNames.length > 12 ? `<li>외 ${missingRoomNames.length - 12}개</li>` : "";
-      detailLines.push(`<div class="tt-auto-progress-failed"><b>교실 미배정</b><ul>${missingList}${moreMissing}</ul></div>`);
-    }
-    if (names.length) {
-      const failedList = names.slice(0, 12)
-        .map(name => `<li>${String(name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
-        .join("");
-      const moreFailed = names.length > 12 ? `<li>외 ${names.length - 12}개</li>` : "";
-      detailLines.push(`<div class="tt-auto-progress-failed"><b>남은 카드</b><ul>${failedList}${moreFailed}</ul></div>`);
-      detailLines.push(diagnosticsToHtml(failedDiagnostics, 8));
-      detailLines.push(`남은 카드는 원인 후보와 함께 표시된 <b>풀어볼 조건</b>부터 조정해 주세요. 교사 제약, 고정 수업, 교실 조건 중 최소 변경으로 열리는 후보 시간을 우선 제안합니다.`);
-    }
-    detailLines.push(`자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.`);
+      const detailLines = [
+        `<b>엔진</b> 새 block-CSP + 전역 교환 복구 r86`,
+        `<b>배치 block</b> ${engineResult.stats.totalBlocks - engineResult.stats.failedBlockCount}/${engineResult.stats.totalBlocks}`,
+        `<b>직접 배치</b> ${engineResult.stats.directPlaced}개`,
+        `<b>교환/이동 복구</b> ${engineResult.stats.swapPlaced}개 block · 이동 ${engineResult.stats.displacedMoves}회`,
+        `<b>보호된 기존 block</b> ${engineResult.stats.skippedProtectedBlocks}개`,
+        `<b>신규 entry</b> ${placed.length}개`,
+        `<b>미배치</b> ${failedNames.length}개`,
+        `<b>교실 미배정</b> ${missingRoomEntries.length}개`,
+        `<b>충돌 표시 대상</b> ${conflictSummary.totalAffected}건`,
+        `<b>결과 판정</b> ${resultKind.status === "complete" ? "완료" : "배치 미완성 · 프로그램 오류 아님"}`,
+        `<b>검증 결과</b> ${finalValidation.ok ? "통과" : finalValidation.summary}`,
+        `<b>학급 시수</b> ${finalValidation.classSlots?.total ?? "-"}/${finalValidation.classSlots?.targetTotal ?? "-"}시수`,
+        `<b>카드 시수 부족</b> ${report.cardShortageSlots}시수`,
+        `<b>배치 방식</b> ${modeText}`,
+        isFastCheckRun ? `<b>자동 보관</b> 빠른 점검 모드로 보관본 저장 생략` : `<b>자동 보관</b> 전: ${safeAutoHtml(beforeAutoSnapshot?.name || "-")} / 결과: ${safeAutoHtml(afterAutoSnapshot?.name || "-")}`,
+        `<b>소요 시간</b> ${Math.round((Date.now() - autoStartedAt) / 1000)}초`,
+        buildAutoAssignComparisonHtml(preValidation, finalValidation),
+        buildAutoAssignOutcomeHtml(outcomeAnalysis)
+      ];
+      if (failedNames.length) {
+        const failedList = failedNames.slice(0, 12)
+          .map(name => `<li>${String(name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
+          .join("");
+        const moreFailed = failedNames.length > 12 ? `<li>외 ${failedNames.length - 12}개</li>` : "";
+        detailLines.push(`<div class="tt-auto-progress-failed"><b>남은 카드</b><ul>${failedList}${moreFailed}</ul></div>`);
+        detailLines.push(diagnosticsToHtml(failedDiagnostics, 8));
+      }
+      detailLines.push(residualPuzzleReportToHtml(residualPuzzleReport, 6));
+      if (missingRoomEntries.length) {
+        const missingList = missingRoomNames.slice(0, 12)
+          .map(name => `<li>${String(name).replace(/[<>&]/g, ch => ({"<":"&lt;",">":"&gt;","&":"&amp;"}[ch]))}</li>`)
+          .join("");
+        const moreMissing = missingRoomNames.length > 12 ? `<li>외 ${missingRoomNames.length - 12}개</li>` : "";
+        detailLines.push(`<div class="tt-auto-progress-failed"><b>교실 미배정</b><ul>${missingList}${moreMissing}</ul></div>`);
+      }
+      detailLines.push("자세한 결과는 하단 <b>로그</b> 탭에서 확인할 수 있습니다.");
 
-    await progress.complete({
-      partial: autoAssignIncomplete,
-      title: resultKind.title,
-      subtitle: resultKind.subtitle,
-      step: resultKind.step,
-      detailHtml: detailLines.filter(Boolean).map(line => `<div>${line}</div>`).join(""),
-      placed: bestPlaced.length,
-      best: bestPlaced.length,
-      failed: names.length,
-      currentCard: "-",
-      closeLabel: "결과 확인",
-      actions: []
-    });
+      await progress.complete({
+        partial: autoAssignIncomplete,
+        title: resultKind.title,
+        subtitle: resultKind.subtitle,
+        step: resultKind.step,
+        detailHtml: detailLines.filter(Boolean).map(line => `<div>${line}</div>`).join(""),
+        placed: placed.length,
+        best: placed.length,
+        failed: failedNames.length,
+        currentCard: "-",
+        closeLabel: "결과 확인",
+        actions: []
+      });
     } catch (err) {
       const isCancel = err?.message === "__AUTO_ASSIGN_CANCELLED__";
-      let displayed = { applied: false, label: "", entryCount: Array.isArray(entries()) ? entries().length : null, fromCurrent: false };
-      try {
-        displayed = applyLastAutoAssignResultToLiveEntries();
-      } catch (displayErr) {
-        console.error("Auto assign last-result display failed:", displayErr);
-      }
-
-      try {
+      try { recomputeConflicts(); } catch (_) {}
+      try { renderAll(); } catch (_) {}
+      if (isCancel) {
+        addTimetableLog("auto", "자동 배치 취소", "사용자 요청으로 새 자동배치를 중단했습니다. 현재 화면 상태를 유지합니다.");
+        if (progress) await progress.cancel("자동배치를 중단했습니다. 현재 화면 상태를 유지합니다.");
+      } else {
+        console.error("Fresh auto assign failed:", err);
         const errorRecord = {
           ts: Date.now(),
           generatedAt: new Date().toISOString(),
-          cancelled: isCancel,
           phase: String(autoAssignPhase || ""),
-          message: isCancel ? "사용자 취소" : (err?.message || String(err)),
-          stackHead: isCancel ? "" : String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          autoRollbackDisabled: true,
-          displayedLastResult: !!displayed.applied,
-          displayedResultLabel: displayed.label || "",
-          displayedEntryCount: displayed.entryCount,
-          displayedFailedCount: lastAutoAssignResultFailedCount,
-          appVersion: String(globalThis.HIS_APP_VERSION || ""),
-          forwardCheck: !globalThis.HIS_DISABLE_FORWARD_CHECK
+          message: err?.message || String(err),
+          stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
+          engine: "fresh-csp-displacement-r86",
+          appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
-        const domain = ttDomain?.();
-        const applyErrorTelemetry = target => {
-          if (!target || typeof target !== "object") return;
-          target.lastAutoAssignError = errorRecord;
-          const mergedMeta = {
-            ...(target.autoAssignMeta && typeof target.autoAssignMeta === "object" ? target.autoAssignMeta : {}),
-            lastAutoAssignError: errorRecord,
-            autoAssignError: errorRecord,
-            resultStatus: isCancel ? "cancelled" : "program-error",
-            resultStatusLabel: isCancel ? "자동배치 취소됨" : "자동배치 프로그램 오류",
-            placementIncomplete: false,
-            programError: !isCancel,
-            telemetryStatus: isCancel ? "cancelled-last-result-displayed" : "error-last-result-displayed",
-            autoRollbackDisabled: true,
-            displayedLastResult: !!displayed.applied,
-            displayedResultLabel: displayed.label || ""
-          };
-          target.autoAssignMeta = compactAutoAssignSnapshotMeta(mergedMeta);
-        };
-        applyErrorTelemetry(domain);
-        applyErrorTelemetry(appState.timetable);
-      } catch (_) {}
-
-      try { recomputeConflicts(); } catch (_) {}
-      try { renderAll(); } catch (_) {}
-
-      if (isCancel) {
-        addTimetableLog(
-          "auto",
-          "자동 배치 취소",
-          displayed.applied
-            ? `사용자 요청으로 중단했습니다. 자동 롤백하지 않고 ${displayed.label || "마지막 자동배치 결과"}를 화면에 남겼습니다.`
-            : "사용자 요청으로 중단했습니다. 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다."
-        );
-        if (progress) {
-          await progress.cancel(
-            displayed.applied
-              ? `자동배치를 중단했습니다. 자동 롤백하지 않고 마지막 결과를 시간표에 표시했습니다.`
-              : "자동배치를 중단했습니다. 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다."
-          );
-        }
-      } else {
-        console.error("Auto assign failed:", err);
-        addTimetableLog(
-          "error",
-          "자동배치 프로그램 오류",
-          `${err?.message || String(err)} · 단계: ${autoAssignPhase || "?"} · 자동 롤백 안 함 · ${displayed.applied ? `마지막 결과 표시(${displayed.entryCount}개)` : "표시할 후보 없음"}`
-        );
-        if (progress) {
-          await progress.error(
-            displayed.applied
-              ? `자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않고 마지막으로 나온 결과를 시간표에 표시했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
-              : `자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않았지만, 표시할 자동배치 후보가 없어 현재 화면 상태를 유지했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`
-          );
-        } else {
-          alert(
-            displayed.applied
-              ? "자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않고 마지막 결과를 시간표에 표시했습니다. 로그를 확인해 주세요."
-              : "자동배치 프로그램 오류가 발생했습니다. 자동 롤백하지 않았지만 표시할 후보가 없습니다. 로그를 확인해 주세요."
-          );
-        }
+        try {
+          const domain = ttDomain?.();
+          if (domain) domain.lastAutoAssignError = errorRecord;
+          if (appState.timetable) {
+            appState.timetable.lastAutoAssignError = errorRecord;
+            appState.timetable.autoAssignMeta = compactAutoAssignSnapshotMeta({
+              ...(appState.timetable.autoAssignMeta || {}),
+              lastAutoAssignError: errorRecord,
+              resultStatus: "program-error",
+              resultStatusLabel: "자동배치 프로그램 오류",
+              programError: true,
+              engine: "fresh-csp-displacement-r86"
+            });
+          }
+        } catch (_) {}
+        addTimetableLog("error", "새 자동배치 프로그램 오류", `${err?.message || String(err)} · 단계: ${autoAssignPhase || "?"}`);
+        if (progress) await progress.error(`새 자동배치 엔진 오류가 발생했습니다. (${err?.message || String(err)}) 하단 [로그] 탭과 콘솔을 확인해 주세요.`);
+        else alert("새 자동배치 엔진 오류가 발생했습니다. 로그를 확인해 주세요.");
       }
     } finally {
       autoAssignRunning = false;
