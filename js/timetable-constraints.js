@@ -691,6 +691,186 @@ export function createTimetableConstraintsHandlers({
       });
   }
 
+
+  function getTtCardByIdLocal(id) {
+    const cardId = clean(id);
+    if (!cardId) return null;
+    const cards = typeof getTtCards === "function" ? getTtCards() : (appState.timetable?.ttcards || []);
+    return cards.find(card => card?.id === cardId) || null;
+  }
+
+  function getUnitDisplayTitleLocal(unit, unitCards = []) {
+    const explicit = clean(unit?.name || unit?.title || unit?.label);
+    if (explicit) return explicit;
+    const names = [...new Set((unitCards || []).map(formatTtCardTitle).map(clean).filter(Boolean))];
+    return names.length ? names.join(" / ") : "수업 묶음";
+  }
+
+  function getCardGroupMembership(cardId) {
+    const id = clean(cardId);
+    if (!id) return null;
+    for (const group of (appState.timetable?.ttcardGroups || [])) {
+      for (const unit of (group.units || [])) {
+        if ((unit.ttcardIds || []).includes(id)) return { group, unit, kind: "unit" };
+      }
+      if ((group.poolCardIds || []).includes(id)) return { group, unit: null, kind: "pool" };
+    }
+    return null;
+  }
+
+  function uniqueEntriesBySlot(items = []) {
+    const seen = new Set();
+    return (items || [])
+      .filter(Boolean)
+      .filter(entry => {
+        const key = `${Number(entry.day)}:${Number(entry.period)}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => (Number(a.day) - Number(b.day)) || (Number(a.period) - Number(b.period)) || formatAssignedEntryTitle(a).localeCompare(formatAssignedEntryTitle(b), "ko"));
+  }
+
+  function getAssignedEntriesForCardList(cards = []) {
+    return uniqueEntriesBySlot((cards || []).flatMap(card => getAssignedEntriesForTtCard(card)));
+  }
+
+  function getBundleCredits(cards = []) {
+    const values = (cards || []).map(getTtCardCredits).filter(v => Number.isFinite(v) && v > 0);
+    return values.length ? Math.max(...values) : 0;
+  }
+
+  function getBundleCreditLabel(cards = [], placedCount = 0) {
+    const values = [...new Set((cards || []).map(getTtCardCredits).filter(v => Number.isFinite(v) && v > 0))].sort((a, b) => a - b);
+    if (!values.length) return `${placedCount}/-시수`;
+    if (values.length === 1) return `${placedCount}/${values[0]}시수`;
+    return `${placedCount}/${values.join(",")}시수`;
+  }
+
+  function cardsAreAllDone(cards = []) {
+    return (cards || []).every(card => {
+      const credits = getTtCardCredits(card);
+      if (!credits) return true;
+      return getAssignedEntriesForTtCard(card).length >= credits;
+    });
+  }
+
+  function cardRoomRuleSummary(cards = [], placed = []) {
+    const placedRooms = [...new Set((placed || []).map(formatAssignedEntryRoom).filter(Boolean))];
+    if (placedRooms.length) return placedRooms.slice(0, 2).join(", ") + (placedRooms.length > 2 ? ` 외 ${placedRooms.length - 2}` : "");
+    const valid = (cards || []).filter(Boolean);
+    const rules = [...new Set(valid.map(card => clean(card.roomRule || "auto")))];
+    const fixedRooms = [...new Set(valid.map(card => clean(card.fixedRoomId)).filter(Boolean))];
+    if (rules.length === 1 && rules[0] === "fixed" && fixedRooms.length === 1) return formatAssignedEntryRoom({ roomId: fixedRooms[0] });
+    if (rules.length === 1 && rules[0] === "homeroom") return "홈룸";
+    if (rules.length === 1 && rules[0] === "teacher") return "교사 담당교실";
+    if (rules.length > 1 || fixedRooms.length > 1) return "교실 규칙 혼합";
+    return "교실 자동";
+  }
+
+  function formatCardListClasses(cards = []) {
+    const labels = [...new Set((cards || []).flatMap(card => {
+      const text = formatTtCardClasses(card);
+      return String(text || "").split(/[,，]+/).map(x => clean(x)).filter(Boolean);
+    }))];
+    return labels.join(", ");
+  }
+
+  function makeTeacherCardDisplayItems(teacher, teacherCards = []) {
+    const allCards = typeof getTtCards === "function" ? getTtCards() : (appState.timetable?.ttcards || []);
+    const byId = new Map(allCards.map(card => [card.id, card]));
+    const teacherCardIds = new Set((teacherCards || []).map(card => card.id).filter(Boolean));
+    const used = new Set();
+    const items = [];
+
+    const addBundle = (group, unit, ids, titleFallback = "수업 묶음") => {
+      const cards = ids.map(id => byId.get(id)).filter(Boolean);
+      const selectedCards = cards.filter(card => teacherCardIds.has(card.id) && getCardTeacherNames(card).includes(teacher));
+      // 같은 교사가 한 묶음 안에서 둘 이상의 카드를 담당할 때만 하나의 묶음 카드로 표시합니다.
+      // 서로 다른 교사가 나누어 맡은 선택 블록은 교실이 다를 수 있으므로 강제로 합치지 않습니다.
+      if (selectedCards.length <= 1) return;
+      selectedCards.forEach(card => used.add(card.id));
+      const placed = getAssignedEntriesForCardList(selectedCards);
+      const title = getUnitDisplayTitleLocal(unit, selectedCards) || titleFallback;
+      items.push({
+        kind: "bundle",
+        key: `${group?.id || "group"}:${unit?.id || "pool"}:${teacher}`,
+        title,
+        cards: selectedCards,
+        group,
+        unit,
+        groupName: group?.name || "묶음 수업",
+        unitName: getUnitDisplayTitleLocal(unit, selectedCards),
+        placed,
+        credits: getBundleCredits(selectedCards),
+        done: cardsAreAllDone(selectedCards),
+      });
+    };
+
+    (appState.timetable?.ttcardGroups || []).forEach(group => {
+      (group.units || []).forEach((unit, idx) => {
+        addBundle(group, unit, [...new Set(unit.ttcardIds || [])], `수업 묶음 ${idx + 1}`);
+      });
+      if ((group.poolCardIds || []).length > 1) {
+        addBundle(group, null, [...new Set(group.poolCardIds || [])], group.name || "묶음 수업");
+      }
+    });
+
+    (teacherCards || []).forEach(card => {
+      if (!card?.id || used.has(card.id)) return;
+      const placed = getAssignedEntriesForTtCard(card);
+      const membership = getCardGroupMembership(card.id);
+      items.push({
+        kind: "card",
+        key: card.id,
+        title: formatTtCardTitle(card),
+        cards: [card],
+        card,
+        group: membership?.group || null,
+        unit: membership?.unit || null,
+        groupName: membership?.group?.name || "",
+        unitName: membership?.unit ? getUnitDisplayTitleLocal(membership.unit, [card]) : "",
+        placed,
+        credits: getTtCardCredits(card),
+        done: (getTtCardCredits(card) > 0 && placed.length >= getTtCardCredits(card)),
+      });
+    });
+
+    return items.sort((a, b) => {
+      const ag = String(a.cards?.[0]?.gradeKey || "").localeCompare(String(b.cards?.[0]?.gradeKey || ""), "ko", { numeric: true });
+      if (ag) return ag;
+      const ak = a.kind === "bundle" ? 0 : 1;
+      const bk = b.kind === "bundle" ? 0 : 1;
+      if (ak !== bk) return ak - bk;
+      return String(a.title || "").localeCompare(String(b.title || ""), "ko", { numeric: true, sensitivity: "base" });
+    });
+  }
+
+  function openTeacherCardDisplayItemDetail(item, teacher) {
+    if (typeof showSidebarCardDetail !== "function" || !item?.cards?.length) return;
+    const detailItems = item.cards.map(card => {
+      const desc = typeof describeTtCard === "function" ? describeTtCard(card) : { title: formatTtCardTitle(card), card };
+      return { ...desc, id: card.id, ttcardId: card.id };
+    });
+    const teachers = [...new Set(item.cards.flatMap(getCardTeacherNames).filter(Boolean))];
+    const gradeKeys = [...new Set(item.cards.map(card => card.gradeKey).filter(Boolean))];
+    const placed = item.placed || getAssignedEntriesForCardList(item.cards);
+    const credits = item.credits || getBundleCredits(item.cards);
+    const title = item.kind === "bundle" ? `${item.title}` : formatTtCardTitle(item.cards[0]);
+    showSidebarCardDetail({
+      title,
+      teachers: teachers.length ? teachers : [teacher].filter(Boolean),
+      gradeKeys,
+      credits,
+      assigned: placed.length,
+      isDone: item.done,
+      sectionIdx: item.cards[0]?.sectionIdx,
+      groupName: item.groupName || "",
+      groupId: item.group?.id || "",
+      detailItems,
+    });
+  }
+
   function getCardTeacherNames(card) {
     if (typeof getTeachersForTtCard === "function") return (getTeachersForTtCard(card) || []).map(clean).filter(Boolean);
     return [...new Set([...(Array.isArray(card?.teachers) ? card.teachers : []), ...splitTeacherNames(card?.teacherName || "")].map(clean).filter(Boolean))];
@@ -731,41 +911,40 @@ export function createTimetableConstraintsHandlers({
   }
 
   function openTtCardDetail(card, placed = []) {
-    if (typeof showSidebarCardDetail !== "function") return;
-    const desc = typeof describeTtCard === "function" ? describeTtCard(card) : { title: formatTtCardTitle(card), card };
-    showSidebarCardDetail({
-      title: desc.title || formatTtCardTitle(card),
-      teachers: getCardTeacherNames(card),
-      gradeKeys: [card?.gradeKey].filter(Boolean),
+    const item = makeTeacherCardDisplayItems("", [card])[0] || {
+      kind: "card",
+      title: formatTtCardTitle(card),
+      cards: [card],
+      placed,
       credits: getTtCardCredits(card),
-      assigned: placed.length,
-      isDone: getTtCardCredits(card) > 0 && placed.length >= getTtCardCredits(card),
-      sectionIdx: card?.sectionIdx,
+      done: getTtCardCredits(card) > 0 && placed.length >= getTtCardCredits(card),
       groupName: card?.group || "",
-      groupId: "",
-      detailItems: [desc],
-    });
+    };
+    item.placed = placed;
+    openTeacherCardDisplayItemDetail(item, "");
   }
 
   function renderTeacherAssignedCards(container, teacher, dayLabels, periods) {
     const teacherCards = getAllTeacherTtCards(teacher);
+    const displayItems = makeTeacherCardDisplayItems(teacher, teacherCards);
     const teacherEntries = getTeacherAssignedEntries(teacher);
     const card = document.createElement("div");
     card.className = "ttc-form-card ttc-assigned-card-panel";
     card.innerHTML = `<h4>시간표 카드</h4>`;
 
-    const placedByCard = new Map(teacherCards.map(c => [c.id, getAssignedEntriesForTtCard(c)]));
-    const assignedCards = teacherCards.filter(c => (placedByCard.get(c.id) || []).length > 0);
-    const unassignedCards = teacherCards.filter(c => !(placedByCard.get(c.id) || []).length);
+    const assignedItems = displayItems.filter(item => (item.placed || []).length > 0);
+    const unassignedItems = displayItems.filter(item => !(item.placed || []).length);
+    const bundleCount = displayItems.filter(item => item.kind === "bundle").length;
     const slots = new Set(teacherEntries.map(e => `${Number(e.day)}:${Number(e.period)}`));
     const rooms = new Set(teacherEntries.map(e => e.roomId).filter(Boolean));
 
     const strip = document.createElement("div");
     strip.className = "ttc-summary-strip";
     [
-      ["카드", `${teacherCards.length}개`],
-      ["배정", `${assignedCards.length}개`],
-      ["미배정", `${unassignedCards.length}개`],
+      ["카드", `${displayItems.length}개`],
+      ["묶음", `${bundleCount}개`],
+      ["배정", `${assignedItems.length}개`],
+      ["미배정", `${unassignedItems.length}개`],
       ["시간", `${slots.size}칸`],
       ["교실", rooms.size ? `${rooms.size}개` : "없음"],
     ].forEach(([label, value]) => {
@@ -778,33 +957,34 @@ export function createTimetableConstraintsHandlers({
 
     const list = document.createElement("div");
     list.className = "ttc-card-list";
-    if (!teacherCards.length) {
+    if (!displayItems.length) {
       const empty = document.createElement("div");
       empty.className = "ttc-empty";
       empty.style.padding = "12px 0";
       empty.textContent = "이 교사에게 연결된 시간표 카드가 없습니다.";
       list.appendChild(empty);
     } else {
-      teacherCards.forEach(ttcard => {
-        const placed = placedByCard.get(ttcard.id) || [];
+      displayItems.forEach(itemInfo => {
+        const itemCards = itemInfo.cards || [];
+        const placed = itemInfo.placed || [];
         const item = document.createElement("div");
-        item.className = "ttc-assigned-card" + (placed.length ? "" : " ttc-unassigned-card");
+        item.className = "ttc-assigned-card" + (placed.length ? "" : " ttc-unassigned-card") + (itemInfo.kind === "bundle" ? " ttc-bundled-card" : "");
         item.tabIndex = 0;
-        item.title = "클릭하면 시간표 카드 상세를 봅니다.";
-        const credits = getTtCardCredits(ttcard);
+        item.title = itemInfo.kind === "bundle" ? "묶음 수업입니다. 클릭하면 묶음 전체 상세를 봅니다." : "클릭하면 시간표 카드 상세를 봅니다.";
         const slotsText = placed.length
           ? placed.slice(0, 3).map(entry => `${dayLabels[Number(entry.day)] || "-"} ${Number.isInteger(Number(entry.period)) ? `${Number(entry.period) + 1}교시` : "-"}`).join(", ") + (placed.length > 3 ? ` 외 ${placed.length - 3}` : "")
           : "미배정";
-        const roomText = placed.length
-          ? [...new Set(placed.map(formatAssignedEntryRoom).filter(Boolean))].slice(0, 2).join(", ") || "교실 없음"
-          : (ttcard.roomRule === "fixed" ? "고정 교실" : "교실 자동");
+        const roomText = cardRoomRuleSummary(itemCards, placed);
+        const classesText = formatCardListClasses(itemCards) || "반 정보 없음";
+        const creditText = itemInfo.kind === "bundle" ? getBundleCreditLabel(itemCards, placed.length) : `${placed.length}/${itemInfo.credits || "-"}시수`;
+        const badge = itemInfo.kind === "bundle" ? `<span class="ttc-bundle-badge">묶음</span>` : "";
         item.innerHTML = `
           <div class="ttc-assigned-card-head">
-            <div class="ttc-assigned-title">${escapeText(formatTtCardTitle(ttcard))}</div>
+            <div class="ttc-assigned-title">${badge}${escapeText(itemInfo.title || "시간표 카드")}</div>
             <div class="ttc-assigned-slot">${escapeText(slotsText)}</div>
           </div>
-          <div class="ttc-assigned-meta">${escapeText(formatTtCardClasses(ttcard) || "반 정보 없음")} · ${escapeText(roomText)} · ${placed.length}/${credits || "-"}시수</div>`;
-        const open = () => openTtCardDetail(ttcard, placed);
+          <div class="ttc-assigned-meta">${escapeText(classesText)} · ${escapeText(itemInfo.groupName || "그룹 없음")}${itemInfo.unitName ? " · " + escapeText(itemInfo.unitName) : ""} · ${escapeText(roomText)} · ${escapeText(creditText)}</div>`;
+        const open = () => openTeacherCardDisplayItemDetail(itemInfo, teacher);
         item.addEventListener("click", open);
         item.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
         list.appendChild(item);
@@ -813,7 +993,7 @@ export function createTimetableConstraintsHandlers({
     card.appendChild(list);
     const assist = document.createElement("div");
     assist.className = "ttc-assist";
-    assist.textContent = "배정된 카드와 미배정 카드를 함께 보여줍니다. 카드를 클릭하면 상세보기가 열립니다.";
+    assist.textContent = "같은 교사가 한 묶음 안에서 여러 카드를 담당하는 수업은 하나로 묶어 보여줍니다. 카드를 클릭하면 상세보기가 열립니다.";
     card.appendChild(assist);
     container.appendChild(card);
   }

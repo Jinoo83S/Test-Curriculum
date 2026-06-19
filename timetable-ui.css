@@ -2892,3 +2892,27 @@ body {
   outline: 3px solid rgba(37, 99, 235, .35);
   outline-offset: 2px;
 }
+
+/* r82: teacher constraint panel shows same-teacher unit bundles as one item */
+.ttc-bundled-card {
+  border-color: #a7f3d0 !important;
+  background: #f0fdf4 !important;
+}
+.ttc-bundled-card:hover {
+  border-color: #34d399 !important;
+  background: #ecfdf5 !important;
+}
+.ttc-bundle-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 950;
+  vertical-align: 1px;
+}
