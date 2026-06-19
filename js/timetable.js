@@ -85,6 +85,7 @@ let currentGrade   = "7학년";
 // 교사별 보기에서는 여러 교사를 쉼표로 묶어 저장합니다. (예: "김예리,박예지")
 let currentTeacher = "";
 let currentRoom    = "";
+let teacherCardsSelectedName = "";
 let teacherPickerOutsideHandlerInstalled = false;
 let roomPickerOutsideHandlerInstalled = false;
 let timetableContextMenuDelegationInstalled = false;
@@ -1054,6 +1055,23 @@ function renderTeacherCardsPanel() {
             <em>${escapeHtml(roomLabel)}</em>
           </div>
           <div class="tt-teacher-card-count"><b>${placed.length}</b>/<span>${credits || "-"}</span></div>`;
+        row.type = "button";
+        row.tabIndex = 0;
+        row.title = "클릭하면 시간표 카드 상세를 봅니다.";
+        const openCardDetail = () => showSidebarCardDetail({
+          title: desc.title,
+          teachers: getTeacherNamesForCard(card),
+          gradeKeys: [card.gradeKey].filter(Boolean),
+          credits,
+          assigned: placed.length,
+          isDone: credits > 0 && placed.length >= credits,
+          sectionIdx: card.sectionIdx,
+          groupName: groupInfo.groupName || "",
+          groupId: (appState.timetable?.ttcardGroups || []).find(g => (g.poolCardIds || []).includes(card.id) || (g.excludedCardIds || []).includes(card.id) || (g.units || []).some(u => (u.ttcardIds || []).includes(card.id)))?.id || "",
+          detailItems: [desc],
+        });
+        row.addEventListener("click", openCardDetail);
+        row.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); openCardDetail(); } });
         cardList.appendChild(row);
       });
     }
@@ -1074,6 +1092,10 @@ function renderTeacherCardsPanel() {
         const row = document.createElement("div");
         row.className = "tt-teacher-card-entry";
         row.innerHTML = `<b>${escapeHtml(dayLabels[entry.day] || "?")} ${escapeHtml(periodLabels[entry.period] || `${entry.period + 1}교시`)}</b><span>${escapeHtml(entryTitle(entry))}</span><em>${escapeHtml(getEntryClassSummary(entry))} · ${escapeHtml(getRoomDisplayName(entry.roomId))}</em>`;
+        row.tabIndex = 0;
+        row.title = "클릭하면 배치 상세를 봅니다.";
+        row.addEventListener("click", () => showEntryDetail(entry));
+        row.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); showEntryDetail(entry); } });
         entryList.appendChild(row);
       });
     }
@@ -3137,6 +3159,13 @@ constraintsPanelApi = createTimetableConstraintsHandlers({
   entryTitle,
   getEntryClassSummary,
   getRoomDisplayName,
+  getTtCards,
+  getTeachersForTtCard,
+  getCreditsForTtCard,
+  getTtCardClassLabels,
+  describeTtCard,
+  showSidebarCardDetail,
+  showEntryDetail,
   $
 });
 

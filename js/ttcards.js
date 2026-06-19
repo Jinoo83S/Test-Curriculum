@@ -367,6 +367,8 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 학생 key는 시간표 카드에 저장하지 않습니다. 학급/반 점유는 classKeys만 사용합니다.
     studentKeys: [],
     isWholeGrade: row ? isWholeGradeRow(row, tpl, gradeKey, sectionIdx) : !!existing?.isWholeGrade,
+    roomRule: existing?.roomRule || "auto",
+    fixedRoomId: existing?.fixedRoomId || null,
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,
     compoundParentTemplateId: isCompoundPart ? templateId : null,
@@ -379,7 +381,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
-    ["label","teacherName","teachers","credits","classKeys","classLabels","isWholeGrade"].forEach(k => {
+    ["label","teacherName","teachers","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId"].forEach(k => {
       if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });

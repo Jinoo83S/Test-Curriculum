@@ -21,6 +21,13 @@ export function createTimetableConstraintsHandlers({
   entryTitle = null,
   getEntryClassSummary = null,
   getRoomDisplayName = null,
+  getTtCards = null,
+  getTeachersForTtCard = null,
+  getCreditsForTtCard = null,
+  getTtCardClassLabels = null,
+  describeTtCard = null,
+  showSidebarCardDetail = null,
+  showEntryDetail = null,
   $,
 }) {
   function ensureConstraint(teacher) {
@@ -672,18 +679,93 @@ export function createTimetableConstraintsHandlers({
       .sort((a, b) => (Number(a.day) - Number(b.day)) || (Number(a.period) - Number(b.period)) || formatAssignedEntryTitle(a).localeCompare(formatAssignedEntryTitle(b), "ko"));
   }
 
+  function getAllTeacherTtCards(teacher) {
+    const cards = typeof getTtCards === "function" ? getTtCards() : (appState.timetable?.ttcards || []);
+    return cards
+      .filter(card => getCardTeacherNames(card).includes(teacher))
+      .slice()
+      .sort((a, b) => {
+        const ga = String(a.gradeKey || "").localeCompare(String(b.gradeKey || ""), "ko", { numeric: true });
+        if (ga) return ga;
+        return formatTtCardTitle(a).localeCompare(formatTtCardTitle(b), "ko", { numeric: true, sensitivity: "base" });
+      });
+  }
+
+  function getCardTeacherNames(card) {
+    if (typeof getTeachersForTtCard === "function") return (getTeachersForTtCard(card) || []).map(clean).filter(Boolean);
+    return [...new Set([...(Array.isArray(card?.teachers) ? card.teachers : []), ...splitTeacherNames(card?.teacherName || "")].map(clean).filter(Boolean))];
+  }
+
+  function getPlacementCardIds(entry = {}) {
+    return [...new Set([
+      ...(Array.isArray(entry.ttcardIds) ? entry.ttcardIds : []),
+      entry.ttcardId,
+      entry.cardId,
+    ].map(clean).filter(Boolean))];
+  }
+
+  function getAssignedEntriesForTtCard(card) {
+    if (!card?.id) return [];
+    return entries()
+      .filter(e => getPlacementCardIds(e).includes(card.id))
+      .slice()
+      .sort((a, b) => (Number(a.day) - Number(b.day)) || (Number(a.period) - Number(b.period)) || formatAssignedEntryTitle(a).localeCompare(formatAssignedEntryTitle(b), "ko"));
+  }
+
+  function formatTtCardTitle(card) {
+    if (typeof describeTtCard === "function") return describeTtCard(card)?.title || card?.subject || card?.label || "시간표 카드";
+    return clean(card?.subject || card?.label || card?.name || "시간표 카드");
+  }
+
+  function formatTtCardClasses(card) {
+    if (typeof getTtCardClassLabels === "function") {
+      const labels = getTtCardClassLabels(card) || [];
+      if (labels.length) return labels.join(", ");
+    }
+    return Array.isArray(card?.classLabels) && card.classLabels.length ? card.classLabels.join(", ") : clean(card?.gradeKey || "");
+  }
+
+  function getTtCardCredits(card) {
+    if (typeof getCreditsForTtCard === "function") return Number(getCreditsForTtCard(card)) || 0;
+    return Number(card?.credits) || 0;
+  }
+
+  function openTtCardDetail(card, placed = []) {
+    if (typeof showSidebarCardDetail !== "function") return;
+    const desc = typeof describeTtCard === "function" ? describeTtCard(card) : { title: formatTtCardTitle(card), card };
+    showSidebarCardDetail({
+      title: desc.title || formatTtCardTitle(card),
+      teachers: getCardTeacherNames(card),
+      gradeKeys: [card?.gradeKey].filter(Boolean),
+      credits: getTtCardCredits(card),
+      assigned: placed.length,
+      isDone: getTtCardCredits(card) > 0 && placed.length >= getTtCardCredits(card),
+      sectionIdx: card?.sectionIdx,
+      groupName: card?.group || "",
+      groupId: "",
+      detailItems: [desc],
+    });
+  }
+
   function renderTeacherAssignedCards(container, teacher, dayLabels, periods) {
-    const listEntries = getTeacherAssignedEntries(teacher);
+    const teacherCards = getAllTeacherTtCards(teacher);
+    const teacherEntries = getTeacherAssignedEntries(teacher);
     const card = document.createElement("div");
     card.className = "ttc-form-card ttc-assigned-card-panel";
-    card.innerHTML = `<h4>배정된 시간표 카드</h4>`;
+    card.innerHTML = `<h4>시간표 카드</h4>`;
+
+    const placedByCard = new Map(teacherCards.map(c => [c.id, getAssignedEntriesForTtCard(c)]));
+    const assignedCards = teacherCards.filter(c => (placedByCard.get(c.id) || []).length > 0);
+    const unassignedCards = teacherCards.filter(c => !(placedByCard.get(c.id) || []).length);
+    const slots = new Set(teacherEntries.map(e => `${Number(e.day)}:${Number(e.period)}`));
+    const rooms = new Set(teacherEntries.map(e => e.roomId).filter(Boolean));
 
     const strip = document.createElement("div");
     strip.className = "ttc-summary-strip";
-    const slots = new Set(listEntries.map(e => `${Number(e.day)}:${Number(e.period)}`));
-    const rooms = new Set(listEntries.map(e => e.roomId).filter(Boolean));
     [
-      ["카드", `${listEntries.length}개`],
+      ["카드", `${teacherCards.length}개`],
+      ["배정", `${assignedCards.length}개`],
+      ["미배정", `${unassignedCards.length}개`],
       ["시간", `${slots.size}칸`],
       ["교실", rooms.size ? `${rooms.size}개` : "없음"],
     ].forEach(([label, value]) => {
@@ -696,33 +778,42 @@ export function createTimetableConstraintsHandlers({
 
     const list = document.createElement("div");
     list.className = "ttc-card-list";
-    if (!listEntries.length) {
+    if (!teacherCards.length) {
       const empty = document.createElement("div");
       empty.className = "ttc-empty";
       empty.style.padding = "12px 0";
-      empty.textContent = "현재 시간표에 배정된 카드가 없습니다.";
+      empty.textContent = "이 교사에게 연결된 시간표 카드가 없습니다.";
       list.appendChild(empty);
     } else {
-      listEntries.forEach(entry => {
+      teacherCards.forEach(ttcard => {
+        const placed = placedByCard.get(ttcard.id) || [];
         const item = document.createElement("div");
-        item.className = "ttc-assigned-card";
-        const day = dayLabels[Number(entry.day)] || "-";
-        const period = Number.isInteger(Number(entry.period)) ? `${Number(entry.period) + 1}교시` : "-";
-        const classText = formatAssignedEntryClass(entry);
-        const roomText = formatAssignedEntryRoom(entry);
+        item.className = "ttc-assigned-card" + (placed.length ? "" : " ttc-unassigned-card");
+        item.tabIndex = 0;
+        item.title = "클릭하면 시간표 카드 상세를 봅니다.";
+        const credits = getTtCardCredits(ttcard);
+        const slotsText = placed.length
+          ? placed.slice(0, 3).map(entry => `${dayLabels[Number(entry.day)] || "-"} ${Number.isInteger(Number(entry.period)) ? `${Number(entry.period) + 1}교시` : "-"}`).join(", ") + (placed.length > 3 ? ` 외 ${placed.length - 3}` : "")
+          : "미배정";
+        const roomText = placed.length
+          ? [...new Set(placed.map(formatAssignedEntryRoom).filter(Boolean))].slice(0, 2).join(", ") || "교실 없음"
+          : (ttcard.roomRule === "fixed" ? "고정 교실" : "교실 자동");
         item.innerHTML = `
           <div class="ttc-assigned-card-head">
-            <div class="ttc-assigned-title">${escapeText(formatAssignedEntryTitle(entry))}</div>
-            <div class="ttc-assigned-slot">${escapeText(day)} ${escapeText(period)}</div>
+            <div class="ttc-assigned-title">${escapeText(formatTtCardTitle(ttcard))}</div>
+            <div class="ttc-assigned-slot">${escapeText(slotsText)}</div>
           </div>
-          <div class="ttc-assigned-meta">${escapeText(classText || "반 정보 없음")} · ${escapeText(roomText)}</div>`;
+          <div class="ttc-assigned-meta">${escapeText(formatTtCardClasses(ttcard) || "반 정보 없음")} · ${escapeText(roomText)} · ${placed.length}/${credits || "-"}시수</div>`;
+        const open = () => openTtCardDetail(ttcard, placed);
+        item.addEventListener("click", open);
+        item.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); } });
         list.appendChild(item);
       });
     }
     card.appendChild(list);
     const assist = document.createElement("div");
     assist.className = "ttc-assist";
-    assist.textContent = "교사 불가시간을 조정할 때 현재 배정된 카드와 바로 비교할 수 있습니다.";
+    assist.textContent = "배정된 카드와 미배정 카드를 함께 보여줍니다. 카드를 클릭하면 상세보기가 열립니다.";
     card.appendChild(assist);
     container.appendChild(card);
   }

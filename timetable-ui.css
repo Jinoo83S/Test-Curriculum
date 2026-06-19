@@ -2864,3 +2864,31 @@ body {
   .tt-teacher-card-left { max-height: 180px; }
   .tt-teacher-card-body { grid-template-columns: 1fr; overflow: auto; }
 }
+
+/* r81: clickable teacher-card rows and unassigned status */
+.ttc-assigned-card,
+.tt-teacher-card-row,
+.tt-teacher-card-entry {
+  cursor: pointer;
+}
+.ttc-assigned-card:hover,
+.tt-teacher-card-row:hover,
+.tt-teacher-card-entry:hover {
+  border-color: #93c5fd !important;
+  background: #eff6ff !important;
+}
+.ttc-unassigned-card {
+  background: #fff7ed !important;
+  border-color: #fed7aa !important;
+}
+.ttc-unassigned-card .ttc-assigned-slot {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #c2410c;
+}
+.ttc-assigned-card:focus-visible,
+.tt-teacher-card-row:focus-visible,
+.tt-teacher-card-entry:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, .35);
+  outline-offset: 2px;
+}
