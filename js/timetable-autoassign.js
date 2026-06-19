@@ -31,23 +31,59 @@ export function createAutoAssignAll(deps) {
     });
   }
 
-  function withAutoSaveTimeout(promise, ms = 25000, label = "시간표 저장") {
+  function watchAutoSave(promise, ms = 25000, label = "시간표 저장") {
     let timer = null;
-    return Promise.race([
-      Promise.resolve(promise),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label}이 ${Math.round(ms / 1000)}초 이상 지연되어 중단했습니다. 네트워크/저장공간을 확인해 주세요.`)), ms);
+    let settled = false;
+    const savePromise = Promise.resolve(promise)
+      .then(ok => {
+        settled = true;
+        return { ok: ok !== false, pending: false };
       })
-    ]).finally(() => { if (timer) clearTimeout(timer); });
+      .catch(error => {
+        settled = true;
+        return { ok: false, pending: false, error };
+      });
+    const timeoutPromise = new Promise(resolve => {
+      timer = setTimeout(() => {
+        if (!settled) resolve({ ok: true, pending: true, delayedSeconds: Math.round(ms / 1000) });
+      }, ms);
+    });
+    return Promise.race([savePromise, timeoutPromise]).finally(() => { if (timer) clearTimeout(timer); });
   }
 
   async function persistTimetableNow() {
     if (typeof saveNow === "function") {
-      const ok = await withAutoSaveTimeout(saveNow("timetable", { force: true, throwOnError: true }), 25000, "시간표 저장");
-      if (!ok) throw new Error("시간표 저장에 실패했습니다. 오래된 자동배치 보관본이 너무 많거나 저장공간/네트워크 문제가 있을 수 있습니다.");
+      // r83: 자동배치 결과 저장이 느려도 프로그램 오류로 처리하지 않습니다.
+      // force 저장은 변경 없는 시간표 카드까지 다시 쓰게 되어 237개 카드 + 500개 이상 entry를 모두 저장할 수 있습니다.
+      // 자동배치에서는 변경된 entry/meta만 저장하고, 25초를 넘기면 백그라운드 저장으로 넘깁니다.
+      const savePromise = Promise.resolve(saveNow("timetable", { force: false, throwOnError: true }));
+      const watched = await watchAutoSave(savePromise, 25000, "시간표 저장");
+      if (watched?.pending) {
+        addTimetableLog?.(
+          "warn",
+          "시간표 저장 지연",
+          "자동배치 결과 계산은 완료되었고 화면에 표시했습니다. Firestore 저장은 백그라운드에서 계속 진행합니다. 잠시 후 저장 상태가 완료로 바뀌는지 확인해 주세요."
+        );
+        savePromise
+          .then(ok => {
+            if (ok !== false) addTimetableLog?.("auto", "시간표 저장 완료", "지연되었던 자동배치 결과 저장이 백그라운드에서 완료되었습니다.");
+            else addTimetableLog?.("warn", "시간표 저장 확인 필요", "백그라운드 저장 결과가 실패로 반환되었습니다. 저장 버튼을 한 번 더 눌러 주세요.");
+          })
+          .catch(error => {
+            console.error("Delayed timetable save failed:", error);
+            addTimetableLog?.("error", "시간표 저장 실패", error?.message || String(error || "저장 실패"));
+          });
+        return true;
+      }
+      if (!watched?.ok) {
+        const message = watched?.error?.message || "시간표 저장에 실패했습니다. 저장 버튼을 한 번 더 눌러 주세요.";
+        console.error("Timetable save failed:", watched?.error || message);
+        addTimetableLog?.("error", "시간표 저장 실패", message);
+        return false;
+      }
       return true;
     }
-    scheduleSave("timetable", { immediate: true, saveOptions: { force: true } });
+    scheduleSave("timetable", { immediate: true, saveOptions: { force: false } });
     return true;
   }
 
