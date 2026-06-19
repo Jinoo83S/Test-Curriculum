@@ -5815,7 +5815,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r86",
+        autoEngine: "fresh-csp-r87",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6021,7 +6021,8 @@ export function createAutoAssignAll(deps) {
     const failures = [];
     (validation.cardCoverage?.shortRows || []).forEach(row => {
       const shortage = Math.max(0, -Number(row.diff || 0));
-      const block = blockByCardId.get(row.id);
+      const blockList = Array.isArray(blockByCardId.get(row.id)) ? blockByCardId.get(row.id) : [blockByCardId.get(row.id)].filter(Boolean);
+      const block = blockList[0];
       const item = block?.primaryItem;
       for (let i = 0; i < shortage; i++) {
         if (item) failures.push(makeFailedPlacement(`${row.title}${row.classLabels?.length ? ` ${row.classLabels.join(", ")}` : ""}`, item, {
@@ -6033,6 +6034,172 @@ export function createAutoAssignAll(deps) {
       }
     });
     return failures;
+  }
+
+  function freshAddBlockToCardIndex(index, cardId, block) {
+    if (!cardId || !block) return;
+    if (!index.has(cardId)) index.set(cardId, []);
+    index.get(cardId).push(block);
+  }
+
+  function freshSortCardBlockIndex(index = new Map()) {
+    index.forEach(list => {
+      list.sort((a, b) => {
+        const ao = Number(a?.occurrence || 0);
+        const bo = Number(b?.occurrence || 0);
+        if (ao !== bo) return ao - bo;
+        return String(a?.key || "").localeCompare(String(b?.key || ""), "ko", { numeric: true });
+      });
+    });
+    return index;
+  }
+
+  function freshPlacedBlockKeys(placed = []) {
+    return new Set((placed || []).map(e => e?.autoBlockKey).filter(Boolean));
+  }
+
+  function freshPlacementItemFromCardId(cardId = "") {
+    const card = getTtCardById(cardId);
+    if (!card) return null;
+    const teacher = getTeachersForTtCard(card).filter(Boolean).join(",");
+    const groupId = groupIdsForCardId(card.id)[0] || null;
+    return annotateRestrictedAutoItem({
+      kind: "coverage-single",
+      ttcardId: card.id,
+      ttcardIds: [card.id],
+      templateId: card.templateId,
+      templateIds: [card.templateId].filter(Boolean),
+      sectionIdx: card.sectionIdx ?? 0,
+      gradeKey: card.gradeKey,
+      gradeKeys: [card.gradeKey].filter(Boolean),
+      teacherName: teacher,
+      groupId
+    });
+  }
+
+  function freshTryPlaceSingleCoverageCard(cardId, placed = [], baseSlots = [], options = {}) {
+    const item = freshPlacementItemFromCardId(cardId);
+    if (!item) return null;
+
+    // 먼저 정상 검증을 통과하는 직접 슬롯을 찾습니다.
+    const probeBlock = {
+      key: `fresh:CARD:${cardId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+      kind: "coverage-single",
+      name: getAutoItemName(item),
+      primaryItem: item,
+      items: [item],
+      occurrence: 1
+    };
+    const direct = freshTryDirectPlace(probeBlock, placed, baseSlots, {
+      ...options,
+      respectSoftLimits: false,
+      respectUnavailable: true,
+      respectAssignedRoom: true
+    });
+    if (direct.ok) {
+      const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
+      added.forEach(e => { e.autoEngine = "fresh-csp-r87-coverage-direct"; });
+      return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
+    }
+
+    // 그래도 막히면 기존 forcedSlotScore의 “최소 충돌 없는 슬롯”을 사용합니다.
+    // 이 함수는 보호 슬롯, 동일 카드 중복, 교실 중복, 학급 중복은 끝까지 금지합니다.
+    const slot = findLeastBadSlot(item, baseSlots, placed, options);
+    if (!slot) return null;
+    const entry = makeAutoEntry(item, slot, placed);
+    if (!entry) return null;
+    const fixed = normalizeTimetableEntry({
+      ...entry,
+      autoBlockKey: probeBlock.key,
+      autoEngine: "fresh-csp-r87-coverage-fill",
+      autoCoverageRepair: true,
+      forced: true
+    });
+    placed.push(fixed);
+    return { mode: "coverage-fill", entries: [fixed], blockKey: probeBlock.key, forced: true };
+  }
+
+  async function freshRepairCoverageShortages(validation = {}, context = {}) {
+    const {
+      placed = [], baseSlots = [], blockByCardId = new Map(), blockByKey = new Map(),
+      options = {}, limits = {}, updateProgress = null
+    } = context;
+    const rows = [...(validation.cardCoverage?.shortRows || [])]
+      .map(row => ({ ...row, shortage: Math.max(0, -Number(row.diff || 0)) }))
+      .filter(row => row.id && row.shortage > 0)
+      .sort((a, b) => {
+        if (b.shortage !== a.shortage) return b.shortage - a.shortage;
+        const ac = (blockByCardId.get(a.id) || []).length;
+        const bc = (blockByCardId.get(b.id) || []).length;
+        if (ac !== bc) return bc - ac;
+        return String(a.title || a.id).localeCompare(String(b.title || b.id), "ko", { numeric: true });
+      });
+
+    const repairedBlocks = [];
+    const forcedEntries = [];
+    const repairedRows = [];
+    let attempts = 0;
+    const placedKeys = freshPlacedBlockKeys(placed);
+
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r];
+      for (let i = 0; i < row.shortage; i++) {
+        let done = false;
+        const candidates = [...(blockByCardId.get(row.id) || [])]
+          .filter(block => block?.key && !placedKeys.has(block.key));
+
+        for (const block of candidates) {
+          attempts += 1;
+          const result = freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, {
+            ...options,
+            respectSoftLimits: false,
+            respectUnavailable: true,
+            respectAssignedRoom: true
+          }, {
+            ...limits,
+            maxBlockersPerMove: Math.max(Number(limits.maxBlockersPerMove || 0), 8),
+            displacementSlotBudget: Math.max(Number(limits.displacementSlotBudget || 0), baseSlots.length)
+          }, Math.max(Number(limits.relaxedDepth || limits.depth || 0), 7), new Set());
+          if (!result.ok) continue;
+          placedKeys.add(block.key);
+          repairedBlocks.push({ blockKey: block.key, cardId: row.id, mode: "coverage-block", displaced: result.displaced || 0 });
+          repairedRows.push(row.id);
+          done = true;
+          break;
+        }
+
+        if (!done) {
+          attempts += 1;
+          const single = freshTryPlaceSingleCoverageCard(row.id, placed, baseSlots, options);
+          if (single) {
+            if (single.forced) forcedEntries.push(...(single.entries || []));
+            repairedRows.push(row.id);
+            done = true;
+          }
+        }
+      }
+
+      if (updateProgress && (r % 4 === 0 || r === rows.length - 1)) {
+        await updateProgress({
+          percent: 86 + Math.round((r + 1) / Math.max(1, rows.length) * 8),
+          step: "카드 시수 잔여 복구",
+          detail: `검증에서 부족한 카드 시수를 다시 block 단위로 삽입 중입니다. ${r + 1}/${rows.length}`,
+          placed: placed.length,
+          best: placed.length,
+          failed: Math.max(0, rows.length - r - 1),
+          currentCard: row.title || row.id
+        }, true);
+      }
+    }
+
+    return {
+      attemptedRows: rows.length,
+      attempts,
+      repairedBlocks,
+      repairedRows,
+      forcedEntries,
+      repairedCount: repairedRows.length
+    };
   }
 
   async function runFreshAutoPlacementEngine(context = {}) {
@@ -6055,7 +6222,8 @@ export function createAutoAssignAll(deps) {
     const orderedBlocks = freshOrderBlocks(rawBlocks, baseSlots, strictOptions);
     const blockByKey = new Map(orderedBlocks.map(block => [block.key, block]));
     const blockByCardId = new Map();
-    orderedBlocks.forEach(block => freshBlockCardIds(block).forEach(id => { if (!blockByCardId.has(id)) blockByCardId.set(id, block); }));
+    orderedBlocks.forEach(block => freshBlockCardIds(block).forEach(id => freshAddBlockToCardIndex(blockByCardId, id, block)));
+    freshSortCardBlockIndex(blockByCardId);
 
     const mode = String(options.runAttempts || "balanced");
     const limits = mode === "fast"
@@ -6126,12 +6294,34 @@ export function createAutoAssignAll(deps) {
       groupId: block.groupId || ""
     })).filter(f => f.item);
 
-    const validation = buildScheduleVerificationReport([...protectedEntries, ...placed], {
+    let validation = buildScheduleVerificationReport([...protectedEntries, ...placed], {
       scopeGrades: activeGrades,
       protectedEntries,
       failedNames: [...new Set(failedItems.map(f => f.name))],
       deriveFailedFromCardShortage: true
     });
+
+    // r87: block 탐색 실패 후에도 검증기가 정확히 알려 주는 “카드 시수 부족”을
+    // 다시 입력으로 삼아 재삽입합니다. r86은 여기서 보고만 하고 끝나서 MS국어/한국어처럼
+    // 큰 동시수업 block이 통째로 누락되었습니다.
+    const coverageRepair = await freshRepairCoverageShortages(validation, {
+      placed,
+      baseSlots,
+      blockByCardId,
+      blockByKey,
+      options: relaxedOptions,
+      limits,
+      updateProgress
+    });
+    if (coverageRepair.repairedCount > 0) {
+      validation = buildScheduleVerificationReport([...protectedEntries, ...placed], {
+        scopeGrades: activeGrades,
+        protectedEntries,
+        failedNames: [...new Set(failedItems.map(f => f.name))],
+        deriveFailedFromCardShortage: true
+      });
+    }
+
     const coverageFailures = freshCoverageFailureItemsFromValidation(validation, blockByCardId);
     const mergedFailed = coverageFailures.length ? coverageFailures : failedItems;
 
@@ -6143,14 +6333,19 @@ export function createAutoAssignAll(deps) {
       validation,
       baseSlots,
       skippedProtectedBlocks: skipped.length,
+      coverageRepair,
+      forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-displacement-r86",
+        engine: "fresh-csp-displacement-r87",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
         displacedMoves,
         skippedProtectedBlocks: skipped.length,
         failedBlockCount: stillFailed.length,
+        coverageRepairCount: coverageRepair.repairedCount || 0,
+        coverageRepairAttempts: coverageRepair.attempts || 0,
+        coverageForcedCount: (coverageRepair.forcedEntries || []).length,
         baseSlotCount: baseSlots.length
       }
     };
@@ -6255,7 +6450,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r86`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r87`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6284,6 +6479,7 @@ export function createAutoAssignAll(deps) {
         updateProgress
       });
       const placed = cloneAutoAssignData(engineResult.placed || []) || [];
+      const forcedEntries = cloneAutoAssignData(engineResult.forcedEntries || []) || [];
       const failedItems = [...(engineResult.failedItems || [])];
       const failedNames = [...new Set(failedItems.map(f => f.name).filter(Boolean))];
       const allFinalEntries = normalizeSnapshotEntries([...protectedEntries, ...placed]);
@@ -6302,7 +6498,7 @@ export function createAutoAssignAll(deps) {
         label: "새 엔진 최종 결과",
         placedCount: placed.length,
         failedCount: finalValidation.failedCount || failedNames.length,
-        forcedCount: 0,
+        forcedCount: forcedEntries.length,
         qualityScore: scoreScheduleQuality(placed, options)
       });
 
@@ -6323,7 +6519,7 @@ export function createAutoAssignAll(deps) {
       const outcomeAnalysis = summarizeAutoAssignOutcome({
         placedEntries: placed,
         failedItems,
-        forcedEntries: [],
+        forcedEntries,
         protectedEntries,
         missingRoomEntries
       });
@@ -6347,10 +6543,10 @@ export function createAutoAssignAll(deps) {
         scoringProfile: options.scoringProfile || "balanced",
         scoringWeights: options.scoringWeights,
         scoringSummary: describeScoreWeights(options.scoringWeights),
-        engineProfileLabel: "새 엔진: block-CSP + 전역 교환 복구 r86",
+        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/잔여시수 복구 r87",
         engineStats: engineResult.stats,
         placedCount: placed.length,
-        forcedCount: 0,
+        forcedCount: forcedEntries.length,
         ok: !autoAssignIncomplete,
         resultStatus: resultKind.status,
         resultStatusLabel: resultKind.title,
@@ -6393,13 +6589,13 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-displacement-r86",
+        telemetryStatus: "fresh-csp-displacement-r87",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-19-fresh-csp-displacement-r86"
+        validatorVersion: "2026-06-19-fresh-csp-displacement-r87"
       };
 
       let afterAutoSnapshot = null;
@@ -6429,7 +6625,7 @@ export function createAutoAssignAll(deps) {
       addTimetableLog(
         resultKind.logType,
         resultKind.logTitle,
-        `새 엔진 완료 · block ${engineResult.stats.totalBlocks}개 중 실패 ${engineResult.stats.failedBlockCount}개 · 직접 ${engineResult.stats.directPlaced}개 · 교환복구 ${engineResult.stats.swapPlaced}개 · 이동 ${engineResult.stats.displacedMoves}회 · 미배치 ${failedNames.length}개 · 충돌 ${conflictSummary.totalAffected}건`
+        `새 엔진 완료 · block ${engineResult.stats.totalBlocks}개 중 실패 ${engineResult.stats.failedBlockCount}개 · 직접 ${engineResult.stats.directPlaced}개 · 교환복구 ${engineResult.stats.swapPlaced}개 · 잔여시수복구 ${engineResult.stats.coverageRepairCount || 0}건 · 이동 ${engineResult.stats.displacedMoves}회 · 미배치 ${failedNames.length}개 · 충돌 ${conflictSummary.totalAffected}건`
       );
       addTimetableLog(
         outcomeAnalysis.failedUnitCount ? "warn" : "auto",
@@ -6438,10 +6634,11 @@ export function createAutoAssignAll(deps) {
       );
 
       const detailLines = [
-        `<b>엔진</b> 새 block-CSP + 전역 교환 복구 r86`,
+        `<b>엔진</b> 새 block-CSP + 전역 교환/잔여시수 복구 r87`,
         `<b>배치 block</b> ${engineResult.stats.totalBlocks - engineResult.stats.failedBlockCount}/${engineResult.stats.totalBlocks}`,
         `<b>직접 배치</b> ${engineResult.stats.directPlaced}개`,
         `<b>교환/이동 복구</b> ${engineResult.stats.swapPlaced}개 block · 이동 ${engineResult.stats.displacedMoves}회`,
+        `<b>잔여시수 복구</b> ${engineResult.stats.coverageRepairCount || 0}건 · 보정 ${engineResult.stats.coverageForcedCount || 0}건`,
         `<b>보호된 기존 block</b> ${engineResult.stats.skippedProtectedBlocks}개`,
         `<b>신규 entry</b> ${placed.length}개`,
         `<b>미배치</b> ${failedNames.length}개`,
@@ -6503,7 +6700,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-displacement-r86",
+          engine: "fresh-csp-displacement-r87",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6517,7 +6714,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-displacement-r86"
+              engine: "fresh-csp-displacement-r87"
             });
           }
         } catch (_) {}
