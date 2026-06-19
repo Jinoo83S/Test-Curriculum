@@ -3969,6 +3969,11 @@ export function createAutoAssignAll(deps) {
     const maxChainTargetSlots = options.runAttempts === 'deep' ? 14 : (options.runAttempts === 'fast' ? 5 : 8);
     const maxChainAttemptsPerCall = options.runAttempts === 'deep' ? 2500 : (options.runAttempts === 'fast' ? 450 : 900);
     const maxChainMillisPerCall = options.runAttempts === 'deep' ? 650 : (options.runAttempts === 'fast' ? 180 : 320);
+    // r84: 잔여 복구 기능을 세분화합니다.
+    // 균형 배치에서는 가벼운 2-cycle 복구만 허용하고, 브라우저를 오래 잡아먹는
+    // ejection-chain은 정교한 배치에서만 실행되도록 분리합니다.
+    const allowEjectionChainRepair = experimentalResidualRepairEnabled({ ...options, engineProfile: options.engineProfile })
+      && options?.engineProfile?.enableEjectionChainRepair === true;
     let attempts = 0;
     let chainCalls = 0;
     let lastRepairYieldAt = Date.now();
@@ -4064,7 +4069,7 @@ export function createAutoAssignAll(deps) {
           }
         }
 
-        if (!done && experimentalResidualRepairEnabled({ ...options, engineProfile: options.engineProfile }) && blockers.length && attempts < maxRepairAttempts && chainCalls < maxChainCalls && targetSlotIndex < maxChainTargetSlots) {
+        if (!done && allowEjectionChainRepair && blockers.length && attempts < maxRepairAttempts && chainCalls < maxChainCalls && targetSlotIndex < maxChainTargetSlots) {
           chainCalls++;
           const chainOptions = {
             ...options,
@@ -4766,10 +4771,11 @@ export function createAutoAssignAll(deps) {
       postProcessLimit: 35,
       postProcessPasses: 1,
       qualityClassCheck: true,
-      // r80: ejection-chain/min-conflicts 계열은 정교한 배치에 남깁니다.
-      // 균형 배치는 병목 선배치 + 단일/다중 이동 복구까지만 수행해 운영 속도를 확보합니다.
-      enableExperimentalResidualRepair: false,
-      enableResidualTwoCycleRepair: false,
+      // r84: 균형 배치에서도 마지막 잔여 5~10시수는 단순 정렬만으로는 풀리지 않습니다.
+      // 다만 r79처럼 무거운 연쇄탐색을 다시 켜지는 않고, 안전한 2-cycle 스왑 복구만 켭니다.
+      // ejection-chain / min-conflicts / 강제보정은 여전히 정교한 배치 전용입니다.
+      enableExperimentalResidualRepair: true,
+      enableResidualTwoCycleRepair: true,
       enableEjectionChainRepair: false,
       enableMinConflictsRepair: false,
       enableForceResidualRepair: false
@@ -6682,7 +6688,7 @@ export function createAutoAssignAll(deps) {
           respectAssignedRoom: true
         };
 
-        const twoCyclePack = allowExperimentalResidualRepair
+        const twoCyclePack = allowExperimentalResidualRepair && engineProfile?.enableResidualTwoCycleRepair === true
           ? await repairResidualByTwoCycleSwap(currentPlaced, [...currentFailed, ...coverageFailures], currentForced, `${labelPrefix} ${pass + 1}차 · 2단계스왑`)
           : null;
         totalAttempts += Number(twoCyclePack?.repairedCount || 0);
@@ -6851,7 +6857,11 @@ export function createAutoAssignAll(deps) {
         currentCard: "-",
         log: "Repair/Swap 1차 복구 단계 시작"
       }, true);
-      const repair = await repairFailedItemsBySingleMove(bestFailed, baseSlots, bestPlaced, bestStage?.options || options, updateProgress);
+      const repair = await repairFailedItemsBySingleMove(bestFailed, baseSlots, bestPlaced, {
+        ...(bestStage?.options || options),
+        runAttempts: options.runAttempts,
+        engineProfile
+      }, updateProgress);
       bestPlaced = repair.placed;
       bestFailed = repair.remaining;
       swapRepaired = repair.repaired || [];
@@ -6956,7 +6966,7 @@ export function createAutoAssignAll(deps) {
       considerAutoCandidate("최종 카드시수 반복복구", bestPlaced, bestFailed, forcedPlaced, scoreScheduleQuality(bestPlaced, options));
     }
 
-    const hardResidualRepair = allowExperimentalResidualRepair
+    const hardResidualRepair = allowExperimentalResidualRepair && engineProfile?.enableForceResidualRepair === true
       ? await forceResidualCardShortagesSafely(bestPlaced, bestFailed, forcedPlaced, "r30 잔여 카드 완성복구")
       : null;
     if (hardResidualRepair?.metrics && compareAutoRunResults(hardResidualRepair.metrics, buildAutoRunMetricsForEntries([...protectedEntries, ...bestPlaced], activeGrades, bestFailed, {
