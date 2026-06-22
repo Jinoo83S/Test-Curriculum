@@ -639,6 +639,15 @@ export function normalizeTimetableEntry(e = {}) {
     roomRule:    clean(e.roomRule) || "auto",
     roomPinned:  !!e.roomPinned,
     pinned:      !!e.pinned,
+    // r95: 자동배치가 만든 block/unit 식별자를 저장 후에도 보존합니다.
+    // 이 값이 사라지면 다음 진단/재복구 단계에서 묶음 이동 단위가 entry 단위로 쪼개져 잔여시수 복구력이 떨어집니다.
+    autoBlockKey: clean(e.autoBlockKey),
+    autoScheduleUnitKey: clean(e.autoScheduleUnitKey),
+    autoEngine: clean(e.autoEngine),
+    autoGroupBlock: e.autoGroupBlock === true,
+    autoOccurrence: Number.isFinite(Number(e.autoOccurrence)) ? Number(e.autoOccurrence) : 0,
+    autoCoverageRepair: e.autoCoverageRepair === true,
+    forced: e.forced === true,
   };
 }
 export function normalizeTtCard(item = {}) {
@@ -1374,6 +1383,13 @@ function syncAutoAssignMetaToEquivalentSnapshots({ entries = [], bestSnapshot = 
     return { bestSnapshot, savedSchedules, meta };
   }
   const sourceMeta = canonicalizeAutoAssignMeta({ ...meta }, { schemaVersion: TIMETABLE_VALIDATOR_VERSION });
+  // r95: canonicalizeAutoAssignMeta는 공통 validator 버전을 넣습니다.
+  // 자동배치 실행 식별자는 별도로 보존해 실제 엔진 버전 추적이 끊기지 않게 합니다.
+  sourceMeta.validatorVersion = clean(meta.validatorVersion || sourceMeta.validatorVersion || TIMETABLE_VALIDATOR_VERSION);
+  sourceMeta.engine = clean(meta.engine || sourceMeta.engine);
+  sourceMeta.telemetryStatus = clean(meta.telemetryStatus || sourceMeta.telemetryStatus);
+  sourceMeta.appVersion = clean(meta.appVersion || globalThis.HIS_APP_VERSION || sourceMeta.appVersion);
+  sourceMeta.autoAssignBuild = clean(meta.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD || sourceMeta.autoAssignBuild);
   sourceMeta.residualPuzzleReport = stripStaleResidualPuzzleReport(sourceMeta.residualPuzzleReport);
   const canonicalMeta = compactAutoAssignMetaForStorage({
     ...sourceMeta,

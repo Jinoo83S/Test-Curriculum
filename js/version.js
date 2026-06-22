@@ -1,8 +1,8 @@
  // ================================================================
 // version.js · Central cache-busting version for runtime imports
 // ================================================================
-// r94: HTML과 JS 양쪽에서 같은 빌드 번호를 사용하도록 window.HIS_APP_VERSION을 우선합니다.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-22-r87solver-metadata-r94");
+// r95: HTML과 JS 양쪽에서 같은 빌드 번호를 사용하도록 window.HIS_APP_VERSION을 우선합니다.
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-22-r87solver-onemove-r95");
 
 export function versioned(path) {
   const raw = String(path || "");

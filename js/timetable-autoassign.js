@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-r87solver-metadata-r94";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-r87solver-onemove-r95";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -364,7 +364,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-22-fresh-csp-displacement-r94"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-22-fresh-csp-displacement-r95"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -690,7 +690,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-22-fresh-csp-displacement-r94",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-22-fresh-csp-displacement-r95",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -5824,7 +5824,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r94",
+        autoEngine: "fresh-csp-r95",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6086,6 +6086,76 @@ export function createAutoAssignAll(deps) {
     });
   }
 
+  function freshTryOneMoveCoverageCard(cardId, placed = [], baseSlots = [], options = {}) {
+    const item = freshPlacementItemFromCardId(cardId);
+    if (!item) return null;
+    const probeKey = `fresh:ONEMOVE:${cardId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const checkOptions = {
+      ...options,
+      respectSoftLimits: false,
+      respectUnavailable: true,
+      respectAssignedRoom: true
+    };
+    const targetSlots = orderRepairTargetSlotsForItem(item, baseSlots, placed);
+    const moveSlots = [...baseSlots].sort((a, b) => {
+      if (a.period !== b.period) return a.period - b.period;
+      return a.day - b.day;
+    });
+    let attempts = 0;
+
+    for (const targetSlot of targetSlots) {
+      attempts += 1;
+      if (checkPlacementValid(item, targetSlot, placed, checkOptions)) {
+        const entry = makeAutoEntry(item, targetSlot, placed);
+        if (!entry) continue;
+        const fixed = normalizeTimetableEntry({
+          ...entry,
+          autoBlockKey: probeKey,
+          autoEngine: "fresh-csp-r95-coverage-onemove-direct",
+          autoCoverageRepair: true
+        });
+        placed.push(fixed);
+        return { mode: "coverage-onemove-direct", entries: [fixed], blockKey: probeKey, attempts };
+      }
+
+      const blockers = uniqueMovableBlocks(getBlockingBlocksForSlot(item, targetSlot, placed))
+        .filter(isRepairBlockMovable)
+        .slice(0, 8);
+      if (!blockers.length) continue;
+
+      for (const block of blockers) {
+        const blockIds = new Set((block.entries || []).map(e => e.id).filter(Boolean));
+        const withoutBlock = placed.filter(e => !blockIds.has(e.id));
+        for (const moveSlot of moveSlots) {
+          attempts += 1;
+          if (moveSlot.day === targetSlot.day && moveSlot.period === targetSlot.period) continue;
+          const moved = makeMovedBlockEntries(block, moveSlot, withoutBlock, checkOptions);
+          if (!moved) continue;
+          const baseWithMoved = [...withoutBlock, ...moved];
+          if (!checkPlacementValid(item, targetSlot, baseWithMoved, checkOptions)) continue;
+          const entry = makeAutoEntry(item, targetSlot, baseWithMoved);
+          if (!entry) continue;
+          const fixed = normalizeTimetableEntry({
+            ...entry,
+            autoBlockKey: probeKey,
+            autoEngine: "fresh-csp-r95-coverage-onemove",
+            autoCoverageRepair: true
+          });
+          placed.splice(0, placed.length, ...baseWithMoved, fixed);
+          return {
+            mode: "coverage-onemove",
+            entries: [fixed],
+            movedEntries: moved,
+            movedBlockKey: block.key,
+            blockKey: probeKey,
+            attempts
+          };
+        }
+      }
+    }
+    return null;
+  }
+
   function freshTryPlaceSingleCoverageCard(cardId, placed = [], baseSlots = [], options = {}) {
     const item = freshPlacementItemFromCardId(cardId);
     if (!item) return null;
@@ -6107,7 +6177,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r94-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r95-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6120,7 +6190,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r94-coverage-fill",
+      autoEngine: "fresh-csp-r95-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6179,6 +6249,27 @@ export function createAutoAssignAll(deps) {
 
         if (!done) {
           attempts += 1;
+          const oneMove = freshTryOneMoveCoverageCard(row.id, placed, baseSlots, {
+            ...options,
+            respectSoftLimits: false,
+            respectUnavailable: true,
+            respectAssignedRoom: true
+          });
+          attempts += Number(oneMove?.attempts || 0);
+          if (oneMove) {
+            repairedBlocks.push({
+              blockKey: oneMove.blockKey,
+              cardId: row.id,
+              mode: oneMove.mode || "coverage-onemove",
+              movedBlockKey: oneMove.movedBlockKey || ""
+            });
+            repairedRows.push(row.id);
+            done = true;
+          }
+        }
+
+        if (!done) {
+          attempts += 1;
           const single = freshTryPlaceSingleCoverageCard(row.id, placed, baseSlots, options);
           if (single) {
             if (single.forced) forcedEntries.push(...(single.entries || []));
@@ -6192,7 +6283,7 @@ export function createAutoAssignAll(deps) {
         await updateProgress({
           percent: 86 + Math.round((r + 1) / Math.max(1, rows.length) * 8),
           step: "카드 시수 잔여 복구",
-          detail: `검증에서 부족한 카드 시수를 다시 block 단위로 삽입 중입니다. ${r + 1}/${rows.length}`,
+          detail: `검증에서 부족한 카드 시수를 block/1단계 이동으로 재삽입 중입니다. ${r + 1}/${rows.length}`,
           placed: placed.length,
           best: placed.length,
           failed: Math.max(0, rows.length - r - 1),
@@ -6345,7 +6436,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-displacement-r94",
+        engine: "fresh-csp-displacement-r95",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6459,7 +6550,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r94`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r95`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6597,17 +6688,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-displacement-r94",
-        engine: "fresh-csp-displacement-r94",
+        telemetryStatus: "fresh-csp-displacement-r95",
+        engine: "fresh-csp-displacement-r95",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/잔여시수복구 r94",
+        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/잔여시수복구 r95",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-22-fresh-csp-displacement-r94"
+        validatorVersion: "2026-06-22-fresh-csp-displacement-r95"
       };
 
       let afterAutoSnapshot = null;
@@ -6712,7 +6803,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-displacement-r94",
+          engine: "fresh-csp-displacement-r95",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6726,7 +6817,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-displacement-r94"
+              engine: "fresh-csp-displacement-r95"
             });
           }
         } catch (_) {}

@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-06-22-r87solver-metadata-r94";
+import { versioned } from "./version.js?v=2026-06-22-r87solver-onemove-r95";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",
