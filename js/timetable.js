@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version-r91.js?v=2026-06-22-hard-file-r91";
+import { versioned } from "./version-r92.js?v=2026-06-22-hard-file-r92";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -46,7 +46,7 @@ const [
   import(versioned("./ttcards.js")),
   import(versioned("./timetable-conflicts.js")),
   import(versioned("./timetable-data.js")),
-  import(versioned("./timetable-autoassign.js")),
+  import(versioned("./timetable-autoassign-r92.js")),
   import(versioned("./timetable-grid.js")),
   import(versioned("./timetable-detail.js")),
   import(versioned("./timetable-constraints.js")),

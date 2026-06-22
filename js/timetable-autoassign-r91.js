@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-hard-file-r91";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-hard-file-r92";
 export function createAutoAssignAll(deps) {
   const {
     GRADE_KEYS, canEdit, appState, scheduleSave, saveNow, normalizeTimetableEntry,
@@ -5872,7 +5872,7 @@ export function createAutoAssignAll(deps) {
         unitId: item.unitId || entry.unitId || null,
         autoBlockKey: block.key,
         autoScheduleUnitKey: freshBlockSignature(block),
-        autoEngine: "fresh-csp-r91",
+        autoEngine: "fresh-csp-r92",
         autoGroupBlock: atomicGroup,
         autoOccurrence: block.occurrence || 1
       }));
@@ -6137,7 +6137,7 @@ export function createAutoAssignAll(deps) {
         respectAssignedRoom: true
       });
       if (!entriesToPush) continue;
-      entriesToPush.forEach(e => { e.autoAtomicRepair = true; e.autoEngine = "fresh-csp-r91-atomic-repair"; });
+      entriesToPush.forEach(e => { e.autoAtomicRepair = true; e.autoEngine = "fresh-csp-r92-atomic-repair"; });
       freshPushEntries(placed, entriesToPush);
       return { ok: true, slot: row.slot, mode: "atomic-relaxed", displaced: 0 };
     }
@@ -6227,7 +6227,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r91-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r92-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
     return null;
@@ -6473,7 +6473,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-displacement-r91",
+        engine: "fresh-csp-displacement-r92",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6587,7 +6587,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r91`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r92`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6680,7 +6680,7 @@ export function createAutoAssignAll(deps) {
         scoringProfile: options.scoringProfile || "balanced",
         scoringWeights: options.scoringWeights,
         scoringSummary: describeScoreWeights(options.scoringWeights),
-        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/ScheduleUnit 원자복구 r91",
+        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/ScheduleUnit 원자복구 r92",
         engineStats: engineResult.stats,
         placedCount: placed.length,
         forcedCount: forcedEntries.length,
@@ -6726,8 +6726,8 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-displacement-r91",
-        engine: "fresh-csp-displacement-r91",
+        telemetryStatus: "fresh-csp-displacement-r92",
+        engine: "fresh-csp-displacement-r92",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
         qualityGate: {
@@ -6735,7 +6735,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-22-fresh-csp-displacement-r91"
+        validatorVersion: "2026-06-22-fresh-csp-displacement-r92"
       };
 
       let afterAutoSnapshot = null;
@@ -6774,7 +6774,7 @@ export function createAutoAssignAll(deps) {
       );
 
       const detailLines = [
-        `<b>엔진</b> 새 block-CSP + 전역 교환/ScheduleUnit 원자복구 r91`,
+        `<b>엔진</b> 새 block-CSP + 전역 교환/ScheduleUnit 원자복구 r92`,
         `<b>배치 block</b> ${engineResult.stats.totalBlocks - engineResult.stats.failedBlockCount}/${engineResult.stats.totalBlocks}`,
         `<b>직접 배치</b> ${engineResult.stats.directPlaced}개`,
         `<b>교환/이동 복구</b> ${engineResult.stats.swapPlaced}개 block · 이동 ${engineResult.stats.displacedMoves}회`,
@@ -6840,7 +6840,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-displacement-r91",
+          engine: "fresh-csp-displacement-r92",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6854,7 +6854,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-displacement-r91"
+              engine: "fresh-csp-displacement-r92"
             });
           }
         } catch (_) {}
