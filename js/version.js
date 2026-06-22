@@ -3,7 +3,7 @@
 // ================================================================
 // Update this value once per release. HTML entry points can override it by
 // setting window.HIS_APP_VERSION before loading app modules.
-export const APP_VERSION = "2026-06-19-새자동배치잔여시수복구-r87";
+export const APP_VERSION = "2026-06-19-ScheduleUnit원자복구-r88";
 
 export function versioned(path) {
   const raw = String(path || "");

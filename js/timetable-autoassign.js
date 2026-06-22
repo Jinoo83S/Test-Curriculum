@@ -5637,6 +5637,58 @@ export function createAutoAssignAll(deps) {
     return block.name || getAutoItemName(block.primaryItem || block.items?.[0] || {}) || block.key || "수업";
   }
 
+  // r88: 자동배치의 기본 단위를 card가 아니라 ScheduleUnit(block)으로 고정합니다.
+  // 특히 동시수업/분반수업은 한 카드가 부족하더라도 형제 카드 전체가 같은 슬롯에
+  // 함께 들어가야 하므로, 복구 단계에서도 절대 단일 카드로 쪼개지 않습니다.
+  function freshBlockIsAtomicGroup(block = {}) {
+    return !!(block.groupId || block.group || block.kind === "group" || block.kind === "group-unit");
+  }
+
+  function freshCardGroupIds(cardId = "") {
+    return groupIdsForCardId(cardId).filter(Boolean);
+  }
+
+  function freshCardBelongsToAtomicGroup(cardId = "") {
+    return freshCardGroupIds(cardId).some(groupId => {
+      const group = ttGroups().find(g => String(g?.id || "") === String(groupId || ""));
+      return !!group && (group.groupType === "concurrent" || group.isConcurrent || (group.units || []).length || (group.poolCardIds || []).length > 1);
+    });
+  }
+
+  function freshBlockSignature(block = {}) {
+    const ids = freshBlockCardIds(block).slice().sort().join("+");
+    return `${block.groupId || block.kind || "single"}::${block.occurrence || 1}::${ids}`;
+  }
+
+  function freshBlockAlreadyPlaced(block = {}, placed = []) {
+    const key = block.key;
+    if (key && placed.some(e => e.autoBlockKey === key)) return true;
+    const ids = freshBlockCardIds(block);
+    if (!ids.length) return false;
+    // 같은 ScheduleUnit의 핵심 카드들이 같은 슬롯에 이미 있으면 배치된 것으로 봅니다.
+    const slotHits = new Map();
+    (placed || []).forEach(entry => {
+      const eids = new Set(ttCardIdsFromPlacement(entry).filter(Boolean));
+      const hit = ids.filter(id => eids.has(id)).length;
+      if (!hit) return;
+      const slotKey = `${entry.day}:${entry.period}`;
+      slotHits.set(slotKey, (slotHits.get(slotKey) || 0) + hit);
+    });
+    const required = Math.max(1, Math.min(ids.length, freshBlockIsAtomicGroup(block) ? Math.ceil(ids.length * 0.6) : 1));
+    return [...slotHits.values()].some(count => count >= required);
+  }
+
+  function freshNormalizeAtomicItem(rawItem = {}, block = {}) {
+    const unitId = rawItem.unitId || rawItem.unit?.id || block.unitId || null;
+    const groupId = rawItem.groupId || block.groupId || block.group?.id || null;
+    return annotateRestrictedAutoItem({
+      ...rawItem,
+      unitId,
+      groupId,
+      groupName: rawItem.groupName || block.group?.name || block.name || ""
+    });
+  }
+
   function freshStableHash(value = "") {
     const s = String(value || "");
     let h = 2166136261;
@@ -5807,16 +5859,26 @@ export function createAutoAssignAll(deps) {
 
   function freshMakeBlockEntries(block = {}, slot = {}, placed = [], checkOptions = {}) {
     const pending = [];
+    const atomicGroup = freshBlockIsAtomicGroup(block);
+    const blockOptions = {
+      allowSameGroupTeacherOverlap: atomicGroup ? true : checkOptions.allowSameGroupTeacherOverlap,
+      ...checkOptions
+    };
     for (const rawItem of block.items || []) {
-      const item = annotateRestrictedAutoItem(rawItem);
-      if (!checkPlacementValid(item, slot, [...placed, ...pending], checkOptions)) return null;
-      const entry = makeAutoEntry(item, slot, [...placed, ...pending]);
+      const item = freshNormalizeAtomicItem(rawItem, block);
+      const base = [...placed, ...pending];
+      if (!checkPlacementValid(item, slot, base, blockOptions)) return null;
+      const entry = makeAutoEntry(item, slot, base);
       if (!entry) return null;
       pending.push(normalizeTimetableEntry({
         ...entry,
+        groupId: item.groupId || entry.groupId || block.groupId || null,
+        groupName: item.groupName || entry.groupName || block.group?.name || "",
+        unitId: item.unitId || entry.unitId || null,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r87",
-        autoGroupBlock: block.kind !== "standalone",
+        autoScheduleUnitKey: freshBlockSignature(block),
+        autoEngine: "fresh-csp-r88",
+        autoGroupBlock: atomicGroup,
         autoOccurrence: block.occurrence || 1
       }));
     }
@@ -5966,6 +6028,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function freshTryDirectPlace(block, placed, baseSlots, checkOptions = {}) {
+    if (freshBlockAlreadyPlaced(block, placed)) return { ok: true, alreadyPlaced: true, displaced: 0 };
     for (const row of freshOrderSlots(block, baseSlots, placed, checkOptions)) {
       const entriesToPush = freshMakeBlockEntries(block, row.slot, placed, checkOptions);
       if (!entriesToPush) continue;
@@ -6013,6 +6076,75 @@ export function createAutoAssignAll(deps) {
       }
       if (ok) return { ok: true, slot: row.slot, displaced };
       freshRestorePlaced(placed, snapshot);
+    }
+    return { ok: false };
+  }
+
+  function freshAtomicBlockSoftConflictScore(block = {}, slot = {}, placed = [], options = {}) {
+    let score = 0;
+    const sameSlot = [...entries(), ...(placed || [])].filter(e => e.day === slot.day && e.period === slot.period);
+    for (const rawItem of block.items || []) {
+      const item = freshNormalizeAtomicItem(rawItem, block);
+      if (strongProtectedSlotConflict(item, slot, placed)) return 9999999;
+      if (sameSlot.some(e => hasAutoGroupExclusionSlotConflict(item, e))) return 9999999;
+      if (hasInternalCompoundSiblingConflict(item) || sameSlot.some(e => hasCompoundSiblingConflict(item, e))) return 9999999;
+      const teachers = getTeachersForAutoItem(item);
+      for (const teacher of teachers) {
+        const c = constraints()?.[teacher] || {};
+        if (c?.unavailableSlots?.some(s => s.day === slot.day && s.period === slot.period)) return 9999999;
+      }
+      // 같은 원자 그룹 내부 충돌은 허용하되, 외부 충돌은 점수로 크게 불리하게 둡니다.
+      for (const e of sameSlot) {
+        const sameBlock = e.autoBlockKey && e.autoBlockKey === block.key;
+        const sameGrp = sameActiveGroup(item, e) && isConcurrentItem(item) && isConcurrentItem(e);
+        if (sameBlock || sameGrp) continue;
+        const itemAudience = audienceForPlacement(item);
+        const eAudience = audienceForPlacement(e);
+        if (audiencesConflict(itemAudience, eAudience)) score += 10000;
+        const it = new Set(getTeachersForAutoItem(item));
+        const et = teacherNamesForPlacement(e);
+        if (et.some(t => it.has(t))) score += 10000;
+      }
+      try { score += scoreAutoSlotLight(item, slot, placed, { ...options, respectSoftLimits: false }); }
+      catch (_) { score += 1000; }
+    }
+    score += freshSlotSortValue(slot, block.key || freshBlockName(block));
+    return score;
+  }
+
+  function freshTryPlaceAtomicBlockRelaxed(block = {}, placed = [], baseSlots = [], blockByKey = new Map(), options = {}, limits = {}) {
+    if (!block?.key || freshBlockAlreadyPlaced(block, placed)) return { ok: true, alreadyPlaced: true, mode: "already" };
+    const relaxed = {
+      ...options,
+      respectSoftLimits: false,
+      respectUnavailable: true,
+      respectAssignedRoom: true,
+      allowSameGroupTeacherOverlap: true
+    };
+
+    const direct = freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, relaxed, {
+      ...limits,
+      maxBlockersPerMove: Math.max(Number(limits.maxBlockersPerMove || 0), 10),
+      displacementSlotBudget: Math.max(Number(limits.displacementSlotBudget || 0), baseSlots.length)
+    }, Math.max(Number(limits.relaxedDepth || limits.depth || 0), 8), new Set());
+    if (direct.ok) return { ...direct, mode: "atomic-displacement" };
+
+    // 마지막 단계: 단일 카드가 아니라 원자 block 전체를 대상으로 가장 나쁜 조건이 적은 슬롯을 찾습니다.
+    // 이 단계도 보호 슬롯/교사불가/그룹 제외/복합과목 형제 충돌은 넘지 않습니다.
+    const rows = baseSlots.map(slot => ({ slot, score: freshAtomicBlockSoftConflictScore(block, slot, placed, relaxed) }))
+      .filter(row => row.score < 9999999)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, Math.max(6, Number(limits.displacementSlotBudget || 18)));
+    for (const row of rows) {
+      const entriesToPush = freshMakeBlockEntries(block, row.slot, placed, {
+        ...relaxed,
+        respectSoftLimits: false,
+        respectAssignedRoom: true
+      });
+      if (!entriesToPush) continue;
+      entriesToPush.forEach(e => { e.autoAtomicRepair = true; e.autoEngine = "fresh-csp-r88-atomic-repair"; });
+      freshPushEntries(placed, entriesToPush);
+      return { ok: true, slot: row.slot, mode: "atomic-relaxed", displaced: 0 };
     }
     return { ok: false };
   }
@@ -6078,10 +6210,12 @@ export function createAutoAssignAll(deps) {
   }
 
   function freshTryPlaceSingleCoverageCard(cardId, placed = [], baseSlots = [], options = {}) {
+    // r88: 동시수업/분반수업에 속한 카드는 절대 단일 카드로 보정 배치하지 않습니다.
+    // 한 카드 부족 → 해당 ScheduleUnit 전체 부족으로 해석해야 그룹 무결성이 보존됩니다.
+    if (freshCardBelongsToAtomicGroup(cardId)) return null;
     const item = freshPlacementItemFromCardId(cardId);
     if (!item) return null;
 
-    // 먼저 정상 검증을 통과하는 직접 슬롯을 찾습니다.
     const probeBlock = {
       key: `fresh:CARD:${cardId}:${Date.now()}:${Math.random().toString(36).slice(2)}`,
       kind: "coverage-single",
@@ -6098,25 +6232,10 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r87-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r88-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
-
-    // 그래도 막히면 기존 forcedSlotScore의 “최소 충돌 없는 슬롯”을 사용합니다.
-    // 이 함수는 보호 슬롯, 동일 카드 중복, 교실 중복, 학급 중복은 끝까지 금지합니다.
-    const slot = findLeastBadSlot(item, baseSlots, placed, options);
-    if (!slot) return null;
-    const entry = makeAutoEntry(item, slot, placed);
-    if (!entry) return null;
-    const fixed = normalizeTimetableEntry({
-      ...entry,
-      autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r87-coverage-fill",
-      autoCoverageRepair: true,
-      forced: true
-    });
-    placed.push(fixed);
-    return { mode: "coverage-fill", entries: [fixed], blockKey: probeBlock.key, forced: true };
+    return null;
   }
 
   async function freshRepairCoverageShortages(validation = {}, context = {}) {
@@ -6128,6 +6247,9 @@ export function createAutoAssignAll(deps) {
       .map(row => ({ ...row, shortage: Math.max(0, -Number(row.diff || 0)) }))
       .filter(row => row.id && row.shortage > 0)
       .sort((a, b) => {
+        const ag = freshCardBelongsToAtomicGroup(a.id) ? 1 : 0;
+        const bg = freshCardBelongsToAtomicGroup(b.id) ? 1 : 0;
+        if (bg !== ag) return bg - ag;
         if (b.shortage !== a.shortage) return b.shortage - a.shortage;
         const ac = (blockByCardId.get(a.id) || []).length;
         const bc = (blockByCardId.get(b.id) || []).length;
@@ -6143,32 +6265,43 @@ export function createAutoAssignAll(deps) {
 
     for (let r = 0; r < rows.length; r++) {
       const row = rows[r];
+      const atomic = freshCardBelongsToAtomicGroup(row.id);
       for (let i = 0; i < row.shortage; i++) {
         let done = false;
         const candidates = [...(blockByCardId.get(row.id) || [])]
-          .filter(block => block?.key && !placedKeys.has(block.key));
+          .filter(block => block?.key && !placedKeys.has(block.key) && !freshBlockAlreadyPlaced(block, placed))
+          .sort((a, b) => {
+            const aa = freshBlockIsAtomicGroup(a) ? 1 : 0;
+            const bb = freshBlockIsAtomicGroup(b) ? 1 : 0;
+            if (bb !== aa) return bb - aa;
+            if (Number(a.occurrence || 0) !== Number(b.occurrence || 0)) return Number(a.occurrence || 0) - Number(b.occurrence || 0);
+            return String(a.key || "").localeCompare(String(b.key || ""), "ko", { numeric: true });
+          });
 
         for (const block of candidates) {
           attempts += 1;
-          const result = freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, {
-            ...options,
-            respectSoftLimits: false,
-            respectUnavailable: true,
-            respectAssignedRoom: true
-          }, {
-            ...limits,
-            maxBlockersPerMove: Math.max(Number(limits.maxBlockersPerMove || 0), 8),
-            displacementSlotBudget: Math.max(Number(limits.displacementSlotBudget || 0), baseSlots.length)
-          }, Math.max(Number(limits.relaxedDepth || limits.depth || 0), 7), new Set());
+          const result = atomic || freshBlockIsAtomicGroup(block)
+            ? freshTryPlaceAtomicBlockRelaxed(block, placed, baseSlots, blockByKey, options, limits)
+            : freshPlaceWithDisplacement(block, placed, baseSlots, blockByKey, {
+                ...options,
+                respectSoftLimits: false,
+                respectUnavailable: true,
+                respectAssignedRoom: true
+              }, {
+                ...limits,
+                maxBlockersPerMove: Math.max(Number(limits.maxBlockersPerMove || 0), 8),
+                displacementSlotBudget: Math.max(Number(limits.displacementSlotBudget || 0), baseSlots.length)
+              }, Math.max(Number(limits.relaxedDepth || limits.depth || 0), 7), new Set());
           if (!result.ok) continue;
           placedKeys.add(block.key);
-          repairedBlocks.push({ blockKey: block.key, cardId: row.id, mode: "coverage-block", displaced: result.displaced || 0 });
+          repairedBlocks.push({ blockKey: block.key, cardId: row.id, mode: result.mode || "coverage-block", displaced: result.displaced || 0, atomic: freshBlockIsAtomicGroup(block) });
           repairedRows.push(row.id);
           done = true;
           break;
         }
 
-        if (!done) {
+        // 단일 fallback은 그룹에 속하지 않는 독립 카드에만 허용합니다.
+        if (!done && !atomic) {
           attempts += 1;
           const single = freshTryPlaceSingleCoverageCard(row.id, placed, baseSlots, options);
           if (single) {
@@ -6182,8 +6315,8 @@ export function createAutoAssignAll(deps) {
       if (updateProgress && (r % 4 === 0 || r === rows.length - 1)) {
         await updateProgress({
           percent: 86 + Math.round((r + 1) / Math.max(1, rows.length) * 8),
-          step: "카드 시수 잔여 복구",
-          detail: `검증에서 부족한 카드 시수를 다시 block 단위로 삽입 중입니다. ${r + 1}/${rows.length}`,
+          step: "ScheduleUnit 원자 복구",
+          detail: `부족 카드가 속한 동시수업/분반수업 전체 block을 같은 슬롯에 재삽입 중입니다. ${r + 1}/${rows.length}`,
           placed: placed.length,
           best: placed.length,
           failed: Math.max(0, rows.length - r - 1),
@@ -6198,7 +6331,8 @@ export function createAutoAssignAll(deps) {
       repairedBlocks,
       repairedRows,
       forcedEntries,
-      repairedCount: repairedRows.length
+      repairedCount: repairedRows.length,
+      atomicRepairCount: repairedBlocks.filter(x => x.atomic).length
     };
   }
 
@@ -6287,7 +6421,8 @@ export function createAutoAssignAll(deps) {
       }
     }
 
-    const failedItems = stillFailed.map(block => makeFailedPlacement(freshBlockName(block), block.primaryItem || block.items?.[0], {
+    let remainingFailedBlocks = stillFailed.filter(block => !freshBlockAlreadyPlaced(block, placed));
+    let failedItems = remainingFailedBlocks.map(block => makeFailedPlacement(freshBlockName(block), block.primaryItem || block.items?.[0], {
       source: "freshEngineUnplacedBlock",
       blockKey: block.key,
       occurrence: block.occurrence || 1,
@@ -6301,7 +6436,7 @@ export function createAutoAssignAll(deps) {
       deriveFailedFromCardShortage: true
     });
 
-    // r87: block 탐색 실패 후에도 검증기가 정확히 알려 주는 “카드 시수 부족”을
+    // r88: block 탐색 실패 후에도 검증기가 정확히 알려 주는 “카드 시수 부족”을
     // 다시 입력으로 삼아 재삽입합니다. r86은 여기서 보고만 하고 끝나서 MS국어/한국어처럼
     // 큰 동시수업 block이 통째로 누락되었습니다.
     const coverageRepair = await freshRepairCoverageShortages(validation, {
@@ -6314,6 +6449,13 @@ export function createAutoAssignAll(deps) {
       updateProgress
     });
     if (coverageRepair.repairedCount > 0) {
+      remainingFailedBlocks = stillFailed.filter(block => !freshBlockAlreadyPlaced(block, placed));
+      failedItems = remainingFailedBlocks.map(block => makeFailedPlacement(freshBlockName(block), block.primaryItem || block.items?.[0], {
+        source: "freshEngineUnplacedBlock",
+        blockKey: block.key,
+        occurrence: block.occurrence || 1,
+        groupId: block.groupId || ""
+      })).filter(f => f.item);
       validation = buildScheduleVerificationReport([...protectedEntries, ...placed], {
         scopeGrades: activeGrades,
         protectedEntries,
@@ -6327,7 +6469,7 @@ export function createAutoAssignAll(deps) {
 
     return {
       placed,
-      failedBlocks: stillFailed,
+      failedBlocks: remainingFailedBlocks,
       failedItems: mergedFailed,
       rawFailedItems: failedItems,
       validation,
@@ -6336,13 +6478,13 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-displacement-r87",
+        engine: "fresh-csp-displacement-r88",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
         displacedMoves,
         skippedProtectedBlocks: skipped.length,
-        failedBlockCount: stillFailed.length,
+        failedBlockCount: remainingFailedBlocks.length,
         coverageRepairCount: coverageRepair.repairedCount || 0,
         coverageRepairAttempts: coverageRepair.attempts || 0,
         coverageForcedCount: (coverageRepair.forcedEntries || []).length,
@@ -6450,7 +6592,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r87`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r88`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6543,7 +6685,7 @@ export function createAutoAssignAll(deps) {
         scoringProfile: options.scoringProfile || "balanced",
         scoringWeights: options.scoringWeights,
         scoringSummary: describeScoreWeights(options.scoringWeights),
-        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/잔여시수 복구 r87",
+        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/ScheduleUnit 원자복구 r88",
         engineStats: engineResult.stats,
         placedCount: placed.length,
         forcedCount: forcedEntries.length,
@@ -6589,13 +6731,13 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-displacement-r87",
+        telemetryStatus: "fresh-csp-displacement-r88",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-19-fresh-csp-displacement-r87"
+        validatorVersion: "2026-06-19-fresh-csp-displacement-r88"
       };
 
       let afterAutoSnapshot = null;
@@ -6625,7 +6767,7 @@ export function createAutoAssignAll(deps) {
       addTimetableLog(
         resultKind.logType,
         resultKind.logTitle,
-        `새 엔진 완료 · block ${engineResult.stats.totalBlocks}개 중 실패 ${engineResult.stats.failedBlockCount}개 · 직접 ${engineResult.stats.directPlaced}개 · 교환복구 ${engineResult.stats.swapPlaced}개 · 잔여시수복구 ${engineResult.stats.coverageRepairCount || 0}건 · 이동 ${engineResult.stats.displacedMoves}회 · 미배치 ${failedNames.length}개 · 충돌 ${conflictSummary.totalAffected}건`
+        `새 엔진 완료 · block ${engineResult.stats.totalBlocks}개 중 실패 ${engineResult.stats.failedBlockCount}개 · 직접 ${engineResult.stats.directPlaced}개 · 교환복구 ${engineResult.stats.swapPlaced}개 · ScheduleUnit원자복구 ${engineResult.stats.coverageRepairCount || 0}건 · 이동 ${engineResult.stats.displacedMoves}회 · 미배치 ${failedNames.length}개 · 충돌 ${conflictSummary.totalAffected}건`
       );
       addTimetableLog(
         outcomeAnalysis.failedUnitCount ? "warn" : "auto",
@@ -6634,11 +6776,11 @@ export function createAutoAssignAll(deps) {
       );
 
       const detailLines = [
-        `<b>엔진</b> 새 block-CSP + 전역 교환/잔여시수 복구 r87`,
+        `<b>엔진</b> 새 block-CSP + 전역 교환/ScheduleUnit 원자복구 r88`,
         `<b>배치 block</b> ${engineResult.stats.totalBlocks - engineResult.stats.failedBlockCount}/${engineResult.stats.totalBlocks}`,
         `<b>직접 배치</b> ${engineResult.stats.directPlaced}개`,
         `<b>교환/이동 복구</b> ${engineResult.stats.swapPlaced}개 block · 이동 ${engineResult.stats.displacedMoves}회`,
-        `<b>잔여시수 복구</b> ${engineResult.stats.coverageRepairCount || 0}건 · 보정 ${engineResult.stats.coverageForcedCount || 0}건`,
+        `<b>ScheduleUnit 원자복구</b> ${engineResult.stats.coverageRepairCount || 0}건 · 보정 ${engineResult.stats.coverageForcedCount || 0}건`,
         `<b>보호된 기존 block</b> ${engineResult.stats.skippedProtectedBlocks}개`,
         `<b>신규 entry</b> ${placed.length}개`,
         `<b>미배치</b> ${failedNames.length}개`,
@@ -6700,7 +6842,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-displacement-r87",
+          engine: "fresh-csp-displacement-r88",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6714,7 +6856,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-displacement-r87"
+              engine: "fresh-csp-displacement-r88"
             });
           }
         } catch (_) {}
