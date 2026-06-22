@@ -905,6 +905,16 @@ function compactAutoAssignMetaForStorage(meta = null) {
     failedDiagnostics: compactDiagnostics,
     failedReasonSummary: compactReasonSummary,
     residualPuzzleReport: compactResidualPuzzleReportForStorage(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
+    // r93: 자동배치 엔진/빌드 식별자는 저장 압축 단계에서 반드시 보존합니다.
+    // r92에서는 timetable-autoassign.js가 engine 값을 만들었지만 state.js가 Firestore 저장 직전에 제거했습니다.
+    telemetryStatus: clean(meta.telemetryStatus),
+    engine: clean(meta.engine),
+    appVersion: clean(meta.appVersion || globalThis.HIS_APP_VERSION),
+    autoAssignBuild: clean(meta.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD),
+    engineProfileLabel: clean(meta.engineProfileLabel),
+    durationMs: Number(meta.durationMs || 0) || 0,
+    coverageRepair: meta.coverageRepair && typeof meta.coverageRepair === "object" ? safeJsonClone(meta.coverageRepair) : null,
+    engineStats: meta.engineStats && typeof meta.engineStats === "object" ? safeJsonClone(meta.engineStats) : null,
     validatorVersion: clean(meta.validatorVersion || TIMETABLE_VALIDATOR_VERSION),
     experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
     experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
@@ -1094,6 +1104,14 @@ function compactAutoAssignMetaForMetaDoc(meta = null) {
     rejectReason: clean(compact.rejectReason),
     failedDiagnostics: Array.isArray(compact.failedDiagnostics) ? compact.failedDiagnostics.slice(0, 4) : [],
     failedReasonSummary: Array.isArray(compact.failedReasonSummary) ? compact.failedReasonSummary.slice(0, 4).map(clean) : [],
+    telemetryStatus: clean(compact.telemetryStatus),
+    engine: clean(compact.engine),
+    appVersion: clean(compact.appVersion || globalThis.HIS_APP_VERSION),
+    autoAssignBuild: clean(compact.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD),
+    engineProfileLabel: clean(compact.engineProfileLabel),
+    durationMs: Number(compact.durationMs || 0) || 0,
+    placedBlockCount: Number(compact.placedBlockCount || 0) || 0,
+    failedOccurrenceCount: Number(compact.failedOccurrenceCount || 0) || 0,
     validatorVersion: clean(compact.validatorVersion || TIMETABLE_VALIDATOR_VERSION)
   };
 }
@@ -1137,7 +1155,14 @@ function compactSavedScheduleForMetaDoc(version = {}) {
       missingRoomCount: Number(compactMeta.missingRoomCount || 0) || 0,
       protectedIntrusionCount: Number(compactMeta.protectedIntrusionCount || 0) || 0,
       metricCompleteness: clean(compactMeta.metricCompleteness),
-      metricSource: clean(compactMeta.metricSource)
+      metricSource: clean(compactMeta.metricSource),
+      telemetryStatus: clean(compactMeta.telemetryStatus),
+      engine: clean(compactMeta.engine),
+      appVersion: clean(compactMeta.appVersion || globalThis.HIS_APP_VERSION),
+      autoAssignBuild: clean(compactMeta.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD),
+      placedBlockCount: Number(compactMeta.placedBlockCount || 0) || 0,
+      failedOccurrenceCount: Number(compactMeta.failedOccurrenceCount || 0) || 0,
+      validatorVersion: clean(compactMeta.validatorVersion || TIMETABLE_VALIDATOR_VERSION)
     } : null,
     cardGenerationMeta: version.cardGenerationMeta && typeof version.cardGenerationMeta === "object" ? safeJsonClone(version.cardGenerationMeta) : null,
     entries: Array.isArray(version.entries) ? version.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter) : []
