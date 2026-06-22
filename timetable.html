@@ -1061,9 +1061,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-12-validator-cleanup-r41c";</script>
+<script>window.HIS_APP_VERSION = "2026-06-22-cache-hard-r90";</script>
 <script type="module">
-  import { versioned } from "./js/version.js";
+  import { versioned } from "./js/version.js?v=2026-06-22-cache-hard-r90";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1874,7 +1874,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-12-validator-cleanup-r41c");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-22-cache-hard-r90");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

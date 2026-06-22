@@ -1,9 +1,8 @@
 // ================================================================
 // version.js · Central cache-busting version for runtime imports
 // ================================================================
-// Update this value once per release. HTML entry points can override it by
-// setting window.HIS_APP_VERSION before loading app modules.
-export const APP_VERSION = "2026-06-22-ScheduleUnit중복판정수정-r89";
+// r90: HTML과 JS 양쪽에서 같은 빌드 번호를 사용하도록 window.HIS_APP_VERSION을 우선합니다.
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-06-22-cache-hard-r90");
 
 export function versioned(path) {
   const raw = String(path || "");
