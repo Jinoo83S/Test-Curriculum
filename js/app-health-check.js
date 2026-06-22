@@ -9,7 +9,7 @@ import {
   getFirestoreUsageStats,
 } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { APP_VERSION, versioned } from "./version.js?v=2026-06-22-r87solver-onemove-r95";
+import { APP_VERSION, versioned } from "./version.js?v=2026-06-22-r87solver-budgetyield-r96";
 
 const MODULE_FILES = [
   "./js/app.js",
