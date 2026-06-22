@@ -1061,10 +1061,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-22-cache-hard-r90";</script>
+<script>window.HIS_APP_VERSION = "2026-06-22-hard-file-r91";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-22-cache-hard-r90";
-  await import(versioned("./js/timetable.js"));
+  import { versioned } from "./js/version-r91.js?v=2026-06-22-hard-file-r91";
+  await import(versioned("./js/timetable-r91.js"));
 </script>
 <script>
 /* ── Tab switching ── */
@@ -1260,6 +1260,17 @@ window._ttBottomToggle = (function() {
   document.getElementById("ttPeriodApplyBtn")?.addEventListener("click", () => {
     window._ttApplyPeriod?.();
   });
+})();
+</script>
+
+<script>
+(function(){
+  try {
+    const b=document.createElement('div');
+    b.textContent='HIS build r91 · 2026-06-22';
+    b.style.cssText='position:fixed;right:8px;bottom:6px;z-index:99999;font:11px/1.3 system-ui,sans-serif;background:rgba(0,0,0,.62);color:#fff;padding:4px 7px;border-radius:999px;pointer-events:none;';
+    document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(b));
+  } catch (_) {}
 })();
 </script>
 </body>
@@ -1874,7 +1885,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-22-cache-hard-r90");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-22-hard-file-r91");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

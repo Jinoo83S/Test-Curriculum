@@ -46,7 +46,7 @@ const [
   import(versioned("./ttcards.js")),
   import(versioned("./timetable-conflicts.js")),
   import(versioned("./timetable-data.js")),
-  import(versioned("./timetable-autoassign.js")),
+  import(versioned("./timetable-autoassign-r91.js")),
   import(versioned("./timetable-grid.js")),
   import(versioned("./timetable-detail.js")),
   import(versioned("./timetable-constraints.js")),
