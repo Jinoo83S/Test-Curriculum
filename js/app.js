@@ -11,7 +11,7 @@ import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
 import { appState, setOnUpdate, migrateFromLegacy } from "./state.js";
-import { versioned } from "./version.js?v=2026-06-22-clean-existingfiles-r93";
+import { versioned } from "./version.js?v=2026-06-22-r87solver-metadata-r94";
 import { createAppModuleLoader } from "./app-module-loader.js";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js";
 import { setupStudentManagementUi } from "./app-students-ui.js";
