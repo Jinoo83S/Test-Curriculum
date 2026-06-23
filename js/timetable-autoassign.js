@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-r87solver-budgetyield-r96";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-groupcard-single-r97";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -364,7 +364,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-22-fresh-csp-displacement-r96"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-22-fresh-csp-groupcard-r97"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -690,7 +690,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-22-fresh-csp-displacement-r96",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-22-fresh-csp-groupcard-r97",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -4337,47 +4337,79 @@ export function createAutoAssignAll(deps) {
     return batches;
   }
 
-  function placeAutoGroupSlot(group, activeItems, slot, placed, checkOptions = {}) {
-    // 한 그룹 안에 pool 카드와 unit 카드가 함께 있을 수 있습니다.
-    // 기존 로직은 activeItems[0]만 저장해, 여러 unitItems 구조가 들어오면 같은 회차의 일부 카드가 누락될 수 있었습니다.
-    // 현재 회차에 활성화된 모든 카드를 합친 뒤, 같은 수업 묶음(unit)은 하나로 유지하고
-    // 나머지 병렬 과목은 과목별 entry로 분리해 각각 담당교실/홈룸을 배정합니다.
-    const activeList = (activeItems || []).filter(Boolean);
-    if (!activeList.length) return false;
-
+  function collectActiveGroupCards(activeItems = []) {
     const seenCardIds = new Set();
     const activeCards = [];
-    activeList.forEach(item => {
+    (activeItems || []).filter(Boolean).forEach(item => {
       (item.ttcards || []).forEach(card => {
         if (!card?.id || seenCardIds.has(card.id)) return;
         seenCardIds.add(card.id);
         activeCards.push(card);
       });
     });
-    if (!activeCards.length) return false;
+    return activeCards;
+  }
 
-    const batches = getGroupRoomBatches(group, activeCards);
-    const pending = [];
-    for (const cards of batches.length ? batches : [activeCards]) {
-      const batchIds = new Set((cards || []).map(c => c.id).filter(Boolean));
-      const unit = (group?.units || []).find(u => {
-        const ids = new Set(u.ttcardIds || []);
-        return batchIds.size && [...batchIds].every(id => ids.has(id));
-      }) || null;
-      const sourceItem = activeList.find(item => (item.ttcards || []).some(c => batchIds.has(c.id))) || activeList[0];
-      const item = makePlacementFromGroupItem(group, { ...sourceItem, unit, ttcards: cards });
-      if (!item) continue;
-      const checkedItem = annotateRestrictedAutoItem(item);
-      // probe 검사를 통과했더라도 실제 저장 entry가 과목별로 분리되면서
-      // 고정 수업/교실/교사 충돌이 생길 수 있으므로, 저장 직전에 한 번 더 검사합니다.
-      if (!checkPlacementValid(checkedItem, slot, [...placed, ...pending], checkOptions)) return false;
-      pending.push(normalizeTimetableEntry({
-        id: uid("ent"),
-        ...applyAutoRoomToEntryData({ ...checkedItem, ...slot }, slot, [...placed, ...pending])
-      }));
-    }
-    if (!pending.length) return false;
-    placed.push(...pending);
+  function makeSingleGroupPlacementItem(group, activeItems = []) {
+    const activeList = (activeItems || []).filter(Boolean);
+    const activeCards = collectActiveGroupCards(activeList);
+    if (!group || !activeCards.length) return null;
+
+    const groupName = group.name || group.groupName || group.label || "그룹 카드";
+    const cardIds = activeCards.map(card => card.id).filter(Boolean);
+    const templateIds = [...new Set(activeCards.map(card => card.templateId).filter(Boolean))];
+    const gradeKeys = [...new Set(activeCards.flatMap(card => [card.gradeKey, ...(card.gradeKeys || [])]).filter(Boolean))];
+    const teachers = [...new Set(activeCards.flatMap(card => getTeachersForTtCard(card)).filter(Boolean))];
+    const sourceItem = activeList[0] || {};
+
+    const fromDataModule = makePlacementFromGroupItem(group, {
+      ...sourceItem,
+      unit: null,
+      ttcards: activeCards
+    });
+
+    const item = fromDataModule || {
+      kind: "group",
+      groupId: group.id || null,
+      groupName,
+      subject: groupName,
+      label: groupName,
+      ttcards: activeCards,
+      ttcardIds: cardIds,
+      templateIds,
+      gradeKeys,
+      teacherName: teachers.join(",")
+    };
+
+    return annotateRestrictedAutoItem({
+      ...item,
+      kind: "group",
+      groupId: group.id || item.groupId || null,
+      groupName,
+      subject: item.subject || groupName,
+      label: item.label || groupName,
+      ttcards: activeCards,
+      ttcardIds: cardIds,
+      templateIds: item.templateIds || templateIds,
+      gradeKeys: item.gradeKeys || gradeKeys,
+      teacherName: item.teacherName || teachers.join(","),
+      autoGroupAsSingleCard: true,
+      autoGroupSourceCardCount: cardIds.length
+    });
+  }
+
+  function placeAutoGroupSlot(group, activeItems, slot, placed, checkOptions = {}) {
+    // r97: 그룹카드는 내부 카드를 과목별 entry로 쪼개지 않고,
+    // 하나의 큰 카드로 저장합니다. 예: 7체육은 7A/7B 칸을 동시에 차지하는 entry 1개입니다.
+    const item = makeSingleGroupPlacementItem(group, activeItems);
+    if (!item) return false;
+    if (!checkPlacementValid(item, slot, placed, checkOptions)) return false;
+    const entry = makeAutoEntry(item, slot, placed);
+    if (!entry) return false;
+    placed.push(normalizeTimetableEntry({
+      ...entry,
+      autoGroupAsSingleCard: true
+    }));
     return true;
   }
 
@@ -5715,32 +5747,10 @@ export function createAutoAssignAll(deps) {
   }
 
   function freshBuildGroupPlacementItems(group, activeItems = []) {
-    const activeList = (activeItems || []).filter(Boolean);
-    if (!activeList.length) return [];
-    const seenCardIds = new Set();
-    const activeCards = [];
-    activeList.forEach(item => {
-      (item.ttcards || []).forEach(card => {
-        if (!card?.id || seenCardIds.has(card.id)) return;
-        seenCardIds.add(card.id);
-        activeCards.push(card);
-      });
-    });
-    if (!activeCards.length) return [];
-
-    const batches = getGroupRoomBatches(group, activeCards);
-    const placementItems = [];
-    for (const cards of batches.length ? batches : [activeCards]) {
-      const batchIds = new Set((cards || []).map(c => c.id).filter(Boolean));
-      const unit = (group?.units || []).find(u => {
-        const ids = new Set(u.ttcardIds || []);
-        return batchIds.size && [...batchIds].every(id => ids.has(id));
-      }) || null;
-      const sourceItem = activeList.find(item => (item.ttcards || []).some(c => batchIds.has(c.id))) || activeList[0];
-      const item = makePlacementFromGroupItem(group, { ...sourceItem, unit, ttcards: cards });
-      if (item) placementItems.push(annotateRestrictedAutoItem(item));
-    }
-    return placementItems;
+    // r97: 그룹카드 자체가 하나의 배치 카드입니다.
+    // 내부 카드들은 같은 칸을 차지하는 구성요소일 뿐, 자동배치에서는 분리 entry로 만들지 않습니다.
+    const item = makeSingleGroupPlacementItem(group, activeItems);
+    return item ? [item] : [];
   }
 
   function freshMakeStandaloneBlock(item = {}, index = 0) {
@@ -5864,7 +5874,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r96",
+        autoEngine: "fresh-csp-r97",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6156,7 +6166,7 @@ export function createAutoAssignAll(deps) {
         const fixed = normalizeTimetableEntry({
           ...entry,
           autoBlockKey: probeKey,
-          autoEngine: "fresh-csp-r96-coverage-onemove-direct",
+          autoEngine: "fresh-csp-r97-coverage-onemove-direct",
           autoCoverageRepair: true
         });
         placed.push(fixed);
@@ -6185,7 +6195,7 @@ export function createAutoAssignAll(deps) {
           const fixed = normalizeTimetableEntry({
             ...entry,
             autoBlockKey: probeKey,
-            autoEngine: "fresh-csp-r96-coverage-onemove",
+            autoEngine: "fresh-csp-r97-coverage-onemove",
             autoCoverageRepair: true
           });
           placed.splice(0, placed.length, ...baseWithMoved, fixed);
@@ -6224,7 +6234,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r96-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r97-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6237,7 +6247,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r96-coverage-fill",
+      autoEngine: "fresh-csp-r97-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6490,7 +6500,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-displacement-r96",
+        engine: "fresh-csp-groupcard-r97",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6605,7 +6615,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-displacement-r96`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r97`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6743,17 +6753,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-displacement-r96",
-        engine: "fresh-csp-displacement-r96",
+        telemetryStatus: "fresh-csp-groupcard-r97",
+        engine: "fresh-csp-groupcard-r97",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: block-CSP + 전역 교환/잔여시수복구 r96 / 응답대기 방지",
+        engineProfileLabel: "새 엔진: 그룹카드 단일블록 r97 / 응답대기 방지",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-22-fresh-csp-displacement-r96"
+        validatorVersion: "2026-06-22-fresh-csp-groupcard-r97"
       };
 
       let afterAutoSnapshot = null;
@@ -6858,7 +6868,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-displacement-r96",
+          engine: "fresh-csp-groupcard-r97",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6872,7 +6882,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-displacement-r96"
+              engine: "fresh-csp-groupcard-r97"
             });
           }
         } catch (_) {}
