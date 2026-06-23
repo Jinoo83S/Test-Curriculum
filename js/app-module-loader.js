@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-06-22-groupcard-single-r97";
+import { versioned } from "./version.js?v=2026-06-23-groupcard-visual-r98";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",

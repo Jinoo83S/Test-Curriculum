@@ -170,6 +170,51 @@ function groupKeyForEntry(entry = {}) {
   return `entry:${entry.id}`;
 }
 
+function getCoveredSectionIdxsForGrade(entry = {}, gradeKey = "", classInfoBySection = new Map(), gradeSections = []) {
+  if (!entry || !gradeKey) return [];
+  const out = [];
+  gradeSections.forEach(sec => {
+    const cls = classInfoBySection.get(sec);
+    if (cls && entryMatchesClass(entry, cls)) out.push(sec);
+  });
+  return out;
+}
+
+function isContiguousSectionSpan(sectionIdxs = []) {
+  const arr = [...new Set(sectionIdxs.map(v => Number(v)).filter(Number.isFinite))].sort((a, b) => a - b);
+  if (arr.length <= 1) return false;
+  for (let i = 1; i < arr.length; i += 1) {
+    if (arr[i] !== arr[i - 1] + 1) return false;
+  }
+  return true;
+}
+
+function canRenderMergedGroupEntry(entry, coveredSections = [], day, period, entries = [], classInfoBySection = new Map()) {
+  if (!entry || coveredSections.length <= 1) return false;
+  if (!isContiguousSectionSpan(coveredSections)) return false;
+  return coveredSections.every(sec => {
+    const cls = classInfoBySection.get(sec);
+    if (!cls) return false;
+    const slotEntries = entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
+    return slotEntries.length === 1 && slotEntries[0]?.id === entry.id;
+  });
+}
+
+function addMergedSpanBadge(card, coveredSections = []) {
+  if (!card || coveredSections.length <= 1) return;
+  card.classList.add('tt-entry-group-span-card');
+  card.style.position = 'relative';
+  card.style.width = '100%';
+  card.style.height = '100%';
+  card.style.boxSizing = 'border-box';
+  card.style.justifyContent = 'center';
+  const badge = document.createElement('div');
+  badge.className = 'tt-entry-group-span-badge';
+  badge.textContent = coveredSections.map(sectionLabel).join(' · ');
+  badge.style.cssText = 'position:absolute;right:4px;bottom:3px;max-width:calc(100% - 8px);padding:1px 6px;border-radius:999px;background:rgba(255,255,255,.75);backdrop-filter:blur(2px);font-size:clamp(5.5px,0.5vw,7px);font-weight:900;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  card.appendChild(badge);
+}
+
 function buildEntryGroups(slotEntries = [], ctx = {}) {
   const map = new Map();
   slotEntries.forEach(entry => {
@@ -526,6 +571,14 @@ function renderClassGrid(wrap, ctx) {
   }
   const gradeSections = [...sectionSet].sort((a, b) => a - b);
   if (!gradeSections.length) gradeSections.push(0);
+  const classInfoBySection = new Map();
+  gradeSections.forEach(sec => {
+    classInfoBySection.set(sec, gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || {
+      gradeKey: currentGrade,
+      sectionIdx: sec,
+      section: sectionLabel(sec),
+    });
+  });
 
   const table = document.createElement("table");
   table.className = "tt-table tt-class-table tt-percent-grid-table";
@@ -595,7 +648,41 @@ function renderClassGrid(wrap, ctx) {
     tr.appendChild(periodCell);
 
     DAYS.forEach((_, day) => {
-      gradeSections.forEach(sec => {
+      const spanPlans = new Map();
+      entries
+        .filter(e => e.day === day && e.period === period && entryHasGrade(e, currentGrade))
+        .forEach(entry => {
+          const coveredSections = getCoveredSectionIdxsForGrade(entry, currentGrade, classInfoBySection, gradeSections);
+          if (!canRenderMergedGroupEntry(entry, coveredSections, day, period, entries, classInfoBySection)) return;
+          const anchor = Math.min(...coveredSections);
+          const prev = spanPlans.get(anchor);
+          if (!prev || coveredSections.length > prev.coveredSections.length) {
+            spanPlans.set(anchor, { entry, coveredSections, span: coveredSections.length });
+          }
+        });
+
+      for (let idx = 0; idx < gradeSections.length; idx += 1) {
+        const sec = gradeSections[idx];
+        const plan = spanPlans.get(sec);
+        if (plan) {
+          const td = document.createElement("td");
+          td.className = "tt-cell tt-percent-grid-cell tt-group-span-cell";
+          td.colSpan = plan.span;
+          td.dataset.gradeKey = currentGrade;
+          td.dataset.sectionIdx = String(sec);
+          td.setAttribute("data-day", day);
+          td.dataset.spanSections = plan.coveredSections.join(",");
+          td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
+          attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
+          const c = ctx.buildEntryCard(plan.entry, { compact: true, showSpan: true });
+          c.style.cssText += ";flex-shrink:0;width:100%;height:100%";
+          addMergedSpanBadge(c, plan.coveredSections);
+          td.appendChild(c);
+          tr.appendChild(td);
+          idx += plan.span - 1;
+          continue;
+        }
+
         const td = document.createElement("td");
         td.className = "tt-cell tt-percent-grid-cell";
         td.dataset.gradeKey = currentGrade;
@@ -604,11 +691,7 @@ function renderClassGrid(wrap, ctx) {
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
 
-        const clsInfo = gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || {
-          gradeKey: currentGrade,
-          sectionIdx: sec,
-          section: sectionLabel(sec),
-        };
+        const clsInfo = classInfoBySection.get(sec);
         const slotEntries = entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, clsInfo));
         if (slotEntries.length) {
           slotEntries.forEach(entry => {
@@ -622,13 +705,14 @@ function renderClassGrid(wrap, ctx) {
           td.appendChild(ph);
         }
         tr.appendChild(td);
-      });
+      }
     });
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
 }
+
 
 function renderGradeGrid(wrap, ctx) {
   buildGrid(ctx.periods, DAYS, wrap, (day, period) => {

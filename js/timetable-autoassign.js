@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-22-groupcard-single-r97";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-groupcard-visual-r98";
 
 export function createAutoAssignAll(deps) {
   const {
