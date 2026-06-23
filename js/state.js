@@ -610,6 +610,14 @@ function normalizeRoomsDomain(raw = {}) {
 export function normalizeTimetableEntry(e = {}) {
   const templateId = clean(e.templateId) || (Array.isArray(e.templateIds) && e.templateIds[0]) || null;
   const gradeKey   = clean(e.gradeKey)   || (Array.isArray(e.gradeKeys)   && e.gradeKeys[0])   || null;
+  const roomAssignmentsByTtCardId = {};
+  if (e.roomAssignmentsByTtCardId && typeof e.roomAssignmentsByTtCardId === "object") {
+    Object.entries(e.roomAssignmentsByTtCardId).forEach(([cardId, roomId]) => {
+      const cId = clean(cardId);
+      const rId = clean(roomId);
+      if (cId && rId) roomAssignmentsByTtCardId[cId] = rId;
+    });
+  }
   return {
     id:          e.id || uid("ent"),
     day:         (Number.isInteger(e.day)    && e.day >= 0    && e.day <= 4)    ? e.day    : 0,
@@ -638,16 +646,8 @@ export function normalizeTimetableEntry(e = {}) {
     roomId:      clean(e.roomId) || null,
     roomRule:    clean(e.roomRule) || "auto",
     roomPinned:  !!e.roomPinned,
+    roomAssignmentsByTtCardId,
     pinned:      !!e.pinned,
-    // r95: 자동배치가 만든 block/unit 식별자를 저장 후에도 보존합니다.
-    // 이 값이 사라지면 다음 진단/재복구 단계에서 묶음 이동 단위가 entry 단위로 쪼개져 잔여시수 복구력이 떨어집니다.
-    autoBlockKey: clean(e.autoBlockKey),
-    autoScheduleUnitKey: clean(e.autoScheduleUnitKey),
-    autoEngine: clean(e.autoEngine),
-    autoGroupBlock: e.autoGroupBlock === true,
-    autoOccurrence: Number.isFinite(Number(e.autoOccurrence)) ? Number(e.autoOccurrence) : 0,
-    autoCoverageRepair: e.autoCoverageRepair === true,
-    forced: e.forced === true,
   };
 }
 export function normalizeTtCard(item = {}) {
@@ -914,16 +914,6 @@ function compactAutoAssignMetaForStorage(meta = null) {
     failedDiagnostics: compactDiagnostics,
     failedReasonSummary: compactReasonSummary,
     residualPuzzleReport: compactResidualPuzzleReportForStorage(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-    // r93: 자동배치 엔진/빌드 식별자는 저장 압축 단계에서 반드시 보존합니다.
-    // r92에서는 timetable-autoassign.js가 engine 값을 만들었지만 state.js가 Firestore 저장 직전에 제거했습니다.
-    telemetryStatus: clean(meta.telemetryStatus),
-    engine: clean(meta.engine),
-    appVersion: clean(meta.appVersion || globalThis.HIS_APP_VERSION),
-    autoAssignBuild: clean(meta.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD),
-    engineProfileLabel: clean(meta.engineProfileLabel),
-    durationMs: Number(meta.durationMs || 0) || 0,
-    coverageRepair: meta.coverageRepair && typeof meta.coverageRepair === "object" ? safeJsonClone(meta.coverageRepair) : null,
-    engineStats: meta.engineStats && typeof meta.engineStats === "object" ? safeJsonClone(meta.engineStats) : null,
     validatorVersion: clean(meta.validatorVersion || TIMETABLE_VALIDATOR_VERSION),
     experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
     experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
@@ -1113,14 +1103,6 @@ function compactAutoAssignMetaForMetaDoc(meta = null) {
     rejectReason: clean(compact.rejectReason),
     failedDiagnostics: Array.isArray(compact.failedDiagnostics) ? compact.failedDiagnostics.slice(0, 4) : [],
     failedReasonSummary: Array.isArray(compact.failedReasonSummary) ? compact.failedReasonSummary.slice(0, 4).map(clean) : [],
-    telemetryStatus: clean(compact.telemetryStatus),
-    engine: clean(compact.engine),
-    appVersion: clean(compact.appVersion || globalThis.HIS_APP_VERSION),
-    autoAssignBuild: clean(compact.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD),
-    engineProfileLabel: clean(compact.engineProfileLabel),
-    durationMs: Number(compact.durationMs || 0) || 0,
-    placedBlockCount: Number(compact.placedBlockCount || 0) || 0,
-    failedOccurrenceCount: Number(compact.failedOccurrenceCount || 0) || 0,
     validatorVersion: clean(compact.validatorVersion || TIMETABLE_VALIDATOR_VERSION)
   };
 }
@@ -1164,14 +1146,7 @@ function compactSavedScheduleForMetaDoc(version = {}) {
       missingRoomCount: Number(compactMeta.missingRoomCount || 0) || 0,
       protectedIntrusionCount: Number(compactMeta.protectedIntrusionCount || 0) || 0,
       metricCompleteness: clean(compactMeta.metricCompleteness),
-      metricSource: clean(compactMeta.metricSource),
-      telemetryStatus: clean(compactMeta.telemetryStatus),
-      engine: clean(compactMeta.engine),
-      appVersion: clean(compactMeta.appVersion || globalThis.HIS_APP_VERSION),
-      autoAssignBuild: clean(compactMeta.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD),
-      placedBlockCount: Number(compactMeta.placedBlockCount || 0) || 0,
-      failedOccurrenceCount: Number(compactMeta.failedOccurrenceCount || 0) || 0,
-      validatorVersion: clean(compactMeta.validatorVersion || TIMETABLE_VALIDATOR_VERSION)
+      metricSource: clean(compactMeta.metricSource)
     } : null,
     cardGenerationMeta: version.cardGenerationMeta && typeof version.cardGenerationMeta === "object" ? safeJsonClone(version.cardGenerationMeta) : null,
     entries: Array.isArray(version.entries) ? version.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter) : []
@@ -1383,13 +1358,6 @@ function syncAutoAssignMetaToEquivalentSnapshots({ entries = [], bestSnapshot = 
     return { bestSnapshot, savedSchedules, meta };
   }
   const sourceMeta = canonicalizeAutoAssignMeta({ ...meta }, { schemaVersion: TIMETABLE_VALIDATOR_VERSION });
-  // r95: canonicalizeAutoAssignMeta는 공통 validator 버전을 넣습니다.
-  // 자동배치 실행 식별자는 별도로 보존해 실제 엔진 버전 추적이 끊기지 않게 합니다.
-  sourceMeta.validatorVersion = clean(meta.validatorVersion || sourceMeta.validatorVersion || TIMETABLE_VALIDATOR_VERSION);
-  sourceMeta.engine = clean(meta.engine || sourceMeta.engine);
-  sourceMeta.telemetryStatus = clean(meta.telemetryStatus || sourceMeta.telemetryStatus);
-  sourceMeta.appVersion = clean(meta.appVersion || globalThis.HIS_APP_VERSION || sourceMeta.appVersion);
-  sourceMeta.autoAssignBuild = clean(meta.autoAssignBuild || globalThis.HIS_AUTOASSIGN_BUILD || sourceMeta.autoAssignBuild);
   sourceMeta.residualPuzzleReport = stripStaleResidualPuzzleReport(sourceMeta.residualPuzzleReport);
   const canonicalMeta = compactAutoAssignMetaForStorage({
     ...sourceMeta,

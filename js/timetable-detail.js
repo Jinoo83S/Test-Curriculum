@@ -201,10 +201,10 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
 }
 
 const ROOM_RULE_LABELS = {
-  auto: "자동 추천",
+  auto: "교사교실 고정 / 없으면 미배정",
   fixed: "지정 교실 고정",
-  homeroom: "홈룸 우선",
-  teacher: "교사 교실 우선",
+  homeroom: "홈룸 고정",
+  teacher: "교사 배정 교실 고정",
   none: "교실 사용 안 함",
 };
 
@@ -274,10 +274,10 @@ function appendSelectField(box, labelText, control, { hint = "" } = {}) {
 function getRoomRuleHint(rule, roomId = "") {
   const r = normalizeRoomRule(rule);
   if (r === "fixed") return roomId ? `항상 ${getRooms().find(x => x.id === roomId)?.name || roomId} 교실을 사용합니다.` : "지정 교실을 선택해야 합니다.";
-  if (r === "homeroom") return "대상 학급의 홈룸 교실을 우선 추천합니다.";
-  if (r === "teacher") return "담당 교사의 전용/담당 교실을 우선 사용하고, 교사교실이 없으면 자동 추천(홈룸 등)으로 내려갑니다.";
+  if (r === "homeroom") return "대상 학급의 홈룸 교실로 고정합니다.";
+  if (r === "teacher") return "담당 교사의 배정 교실을 고정 사용합니다. 교사교실이 없으면 방 미배정 상태를 유지합니다.";
   if (r === "none") return "이 수업은 교실을 배정하지 않습니다.";
-  return "지정 교실, 홈룸, 교사 교실 순서로 자동 추천합니다.";
+  return "교사 배정 교실이 있으면 고정 사용하고, 없으면 방 미배정 상태를 유지합니다.";
 }
 
 function roomNameForId(roomId = "") {
@@ -305,10 +305,15 @@ function makeTinyButton(label, onClick, { primary = false } = {}) {
   return btn;
 }
 
-function cardRoomSummaryText(card = {}) {
+function cardRoomSummaryText(card = {}, item = {}) {
   const rule = normalizeRoomRule(card.roomRule);
-  if (rule === "fixed") return `고정: ${roomNameForId(card.fixedRoomId) || "교실 미지정"}`;
-  return ROOM_RULE_LABELS[rule] || ROOM_RULE_LABELS.auto;
+  if (rule === "none") return ROOM_RULE_LABELS.none;
+  if (rule === "fixed") return `지정 고정: ${roomNameForId(card.fixedRoomId) || "교실 미지정"}`;
+  if (rule === "homeroom") return ROOM_RULE_LABELS.homeroom;
+  const teacherRooms = teacherRoomIdsForCard(card, item);
+  if (teacherRooms.length === 1) return `교사교실 고정: ${roomNameForId(teacherRooms[0])}`;
+  if (teacherRooms.length > 1) return `교사교실 고정 ${teacherRooms.length}개`;
+  return "교사교실 없음 · 미배정";
 }
 function splitTeacherNamesLocal(value = "") {
   return String(value || "")
@@ -327,6 +332,10 @@ function getTeacherRoomIdLocal(teacherName = "") {
 function getTeacherRoomNameLocal(teacherName = "") {
   const roomId = getTeacherRoomIdLocal(teacherName);
   return roomId ? roomNameForId(roomId) : "";
+}
+
+function teacherRoomIdsForCard(card = {}, item = {}) {
+  return [...new Set(teacherNamesForItemOrCard(item, card).map(getTeacherRoomIdLocal).filter(Boolean))];
 }
 
 function teacherNamesForItemOrCard(item = {}, card = {}) {
@@ -376,12 +385,15 @@ function getCardsCommonRoomRule(cards = []) {
   };
 }
 
-function targetRoomSummaryText(cards = []) {
+function targetRoomSummaryText(cards = [], itemsByCardId = new Map()) {
   const valid = (cards || []).filter(Boolean);
   if (!valid.length) return ROOM_RULE_LABELS.auto;
+  const roomIds = [...new Set(valid.flatMap(card => teacherRoomIdsForCard(card, itemsByCardId.get(card.id) || {})).filter(Boolean))];
   const common = getCardsCommonRoomRule(valid);
+  if (roomIds.length === 1) return `교사교실 고정: ${roomNameForId(roomIds[0])}`;
+  if (roomIds.length > 1) return `교사교실 고정 ${roomIds.length}개`;
   if (common.mixed) return "혼합 규칙";
-  return cardRoomSummaryText(valid[0]);
+  return cardRoomSummaryText(valid[0], itemsByCardId.get(valid[0].id) || {});
 }
 
 function buildRoomRuleTargets(items = [], groupId = "") {
@@ -496,7 +508,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
       const summary = document.createElement("span");
       summary.style.cssText = "font-size:10px;font-weight:900;color:#334155;background:#e2e8f0;border-radius:999px;padding:2px 7px;white-space:nowrap";
-      summary.textContent = targetRoomSummaryText(target.cards);
+      summary.textContent = targetRoomSummaryText(target.cards, itemsByCardId);
       summary.title = describeTeacherRoomStatusForCards(target.cards, itemsByCardId);
       top.append(main, summary);
       const missingTeacherRooms = missingTeacherRoomNamesForCards(target.cards, itemsByCardId);
@@ -504,7 +516,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
         const miss = document.createElement("span");
         miss.style.cssText = "font-size:9px;font-weight:900;color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:999px;padding:2px 6px;white-space:nowrap";
         miss.textContent = `교사교실 없음 ${missingTeacherRooms.length}`;
-        miss.title = `교사 배정 교실 없음: ${missingTeacherRooms.join(", ")} · 교사교실 우선 적용 시 자동 추천으로 내려갑니다.`;
+        miss.title = `교사 배정 교실 없음: ${missingTeacherRooms.join(", ")} · 교사교실 고정 적용 시 방 미배정으로 유지됩니다.`;
         top.appendChild(miss);
       }
       row.appendChild(top);
@@ -537,7 +549,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
         const ok = ctx.setTtCardRoomPreference?.(target.ids, ruleSel.value, roomSel.value);
         if (ok) {
           const refreshedCards = target.ids.map(id => getTtCardById(id)).filter(Boolean);
-          summary.textContent = targetRoomSummaryText(refreshedCards);
+          summary.textContent = targetRoomSummaryText(refreshedCards, itemsByCardId);
           ctx.renderAll?.();
         }
       }, { primary: true });
@@ -565,7 +577,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
   const bulkTitle = document.createElement("div");
   bulkTitle.style.cssText = "font-size:11px;font-weight:900;color:#334155;margin-bottom:6px";
-  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 교사교실 우선 적용" : "교실 규칙 지정";
+  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 교사교실 고정 적용" : "교실 규칙 지정";
   bulk.appendChild(bulkTitle);
 
   const bulkDefaultRule = "teacher";
@@ -600,7 +612,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   const apply = document.createElement("button");
   apply.type = "button";
   apply.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer";
-  apply.textContent = targets.length > 1 ? "교사교실 우선 전체 적용" : "교실 규칙 저장";
+  apply.textContent = targets.length > 1 ? "교사교실 고정 전체 적용" : "교실 규칙 저장";
   apply.onclick = () => {
     if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
       alert("지정 교실 고정은 교실을 선택해야 합니다.");
@@ -1356,7 +1368,7 @@ export function createTimetableDetailHandlers(ctx) {
       const missing = rule === "teacher" ? missingTeacherRoomNamesForCards(ttCardIdsFromEntryLocal(entry).map(id => getTtCardById(id)).filter(Boolean)) : [];
       if (missing.length) {
         teacherRoomWarn.style.display = "block";
-        teacherRoomWarn.textContent = `교사 배정 교실 없음: ${missing.join(", ")} · 교사교실 우선 적용 시 자동 추천으로 배정합니다.`;
+        teacherRoomWarn.textContent = `교사 배정 교실 없음: ${missing.join(", ")} · 교사교실 고정 적용 시 방 미배정으로 유지합니다.`;
       } else {
         teacherRoomWarn.style.display = "none";
         teacherRoomWarn.textContent = "";

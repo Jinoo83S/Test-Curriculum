@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-roomfixed-constraint-r111";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-teacherroom-fixed-r112";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -444,7 +444,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-23-timetable-audit-r109"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-23-teacherroom-fixed-r112"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -770,7 +770,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-timetable-audit-r109",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-teacherroom-fixed-r112",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1388,10 +1388,22 @@ export function createAutoAssignAll(deps) {
     return !!(a.unitId && b.unitId && a.unitId === b.unitId);
   }
 
+  function roomAssignmentsForPlacementAuto(entry = {}) {
+    const explicit = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+      ? entry.roomAssignmentsByTtCardId
+      : {};
+    const out = {};
+    ttCardIdsFromPlacement(entry).forEach(id => {
+      const explicitRoom = cleanStr(explicit[id]);
+      if (explicitRoom) { out[id] = explicitRoom; return; }
+      const fixedRoom = fixedRoomForCardDuringAuto(getTtCardById(id), entry);
+      if (fixedRoom) out[id] = fixedRoom;
+    });
+    return out;
+  }
+
   function roomIdsForPlacement(entry = {}) {
-    const assigned = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
-      ? Object.values(entry.roomAssignmentsByTtCardId)
-      : [];
+    const assigned = Object.values(roomAssignmentsForPlacementAuto(entry));
     const cardIds = ttCardIdsFromPlacement(entry);
     const ids = [...assigned];
     // 그룹/다중 카드에서는 entry.roomId 하나를 대표 교실로 보지 않습니다.
@@ -1417,9 +1429,7 @@ export function createAutoAssignAll(deps) {
 
   function entryHasMissingRoomForAuto(entry = {}) {
     const cardIds = ttCardIdsFromPlacement(entry);
-    const assignments = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
-      ? entry.roomAssignmentsByTtCardId
-      : {};
+    const assignments = roomAssignmentsForPlacementAuto(entry);
     if (cardIds.length && (entry.groupId || cardIds.length > 1)) {
       return cardIds.some(id => {
         const card = getTtCardById(id);
@@ -2391,7 +2401,7 @@ export function createAutoAssignAll(deps) {
 
   function getAudienceSizeForRoom(data = {}) {
     // 학생 개인 key는 시간표 배치 단계에서 사용하지 않습니다.
-    // 교실 후보 정렬에서도 학생 수 기반 보정보다 교사 담당교실/홈룸/고정교실 규칙을 우선합니다.
+    // 교실 후보 정렬에서도 학생 수 기반 보정보다 교사 배정 교실 고정 규칙을 먼저 적용합니다.
     return 0;
   }
 
@@ -2444,9 +2454,10 @@ export function createAutoAssignAll(deps) {
     });
 
     entryData.roomAssignmentsByTtCardId = assignments;
+    entryData.roomRule = entryData.roomRule || "teacher";
     entryData.roomId = null;
     entryData.roomPinned = false;
-    // r111: 그룹 교실도 시간표 배치 중에는 확정/미배정 상태를 그대로 유지합니다.
+    // r112: 그룹 교실도 시간표 배치 중에는 확정/미배정 상태를 그대로 유지합니다.
     // 교사 담당교실이나 사용자가 지정한 방이 없으면 임의 자동추천 교실을 넣지 않습니다.
     return entryData;
   }
@@ -2466,7 +2477,7 @@ export function createAutoAssignAll(deps) {
       return entryData;
     }
 
-    // r111: 교사 담당교실/사용자 지정교실이 없는 카드는 방 미배정 상태 자체를 고정합니다.
+    // r112: 교사 담당교실/사용자 지정교실이 없는 카드는 방 미배정 상태 자체를 고정합니다.
     // 배치 중 빈 교실을 임의로 추천하지 않고, 상세카드에서만 추천/경고를 보여줍니다.
     entryData.roomId = null;
     entryData.roomPinned = false;
@@ -6066,7 +6077,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r111",
+        autoEngine: "fresh-csp-r112",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6379,7 +6390,7 @@ export function createAutoAssignAll(deps) {
         const fixed = normalizeTimetableEntry({
           ...entry,
           autoBlockKey: probeKey,
-          autoEngine: "fresh-csp-r111-coverage-onemove-direct",
+          autoEngine: "fresh-csp-r112-coverage-onemove-direct",
           autoCoverageRepair: true
         });
         placed.push(fixed);
@@ -6408,7 +6419,7 @@ export function createAutoAssignAll(deps) {
           const fixed = normalizeTimetableEntry({
             ...entry,
             autoBlockKey: probeKey,
-            autoEngine: "fresh-csp-r111-coverage-onemove",
+            autoEngine: "fresh-csp-r112-coverage-onemove",
             autoCoverageRepair: true
           });
           placed.splice(0, placed.length, ...baseWithMoved, fixed);
@@ -6447,7 +6458,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r111-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r112-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6460,7 +6471,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r111-coverage-fill",
+      autoEngine: "fresh-csp-r112-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6713,7 +6724,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-groupcard-r111",
+        engine: "fresh-csp-groupcard-r112",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6828,7 +6839,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r111`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r112`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6966,17 +6977,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-groupcard-r111",
-        engine: "fresh-csp-groupcard-r111",
+        telemetryStatus: "fresh-csp-groupcard-r112",
+        engine: "fresh-csp-groupcard-r112",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 교실확정 제약 r111",
+        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 교사교실 고정 제약 r112",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-23-roomfixed-constraint-r111"
+        validatorVersion: "2026-06-23-teacherroom-fixed-r112"
       };
 
       let afterAutoSnapshot = null;
@@ -7081,7 +7092,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-groupcard-r111",
+          engine: "fresh-csp-groupcard-r112",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -7095,7 +7106,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-groupcard-r111"
+              engine: "fresh-csp-groupcard-r112"
             });
           }
         } catch (_) {}

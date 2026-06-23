@@ -683,9 +683,9 @@ export function createTimetableSidebarHandlers(deps) {
     const roomRow = document.createElement("div");
     roomRow.className = "tt-subject-editor-grid-2";
     const roomRule = makeEditorSelect("교실 규칙", [
-      ["auto", "자동 추천"],
-      ["teacher", "교사 담당교실"],
-      ["homeroom", "홈룸"],
+      ["auto", "교사교실 고정 / 없으면 미배정"],
+      ["teacher", "교사 배정 교실 고정"],
+      ["homeroom", "홈룸 고정"],
       ["fixed", "고정 교실"],
       ["none", "교실 없음"],
     ], card.roomRule || "auto");
@@ -1580,12 +1580,40 @@ export function createTimetableSidebarHandlers(deps) {
     return room?.name || roomId;
   }
 
+  function teacherRoomNameByTeacher(teacherName = "") {
+    const teacher = clean(teacherName);
+    if (!teacher) return "";
+    const room = (appState.rooms?.rooms || []).find(r => clean(r.teacherName) === teacher && r.id);
+    return room ? (room.name || room.id) : "";
+  }
+
+  function teacherRoomsForCardLike(item = {}) {
+    const teachers = unique([
+      ...(Array.isArray(item.teachers) ? item.teachers : []),
+      ...String(item.teacherName || "").split(/[,，·/]+/)
+    ].map(clean).filter(Boolean));
+    return unique(teachers.map(teacherRoomNameByTeacher).filter(Boolean));
+  }
+
   function collectRoomNamesForEntries(list) {
-    return unique((list || []).map(e => roomNameById(e.roomId)).filter(Boolean));
+    return unique((list || []).flatMap(e => {
+      const explicit = e.roomAssignmentsByTtCardId && typeof e.roomAssignmentsByTtCardId === "object"
+        ? Object.values(e.roomAssignmentsByTtCardId).map(roomNameById).filter(Boolean)
+        : [];
+      if (explicit.length) return explicit;
+      const entryRoom = roomNameById(e.roomId);
+      if (entryRoom) return [entryRoom];
+      const cardIds = [e.ttcardId, ...(Array.isArray(e.ttcardIds) ? e.ttcardIds : [])].filter(Boolean);
+      return cardIds.flatMap(id => teacherRoomsForCardLike(getTtCardById(id) || {}));
+    }).filter(Boolean));
   }
 
   function collectRoomNamesForDetailItems(items) {
-    return unique((items || []).map(item => roomNameById(item.fixedRoomId || item.roomId)).filter(Boolean));
+    return unique((items || []).flatMap(item => {
+      const explicit = roomNameById(item.fixedRoomId || item.roomId);
+      if (explicit) return [explicit];
+      return teacherRoomsForCardLike(item);
+    }).filter(Boolean));
   }
 
 

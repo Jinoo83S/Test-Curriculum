@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-roomfixed-constraint-r111";
+import { versioned } from "./version.js?v=2026-06-23-teacherroom-fixed-r112";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1262,17 +1262,17 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
   if (rule === "teacher") {
     const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
-    // 교사 담당교실이 없으면 교실 없음으로 끝내지 않고 자동 추천의 다음 단계(지정교실/홈룸)로 내려갑니다.
-    return teacherRoomId || fixedRoomId || getHomeRoomIdForPlacementData(data) || null;
+    // r112: 교사 배정 교실은 추천이 아니라 고정 조건입니다.
+    // 교사 배정 교실이 없으면 임의 교실/홈룸으로 내려가지 않고 미배정 상태를 유지합니다.
+    return teacherRoomId || fixedRoomId || null;
   }
 
   // auto 기본 교실 규칙:
   // 1) 카드/수업에 명시된 고정교실
-  // 2) 교사 담당교실
-  // 3) 해당 학급 홈룸
-  // 교사 담당교실이 없는 경우에만 홈룸으로 내려갑니다.
+  // 2) 교사 배정 교실 고정
+  // 3) 둘 다 없으면 교실 미배정 유지
   const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
-  return fixedRoomId || teacherRoomId || getHomeRoomIdForPlacementData(data) || null;
+  return fixedRoomId || teacherRoomId || null;
 }
 
 function getDefaultRoomForPlacementData(data = {}) {
@@ -3330,6 +3330,7 @@ constraintsPanelApi = createTimetableConstraintsHandlers({
   getEntryClassSummary,
   getRoomDisplayName,
   getTtCards,
+  getTtCardById,
   getTeachersForTtCard,
   getCreditsForTtCard,
   getTtCardClassLabels,
