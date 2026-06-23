@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-real-table-merge-r102";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-group-rooms-correct-r103";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -25,6 +25,9 @@ export function createAutoAssignAll(deps) {
   } = deps;
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
+  const cleanStr = value => String(value ?? "").trim();
+  const uniqueRoomIds = list => [...new Set((list || []).map(cleanStr).filter(Boolean))];
+
 
   function experimentalResidualRepairEnabled(localOptions = {}) {
     return isExperimentalResidualRepairEnabled({
@@ -364,7 +367,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-23-real-table-merge-r102"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-23-group-rooms-correct-r103"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -690,7 +693,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-real-table-merge-r102",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-group-rooms-correct-r103",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1308,11 +1311,23 @@ export function createAutoAssignAll(deps) {
     return !!(a.unitId && b.unitId && a.unitId === b.unitId);
   }
 
+  function roomIdsForPlacement(entry = {}) {
+    const assigned = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+      ? Object.values(entry.roomAssignmentsByTtCardId)
+      : [];
+    const cardIds = ttCardIdsFromPlacement(entry);
+    const ids = [...assigned];
+    // 그룹/다중 카드에서는 entry.roomId 하나를 대표 교실로 보지 않습니다.
+    // 단일 카드 또는 일반 수업에서만 roomId를 사용합니다.
+    if ((!entry.groupId && cardIds.length <= 1) && entry.roomId) ids.push(entry.roomId);
+    return uniqueRoomIds(ids);
+  }
+
   function roomConflictsInSlot(candidate = {}, slot = {}, placed = []) {
-    const roomId = candidate.roomId;
-    if (!roomId) return false;
+    const roomIds = roomIdsForPlacement(candidate);
+    if (!roomIds.length) return false;
     const slotEntries = [...entries(), ...placed].filter(e => e.day === slot.day && e.period === slot.period);
-    return slotEntries.some(e => e.roomId === roomId && !sameUnitPlacement(candidate, e));
+    return slotEntries.some(e => !sameUnitPlacement(candidate, e) && roomIdsForPlacement(e).some(roomId => roomIds.includes(roomId)));
   }
 
   function getRoomByIdLocal(roomId) {
@@ -1329,9 +1344,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function roomUnavailableInSlot(candidate = {}, slot = {}) {
-    const roomId = candidate.roomId;
-    if (!roomId) return false;
-    return isRoomUnavailable(roomId, slot.day, slot.period);
+    return roomIdsForPlacement(candidate).some(roomId => isRoomUnavailable(roomId, slot.day, slot.period));
   }
 
 
@@ -2300,8 +2313,79 @@ export function createAutoAssignAll(deps) {
       .map(x => x.room);
   }
 
+  function cardNeedsRoomForAuto(card = {}, entryData = {}) {
+    const rule = cleanStr(card.roomRule || entryData.roomRule || "auto");
+    return rule !== "none";
+  }
+
+  function cardTeacherName(card = {}) {
+    return [...new Set(getTeachersForTtCard(card).filter(Boolean))].join(",");
+  }
+
+  function roomAvailableForGroupPart(roomId, slot = {}, taken = new Set()) {
+    const id = cleanStr(roomId);
+    return !!id && !taken.has(id) && !isRoomUnavailable(id, slot.day, slot.period);
+  }
+
+  function assignRoomsForGroupedEntry(entryData = {}, slot = entryData, placed = []) {
+    const ids = ttCardIdsFromPlacement(entryData);
+    if (ids.length <= 1 && !entryData.groupId) return entryData;
+
+    const slotEntries = [...entries(), ...placed].filter(e => e.day === slot.day && e.period === slot.period);
+    const taken = new Set(slotEntries.flatMap(roomIdsForPlacement));
+    const assignments = { ...(entryData.roomAssignmentsByTtCardId || {}) };
+
+    ids.forEach(id => {
+      const card = getTtCardById(id);
+      if (!card || !cardNeedsRoomForAuto(card, entryData)) { delete assignments[id]; return; }
+
+      let roomId = cleanStr(assignments[id]);
+      if (roomAvailableForGroupPart(roomId, slot, taken)) { taken.add(roomId); assignments[id] = roomId; return; }
+
+      const oneCardData = applyDefaultRoomToEntryData({
+        ...entryData,
+        ttcardId: id,
+        ttcardIds: [id],
+        templateId: card.templateId || entryData.templateId,
+        templateIds: [card.templateId || entryData.templateId].filter(Boolean),
+        gradeKey: card.gradeKey || entryData.gradeKey,
+        gradeKeys: [card.gradeKey || entryData.gradeKey].filter(Boolean),
+        sectionIdx: card.sectionIdx ?? entryData.sectionIdx ?? 0,
+        teacherName: cardTeacherName(card),
+        roomRule: card.roomRule || "auto",
+        roomPinned: false,
+        roomId: null,
+      });
+
+      const preferred = cleanStr(oneCardData.roomId || card.fixedRoomId || "");
+      if (roomAvailableForGroupPart(preferred, slot, taken)) {
+        assignments[id] = preferred;
+        taken.add(preferred);
+        return;
+      }
+
+      for (const room of sortRoomCandidatesFor(oneCardData)) {
+        if (roomAvailableForGroupPart(room.id, slot, taken)) {
+          assignments[id] = room.id;
+          taken.add(room.id);
+          return;
+        }
+      }
+
+      delete assignments[id];
+    });
+
+    entryData.roomAssignmentsByTtCardId = assignments;
+    entryData.roomId = null;
+    entryData.roomPinned = false;
+    return entryData;
+  }
+
   function applyAutoRoomToEntryData(data = {}, slot = data, placed = []) {
     const entryData = applyDefaultRoomToEntryData({ ...data });
+    const cardIds = ttCardIdsFromPlacement(entryData);
+    if (entryData.groupId || cardIds.length > 1) return assignRoomsForGroupedEntry(entryData, slot, placed);
+
     const rule = String(entryData.roomRule || "auto").trim();
 
     if (rule === "none") return { ...entryData, roomId: null };
@@ -6763,7 +6847,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-23-real-table-merge-r102"
+        validatorVersion: "2026-06-23-group-rooms-correct-r103"
       };
 
       let afterAutoSnapshot = null;

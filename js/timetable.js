@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-real-table-merge-r102";
+import { versioned } from "./version.js?v=2026-06-23-group-rooms-correct-r103";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1320,9 +1320,16 @@ function roomAssignmentsForEntry(entry = {}) {
   return out;
 }
 
+function isGroupedRoomEntry(entry = {}) {
+  const cardIds = ttCardIdsFromPlacement(entry);
+  return !!entry.groupId || cardIds.length > 1;
+}
+
 function effectiveRoomIdsForEntry(entry = {}) {
   const ids = Object.values(roomAssignmentsForEntry(entry)).map(clean).filter(Boolean);
-  if (entry.roomId) ids.push(clean(entry.roomId));
+  // 그룹카드는 entry.roomId 하나로 교실을 대표하면 안 됩니다.
+  // 시간표에서는 카드 1개로 움직이지만, 실제 교실은 구성 과목별 roomAssignmentsByTtCardId만 신뢰합니다.
+  if (!isGroupedRoomEntry(entry) && entry.roomId) ids.push(clean(entry.roomId));
   return [...new Set(ids.filter(Boolean))];
 }
 
@@ -1355,7 +1362,10 @@ function applyCardRoomAssignmentsToEntryData(data = {}) {
   });
   data.roomAssignmentsByTtCardId = assignments;
   const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
-  if (rooms.length === 1) data.roomId = rooms[0];
+  if (isGroupedRoomEntry(data)) {
+    data.roomId = null;
+    data.roomPinned = false;
+  } else if (rooms.length === 1) data.roomId = rooms[0];
   else if (rooms.length > 1) data.roomId = null;
   return data;
 }
@@ -1373,7 +1383,10 @@ function refreshEntryRoomAssignmentsFromCards(cardIds = []) {
     });
     entry.roomAssignmentsByTtCardId = assignments;
     const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
-    if (rooms.length === 1) entry.roomId = rooms[0];
+    if (isGroupedRoomEntry(entry)) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    } else if (rooms.length === 1) entry.roomId = rooms[0];
     else if (rooms.length > 1) entry.roomId = null;
     else if (!entry.roomPinned) entry.roomId = null;
   });
@@ -1388,9 +1401,14 @@ function entryRoomSummary(entry = {}) {
 }
 
 function applyDefaultRoomToEntryData(data = {}) {
-  if (data.roomPinned && data.roomId) return data;
-  const roomId = resolveRoomForPlacementData(data);
+  if (data.roomPinned && data.roomId && !isGroupedRoomEntry(data)) return data;
   data.roomRule = clean(data.roomRule || getCardPreferenceForPlacementData(data).rule || "auto");
+  if (isGroupedRoomEntry(data)) {
+    data.roomId = null;
+    data.roomPinned = false;
+    return applyCardRoomAssignmentsToEntryData(data);
+  }
+  const roomId = resolveRoomForPlacementData(data);
   data.roomId = roomId || null;
   return applyCardRoomAssignmentsToEntryData(data);
 }
@@ -1417,6 +1435,10 @@ function applyRoomRuleToEntry(entryId, rule = "auto", roomId = null) {
   if (!canEdit()) return false;
   const e = entries().find(x => x.id === entryId);
   if (!e) return false;
+  if (isGroupedRoomEntry(e)) {
+    alert("그룹카드는 상단 교실 1개가 아니라 구성 과목별 교실을 지정해야 합니다.");
+    return false;
+  }
   captureTimetableUndo("수업 교실 설정");
   const normalizedRule = clean(rule) || "auto";
 
@@ -2346,7 +2368,10 @@ function getManualPlacementBlock(candidates, options = {}) {
         getProtectedGrades: protectedGradesForEntry,
         getCompoundPartRefs: compoundPartRefsForPlacement,
         rooms: getEffectiveRoomsForTimetable(),
-        getHardTeachers: resolveHardTeachersForEntry
+        getHardTeachers: resolveHardTeachersForEntry,
+        getRoomIdsForEntry: effectiveRoomIdsForEntry,
+        entryNeedsRoom: entryNeedsAnyRoom,
+        entryHasRoomMissing: entryHasMissingRoomAssignment
       }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
@@ -3713,6 +3738,10 @@ function isRoomUnavailableForDragPreview(roomId, day, period) {
   return getRoomUnavailableSlots(roomId).some(s => s.day === day && s.period === period);
 }
 
+function entryHasUnavailableRoomForDragPreview(entry = {}, day, period) {
+  return effectiveRoomIdsForEntry(entry).some(roomId => isRoomUnavailableForDragPreview(roomId, day, period));
+}
+
 function getSlotEntriesForPreview(day, period, excludeIds = new Set()) {
   return entries().filter(e => e && e.day === day && e.period === period && !excludeIds.has(e.id));
 }
@@ -3766,7 +3795,9 @@ function getDragPreviewBlockLight(candidates, options = {}) {
         return { kind: "conflict", candidate, conflictTypes: ["teacher"] };
       }
 
-      if (candidate.roomId && fixed.roomId && candidate.roomId === fixed.roomId) {
+      const candidateRooms = effectiveRoomIdsForEntry(candidate);
+      const fixedRooms = effectiveRoomIdsForEntry(fixed);
+      if (candidateRooms.some(roomId => fixedRooms.includes(roomId))) {
         return { kind: "conflict", candidate, conflictTypes: ["room"] };
       }
     }

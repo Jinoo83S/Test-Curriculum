@@ -1037,29 +1037,32 @@ export function createTimetableDetailHandlers(ctx) {
 
     makeRow("학년/반", ctx.getEntryClassSummary(entry));
 
+    const groupDetailCards = entry.groupId ? getGroupDetailCards(entry) : [];
+    const isGroupDetail = !!entry.groupId && groupDetailCards.length > 1;
     const teachers = entryTeachers(entry);
-    const tLabel = document.createElement("label");
-    tLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:600";
-    tLabel.textContent = "담당 교사";
-    const tSel = document.createElement("select");
-    tSel.style.cssText = "width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:8px";
-    tSel.disabled = !canEdit();
-    [{ v: "", l: "교사 없음" }, ...teachers.map(t => ({ v: t, l: t }))].forEach(({ v, l }) => {
-      const o = document.createElement("option");
-      o.value = v;
-      o.textContent = l;
-      if (v === entry.teacherName) o.selected = true;
-      tSel.appendChild(o);
-    });
-    tSel.addEventListener("change", e => {
-      ctx.updateEntry(entry.id, "teacherName", e.target.value || null);
-      ctx.recomputeConflicts();
-      ctx.renderAll();
-    });
-    box.append(tLabel, tSel);
+    if (!isGroupDetail) {
+      const tLabel = document.createElement("label");
+      tLabel.style.cssText = "display:block;margin-bottom:3px;font-size:11px;color:#6b7280;font-weight:600";
+      tLabel.textContent = "담당 교사";
+      const tSel = document.createElement("select");
+      tSel.style.cssText = "width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px;margin-bottom:8px";
+      tSel.disabled = !canEdit();
+      [{ v: "", l: "교사 없음" }, ...teachers.map(t => ({ v: t, l: t }))].forEach(({ v, l }) => {
+        const o = document.createElement("option");
+        o.value = v;
+        o.textContent = l;
+        if (v === entry.teacherName) o.selected = true;
+        tSel.appendChild(o);
+      });
+      tSel.addEventListener("change", e => {
+        ctx.updateEntry(entry.id, "teacherName", e.target.value || null);
+        ctx.recomputeConflicts();
+        ctx.renderAll();
+      });
+      box.append(tLabel, tSel);
+    }
 
     const tplId = entry.templateId || entry.templateIds?.[0];
-    const groupDetailCards = entry.groupId ? getGroupDetailCards(entry) : [];
     if (entry.groupId) {
       const groupCredits = Math.max(1, ...groupDetailCards.map(item => Number(item.credits) || 0).filter(v => v > 0));
       const assignedSlots = new Set(entries()
@@ -1088,8 +1091,10 @@ export function createTimetableDetailHandlers(ctx) {
       const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
       makeRow("그룹", grp?.name || entry.groupId);
       appendGroupDetailSection(box, groupDetailCards, { title: entry.unitId ? "묶음수업 구성" : "그룹 구성 과목" });
+      appendCardRoomRuleEditor(box, groupDetailCards, ctx, modal, entry.groupId);
     }
 
+    if (!isGroupDetail) {
     const roomSection = document.createElement("div");
     roomSection.style.cssText = "margin:12px 0 10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc";
     const roomTitle = document.createElement("div");
@@ -1190,6 +1195,7 @@ export function createTimetableDetailHandlers(ctx) {
       roomSection.appendChild(roomPinBtn);
     }
     box.appendChild(roomSection);
+    }
 
     ctx.renderEntryConflictDetailSection(box, entry);
 
