@@ -661,7 +661,7 @@ function renderClassGrid(wrap, ctx) {
 
   const table = document.createElement("table");
   table.className = "tt-table tt-class-table tt-percent-grid-table tt-real-merged-table";
-  table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0;overflow:visible";
+  table.style.cssText = "table-layout:fixed;width:100%;height:100%;min-width:0;border-collapse:separate;border-spacing:0";
   table.style.setProperty("--tt-period-row-count", String(Math.max(1, periods.length)));
   wrap.style.setProperty("--tt-class-col-count", String(DAYS.length * gradeSections.length));
   wrap.style.setProperty("--tt-class-row-count", String(Math.max(1, periods.length)));
@@ -718,7 +718,7 @@ function renderClassGrid(wrap, ctx) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  tbody.style.cssText = `height:calc(100% - ${classHeaderHeightPx}px);overflow:visible`;
+  tbody.style.height = `calc(100% - ${classHeaderHeightPx}px)`;
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
@@ -728,7 +728,6 @@ function renderClassGrid(wrap, ctx) {
 
     DAYS.forEach((_, day) => {
       const spanPlans = new Map();
-      const coveredBy = new Map();
       entries
         .filter(e => e.day === day && e.period === period && entryHasGrade(e, currentGrade))
         .forEach(entry => {
@@ -740,45 +739,47 @@ function renderClassGrid(wrap, ctx) {
             spanPlans.set(anchor, { entry, coveredSections, span: coveredSections.length });
           }
         });
-      spanPlans.forEach(plan => {
-        plan.coveredSections.slice(1).forEach(sec => coveredBy.set(sec, plan));
-      });
 
-      gradeSections.forEach(sec => {
-        const td = document.createElement("td");
+      for (let idx = 0; idx < gradeSections.length; idx += 1) {
+        const sec = gradeSections[idx];
         const plan = spanPlans.get(sec);
-        const coveredPlan = coveredBy.get(sec);
-        td.className = "tt-cell tt-percent-grid-cell" + (plan ? " tt-group-span-anchor" : "") + (coveredPlan ? " tt-covered-by-span" : "");
+        const td = document.createElement("td");
         td.dataset.gradeKey = currentGrade;
         td.dataset.sectionIdx = String(sec);
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;height:${rowHeight};min-width:0;position:relative;${plan ? 'overflow:visible;z-index:25;' : 'overflow:hidden;'}`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
 
         if (plan) {
+          td.className = "tt-cell tt-percent-grid-cell tt-real-merge-cell tt-group-span-anchor";
+          td.colSpan = plan.span;
+          td.dataset.spanSections = plan.coveredSections.join(",");
           const c = ctx.buildEntryCard(plan.entry, { compact: true, showSpan: true });
-          styleClassSpanOverlay(c, plan.span);
+          c.classList.add("tt-real-merge-card");
+          c.style.cssText += ";flex-shrink:0;width:100%;height:100%";
           addMergedLabelBadge(c, plan.coveredSections.map(sectionLabel));
           td.appendChild(c);
-        } else if (coveredPlan) {
-          appendCoveredPlaceholder(td);
+          tr.appendChild(td);
+          idx += plan.span - 1;
+          continue;
+        }
+
+        td.className = "tt-cell tt-percent-grid-cell";
+        const clsInfo = classInfoBySection.get(sec);
+        const slotEntries = entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, clsInfo));
+        if (slotEntries.length) {
+          slotEntries.forEach(entry => {
+            const c = ctx.buildEntryCard(entry, { compact: true });
+            c.style.cssText += ";flex-shrink:0;width:100%";
+            td.appendChild(c);
+          });
         } else {
-          const clsInfo = classInfoBySection.get(sec);
-          const slotEntries = entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, clsInfo));
-          if (slotEntries.length) {
-            slotEntries.forEach(entry => {
-              const c = ctx.buildEntryCard(entry, { compact: true });
-              c.style.cssText += ";flex-shrink:0;width:100%";
-              td.appendChild(c);
-            });
-          } else {
-            const ph = document.createElement("div");
-            ph.className = "tt-cell-ph";
-            td.appendChild(ph);
-          }
+          const ph = document.createElement("div");
+          ph.className = "tt-cell-ph";
+          td.appendChild(ph);
         }
         tr.appendChild(td);
-      });
+      }
     });
     tbody.appendChild(tr);
   });
@@ -1122,8 +1123,8 @@ function renderAllClassesGrid(wrap, ctx) {
   const dayIndexes = Array.from({ length: numDays }, (_, i) => i);
 
   const table = document.createElement("table");
-  table.className = "tt-table tt-all-class-table tt-all-summary-table tt-all-merged-table tt-real-merged-table";
-  table.style.cssText = "table-layout:fixed;width:100%;height:calc(100% - 35px);min-width:0;border-collapse:separate;border-spacing:0;overflow:visible";
+  table.className = "tt-table tt-all-class-table tt-all-summary-table tt-real-merged-table";
+  table.style.cssText = "table-layout:fixed;width:100%;height:calc(100% - 35px);min-width:0;border-collapse:separate;border-spacing:0";
 
   const rowCount = Math.max(1, classes.length);
   wrap.style.setProperty("--num-rows", String(rowCount));
@@ -1200,7 +1201,7 @@ function renderAllClassesGrid(wrap, ctx) {
   });
 
   const tbody = document.createElement("tbody");
-  tbody.style.cssText = "height:calc(100% - var(--tt-all-header-height, 30px));overflow:visible";
+  tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
   classes.forEach((cls, rowIdx) => {
     const tr = document.createElement("tr");
@@ -1222,33 +1223,34 @@ function renderAllClassesGrid(wrap, ctx) {
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
         const cellKey = allClassRowKey(rowIdx, day, period);
-        const plan = spanPlans.get(cellKey);
         const coveredPlan = coveredBy.get(cellKey);
+        if (coveredPlan) return;
+
+        const plan = spanPlans.get(cellKey);
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
         const td = document.createElement("td");
-        td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (plan ? " tt-group-rowspan-anchor" : "") + (coveredPlan ? " tt-covered-by-span" : "");
-        if (plan) {
-          td.dataset.spanClasses = plan.rowIndexes.map(i => labelForClassInfo(classes[i])).join(",");
-        }
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;height:${rowHeight};position:relative;${plan ? 'overflow:visible;z-index:30;' : 'overflow:hidden;'}`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         if (plan) {
+          td.className = "tt-cell tt-all-cell tt-real-merge-cell tt-group-rowspan-anchor" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+          td.rowSpan = plan.span;
+          td.dataset.spanClasses = plan.rowIndexes.map(i => labelForClassInfo(classes[i])).join(",");
           const card = makeAllViewOverlayCard(plan.entry, ctx, mode);
           if (card) {
-            styleAllViewSpanOverlay(card, plan.span);
+            card.classList.add("tt-real-merge-card");
+            card.style.cssText += ";width:100%;height:100%";
             addMergedLabelBadge(card, plan.rowIndexes.map(i => labelForClassInfo(classes[i])));
             td.appendChild(card);
           } else {
             appendCoveredPlaceholder(td);
           }
-        } else if (coveredPlan) {
-          appendCoveredPlaceholder(td);
         } else {
+          td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
           const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
           appendAllSlotContents(td, slotEntries, ctx, mode);
         }

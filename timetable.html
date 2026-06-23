@@ -553,6 +553,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 
 .tt-title-version-badge{display:inline-flex;align-items:center;margin-left:8px;padding:2px 7px;border-radius:999px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:11px;font-weight:900;line-height:1;vertical-align:middle;}
+
+/* r102 real merged group-card cells */
+.tt-real-merge-cell{overflow:hidden!important;position:relative!important;padding:0 1px!important;}
+.tt-real-merge-cell .tt-entry-card,
+.tt-real-merge-cell .tt-all-summary-card{width:100%!important;height:100%!important;min-height:0!important;box-sizing:border-box!important;border-radius:8px!important;box-shadow:0 2px 8px rgba(15,23,42,.16), inset 0 0 0 1px rgba(15,23,42,.10)!important;}
+.tt-real-merge-card{display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;}
+.tt-real-merge-card .tt-entry-title,
+.tt-real-merge-card .tt-all-summary-top{font-weight:950!important;}
+.tt-merged-suppressed{display:none!important;}
 </style>
 
 <style>
@@ -1008,7 +1017,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r101</span></h1>
+  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r102</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1078,9 +1087,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-23-groupcard-roomassign-r101";</script>
+<script>window.HIS_APP_VERSION = "2026-06-23-real-table-merge-r102";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-23-groupcard-roomassign-r101";
+  import { versioned } from "./js/version.js?v=2026-06-23-real-table-merge-r102";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1284,7 +1293,7 @@ window._ttBottomToggle = (function() {
 (function(){
   try {
     const b=document.createElement('div');
-    b.textContent='HIS build r101 · 2026-06-23';
+    b.textContent='HIS build r102 · 2026-06-23';
     b.style.cssText='position:fixed;right:8px;bottom:6px;z-index:99999;font:11px/1.3 system-ui,sans-serif;background:rgba(0,0,0,.62);color:#fff;padding:4px 7px;border-radius:999px;pointer-events:none;';
     document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(b));
   } catch (_) {}
@@ -1902,7 +1911,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-groupcard-roomassign-r101");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-real-table-merge-r102");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
