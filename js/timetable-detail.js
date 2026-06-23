@@ -52,15 +52,17 @@ function clampModalPosition(modal) {
 
 function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } = {}) {
   const seq = detailModalSeq++;
-  const { left, top } = getInitialModalPosition(maxWidth);
   const modal = document.createElement("div");
   modal.id = `tt-entry-detail-modal-${Date.now()}-${seq}`;
-  modal.className = "tt-entry-detail-floating-modal";
+  modal.className = "tt-entry-detail-floating-modal tt-entry-detail-side-panel";
+  const panelWidth = Math.max(Number(minWidth) || 300, Math.min(Number(maxWidth) || 440, 520));
   modal.style.cssText = [
     "position:fixed",
-    `left:${left}px`,
-    `top:${top}px`,
-    "width:max-content",
+    "right:12px",
+    "left:auto",
+    "top:calc(var(--tt-detail-panel-top, 88px))",
+    "bottom:calc(var(--tt-bottom-active-height, 0px) + 12px)",
+    `width:min(${panelWidth}px,calc(100vw - 24px))`,
     "max-width:calc(100vw - 24px)",
     "z-index:" + (++detailModalTopZ),
     "background:transparent",
@@ -68,44 +70,47 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   ].join(";");
 
   const box = document.createElement("div");
+  box.className = "tt-detail-side-box";
   box.style.cssText = [
     "background:white",
     "border:1px solid #dbe4f0",
     "border-radius:12px",
     "padding:0 20px 18px",
-    `min-width:${minWidth}px`,
-    `max-width:min(${maxWidth}px,calc(100vw - 24px))`,
-    "max-height:calc(100vh - 32px)",
+    `min-width:min(${minWidth}px,calc(100vw - 24px))`,
+    "width:100%",
+    "height:100%",
+    "max-height:100%",
     "overflow-y:auto",
     "box-shadow:0 18px 55px rgba(15,23,42,.28)",
     "font-size:13px",
     "position:relative",
-    "scrollbar-gutter:stable"
+    "scrollbar-gutter:stable",
+    "box-sizing:border-box"
   ].join(";");
 
   const dragHandle = document.createElement("div");
-  dragHandle.className = "tt-detail-drag-handle";
+  dragHandle.className = "tt-detail-drag-handle tt-detail-side-header";
   dragHandle.style.cssText = [
     "position:sticky",
     "left:0",
     "right:0",
     "top:0",
-    "height:34px",
+    "height:38px",
     "display:flex",
     "align-items:center",
     "gap:8px",
     "margin:0 -20px 14px",
-    "padding:0 44px 0 14px",
+    "padding:0 48px 0 14px",
     "border-bottom:1px solid #dbe4f0",
     "border-radius:12px 12px 0 0",
     "background:linear-gradient(180deg,#f8fbff,#eef5ff)",
     "color:#0f172a",
     "font-size:12px",
     "font-weight:900",
-    "cursor:move",
+    "cursor:default",
     "user-select:none",
     "box-sizing:border-box",
-    "z-index:5",
+    "z-index:30",
     "box-shadow:0 2px 8px rgba(15,23,42,.06)"
   ].join(";");
 
@@ -116,17 +121,15 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   titleText.title = title;
   dragHandle.appendChild(titleText);
 
-  const closeBtn = document.createElement("button");
-  closeBtn.type = "button";
-  closeBtn.className = "tt-detail-close-btn";
-  closeBtn.style.cssText = [
-    "position:sticky",
-    "top:3px",
-    "float:right",
-    "margin-top:3px",
-    "margin-right:-14px",
-    "width:28px",
-    "height:28px",
+  const realCloseBtn = document.createElement("button");
+  realCloseBtn.type = "button";
+  realCloseBtn.className = "tt-detail-close-btn tt-detail-close-fixed";
+  realCloseBtn.style.cssText = [
+    "position:absolute",
+    "top:5px",
+    "right:8px",
+    "width:29px",
+    "height:29px",
     "border:1px solid #dbe4f0",
     "border-radius:999px",
     "background:#ffffff",
@@ -135,9 +138,16 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
     "cursor:pointer",
     "color:#64748b",
     "line-height:1",
-    "z-index:7",
+    "z-index:35",
     "box-shadow:0 2px 8px rgba(15,23,42,.08)"
   ].join(";");
+  realCloseBtn.textContent = "×";
+  dragHandle.appendChild(realCloseBtn);
+
+  const closeBtn = document.createElement("button");
+  closeBtn.type = "button";
+  closeBtn.className = "tt-detail-close-sentinel";
+  closeBtn.style.cssText = "display:none!important";
   closeBtn.textContent = "×";
 
   const setTitle = value => {
@@ -153,39 +163,18 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
       resizeHandler = null;
     }
     modal.remove();
+    if (!document.querySelector(".tt-entry-detail-side-panel")) document.body.classList.remove("tt-detail-panel-open");
   }
+  realCloseBtn.onclick = closeModal;
   closeBtn.onclick = closeModal;
 
-  let dragState = null;
-  dragHandle.addEventListener("pointerdown", ev => {
-    ev.preventDefault();
-    bringModalToFront(modal);
-    const rect = modal.getBoundingClientRect();
-    dragState = { offsetX: ev.clientX - rect.left, offsetY: ev.clientY - rect.top };
-    dragHandle.setPointerCapture?.(ev.pointerId);
-  });
-  dragHandle.addEventListener("pointermove", ev => {
-    if (!dragState) return;
-    modal.style.left = `${ev.clientX - dragState.offsetX}px`;
-    modal.style.top = `${ev.clientY - dragState.offsetY}px`;
-  });
-  const endDrag = ev => {
-    if (!dragState) return;
-    dragState = null;
-    try { dragHandle.releasePointerCapture?.(ev.pointerId); } catch (_) {}
-    clampModalPosition(modal);
-  };
-  dragHandle.addEventListener("pointerup", endDrag);
-  dragHandle.addEventListener("pointercancel", endDrag);
-
   modal.addEventListener("pointerdown", () => bringModalToFront(modal));
-  resizeHandler = () => clampModalPosition(modal);
+  resizeHandler = () => {};
   window.addEventListener("resize", resizeHandler, { passive: true });
 
-  requestAnimationFrame(() => clampModalPosition(modal));
-
-  box.append(dragHandle, closeBtn);
+  box.append(dragHandle);
   modal.appendChild(box);
+  document.body.classList.add("tt-detail-panel-open");
   return { modal, box, closeBtn, setTitle };
 }
 

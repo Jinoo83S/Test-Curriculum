@@ -1013,11 +1013,39 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-entry-group-span-badge{color:inherit!important;}
 </style>
 
+
+<style id="tt-layout-bottom-detail-r105">
+:root{--tt-bottom-active-height:0px;--tt-detail-panel-top:88px;}
+.tt-body{flex:1 1 auto!important;min-height:0!important;overflow:hidden!important;}
+#ttGrid{height:100%!important;min-height:0!important;}
+.tt-bottom{height:0;max-height:55vh;transition:height .16s ease;border-top:1px solid #cbd5e1;will-change:height;}
+.tt-bottom.tt-bottom-collapsed{height:0!important;min-height:0!important;border-top:0!important;overflow:hidden!important;}
+.tt-bottom.tt-bottom-collapsed .tt-bottom-scroll{display:none!important;}
+.tt-bottom .tt-bottom-tab{min-height:34px!important;}
+.tt-bottom-tab-btn[data-tab="subjects"],
+.tt-bottom-tab-btn[data-tab="constraints"],
+.tt-bottom-tab-btn[data-tab="teacherCards"],
+.tt-bottom-tab-btn[data-tab="rooms"]{display:none!important;}
+#ttSubjectsContent,#ttConstraintsContent,#ttTeacherCardsContent,#ttRoomsContent{display:none!important;}
+.tt-bottom-resizer{height:9px!important;cursor:ns-resize!important;background:#eef2ff!important;border-top:1px solid #cbd5e1!important;}
+.tt-bottom-resizer::after{content:"로그 · 충돌 · 미배치 패널 — 드래그로 높이 조절"!important;font-size:10px!important;letter-spacing:0!important;color:#64748b!important;}
+.tt-bottom.tt-bottom-collapsed .tt-bottom-resizer{display:none!important;}
+.tt-bottom-toggle-btn{white-space:nowrap!important;}
+.tt-detail-panel-open #ttGrid{scroll-padding-right:440px;}
+.tt-entry-detail-side-panel{z-index:12000!important;}
+.tt-entry-detail-side-panel .tt-detail-side-box{overscroll-behavior:contain;}
+.tt-entry-detail-side-panel .tt-detail-side-header{cursor:default!important;}
+.tt-detail-close-fixed:hover{background:#fee2e2!important;color:#dc2626!important;border-color:#fecaca!important;}
+@media(max-width:900px){
+  .tt-entry-detail-side-panel{left:8px!important;right:8px!important;width:auto!important;top:82px!important;bottom:calc(var(--tt-bottom-active-height,0px) + 8px)!important;}
+}
+</style>
+
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r104</span></h1>
+  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r105</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1057,8 +1085,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
   <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
   <div class="tt-toolbar-right">
-    <button id="ttToggleBottom" class="tt-bottom-toggle-btn" type="button" title="하단 패널 숨기기/보이기">
-      <span id="ttToggleIcon">⌄</span> 과목·조건
+    <button id="ttToggleBottom" class="tt-bottom-toggle-btn active" type="button" title="하단 로그/충돌/미배치 패널 열기/접기">
+      <span id="ttToggleIcon">⌃</span> 로그·충돌·미배치
     </button>
   </div>
 </div>
@@ -1066,30 +1094,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- Grid only - no sidebar -->
 <div class="tt-body"><div id="ttGrid"></div></div>
 
-<!-- Bottom panel: 과목카드 / 교사조건 / 교실관리 -->
-<div class="tt-bottom" id="ttBottom">
-  <div class="tt-bottom-resizer" id="ttBottomResizer"></div>
+<!-- Bottom panel: 로그 / 충돌 / 미배치 only -->
+<div class="tt-bottom tt-bottom-collapsed" id="ttBottom" aria-label="로그·충돌·미배치 패널">
+  <div class="tt-bottom-resizer" id="ttBottomResizer" title="위아래로 드래그해 높이를 조절합니다"></div>
   <div class="tt-bottom-scroll">
     <div class="tt-bottom-tab">
-      <button class="tt-bottom-tab-btn active" data-tab="subjects">📚 과목 카드</button>
-      <button class="tt-bottom-tab-btn"         data-tab="constraints">👩‍🏫 교사 조건</button>
-      <button class="tt-bottom-tab-btn"         data-tab="teacherCards">👨‍🏫 교사별 카드</button>
-      <button class="tt-bottom-tab-btn"         data-tab="rooms">🏫 교실 관리</button>
-      <button class="tt-bottom-tab-btn"         data-tab="logs">🧾 로그</button>
+      <button class="tt-bottom-tab-btn active" data-tab="logs" type="button">🧾 로그 · 충돌 · 미배치</button>
     </div>
     <div class="tt-bottom-content">
-      <div id="ttSubjectsContent"></div>
+      <div id="ttSubjectsContent" class="hidden"></div>
       <div id="ttConstraintsContent" class="hidden"></div>
       <div id="ttTeacherCardsContent" class="hidden"></div>
       <div id="ttRoomsContent" class="hidden"></div>
-      <div id="ttLogsContent" class="hidden"></div>
+      <div id="ttLogsContent"></div>
     </div>
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-23-group-parent-structure-r104";</script>
+<script>window.HIS_APP_VERSION = "2026-06-23-layout-bottom-detail-r105";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-23-group-parent-structure-r104";
+  import { versioned } from "./js/version.js?v=2026-06-23-layout-bottom-detail-r105";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1098,54 +1122,89 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    const t = btn.dataset.tab;
-    document.getElementById("ttSubjectsContent")?.classList.toggle("hidden", t !== "subjects");
-    document.getElementById("ttConstraintsContent")?.classList.toggle("hidden", t !== "constraints");
-    document.getElementById("ttTeacherCardsContent")?.classList.toggle("hidden", t !== "teacherCards");
-    document.getElementById("ttRoomsContent")?.classList.toggle("hidden", t !== "rooms");
+    const t = btn.dataset.tab === "conflicts" || btn.dataset.tab === "unplaced" ? "logs" : (btn.dataset.tab || "logs");
+    document.getElementById("ttSubjectsContent")?.classList.add("hidden");
+    document.getElementById("ttConstraintsContent")?.classList.add("hidden");
+    document.getElementById("ttTeacherCardsContent")?.classList.add("hidden");
+    document.getElementById("ttRoomsContent")?.classList.add("hidden");
     document.getElementById("ttLogsContent")?.classList.toggle("hidden", t !== "logs");
+    if (t === "logs") window._ttBottomToggle?.show?.();
   });
 });
 
-/* ── Bottom resize & toggle ── */
+/* ── Bottom resize & toggle · r105 ── */
 (function() {
   const bottom  = document.getElementById("ttBottom");
   const resizer = document.getElementById("ttBottomResizer");
-  const DEFAULT_H = 260;
-  const MIN_H = 80;
-  const MAX_H = 720;
+  const btn     = document.getElementById("ttToggleBottom");
+  const icon    = document.getElementById("ttToggleIcon");
+  const DEFAULT_H = 280;
+  const MIN_H = 96;
+  const MAX_H = Math.max(220, Math.round((window.innerHeight || 720) * 0.55));
+  let collapsed = localStorage.getItem("tt_bot_collapsed") !== "0";
+  let h = clampHeight(localStorage.getItem("tt_botH") || DEFAULT_H);
 
   function clampHeight(value) {
     const n = Number.parseInt(value, 10);
     return Math.max(MIN_H, Math.min(MAX_H, Number.isFinite(n) ? n : DEFAULT_H));
   }
-
-  function applyHeight(value, save = false) {
+  function setCssHeight(value) {
     const next = clampHeight(value);
     bottom.style.height = next + "px";
     bottom.style.setProperty("--tt-bottom-current-height", next + "px");
     document.documentElement.style.setProperty("--tt-bottom-current-height", next + "px");
-    if (save) localStorage.setItem("tt_botH", String(next));
+    document.documentElement.style.setProperty("--tt-bottom-active-height", next + "px");
     return next;
   }
-
-  let h = applyHeight(localStorage.getItem("tt_botH") || DEFAULT_H, true);
+  function updateToggleUi() {
+    btn?.classList.toggle("active", collapsed);
+    if (icon) icon.textContent = collapsed ? "⌃" : "⌄";
+    if (btn) btn.title = collapsed ? "하단 로그/충돌/미배치 패널 열기" : "하단 로그/충돌/미배치 패널 접기";
+  }
+  function show(save = true) {
+    collapsed = false;
+    bottom.classList.remove("tt-bottom-collapsed");
+    bottom.style.overflow = "";
+    h = setCssHeight(h);
+    if (save) {
+      localStorage.setItem("tt_bot_collapsed", "0");
+      localStorage.setItem("tt_botH", String(h));
+    }
+    updateToggleUi();
+    window._ttRefreshLogs?.();
+  }
+  function hide(save = true) {
+    collapsed = true;
+    bottom.classList.add("tt-bottom-collapsed");
+    bottom.style.height = "0px";
+    bottom.style.overflow = "hidden";
+    document.documentElement.style.setProperty("--tt-bottom-active-height", "0px");
+    if (save) localStorage.setItem("tt_bot_collapsed", "1");
+    updateToggleUi();
+  }
+  function applyHeight(value, save = false) {
+    h = clampHeight(value);
+    if (!collapsed) setCssHeight(h);
+    if (save) localStorage.setItem("tt_botH", String(h));
+    return h;
+  }
 
   let resizeActive = false;
   function startResize(clientY, pointerId = null) {
     if (resizeActive) return;
+    if (collapsed) show(false);
     resizeActive = true;
     document.body.classList.add("tt-resizing-bottom");
     const startY = clientY;
-    const startH = bottom.offsetHeight;
-
+    const startH = bottom.offsetHeight || h;
     const move = ev => {
       const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? startY;
       const delta = startY - y;
-      h = applyHeight(startH + delta, false);
+      applyHeight(startH + delta, false);
     };
     const end = () => {
       applyHeight(h, true);
+      localStorage.setItem("tt_bot_collapsed", "0");
       resizeActive = false;
       document.body.classList.remove("tt-resizing-bottom");
       document.removeEventListener("mousemove", move);
@@ -1164,56 +1223,26 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
     document.addEventListener("touchend", end);
   }
 
-  resizer.addEventListener("mousedown", e => {
-    e.preventDefault();
-    startResize(e.clientY);
-  });
-  resizer.addEventListener("pointerdown", e => {
+  resizer?.addEventListener("mousedown", e => { e.preventDefault(); startResize(e.clientY); });
+  resizer?.addEventListener("pointerdown", e => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     e.preventDefault();
     try { resizer.setPointerCapture?.(e.pointerId); } catch (_) {}
     startResize(e.clientY, e.pointerId);
   });
-  resizer.addEventListener("touchstart", e => {
+  resizer?.addEventListener("touchstart", e => {
     const t = e.touches?.[0];
     if (!t) return;
     e.preventDefault();
     startResize(t.clientY);
   }, { passive: false });
+  resizer?.addEventListener("dblclick", () => { applyHeight(DEFAULT_H, true); show(true); });
+  btn?.addEventListener("click", () => { collapsed ? show(true) : hide(true); });
 
-  resizer.addEventListener("dblclick", () => {
-    h = applyHeight(DEFAULT_H, true);
-    document.querySelector(".tt-body")?.scrollIntoView({ block: "start", behavior: "smooth" });
-  });
-
+  if (collapsed) hide(false); else show(false);
   window._ttSetBottomHeight = applyHeight;
+  window._ttBottomToggle = { show: () => show(true), hide: () => hide(true), isCollapsed: () => collapsed };
 })();
-
-/* ── Bottom bar toggle (synced with resizer h variable via shared ref) ── */
-window._ttBottomToggle = (function() {
-  const bottom = document.getElementById("ttBottom");
-  const btn    = document.getElementById("ttToggleBottom");
-  let collapsed = false;
-
-  function getH() { return parseInt(localStorage.getItem("tt_botH") || "260", 10); }
-
-  function show() {
-    collapsed = false;
-    window._ttSetBottomHeight?.(getH(), false);
-    bottom.style.overflow = "";
-    btn?.classList.remove("active");
-  }
-  function hide() {
-    collapsed = true;
-    bottom.style.height = "0";
-    bottom.style.overflow = "hidden";
-    btn?.classList.add("active");
-  }
-
-  btn?.addEventListener("click", () => { collapsed ? show() : hide(); });
-  return { show, hide, isCollapsed: () => collapsed };
-})();
-
 
 /* ── Bottom panel wheel scroll fix ── */
 (function() {
@@ -1293,7 +1322,7 @@ window._ttBottomToggle = (function() {
 (function(){
   try {
     const b=document.createElement('div');
-    b.textContent='HIS build r104 · 2026-06-23';
+    b.textContent='HIS build r105 · 2026-06-23';
     b.style.cssText='position:fixed;right:8px;bottom:6px;z-index:99999;font:11px/1.3 system-ui,sans-serif;background:rgba(0,0,0,.62);color:#fff;padding:4px 7px;border-radius:999px;pointer-events:none;';
     document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(b));
   } catch (_) {}
@@ -1911,7 +1940,7 @@ window._ttBottomToggle = (function() {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-group-parent-structure-r104");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-layout-bottom-detail-r105");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

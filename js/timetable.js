@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-group-rooms-correct-r103";
+import { versioned } from "./version.js?v=2026-06-23-layout-bottom-detail-r105";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -239,8 +239,9 @@ function installTimetableScrollIsolation() {
 }
 
 function activateBottomTab(tabName) {
+  const normalized = tabName === "conflicts" || tabName === "unplaced" ? "logs" : (tabName || "logs");
   window._ttBottomToggle?.show?.();
-  const btn = document.querySelector(`.tt-bottom-tab-btn[data-tab="${tabName}"]`);
+  const btn = document.querySelector(`.tt-bottom-tab-btn[data-tab="${normalized}"]`) || document.querySelector('.tt-bottom-tab-btn[data-tab="logs"]');
   btn?.click();
 }
 
@@ -3960,10 +3961,11 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
     const tab = btn.dataset.tab;
     document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.toggle("active", b === btn));
+    const normalizedTab = tab === "conflicts" || tab === "unplaced" ? "logs" : tab;
     const tabMap = { subjects:"ttSubjectsContent", constraints:"ttConstraintsContent", teacherCards:"ttTeacherCardsContent", rooms:"ttRoomsContent", logs:"ttLogsContent" };
-    Object.entries(tabMap).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== tab));
-    if (tab === "constraints" || tab === "teacherCards" || tab === "rooms") subscribeOptionalTimetableDomains();
-    if (tab === "logs") window._ttBottomToggle?.show?.();
+    Object.entries(tabMap).forEach(([key, id]) => $(id)?.classList.toggle("hidden", key !== normalizedTab));
+    if (normalizedTab === "constraints" || normalizedTab === "teacherCards" || normalizedTab === "rooms") subscribeOptionalTimetableDomains();
+    if (normalizedTab === "logs") window._ttBottomToggle?.show?.();
     // hidden 클래스가 먼저 바뀐 뒤 렌더링해야 isVisible()이 정확히 동작합니다.
     setTimeout(() => renderAll(), 0);
   });
