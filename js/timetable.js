@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-teacherroom-default-r113";
+import { versioned } from "./version.js?v=2026-06-24-room-display-fix-r114";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1045,7 +1045,15 @@ function renderTeacherCardsPanel() {
         const groupInfo = getGroupInfoForTeacherCard(card.id);
         const placed = getPlacedOccurrencesForTeacherCard(card);
         const credits = Number(getCreditsForTtCard(card)) || 0;
-        const roomLabel = card.fixedRoomId ? getRoomDisplayName(card.fixedRoomId) : "교실 미배정";
+        const resolvedRoomId = resolveRoomForTtCard(card, {
+          ttcardId: card.id,
+          ttcardIds: [card.id],
+          templateId: card.templateId,
+          gradeKey: card.gradeKey,
+          sectionIdx: card.sectionIdx ?? 0,
+          teacherName: getTeacherNamesForCard(card).join(",")
+        });
+        const roomLabel = resolvedRoomId ? getRoomDisplayName(resolvedRoomId) : "교실 미배정";
         const row = document.createElement("div");
         row.className = "tt-teacher-card-row" + (placed.length >= credits && credits > 0 ? " done" : "");
         const classLabels = getTtCardClassLabels(card).length ? getTtCardClassLabels(card).join(", ") : getEntryClassSummary({ ttcardIds:[card.id], gradeKey:card.gradeKey });
@@ -1262,7 +1270,7 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
   if (rule === "teacher") {
     const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
-    // r113: 교사 배정교실 고정은 사용자 지정교실보다 아래 단계입니다.
+    // r114: 교사 배정교실 고정은 사용자 지정교실보다 아래 단계입니다.
     // 이미 지정교실/고정교실이 있으면 절대 교사 배정교실로 덮어쓰지 않습니다.
     return fixedRoomId || teacherRoomId || null;
   }
@@ -1428,7 +1436,7 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, opt
   (appState.timetable.ttcards || []).forEach(card => {
     if (!ids.includes(card.id)) return;
     const hasUserFixedRoom = clean(card.roomRule) === "fixed" && clean(card.fixedRoomId);
-    // r113: 전체 일괄 적용/교사 배정교실 고정 적용은 이미 사용자가 지정한 교실을 건드리면 안 됩니다.
+    // r114: 전체 일괄 적용/교사 배정교실 고정 적용은 이미 사용자가 지정한 교실을 건드리면 안 됩니다.
     if (preserveFixedRooms && normalizedRule !== "fixed" && hasUserFixedRoom) return;
     card.roomRule = normalizedRule;
     card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : (hasUserFixedRoom ? card.fixedRoomId : null);
@@ -2577,7 +2585,7 @@ function buildSavedScheduleStats(list = entries()) {
       : `entry:${getEntryIdentityKey(entry)}:${entry.day}:${entry.period}`;
     slotBlocks.add(blockKey);
     if (entry.pinned) pinned += 1;
-    if (entry.roomId) roomAssigned += 1;
+    if (effectiveRoomIdsForEntry(entry).length) roomAssigned += 1;
     try {
       const occ = getEntryOccupancy(entry, {
         getTtCardById,
@@ -3333,6 +3341,9 @@ constraintsPanelApi = createTimetableConstraintsHandlers({
   entryTitle,
   getEntryClassSummary,
   getRoomDisplayName,
+  entryRoomSummary,
+  effectiveRoomIdsForEntry,
+  entryHasMissingRoomAssignment,
   getTtCards,
   getTtCardById,
   getTeachersForTtCard,

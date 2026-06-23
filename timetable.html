@@ -1627,7 +1627,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r113</span></h1>
+  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r114</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1697,9 +1697,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-23-teacherroom-default-r113";</script>
+<script>window.HIS_APP_VERSION = "2026-06-24-room-display-fix-r114";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-23-teacherroom-default-r113";
+  import { versioned } from "./js/version.js?v=2026-06-24-room-display-fix-r114";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1903,7 +1903,7 @@ window._ttBottomToggle = (function() {
 (function(){
   try {
     const b=document.createElement('div');
-    b.textContent='HIS build r113 · 2026-06-23';
+    b.textContent='HIS build r114 · 2026-06-24';
     b.style.cssText='position:fixed;right:8px;bottom:6px;z-index:99999;font:11px/1.3 system-ui,sans-serif;background:rgba(0,0,0,.62);color:#fff;padding:4px 7px;border-radius:999px;pointer-events:none;';
     document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(b));
   } catch (_) {}
@@ -1913,7 +1913,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-teacherroom-default-r113");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-24-room-display-fix-r114");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

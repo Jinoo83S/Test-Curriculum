@@ -21,6 +21,9 @@ export function createTimetableConstraintsHandlers({
   entryTitle = null,
   getEntryClassSummary = null,
   getRoomDisplayName = null,
+  entryRoomSummary = null,
+  effectiveRoomIdsForEntry = null,
+  entryHasMissingRoomAssignment = null,
   getTtCards = null,
   getTtCardById = null,
   getTeachersForTtCard = null,
@@ -98,6 +101,64 @@ export function createTimetableConstraintsHandlers({
     ].map(clean).filter(Boolean))];
   }
 
+  function roomNameByIdLocal(roomId = "") {
+    const id = clean(roomId);
+    if (!id) return "";
+    if (typeof getRoomDisplayName === "function") return getRoomDisplayName(id);
+    const room = getRooms().find(r => r.id === id);
+    return room?.name || id;
+  }
+
+  function teacherRoomIdByNameLocal(teacher = "") {
+    const name = clean(teacher);
+    if (!name) return null;
+    const fixed = getEffectiveAssignedRoomId(name);
+    if (fixed) return fixed;
+    const room = getRooms().find(r => clean(r.teacherName) === name && r.id);
+    return room?.id || null;
+  }
+
+  function cardResolvedRoomIdsLocal(card = {}) {
+    if (!card) return [];
+    const rule = clean(card.roomRule || "auto") || "auto";
+    if (rule === "none") return [];
+    const fixedRoomId = clean(card.fixedRoomId || "");
+    if (fixedRoomId) return [fixedRoomId];
+    if (rule === "homeroom") return [];
+    return [...new Set(cardTeacherNamesLocal(card).map(teacherRoomIdByNameLocal).filter(Boolean))];
+  }
+
+  function entryRoomIdsLocal(entry = {}) {
+    if (typeof effectiveRoomIdsForEntry === "function") {
+      try {
+        const ids = effectiveRoomIdsForEntry(entry);
+        if (Array.isArray(ids) && ids.length) return [...new Set(ids.map(clean).filter(Boolean))];
+      } catch (_) {}
+    }
+    const explicit = entry?.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+      ? Object.values(entry.roomAssignmentsByTtCardId).map(clean).filter(Boolean)
+      : [];
+    if (explicit.length) return [...new Set(explicit)];
+    const roomId = clean(entry?.roomId || "");
+    if (roomId) return [roomId];
+    const cardIds = [entry?.ttcardId, ...(Array.isArray(entry?.ttcardIds) ? entry.ttcardIds : [])].map(clean).filter(Boolean);
+    return [...new Set(cardIds.flatMap(id => cardResolvedRoomIdsLocal(getTtCardByIdLocal(id) || {})).filter(Boolean))];
+  }
+
+  function entryRoomSummaryLocal(entry = {}) {
+    if (typeof entryRoomSummary === "function") {
+      try {
+        const summary = clean(entryRoomSummary(entry));
+        if (summary) return summary;
+      } catch (_) {}
+    }
+    const ids = entryRoomIdsLocal(entry);
+    if (!ids.length) return "";
+    const names = [...new Set(ids.map(roomNameByIdLocal).filter(Boolean))];
+    if (!names.length) return "";
+    return names.length === 1 ? names[0] : `${names.length}개 교실`;
+  }
+
   function applyRoomToTeacherEntries(teacher, roomId) {
     const teacherName = clean(teacher);
     const assignedRoom = clean(roomId) || null;
@@ -112,7 +173,7 @@ export function createTimetableConstraintsHandlers({
           const card = getTtCardByIdLocal(id);
           if (!cardTeacherNamesLocal(card || {}).includes(teacherName)) return;
           touched = true;
-          // r113: 사용자가 지정한 카드 고정교실은 교사 배정교실 적용으로 덮어쓰지 않습니다.
+          // r114: 사용자가 지정한 카드 고정교실은 교사 배정교실 적용으로 덮어쓰지 않습니다.
           if (clean(card?.roomRule) === "fixed" && clean(card?.fixedRoomId)) {
             assignments[id] = clean(card.fixedRoomId);
             return;
@@ -128,7 +189,7 @@ export function createTimetableConstraintsHandlers({
         return;
       }
       if (splitTeacherNames(en.teacherName).includes(teacherName)) {
-        // r113: 이미 지정교실로 고정된 단일 배치카드는 건드리지 않습니다.
+        // r114: 이미 지정교실로 고정된 단일 배치카드는 건드리지 않습니다.
         if (en.roomPinned || clean(en.roomRule) === "fixed") return;
         const card = cardIds.length === 1 ? getTtCardByIdLocal(cardIds[0]) : null;
         if (clean(card?.roomRule) === "fixed" && clean(card?.fixedRoomId)) {
@@ -720,9 +781,11 @@ export function createTimetableConstraintsHandlers({
   }
 
   function formatAssignedEntryRoom(entry) {
-    if (typeof getRoomDisplayName === "function") return getRoomDisplayName(entry?.roomId);
-    if (!entry?.roomId) return "교실 없음";
-    return getRooms().find(r => r.id === entry.roomId)?.name || entry.roomId;
+    return entryRoomSummaryLocal(entry) || "교실 없음";
+  }
+
+  function formatAssignedEntryRoomIfAny(entry) {
+    return entryRoomSummaryLocal(entry);
   }
 
   function getTeacherAssignedEntries(teacher) {
@@ -809,15 +872,15 @@ export function createTimetableConstraintsHandlers({
   }
 
   function cardRoomRuleSummary(cards = [], placed = []) {
-    const placedRooms = [...new Set((placed || []).map(formatAssignedEntryRoom).filter(Boolean))];
+    const placedRooms = [...new Set((placed || []).map(formatAssignedEntryRoomIfAny).filter(Boolean))];
     if (placedRooms.length) return placedRooms.slice(0, 2).join(", ") + (placedRooms.length > 2 ? ` 외 ${placedRooms.length - 2}` : "");
     const valid = (cards || []).filter(Boolean);
     const rules = [...new Set(valid.map(card => clean(card.roomRule || "auto")))];
-    const fixedRooms = [...new Set(valid.map(card => clean(card.fixedRoomId)).filter(Boolean))];
-    if (rules.length === 1 && rules[0] === "fixed" && fixedRooms.length === 1) return formatAssignedEntryRoom({ roomId: fixedRooms[0] });
+    const resolvedRooms = [...new Set(valid.flatMap(cardResolvedRoomIdsLocal).filter(Boolean))];
+    if (resolvedRooms.length === 1) return roomNameByIdLocal(resolvedRooms[0]);
+    if (resolvedRooms.length > 1) return `${resolvedRooms.length}개 교실`;
     if (rules.length === 1 && rules[0] === "homeroom") return "홈룸";
-    if (rules.length === 1 && rules[0] === "teacher") return "교사 배정교실";
-    if (rules.length > 1 || fixedRooms.length > 1) return "교실 규칙 혼합";
+    if (rules.length > 1) return "교실 규칙 혼합";
     return "교실 미배정";
   }
 
@@ -989,7 +1052,7 @@ export function createTimetableConstraintsHandlers({
     const unassignedItems = displayItems.filter(item => !(item.placed || []).length);
     const bundleCount = displayItems.filter(item => item.kind === "bundle").length;
     const slots = new Set(teacherEntries.map(e => `${Number(e.day)}:${Number(e.period)}`));
-    const rooms = new Set(teacherEntries.map(e => e.roomId).filter(Boolean));
+    const rooms = new Set(teacherEntries.flatMap(e => entryRoomIdsLocal(e)).filter(Boolean));
 
     const strip = document.createElement("div");
     strip.className = "ttc-summary-strip";
@@ -1331,7 +1394,7 @@ export function createTimetableConstraintsHandlers({
     const set = new Set();
     if (!roomId) return set;
     entries().forEach(e => {
-      if (e.roomId === roomId) set.add(`${e.day}:${e.period}`);
+      if (entryRoomIdsLocal(e).includes(roomId)) set.add(`${e.day}:${e.period}`);
     });
     return set;
   }
