@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-groupcard-visual-r98";
+import { versioned } from "./version.js?v=2026-06-23-allview-groupmove-r99";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -2948,21 +2948,37 @@ function buildEntryCard(entry, opts = {}) {
 }
 
 // ── Drop handler ──────────────────────────────────────────────────
+function entryMoveUnitKeyForDrag(entry = {}) {
+  const raw = [
+    entry.autoBlockKey,
+    entry.autoScheduleUnitKey,
+    entry.groupMoveKey,
+    entry.unitKey,
+  ].map(v => String(v || "").trim()).find(Boolean);
+  if (raw) return raw;
+  if (entry.groupId && entry.unitId) return `group-unit:${entry.groupId}:${entry.unitId}`;
+  if (entry.groupId) return `group:${entry.groupId}`;
+  if (entry.unitId) return `unit:${entry.unitId}`;
+  return "";
+}
+
 function moveEntry(entryId, day, period) {
   if (!canEdit()) return;
   const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return;
   if (e.day === day && e.period === period) return;
-  // If entry has groupId or unitId, move ALL sibling entries to same slot
-  const siblings = (e.groupId || e.unitId) ? entries().filter(x =>
-    x.id !== entryId && !x.pinned &&
-    ((e.groupId && x.groupId === e.groupId) || (e.unitId && x.unitId === e.unitId)) &&
-    x.day === e.day && x.period === e.period
-  ) : [];
 
-  // 수업 이동도 충돌이 있어도 허용하고, 이동 후 충돌 표시로 확인하게 합니다.
-  captureTimetableUndo("수업 이동");
-  siblings.forEach(s => { s.day = day; s.period = period; });
-  e.day = day; e.period = period;
+  const fromDay = e.day;
+  const fromPeriod = e.period;
+  const moveKey = entryMoveUnitKeyForDrag(e);
+  const linkedEntries = moveKey
+    ? entries().filter(x => x.day === fromDay && x.period === fromPeriod && entryMoveUnitKeyForDrag(x) === moveKey)
+    : [e];
+  if (!linkedEntries.length || linkedEntries.some(x => x.pinned)) return;
+
+  // 그룹카드는 시각적으로도 계산상으로도 하나의 큰 카드처럼 움직입니다.
+  // 같은 시간대의 동일 group/unit/autoBlockKey 엔트리는 일부만 이동하지 않고 함께 이동합니다.
+  captureTimetableUndo(linkedEntries.length > 1 ? "그룹카드 이동" : "수업 이동");
+  linkedEntries.forEach(item => { item.day = day; item.period = period; });
   scheduleSave("timetable");
 }
 

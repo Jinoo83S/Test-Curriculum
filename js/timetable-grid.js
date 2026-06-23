@@ -215,6 +215,40 @@ function addMergedSpanBadge(card, coveredSections = []) {
   card.appendChild(badge);
 }
 
+
+function allClassRowKey(rowIdx, day, period) {
+  return `${rowIdx}:${day}:${period}`;
+}
+
+function getCoveredClassRowIndexes(entry = {}, classes = []) {
+  const out = [];
+  classes.forEach((cls, idx) => {
+    if (entryMatchesClass(entry, cls)) out.push(idx);
+  });
+  return out;
+}
+
+function isContiguousRowSpan(rowIndexes = []) {
+  const arr = [...new Set(rowIndexes.map(v => Number(v)).filter(Number.isFinite))].sort((a, b) => a - b);
+  if (arr.length <= 1) return false;
+  for (let i = 1; i < arr.length; i += 1) {
+    if (arr[i] !== arr[i - 1] + 1) return false;
+  }
+  return true;
+}
+
+function canRenderAllViewMergedEntry(entry, rowIndexes = [], day, period, entries = [], classes = [], ctx = {}, mode = "summary") {
+  if (!entry || rowIndexes.length <= 1) return false;
+  if (!isContiguousRowSpan(rowIndexes)) return false;
+  if (mode === "problem" && !(ctx.getEntryConflictSet?.(entry)?.size)) return false;
+  return rowIndexes.every(rowIdx => {
+    const cls = classes[rowIdx];
+    if (!cls) return false;
+    const slotEntries = entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
+    return slotEntries.length === 1 && slotEntries[0]?.id === entry.id;
+  });
+}
+
 function buildEntryGroups(slotEntries = [], ctx = {}) {
   const map = new Map();
   slotEntries.forEach(entry => {
@@ -1049,7 +1083,7 @@ function renderAllClassesGrid(wrap, ctx) {
   const dayIndexes = Array.from({ length: numDays }, (_, i) => i);
 
   const table = document.createElement("table");
-  table.className = "tt-table tt-all-class-table tt-all-summary-table";
+  table.className = "tt-table tt-all-class-table tt-all-summary-table tt-all-merged-table";
   table.style.cssText = "table-layout:fixed;width:100%;height:calc(100% - 35px);min-width:0;border-collapse:separate;border-spacing:0";
 
   const rowCount = Math.max(1, classes.length);
@@ -1104,10 +1138,29 @@ function renderAllClassesGrid(wrap, ctx) {
   thead.appendChild(hr2);
   table.appendChild(thead);
 
+  const spanPlans = new Map();
+  const skipCells = new Set();
+  dayIndexes.forEach(day => {
+    periods.forEach((_, period) => {
+      const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period);
+      slotEntries.forEach(entry => {
+        const rowIndexes = getCoveredClassRowIndexes(entry, classes);
+        if (!canRenderAllViewMergedEntry(entry, rowIndexes, day, period, ctx.entries, classes, ctx, mode)) return;
+        const anchor = Math.min(...rowIndexes);
+        const anchorKey = allClassRowKey(anchor, day, period);
+        const prev = spanPlans.get(anchorKey);
+        if (!prev || rowIndexes.length > prev.rowIndexes.length) {
+          spanPlans.set(anchorKey, { entry, rowIndexes, span: rowIndexes.length });
+          rowIndexes.slice(1).forEach(rowIdx => skipCells.add(allClassRowKey(rowIdx, day, period)));
+        }
+      });
+    });
+  });
+
   const tbody = document.createElement("tbody");
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
-  classes.forEach(cls => {
+  classes.forEach((cls, rowIdx) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -1126,17 +1179,27 @@ function renderAllClassesGrid(wrap, ctx) {
 
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
-        const td = document.createElement("td");
+        const cellKey = allClassRowKey(rowIdx, day, period);
+        if (skipCells.has(cellKey)) return;
+
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        const plan = spanPlans.get(cellKey);
+        const td = document.createElement("td");
+        td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (plan ? " tt-group-rowspan-cell" : "");
+        if (plan) {
+          td.rowSpan = plan.span;
+          td.dataset.spanClasses = plan.rowIndexes.map(i => `${gradeDisplay(classes[i]?.gradeKey)}${classes[i]?.section || sectionLabel(classes[i]?.sectionIdx ?? 0)}`).join(",");
+        }
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
-        const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
+        const slotEntries = plan
+          ? [plan.entry]
+          : ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
         appendAllSlotContents(td, slotEntries, ctx, mode);
         tr.appendChild(td);
       });
@@ -1146,6 +1209,7 @@ function renderAllClassesGrid(wrap, ctx) {
   table.appendChild(tbody);
   wrap.appendChild(table);
 }
+
 
 function buildGrid(periods, days, wrap, getEntries, ctx, cardOpts = {}) {
   const table = document.createElement("table");

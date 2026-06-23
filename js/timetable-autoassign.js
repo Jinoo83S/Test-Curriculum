@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-groupcard-visual-r98";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-allview-groupmove-r99";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -364,7 +364,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-22-fresh-csp-groupcard-r97"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-23-allview-groupmove-r99"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -690,7 +690,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-22-fresh-csp-groupcard-r97",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-allview-groupmove-r99",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -6500,7 +6500,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-groupcard-r97",
+        engine: "fresh-csp-groupcard-r99",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6615,7 +6615,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r97`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r99`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6753,8 +6753,8 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-groupcard-r97",
-        engine: "fresh-csp-groupcard-r97",
+        telemetryStatus: "fresh-csp-groupcard-r99",
+        engine: "fresh-csp-groupcard-r99",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
         engineProfileLabel: "새 엔진: 그룹카드 단일블록 r97 / 응답대기 방지",
@@ -6763,7 +6763,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-22-fresh-csp-groupcard-r97"
+        validatorVersion: "2026-06-23-allview-groupmove-r99"
       };
 
       let afterAutoSnapshot = null;
@@ -6868,7 +6868,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-groupcard-r97",
+          engine: "fresh-csp-groupcard-r99",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6882,7 +6882,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-groupcard-r97"
+              engine: "fresh-csp-groupcard-r99"
             });
           }
         } catch (_) {}
