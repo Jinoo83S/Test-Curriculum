@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-06-23-groupcard-realmerge-r100";
+import { versioned } from "./version.js?v=2026-06-23-groupcard-roomassign-r101";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",

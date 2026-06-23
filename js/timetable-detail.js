@@ -395,13 +395,13 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
   const h = document.createElement("div");
   h.style.cssText = "font-size:12px;font-weight:900;color:#334155;margin-bottom:5px";
-  h.textContent = cardIds.length > 1 ? "과목카드 교실 규칙" : "과목카드 교실 규칙";
+  h.textContent = cardIds.length > 1 ? "구성 과목별 교실 배정" : "구성 과목별 교실 배정";
   section.appendChild(h);
 
   const intro = document.createElement("div");
   intro.style.cssText = "font-size:10px;color:#64748b;line-height:1.45;margin-bottom:8px";
   intro.textContent = cardIds.length > 1
-    ? "그룹은 같은 시간에 묶고, 교실은 구성 카드별로 따로 지정합니다. 전체 적용은 필요할 때만 사용하세요."
+    ? "그룹카드는 시간표에서는 하나로 움직이고, 교실은 구성 과목별로 따로 지정합니다."
     : "이 과목카드가 자동배치될 때 사용할 교실 규칙입니다.";
   section.appendChild(intro);
 
@@ -411,7 +411,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   if (targets.length > 1) {
     const listTitle = document.createElement("div");
     listTitle.style.cssText = "margin:8px 0 6px;font-size:11px;font-weight:900;color:#1e293b";
-    listTitle.textContent = targets.some(t => t.kind === "unit") ? "수업 묶음별 교실 지정" : "구성 카드별 교실 지정";
+    listTitle.textContent = targets.some(t => t.kind === "unit") ? "구성 묶음별 교실 지정" : "구성 과목별 교실 지정";
     section.appendChild(listTitle);
 
     const list = document.createElement("div");
@@ -499,7 +499,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
   const bulkTitle = document.createElement("div");
   bulkTitle.style.cssText = "font-size:11px;font-weight:900;color:#334155;margin-bottom:6px";
-  bulkTitle.textContent = targets.length > 1 ? "전체 구성 카드에 한 번에 적용" : "교실 규칙 지정";
+  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 한 번에 적용" : "교실 규칙 지정";
   bulk.appendChild(bulkTitle);
 
   const ruleSel = makeRoomRuleSelect(sameRule ? first?.roomRule : "auto");
@@ -533,7 +533,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   const apply = document.createElement("button");
   apply.type = "button";
   apply.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer";
-  apply.textContent = targets.length > 1 ? "전체 구성 카드에 적용" : "교실 규칙 저장";
+  apply.textContent = targets.length > 1 ? "전체 구성 과목에 적용" : "교실 규칙 저장";
   apply.onclick = () => {
     if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
       alert("지정 교실 고정은 교실을 선택해야 합니다.");

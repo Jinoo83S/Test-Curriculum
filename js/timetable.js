@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-groupcard-realmerge-r100";
+import { versioned } from "./version.js?v=2026-06-23-groupcard-roomassign-r101";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1091,7 +1091,7 @@ function renderTeacherCardsPanel() {
       teacherEntries.forEach(entry => {
         const row = document.createElement("div");
         row.className = "tt-teacher-card-entry";
-        row.innerHTML = `<b>${escapeHtml(dayLabels[entry.day] || "?")} ${escapeHtml(periodLabels[entry.period] || `${entry.period + 1}교시`)}</b><span>${escapeHtml(entryTitle(entry))}</span><em>${escapeHtml(getEntryClassSummary(entry))} · ${escapeHtml(getRoomDisplayName(entry.roomId))}</em>`;
+        row.innerHTML = `<b>${escapeHtml(dayLabels[entry.day] || "?")} ${escapeHtml(periodLabels[entry.period] || `${entry.period + 1}교시`)}</b><span>${escapeHtml(entryTitle(entry))}</span><em>${escapeHtml(getEntryClassSummary(entry))} · ${escapeHtml(entryRoomSummary(entry) || "교실 없음")}</em>`;
         row.tabIndex = 0;
         row.title = "클릭하면 배치 상세를 봅니다.";
         row.addEventListener("click", () => showEntryDetail(entry));
@@ -1274,12 +1274,125 @@ function getDefaultRoomForPlacementData(data = {}) {
   return resolveRoomForPlacementData(data);
 }
 
+function roomRuleForCard(card = {}) {
+  return clean(card.roomRule || "auto") || "auto";
+}
+
+function roomRequiredForCard(card = {}) {
+  return roomRuleForCard(card) !== "none";
+}
+
+function resolveRoomForTtCard(card = {}, fallbackEntry = {}) {
+  if (!card?.id) return null;
+  const rule = roomRuleForCard(card);
+  if (rule === "none") return null;
+  const teacherName = (Array.isArray(card.teachers) && card.teachers.length)
+    ? card.teachers.join(",")
+    : (card.teacherName || (getTeachersForTtCard(card) || []).join(","));
+  const data = {
+    ...fallbackEntry,
+    ttcardId: card.id,
+    ttcardIds: [card.id],
+    templateId: card.templateId || fallbackEntry.templateId,
+    templateIds: [card.templateId || fallbackEntry.templateId].filter(Boolean),
+    gradeKey: card.gradeKey || fallbackEntry.gradeKey,
+    gradeKeys: [card.gradeKey || fallbackEntry.gradeKey].filter(Boolean),
+    sectionIdx: card.sectionIdx ?? fallbackEntry.sectionIdx ?? 0,
+    teacherName,
+    roomRule: rule,
+    fixedRoomId: clean(card.fixedRoomId || "")
+  };
+  return resolveRoomForPlacementData(data, rule);
+}
+
+function roomAssignmentsForEntry(entry = {}) {
+  const explicit = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+    ? entry.roomAssignmentsByTtCardId
+    : {};
+  const out = {};
+  ttCardIdsFromPlacement(entry).forEach(id => {
+    const explicitRoom = clean(explicit[id]);
+    if (explicitRoom) { out[id] = explicitRoom; return; }
+    const card = getTtCardById(id);
+    const roomId = resolveRoomForTtCard(card, entry);
+    if (roomId) out[id] = roomId;
+  });
+  return out;
+}
+
+function effectiveRoomIdsForEntry(entry = {}) {
+  const ids = Object.values(roomAssignmentsForEntry(entry)).map(clean).filter(Boolean);
+  if (entry.roomId) ids.push(clean(entry.roomId));
+  return [...new Set(ids.filter(Boolean))];
+}
+
+function entryNeedsAnyRoom(entry = {}) {
+  const cardIds = ttCardIdsFromPlacement(entry);
+  if (cardIds.length) {
+    return cardIds.some(id => roomRequiredForCard(getTtCardById(id) || {}));
+  }
+  return clean(entry.roomRule || "auto") !== "none";
+}
+
+function entryHasMissingRoomAssignment(entry = {}) {
+  const cardIds = ttCardIdsFromPlacement(entry);
+  if (!cardIds.length) return entryNeedsAnyRoom(entry) && !effectiveRoomIdsForEntry(entry).length;
+  const assignments = roomAssignmentsForEntry(entry);
+  return cardIds.some(id => {
+    const card = getTtCardById(id);
+    if (!roomRequiredForCard(card || {})) return false;
+    return !clean(assignments[id]);
+  });
+}
+
+function applyCardRoomAssignmentsToEntryData(data = {}) {
+  const ids = ttCardIdsFromPlacement(data);
+  if (!ids.length) return data;
+  const assignments = {};
+  ids.forEach(id => {
+    const roomId = resolveRoomForTtCard(getTtCardById(id), data);
+    if (roomId) assignments[id] = roomId;
+  });
+  data.roomAssignmentsByTtCardId = assignments;
+  const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
+  if (rooms.length === 1) data.roomId = rooms[0];
+  else if (rooms.length > 1) data.roomId = null;
+  return data;
+}
+
+function refreshEntryRoomAssignmentsFromCards(cardIds = []) {
+  const target = new Set((cardIds || []).map(clean).filter(Boolean));
+  if (!target.size) return;
+  entries().forEach(entry => {
+    const ids = ttCardIdsFromPlacement(entry);
+    if (!ids.some(id => target.has(id))) return;
+    const assignments = {};
+    ids.forEach(id => {
+      const roomId = resolveRoomForTtCard(getTtCardById(id), entry);
+      if (roomId) assignments[id] = roomId;
+    });
+    entry.roomAssignmentsByTtCardId = assignments;
+    const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
+    if (rooms.length === 1) entry.roomId = rooms[0];
+    else if (rooms.length > 1) entry.roomId = null;
+    else if (!entry.roomPinned) entry.roomId = null;
+  });
+}
+
+function entryRoomSummary(entry = {}) {
+  const roomIds = effectiveRoomIdsForEntry(entry);
+  const names = roomIds.map(getRoomDisplayName).filter(Boolean);
+  if (!names.length) return "";
+  if (names.length === 1) return names[0];
+  return `${names.length}개 교실`;
+}
+
 function applyDefaultRoomToEntryData(data = {}) {
   if (data.roomPinned && data.roomId) return data;
   const roomId = resolveRoomForPlacementData(data);
   data.roomRule = clean(data.roomRule || getCardPreferenceForPlacementData(data).rule || "auto");
   data.roomId = roomId || null;
-  return data;
+  return applyCardRoomAssignmentsToEntryData(data);
 }
 
 function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null) {
@@ -1294,7 +1407,9 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null) {
     card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : null;
     card.manualEdited = true;
   });
+  refreshEntryRoomAssignmentsFromCards(ids);
   scheduleSave("timetable");
+  try { recomputeConflicts(); } catch (_) {}
   return true;
 }
 
@@ -1396,10 +1511,14 @@ function getRelatedConflictEntries(entry, type) {
       .filter(x => x.detail);
   }
   if (type === "room") {
-    if (!entry.roomId) return [];
+    const rooms = effectiveRoomIdsForEntry(entry);
+    if (!rooms.length) return [];
     return sameSlot
-      .filter(e => e.roomId && e.roomId === entry.roomId)
-      .map(e => ({ entry: e, detail: getRoomDisplayName(entry.roomId) }));
+      .map(e => {
+        const shared = effectiveRoomIdsForEntry(e).filter(id => rooms.includes(id));
+        return shared.length ? { entry: e, detail: shared.map(getRoomDisplayName).join(", ") } : null;
+      })
+      .filter(Boolean);
   }
   if (type === "student") {
     return sameSlot
@@ -1417,7 +1536,7 @@ function getRelatedConflictEntries(entry, type) {
 
 function getConstraintConflictMessage(type, entry) {
   const teachers = entryTeachers(entry).join(", ") || "담당 교사";
-  if (type === "roomMissing") return "이 수업에는 교실이 배정되지 않았습니다. 상세보기 또는 우클릭 메뉴에서 교실을 지정해 주세요.";
+  if (type === "roomMissing") return "이 수업 또는 그룹 구성 과목 중 교실이 배정되지 않은 항목이 있습니다. 상세보기에서 구성 과목별 교실을 지정해 주세요.";
   if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
   if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
   if (type === "maxPerDay") return `${teachers} 선생님의 일일 수업 수 제한을 초과했습니다.`;
@@ -1873,7 +1992,10 @@ function recomputeConflicts() {
       getProtectedGrades: protectedGradesForEntry,
       getCompoundPartRefs: compoundPartRefsForPlacement,
       rooms: getEffectiveRoomsForTimetable(),
-      getHardTeachers: resolveHardTeachersForEntry
+      getHardTeachers: resolveHardTeachersForEntry,
+      getRoomIdsForEntry: effectiveRoomIdsForEntry,
+      entryNeedsRoom: entryNeedsAnyRoom,
+      entryHasRoomMissing: entryHasMissingRoomAssignment
     }
   );
   constraintMap = detectConstraintViolations(entries(), constraints());
@@ -2905,11 +3027,13 @@ function buildEntryCard(entry, opts = {}) {
   const row3 = document.createElement("div");
   row3.className = "tt-entry-room-row";
   row3.style.cssText = "display:block;width:100%;min-width:0;margin-top:1px;text-align:center;line-height:1.05;";
-  if (entry.roomId) {
+  const roomSummary = entryRoomSummary(entry);
+  if (roomSummary) {
     const roomBadge = document.createElement("div");
     roomBadge.className = "tt-entry-room2";
-    roomBadge.textContent = getRoomDisplayName(entry.roomId);
-    roomBadge.title = `교실: ${getRoomDisplayName(entry.roomId)}`;
+    roomBadge.textContent = roomSummary;
+    const roomNames = effectiveRoomIdsForEntry(entry).map(getRoomDisplayName).join(", ");
+    roomBadge.title = `교실: ${roomNames || roomSummary}`;
     roomBadge.style.cssText = "display:block;width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(6px,0.54vw,8px);font-weight:900;line-height:1.05;opacity:.92;";
     row3.appendChild(roomBadge);
   }

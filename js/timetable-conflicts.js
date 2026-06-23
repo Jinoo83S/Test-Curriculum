@@ -104,6 +104,32 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
     const p = Number(period);
     return slots.some(slot => Number(slot?.day) === d && Number(slot?.period) === p);
   };
+  const roomIdsForEntry = (entry) => {
+    if (typeof options.getRoomIdsForEntry === "function") {
+      try {
+        const ids = options.getRoomIdsForEntry(entry) || [];
+        return unique(ids.map(x => String(x || "").trim()).filter(Boolean));
+      } catch (err) {
+        console.warn("Room resolver failed:", err);
+      }
+    }
+    return entry?.roomId ? [entry.roomId] : [];
+  };
+  const entryNeedsRoom = (entry) => {
+    if (typeof options.entryNeedsRoom === "function") {
+      try { return !!options.entryNeedsRoom(entry); }
+      catch (err) { console.warn("Room requirement resolver failed:", err); }
+    }
+    const rule = String(entry?.roomRule || "auto").trim();
+    return rule !== "none";
+  };
+  const entryHasRoomMissing = (entry) => {
+    if (typeof options.entryHasRoomMissing === "function") {
+      try { return !!options.entryHasRoomMissing(entry); }
+      catch (err) { console.warn("Room missing resolver failed:", err); }
+    }
+    return !roomIdsForEntry(entry).length && entryNeedsRoom(entry);
+  };
 
   const compoundRefsFor = entry => {
     if (typeof options.getCompoundPartRefs !== "function") return [];
@@ -136,9 +162,9 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
   // Room is required for scheduled lessons unless explicitly set to no-room.
   // Treat missing room as a first-class conflict so it appears in cards, detail popups and logs.
   entries.forEach(e => {
-    const rule = String(e.roomRule || "auto").trim();
-    if (!e.roomId && rule !== "none") result.get(e.id)?.add("roomMissing");
-    if (e.roomId && isRoomUnavailable(e.roomId, e.day, e.period)) result.get(e.id)?.add("roomUnavailable");
+    const roomIds = roomIdsForEntry(e);
+    if (entryHasRoomMissing(e)) result.get(e.id)?.add("roomMissing");
+    if (roomIds.some(roomId => isRoomUnavailable(roomId, e.day, e.period))) result.get(e.id)?.add("roomUnavailable");
     // 같은 대표 복합과목의 서로 다른 구성 카드가 하나의 aggregate entry 안에 같이 있으면
     // 실제로는 같은 학생이 같은 시간에 두 수업을 듣는 상태이므로 학생 충돌로 표시합니다.
     if (hasInternalCompoundConflict(e)) result.get(e.id)?.add("student");
@@ -182,12 +208,13 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
           }
         }
 
-        // Room conflict (cross-grade same unit shares room intentionally)
-        if (a.roomId && b.roomId && a.roomId === b.roomId) {
-          if (!sameUnit(a, b)) {
-            result.get(a.id).add("room");
-            result.get(b.id).add("room");
-          }
+        // Room conflict. A grouped entry may occupy multiple rooms, one per component card.
+        // Compare the effective room sets instead of only entry.roomId.
+        const roomsA = roomIdsForEntry(a);
+        const roomsB = roomIdsForEntry(b);
+        if (!sameUnit(a, b) && roomsA.some(roomId => roomsB.includes(roomId))) {
+          result.get(a.id).add("room");
+          result.get(b.id).add("room");
         }
 
         // Class conflict — same concurrent group means intentional parallel/level-split lessons.
