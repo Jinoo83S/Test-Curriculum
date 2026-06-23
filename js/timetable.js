@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-interface-rollback-r107";
+import { versioned } from "./version.js?v=2026-06-23-detailroom-teacherfirst-r108";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1260,7 +1260,11 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "none") return null;
   if (rule === "fixed") return fixedRoomId || null;
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
-  if (rule === "teacher") return getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
+  if (rule === "teacher") {
+    const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
+    // 교사 담당교실이 없으면 교실 없음으로 끝내지 않고 자동 추천의 다음 단계(지정교실/홈룸)로 내려갑니다.
+    return teacherRoomId || fixedRoomId || getHomeRoomIdForPlacementData(data) || null;
+  }
 
   // auto 기본 교실 규칙:
   // 1) 카드/수업에 명시된 고정교실

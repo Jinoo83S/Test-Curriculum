@@ -52,17 +52,17 @@ function clampModalPosition(modal) {
 
 function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } = {}) {
   const seq = detailModalSeq++;
+  const { left, top } = getInitialModalPosition(maxWidth);
   const modal = document.createElement("div");
   modal.id = `tt-entry-detail-modal-${Date.now()}-${seq}`;
-  modal.className = "tt-entry-detail-floating-modal tt-entry-detail-side-panel";
-  const panelWidth = Math.max(Number(minWidth) || 300, Math.min(Number(maxWidth) || 440, 520));
+  modal.className = "tt-entry-detail-floating-modal";
   modal.style.cssText = [
     "position:fixed",
-    "right:12px",
-    "left:auto",
-    "top:calc(var(--tt-detail-panel-top, 88px))",
-    "bottom:calc(var(--tt-bottom-active-height, 0px) + 12px)",
-    `width:min(${panelWidth}px,calc(100vw - 24px))`,
+    `left:${left}px`,
+    `top:${top}px`,
+    "right:auto",
+    "bottom:auto",
+    "width:max-content",
     "max-width:calc(100vw - 24px)",
     "z-index:" + (++detailModalTopZ),
     "background:transparent",
@@ -70,16 +70,14 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   ].join(";");
 
   const box = document.createElement("div");
-  box.className = "tt-detail-side-box";
   box.style.cssText = [
     "background:white",
     "border:1px solid #dbe4f0",
     "border-radius:12px",
     "padding:0 20px 18px",
     `min-width:min(${minWidth}px,calc(100vw - 24px))`,
-    "width:100%",
-    "height:100%",
-    "max-height:100%",
+    `max-width:min(${maxWidth}px,calc(100vw - 24px))`,
+    "max-height:calc(100vh - 32px)",
     "overflow-y:auto",
     "box-shadow:0 18px 55px rgba(15,23,42,.28)",
     "font-size:13px",
@@ -89,13 +87,13 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   ].join(";");
 
   const dragHandle = document.createElement("div");
-  dragHandle.className = "tt-detail-drag-handle tt-detail-side-header";
+  dragHandle.className = "tt-detail-drag-handle";
   dragHandle.style.cssText = [
     "position:sticky",
     "left:0",
     "right:0",
     "top:0",
-    "height:38px",
+    "height:36px",
     "display:flex",
     "align-items:center",
     "gap:8px",
@@ -107,10 +105,10 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
     "color:#0f172a",
     "font-size:12px",
     "font-weight:900",
-    "cursor:default",
+    "cursor:move",
     "user-select:none",
     "box-sizing:border-box",
-    "z-index:30",
+    "z-index:40",
     "box-shadow:0 2px 8px rgba(15,23,42,.06)"
   ].join(";");
 
@@ -126,10 +124,10 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
   realCloseBtn.className = "tt-detail-close-btn tt-detail-close-fixed";
   realCloseBtn.style.cssText = [
     "position:absolute",
-    "top:5px",
+    "top:4px",
     "right:8px",
-    "width:29px",
-    "height:29px",
+    "width:28px",
+    "height:28px",
     "border:1px solid #dbe4f0",
     "border-radius:999px",
     "background:#ffffff",
@@ -138,12 +136,13 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
     "cursor:pointer",
     "color:#64748b",
     "line-height:1",
-    "z-index:35",
+    "z-index:45",
     "box-shadow:0 2px 8px rgba(15,23,42,.08)"
   ].join(";");
   realCloseBtn.textContent = "×";
   dragHandle.appendChild(realCloseBtn);
 
+  // 기존 호출부들이 box.appendChild(closeBtn)를 다시 실행해도 화면을 흐트러뜨리지 않도록 숨은 닫기 버튼을 반환합니다.
   const closeBtn = document.createElement("button");
   closeBtn.type = "button";
   closeBtn.className = "tt-detail-close-sentinel";
@@ -163,18 +162,41 @@ function makeModal({ maxWidth = 440, minWidth = 300, title = "배치 상세" } =
       resizeHandler = null;
     }
     modal.remove();
-    if (!document.querySelector(".tt-entry-detail-side-panel")) document.body.classList.remove("tt-detail-panel-open");
   }
   realCloseBtn.onclick = closeModal;
   closeBtn.onclick = closeModal;
 
+  let dragState = null;
+  dragHandle.addEventListener("pointerdown", ev => {
+    if (ev.target.closest("button,select,input,textarea")) return;
+    ev.preventDefault();
+    bringModalToFront(modal);
+    const rect = modal.getBoundingClientRect();
+    dragState = { offsetX: ev.clientX - rect.left, offsetY: ev.clientY - rect.top };
+    dragHandle.setPointerCapture?.(ev.pointerId);
+  });
+  dragHandle.addEventListener("pointermove", ev => {
+    if (!dragState) return;
+    modal.style.left = `${ev.clientX - dragState.offsetX}px`;
+    modal.style.top = `${ev.clientY - dragState.offsetY}px`;
+  });
+  const endDrag = ev => {
+    if (!dragState) return;
+    dragState = null;
+    try { dragHandle.releasePointerCapture?.(ev.pointerId); } catch (_) {}
+    clampModalPosition(modal);
+  };
+  dragHandle.addEventListener("pointerup", endDrag);
+  dragHandle.addEventListener("pointercancel", endDrag);
+
   modal.addEventListener("pointerdown", () => bringModalToFront(modal));
-  resizeHandler = () => {};
+  resizeHandler = () => clampModalPosition(modal);
   window.addEventListener("resize", resizeHandler, { passive: true });
+
+  requestAnimationFrame(() => clampModalPosition(modal));
 
   box.append(dragHandle);
   modal.appendChild(box);
-  document.body.classList.add("tt-detail-panel-open");
   return { modal, box, closeBtn, setTitle };
 }
 
@@ -253,7 +275,7 @@ function getRoomRuleHint(rule, roomId = "") {
   const r = normalizeRoomRule(rule);
   if (r === "fixed") return roomId ? `항상 ${getRooms().find(x => x.id === roomId)?.name || roomId} 교실을 사용합니다.` : "지정 교실을 선택해야 합니다.";
   if (r === "homeroom") return "대상 학급의 홈룸 교실을 우선 추천합니다.";
-  if (r === "teacher") return "담당 교사의 전용/담당 교실을 우선 추천합니다.";
+  if (r === "teacher") return "담당 교사의 전용/담당 교실을 우선 사용하고, 교사교실이 없으면 자동 추천(홈룸 등)으로 내려갑니다.";
   if (r === "none") return "이 수업은 교실을 배정하지 않습니다.";
   return "지정 교실, 홈룸, 교사 교실 순서로 자동 추천합니다.";
 }
@@ -295,7 +317,52 @@ function splitTeacherNamesLocal(value = "") {
     .filter(Boolean);
 }
 
+function getTeacherRoomIdLocal(teacherName = "") {
+  const name = clean(teacherName);
+  if (!name) return "";
+  const matches = getRooms().filter(r => clean(r.teacherName) === name && r.id);
+  return matches.length === 1 ? matches[0].id : "";
+}
 
+function getTeacherRoomNameLocal(teacherName = "") {
+  const roomId = getTeacherRoomIdLocal(teacherName);
+  return roomId ? roomNameForId(roomId) : "";
+}
+
+function teacherNamesForItemOrCard(item = {}, card = {}) {
+  const fromItem = Array.isArray(item.teachers) ? item.teachers : [];
+  const fromCard = Array.isArray(card.teachers) ? card.teachers : [];
+  return [...new Set([
+    ...fromItem,
+    ...fromCard,
+    ...splitTeacherNamesLocal(card.teacherName || "")
+  ].map(clean).filter(Boolean))];
+}
+
+function missingTeacherRoomNamesForCards(cards = [], itemsByCardId = new Map()) {
+  const names = [];
+  (cards || []).forEach(card => {
+    const item = itemsByCardId.get(card?.id) || {};
+    teacherNamesForItemOrCard(item, card).forEach(name => {
+      if (!getTeacherRoomIdLocal(name)) names.push(name);
+    });
+  });
+  return [...new Set(names)];
+}
+
+function describeTeacherRoomStatusForCards(cards = [], itemsByCardId = new Map()) {
+  const teachers = [];
+  (cards || []).forEach(card => {
+    const item = itemsByCardId.get(card?.id) || {};
+    teacherNamesForItemOrCard(item, card).forEach(name => teachers.push(name));
+  });
+  const unique = [...new Set(teachers.map(clean).filter(Boolean))];
+  if (!unique.length) return "교사 정보 없음";
+  return unique.map(name => {
+    const room = getTeacherRoomNameLocal(name);
+    return room ? `${name}: ${room}` : `${name}: 교사교실 없음`;
+  }).join(" · ");
+}
 
 function getCardsCommonRoomRule(cards = []) {
   const valid = (cards || []).filter(Boolean);
@@ -373,6 +440,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
     .map(item => ({ item, card: getTtCardById(item.ttcardId || item.id) }))
     .filter(x => x.card?.id);
   const cardIds = [...new Set(items.map(x => x.card.id))];
+  const itemsByCardId = new Map(items.map(x => [x.card.id, x.item]));
   if (!cardIds.length || !canEdit()) return;
 
   const first = items[0]?.card;
@@ -429,7 +497,16 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
       const summary = document.createElement("span");
       summary.style.cssText = "font-size:10px;font-weight:900;color:#334155;background:#e2e8f0;border-radius:999px;padding:2px 7px;white-space:nowrap";
       summary.textContent = targetRoomSummaryText(target.cards);
+      summary.title = describeTeacherRoomStatusForCards(target.cards, itemsByCardId);
       top.append(main, summary);
+      const missingTeacherRooms = missingTeacherRoomNamesForCards(target.cards, itemsByCardId);
+      if (missingTeacherRooms.length) {
+        const miss = document.createElement("span");
+        miss.style.cssText = "font-size:9px;font-weight:900;color:#b45309;background:#fef3c7;border:1px solid #fde68a;border-radius:999px;padding:2px 6px;white-space:nowrap";
+        miss.textContent = `교사교실 없음 ${missingTeacherRooms.length}`;
+        miss.title = `교사 배정 교실 없음: ${missingTeacherRooms.join(", ")} · 교사교실 우선 적용 시 자동 추천으로 내려갑니다.`;
+        top.appendChild(miss);
+      }
       row.appendChild(top);
 
       const controls = document.createElement("div");
@@ -488,10 +565,11 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
   const bulkTitle = document.createElement("div");
   bulkTitle.style.cssText = "font-size:11px;font-weight:900;color:#334155;margin-bottom:6px";
-  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 한 번에 적용" : "교실 규칙 지정";
+  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 교사교실 우선 적용" : "교실 규칙 지정";
   bulk.appendChild(bulkTitle);
 
-  const ruleSel = makeRoomRuleSelect(sameRule ? first?.roomRule : "auto");
+  const bulkDefaultRule = "teacher";
+  const ruleSel = makeRoomRuleSelect(bulkDefaultRule);
   ruleSel.disabled = !canEdit();
   const roomSel = makeRoomSelect(sameRoom ? first?.fixedRoomId : "");
   roomSel.disabled = !canEdit();
@@ -522,7 +600,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   const apply = document.createElement("button");
   apply.type = "button";
   apply.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer";
-  apply.textContent = targets.length > 1 ? "전체 구성 과목에 적용" : "교실 규칙 저장";
+  apply.textContent = targets.length > 1 ? "교사교실 우선 전체 적용" : "교실 규칙 저장";
   apply.onclick = () => {
     if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
       alert("지정 교실 고정은 교실을 선택해야 합니다.");
@@ -574,6 +652,10 @@ function uniqueIds(ids = []) {
     .map(clean)
     .filter(Boolean)
     .filter(id => !seen.has(id) && seen.add(id));
+}
+
+function ttCardIdsFromEntryLocal(entry = {}) {
+  return uniqueIds([entry.ttcardId, ...(Array.isArray(entry.ttcardIds) ? entry.ttcardIds : [])]);
 }
 
 function getGroupUnitCardIds(group = {}) {
@@ -767,6 +849,16 @@ export function createTimetableDetailHandlers(ctx) {
   const currentGrade = () => ctx.currentGrade();
 
   function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, groupId = "", detailItems = [] }) {
+    // 그룹카드가 아닌 단일 과목카드는 중간 "과목카드 상세"를 거치지 않고,
+    // 이미 배치된 수업이 있으면 곧바로 배치 상세카드로 엽니다.
+    if (!groupId && detailItems?.length === 1) {
+      const cardId = detailItems[0]?.ttcardId || detailItems[0]?.id;
+      const placedEntry = cardId ? entries().find(e => e?.ttcardId === cardId || (e?.ttcardIds || []).includes(cardId)) : null;
+      if (placedEntry) {
+        showEntryDetail(placedEntry);
+        return;
+      }
+    }
     const { modal, box, closeBtn, setTitle } = makeModal({ maxWidth: 460, minWidth: 300, title: `배치 상세 · ${title || "과목카드"}` });
     setTitle(`배치 상세 · ${title || "과목카드"}`);
 
@@ -1246,6 +1338,8 @@ export function createTimetableDetailHandlers(ctx) {
 
     const hint = document.createElement("div");
     hint.style.cssText = "font-size:10px;color:#64748b;line-height:1.35;margin:4px 0 7px";
+    const teacherRoomWarn = document.createElement("div");
+    teacherRoomWarn.style.cssText = "display:none;margin:0 0 7px;padding:6px 8px;border:1px solid #fde68a;border-radius:7px;background:#fffbeb;color:#92400e;font-size:10px;font-weight:800;line-height:1.35";
     const refreshRoomUi = () => {
       const rule = normalizeRoomRule(ruleSel.value);
       if (rule === "homeroom" && roomSel.value !== HOME_ROOM_ROOM_SELECT_VALUE) {
@@ -1259,6 +1353,14 @@ export function createTimetableDetailHandlers(ctx) {
         : roomSel.value === HOME_ROOM_ROOM_SELECT_VALUE
           ? "대상 학반별 홈룸으로 나누어 배정합니다. 교실 관리에서 각 학급의 홈룸이 지정되어 있어야 합니다."
           : getRoomRuleHint(rule, roomSel.value);
+      const missing = rule === "teacher" ? missingTeacherRoomNamesForCards(ttCardIdsFromEntryLocal(entry).map(id => getTtCardById(id)).filter(Boolean)) : [];
+      if (missing.length) {
+        teacherRoomWarn.style.display = "block";
+        teacherRoomWarn.textContent = `교사 배정 교실 없음: ${missing.join(", ")} · 교사교실 우선 적용 시 자동 추천으로 배정합니다.`;
+      } else {
+        teacherRoomWarn.style.display = "none";
+        teacherRoomWarn.textContent = "";
+      }
     };
 
     const applyBtn = document.createElement("button");
@@ -1293,7 +1395,7 @@ export function createTimetableDetailHandlers(ctx) {
     ruleSel.addEventListener("change", refreshRoomUi);
     refreshRoomUi();
 
-    roomSection.append(ruleWrap, roomWrap, hint, applyBtn);
+    roomSection.append(ruleWrap, roomWrap, hint, teacherRoomWarn, applyBtn);
 
     if (canEdit()) {
       const roomPinBtn = document.createElement("button");
