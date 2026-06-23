@@ -112,17 +112,31 @@ export function createTimetableConstraintsHandlers({
           const card = getTtCardByIdLocal(id);
           if (!cardTeacherNamesLocal(card || {}).includes(teacherName)) return;
           touched = true;
+          // r113: 사용자가 지정한 카드 고정교실은 교사 배정교실 적용으로 덮어쓰지 않습니다.
+          if (clean(card?.roomRule) === "fixed" && clean(card?.fixedRoomId)) {
+            assignments[id] = clean(card.fixedRoomId);
+            return;
+          }
           if (assignedRoom) assignments[id] = assignedRoom;
           else delete assignments[id];
         });
         if (touched) {
           en.roomAssignmentsByTtCardId = assignments;
           en.roomId = null;
-          en.roomRule = "teacher";
+          en.roomRule = en.roomRule === "fixed" ? "fixed" : "teacher";
         }
         return;
       }
       if (splitTeacherNames(en.teacherName).includes(teacherName)) {
+        // r113: 이미 지정교실로 고정된 단일 배치카드는 건드리지 않습니다.
+        if (en.roomPinned || clean(en.roomRule) === "fixed") return;
+        const card = cardIds.length === 1 ? getTtCardByIdLocal(cardIds[0]) : null;
+        if (clean(card?.roomRule) === "fixed" && clean(card?.fixedRoomId)) {
+          en.roomId = clean(card.fixedRoomId);
+          en.roomRule = "fixed";
+          en.roomPinned = true;
+          return;
+        }
         en.roomId = assignedRoom;
         en.roomRule = assignedRoom ? "teacher" : (en.roomRule || "auto");
       }
@@ -802,9 +816,9 @@ export function createTimetableConstraintsHandlers({
     const fixedRooms = [...new Set(valid.map(card => clean(card.fixedRoomId)).filter(Boolean))];
     if (rules.length === 1 && rules[0] === "fixed" && fixedRooms.length === 1) return formatAssignedEntryRoom({ roomId: fixedRooms[0] });
     if (rules.length === 1 && rules[0] === "homeroom") return "홈룸";
-    if (rules.length === 1 && rules[0] === "teacher") return "교사 담당교실";
+    if (rules.length === 1 && rules[0] === "teacher") return "교사 배정교실";
     if (rules.length > 1 || fixedRooms.length > 1) return "교실 규칙 혼합";
-    return "교실 자동";
+    return "교실 미배정";
   }
 
   function formatCardListClasses(cards = []) {

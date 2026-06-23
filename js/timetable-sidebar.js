@@ -683,13 +683,13 @@ export function createTimetableSidebarHandlers(deps) {
     const roomRow = document.createElement("div");
     roomRow.className = "tt-subject-editor-grid-2";
     const roomRule = makeEditorSelect("교실 규칙", [
-      ["auto", "교사교실 고정 / 없으면 미배정"],
-      ["teacher", "교사 배정 교실 고정"],
+      ["auto", "기본: 교사 배정교실 / 없으면 미배치"],
+      ["teacher", "교사 배정교실 고정"],
       ["homeroom", "홈룸 고정"],
-      ["fixed", "고정 교실"],
+      ["fixed", "지정교실 고정"],
       ["none", "교실 없음"],
     ], card.roomRule || "auto");
-    const fixedRoom = makeRoomSelect("고정 교실", card.fixedRoomId || "");
+    const fixedRoom = makeRoomSelect("지정교실 고정", card.fixedRoomId || "");
     roomRow.append(roomRule.wrap, fixedRoom.wrap);
 
     const flags = document.createElement("label");

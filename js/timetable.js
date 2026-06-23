@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-23-teacherroom-fixed-r112";
+import { versioned } from "./version.js?v=2026-06-23-teacherroom-default-r113";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1045,7 +1045,7 @@ function renderTeacherCardsPanel() {
         const groupInfo = getGroupInfoForTeacherCard(card.id);
         const placed = getPlacedOccurrencesForTeacherCard(card);
         const credits = Number(getCreditsForTtCard(card)) || 0;
-        const roomLabel = card.fixedRoomId ? getRoomDisplayName(card.fixedRoomId) : "교실 자동";
+        const roomLabel = card.fixedRoomId ? getRoomDisplayName(card.fixedRoomId) : "교실 미배정";
         const row = document.createElement("div");
         row.className = "tt-teacher-card-row" + (placed.length >= credits && credits > 0 ? " done" : "");
         const classLabels = getTtCardClassLabels(card).length ? getTtCardClassLabels(card).join(", ") : getEntryClassSummary({ ttcardIds:[card.id], gradeKey:card.gradeKey });
@@ -1262,14 +1262,14 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
   if (rule === "teacher") {
     const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
-    // r112: 교사 배정 교실은 추천이 아니라 고정 조건입니다.
-    // 교사 배정 교실이 없으면 임의 교실/홈룸으로 내려가지 않고 미배정 상태를 유지합니다.
-    return teacherRoomId || fixedRoomId || null;
+    // r113: 교사 배정교실 고정은 사용자 지정교실보다 아래 단계입니다.
+    // 이미 지정교실/고정교실이 있으면 절대 교사 배정교실로 덮어쓰지 않습니다.
+    return fixedRoomId || teacherRoomId || null;
   }
 
   // auto 기본 교실 규칙:
-  // 1) 카드/수업에 명시된 고정교실
-  // 2) 교사 배정 교실 고정
+  // 1) 사용자 지정교실/카드 고정교실
+  // 2) 교사 배정교실 고정
   // 3) 둘 다 없으면 교실 미배정 유지
   const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
   return fixedRoomId || teacherRoomId || null;
@@ -1418,16 +1418,20 @@ function applyDefaultRoomToEntryData(data = {}) {
   return applyCardRoomAssignmentsToEntryData(data);
 }
 
-function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null) {
+function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, options = {}) {
   if (!canEdit()) return false;
   const ids = [...new Set((cardIds || []).filter(Boolean))];
   if (!ids.length) return false;
   captureTimetableUndo("과목카드 교실 설정");
   const normalizedRule = clean(rule) || "auto";
+  const preserveFixedRooms = !!options.preserveFixedRooms;
   (appState.timetable.ttcards || []).forEach(card => {
     if (!ids.includes(card.id)) return;
+    const hasUserFixedRoom = clean(card.roomRule) === "fixed" && clean(card.fixedRoomId);
+    // r113: 전체 일괄 적용/교사 배정교실 고정 적용은 이미 사용자가 지정한 교실을 건드리면 안 됩니다.
+    if (preserveFixedRooms && normalizedRule !== "fixed" && hasUserFixedRoom) return;
     card.roomRule = normalizedRule;
-    card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : null;
+    card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : (hasUserFixedRoom ? card.fixedRoomId : null);
     card.manualEdited = true;
   });
   refreshEntryRoomAssignmentsFromCards(ids);
