@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-group-rooms-correct-r103";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-timetable-audit-r109";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -367,7 +367,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-23-group-rooms-correct-r103"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-23-timetable-audit-r109"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -693,7 +693,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-group-rooms-correct-r103",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-23-timetable-audit-r109",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1328,6 +1328,29 @@ export function createAutoAssignAll(deps) {
     if (!roomIds.length) return false;
     const slotEntries = [...entries(), ...placed].filter(e => e.day === slot.day && e.period === slot.period);
     return slotEntries.some(e => !sameUnitPlacement(candidate, e) && roomIdsForPlacement(e).some(roomId => roomIds.includes(roomId)));
+  }
+
+
+  function roomsOverlapForPlacement(a = {}, b = {}) {
+    const aRooms = roomIdsForPlacement(a);
+    if (!aRooms.length) return false;
+    const bRooms = new Set(roomIdsForPlacement(b));
+    return aRooms.some(roomId => bRooms.has(roomId)) && !sameUnitPlacement(a, b);
+  }
+
+  function entryHasMissingRoomForAuto(entry = {}) {
+    const cardIds = ttCardIdsFromPlacement(entry);
+    const assignments = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+      ? entry.roomAssignmentsByTtCardId
+      : {};
+    if (cardIds.length && (entry.groupId || cardIds.length > 1)) {
+      return cardIds.some(id => {
+        const card = getTtCardById(id);
+        if (!cardNeedsRoomForAuto(card || {}, entry)) return false;
+        return !cleanStr(assignments[id]);
+      });
+    }
+    return !roomIdsForPlacement(entry).length && String(entry.roomRule || "auto").trim() !== "none";
   }
 
   function getRoomByIdLocal(roomId) {
@@ -2046,7 +2069,7 @@ export function createAutoAssignAll(deps) {
     const derivedFailedNames = options.deriveFailedFromCardShortage ? failedNamesFromCardCoverage(cardCoverage) : [];
     const finalFailedNames = providedFailedNames.length ? providedFailedNames : derivedFailedNames;
     const failedCount = finalFailedNames.length;
-    const missingRooms = (allEntries || []).filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
+    const missingRooms = (allEntries || []).filter(entryHasMissingRoomForAuto);
     const ok = classSlots.ok && cardCoverage.ok && restrictedTeachers.ok && protectedIntrusions.ok && failedCount === 0 && missingRooms.length === 0;
     const issueParts = [];
     if (!classSlots.ok) issueParts.push(`학급 시수 ${classSlots.issueCount}개`);
@@ -2123,7 +2146,7 @@ export function createAutoAssignAll(deps) {
       const block = placedBlocks.get(key);
       block.entries += 1;
       block.forced = block.forced || forcedIds.has(entry.id);
-      block.missingRoom = block.missingRoom || (!entry.roomId && String(entry.roomRule || "auto").trim() !== "none");
+      block.missingRoom = block.missingRoom || entryHasMissingRoomForAuto(entry);
       ttCardIdsFromPlacement(entry).forEach(id => id && block.cardIds.add(id));
     });
 
@@ -3846,7 +3869,7 @@ export function createAutoAssignAll(deps) {
     const bt = teacherNamesForPlacement(b);
     if (at.some(t => bt.includes(t))) return true;
     if (audiencesConflict(audienceForPlacement(a), audienceForPlacement(b))) return true;
-    if (a.roomId && b.roomId && a.roomId === b.roomId && !sameUnitPlacement(a, b)) return true;
+    if (roomsOverlapForPlacement(a, b)) return true;
     return false;
   }
 
@@ -6064,7 +6087,7 @@ export function createAutoAssignAll(deps) {
     if (audiencesConflict(itemAudience, entryAudience) && !freshSameConcurrentGroup(item, entry)) return true;
 
     const roomed = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed || []);
-    if (roomed.roomId && entry.roomId && roomed.roomId === entry.roomId && !sameUnitPlacement(item, entry)) return true;
+    if (roomsOverlapForPlacement(roomed, entry)) return true;
     return false;
   }
 
@@ -6751,7 +6774,7 @@ export function createAutoAssignAll(deps) {
         qualityScore: scoreScheduleQuality(placed, options)
       });
 
-      const missingRoomEntries = allFinalEntries.filter(e => !e.roomId && String(e.roomRule || "auto").trim() !== "none");
+      const missingRoomEntries = allFinalEntries.filter(entryHasMissingRoomForAuto);
       const missingRoomNames = missingRoomEntries.map(e => getAutoItemName(e));
       const failedDiagnostics = buildFailureDiagnostics(failedItems, engineResult.baseSlots || freshBaseSlots(), placed, {
         ...options,
@@ -6847,7 +6870,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-23-group-rooms-correct-r103"
+        validatorVersion: "2026-06-23-timetable-audit-r109"
       };
 
       let afterAutoSnapshot = null;
