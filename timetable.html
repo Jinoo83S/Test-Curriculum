@@ -1014,7 +1014,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 
-<style id="tt-layout-bottom-detail-r105">
+<style id="tt-layout-bottom-detail-r106">
 :root{--tt-bottom-active-height:0px;--tt-detail-panel-top:88px;}
 .tt-body{flex:1 1 auto!important;min-height:0!important;overflow:hidden!important;}
 #ttGrid{height:100%!important;min-height:0!important;}
@@ -1045,7 +1045,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r105</span></h1>
+  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r106</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1111,9 +1111,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-23-layout-bottom-detail-r105";</script>
+<script>window.HIS_APP_VERSION = "2026-06-23-group-active-occurrence-r106";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-23-layout-bottom-detail-r105";
+  import { versioned } from "./js/version.js?v=2026-06-23-group-active-occurrence-r106";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1132,7 +1132,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
   });
 });
 
-/* ── Bottom resize & toggle · r105 ── */
+/* ── Bottom resize & toggle · r106 ── */
 (function() {
   const bottom  = document.getElementById("ttBottom");
   const resizer = document.getElementById("ttBottomResizer");
@@ -1322,7 +1322,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 (function(){
   try {
     const b=document.createElement('div');
-    b.textContent='HIS build r105 · 2026-06-23';
+    b.textContent='HIS build r106 · 2026-06-23';
     b.style.cssText='position:fixed;right:8px;bottom:6px;z-index:99999;font:11px/1.3 system-ui,sans-serif;background:rgba(0,0,0,.62);color:#fff;padding:4px 7px;border-radius:999px;pointer-events:none;';
     document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(b));
   } catch (_) {}
@@ -1940,7 +1940,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 </style>
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-layout-bottom-detail-r105");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-23-group-active-occurrence-r106");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

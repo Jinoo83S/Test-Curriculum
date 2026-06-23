@@ -384,13 +384,13 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
   const h = document.createElement("div");
   h.style.cssText = "font-size:12px;font-weight:900;color:#334155;margin-bottom:5px";
-  h.textContent = cardIds.length > 1 ? "구성 과목별 교실 배정" : "구성 과목별 교실 배정";
+  h.textContent = groupId ? "이 시간 구성 과목별 교실 배정" : "교실 배정 규칙";
   section.appendChild(h);
 
   const intro = document.createElement("div");
   intro.style.cssText = "font-size:10px;color:#64748b;line-height:1.45;margin-bottom:8px";
-  intro.textContent = cardIds.length > 1
-    ? "그룹카드는 시간표에서는 하나로 움직이고, 교실은 구성 과목별로 따로 지정합니다."
+  intro.textContent = groupId
+    ? "이 시간대에 실제로 함께 열리는 구성 과목만 표시합니다. 복합 과목의 다른 파트는 다른 시간대에 표시됩니다."
     : "이 과목카드가 자동배치될 때 사용할 교실 규칙입니다.";
   section.appendChild(intro);
 
@@ -606,6 +606,19 @@ function getGroupDetailCards(entry) {
 
   const directIds = uniqueIds([entry.ttcardId, ...(entry.ttcardIds || [])]);
   return directIds.map(describeCardId).filter(Boolean);
+}
+
+function getEntryActiveDetailCards(entry) {
+  if (!entry) return [];
+  const directIds = uniqueIds([entry.ttcardId, ...(entry.ttcardIds || [])]);
+  return directIds.map(describeCardId).filter(Boolean);
+}
+
+function describeInactiveGroupCards(entry) {
+  if (!entry?.groupId) return [];
+  const all = getGroupDetailCards(entry);
+  const active = new Set(getEntryActiveDetailCards(entry).map(item => item.ttcardId || item.id).filter(Boolean));
+  return all.filter(item => !active.has(item.ttcardId || item.id));
 }
 
 function getGroupDetailSections(group = null, allItems = []) {
@@ -1132,6 +1145,9 @@ export function createTimetableDetailHandlers(ctx) {
     const detailGroup = getTimetableGroupById(entry.groupId);
     const rawGroupDetailCards = entry.groupId ? getGroupDetailCards(entry) : [];
     const groupDetailCards = withAssignedCounts(rawGroupDetailCards, entries);
+    const rawActiveDetailCards = entry.groupId ? getEntryActiveDetailCards(entry) : [];
+    const activeDetailCards = withAssignedCounts(rawActiveDetailCards, entries);
+    const inactiveGroupCards = entry.groupId ? describeInactiveGroupCards(entry) : [];
     const isGroupDetail = !!detailGroup && groupDetailCards.length > 1;
     const detailDisplayTitle = isGroupDetail ? (detailGroup.name || entry.groupName || entryTitle(entry)) : entryTitle(entry);
     if (isGroupDetail) {
@@ -1191,8 +1207,14 @@ export function createTimetableDetailHandlers(ctx) {
     if (entry.groupId) {
       const grp = detailGroup || (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
       makeRow("그룹", grp?.name || entry.groupId);
-      appendGroupDetailSection(box, groupDetailCards, { title: "그룹 구성", group: grp, entriesFn: entries });
-      appendCardRoomRuleEditor(box, groupDetailCards, ctx, modal, entry.groupId);
+      appendGroupDetailSection(box, groupDetailCards, { title: "전체 그룹 구성", group: grp, entriesFn: entries });
+      if (inactiveGroupCards.length && activeDetailCards.length) {
+        const activeNotice = document.createElement("div");
+        activeNotice.style.cssText = "margin:8px 0 4px;padding:8px 10px;border:1px solid #dbeafe;border-radius:8px;background:#eff6ff;color:#1e3a8a;font-size:10.5px;line-height:1.45";
+        activeNotice.textContent = `현재 시간에는 전체 그룹 중 ${activeDetailCards.length}개 카드만 실제로 배치됩니다. 미적분(2)+심화물리(2)처럼 복합 과목은 시간대별로 해당 파트만 교실 배정에 나타납니다.`;
+        box.appendChild(activeNotice);
+      }
+      appendCardRoomRuleEditor(box, activeDetailCards.length ? activeDetailCards : groupDetailCards, ctx, modal, entry.groupId);
     }
 
     if (!isGroupDetail) {
