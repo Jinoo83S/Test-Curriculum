@@ -9,7 +9,7 @@ import {
   getFirestoreUsageStats,
 } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { APP_VERSION, versioned } from "./version.js?v=2026-06-23-allview-groupmove-r99";
+import { APP_VERSION, versioned } from "./version.js?v=2026-06-23-groupcard-realmerge-r100";
 
 const MODULE_FILES = [
   "./js/app.js",
