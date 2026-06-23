@@ -574,37 +574,119 @@ function formatClassLabelList(gradeKey, labels = []) {
 }
 
 
-function getGroupDetailCards(entry) {
-  if (!entry) return [];
-  const directIds = [entry.ttcardId, ...(entry.ttcardIds || [])].filter(Boolean);
-  const group = entry.groupId
-    ? (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId)
-    : null;
-
-  let ids = [...directIds];
-
-  if (group) {
-    const unit = entry.unitId ? (group.units || []).find(u => u.id === entry.unitId) : null;
-    if (unit?.ttcardIds?.length) {
-      ids = [...ids, ...unit.ttcardIds];
-    } else if (!ids.length) {
-      ids = [
-        ...(group.poolCardIds || []),
-        ...(group.units || []).flatMap(u => u.ttcardIds || [])
-      ];
-    }
-  }
-
-  const seen = new Set();
-  return ids
-    .filter(id => id && !seen.has(id) && seen.add(id))
-    .map(id => getTtCardById(id))
-    .filter(Boolean)
-    .map(describeTtCard);
+function getTimetableGroupById(groupId = "") {
+  if (!groupId) return null;
+  return (appState.timetable?.ttcardGroups || []).find(g => g.id === groupId) || null;
 }
 
-function appendGroupDetailSection(box, detailItems, { title = "구성 과목" } = {}) {
+function uniqueIds(ids = []) {
+  const seen = new Set();
+  return (ids || [])
+    .map(clean)
+    .filter(Boolean)
+    .filter(id => !seen.has(id) && seen.add(id));
+}
+
+function getGroupUnitCardIds(group = {}) {
+  return uniqueIds((group.units || []).flatMap(unit => unit.ttcardIds || []));
+}
+
+function getGroupAllCardIds(group = {}) {
+  if (!group) return [];
+  const excluded = new Set(uniqueIds(group.excludedCardIds || []));
+  const ids = uniqueIds([
+    ...(group.units || []).flatMap(unit => unit.ttcardIds || []),
+    ...(group.poolCardIds || []),
+    ...(group.ttcardIds || []),
+    ...(group.cardIds || []),
+  ]);
+  return ids.filter(id => !excluded.has(id));
+}
+
+function describeCardId(cardId = "") {
+  const card = getTtCardById(cardId);
+  return card ? describeTtCard(card) : null;
+}
+
+function getGroupDetailCards(entry) {
+  if (!entry) return [];
+  const group = getTimetableGroupById(entry.groupId);
+  if (group) {
+    return getGroupAllCardIds(group).map(describeCardId).filter(Boolean);
+  }
+
+  const directIds = uniqueIds([entry.ttcardId, ...(entry.ttcardIds || [])]);
+  return directIds.map(describeCardId).filter(Boolean);
+}
+
+function getGroupDetailSections(group = null, allItems = []) {
+  if (!group) {
+    return [{ kind: "cards", title: "구성 과목", items: allItems || [] }].filter(s => s.items.length);
+  }
+
+  const byId = new Map((allItems || []).map(item => [item.ttcardId || item.id, item]));
+  const used = new Set();
+  const sections = [];
+
+  (group.units || []).forEach((unit, idx) => {
+    const ids = uniqueIds(unit.ttcardIds || []).filter(id => byId.has(id));
+    if (!ids.length) return;
+    ids.forEach(id => used.add(id));
+    const title = clean(unit.name) || `묶음수업 ${idx + 1}`;
+    sections.push({
+      kind: "unit",
+      title,
+      items: ids.map(id => byId.get(id)).filter(Boolean),
+    });
+  });
+
+  const poolIds = uniqueIds(group.poolCardIds || []).filter(id => byId.has(id) && !used.has(id));
+  if (poolIds.length) {
+    sections.push({
+      kind: "pool",
+      title: "그룹 카드 (묶음수업 미배정)",
+      items: poolIds.map(id => byId.get(id)).filter(Boolean),
+    });
+  }
+
+  const remaining = (allItems || []).filter(item => !used.has(item.ttcardId || item.id) && !poolIds.includes(item.ttcardId || item.id));
+  if (remaining.length) {
+    sections.push({ kind: "cards", title: "그룹 구성 과목", items: remaining });
+  }
+
+  return sections.filter(s => s.items.length);
+}
+
+function getAssignedCountForCardId(cardId = "", entriesFn = null) {
+  if (!cardId || typeof entriesFn !== "function") return null;
+  return (entriesFn() || []).filter(e => e?.ttcardId === cardId || (e?.ttcardIds || []).includes(cardId)).length;
+}
+
+function withAssignedCounts(items = [], entriesFn = null) {
+  return (items || []).map(item => ({
+    ...item,
+    assignedCount: getAssignedCountForCardId(item.ttcardId || item.id, entriesFn),
+  }));
+}
+
+function getDetailItemsClassSummary(items = []) {
+  const labels = [];
+  (items || []).forEach(item => {
+    if (item.classLabels?.length) {
+      item.classLabels.forEach(label => labels.push(formatClassLabel(item.gradeKey, label)));
+    } else {
+      labels.push(formatClassLabel(item.gradeKey, item.sectionLabel || sectionLabel(item.sectionIdx ?? 0)));
+    }
+  });
+  return compactInlineLabels(labels) || "-";
+}
+
+function appendGroupDetailSection(box, detailItems, { title = "구성 과목", group = null, entriesFn = null } = {}) {
   if (!detailItems?.length) return;
+
+  const items = withAssignedCounts(detailItems, entriesFn);
+  const sections = getGroupDetailSections(group, items);
+  const totalCount = items.length;
 
   const section = document.createElement("div");
   section.style.cssText = "margin:10px 0 10px;padding:10px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc";
@@ -616,13 +698,14 @@ function appendGroupDetailSection(box, detailItems, { title = "구성 과목" } 
   h.textContent = title;
   const count = document.createElement("span");
   count.style.cssText = "font-size:10px;font-weight:800;color:#166534;background:#dcfce7;border-radius:999px;padding:2px 7px";
-  count.textContent = `${detailItems.length}개`;
+  count.textContent = `${totalCount}개`;
   header.append(h, count);
   section.appendChild(header);
 
   const list = document.createElement("div");
-  list.style.cssText = "display:flex;flex-direction:column;gap:5px";
-  detailItems.forEach(item => {
+  list.style.cssText = "display:flex;flex-direction:column;gap:8px";
+
+  function appendItemRow(parent, item) {
     const row = document.createElement("div");
     row.style.cssText = "display:grid;grid-template-columns:1fr auto;gap:6px;align-items:center;padding:7px 8px;border:1px solid #e5e7eb;border-radius:8px;background:white";
 
@@ -645,14 +728,36 @@ function appendGroupDetailSection(box, detailItems, { title = "구성 과목" } 
 
     const credit = document.createElement("span");
     credit.style.cssText = "font-size:10px;font-weight:800;color:#334155;background:#e2e8f0;border-radius:999px;padding:2px 7px;white-space:nowrap";
-    credit.textContent = `${item.credits || "-"}시수`;
+    const assignedText = item.assignedCount == null ? "" : `${item.assignedCount} / `;
+    credit.textContent = `${assignedText}${item.credits || "-"}시수`;
 
     row.append(main, credit);
-    list.appendChild(row);
+    parent.appendChild(row);
+  }
+
+  sections.forEach(sec => {
+    const groupBox = document.createElement("div");
+    groupBox.style.cssText = "border:1px dashed #cbd5e1;border-radius:9px;background:#ffffff99;padding:8px;display:flex;flex-direction:column;gap:5px";
+
+    const secHeader = document.createElement("div");
+    secHeader.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:2px";
+    const secTitle = document.createElement("div");
+    secTitle.style.cssText = "font-size:11px;font-weight:900;color:#1e293b";
+    secTitle.textContent = sec.title || "구성";
+    const secBadge = document.createElement("span");
+    secBadge.style.cssText = "font-size:9px;font-weight:900;border-radius:999px;padding:1px 6px;background:#dbeafe;color:#1d4ed8";
+    secBadge.textContent = sec.kind === "unit" ? "동일 수업" : "개별 카드";
+    secHeader.append(secTitle, secBadge);
+    groupBox.appendChild(secHeader);
+
+    sec.items.forEach(item => appendItemRow(groupBox, item));
+    list.appendChild(groupBox);
   });
+
   section.appendChild(list);
   box.appendChild(section);
 }
+
 
 export function createTimetableDetailHandlers(ctx) {
   const entries = () => ctx.entries();
@@ -1035,10 +1140,18 @@ export function createTimetableDetailHandlers(ctx) {
       return r;
     }
 
-    makeRow("학년/반", ctx.getEntryClassSummary(entry));
+    const detailGroup = getTimetableGroupById(entry.groupId);
+    const rawGroupDetailCards = entry.groupId ? getGroupDetailCards(entry) : [];
+    const groupDetailCards = withAssignedCounts(rawGroupDetailCards, entries);
+    const isGroupDetail = !!detailGroup && groupDetailCards.length > 1;
+    const detailDisplayTitle = isGroupDetail ? (detailGroup.name || entry.groupName || entryTitle(entry)) : entryTitle(entry);
+    if (isGroupDetail) {
+      setTitle(`배치 상세 · ${detailDisplayTitle}`);
+      titleEl.textContent = detailDisplayTitle;
+    }
 
-    const groupDetailCards = entry.groupId ? getGroupDetailCards(entry) : [];
-    const isGroupDetail = !!entry.groupId && groupDetailCards.length > 1;
+    makeRow("학년/반", isGroupDetail ? getDetailItemsClassSummary(groupDetailCards) : ctx.getEntryClassSummary(entry));
+
     const teachers = entryTeachers(entry);
     if (!isGroupDetail) {
       const tLabel = document.createElement("label");
@@ -1064,12 +1177,11 @@ export function createTimetableDetailHandlers(ctx) {
 
     const tplId = entry.templateId || entry.templateIds?.[0];
     if (entry.groupId) {
-      const groupCredits = Math.max(1, ...groupDetailCards.map(item => Number(item.credits) || 0).filter(v => v > 0));
       const assignedSlots = new Set(entries()
         .filter(e => e.groupId === entry.groupId)
         .map(e => `${e.day}:${e.period}`)
       ).size;
-      makeRow("시수/배정", `${assignedSlots} / ${groupCredits} 차시`);
+      makeRow("그룹 배치", `${assignedSlots}개 시간대 · 구성별 시수는 아래 표시`);
     } else if (tplId) {
       const directCardIds = [entry.ttcardId, ...(entry.ttcardIds || [])].filter(Boolean);
       const firstCard = directCardIds.length ? getTtCardById(directCardIds[0]) : null;
@@ -1088,9 +1200,9 @@ export function createTimetableDetailHandlers(ctx) {
     }
 
     if (entry.groupId) {
-      const grp = (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
+      const grp = detailGroup || (appState.timetable.ttcardGroups || []).find(g => g.id === entry.groupId);
       makeRow("그룹", grp?.name || entry.groupId);
-      appendGroupDetailSection(box, groupDetailCards, { title: entry.unitId ? "묶음수업 구성" : "그룹 구성 과목" });
+      appendGroupDetailSection(box, groupDetailCards, { title: "그룹 구성", group: grp, entriesFn: entries });
       appendCardRoomRuleEditor(box, groupDetailCards, ctx, modal, entry.groupId);
     }
 
