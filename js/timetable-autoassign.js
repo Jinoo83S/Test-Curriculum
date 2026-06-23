@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-timetable-audit-r109";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-23-teacherroom-priority-r110";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -27,6 +27,33 @@ export function createAutoAssignAll(deps) {
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
   const cleanStr = value => String(value ?? "").trim();
   const uniqueRoomIds = list => [...new Set((list || []).map(cleanStr).filter(Boolean))];
+
+  function getTeacherAssignedRoomIdForAuto(teacherName = "") {
+    const teacher = cleanStr(teacherName);
+    if (!teacher) return "";
+    const fromConstraints = cleanStr(getEffectiveAssignedRoomId(teacher) || "");
+    if (fromConstraints) return fromConstraints;
+    const matches = (appState.rooms?.rooms || [])
+      .filter(room => cleanStr(room.teacherName) === teacher && room.id)
+      .map(room => room.id);
+    const unique = uniqueRoomIds(matches);
+    return unique.length === 1 ? unique[0] : "";
+  }
+
+  function placementHasTeacherAssignedRoomForAuto(item = {}) {
+    return teacherNamesForPlacement(item).some(name => !!getTeacherAssignedRoomIdForAuto(name));
+  }
+
+  function blockHasTeacherAssignedRoomForAuto(block = {}) {
+    return (block.items || []).some(item => placementHasTeacherAssignedRoomForAuto(item));
+  }
+
+  function blockClassCardSize(block = {}) {
+    const classCount = freshBlockAudienceKeys(block).length;
+    const cardCount = freshBlockCardIds(block).length;
+    const teacherCount = freshBlockTeacherNames(block).length;
+    return classCount * 1000 + cardCount * 100 + teacherCount * 10;
+  }
 
 
   function experimentalResidualRepairEnabled(localOptions = {}) {
@@ -2428,6 +2455,23 @@ export function createAutoAssignAll(deps) {
     return entryData;
   }
 
+  function hydrateAutoRoomsForEntries(list = []) {
+    const hydrated = [];
+    for (const raw of list || []) {
+      const base = normalizeTimetableEntry({ ...raw });
+      const next = applyAutoRoomToEntryData(base, base, hydrated);
+      if (next && !next.roomPinned) {
+        if (next.groupId || ttCardIdsFromPlacement(next).length > 1) {
+          next.roomRule = next.roomRule || "teacher";
+        } else {
+          next.roomRule = next.roomRule || "teacher";
+        }
+      }
+      hydrated.push(normalizeTimetableEntry(next || base));
+    }
+    return hydrated;
+  }
+
 
   function addReason(reasonMap, code, label, detail = "") {
     if (!reasonMap.has(code)) reasonMap.set(code, { code, label, count: 0, samples: [] });
@@ -2473,6 +2517,13 @@ export function createAutoAssignAll(deps) {
       : slotEnts.find(e => e.templateId === item.templateId && e.gradeKey === item.gradeKey && (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0));
     if (duplicate) {
       addReason(reasons, "duplicate", "동일 카드 중복", `${formatSlotLabel(slot)}에 이미 같은 카드 배치`);
+    }
+
+    const dayDuplicate = itemCardIds.size
+      ? [...entries(), ...placed].find(e => e.day === slot.day && ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)))
+      : [...entries(), ...placed].find(e => e.day === slot.day && e.templateId === item.templateId && e.gradeKey === item.gradeKey && (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0));
+    if (dayDuplicate) {
+      addReason(reasons, "sameDayDuplicate", "동일 수업 하루 2회", `${formatSlotLabel(slot)} · 같은 수업은 하루에 한 번만 배치`);
     }
 
     for (const e of slotEnts) {
@@ -3309,12 +3360,26 @@ export function createAutoAssignAll(deps) {
     );
   }
 
+  function exactDuplicateInDay(item, slot, placed = []) {
+    const itemCardIds = new Set(ttCardIdsFromPlacement(item));
+    const dayEnts = [...entries(), ...placed].filter(e => e.day === slot.day);
+    if (itemCardIds.size) {
+      return dayEnts.some(e => ttCardIdsFromPlacement(e).some(id => itemCardIds.has(id)));
+    }
+    return dayEnts.some(e =>
+      e.templateId === item.templateId &&
+      e.gradeKey === item.gradeKey &&
+      (e.sectionIdx ?? 0) === (item.sectionIdx ?? 0)
+    );
+  }
+
   function forcedSlotScore(item, slot, placed = [], options = {}) {
     // 마지막 보정 단계용 점수입니다.
     // 원칙적으로 충돌 없는 슬롯을 찾고, 불가피할 때만 최소 충돌 슬롯에 배치합니다.
     // 단, 고정/보호 슬롯 침범과 동일 카드 동일 시간 중복은 끝까지 막습니다.
     if (strongProtectedSlotConflict(item, slot, placed)) return Infinity;
     if (exactDuplicateInSlot(item, slot, placed)) return Infinity;
+    if (exactDuplicateInDay(item, slot, placed)) return Infinity;
 
     const existing = [...entries(), ...placed];
     const slotEnts = existing.filter(e => e.day === slot.day && e.period === slot.period);
@@ -5792,7 +5857,7 @@ export function createAutoAssignAll(deps) {
     }
     const options = { ...AUTO_ASSIGN_DEFAULT_OPTIONS, selectedGrades: normalizeAutoActiveGrades(availableGrades) };
     ({ standalone, groupBlocks } = filterAutoTargetsByGrades(standalone, groupBlocks, options.selectedGrades));
-    const protectedEntries = computeProtectedEntries(entries(), options);
+    const protectedEntries = hydrateAutoRoomsForEntries(computeProtectedEntries(entries(), options));
     const activeGrades = getActiveGradesFromScheduleItems(standalone, groupBlocks);
     const report = buildAutoAssignPrecheckReport({ standalone, groupBlocks, activeGrades, availableGrades, options, protectedEntries });
     await openAutoAssignPrecheckDialog(report, { allowProceed: false });
@@ -5981,7 +6046,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r97",
+        autoEngine: "fresh-csp-r110",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6002,10 +6067,12 @@ export function createAutoAssignAll(deps) {
     const classCount = freshBlockAudienceKeys(block).length;
     const cardCount = freshBlockCardIds(block).length;
     const restrictedCount = (block.items || []).filter(item => getRestrictedTeachersForAutoItem(item).length).length;
-    const groupBonus = block.kind === "standalone" ? 0 : 220;
+    const bigGroupBonus = block.kind === "standalone" ? 0 : 1200 + classCount * 120 + cardCount * 80;
+    const teacherRoomBonus = blockHasTeacherAssignedRoomForAuto(block) ? 550 : 0;
     const bottleneckBonus = getBottleneckAutoItemPriority(block.primaryItem || {}) * -1;
     return (1000 - Math.min(999, initialCandidateCount) * 12)
-      + groupBonus
+      + bigGroupBonus
+      + teacherRoomBonus
       + teacherCount * 55
       + classCount * 45
       + cardCount * 25
@@ -6013,15 +6080,34 @@ export function createAutoAssignAll(deps) {
       + bottleneckBonus;
   }
 
+  function freshBlockPlacementTier(block = {}) {
+    const isGroup = block.kind !== "standalone";
+    const isBigGroup = isGroup && (freshBlockCardIds(block).length >= 2 || freshBlockAudienceKeys(block).length >= 2);
+    if (isBigGroup) return 0;
+    if (blockHasTeacherAssignedRoomForAuto(block)) return 1;
+    return 2;
+  }
+
   function freshOrderBlocks(blocks = [], baseSlots = [], checkOptions = {}) {
     return blocks.map((block, idx) => {
       const candidateCount = freshDirectCandidateCount(block, baseSlots, [], checkOptions);
-      return { block, idx, candidateCount, difficulty: freshBlockDifficulty(block, candidateCount) };
+      const tier = freshBlockPlacementTier(block);
+      const sizeScore = blockClassCardSize(block);
+      return { block, idx, tier, sizeScore, candidateCount, difficulty: freshBlockDifficulty(block, candidateCount) };
     }).sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      if (a.tier === 0 && b.sizeScore !== a.sizeScore) return b.sizeScore - a.sizeScore;
+      if (a.tier === 1 && b.sizeScore !== a.sizeScore) return b.sizeScore - a.sizeScore;
       if (a.candidateCount !== b.candidateCount) return a.candidateCount - b.candidateCount;
       if (b.difficulty !== a.difficulty) return b.difficulty - a.difficulty;
       return String(freshBlockName(a.block)).localeCompare(String(freshBlockName(b.block)), "ko", { numeric: true }) || a.idx - b.idx;
-    }).map(x => ({ ...x.block, initialCandidateCount: x.candidateCount, freshDifficulty: x.difficulty }));
+    }).map(x => ({
+      ...x.block,
+      initialCandidateCount: x.candidateCount,
+      freshDifficulty: x.difficulty,
+      freshPlacementTier: x.tier,
+      freshSizeScore: x.sizeScore
+    }));
   }
 
   function freshSlotScore(block = {}, slot = {}, placed = [], checkOptions = {}) {
@@ -6273,7 +6359,7 @@ export function createAutoAssignAll(deps) {
         const fixed = normalizeTimetableEntry({
           ...entry,
           autoBlockKey: probeKey,
-          autoEngine: "fresh-csp-r97-coverage-onemove-direct",
+          autoEngine: "fresh-csp-r110-coverage-onemove-direct",
           autoCoverageRepair: true
         });
         placed.push(fixed);
@@ -6302,7 +6388,7 @@ export function createAutoAssignAll(deps) {
           const fixed = normalizeTimetableEntry({
             ...entry,
             autoBlockKey: probeKey,
-            autoEngine: "fresh-csp-r97-coverage-onemove",
+            autoEngine: "fresh-csp-r110-coverage-onemove",
             autoCoverageRepair: true
           });
           placed.splice(0, placed.length, ...baseWithMoved, fixed);
@@ -6341,7 +6427,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r97-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r110-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6354,7 +6440,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r97-coverage-fill",
+      autoEngine: "fresh-csp-r110-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6607,7 +6693,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-groupcard-r99",
+        engine: "fresh-csp-groupcard-r110",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6722,7 +6808,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r99`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r110`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -6754,7 +6840,7 @@ export function createAutoAssignAll(deps) {
       const forcedEntries = cloneAutoAssignData(engineResult.forcedEntries || []) || [];
       const failedItems = [...(engineResult.failedItems || [])];
       const failedNames = [...new Set(failedItems.map(f => f.name).filter(Boolean))];
-      const allFinalEntries = normalizeSnapshotEntries([...protectedEntries, ...placed]);
+      const allFinalEntries = hydrateAutoRoomsForEntries(normalizeSnapshotEntries([...protectedEntries, ...placed]));
 
       autoAssignPhase = "검증/확정";
       ttDomain().entries = allFinalEntries;
@@ -6860,17 +6946,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-groupcard-r99",
-        engine: "fresh-csp-groupcard-r99",
+        telemetryStatus: "fresh-csp-groupcard-r110",
+        engine: "fresh-csp-groupcard-r110",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: 그룹카드 단일블록 r97 / 응답대기 방지",
+        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 교사교실 우선 r110",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-23-timetable-audit-r109"
+        validatorVersion: "2026-06-23-teacherroom-priority-r110"
       };
 
       let afterAutoSnapshot = null;
@@ -6975,7 +7061,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-groupcard-r99",
+          engine: "fresh-csp-groupcard-r110",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -6989,7 +7075,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-groupcard-r99"
+              engine: "fresh-csp-groupcard-r110"
             });
           }
         } catch (_) {}
