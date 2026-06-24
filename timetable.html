@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-24-cache-unify-r123"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-24-cpsat-webapp-import-r132"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1627,7 +1627,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r123</span></h1>
+  <h1>시간표 편집 <span id="ttHeaderVersion" class="tt-title-version-badge">r132</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1697,9 +1697,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-24-cache-unify-r123";</script>
+<script>window.HIS_APP_VERSION = "2026-06-24-cpsat-webapp-import-r132";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-24-cache-unify-r123";
+  import { versioned } from "./js/version.js?v=2026-06-24-cpsat-webapp-import-r132";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1913,7 +1913,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-24-cache-unify-r123");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-24-cpsat-webapp-import-r132");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

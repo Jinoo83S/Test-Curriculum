@@ -41,6 +41,7 @@ const [
   constraintsModule,
   logModule,
   sidebarModule,
+  cpSatImportModule,
 ] = await Promise.all([
   import(versioned("./data-cleanup.js")),
   import(versioned("./ttcards.js")),
@@ -52,6 +53,7 @@ const [
   import(versioned("./timetable-constraints.js")),
   import(versioned("./timetable-log.js")),
   import(versioned("./timetable-sidebar.js")),
+  import(versioned("./cp-sat-webapp-import.js")),
 ]);
 
 const { openDataCleanupDialog } = dataCleanupModule;
@@ -72,6 +74,7 @@ const { createTimetableDetailHandlers } = detailModule;
 const { createTimetableConstraintsHandlers } = constraintsModule;
 const { createTimetableLogHandlers } = logModule;
 const { createTimetableSidebarHandlers } = sidebarModule;
+const { setupCpSatWebappImport } = cpSatImportModule;
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
@@ -4091,6 +4094,21 @@ $("ttAutoPrecheckBtn")?.addEventListener("click", () => autoAssignAll.openPreche
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
 
+setupCpSatWebappImport({
+  appState,
+  ttDomain,
+  entries,
+  ttConfig,
+  canEdit,
+  saveNow,
+  normalizeTimetableEntry,
+  captureTimetableUndo,
+  recomputeConflicts,
+  renderAll: () => renderAll(),
+  uid,
+  clean,
+  escapeHtml,
+});
 
 // Expose schedule control callbacks to inline HTML script
 window._ttApplyPeriod = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?.value)||8); renderAll(); };
