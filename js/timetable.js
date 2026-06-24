@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-24-r118-duplicate-fix-r119";
+import { versioned } from "./version.js?v=2026-06-24-group-room-display-r121";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -2225,6 +2225,9 @@ function renderGrid() {
     showEntryContextMenu,
     getEntryConflictSet,
     getRoomDisplayName,
+    getRoomIdsForEntry: effectiveRoomIdsForEntry,
+    entryRoomSummary,
+    entryHasRoomMissing: entryHasMissingRoomAssignment,
     renderAll: () => renderAll(),
     getGroupNameById: id => (appState.timetable.ttcardGroups || []).find(g => g.id === id)?.name || "",
   });
@@ -2951,7 +2954,7 @@ function openFixedLessonManager() {
           const allPinned = block.every(e => e.pinned);
           const somePinned = block.some(e => e.pinned);
           const teachers = [...new Set(block.flatMap(e => splitTeacherNames(e.teacherName || "")))].filter(Boolean).join(", ");
-          const roomNames = [...new Set(block.map(e => e.roomId ? getRoomDisplayName(e.roomId) : "").filter(Boolean))].join(", ");
+          const roomNames = [...new Set(block.flatMap(e => effectiveRoomIdsForEntry(e).map(getRoomDisplayName)).filter(Boolean))].join(", ");
           const type = first.groupId ? "그룹" : first.unitId ? "묶음" : "개별";
           return `<div class="tt-fixed-row ${allPinned ? "is-pinned" : somePinned ? "is-partial" : ""}" data-idx="${idx}">
             <div class="tt-fixed-row-main">
