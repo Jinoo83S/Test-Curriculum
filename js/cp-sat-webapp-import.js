@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · CP-SAT import/apply/rollback UI
-// r132: reads cp_sat_webapp_import.json and safely replaces timetable.entries
+// r136: reads cp_sat_webapp_import.json and safely replaces timetable.entries
 // ================================================================
 
 const CP_SAT_IMPORT_UI_ID = "ttCpSatImportOverlay";
@@ -70,10 +70,27 @@ function firstArray(...items) {
 }
 
 function entryClassKeys(entry = {}) {
-  const direct = asArray(entry.classKeys).map(String).filter(Boolean);
-  if (direct.length) return direct;
-  const gradeKeys = asArray(entry.gradeKeys).map(String).filter(Boolean);
-  if (gradeKeys.length) return gradeKeys;
+  // CP-SAT local exporter writes the exact occupied class cells to audienceClassKeys.
+  // r132/r135 only checked classKeys/gradeKeys, so generated CP-SAT entries were
+  // read as 0/525 class slots in the webapp import dialog.
+  const audience = asArray(entry.audienceClassKeys).map(String).map(v => v.trim()).filter(Boolean);
+  if (audience.length) return [...new Set(audience)];
+
+  const direct = asArray(entry.classKeys).map(String).map(v => v.trim()).filter(Boolean);
+  if (direct.length) return [...new Set(direct)];
+
+  const fromComponents = [];
+  asArray(entry.components).forEach(comp => {
+    asArray(comp?.classKeys).forEach(v => {
+      const s = String(v || "").trim();
+      if (s) fromComponents.push(s);
+    });
+  });
+  if (fromComponents.length) return [...new Set(fromComponents)];
+
+  const gradeKeys = asArray(entry.gradeKeys).map(String).map(v => v.trim()).filter(Boolean);
+  if (gradeKeys.length) return [...new Set(gradeKeys)];
+
   const g = String(entry.gradeKey || entry.grade || "").trim();
   if (!g) return [];
   const sectionIdx = Number.isInteger(entry.sectionIdx) ? entry.sectionIdx : parseInt(entry.sectionIdx, 10);
@@ -100,6 +117,10 @@ function entryRoomIds(entry = {}) {
 function entryTeacherNames(entry = {}) {
   const out = [];
   asArray(entry.teacherNames).forEach(v => v && out.push(String(v).trim()));
+  asArray(entry.teachers).forEach(v => v && out.push(String(v).trim()));
+  asArray(entry.components).forEach(comp => {
+    asArray(comp?.teachers).forEach(v => v && out.push(String(v).trim()));
+  });
   String(entry.teacherName || "").split(/[,/·，]+/).forEach(v => {
     const s = v.trim();
     if (s) out.push(s);
@@ -299,7 +320,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.entries = normalized;
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
-      source: "cp-sat-webapp-import-r132",
+      source: "cp-sat-webapp-import-r136",
       importedAt: safeNowIso(),
       importedEntryCount: normalized.length,
       importedClassSlotCount: summary.classSlotCount,
