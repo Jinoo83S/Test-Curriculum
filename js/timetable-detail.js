@@ -627,7 +627,8 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 교사 배정교실 고정 적용" : "교실 규칙 지정";
   bulk.appendChild(bulkTitle);
 
-  const bulkDefaultRule = "teacher";
+  const commonBulkRule = sameRule ? normalizeRoomRule(first?.roomRule || "auto") : "teacher";
+  const bulkDefaultRule = targets.length === 1 ? commonBulkRule : (commonBulkRule || "teacher");
   const ruleSel = makeRoomRuleSelect(bulkDefaultRule);
   ruleSel.disabled = !canEdit();
   const roomSel = makeRoomSelect(sameRoom ? first?.fixedRoomId : "");
@@ -665,7 +666,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
       alert("지정 교실 고정은 교실을 선택해야 합니다.");
       return;
     }
-    const ok = ctx.setTtCardRoomPreference?.(cardIds, ruleSel.value, roomSel.value, { preserveFixedRooms: true });
+    const ok = ctx.setTtCardRoomPreference?.(cardIds, ruleSel.value, roomSel.value, { preserveFixedRooms: targets.length > 1 });
     if (ok) {
       ctx.renderAll?.();
       modal.remove();
@@ -838,6 +839,72 @@ function buildManualTeacherControls(entry, input, ctx, modal) {
   });
   const saveBtn = makeTinyButton("교사 저장", () => {
     setManualEntryTeachers(entry, input.value);
+    ctx.recomputeConflicts?.();
+    ctx.renderAll?.();
+    modal.remove();
+  }, { primary: true });
+  wrap.append(sel, addBtn, homeBtn, saveBtn);
+  return wrap;
+}
+
+function setManualCardTeachersLocal(cardIds = [], value = "") {
+  const ids = uniqueIds(cardIds);
+  if (!ids.length) return [];
+  const names = splitTeacherNamesLocal(value);
+  const text = names.join(", ");
+  const idSet = new Set(ids);
+  (appState.timetable?.ttcards || []).forEach(card => {
+    if (!idSet.has(card.id)) return;
+    card.teacherName = text;
+    card.teachers = names;
+    card.manualEdited = true;
+    card.editedAt = new Date().toISOString();
+  });
+  (appState.timetable?.entries || []).forEach(entry => {
+    const entryIds = ttCardIdsFromEntryLocal(entry);
+    if (!entryIds.some(id => idSet.has(id))) return;
+    entry.teacherName = text || null;
+    entry.teachers = names;
+    entry.manualEdited = true;
+  });
+  scheduleSave("timetable");
+  return names;
+}
+
+function homeRoomTeachersForCardIdsLocal(cardIds = []) {
+  return homeRoomTeachersForEntryLocal({ ttcardIds: uniqueIds(cardIds) });
+}
+
+function buildManualCardTeacherControls(cardIds, input, ctx, modal) {
+  const ids = uniqueIds(cardIds);
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;align-items:center;margin:-3px 0 10px";
+
+  const sel = document.createElement("select");
+  sel.style.cssText = "min-width:0;height:32px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;background:#fff;font-size:12px;font-weight:800;color:#0f172a";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "교사 선택";
+  sel.appendChild(placeholder);
+  allTeacherNameOptionsLocal().forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+
+  const addBtn = makeTinyButton("교사 추가", () => {
+    if (!sel.value) return;
+    input.value = uniqueIds([...splitTeacherNamesLocal(input.value), sel.value]).join(", ");
+    sel.value = "";
+  });
+  const homeBtn = makeTinyButton("홈룸교사", () => {
+    const homes = homeRoomTeachersForCardIdsLocal(ids);
+    if (!homes.length) { alert("선택한 대상 반에 연결된 홈룸교사가 없습니다. 교실 관리의 홈룸/담당교사를 확인해 주세요."); return; }
+    input.value = uniqueIds([...splitTeacherNamesLocal(input.value), ...homes]).join(", ");
+  });
+  const saveBtn = makeTinyButton("교사 저장", () => {
+    setManualCardTeachersLocal(ids, input.value);
     ctx.recomputeConflicts?.();
     ctx.renderAll?.();
     modal.remove();
@@ -1085,6 +1152,23 @@ export function createTimetableDetailHandlers(ctx) {
       row.append(l, v);
       box.appendChild(row);
     });
+
+    const sidebarCardIds = uniqueIds((detailItems || []).map(item => item.ttcardId || item.id));
+    const sidebarCards = sidebarCardIds.map(id => getTtCardById(id)).filter(Boolean);
+    if (sidebarCards.length === 1 && sidebarCards.some(isManualCardLocal) && canEdit()) {
+      const teacherBox = document.createElement("div");
+      teacherBox.style.cssText = "margin:10px 0 8px;padding:10px;border:1px solid #dbeafe;border-radius:9px;background:#eff6ff";
+      const teacherTitle = document.createElement("div");
+      teacherTitle.style.cssText = "font-size:12px;font-weight:900;color:#1e3a8a;margin-bottom:6px";
+      teacherTitle.textContent = "수동 카드 담당 교사";
+      const tInput = document.createElement("input");
+      tInput.type = "text";
+      tInput.value = sidebarCards[0].teacherName || (Array.isArray(sidebarCards[0].teachers) ? sidebarCards[0].teachers.join(", ") : "");
+      tInput.placeholder = "교사 없음 — 교사 추가 또는 홈룸교사 버튼 사용";
+      tInput.style.cssText = "width:100%;padding:6px 8px;border:1px solid #bfdbfe;border-radius:7px;font-size:12px;box-sizing:border-box;margin-bottom:8px";
+      teacherBox.append(teacherTitle, tInput, buildManualCardTeacherControls(sidebarCardIds, tInput, ctx, modal));
+      box.appendChild(teacherBox);
+    }
 
     if (detailItems.length) {
       const listTitle = document.createElement("div");

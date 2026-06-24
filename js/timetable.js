@@ -1477,11 +1477,13 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, opt
     const currentRule = clean(card.roomRule || "auto") || "auto";
     const hasUserFixedRoom = currentRule === "fixed" && clean(card.fixedRoomId);
     const hasExplicitRoomRule = hasUserFixedRoom || currentRule === "homeroom" || currentRule === "none";
-    // r115: 전체 일괄 적용/교사 배정교실 고정 적용은 사용자가 명시한 지정교실/홈룸/교실없음을 건드리지 않습니다.
-    if (preserveFixedRooms && normalizedRule !== "fixed" && hasExplicitRoomRule) return;
+    // r115/r120: 전체 일괄 적용/교사 배정교실 고정 적용은 사용자가 명시한 지정교실/홈룸/교실없음을 건드리지 않습니다.
+    // 단, 사용자가 카드 1개에서 같은 규칙을 다시 저장하거나 직접 바꾸는 경우는 반드시 반영/재계산합니다.
+    if (preserveFixedRooms && normalizedRule !== currentRule && normalizedRule !== "fixed" && hasExplicitRoomRule) return;
     card.roomRule = normalizedRule;
-    card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : (hasUserFixedRoom ? card.fixedRoomId : null);
+    card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : null;
     card.manualEdited = true;
+    card.editedAt = new Date().toISOString();
   });
   refreshEntryRoomAssignmentsFromCards(ids);
   scheduleSave("timetable");
