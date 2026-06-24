@@ -1,4 +1,4 @@
-// ================================================================
+ // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-24-group-room-display-r121";
+import { versioned } from "./version.js?v=2026-06-24-cache-unify-r123";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
