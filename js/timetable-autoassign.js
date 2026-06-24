@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-room-display-fix-r114";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-homeroom-manual-teacher-r115";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -27,7 +27,7 @@ export function createAutoAssignAll(deps) {
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
   const cleanStr = value => String(value ?? "").trim();
   const uniqueRoomIds = list => [...new Set((list || []).map(cleanStr).filter(Boolean))];
-  // r114: 기본은 교사 배정교실/지정교실이 있는 카드만 배치합니다.
+  // r115: 기본은 교사 배정교실/지정교실이 있는 카드만 배치합니다.
   // 사용자가 옵션을 켤 때만 빈 교실 자동 배정을 허용합니다.
   let currentAllowAutoRoomAssignment = false;
 
@@ -65,17 +65,70 @@ export function createAutoAssignAll(deps) {
     return splitTeacherNames(fallback.teacherName || "").filter(Boolean);
   }
 
-  function fixedRoomForCardDuringAuto(card = {}, fallback = {}) {
-    if (!card && !fallback) return "";
+
+  function normalizeAutoClassKey(value = "", fallbackGradeKey = "") {
+    const raw = cleanStr(value).replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+    if (!raw) return "";
+    if (raw.includes(":")) {
+      const [g, sec] = raw.split(":");
+      const n = Number(String(g || "").replace(/[^0-9]/g, ""));
+      return n && sec ? `${n}:${sec}` : "";
+    }
+    const m = raw.match(/^(\d{1,2})(.+)$/);
+    if (m) return `${Number(m[1])}:${m[2]}`;
+    const fg = Number(String(fallbackGradeKey || "").replace(/[^0-9]/g, ""));
+    return fg && raw ? `${fg}:${raw}` : "";
+  }
+
+  function classIdForAutoClassKey(classKey = "") {
+    const [gradeNo, rawSection] = cleanStr(classKey).split(":");
+    const grade = `${Number(gradeNo)}학년`;
+    const section = cleanStr(rawSection).toUpperCase();
+    const cls = (appState.classes?.classes || []).find(c => cleanStr(c.grade) === grade && cleanStr(c.name).toUpperCase() === section);
+    return cls?.id || "";
+  }
+
+  function homeroomRoomIdForAutoClassKey(classKey = "") {
+    const classId = classIdForAutoClassKey(classKey);
+    if (!classId) return "";
+    return (appState.rooms?.rooms || []).find(r => r.homeRoomClassId === classId)?.id || "";
+  }
+
+  function classKeysForAutoRoomSource(card = {}, fallback = {}) {
+    const direct = [
+      ...(Array.isArray(card?.classKeys) ? card.classKeys : []),
+      ...(Array.isArray(card?.audienceClassKeys) ? card.audienceClassKeys : []),
+      ...(Array.isArray(fallback?.audienceClassKeys) ? fallback.audienceClassKeys : []),
+      ...(Array.isArray(fallback?.classKeys) ? fallback.classKeys : []),
+    ].map(v => normalizeAutoClassKey(v, card?.gradeKey || fallback?.gradeKey)).filter(Boolean);
+    if (direct.length) return [...new Set(direct)];
+    const labels = [
+      ...(Array.isArray(card?.classLabels) ? card.classLabels : []),
+      ...(Array.isArray(fallback?.classLabels) ? fallback.classLabels : []),
+    ].map(v => normalizeAutoClassKey(v, card?.gradeKey || fallback?.gradeKey)).filter(Boolean);
+    if (labels.length) return [...new Set(labels)];
+    const gradeNum = Number(String(card?.gradeKey || fallback?.gradeKey || "").replace(/[^0-9]/g, ""));
+    const sec = Number.isInteger(card?.sectionIdx) ? String.fromCharCode(65 + card.sectionIdx) : Number.isInteger(fallback?.sectionIdx) ? String.fromCharCode(65 + fallback.sectionIdx) : "";
+    return gradeNum && sec ? [`${gradeNum}:${sec}`] : [];
+  }
+
+  function homeroomRoomIdForAutoSource(card = {}, fallback = {}) {
+    const roomIds = uniqueRoomIds(classKeysForAutoRoomSource(card, fallback).map(homeroomRoomIdForAutoClassKey));
+    return roomIds.length === 1 ? roomIds[0] : "";
+  }
+
+  function fixedRoomForCardDuringAuto(card = {}, fallback = {}) {    if (!card && !fallback) return "";
     const rule = cleanStr(card?.roomRule || fallback.roomRule || "auto");
     if (rule === "none") return "";
 
-    // r114: 사용자/카드가 지정한 교실은 최상위 확정입니다.
+    // r115: 사용자/카드가 지정한 교실은 최상위 확정입니다.
     // 교사 배정교실 고정이 있어도 지정교실을 절대 덮어쓰지 않습니다.
     const explicit = cleanStr(card?.fixedRoomId || fallback.fixedRoomId || "");
     if (explicit) return explicit;
     if (fallback.roomPinned && fallback.roomId) return cleanStr(fallback.roomId);
     if (cleanStr(fallback.roomRule) === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
+
+    if (rule === "homeroom") return homeroomRoomIdForAutoSource(card || {}, fallback || {});
 
     // 교사 배정교실은 추천이 아니라 확정 제약입니다. 단, 지정교실보다 아래 순위입니다.
     const teacherRoom = uniqueTeacherRoomIdForNamesAuto(cardTeacherNamesForAuto(card || {}, fallback));
@@ -446,7 +499,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-24-room-display-fix-r114"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-24-homeroom-manual-teacher-r115"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -772,7 +825,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-24-room-display-fix-r114",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-24-homeroom-manual-teacher-r115",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -2495,7 +2548,7 @@ export function createAutoAssignAll(deps) {
     entryData.roomRule = entryData.roomRule || "teacher";
     entryData.roomId = null;
     entryData.roomPinned = false;
-    // r114: 기본은 교사 배정교실/지정교실만 사용합니다.
+    // r115: 기본은 교사 배정교실/지정교실만 사용합니다.
     // 옵션을 켠 경우에만 빈 교실 자동 배정을 수행합니다.
     return entryData;
   }
@@ -2526,7 +2579,7 @@ export function createAutoAssignAll(deps) {
       }
     }
 
-    // r114: 교사 배정교실/지정교실이 없으면 기본값에서는 배치하지 않습니다.
+    // r115: 교사 배정교실/지정교실이 없으면 기본값에서는 배치하지 않습니다.
     // 단, 기존 보호 배치의 화면 표시는 방 미배정 상태로 남깁니다.
     entryData.roomId = null;
     entryData.roomPinned = false;
@@ -6141,7 +6194,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r114",
+        autoEngine: "fresh-csp-r115",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6454,7 +6507,7 @@ export function createAutoAssignAll(deps) {
         const fixed = normalizeTimetableEntry({
           ...entry,
           autoBlockKey: probeKey,
-          autoEngine: "fresh-csp-r114-coverage-onemove-direct",
+          autoEngine: "fresh-csp-r115-coverage-onemove-direct",
           autoCoverageRepair: true
         });
         placed.push(fixed);
@@ -6483,7 +6536,7 @@ export function createAutoAssignAll(deps) {
           const fixed = normalizeTimetableEntry({
             ...entry,
             autoBlockKey: probeKey,
-            autoEngine: "fresh-csp-r114-coverage-onemove",
+            autoEngine: "fresh-csp-r115-coverage-onemove",
             autoCoverageRepair: true
           });
           placed.splice(0, placed.length, ...baseWithMoved, fixed);
@@ -6522,7 +6575,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r114-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r115-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6535,7 +6588,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r114-coverage-fill",
+      autoEngine: "fresh-csp-r115-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6788,7 +6841,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-groupcard-r114",
+        engine: "fresh-csp-groupcard-r115",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6905,7 +6958,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r114`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r115`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -7043,17 +7096,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-groupcard-r114",
-        engine: "fresh-csp-groupcard-r114",
+        telemetryStatus: "fresh-csp-groupcard-r115",
+        engine: "fresh-csp-groupcard-r115",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 기본 교사교실 + 자동교실 옵션 r114",
+        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 기본 교사교실 + 자동교실 옵션 r115",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-24-room-display-fix-r114"
+        validatorVersion: "2026-06-24-homeroom-manual-teacher-r115"
       };
 
       let afterAutoSnapshot = null;
@@ -7158,7 +7211,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-groupcard-r114",
+          engine: "fresh-csp-groupcard-r115",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -7172,7 +7225,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-groupcard-r114"
+              engine: "fresh-csp-groupcard-r115"
             });
           }
         } catch (_) {}

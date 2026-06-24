@@ -253,6 +253,75 @@ export function createTimetableSidebarHandlers(deps) {
     return unique(String(value || "").split(/[,，/+·&]|\band\b/gi).map(v => v.trim()).filter(Boolean));
   }
 
+
+  function getAllTeacherNameOptions() {
+    const names = [
+      ...(appState.teachers?.teachers || []).map(t => t.name),
+      ...(appState.rooms?.rooms || []).map(r => r.teacherName),
+      ...(appState.timetable?.ttcards || []).flatMap(c => [c.teacherName, ...(Array.isArray(c.teachers) ? c.teachers : [])]),
+    ];
+    return unique(names.flatMap(v => splitManualTeacherNames(v)).map(clean).filter(Boolean))
+      .sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
+  }
+
+  function classRowsFromManualClassKeys(classKeys = []) {
+    const keySet = new Set((classKeys || []).map(clean).filter(Boolean));
+    return (appState.classes?.classes || []).filter(cls => {
+      const key = manualClassKeyFromLabel(manualClassLabel(cls.grade, cls.name), cls.grade);
+      return keySet.has(key);
+    });
+  }
+
+  function homeRoomTeachersForManualClassKeys(classKeys = []) {
+    const classRows = classRowsFromManualClassKeys(classKeys);
+    const teacherNames = classRows.map(cls => {
+      const room = (appState.rooms?.rooms || []).find(r => r.homeRoomClassId === cls.id);
+      return room?.teacherName || "";
+    });
+    return unique(teacherNames.map(clean).filter(Boolean));
+  }
+
+  function setTeacherInputNames(input, names = [], { append = true } = {}) {
+    if (!input) return;
+    const current = append ? splitManualTeacherNames(input.value) : [];
+    input.value = unique([...current, ...(names || []).map(clean).filter(Boolean)]).join(", ");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function buildTeacherQuickControls(teacherInput, getClassKeys) {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:6px;align-items:center;margin-top:-6px;";
+    const sel = document.createElement("select");
+    sel.style.cssText = "height:32px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;background:#fff;font-size:12px;font-weight:800;color:#0f172a;min-width:0;";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "교사 선택";
+    sel.appendChild(placeholder);
+    getAllTeacherNameOptions().forEach(name => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    const addBtn = makeBtn("교사 추가", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+      if (!sel.value) return;
+      setTeacherInputNames(teacherInput, [sel.value], { append: true });
+      sel.value = "";
+    });
+    const homeBtn = makeBtn("홈룸교사 추가", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+      const keys = typeof getClassKeys === "function" ? getClassKeys() : [];
+      const names = homeRoomTeachersForManualClassKeys(keys);
+      if (!names.length) { alert("선택한 대상 반에 연결된 홈룸교사가 없습니다. 교실 관리의 홈룸/담당교사를 확인해 주세요."); return; }
+      setTeacherInputNames(teacherInput, names, { append: true });
+    });
+    const clearBtn = makeBtn("비우기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", () => {
+      teacherInput.value = "";
+      teacherInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    wrap.append(sel, addBtn, homeBtn, clearBtn);
+    return wrap;
+  }
+
   function selectedManualAudience(gradeKey, selectedLabels = []) {
     const labels = unique((selectedLabels || []).map(v => String(v || "").trim()).filter(Boolean));
     const classKeys = unique(labels.map(label => manualClassKeyFromLabel(label, gradeKey)).filter(Boolean));
@@ -386,10 +455,16 @@ export function createTimetableSidebarHandlers(deps) {
     note.style.cssText = "padding:10px 12px;border-radius:12px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.45;font-weight:800;";
     note.textContent = "예: 12학년이 2시수 부족하면 제목과 시수 2를 입력하고 12A·12B·12C를 선택해 생성한 뒤, 하단 카드에서 드래그하여 시간표에 배치하세요.";
 
+    const selectedClassKeysForManualDialog = () => [...classBox.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(chk => manualClassKeyFromLabel(chk.value, gradeSel.value))
+      .filter(Boolean);
+    const teacherQuick = buildTeacherQuickControls(teacherInput, selectedClassKeysForManualDialog);
+
     body.append(
       field("카드명", titleInput),
       row1,
       field("담당 교사", teacherInput, "비워두면 교사 충돌 검사에서는 교사 없음 카드로 처리됩니다."),
+      teacherQuick,
       field("구분/그룹 표시", groupInput),
       wholeWrap,
       field("대상 반", classBox, "필요한 반만 체크할 수 있습니다. 전체반 수업은 모든 반을 선택하세요."),
@@ -680,6 +755,19 @@ export function createTimetableSidebarHandlers(deps) {
 
     const classLabels = makeEditorTextarea("대상 학급", (card.classLabels || []).join(", "), "예: 9A, 9B / 쉼표 또는 줄바꿈 구분");
     const classKeys = makeEditorTextarea("classKeys", (card.classKeys || []).join(", "), "고급 항목: 9:A 형식. 비워두면 대상 학급에서 자동 생성합니다.");
+    const teacherQuick = buildTeacherQuickControls(teacher.input, () => {
+      const explicitKeys = String(classKeys.input.value || "")
+        .split(/[,，
+]+/)
+        .map(clean)
+        .filter(Boolean);
+      if (explicitKeys.length) return explicitKeys;
+      return String(classLabels.input.value || "")
+        .split(/[,，
+]+/)
+        .map(label => manualClassKeyFromLabel(label, card.gradeKey))
+        .filter(Boolean);
+    });
     const roomRow = document.createElement("div");
     roomRow.className = "tt-subject-editor-grid-2";
     const roomRule = makeEditorSelect("교실 규칙", [
@@ -699,7 +787,7 @@ export function createTimetableSidebarHandlers(deps) {
     isWhole.checked = !!card.isWholeGrade;
     flags.append(isWhole, document.createTextNode(" 전체 학년/전체 반 수업으로 처리"));
 
-    form.append(subject.wrap, label.wrap, teacher.wrap, credits.wrap, metaRow, classLabels.wrap, classKeys.wrap, roomRow, flags);
+    form.append(subject.wrap, label.wrap, teacher.wrap, teacherQuick, credits.wrap, metaRow, classLabels.wrap, classKeys.wrap, roomRow, flags);
 
     const actions = document.createElement("div");
     actions.className = "tt-subject-editor-actions";

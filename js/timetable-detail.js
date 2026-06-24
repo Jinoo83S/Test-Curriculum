@@ -309,7 +309,12 @@ function cardRoomSummaryText(card = {}, item = {}) {
   const rule = normalizeRoomRule(card.roomRule);
   if (rule === "none") return ROOM_RULE_LABELS.none;
   if (rule === "fixed") return `지정 고정: ${roomNameForId(card.fixedRoomId) || "교실 미지정"}`;
-  if (rule === "homeroom") return ROOM_RULE_LABELS.homeroom;
+  if (rule === "homeroom") {
+    const homeRooms = homeRoomIdsForCard(card, item);
+    if (homeRooms.length === 1) return `홈룸 고정: ${roomNameForId(homeRooms[0])}`;
+    if (homeRooms.length > 1) return `홈룸 고정 ${homeRooms.length}개`;
+    return ROOM_RULE_LABELS.homeroom;
+  }
   const teacherRooms = teacherRoomIdsForCard(card, item);
   if (teacherRooms.length === 1) return `교사 배정교실 고정: ${roomNameForId(teacherRooms[0])}`;
   if (teacherRooms.length > 1) return `교사 배정교실 고정 ${teacherRooms.length}개`;
@@ -346,6 +351,39 @@ function teacherNamesForItemOrCard(item = {}, card = {}) {
     ...fromCard,
     ...splitTeacherNamesLocal(card.teacherName || "")
   ].map(clean).filter(Boolean))];
+}
+
+
+function normalizeClassKeyForRoom(value = "", fallbackGradeKey = "") {
+  const raw = clean(value).replace(/\s+/g, "").replace(/학년/g, "").toUpperCase();
+  if (!raw) return "";
+  if (raw.includes(":")) {
+    const [g, sec] = raw.split(":");
+    const n = Number(String(g || "").replace(/[^0-9]/g, ""));
+    return n && sec ? `${n}:${sec}` : "";
+  }
+  const m = raw.match(/^(\d{1,2})(.+)$/);
+  if (m) return `${Number(m[1])}:${m[2]}`;
+  const fg = Number(String(fallbackGradeKey || "").replace(/[^0-9]/g, ""));
+  return fg && raw ? `${fg}:${raw}` : "";
+}
+
+function homeRoomIdsForCard(card = {}, item = {}) {
+  const keys = [
+    ...(Array.isArray(card.classKeys) ? card.classKeys : []),
+    ...(Array.isArray(item.classKeys) ? item.classKeys : []),
+    ...(Array.isArray(card.classLabels) ? card.classLabels : []),
+    ...(Array.isArray(item.classLabels) ? item.classLabels : []),
+  ].map(v => normalizeClassKeyForRoom(v, card.gradeKey || item.gradeKey)).filter(Boolean);
+  const rooms = getRooms();
+  const classRows = appState.classes?.classes || [];
+  const roomIds = keys.map(key => {
+    const [gradeNo, section] = key.split(":");
+    const cls = classRows.find(c => clean(c.grade) === `${Number(gradeNo)}학년` && clean(c.name).toUpperCase() === clean(section).toUpperCase());
+    if (!cls) return "";
+    return rooms.find(r => r.homeRoomClassId === cls.id)?.id || "";
+  }).filter(Boolean);
+  return [...new Set(roomIds)];
 }
 
 function missingTeacherRoomNamesForCards(cards = [], itemsByCardId = new Map()) {

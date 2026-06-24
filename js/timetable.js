@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-24-room-display-fix-r114";
+import { versioned } from "./version.js?v=2026-06-24-homeroom-manual-teacher-r115";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -1230,9 +1230,14 @@ function applyHomeroomRuleToEntryBlock(entry) {
     const classKeys = getAudienceClassKeysForPlacementData(e);
     if (classKeys.length <= 1) {
       const oneKey = classKeys[0];
+      const homeRoomId = oneKey ? getHomeRoomIdForClassKey(oneKey) : null;
       e.roomRule = "homeroom";
       e.roomPinned = false;
-      e.roomId = oneKey ? getHomeRoomIdForClassKey(oneKey) : null;
+      e.roomId = homeRoomId || null;
+      const ids = ttCardIdsFromPlacement(e);
+      if (ids.length && homeRoomId) {
+        e.roomAssignmentsByTtCardId = Object.fromEntries(ids.map(id => [id, homeRoomId]));
+      }
       return;
     }
     replaceMap.set(e.id, classKeys.map(key => buildClassScopedEntry(e, key, getHomeRoomIdForClassKey(key))));
@@ -1270,7 +1275,7 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
   if (rule === "teacher") {
     const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
-    // r114: 교사 배정교실 고정은 사용자 지정교실보다 아래 단계입니다.
+    // r115: 교사 배정교실 고정은 사용자 지정교실/홈룸보다 아래 단계입니다.
     // 이미 지정교실/고정교실이 있으면 절대 교사 배정교실로 덮어쓰지 않습니다.
     return fixedRoomId || teacherRoomId || null;
   }
@@ -1356,7 +1361,13 @@ function entryNeedsAnyRoom(entry = {}) {
 
 function entryHasMissingRoomAssignment(entry = {}) {
   const cardIds = ttCardIdsFromPlacement(entry);
-  if (!cardIds.length) return entryNeedsAnyRoom(entry) && !effectiveRoomIdsForEntry(entry).length;
+  const effectiveRooms = effectiveRoomIdsForEntry(entry);
+  if (!cardIds.length) return entryNeedsAnyRoom(entry) && !effectiveRooms.length;
+
+  // r115: 단일 카드/수동카드는 entry.roomId 또는 홈룸 계산값이 있으면 미배정이 아닙니다.
+  // 이전 판정은 roomAssignmentsByTtCardId만 보아 홈룸/지정교실이 화면에서 미배정으로 보였습니다.
+  if (cardIds.length === 1 && effectiveRooms.length) return false;
+
   const assignments = roomAssignmentsForEntry(entry);
   return cardIds.some(id => {
     const card = getTtCardById(id);
@@ -1435,9 +1446,11 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, opt
   const preserveFixedRooms = !!options.preserveFixedRooms;
   (appState.timetable.ttcards || []).forEach(card => {
     if (!ids.includes(card.id)) return;
-    const hasUserFixedRoom = clean(card.roomRule) === "fixed" && clean(card.fixedRoomId);
-    // r114: 전체 일괄 적용/교사 배정교실 고정 적용은 이미 사용자가 지정한 교실을 건드리면 안 됩니다.
-    if (preserveFixedRooms && normalizedRule !== "fixed" && hasUserFixedRoom) return;
+    const currentRule = clean(card.roomRule || "auto") || "auto";
+    const hasUserFixedRoom = currentRule === "fixed" && clean(card.fixedRoomId);
+    const hasExplicitRoomRule = hasUserFixedRoom || currentRule === "homeroom" || currentRule === "none";
+    // r115: 전체 일괄 적용/교사 배정교실 고정 적용은 사용자가 명시한 지정교실/홈룸/교실없음을 건드리지 않습니다.
+    if (preserveFixedRooms && normalizedRule !== "fixed" && hasExplicitRoomRule) return;
     card.roomRule = normalizedRule;
     card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : (hasUserFixedRoom ? card.fixedRoomId : null);
     card.manualEdited = true;
@@ -1459,16 +1472,32 @@ function applyRoomRuleToEntry(entryId, rule = "auto", roomId = null) {
   captureTimetableUndo("수업 교실 설정");
   const normalizedRule = clean(rule) || "auto";
 
+  const entryCardIds = ttCardIdsFromPlacement(e);
+  const persistRuleToCards = () => {
+    if (!entryCardIds.length) return;
+    (appState.timetable.ttcards || []).forEach(card => {
+      if (!entryCardIds.includes(card.id)) return;
+      card.roomRule = normalizedRule;
+      card.fixedRoomId = normalizedRule === "fixed" ? (clean(roomId) || null) : null;
+      card.manualEdited = true;
+    });
+  };
+
   // 여러 학반을 한 번에 덮는 그룹/창체 카드는 entry 하나에 교실 하나만 담을 수 없으므로,
   // 홈룸 적용 시 학반별 entry로 자동 분할해 각 학반의 홈룸을 배정합니다.
   if (normalizedRule === "homeroom") {
-    return applyHomeroomRuleToEntryBlock(e);
+    persistRuleToCards();
+    const ok = applyHomeroomRuleToEntryBlock(e);
+    refreshEntryRoomAssignmentsFromCards(entryCardIds);
+    return ok;
   }
 
+  persistRuleToCards();
   e.roomRule = normalizedRule;
   e.roomPinned = e.roomRule === "fixed";
   if (e.roomRule === "fixed") e.roomId = clean(roomId) || e.roomId || null;
   else e.roomId = resolveRoomForPlacementData(e, e.roomRule);
+  if (entryCardIds.length) applyCardRoomAssignmentsToEntryData(e);
   scheduleSave("timetable");
   return true;
 }
