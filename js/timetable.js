@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-24-homeroom-manual-teacher-r115";
+import { versioned } from "./version.js?v=2026-06-24-r115-syntax-hotfix-r116";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -960,7 +960,7 @@ function renderTeacherCardsPanel() {
   }
 
   panel.innerHTML = "";
-  panel.className = panel.className.replace(/hidden/g, "").trim();
+  panel.className = panel.className.replace(/\bhidden\b/g, "").trim();
   panel.classList.add("tt-teacher-card-panel");
 
   const wrap = document.createElement("div");

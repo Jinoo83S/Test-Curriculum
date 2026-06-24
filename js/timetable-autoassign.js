@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-homeroom-manual-teacher-r115";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-r115-syntax-hotfix-r116";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -499,7 +499,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-24-homeroom-manual-teacher-r115"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-24-r115-syntax-hotfix-r116"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -825,7 +825,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-24-homeroom-manual-teacher-r115",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-24-r115-syntax-hotfix-r116",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1154,7 +1154,7 @@ export function createAutoAssignAll(deps) {
     // r79: ASC가 보여준 병목은 선택묶음보다 "11체육/리더십/전체학급"을 늦게 배치한 데서 발생했습니다.
     // ASC 데이터를 복사하지 않고, 같은 유형의 병목 그룹을 우선 배치하도록 순서만 강화합니다.
     if (/HS\s*국어|고등\s*국어/i.test(text)) return 0;
-    if (classCount >= 3 && /(11\s*체육|체육|sports|physical\s*education|pe)/i.test(text)) return 1;
+    if (classCount >= 3 && /(11\s*체육|체육|sports|physical\s*education|\bpe\b)/i.test(text)) return 1;
     if (classCount >= 3 && /(섬김|리더십|leadership|servant|transformational)/i.test(text)) return 2;
     if (/MS\s*국어|중등\s*국어/i.test(text)) return 3;
     if (/국어|한국어|Korean/i.test(text) && classCount >= 3) return 4;
@@ -6194,7 +6194,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r115",
+        autoEngine: "fresh-csp-r116",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6507,7 +6507,7 @@ export function createAutoAssignAll(deps) {
         const fixed = normalizeTimetableEntry({
           ...entry,
           autoBlockKey: probeKey,
-          autoEngine: "fresh-csp-r115-coverage-onemove-direct",
+          autoEngine: "fresh-csp-r116-coverage-onemove-direct",
           autoCoverageRepair: true
         });
         placed.push(fixed);
@@ -6536,7 +6536,7 @@ export function createAutoAssignAll(deps) {
           const fixed = normalizeTimetableEntry({
             ...entry,
             autoBlockKey: probeKey,
-            autoEngine: "fresh-csp-r115-coverage-onemove",
+            autoEngine: "fresh-csp-r116-coverage-onemove",
             autoCoverageRepair: true
           });
           placed.splice(0, placed.length, ...baseWithMoved, fixed);
@@ -6575,7 +6575,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r115-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r116-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6588,7 +6588,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r115-coverage-fill",
+      autoEngine: "fresh-csp-r116-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6841,7 +6841,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-groupcard-r115",
+        engine: "fresh-csp-groupcard-r116",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6958,7 +6958,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r115`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r116`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -7096,17 +7096,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-groupcard-r115",
-        engine: "fresh-csp-groupcard-r115",
+        telemetryStatus: "fresh-csp-groupcard-r116",
+        engine: "fresh-csp-groupcard-r116",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 기본 교사교실 + 자동교실 옵션 r115",
+        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 기본 교사교실 + 자동교실 옵션 r116",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-24-homeroom-manual-teacher-r115"
+        validatorVersion: "2026-06-24-r115-syntax-hotfix-r116"
       };
 
       let afterAutoSnapshot = null;
@@ -7211,7 +7211,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-groupcard-r115",
+          engine: "fresh-csp-groupcard-r116",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -7225,7 +7225,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-groupcard-r115"
+              engine: "fresh-csp-groupcard-r116"
             });
           }
         } catch (_) {}
