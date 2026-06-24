@@ -73,7 +73,6 @@ const { createTimetableConstraintsHandlers } = constraintsModule;
 const { createTimetableLogHandlers } = logModule;
 const { createTimetableSidebarHandlers } = sidebarModule;
 
-
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries;
@@ -1259,17 +1258,19 @@ function applyHomeroomRuleToEntryBlock(entry) {
 function getCardPreferenceForPlacementData(data = {}) {
   const ids = [...(data.ttcardIds || []), data.ttcardId].filter(Boolean);
   const cards = ids.map(id => getTtCardById(id)).filter(Boolean);
-  if (!cards.length) return { rule: "auto", fixedRoomId: null };
-  const rules = [...new Set(cards.map(c => normalizeRoomRuleValue(c.roomRule || "auto")))];
+  if (!cards.length) return { rule: "teacher", fixedRoomId: null };
+  const rules = [...new Set(cards.map(c => normalizeRoomRuleValue(c.roomRule || "teacher")))];
   const fixedIds = [...new Set(cards.map(c => clean(c.fixedRoomId)).filter(Boolean))];
-  if (rules.length === 1) return { rule: rules[0] || "auto", fixedRoomId: fixedIds.length === 1 ? fixedIds[0] : null };
-  if (fixedIds.length === 1 && rules.every(r => r === "auto" || r === "fixed")) return { rule: "fixed", fixedRoomId: fixedIds[0] };
-  return { rule: "auto", fixedRoomId: null };
+  if (rules.length === 1) return { rule: rules[0] || "teacher", fixedRoomId: fixedIds.length === 1 ? fixedIds[0] : null };
+  if (fixedIds.length === 1 && rules.every(r => r === "teacher" || r === "fixed")) return { rule: "fixed", fixedRoomId: fixedIds[0] };
+  return { rule: "teacher", fixedRoomId: null };
 }
 
-function normalizeRoomRuleValue(rule = "auto") {
-  const r = clean(rule) || "auto";
-  return ["auto", "fixed", "homeroom", "teacher", "none"].includes(r) ? r : "auto";
+function normalizeRoomRuleValue(rule = "teacher") {
+  const r = clean(rule);
+  // 기존 auto 값은 예전 기본값(교사 교실 고정)으로 해석합니다.
+  if (!r || r === "auto") return "teacher";
+  return ["teacher", "fixed", "homeroom", "autoRoom", "none"].includes(r) ? r : "teacher";
 }
 
 function effectiveRuleForPlacementData(data = {}, forcedRule = null) {
@@ -1278,8 +1279,8 @@ function effectiveRuleForPlacementData(data = {}, forcedRule = null) {
   // r118: 과목카드에 사용자가 저장한 지정교실/홈룸/교실없음 규칙은
   // 오래된 entry.roomRule 값보다 우선합니다. 특히 HR 수동카드가 홈룸 고정인데
   // 배치 entry에 과거 교사교실 값이 남아 있으면 화면과 교실 판정이 틀어집니다.
-  if (preference.rule && preference.rule !== "auto") return normalizeRoomRuleValue(preference.rule);
-  return normalizeRoomRuleValue(data.roomRule || preference.rule || "auto");
+  if (preference.rule && preference.rule !== "teacher") return normalizeRoomRuleValue(preference.rule);
+  return normalizeRoomRuleValue(data.roomRule || preference.rule || "teacher");
 }
 
 function resolveRoomForPlacementData(data = {}, forcedRule = null) {
@@ -1291,15 +1292,14 @@ function resolveRoomForPlacementData(data = {}, forcedRule = null) {
   if (rule === "homeroom") return getHomeRoomIdForPlacementData(data);
   if (rule === "teacher") {
     const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
-    // r115: 교사 배정교실 고정은 사용자 지정교실/홈룸보다 아래 단계입니다.
-    // 이미 지정교실/고정교실이 있으면 절대 교사 배정교실로 덮어쓰지 않습니다.
+    // r115: 교사 교실 고정은 사용자 지정교실/홈룸보다 아래 단계입니다.
+    // 이미 지정교실/고정교실이 있으면 절대 교사 교실로 덮어쓰지 않습니다.
     return fixedRoomId || teacherRoomId || null;
   }
 
-  // auto 기본 교실 규칙:
-  // 1) 사용자 지정교실/카드 고정교실
-  // 2) 교사 배정교실 고정
-  // 3) 둘 다 없으면 교실 미배정 유지
+  // 자동 배치(autoRoom)는 배치 엔진이 빈 교실을 고르게 하며, 여기서는 기존 roomId만 표시합니다.
+  if (rule === "autoRoom") return clean(data.roomId || "") || null;
+
   const teacherRoomId = getDefaultRoomForTeacherNames(splitTeacherNames(data.teacherName || ""));
   return fixedRoomId || teacherRoomId || null;
 }
@@ -1309,7 +1309,7 @@ function getDefaultRoomForPlacementData(data = {}) {
 }
 
 function roomRuleForCard(card = {}) {
-  return clean(card.roomRule || "auto") || "auto";
+  return normalizeRoomRuleValue(card.roomRule || "teacher");
 }
 
 function roomRequiredForCard(card = {}) {
@@ -1384,7 +1384,7 @@ function entryNeedsAnyRoom(entry = {}) {
   if (cardIds.length) {
     return cardIds.some(id => roomRequiredForCard(getTtCardById(id) || {}));
   }
-  return clean(entry.roomRule || "auto") !== "none";
+  return normalizeRoomRuleValue(entry.roomRule || "teacher") !== "none";
 }
 
 function entryHasMissingRoomAssignment(entry = {}) {
@@ -1475,10 +1475,10 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, opt
   const preserveFixedRooms = !!options.preserveFixedRooms;
   (appState.timetable.ttcards || []).forEach(card => {
     if (!ids.includes(card.id)) return;
-    const currentRule = clean(card.roomRule || "auto") || "auto";
+    const currentRule = normalizeRoomRuleValue(card.roomRule || "teacher");
     const hasUserFixedRoom = currentRule === "fixed" && clean(card.fixedRoomId);
     const hasExplicitRoomRule = hasUserFixedRoom || currentRule === "homeroom" || currentRule === "none";
-    // r115/r120: 전체 일괄 적용/교사 배정교실 고정 적용은 사용자가 명시한 지정교실/홈룸/교실없음을 건드리지 않습니다.
+    // r115/r120: 전체 일괄 적용/교사 교실 고정 적용은 사용자가 명시한 지정교실/홈룸/교실없음을 건드리지 않습니다.
     // 단, 사용자가 카드 1개에서 같은 규칙을 다시 저장하거나 직접 바꾸는 경우는 반드시 반영/재계산합니다.
     if (preserveFixedRooms && normalizedRule !== currentRule && normalizedRule !== "fixed" && hasExplicitRoomRule) return;
     card.roomRule = normalizedRule;
@@ -4092,36 +4092,6 @@ $("ttAutoPrecheckBtn")?.addEventListener("click", () => autoAssignAll.openPreche
 $("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
 
-// CP-SAT import UI is optional.
-// r135: Do not block the whole timetable page if this helper file is not cached, not uploaded yet,
-// or temporarily fails to load from GitHub Pages.
-async function setupOptionalCpSatWebappImport() {
-  try {
-    const mod = await import(versioned("./cp-sat-webapp-import.js"));
-    if (typeof mod?.setupCpSatWebappImport !== "function") {
-      console.warn("[CP-SAT] cp-sat-webapp-import.js loaded, but setupCpSatWebappImport() was not found.");
-      return;
-    }
-    mod.setupCpSatWebappImport({
-      appState,
-      ttDomain,
-      entries,
-      ttConfig,
-      canEdit,
-      saveNow,
-      normalizeTimetableEntry,
-      captureTimetableUndo,
-      recomputeConflicts,
-      renderAll: () => renderAll(),
-      uid,
-      clean,
-      escapeHtml,
-    });
-  } catch (err) {
-    console.warn("[CP-SAT] import helper was skipped. Timetable page continues to load.", err);
-  }
-}
-void setupOptionalCpSatWebappImport();
 
 // Expose schedule control callbacks to inline HTML script
 window._ttApplyPeriod = () => { setPeriodCount(parseInt($("ttPeriodCountInput")?.value)||8); renderAll(); };

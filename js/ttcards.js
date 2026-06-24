@@ -367,7 +367,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 학생 key는 시간표 카드에 저장하지 않습니다. 학급/반 점유는 classKeys만 사용합니다.
     studentKeys: [],
     isWholeGrade: row ? isWholeGradeRow(row, tpl, gradeKey, sectionIdx) : !!existing?.isWholeGrade,
-    roomRule: existing?.roomRule || "auto",
+    roomRule: existing?.roomRule || "teacher",
     fixedRoomId: existing?.fixedRoomId || null,
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,

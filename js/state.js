@@ -644,7 +644,7 @@ export function normalizeTimetableEntry(e = {}) {
     // 기존 Firestore 데이터에 남아 있어도 로드 시 비워서 UI/충돌/자동배치에 영향을 주지 않게 합니다.
     audienceStudentKeys: [],
     roomId:      clean(e.roomId) || null,
-    roomRule:    clean(e.roomRule) || "auto",
+    roomRule:    (clean(e.roomRule) === "auto" ? "teacher" : (clean(e.roomRule) || "teacher")),
     roomPinned:  !!e.roomPinned,
     roomAssignmentsByTtCardId,
     pinned:      !!e.pinned,
@@ -675,7 +675,7 @@ export function normalizeTtCard(item = {}) {
     // 학생 개인 key는 사전작업 단계에서만 의미가 있고 시간표 카드에는 저장하지 않습니다.
     studentKeys: [],
     isWholeGrade: !!item.isWholeGrade,
-    roomRule:    clean(item.roomRule) || "auto",
+    roomRule:    (clean(item.roomRule) === "auto" ? "teacher" : (clean(item.roomRule) || "teacher")),
     fixedRoomId: clean(item.fixedRoomId) || null,
     generatedAt: clean(item.generatedAt),
     manualEdited: !!item.manualEdited,

@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-cache-unify-r123";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-room-rule-default-teacher-r138";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -26,8 +26,13 @@ export function createAutoAssignAll(deps) {
 
   const ttGroups = () => appState.timetable?.ttcardGroups || [];
   const cleanStr = value => String(value ?? "").trim();
+  const normalizeRoomRuleForAuto = rule => {
+    const r = cleanStr(rule);
+    if (!r || r === "auto") return "teacher";
+    return ["teacher", "fixed", "homeroom", "autoRoom", "none"].includes(r) ? r : "teacher";
+  };
   const uniqueRoomIds = list => [...new Set((list || []).map(cleanStr).filter(Boolean))];
-  // r115: 기본은 교사 배정교실/지정교실이 있는 카드만 배치합니다.
+  // r138: 기본은 교사 교실/지정교실이 있는 카드만 배치합니다.
   // 사용자가 옵션을 켤 때만 빈 교실 자동 배정을 허용합니다.
   let currentAllowAutoRoomAssignment = false;
 
@@ -118,23 +123,24 @@ export function createAutoAssignAll(deps) {
   }
 
   function fixedRoomForCardDuringAuto(card = {}, fallback = {}) {    if (!card && !fallback) return "";
-    const rule = cleanStr(card?.roomRule || fallback.roomRule || "auto");
+    const rule = normalizeRoomRuleForAuto(card?.roomRule || fallback.roomRule || "teacher");
     if (rule === "none") return "";
 
     // r115: 사용자/카드가 지정한 교실은 최상위 확정입니다.
-    // 교사 배정교실 고정이 있어도 지정교실을 절대 덮어쓰지 않습니다.
+    // 교사 교실 고정이 있어도 지정교실을 절대 덮어쓰지 않습니다.
     const explicit = cleanStr(card?.fixedRoomId || fallback.fixedRoomId || "");
     if (explicit) return explicit;
     if (fallback.roomPinned && fallback.roomId) return cleanStr(fallback.roomId);
     if (cleanStr(fallback.roomRule) === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
 
     if (rule === "homeroom") return homeroomRoomIdForAutoSource(card || {}, fallback || {});
+    if (rule === "autoRoom") return "";
 
-    // 교사 배정교실은 추천이 아니라 확정 제약입니다. 단, 지정교실보다 아래 순위입니다.
+    // 교사 교실은 추천이 아니라 확정 제약입니다. 단, 지정교실보다 아래 순위입니다.
     const teacherRoom = uniqueTeacherRoomIdForNamesAuto(cardTeacherNamesForAuto(card || {}, fallback));
     if (teacherRoom) return teacherRoom;
 
-    // 교사 배정교실이 없으면 임의 추천/홈룸으로 내려가지 않습니다.
+    // 교사 교실이 없으면 임의 추천/홈룸으로 내려가지 않습니다.
     return "";
   }
 
@@ -1492,7 +1498,7 @@ export function createAutoAssignAll(deps) {
         return !cleanStr(assignments[id]);
       });
     }
-    return !roomIdsForPlacement(entry).length && String(entry.roomRule || "auto").trim() !== "none";
+    return !roomIdsForPlacement(entry).length && normalizeRoomRuleForAuto(entry.roomRule || "teacher") !== "none";
   }
 
   function getRoomByIdLocal(roomId) {
@@ -2456,7 +2462,7 @@ export function createAutoAssignAll(deps) {
 
   function getAudienceSizeForRoom(data = {}) {
     // 학생 개인 key는 시간표 배치 단계에서 사용하지 않습니다.
-    // 교실 후보 정렬에서도 학생 수 기반 보정보다 교사 배정 교실 고정 규칙을 먼저 적용합니다.
+    // 교실 후보 정렬에서도 학생 수 기반 보정보다 교사 교실 고정 규칙을 먼저 적용합니다.
     return 0;
   }
 
@@ -2481,7 +2487,7 @@ export function createAutoAssignAll(deps) {
   }
 
   function cardNeedsRoomForAuto(card = {}, entryData = {}) {
-    const rule = cleanStr(card.roomRule || entryData.roomRule || "auto");
+    const rule = normalizeRoomRuleForAuto(card.roomRule || entryData.roomRule || "teacher");
     return rule !== "none";
   }
 
@@ -2536,7 +2542,7 @@ export function createAutoAssignAll(deps) {
         assignments[id] = fixedRoomId;
         return;
       }
-      if (allowAutoRoomAssignment(options)) {
+      if (rule === "autoRoom" || allowAutoRoomAssignment(options)) {
         const taken = new Set(Object.values(assignments).map(cleanStr).filter(Boolean));
         const autoRoomId = chooseAutoRoomIdForPlacement({ ...entryData, ttcardId: id, ttcardIds: [id] }, slot, placed, taken);
         if (autoRoomId) { assignments[id] = autoRoomId; return; }
@@ -2548,7 +2554,7 @@ export function createAutoAssignAll(deps) {
     entryData.roomRule = entryData.roomRule || "teacher";
     entryData.roomId = null;
     entryData.roomPinned = false;
-    // r115: 기본은 교사 배정교실/지정교실만 사용합니다.
+    // r138: 기본은 교사 교실/지정교실만 사용합니다.
     // 옵션을 켠 경우에만 빈 교실 자동 배정을 수행합니다.
     return entryData;
   }
@@ -2558,7 +2564,7 @@ export function createAutoAssignAll(deps) {
     const cardIds = ttCardIdsFromPlacement(entryData);
     if (entryData.groupId || cardIds.length > 1) return assignRoomsForGroupedEntry(entryData, slot, placed, options);
 
-    const rule = String(entryData.roomRule || "auto").trim();
+    const rule = normalizeRoomRuleForAuto(entryData.roomRule || "teacher");
     if (rule === "none") return { ...entryData, roomId: null };
 
     const fixedRoomId = fixedRoomForAutoData(entryData);
@@ -2568,18 +2574,18 @@ export function createAutoAssignAll(deps) {
       return entryData;
     }
 
-    if (allowAutoRoomAssignment(options)) {
+    if (rule === "autoRoom" || allowAutoRoomAssignment(options)) {
       const autoRoomId = chooseAutoRoomIdForPlacement(entryData, slot, placed);
       if (autoRoomId) {
         entryData.roomId = autoRoomId;
-        entryData.roomRule = entryData.roomRule || "auto";
+        entryData.roomRule = entryData.roomRule || "teacher";
         entryData.roomPinned = false;
         entryData.autoRoomAssigned = true;
         return entryData;
       }
     }
 
-    // r115: 교사 배정교실/지정교실이 없으면 기본값에서는 배치하지 않습니다.
+    // r115: 교사 교실/지정교실이 없으면 기본값에서는 배치하지 않습니다.
     // 단, 기존 보호 배치의 화면 표시는 방 미배정 상태로 남깁니다.
     entryData.roomId = null;
     entryData.roomPinned = false;
@@ -2701,7 +2707,7 @@ export function createAutoAssignAll(deps) {
 
     const candidateRoomData = applyAutoRoomToEntryData({ ...item, ...slot }, slot, placed, options);
     if (respectAssignedRoom && entryHasMissingRoomForAuto(candidateRoomData)) {
-      addReason(reasons, "roomMissing", "교실 설정 없음", `${formatSlotLabel(slot)} · 교사 배정교실/지정교실 없음`);
+      addReason(reasons, "roomMissing", "교실 설정 없음", `${formatSlotLabel(slot)} · 교사 교실/지정교실 없음`);
     }
     if (respectAssignedRoom && roomUnavailableInSlot(candidateRoomData, slot)) {
       const roomName = getRoomByIdLocal(candidateRoomData.roomId)?.name || candidateRoomData.roomId || "교실";
@@ -2719,7 +2725,7 @@ export function createAutoAssignAll(deps) {
         const roomBusy = existing.some(e => e.day === slot.day && e.period === slot.period && roomIdsForPlacement(e).includes(roomId) && !sameUnitPlacement(item, e));
         if (roomBusy && candidateRooms.includes(roomId)) {
           const roomName = (appState.rooms?.rooms || []).find(r => r.id === roomId)?.name || roomId;
-          addReason(reasons, "teacherRoomBusy", "교사 배정교실 사용 중", `${formatSlotLabel(slot)} · ${teacher} / ${roomName}`);
+          addReason(reasons, "teacherRoomBusy", "교사 교실 사용 중", `${formatSlotLabel(slot)} · ${teacher} / ${roomName}`);
         }
       }
     }
@@ -3251,7 +3257,7 @@ export function createAutoAssignAll(deps) {
     if (respectAssignedRoom && roomUnavailableInSlot(candidateRoomData, slot)) return false;
     if (respectAssignedRoom && roomConflictsInSlot(candidateRoomData, slot, placed)) return false;
 
-    // 7. 교사 배정교실 기준 추가 방어 검사입니다.
+    // 7. 교사 교실 기준 추가 방어 검사입니다.
     for (const teacher of teachers) {
       const roomId = getEffectiveAssignedRoomId(teacher);
       if (respectAssignedRoom && roomId) {
@@ -5489,7 +5495,7 @@ export function createAutoAssignAll(deps) {
             <section class="tt-auto-option-section">
               <h4>교실 설정</h4>
               <label class="tt-auto-check-line"><input type="checkbox" id="ttAutoAllowRandomRooms" ${defaults.allowAutoRoomAssignment === true ? "checked" : ""}> <span>교실 미설정 카드도 빈 교실 자동 배정</span></label>
-              <p class="tt-auto-option-help">기본값은 교사 배정교실 또는 지정교실이 있는 카드만 배치합니다. 이 옵션을 켜면 교실이 없는 카드도 빈 교실을 자동으로 골라 배치합니다.</p>
+              <p class="tt-auto-option-help">기본값은 교사 교실 또는 지정교실이 있는 카드만 배치합니다. 이 옵션을 켜면 교실이 없는 카드도 빈 교실을 자동으로 골라 배치합니다.</p>
             </section>
             <section class="tt-auto-option-section">
               <h4>배치 강도</h4>
@@ -5902,9 +5908,9 @@ export function createAutoAssignAll(deps) {
     }
 
     const fixedRoomNoRoom = activeCards.filter(card => String(card.roomRule || "").trim() === "fixed" && !card.roomId && !card.fixedRoomId);
-    const anyNoRoom = activeCards.filter(card => String(card.roomRule || "auto").trim() !== "none" && !fixedRoomForCardDuringAuto(card, {}));
+    const anyNoRoom = activeCards.filter(card => normalizeRoomRuleForAuto(card.roomRule || "teacher") !== "none" && !fixedRoomForCardDuringAuto(card, {}));
     addPrecheckItem(report, "교실 점검", fixedRoomNoRoom.length ? "error" : "ok", "지정교실 고정 규칙 미지정", fixedRoomNoRoom.length ? `${fixedRoomNoRoom.length}개 카드가 지정교실 고정 규칙이지만 교실이 없습니다.` : "없음");
-    addPrecheckItem(report, "교실 점검", anyNoRoom.length ? (options?.allowAutoRoomAssignment ? "info" : "warn") : "ok", "교실 설정 없는 카드", anyNoRoom.length ? (options?.allowAutoRoomAssignment ? `${anyNoRoom.length}개 카드는 옵션에 따라 빈 교실을 자동 배정합니다.` : `${anyNoRoom.length}개 카드는 교사 배정교실/지정교실이 없어 자동배치 대상에서 제외됩니다.`) : "모든 카드에 교사 배정교실/지정교실 또는 제외 규칙 있음");
+    addPrecheckItem(report, "교실 점검", anyNoRoom.length ? (options?.allowAutoRoomAssignment ? "info" : "warn") : "ok", "교실 설정 없는 카드", anyNoRoom.length ? (options?.allowAutoRoomAssignment ? `${anyNoRoom.length}개 카드는 옵션에 따라 빈 교실을 자동 배정합니다.` : `${anyNoRoom.length}개 카드는 교사 교실/지정교실이 없어 자동배치 대상에서 제외됩니다.`) : "모든 카드에 교사 교실/지정교실 또는 제외 규칙 있음");
 
     const restrictedTargets = buildRestrictedTeacherTargetsForPrecheck(standalone, groupBlocks);
     if (!restrictedTargets.length) {
@@ -6926,7 +6932,7 @@ export function createAutoAssignAll(deps) {
       `고정/보호 슬롯: ${protectedSummary.slots}칸`,
       `탐색 모드: ${autoAssignModeLabel(runMode)}`,
       `점수 기준: ${describeScoreWeights(options.scoringWeights)}`,
-      `교실 방식: ${options.allowAutoRoomAssignment ? "교실 없는 카드도 빈 교실 자동 배정" : "교사 배정교실/지정교실 없으면 배치하지 않음"}`,
+      `교실 방식: ${options.allowAutoRoomAssignment ? "교실 없는 카드도 빈 교실 자동 배정" : "교사 교실/지정교실 없으면 배치하지 않음"}`,
       "",
       "기존 그리디 엔진 대신 block-CSP + 전역 교환 복구 엔진을 사용합니다.",
       "계속할까요?"

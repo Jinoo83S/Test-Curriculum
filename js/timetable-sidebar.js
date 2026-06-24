@@ -502,7 +502,7 @@ export function createTimetableSidebarHandlers(deps) {
         classKeys: audience.classKeys,
         classLabels: audience.classLabels,
         isWholeGrade: !!wholeChk.checked && audience.classLabels.length === getManualClassRowsForGrade(gradeSel.value).length,
-        roomRule: "auto",
+        roomRule: "teacher",
         fixedRoomId: null,
         generatedAt: new Date().toISOString(),
         manualEdited: true,
@@ -769,12 +769,12 @@ export function createTimetableSidebarHandlers(deps) {
     const roomRow = document.createElement("div");
     roomRow.className = "tt-subject-editor-grid-2";
     const roomRule = makeEditorSelect("교실 규칙", [
-      ["auto", "기본: 교사 배정교실 / 없으면 미배치"],
-      ["teacher", "교사 배정교실 고정"],
+      ["teacher", "교사 교실 고정"],
       ["homeroom", "홈룸 고정"],
-      ["fixed", "지정교실 고정"],
-      ["none", "교실 없음"],
-    ], card.roomRule || "auto");
+      ["fixed", "지정 교실 고정"],
+      ["autoRoom", "자동 배치"],
+      ["none", "교실 사용 안 함"],
+    ], (card.roomRule && card.roomRule !== "auto") ? card.roomRule : "teacher");
     const fixedRoom = makeRoomSelect("지정교실 고정", card.fixedRoomId || "");
     roomRow.append(roomRule.wrap, fixedRoom.wrap);
 
@@ -1017,7 +1017,7 @@ export function createTimetableSidebarHandlers(deps) {
     card.classKeys = classKeys.length ? classKeys : classLabels.map(label => classLabelToKey(label, card.gradeKey)).filter(Boolean);
     // 학생 key는 시간표 카드에서 제거합니다. 학급/반 점유는 classKeys/classLabels만 사용합니다.
     card.studentKeys = [];
-    card.roomRule = values.roomRule || "auto";
+    card.roomRule = values.roomRule || "teacher";
     card.fixedRoomId = values.roomRule === "fixed" ? (values.fixedRoomId || null) : (values.fixedRoomId || null);
     const gradeClassCount = countGradeClassesForCard(card);
     const targetClassCount = card.classKeys.length || card.classLabels.length;

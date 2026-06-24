@@ -55,8 +55,8 @@ export function createTimetableConstraintsHandlers({
     const c = constraints()[teacher];
     if (!c) return null;
 
-    // 교사 배정 교실은 추천이 아니라 고정 조건입니다.
-    // assignedRoomId가 있으면 그 교실, 없으면 기존 홈룸 교실을 교사 배정 교실로 사용합니다.
+    // 교사 교실은 추천이 아니라 고정 조건입니다.
+    // assignedRoomId가 있으면 그 교실, 없으면 기존 홈룸 교실을 교사 교실로 사용합니다.
     return c.assignedRoomId || c.homeRoomId || null;
   }
 
@@ -120,7 +120,7 @@ export function createTimetableConstraintsHandlers({
 
   function cardResolvedRoomIdsLocal(card = {}) {
     if (!card) return [];
-    const rule = clean(card.roomRule || "auto") || "auto";
+    const rule = (clean(card.roomRule) === "auto" ? "teacher" : (clean(card.roomRule) || "teacher"));
     if (rule === "none") return [];
     const fixedRoomId = clean(card.fixedRoomId || "");
     if (fixedRoomId) return [fixedRoomId];
@@ -173,7 +173,7 @@ export function createTimetableConstraintsHandlers({
           const card = getTtCardByIdLocal(id);
           if (!cardTeacherNamesLocal(card || {}).includes(teacherName)) return;
           touched = true;
-          // r114: 사용자가 지정한 카드 고정교실은 교사 배정교실 적용으로 덮어쓰지 않습니다.
+          // r114: 사용자가 지정한 카드 고정교실은 교사 교실 적용으로 덮어쓰지 않습니다.
           if (clean(card?.roomRule) === "fixed" && clean(card?.fixedRoomId)) {
             assignments[id] = clean(card.fixedRoomId);
             return;
@@ -199,7 +199,7 @@ export function createTimetableConstraintsHandlers({
           return;
         }
         en.roomId = assignedRoom;
-        en.roomRule = assignedRoom ? "teacher" : (en.roomRule || "auto");
+        en.roomRule = assignedRoom ? "teacher" : (en.roomRule || "teacher");
       }
     });
   }
@@ -875,7 +875,7 @@ export function createTimetableConstraintsHandlers({
     const placedRooms = [...new Set((placed || []).map(formatAssignedEntryRoomIfAny).filter(Boolean))];
     if (placedRooms.length) return placedRooms.slice(0, 2).join(", ") + (placedRooms.length > 2 ? ` 외 ${placedRooms.length - 2}` : "");
     const valid = (cards || []).filter(Boolean);
-    const rules = [...new Set(valid.map(card => clean(card.roomRule || "auto")))];
+    const rules = [...new Set(valid.map(card => (clean(card.roomRule) === "auto" ? "teacher" : (clean(card.roomRule) || "teacher"))))];
     const resolvedRooms = [...new Set(valid.flatMap(cardResolvedRoomIdsLocal).filter(Boolean))];
     if (resolvedRooms.length === 1) return roomNameByIdLocal(resolvedRooms[0]);
     if (resolvedRooms.length > 1) return `${resolvedRooms.length}개 교실`;
@@ -1192,12 +1192,12 @@ export function createTimetableConstraintsHandlers({
     const assignedField = document.createElement("div");
     assignedField.className = "ttc-field";
     const assignedLabel = document.createElement("label");
-    assignedLabel.textContent = "배정 교실";
+    assignedLabel.textContent = "교실";
     const assignedSel = makeRoomSelect(c.assignedRoomId, rooms);
     assignedSel.disabled = !canEdit() || !!c.useHomeRoom;
     assignedSel.addEventListener("change", e => {
       if (!canEdit()) return;
-      captureTimetableUndo("교사 배정 교실 수정");
+      captureTimetableUndo("교사 교실 수정");
       c.assignedRoomId = e.target.value || null;
       c.useHomeRoom = false;
       applyRoomToTeacherEntries(teacher, c.assignedRoomId || null);
@@ -1224,7 +1224,7 @@ export function createTimetableConstraintsHandlers({
 
     const assist = document.createElement("div");
     assist.className = "ttc-assist";
-    assist.textContent = "자동배치 기본 교실은 교사 배정 교실을 고정 사용합니다. 배정 교실이 없으면 방 미배정으로 유지합니다.";
+    assist.textContent = "기본값은 교사 교실 고정입니다. 교사 교실이 없으면 방 미배정으로 유지합니다.";
     card.appendChild(assist);
     container.appendChild(card);
   }
