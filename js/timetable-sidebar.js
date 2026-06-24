@@ -757,14 +757,12 @@ export function createTimetableSidebarHandlers(deps) {
     const classKeys = makeEditorTextarea("classKeys", (card.classKeys || []).join(", "), "고급 항목: 9:A 형식. 비워두면 대상 학급에서 자동 생성합니다.");
     const teacherQuick = buildTeacherQuickControls(teacher.input, () => {
       const explicitKeys = String(classKeys.input.value || "")
-        .split(/[,，
-]+/)
+        .split(/[,，\n]+/)
         .map(clean)
         .filter(Boolean);
       if (explicitKeys.length) return explicitKeys;
       return String(classLabels.input.value || "")
-        .split(/[,，
-]+/)
+        .split(/[,，\n]+/)
         .map(label => manualClassKeyFromLabel(label, card.gradeKey))
         .filter(Boolean);
     });
