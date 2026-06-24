@@ -159,6 +159,68 @@ function displayTitleForEntry(entry = {}, ctx = {}) {
   return entryTitleFallback(entry);
 }
 
+
+// CP-SAT import entries can store occupied classes as audienceClassKeys such as
+// "10:A".  Some legacy UI helpers infer classes from ttcard snapshots only, so
+// the grid needs a local, tolerant matcher to keep multi-class/group cards merged
+// after import.
+function normalizeGridClassKey(value = "", fallbackGradeKey = "") {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  const compact = raw
+    .replace(/\s+/g, "")
+    .replace(/학년/g, "")
+    .replace(/[：]/g, ":")
+    .replace(/[\-_/]/g, ":")
+    .toUpperCase();
+
+  let m = compact.match(/^(\d{1,2}):?([A-Z]+)$/);
+  if (m) return `${m[1]}:${m[2]}`;
+
+  m = compact.match(/^(\d{1,2})([A-Z]+)$/);
+  if (m) return `${m[1]}:${m[2]}`;
+
+  const gradeNum = cleanText(fallbackGradeKey).replace(/학년/g, "").match(/\d{1,2}/)?.[0] || "";
+  if (gradeNum && /^[A-Z]+$/.test(compact)) return `${gradeNum}:${compact}`;
+  return compact;
+}
+
+function gridClassKeyForInfo(cls = {}) {
+  const grade = cleanText(cls.gradeKey || cls.grade || "");
+  const sec = cleanText(cls.section || sectionLabel(cls.sectionIdx ?? 0));
+  return normalizeGridClassKey(`${gradeDisplay(grade)}:${sec}`);
+}
+
+function explicitClassKeysForEntry(entry = {}) {
+  const out = [];
+  const add = (value, fallbackGradeKey = "") => {
+    const key = normalizeGridClassKey(value, fallbackGradeKey || entry.gradeKey || "");
+    if (key) out.push(key);
+  };
+
+  safeArray(entry.audienceClassKeys).forEach(v => add(v));
+  safeArray(entry.classKeys).forEach(v => add(v));
+  safeArray(entry.audienceClassLabels).forEach(v => add(v, entry.gradeKey || safeArray(entry.gradeKeys)[0] || ""));
+  safeArray(entry.classLabels).forEach(v => add(v, entry.gradeKey || safeArray(entry.gradeKeys)[0] || ""));
+
+  // CP-SAT component-style exports may keep classKeys under each component.
+  safeArray(entry.components).forEach(comp => {
+    safeArray(comp?.audienceClassKeys).forEach(v => add(v, comp?.gradeKey || entry.gradeKey || ""));
+    safeArray(comp?.classKeys).forEach(v => add(v, comp?.gradeKey || entry.gradeKey || ""));
+  });
+
+  return localUnique(out);
+}
+
+function entryMatchesClassForGrid(entry = {}, cls = {}) {
+  const explicit = explicitClassKeysForEntry(entry);
+  if (explicit.length) {
+    const target = gridClassKeyForInfo(cls);
+    return !!target && explicit.includes(target);
+  }
+  return entryMatchesClass(entry, cls);
+}
+
 function entryTeachers(entry = {}) {
   const direct = Array.isArray(entry.teacherNames) && entry.teacherNames.length ? entry.teacherNames : splitTeacherNames(entry.teacherName || "");
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
@@ -701,7 +763,7 @@ function renderClassGrid(wrap, ctx) {
     periods,
     ctx,
     mode: "summary",
-    matchEntry: (entry, clsInfo) => entryMatchesClass(entry, clsInfo),
+    matchEntry: (entry, clsInfo) => entryMatchesClassForGrid(entry, clsInfo),
   });
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
@@ -731,7 +793,7 @@ function renderClassGrid(wrap, ctx) {
         };
         const slotEntries = span
           ? span.entries
-          : entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, clsInfo));
+          : entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, clsInfo));
         if (slotEntries.length) {
           const renderEntries = span ? [slotEntries[0]] : slotEntries;
           renderEntries.forEach(entry => {
@@ -853,7 +915,24 @@ function renderTeacherGrid(wrap, ctx) {
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
 
-  classes.forEach(cls => {
+  const teacherEntryMatchesSelection = entry => {
+    const names = Array.isArray(entry.teacherNames) && entry.teacherNames.length
+      ? entry.teacherNames
+      : splitTeacherNames(entry.teacherName);
+    return names.some(t => selectedTeacherSet.has(t));
+  };
+  const teacherEntriesForSpans = ctx.entries.filter(teacherEntryMatchesSelection);
+  const verticalSpans = buildAxisSpanMap({
+    axisItems: classes,
+    entries: teacherEntriesForSpans,
+    days: dayIndexes,
+    periods,
+    ctx,
+    mode: "summary",
+    matchEntry: (entry, cls) => entryMatchesClassForGrid(entry, cls),
+  });
+
+  classes.forEach((cls, classPos) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -872,29 +951,31 @@ function renderTeacherGrid(wrap, ctx) {
 
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
+        const spanKey = spanCellKey(day, period, classPos);
+        if (verticalSpans.skips.has(spanKey)) return;
+        const span = verticalSpans.starts.get(spanKey);
         const td = document.createElement("td");
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (span ? " tt-group-merged-cell" : "");
+        if (span) td.rowSpan = span.span;
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
-        const slotEntries = ctx.entries.filter(e => {
-          const names = Array.isArray(e.teacherNames) && e.teacherNames.length
-            ? e.teacherNames
-            : splitTeacherNames(e.teacherName);
-          return names.some(t => selectedTeacherSet.has(t)) && e.day === day && e.period === period && entryMatchesClass(e, cls);
-        });
+        const slotEntries = span
+          ? span.entries
+          : ctx.entries.filter(e => teacherEntryMatchesSelection(e) && e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
 
         if (slotEntries.length) {
           const cg = document.createElement("div");
           cg.className = "tt-cell-card-grid";
           cg.style.height = "100%";
-          cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
-          slotEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true })));
+          const renderEntries = span ? [slotEntries[0]] : slotEntries;
+          cg.style.setProperty("--tt-auto-cols", String(renderEntries.length || 1));
+          renderEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true })));
           td.appendChild(cg);
         } else {
           const ph = document.createElement("div");
@@ -1008,7 +1089,24 @@ function renderRoomGrid(wrap, ctx) {
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
 
-  classes.forEach(cls => {
+  const roomEntryMatchesSelection = entry => {
+    const roomIds = typeof ctx.getRoomIdsForEntry === "function"
+      ? (ctx.getRoomIdsForEntry(entry) || [])
+      : [entry.roomId].filter(Boolean);
+    return roomIds.some(id => selectedRoomSet.has(id));
+  };
+  const roomEntriesForSpans = ctx.entries.filter(roomEntryMatchesSelection);
+  const verticalSpans = buildAxisSpanMap({
+    axisItems: classes,
+    entries: roomEntriesForSpans,
+    days: dayIndexes,
+    periods,
+    ctx,
+    mode: "summary",
+    matchEntry: (entry, cls) => entryMatchesClassForGrid(entry, cls),
+  });
+
+  classes.forEach((cls, classPos) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -1027,10 +1125,14 @@ function renderRoomGrid(wrap, ctx) {
 
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
+        const spanKey = spanCellKey(day, period, classPos);
+        if (verticalSpans.skips.has(spanKey)) return;
+        const span = verticalSpans.starts.get(spanKey);
         const td = document.createElement("td");
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell tt-room-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.className = "tt-cell tt-all-cell tt-room-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (span ? " tt-group-merged-cell" : "");
+        if (span) td.rowSpan = span.span;
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
@@ -1045,20 +1147,17 @@ function renderRoomGrid(wrap, ctx) {
           roomPinned: true,
         }));
 
-        const slotEntries = ctx.entries.filter(e => {
-          if (e.day !== day || e.period !== period || !entryMatchesClass(e, cls)) return false;
-          const roomIds = typeof ctx.getRoomIdsForEntry === "function"
-            ? (ctx.getRoomIdsForEntry(e) || [])
-            : [e.roomId].filter(Boolean);
-          return roomIds.some(id => selectedRoomSet.has(id));
-        });
+        const slotEntries = span
+          ? span.entries
+          : ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls) && roomEntryMatchesSelection(e));
 
         if (slotEntries.length) {
           const cg = document.createElement("div");
           cg.className = "tt-cell-card-grid";
           cg.style.height = "100%";
-          cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
-          slotEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true, showGrade: true })));
+          const renderEntries = span ? [slotEntries[0]] : slotEntries;
+          cg.style.setProperty("--tt-auto-cols", String(renderEntries.length || 1));
+          renderEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true, showGrade: true })));
           td.appendChild(cg);
         } else {
           const ph = document.createElement("div");
@@ -1158,7 +1257,7 @@ function renderAllClassesGrid(wrap, ctx) {
     periods,
     ctx,
     mode,
-    matchEntry: (entry, cls) => entryMatchesClass(entry, cls),
+    matchEntry: (entry, cls) => entryMatchesClassForGrid(entry, cls),
   });
   let prevGrade = null;
   classes.forEach((cls, classPos) => {
@@ -1196,7 +1295,7 @@ function renderAllClassesGrid(wrap, ctx) {
 
         const slotEntries = span
           ? span.entries
-          : ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClass(e, cls));
+          : ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
         appendAllSlotContents(td, slotEntries, ctx, mode);
         tr.appendChild(td);
       });

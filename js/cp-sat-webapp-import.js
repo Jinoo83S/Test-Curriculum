@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · CP-SAT import/apply/rollback UI
-// r136: reads cp_sat_webapp_import.json and safely replaces timetable.entries
+// r137: reads cp_sat_webapp_import.json and safely replaces timetable.entries
 // ================================================================
 
 const CP_SAT_IMPORT_UI_ID = "ttCpSatImportOverlay";
@@ -320,7 +320,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.entries = normalized;
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
-      source: "cp-sat-webapp-import-r136",
+      source: "cp-sat-webapp-import-r137",
       importedAt: safeNowIso(),
       importedEntryCount: normalized.length,
       importedClassSlotCount: summary.classSlotCount,
