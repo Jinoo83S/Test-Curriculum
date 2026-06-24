@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-homeroom-manual-teacher-r118";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-r119-duplicate-fix-r119";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -499,7 +499,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-06-24-homeroom-manual-teacher-r118"),
+      validatorVersion: String(meta.validatorVersion || "2026-06-24-r119-duplicate-fix-r119"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -825,7 +825,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-06-24-homeroom-manual-teacher-r118",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-06-24-r119-duplicate-fix-r119",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -6194,7 +6194,7 @@ export function createAutoAssignAll(deps) {
       pending.push(normalizeTimetableEntry({
         ...entry,
         autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r118",
+        autoEngine: "fresh-csp-r119",
         autoGroupBlock: block.kind !== "standalone",
         autoOccurrence: block.occurrence || 1
       }));
@@ -6507,7 +6507,7 @@ export function createAutoAssignAll(deps) {
         const fixed = normalizeTimetableEntry({
           ...entry,
           autoBlockKey: probeKey,
-          autoEngine: "fresh-csp-r118-coverage-onemove-direct",
+          autoEngine: "fresh-csp-r119-coverage-onemove-direct",
           autoCoverageRepair: true
         });
         placed.push(fixed);
@@ -6536,7 +6536,7 @@ export function createAutoAssignAll(deps) {
           const fixed = normalizeTimetableEntry({
             ...entry,
             autoBlockKey: probeKey,
-            autoEngine: "fresh-csp-r118-coverage-onemove",
+            autoEngine: "fresh-csp-r119-coverage-onemove",
             autoCoverageRepair: true
           });
           placed.splice(0, placed.length, ...baseWithMoved, fixed);
@@ -6575,7 +6575,7 @@ export function createAutoAssignAll(deps) {
     });
     if (direct.ok) {
       const added = placed.filter(e => e?.autoBlockKey === probeBlock.key);
-      added.forEach(e => { e.autoEngine = "fresh-csp-r118-coverage-direct"; });
+      added.forEach(e => { e.autoEngine = "fresh-csp-r119-coverage-direct"; });
       return { mode: "coverage-direct", entries: added, blockKey: probeBlock.key };
     }
 
@@ -6588,7 +6588,7 @@ export function createAutoAssignAll(deps) {
     const fixed = normalizeTimetableEntry({
       ...entry,
       autoBlockKey: probeBlock.key,
-      autoEngine: "fresh-csp-r118-coverage-fill",
+      autoEngine: "fresh-csp-r119-coverage-fill",
       autoCoverageRepair: true,
       forced: true
     });
@@ -6841,7 +6841,7 @@ export function createAutoAssignAll(deps) {
       coverageRepair,
       forcedEntries: coverageRepair.forcedEntries || [],
       stats: {
-        engine: "fresh-csp-groupcard-r118",
+        engine: "fresh-csp-groupcard-r119",
         totalBlocks: orderedBlocks.length,
         directPlaced,
         swapPlaced,
@@ -6958,7 +6958,7 @@ export function createAutoAssignAll(deps) {
         best: 0,
         failed: 0,
         currentCard: "-",
-        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r118`
+        log: `대상 학년: ${formatAutoActiveGrades(activeGrades)} · 엔진: fresh-csp-groupcard-r119`
       }, true);
 
       captureTimetableUndo("자동 배정");
@@ -7096,17 +7096,17 @@ export function createAutoAssignAll(deps) {
         finalMetrics,
         autoSourceSignature: buildCurrentAutoSourceSignature(),
         autoSourceSummary: currentAutoSourceSummary(),
-        telemetryStatus: "fresh-csp-groupcard-r118",
-        engine: "fresh-csp-groupcard-r118",
+        telemetryStatus: "fresh-csp-groupcard-r119",
+        engine: "fresh-csp-groupcard-r119",
         appVersion: String(globalThis.HIS_APP_VERSION || ""),
         autoAssignBuild: String(globalThis.HIS_AUTOASSIGN_BUILD || ""),
-        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 기본 교사교실 + 자동교실 옵션 r118",
+        engineProfileLabel: "새 엔진: 그룹큰카드 우선 + 기본 교사교실 + 자동교실 옵션 r119",
         qualityGate: {
           worseThanBaseline: false,
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-06-24-homeroom-manual-teacher-r118"
+        validatorVersion: "2026-06-24-r119-duplicate-fix-r119"
       };
 
       let afterAutoSnapshot = null;
@@ -7211,7 +7211,7 @@ export function createAutoAssignAll(deps) {
           phase: String(autoAssignPhase || ""),
           message: err?.message || String(err),
           stackHead: String(err?.stack || "").split("\n").slice(0, 6).join("\n"),
-          engine: "fresh-csp-groupcard-r118",
+          engine: "fresh-csp-groupcard-r119",
           appVersion: String(globalThis.HIS_APP_VERSION || "")
         };
         try {
@@ -7225,7 +7225,7 @@ export function createAutoAssignAll(deps) {
               resultStatus: "program-error",
               resultStatusLabel: "자동배치 프로그램 오류",
               programError: true,
-              engine: "fresh-csp-groupcard-r118"
+              engine: "fresh-csp-groupcard-r119"
             });
           }
         } catch (_) {}

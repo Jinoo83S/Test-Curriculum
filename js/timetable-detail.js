@@ -751,10 +751,6 @@ function effectiveEntryFixedRoomIdLocal(entry = {}) {
   return clean(pref.fixedRoomId || entry.fixedRoomId || entry.roomId);
 }
 
-function splitTeacherNamesLocal(value = "") {
-  return uniqueIds(String(value || "").split(/[,，/+·&]|\band\b/gi).map(v => v.trim()).filter(Boolean));
-}
-
 function allTeacherNameOptionsLocal() {
   const names = [
     ...(appState.teachers?.teachers || []).map(t => t.name),
