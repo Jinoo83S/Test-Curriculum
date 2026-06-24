@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-room-rule-default-teacher-r138";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-room-rules-hard-r139";
 
 export function createAutoAssignAll(deps) {
   const {

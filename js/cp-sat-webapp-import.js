@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · CP-SAT import/apply/rollback UI
-// r137: reads cp_sat_webapp_import.json and safely replaces timetable.entries
+// r139: reads cp_sat_webapp_import.json, validates 525/525 + class/teacher/room conflicts, then replaces timetable.entries
 // ================================================================
 
 const CP_SAT_IMPORT_UI_ID = "ttCpSatImportOverlay";
@@ -131,7 +131,7 @@ function entryTeacherNames(entry = {}) {
 function validateEntries(list = [], { targetClassSlots = 525 } = {}) {
   const entries = asArray(list).filter(e => e && typeof e === "object");
   const missingTime = [];
-  const classSlotSet = new Set();
+  const classSlotMap = new Map();
   const teacherSlotMap = new Map();
   const roomSlotMap = new Map();
 
@@ -143,7 +143,11 @@ function validateEntries(list = [], { targetClassSlots = 525 } = {}) {
       return;
     }
     const slotKey = `${day}:${period}`;
-    entryClassKeys(entry).forEach(k => classSlotSet.add(`${k}@${slotKey}`));
+    entryClassKeys(entry).forEach(k => {
+      const key = `${k}@${slotKey}`;
+      if (!classSlotMap.has(key)) classSlotMap.set(key, []);
+      classSlotMap.get(key).push(entry.id || `${index}`);
+    });
     entryTeacherNames(entry).forEach(name => {
       const key = `${name}@${slotKey}`;
       if (!teacherSlotMap.has(key)) teacherSlotMap.set(key, []);
@@ -156,9 +160,10 @@ function validateEntries(list = [], { targetClassSlots = 525 } = {}) {
     });
   });
 
+  const classConflictCount = [...classSlotMap.values()].filter(v => v.length > 1).length;
   const teacherConflictCount = [...teacherSlotMap.values()].filter(v => v.length > 1).length;
   const roomConflictCount = [...roomSlotMap.values()].filter(v => v.length > 1).length;
-  const classSlotCount = classSlotSet.size;
+  const classSlotCount = classSlotMap.size;
   const classSlotGap = Math.max(0, Number(targetClassSlots || 0) - classSlotCount);
 
   return {
@@ -167,10 +172,12 @@ function validateEntries(list = [], { targetClassSlots = 525 } = {}) {
     targetClassSlots,
     classSlotGap,
     missingTimeCount: missingTime.length,
+    classConflictCount,
     teacherConflictCount,
     roomConflictCount,
-    ok: entries.length > 0 && missingTime.length === 0 && classSlotGap === 0,
+    ok: entries.length > 0 && missingTime.length === 0 && classSlotGap === 0 && classConflictCount === 0 && teacherConflictCount === 0 && roomConflictCount === 0,
     warnings: [
+      ...(classConflictCount ? [`학급 시간 중복 가능성 ${classConflictCount}건`] : []),
       ...(teacherConflictCount ? [`교사 시간 중복 가능성 ${teacherConflictCount}건`] : []),
       ...(roomConflictCount ? [`교실 시간 중복 가능성 ${roomConflictCount}건`] : []),
     ],
@@ -320,10 +327,27 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.entries = normalized;
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
-      source: "cp-sat-webapp-import-r137",
+      ok: summary.ok,
+      source: "cp-sat-webapp-import-r139",
+      metricSource: "currentEntriesAfterCpSatImport",
+      validationSummary: summary.ok
+        ? `CP-SAT 적용 완료: 학급칸 ${summary.classSlotCount}/${summary.targetClassSlots}, 학급/교사/교실 충돌 0`
+        : `CP-SAT 적용 검증 필요: 학급칸 ${summary.classSlotCount}/${summary.targetClassSlots}, 학급 ${summary.classConflictCount}, 교사 ${summary.teacherConflictCount}, 교실 ${summary.roomConflictCount}`,
       importedAt: safeNowIso(),
+      generatedAt: safeNowIso(),
       importedEntryCount: normalized.length,
+      placedEntryCount: normalized.length,
+      placedBlockCount: normalized.length,
       importedClassSlotCount: summary.classSlotCount,
+      classTotal: summary.classSlotCount,
+      classTargetTotal: summary.targetClassSlots,
+      classTargetGap: summary.classSlotGap,
+      classConflictCount: summary.classConflictCount,
+      teacherConflictCount: summary.teacherConflictCount,
+      roomConflictCount: summary.roomConflictCount,
+      failedUnitCount: 0,
+      failedCount: 0,
+      failedOccurrenceCount: 0,
       backupVersionId: backup?.id || null,
     };
     await saveNow?.("timetable", { force: true, throwOnError: true });
@@ -397,6 +421,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         ${row("학급칸", `${currentSummary.validation.classSlotCount} / ${currentSummary.validation.targetClassSlots}`, escapeHtml)}
         ${row("classSlotGap", currentSummary.validation.classSlotGap, escapeHtml)}
         ${row("missingTime", currentSummary.validation.missingTimeCount, escapeHtml)}
+        ${row("학급 중복 가능성", currentSummary.validation.classConflictCount, escapeHtml)}
         ${row("교사 중복 가능성", currentSummary.validation.teacherConflictCount, escapeHtml)}
         ${row("교실 중복 가능성", currentSummary.validation.roomConflictCount, escapeHtml)}
         ${row("현재→새 결과 변경칸", comparison.changedClassSlots, escapeHtml)}
