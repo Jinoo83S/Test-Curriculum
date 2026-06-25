@@ -56,7 +56,8 @@ function injectAllSummaryStyles() {
     .tt-all-view-help{margin-left:auto;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .tt-all-class-table.tt-all-summary-table{flex:1 1 auto;height:auto!important;min-height:0;}
     .tt-all-summary-cell-wrap{height:100%;width:100%;display:flex;align-items:stretch;gap:1px;min-width:0;overflow:hidden;}
-    .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;}
+    .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex:var(--tt-class-span,1) 1 0;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;min-height:calc(31px * min(var(--tt-class-span,1),4));}
+    .tt-all-summary-card.tt-multi-class-card{border-width:2px;border-left-width:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.72),0 1px 3px rgba(15,23,42,.16);} 
     .tt-all-summary-card:hover{filter:brightness(.98);box-shadow:inset 0 0 0 1px rgba(37,99,235,.25);}
     .tt-all-summary-card.tt-all-summary-problem{outline:2px solid #ef4444;outline-offset:-2px;background:#fff1f2!important;color:#9f1239!important;}
     .tt-all-summary-card.tt-all-summary-hidden-normal{opacity:.18;filter:grayscale(.6);}
@@ -85,13 +86,14 @@ function injectAllSummaryStyles() {
   document.head.appendChild(style);
 }
 
+// r144: 그룹카드 표시 복구. r141의 배지/겹침 표시는 제거하고, 여러 학급을 차지하는 카드는 높이와 테두리만 확장합니다.
 function injectGroupMergeStyles() {
   if (groupMergeStyleInjected || document.getElementById("tt-group-merge-style")) return;
   groupMergeStyleInjected = true;
   const style = document.createElement("style");
   style.id = "tt-group-merge-style";
   style.textContent = `
-    .tt-cell.tt-group-merged-cell{position:relative;box-shadow:inset 0 0 0 2px rgba(37,99,235,.42);background:linear-gradient(180deg,rgba(239,246,255,.72),rgba(248,250,252,.66));}
+    .tt-cell.tt-group-merged-cell{position:relative;box-shadow:inset 0 0 0 3px rgba(37,99,235,.46);background:linear-gradient(180deg,rgba(239,246,255,.82),rgba(248,250,252,.70));} 
     .tt-cell.tt-group-merged-cell .tt-entry-card,
     .tt-cell.tt-group-merged-cell .tt-all-summary-card{height:100%;min-height:100%;}
     .tt-cell.tt-group-merged-cell .tt-cell-card-grid,
@@ -288,6 +290,7 @@ function summarizeEntryGroup(group, ctx = {}) {
   const teachers = localUnique(group.entries.flatMap(entryTeachers));
   const rooms = localUnique(group.entries.flatMap(entry => entryRooms(entry, ctx)));
   const studentKeys = localUnique(group.cards.flatMap(c => safeArray(c.studentKeys)).concat(group.entries.flatMap(e => safeArray(e.studentKeys))));
+  const classKeys = localUnique(group.entries.flatMap(e => explicitClassKeysForEntry(e)));
   const conflictCount = group.entries.filter(e => ctx.getEntryConflictSet?.(e)?.size).length;
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
@@ -304,6 +307,8 @@ function summarizeEntryGroup(group, ctx = {}) {
     subjectTitles,
     teachers,
     rooms,
+    classKeys,
+    classSpan: Math.max(1, classKeys.length || Math.max(1, group.entries.length)),
     studentCount: studentKeys.length,
     conflictCount,
     gradeColor,
@@ -343,7 +348,11 @@ function writeSummaryDragData(ev, data) {
 
 function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   const card = document.createElement("div");
-  card.className = "tt-all-summary-card" + (summary.conflictCount ? " tt-all-summary-problem" : "");
+  const classSpan = Math.max(1, Number(summary.classSpan || summary.classKeys?.length || 1));
+  card.className = "tt-all-summary-card"
+    + (summary.conflictCount ? " tt-all-summary-problem" : "")
+    + (classSpan > 1 ? " tt-multi-class-card" : "");
+  card.style.setProperty("--tt-class-span", String(Math.min(classSpan, 6)));
   card.style.setProperty("--tt-sum-bg", summary.gradeColor.bg || "#eff6ff");
   card.style.setProperty("--tt-sum-text", summary.gradeColor.text || "#1e3a8a");
   card.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
@@ -376,8 +385,9 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
     card.dataset.entryId = contextEntry.id;
     card.dataset.ttEntryId = contextEntry.id;
   }
-  if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · ${subjectText}`;
-  else card.title = [subjectText, teacherText, roomText].filter(Boolean).join(" · ");
+  const classText = summary.classKeys?.length ? `대상: ${summary.classKeys.join(", ")}` : "";
+  if (summary.conflictCount) card.title = [`문제 ${summary.conflictCount}건`, subjectText, teacherText, roomText, classText].filter(Boolean).join(" · ");
+  else card.title = [subjectText, teacherText, roomText, classText].filter(Boolean).join(" · ");
 
   const dragData = getSummaryDragData(summary);
   if (dragData && canEdit()) {
@@ -962,7 +972,9 @@ function renderTeacherGrid(wrap, ctx) {
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
+        td.style.cssText = span
+          ? `padding:0 1px;vertical-align:top;overflow:hidden;height:auto;position:relative`
+          : `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         const slotEntries = span
@@ -1136,7 +1148,9 @@ function renderRoomGrid(wrap, ctx) {
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
+        td.style.cssText = span
+          ? `padding:0 1px;vertical-align:top;overflow:hidden;height:auto;position:relative`
+          : `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({
           ...dragData,
           sectionIdx: cls.sectionIdx,
@@ -1290,7 +1304,9 @@ function renderAllClassesGrid(wrap, ctx) {
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
+        td.style.cssText = span
+          ? `padding:0 1px;vertical-align:top;overflow:hidden;height:auto;position:relative`
+          : `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         const slotEntries = span
