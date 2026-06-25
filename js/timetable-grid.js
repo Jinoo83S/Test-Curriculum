@@ -63,6 +63,18 @@ function injectAllSummaryStyles() {
     .tt-all-summary-mid{width:100%;margin-top:1px;font-size:clamp(6px,.54vw,8px);font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.92;}
     .tt-all-summary-bottom{width:100%;margin-top:1px;font-size:clamp(5.5px,.50vw,7px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.82;}
     .tt-all-summary-card.tt-dragging{opacity:.58;outline:2px dashed rgba(37,99,235,.75);outline-offset:-2px;}
+    /* r146: 그룹카드를 실제 하나의 세로 카드처럼 보이게 하는 안전 병합 표시.
+       테이블 구조(rowSpan)는 건드리지 않고 첫 칸 카드가 아래 칸 위로 덮도록 한다. */
+    .tt-all-cell.tt-group-span-host{overflow:visible!important;z-index:8;}
+    .tt-all-cell.tt-group-span-covered-cell{overflow:hidden!important;}
+    .tt-all-summary-cell-wrap.tt-span-wrap{position:relative;height:100%;width:100%;display:block;overflow:visible;}
+    .tt-all-summary-card.tt-group-span-card{position:absolute;left:1px;right:1px;top:1px;width:auto;height:calc((var(--tt-all-row-height, 32px) * var(--tt-span-rows, 1)) - 2px);z-index:40;border-radius:6px;border-width:1px;border-left-width:4px;box-shadow:0 3px 8px rgba(15,23,42,.14), inset 0 0 0 1px rgba(255,255,255,.45);justify-content:center;}
+    .tt-all-summary-card.tt-group-span-card .tt-all-summary-top{font-size:clamp(8px,.72vw,10px);}
+    .tt-all-summary-card.tt-group-span-card .tt-all-summary-mid{font-size:clamp(7px,.62vw,9px);}
+    .tt-all-summary-card.tt-group-span-card .tt-all-summary-bottom{font-size:clamp(6px,.55vw,8px);}
+    .tt-group-span-covered-segment{height:100%;width:100%;box-sizing:border-box;border-left:4px solid var(--tt-sum-border,#2563eb);border-right:1px solid rgba(15,23,42,.12);background:var(--tt-sum-bg,#eff6ff);opacity:.96;pointer-events:none;}
+    .tt-group-span-covered-segment.mid{border-top:0;border-bottom:0;border-radius:0;}
+    .tt-group-span-covered-segment.end{border-top:0;border-bottom:1px solid rgba(15,23,42,.12);border-radius:0 0 6px 6px;}
     .tt-all-detail-panel-backdrop{position:fixed;inset:0;z-index:99997;background:rgba(15,23,42,.08);pointer-events:none;}
     .tt-all-detail-panel{position:fixed;top:58px;right:12px;bottom:14px;width:min(430px,calc(100vw - 26px));z-index:99998;border:1px solid #cbd5e1;border-radius:16px;background:#fff;box-shadow:0 22px 55px rgba(15,23,42,.26);display:flex;flex-direction:column;overflow:hidden;pointer-events:auto;}
     .tt-all-detail-panel-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:14px 16px 12px;border-bottom:1px solid #e2e8f0;background:linear-gradient(180deg,#fff,#f8fafc);}
@@ -479,7 +491,78 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
   document.body.append(backdrop, panel);
 }
 
-function appendAllSlotContents(td, slotEntries, ctx, mode) {
+function makeSpanCoveredSegment(summary, meta = {}) {
+  const seg = document.createElement("div");
+  seg.className = "tt-group-span-covered-segment " + (meta.isEnd ? "end" : "mid");
+  seg.style.setProperty("--tt-sum-bg", summary.gradeColor?.bg || "#eff6ff");
+  seg.style.setProperty("--tt-sum-border", summary.gradeColor?.border || "#2563eb");
+  seg.title = summary.title || "그룹 수업";
+  return seg;
+}
+
+function spanCellKey(day, period, rowIndex) {
+  return `${day}:${period}:${rowIndex}`;
+}
+
+function buildAllViewSpanMap(classes = [], periods = [], ctx = {}, mode = "summary") {
+  const spanMap = new Map();
+  const classCount = classes.length;
+  for (let day = 0; day < DAYS.length; day += 1) {
+    for (let period = 0; period < periods.length; period += 1) {
+      const perRow = classes.map((cls, rowIndex) => {
+        const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
+        const groups = buildEntryGroups(slotEntries, ctx);
+        const visibleGroups = mode === "problem" ? groups.filter(g => g.conflictCount) : groups;
+        return { cls, rowIndex, visibleGroups };
+      });
+
+      const byKey = new Map();
+      perRow.forEach(row => {
+        row.visibleGroups.forEach(g => {
+          if (!byKey.has(g.key)) byKey.set(g.key, []);
+          byKey.get(g.key).push(row.rowIndex);
+        });
+      });
+
+      byKey.forEach((rows, key) => {
+        const sorted = [...new Set(rows)].sort((a, b) => a - b);
+        let start = 0;
+        while (start < sorted.length) {
+          let end = start;
+          while (end + 1 < sorted.length && sorted[end + 1] === sorted[end] + 1) end += 1;
+          const run = sorted.slice(start, end + 1);
+          const span = run.length;
+          if (span > 1) {
+            // 안전 조건: 해당 칸에 이 그룹 하나만 있을 때만 실제 하나의 카드처럼 덮어쓴다.
+            const safe = run.every(rowIndex => {
+              const row = perRow[rowIndex];
+              return row && row.visibleGroups.length === 1 && row.visibleGroups[0]?.key === key;
+            });
+            if (safe) {
+              run.forEach((rowIndex, pos) => {
+                const cellKey = spanCellKey(day, period, rowIndex);
+                if (!spanMap.has(cellKey)) spanMap.set(cellKey, new Map());
+                spanMap.get(cellKey).set(key, {
+                  span,
+                  position: pos,
+                  isStart: pos === 0,
+                  isEnd: pos === span - 1,
+                  rowIndex,
+                  startRowIndex: run[0],
+                  endRowIndex: run[span - 1],
+                });
+              });
+            }
+          }
+          start = end + 1;
+        }
+      });
+    }
+  }
+  return spanMap;
+}
+
+function appendAllSlotContents(td, slotEntries, ctx, mode, opts = {}) {
   if (!slotEntries.length) {
     const ph = document.createElement("div");
     ph.className = "tt-cell-ph";
@@ -509,7 +592,25 @@ function appendAllSlotContents(td, slotEntries, ctx, mode) {
   const wrap = document.createElement("div");
   wrap.className = "tt-all-summary-cell-wrap";
   wrap.style.setProperty("--tt-auto-cols", String(visibleGroups.length || 1));
-  visibleGroups.forEach(g => wrap.appendChild(makeSummaryCard(g, ctx, mode)));
+
+  visibleGroups.forEach(g => {
+    const meta = opts.spanMeta?.get(g.key) || null;
+    if (meta?.span > 1) {
+      wrap.classList.add("tt-span-wrap");
+      if (meta.isStart) {
+        td.classList.add("tt-group-span-host");
+        const card = makeSummaryCard(g, ctx, mode);
+        card.classList.add("tt-group-span-card");
+        card.style.setProperty("--tt-span-rows", String(meta.span));
+        wrap.appendChild(card);
+      } else {
+        td.classList.add("tt-group-span-covered-cell");
+        wrap.appendChild(makeSpanCoveredSegment(g, meta));
+      }
+    } else {
+      wrap.appendChild(makeSummaryCard(g, ctx, mode));
+    }
+  });
   td.appendChild(wrap);
 }
 
@@ -805,7 +906,7 @@ function renderTeacherGrid(wrap, ctx) {
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
 
-  classes.forEach(cls => {
+  classes.forEach((cls, rowIndex) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -960,7 +1061,7 @@ function renderRoomGrid(wrap, ctx) {
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
 
-  classes.forEach(cls => {
+  classes.forEach((cls, rowIndex) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -1039,6 +1140,7 @@ function renderAllClassesGrid(wrap, ctx) {
 
   const mode = getAllViewMode();
   wrap.appendChild(makeAllViewToolbar(wrap));
+  const spanMap = buildAllViewSpanMap(classes, periods, ctx, mode);
 
   const numDays = DAYS.length;
   const numPer = periods.length;
@@ -1103,7 +1205,7 @@ function renderAllClassesGrid(wrap, ctx) {
   const tbody = document.createElement("tbody");
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
-  classes.forEach(cls => {
+  classes.forEach((cls, rowIndex) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -1133,7 +1235,7 @@ function renderAllClassesGrid(wrap, ctx) {
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
-        appendAllSlotContents(td, slotEntries, ctx, mode);
+        appendAllSlotContents(td, slotEntries, ctx, mode, { spanMeta: spanMap.get(spanCellKey(day, period, rowIndex)) });
         tr.appendChild(td);
       });
     });
