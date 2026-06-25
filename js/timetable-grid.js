@@ -17,7 +17,6 @@ const TT_DRAG_MIME = "application/x-his-timetable-drag";
 
 const ALL_VIEW_MODE_KEY = "his:timetable:allViewMode";
 let allSummaryStyleInjected = false;
-let groupMergeStyleInjected = false;
 
 function cleanText(v) {
   return String(v ?? "").trim();
@@ -56,8 +55,7 @@ function injectAllSummaryStyles() {
     .tt-all-view-help{margin-left:auto;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .tt-all-class-table.tt-all-summary-table{flex:1 1 auto;height:auto!important;min-height:0;}
     .tt-all-summary-cell-wrap{height:100%;width:100%;display:flex;align-items:stretch;gap:1px;min-width:0;overflow:hidden;}
-    .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex:var(--tt-class-span,1) 1 0;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;min-height:calc(31px * min(var(--tt-class-span,1),4));}
-    .tt-all-summary-card.tt-multi-class-card{border-width:2px;border-left-width:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.72),0 1px 3px rgba(15,23,42,.16);} 
+    .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;}
     .tt-all-summary-card:hover{filter:brightness(.98);box-shadow:inset 0 0 0 1px rgba(37,99,235,.25);}
     .tt-all-summary-card.tt-all-summary-problem{outline:2px solid #ef4444;outline-offset:-2px;background:#fff1f2!important;color:#9f1239!important;}
     .tt-all-summary-card.tt-all-summary-hidden-normal{opacity:.18;filter:grayscale(.6);}
@@ -82,22 +80,6 @@ function injectAllSummaryStyles() {
     .tt-all-detail-item-actions{display:flex;justify-content:flex-end;margin-top:8px;}
     .tt-all-detail-open-btn{height:26px;padding:0 10px;border:1px solid #bfdbfe;border-radius:999px;background:#eff6ff;color:#1d4ed8;font-size:11px;font-weight:900;cursor:pointer;}
     .tt-all-detail-problem-badge{display:inline-flex;margin-left:5px;border-radius:999px;background:#fee2e2;color:#b91c1c;padding:1px 6px;font-size:10px;font-weight:900;vertical-align:middle;}
-  `;
-  document.head.appendChild(style);
-}
-
-// r144: 그룹카드 표시 복구. r141의 배지/겹침 표시는 제거하고, 여러 학급을 차지하는 카드는 높이와 테두리만 확장합니다.
-function injectGroupMergeStyles() {
-  if (groupMergeStyleInjected || document.getElementById("tt-group-merge-style")) return;
-  groupMergeStyleInjected = true;
-  const style = document.createElement("style");
-  style.id = "tt-group-merge-style";
-  style.textContent = `
-    .tt-cell.tt-group-merged-cell{position:relative;box-shadow:inset 0 0 0 3px rgba(37,99,235,.46);background:linear-gradient(180deg,rgba(239,246,255,.82),rgba(248,250,252,.70));} 
-    .tt-cell.tt-group-merged-cell .tt-entry-card,
-    .tt-cell.tt-group-merged-cell .tt-all-summary-card{height:100%;min-height:100%;}
-    .tt-cell.tt-group-merged-cell .tt-cell-card-grid,
-    .tt-cell.tt-group-merged-cell .tt-all-summary-cell-wrap{height:100%;}
   `;
   document.head.appendChild(style);
 }
@@ -130,7 +112,7 @@ function makeAllViewToolbar(wrap) {
   });
   const help = document.createElement("span");
   help.className = "tt-all-view-help";
-  help.textContent = "전체카드를 클릭하면 포함 과목·교사·교실을 확인합니다.";
+  help.textContent = "그룹카드는 점유한 각 학급 칸에 표시됩니다. 클릭하면 포함 과목·교사·교실을 확인합니다.";
   toolbar.appendChild(help);
   return toolbar;
 }
@@ -162,10 +144,10 @@ function displayTitleForEntry(entry = {}, ctx = {}) {
 }
 
 
-// CP-SAT import entries can store occupied classes as audienceClassKeys such as
-// "10:A".  Some legacy UI helpers infer classes from ttcard snapshots only, so
-// the grid needs a local, tolerant matcher to keep multi-class/group cards merged
-// after import.
+// r145: 그룹카드는 HTML rowSpan/colSpan으로 병합하지 않습니다.
+// r50의 안정 렌더링처럼, 점유한 각 학급 칸에 같은 그룹 요약카드를 표시합니다.
+// 대신 CP-SAT import 결과가 가진 audienceClassKeys/classKeys를 정확히 읽어서
+// "10:A", "10학년:A", "10A" 형식을 모두 같은 학급으로 인식합니다.
 function normalizeGridClassKey(value = "", fallbackGradeKey = "") {
   const raw = cleanText(value);
   if (!raw) return "";
@@ -205,7 +187,6 @@ function explicitClassKeysForEntry(entry = {}) {
   safeArray(entry.audienceClassLabels).forEach(v => add(v, entry.gradeKey || safeArray(entry.gradeKeys)[0] || ""));
   safeArray(entry.classLabels).forEach(v => add(v, entry.gradeKey || safeArray(entry.gradeKeys)[0] || ""));
 
-  // CP-SAT component-style exports may keep classKeys under each component.
   safeArray(entry.components).forEach(comp => {
     safeArray(comp?.audienceClassKeys).forEach(v => add(v, comp?.gradeKey || entry.gradeKey || ""));
     safeArray(comp?.classKeys).forEach(v => add(v, comp?.gradeKey || entry.gradeKey || ""));
@@ -231,9 +212,6 @@ function entryTeachers(entry = {}) {
 }
 
 function entryRooms(entry = {}, ctx = {}) {
-  // r121: 그룹/묶음 카드는 entry.roomId가 비어 있고
-  // roomAssignmentsByTtCardId에 실제 교실이 들어갑니다.
-  // 시간표 요약카드는 반드시 effective room ids를 먼저 사용해야 합니다.
   if (typeof ctx.getRoomIdsForEntry === "function") {
     const roomIds = ctx.getRoomIdsForEntry(entry) || [];
     const names = localUnique(roomIds.map(id => ctx.getRoomDisplayName ? ctx.getRoomDisplayName(id) : id).filter(Boolean));
@@ -290,7 +268,6 @@ function summarizeEntryGroup(group, ctx = {}) {
   const teachers = localUnique(group.entries.flatMap(entryTeachers));
   const rooms = localUnique(group.entries.flatMap(entry => entryRooms(entry, ctx)));
   const studentKeys = localUnique(group.cards.flatMap(c => safeArray(c.studentKeys)).concat(group.entries.flatMap(e => safeArray(e.studentKeys))));
-  const classKeys = localUnique(group.entries.flatMap(e => explicitClassKeysForEntry(e)));
   const conflictCount = group.entries.filter(e => ctx.getEntryConflictSet?.(e)?.size).length;
   const gradeKey = firstEntry.gradeKey || firstCard?.gradeKey || "";
   const gradeColor = ctx.getGradeColor?.(gradeKey) || { bg: "#eff6ff", text: "#1e3a8a", border: "#2563eb" };
@@ -307,8 +284,6 @@ function summarizeEntryGroup(group, ctx = {}) {
     subjectTitles,
     teachers,
     rooms,
-    classKeys,
-    classSpan: Math.max(1, classKeys.length || Math.max(1, group.entries.length)),
     studentCount: studentKeys.length,
     conflictCount,
     gradeColor,
@@ -348,11 +323,7 @@ function writeSummaryDragData(ev, data) {
 
 function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   const card = document.createElement("div");
-  const classSpan = Math.max(1, Number(summary.classSpan || summary.classKeys?.length || 1));
-  card.className = "tt-all-summary-card"
-    + (summary.conflictCount ? " tt-all-summary-problem" : "")
-    + (classSpan > 1 ? " tt-multi-class-card" : "");
-  card.style.setProperty("--tt-class-span", String(Math.min(classSpan, 6)));
+  card.className = "tt-all-summary-card" + (summary.conflictCount ? " tt-all-summary-problem" : "");
   card.style.setProperty("--tt-sum-bg", summary.gradeColor.bg || "#eff6ff");
   card.style.setProperty("--tt-sum-text", summary.gradeColor.text || "#1e3a8a");
   card.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
@@ -385,9 +356,8 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
     card.dataset.entryId = contextEntry.id;
     card.dataset.ttEntryId = contextEntry.id;
   }
-  const classText = summary.classKeys?.length ? `대상: ${summary.classKeys.join(", ")}` : "";
-  if (summary.conflictCount) card.title = [`문제 ${summary.conflictCount}건`, subjectText, teacherText, roomText, classText].filter(Boolean).join(" · ");
-  else card.title = [subjectText, teacherText, roomText, classText].filter(Boolean).join(" · ");
+  if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · ${subjectText}`;
+  else card.title = [subjectText, teacherText, roomText].filter(Boolean).join(" · ");
 
   const dragData = getSummaryDragData(summary);
   if (dragData && canEdit()) {
@@ -544,74 +514,6 @@ function appendAllSlotContents(td, slotEntries, ctx, mode) {
 }
 
 
-
-function spanCellKey(day, period, index) {
-  return `${day}:${period}:${index}`;
-}
-
-function contiguousRuns(indexes = []) {
-  const sorted = [...new Set(indexes)].sort((a, b) => a - b);
-  const runs = [];
-  let current = [];
-  sorted.forEach(idx => {
-    if (!current.length || idx === current[current.length - 1] + 1) current.push(idx);
-    else { runs.push(current); current = [idx]; }
-  });
-  if (current.length) runs.push(current);
-  return runs;
-}
-
-function isSpanCandidateEntry(entry = {}, matchedCount = 0) {
-  if (matchedCount <= 1) return false;
-  const ids = entryCardIds(entry);
-  const classLabels = safeArray(entry.classLabels).concat(safeArray(entry.audienceClassLabels));
-  const classKeys = safeArray(entry.classKeys).concat(safeArray(entry.audienceClassKeys));
-  return !!entry.groupId || !!entry.unitId || ids.length > 1 || classLabels.length > 1 || classKeys.length > 1;
-}
-
-function buildAxisSpanMap({ axisItems = [], entries = [], days = [], periods = [], ctx = {}, mode = "summary", matchEntry }) {
-  const starts = new Map();
-  const skips = new Set();
-  if (!axisItems.length || typeof matchEntry !== "function") return { starts, skips };
-
-  days.forEach(day => {
-    periods.forEach((_, period) => {
-      const slotEntries = entries.filter(e => e.day === day && e.period === period);
-      const grouped = new Map();
-      slotEntries.forEach(entry => {
-        const matched = [];
-        axisItems.forEach((item, idx) => {
-          if (matchEntry(entry, item, idx)) matched.push(idx);
-        });
-        if (!isSpanCandidateEntry(entry, matched.length)) return;
-        const key = groupKeyForEntry(entry);
-        if (!grouped.has(key)) grouped.set(key, { key, entries: [], indices: new Set() });
-        const group = grouped.get(key);
-        if (!group.entries.some(e => e.id === entry.id)) group.entries.push(entry);
-        matched.forEach(idx => group.indices.add(idx));
-      });
-
-      grouped.forEach(group => {
-        const conflictCount = group.entries.filter(e => ctx.getEntryConflictSet?.(e)?.size).length;
-        if (mode === "problem" && !conflictCount) return;
-        contiguousRuns([...group.indices]).forEach(run => {
-          if (run.length <= 1) return;
-          const start = spanCellKey(day, period, run[0]);
-          if (starts.has(start)) return;
-          starts.set(start, {
-            key: group.key,
-            span: run.length,
-            entries: group.entries,
-            indices: run,
-          });
-          run.slice(1).forEach(idx => skips.add(spanCellKey(day, period, idx)));
-        });
-      });
-    });
-  });
-  return { starts, skips };
-}
-
 function makePeriodLabelCell(label, period, updatePeriodLabel) {
   const pTd = document.createElement("td");
   pTd.className = "tt-period-label";
@@ -659,7 +561,6 @@ function appendSlotContents(td, slotEntries, ctx, cardOpts = {}) {
 }
 
 export function renderTimetableGrid(ctx) {
-  injectGroupMergeStyles();
   const wrap = ctx.wrap;
   if (!wrap) return;
   ctxRenderAll = ctx.renderAll || null;
@@ -761,20 +662,6 @@ function renderClassGrid(wrap, ctx) {
 
   const tbody = document.createElement("tbody");
   tbody.style.height = `calc(100% - ${classHeaderHeightPx}px)`;
-  const classAxis = gradeSections.map(sec => gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || {
-    gradeKey: currentGrade,
-    sectionIdx: sec,
-    section: sectionLabel(sec),
-  });
-  const horizontalSpans = buildAxisSpanMap({
-    axisItems: classAxis,
-    entries,
-    days: DAYS.map((_, i) => i),
-    periods,
-    ctx,
-    mode: "summary",
-    matchEntry: (entry, clsInfo) => entryMatchesClassForGrid(entry, clsInfo),
-  });
   periods.forEach((label, period) => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
@@ -783,32 +670,25 @@ function renderClassGrid(wrap, ctx) {
     tr.appendChild(periodCell);
 
     DAYS.forEach((_, day) => {
-      gradeSections.forEach((sec, secPos) => {
-        const spanKey = spanCellKey(day, period, secPos);
-        if (horizontalSpans.skips.has(spanKey)) return;
-        const span = horizontalSpans.starts.get(spanKey);
+      gradeSections.forEach(sec => {
         const td = document.createElement("td");
-        td.className = "tt-cell tt-percent-grid-cell" + (span ? " tt-group-merged-cell" : "");
-        if (span) td.colSpan = span.span;
+        td.className = "tt-cell tt-percent-grid-cell";
         td.dataset.gradeKey = currentGrade;
         td.dataset.sectionIdx = String(sec);
         td.setAttribute("data-day", day);
         td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};min-width:0;position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: sec }));
 
-        const clsInfo = classAxis[secPos] || {
+        const clsInfo = gradeClassInfos.find(c => (c.sectionIdx ?? 0) === sec) || {
           gradeKey: currentGrade,
           sectionIdx: sec,
           section: sectionLabel(sec),
         };
-        const slotEntries = span
-          ? span.entries
-          : entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, clsInfo));
+        const slotEntries = entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, clsInfo));
         if (slotEntries.length) {
-          const renderEntries = span ? [slotEntries[0]] : slotEntries;
-          renderEntries.forEach(entry => {
+          slotEntries.forEach(entry => {
             const c = ctx.buildEntryCard(entry, { compact: true });
-            c.style.cssText += ";flex-shrink:0;width:100%;height:100%";
+            c.style.cssText += ";flex-shrink:0;width:100%";
             td.appendChild(c);
           });
         } else {
@@ -925,24 +805,7 @@ function renderTeacherGrid(wrap, ctx) {
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
 
-  const teacherEntryMatchesSelection = entry => {
-    const names = Array.isArray(entry.teacherNames) && entry.teacherNames.length
-      ? entry.teacherNames
-      : splitTeacherNames(entry.teacherName);
-    return names.some(t => selectedTeacherSet.has(t));
-  };
-  const teacherEntriesForSpans = ctx.entries.filter(teacherEntryMatchesSelection);
-  const verticalSpans = buildAxisSpanMap({
-    axisItems: classes,
-    entries: teacherEntriesForSpans,
-    days: dayIndexes,
-    periods,
-    ctx,
-    mode: "summary",
-    matchEntry: (entry, cls) => entryMatchesClassForGrid(entry, cls),
-  });
-
-  classes.forEach((cls, classPos) => {
+  classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -961,33 +824,29 @@ function renderTeacherGrid(wrap, ctx) {
 
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
-        const spanKey = spanCellKey(day, period, classPos);
-        if (verticalSpans.skips.has(spanKey)) return;
-        const span = verticalSpans.starts.get(spanKey);
         const td = document.createElement("td");
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (span ? " tt-group-merged-cell" : "");
-        if (span) td.rowSpan = span.span;
+        td.className = "tt-cell tt-all-cell tt-teacher-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = span
-          ? `padding:0 1px;vertical-align:top;overflow:hidden;height:auto;position:relative`
-          : `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
-        const slotEntries = span
-          ? span.entries
-          : ctx.entries.filter(e => teacherEntryMatchesSelection(e) && e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
+        const slotEntries = ctx.entries.filter(e => {
+          const names = Array.isArray(e.teacherNames) && e.teacherNames.length
+            ? e.teacherNames
+            : splitTeacherNames(e.teacherName);
+          return names.some(t => selectedTeacherSet.has(t)) && e.day === day && e.period === period && entryMatchesClassForGrid(e, cls);
+        });
 
         if (slotEntries.length) {
           const cg = document.createElement("div");
           cg.className = "tt-cell-card-grid";
           cg.style.height = "100%";
-          const renderEntries = span ? [slotEntries[0]] : slotEntries;
-          cg.style.setProperty("--tt-auto-cols", String(renderEntries.length || 1));
-          renderEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true })));
+          cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
+          slotEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true })));
           td.appendChild(cg);
         } else {
           const ph = document.createElement("div");
@@ -1101,24 +960,7 @@ function renderRoomGrid(wrap, ctx) {
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
 
-  const roomEntryMatchesSelection = entry => {
-    const roomIds = typeof ctx.getRoomIdsForEntry === "function"
-      ? (ctx.getRoomIdsForEntry(entry) || [])
-      : [entry.roomId].filter(Boolean);
-    return roomIds.some(id => selectedRoomSet.has(id));
-  };
-  const roomEntriesForSpans = ctx.entries.filter(roomEntryMatchesSelection);
-  const verticalSpans = buildAxisSpanMap({
-    axisItems: classes,
-    entries: roomEntriesForSpans,
-    days: dayIndexes,
-    periods,
-    ctx,
-    mode: "summary",
-    matchEntry: (entry, cls) => entryMatchesClassForGrid(entry, cls),
-  });
-
-  classes.forEach((cls, classPos) => {
+  classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -1137,20 +979,14 @@ function renderRoomGrid(wrap, ctx) {
 
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
-        const spanKey = spanCellKey(day, period, classPos);
-        if (verticalSpans.skips.has(spanKey)) return;
-        const span = verticalSpans.starts.get(spanKey);
         const td = document.createElement("td");
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell tt-room-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (span ? " tt-group-merged-cell" : "");
-        if (span) td.rowSpan = span.span;
+        td.className = "tt-cell tt-all-cell tt-room-class-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = span
-          ? `padding:0 1px;vertical-align:top;overflow:hidden;height:auto;position:relative`
-          : `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({
           ...dragData,
           sectionIdx: cls.sectionIdx,
@@ -1161,17 +997,19 @@ function renderRoomGrid(wrap, ctx) {
           roomPinned: true,
         }));
 
-        const slotEntries = span
-          ? span.entries
-          : ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls) && roomEntryMatchesSelection(e));
+        const slotEntries = ctx.entries.filter(e => {
+          const roomIds = typeof ctx.getRoomIdsForEntry === "function"
+            ? (ctx.getRoomIdsForEntry(e) || [])
+            : [e.roomId].filter(Boolean);
+          return roomIds.some(id => selectedRoomSet.has(id)) && e.day === day && e.period === period && entryMatchesClassForGrid(e, cls);
+        });
 
         if (slotEntries.length) {
           const cg = document.createElement("div");
           cg.className = "tt-cell-card-grid";
           cg.style.height = "100%";
-          const renderEntries = span ? [slotEntries[0]] : slotEntries;
-          cg.style.setProperty("--tt-auto-cols", String(renderEntries.length || 1));
-          renderEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true, showGrade: true })));
+          cg.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
+          slotEntries.forEach(entry => cg.appendChild(ctx.buildEntryCard(entry, { compact: true, showGrade: true })));
           td.appendChild(cg);
         } else {
           const ph = document.createElement("div");
@@ -1264,17 +1102,8 @@ function renderAllClassesGrid(wrap, ctx) {
 
   const tbody = document.createElement("tbody");
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
-  const verticalSpans = buildAxisSpanMap({
-    axisItems: classes,
-    entries: ctx.entries,
-    days: dayIndexes,
-    periods,
-    ctx,
-    mode,
-    matchEntry: (entry, cls) => entryMatchesClassForGrid(entry, cls),
-  });
   let prevGrade = null;
-  classes.forEach((cls, classPos) => {
+  classes.forEach(cls => {
     const tr = document.createElement("tr");
     tr.style.height = rowHeight;
     tr.dataset.gradeKey = cls.gradeKey;
@@ -1293,25 +1122,17 @@ function renderAllClassesGrid(wrap, ctx) {
 
     dayIndexes.forEach(day => {
       periods.forEach((_, period) => {
-        const spanKey = spanCellKey(day, period, classPos);
-        if (verticalSpans.skips.has(spanKey)) return;
-        const span = verticalSpans.starts.get(spanKey);
         const td = document.createElement("td");
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "") + (span ? " tt-group-merged-cell" : "");
-        if (span) td.rowSpan = span.span;
+        td.className = "tt-cell tt-all-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.dataset.gradeKey = cls.gradeKey;
         td.dataset.sectionIdx = String(cls.sectionIdx);
         td.setAttribute("data-day", day);
-        td.style.cssText = span
-          ? `padding:0 1px;vertical-align:top;overflow:hidden;height:auto;position:relative`
-          : `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
+        td.style.cssText = `padding:0 1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative`;
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
-        const slotEntries = span
-          ? span.entries
-          : ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
+        const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
         appendAllSlotContents(td, slotEntries, ctx, mode);
         tr.appendChild(td);
       });
