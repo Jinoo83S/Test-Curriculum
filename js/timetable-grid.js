@@ -56,7 +56,9 @@ function injectAllSummaryStyles() {
     .tt-all-view-help{margin-left:auto;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
     .tt-all-class-table.tt-all-summary-table{flex:1 1 auto;height:auto!important;min-height:0;}
     .tt-all-summary-cell-wrap{height:100%;width:100%;display:flex;align-items:stretch;gap:1px;min-width:0;overflow:hidden;}
-    .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;}
+    .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex:var(--tt-class-span,1) 1 0;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;min-height:calc(32px * min(var(--tt-class-span,1),4));}
+    .tt-all-summary-card.tt-multi-class-card{border-width:2px;border-left-width:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.72),0 1px 3px rgba(15,23,42,.18);}
+    .tt-all-summary-card.tt-multi-class-card::after{content:attr(data-span-label);position:absolute;right:3px;bottom:2px;border-radius:999px;background:rgba(15,23,42,.74);color:#fff;font-size:9px;font-weight:950;padding:1px 5px;line-height:1.2;}
     .tt-all-summary-card:hover{filter:brightness(.98);box-shadow:inset 0 0 0 1px rgba(37,99,235,.25);}
     .tt-all-summary-card.tt-all-summary-problem{outline:2px solid #ef4444;outline-offset:-2px;background:#fff1f2!important;color:#9f1239!important;}
     .tt-all-summary-card.tt-all-summary-hidden-normal{opacity:.18;filter:grayscale(.6);}
@@ -91,7 +93,8 @@ function injectGroupMergeStyles() {
   const style = document.createElement("style");
   style.id = "tt-group-merge-style";
   style.textContent = `
-    .tt-cell.tt-group-merged-cell{position:relative;box-shadow:inset 0 0 0 2px rgba(37,99,235,.42);background:linear-gradient(180deg,rgba(239,246,255,.72),rgba(248,250,252,.66));}
+    .tt-cell.tt-group-merged-cell{position:relative;box-shadow:inset 0 0 0 3px rgba(37,99,235,.55);background:linear-gradient(180deg,rgba(239,246,255,.86),rgba(248,250,252,.72));}
+    .tt-cell.tt-group-merged-cell::before{content:'묶음';position:absolute;right:2px;top:2px;z-index:4;border-radius:999px;background:rgba(37,99,235,.88);color:#fff;font-size:9px;font-weight:950;padding:1px 5px;pointer-events:none;}
     .tt-cell.tt-group-merged-cell .tt-entry-card,
     .tt-cell.tt-group-merged-cell .tt-all-summary-card{height:100%;min-height:100%;}
     .tt-cell.tt-group-merged-cell .tt-cell-card-grid,
@@ -298,6 +301,8 @@ function summarizeEntryGroup(group, ctx = {}) {
   const isSingleSubject = group.entries.length === 1 && group.cards.length <= 1;
   if (!groupDisplayName && isSingleSubject) title = subjectTitles[0] || title;
 
+  const classKeys = localUnique(group.entries.flatMap(e => explicitClassKeysForEntry(e)));
+
   return {
     ...group,
     title,
@@ -307,6 +312,8 @@ function summarizeEntryGroup(group, ctx = {}) {
     studentCount: studentKeys.length,
     conflictCount,
     gradeColor,
+    classKeys,
+    classSpan: Math.max(1, classKeys.length || Math.max(1, group.entries.length)),
   };
 }
 
@@ -343,7 +350,12 @@ function writeSummaryDragData(ev, data) {
 
 function makeSummaryCard(summary, ctx = {}, mode = "summary") {
   const card = document.createElement("div");
-  card.className = "tt-all-summary-card" + (summary.conflictCount ? " tt-all-summary-problem" : "");
+  const classSpan = Math.max(1, Number(summary.classSpan || summary.classKeys?.length || 1));
+  card.className = "tt-all-summary-card"
+    + (summary.conflictCount ? " tt-all-summary-problem" : "")
+    + (classSpan > 1 ? " tt-multi-class-card" : "");
+  card.style.setProperty("--tt-class-span", String(Math.min(classSpan, 6)));
+  if (classSpan > 1) card.dataset.spanLabel = `${classSpan}칸`;
   card.style.setProperty("--tt-sum-bg", summary.gradeColor.bg || "#eff6ff");
   card.style.setProperty("--tt-sum-text", summary.gradeColor.text || "#1e3a8a");
   card.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
@@ -376,8 +388,9 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
     card.dataset.entryId = contextEntry.id;
     card.dataset.ttEntryId = contextEntry.id;
   }
+  const classText = summary.classKeys?.length ? `대상 ${summary.classKeys.join(", ")}` : "";
   if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · ${subjectText}`;
-  else card.title = [subjectText, teacherText, roomText].filter(Boolean).join(" · ");
+  else card.title = [subjectText, teacherText, roomText, classText].filter(Boolean).join(" · ");
 
   const dragData = getSummaryDragData(summary);
   if (dragData && canEdit()) {
