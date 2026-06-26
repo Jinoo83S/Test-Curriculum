@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r181: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
+// r182: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -128,7 +128,14 @@ function privacyReport(state) {
     entriesWithAudienceStudentKeys: entries.filter(e => asArray(e?.audienceStudentKeys).length).length,
   };
 }
-function makeSolverState(appState) {
+function makeSolverState(appState, live = {}) {
+  // r182: CP-SAT에는 화면에 실제로 렌더링 중인 현재 entries()를 전송해야 합니다.
+  // appState.timetable.entries가 저장/동기화 지연으로 4개처럼 오래된 값을 가질 수 있어서,
+  // ttDomain() + entries()를 우선 사용해 visible timetable과 solver payload를 일치시킵니다.
+  const liveTimetable = deepClone(live.timetable || appState?.timetable || {});
+  if (Array.isArray(live.entries)) {
+    liveTimetable.entries = deepClone(live.entries);
+  }
   const data = {
     curriculum: appState?.curriculum || {},
     templates: appState?.templates || {},
@@ -136,13 +143,13 @@ function makeSolverState(appState) {
     teachers: appState?.teachers || {},
     rosters: appState?.rosters || {},
     rooms: appState?.rooms || {},
-    timetable: appState?.timetable || {},
+    timetable: liveTimetable,
   };
   const wrapped = {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r181 CP-SAT API bridge",
+    source: "HIS webapp r182 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -359,7 +366,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
       ok: validation.ok !== false,
-      source: "cp-sat-api-r181",
+      source: "cp-sat-webapp-r182",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
       importedAt: nowIso(),
@@ -451,7 +458,10 @@ export function setupCpSatWebappImport(ctx = {}) {
       };
     }
     function solverState() {
-      latestState = makeSolverState(appState);
+      latestState = makeSolverState(appState, {
+        timetable: ttDomain?.() || appState?.timetable || {},
+        entries: asArray(entries?.()),
+      });
       return latestState;
     }
     function setStatus(cls, html, progress = null) {
@@ -587,8 +597,14 @@ export function setupCpSatWebappImport(ctx = {}) {
   }
 
   window.HisCpSatWebappImport = {
-    makeSolverState: () => makeSolverState(appState),
-    privacyReport: () => privacyReport(makeSolverState(appState)),
+    makeSolverState: () => makeSolverState(appState, {
+      timetable: ttDomain?.() || appState?.timetable || {},
+      entries: asArray(entries?.()),
+    }),
+    privacyReport: () => privacyReport(makeSolverState(appState, {
+      timetable: ttDomain?.() || appState?.timetable || {},
+      entries: asArray(entries?.()),
+    })),
     entriesSummary,
   };
 }
