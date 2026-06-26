@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-cpsat-current-webapp-r171"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-interface-review-r172"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1622,12 +1622,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content{min-height:0!important;}
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
+
+/* r172: remove obsolete bottom build strip and clean bottom toggle */
+#hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge{display:none!important}
+.tt-bottom-toggle-btn{gap:6px!important;border-radius:999px!important;background:#fff!important;color:#334155!important;border-color:#cbd5e1!important;font-weight:900!important}
+.tt-bottom-toggle-btn:hover{background:#eff6ff!important;color:#1d4ed8!important;border-color:#93c5fd!important}
+.tt-bottom-toggle-btn.active{background:#fee2e2!important;color:#b91c1c!important;border-color:#fecaca!important}
+#ttToggleIcon{font-size:12px;line-height:1;transition:transform .12s ease}
+.tt-bottom-toggle-btn.active #ttToggleIcon{transform:rotate(-90deg)!important}
 </style>
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r171</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r172</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1651,7 +1659,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button class="tt-view-btn active" data-view="all"     type="button">🗂 전체</button>
     <button class="tt-view-btn"        data-view="teacher" type="button">👩‍🏫 교사별</button>
     <button class="tt-view-btn"        data-view="room"    type="button">🏫 교실별</button>
-    <button class="tt-view-btn"        data-view="grade"   type="button">📋 학년별</button>
     <button class="tt-view-btn"        data-view="class"   type="button">🏷 학년·반별</button>
   </div>
   <select id="ttGradeSelect"   class="hidden"></select>
@@ -1668,7 +1675,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
   <div class="tt-toolbar-right">
     <button id="ttToggleBottom" class="tt-bottom-toggle-btn" type="button" title="하단 패널 숨기기/보이기">
-      <span id="ttToggleIcon">⌄</span> 과목·조건
+      <span id="ttToggleIcon">▾</span> 작업 패널
     </button>
   </div>
 </div>
@@ -1697,9 +1704,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-cpsat-current-webapp-r171";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-interface-review-r172";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-cpsat-current-webapp-r171";
+  import { versioned } from "./js/version.js?v=2026-06-26-interface-review-r172";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1903,7 +1910,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-cpsat-current-webapp-r171");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-interface-review-r172");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

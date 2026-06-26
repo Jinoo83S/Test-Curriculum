@@ -1708,7 +1708,7 @@ export function createTimetableSidebarHandlers(deps) {
   // Curriculum ↔ Timetable Read-only Diagnostic
   // ─────────────────────────────────────────────────────────────
   function buildCurriculumTimetableDiagnosticButton() {
-    const btn = makeBtn("🧭 커리큘럼 대조", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
+    const btn = makeBtn("📊 커리큘럼 대조", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact tt-toolbar-action", () => {
       openCurriculumTimetableDiagnosticDialog();
     });
     btn.title = "커리큘럼 보드 → 수강명단 → 시간표카드 → 배치까지 변환 상태를 읽기 전용으로 점검합니다.";
@@ -2383,8 +2383,8 @@ export function createTimetableSidebarHandlers(deps) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "his-ui-btn his-ui-btn-ghost his-ui-btn-compact tt-toolbar-action";
-    btn.textContent = "🔎 진단";
-    btn.title = "학급별 필요 시수 차이 원인을 확인합니다.";
+    btn.textContent = "🔍 시수 진단";
+    btn.title = "학급별 필요 시수와 배치 완료 상태를 점검합니다.";
     btn.addEventListener("click", () => showClassCreditDiagnostics(ttcards));
     return btn;
   }

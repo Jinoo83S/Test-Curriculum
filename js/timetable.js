@@ -8,7 +8,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-cpsat-r171";
+import { versioned } from "./version.js?v=2026-06-26-cpsat-r172";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
@@ -412,7 +412,7 @@ function setupTtSaveQuotaControls() {
     const healthBtn = document.createElement("button");
     healthBtn.type = "button";
     healthBtn.className = "tt-save-mode-btn app-health-check-btn dev-tool-control";
-    healthBtn.textContent = "앱 점검";
+    healthBtn.textContent = "앱점검";
     healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
     healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
     parent.insertBefore(healthBtn, parent.firstChild);
@@ -445,7 +445,7 @@ function setupTtSaveQuotaControls() {
     const cleanupBtn = document.createElement("button");
     cleanupBtn.type = "button";
     cleanupBtn.className = "tt-save-mode-btn data-cleanup-btn dev-tool-control";
-    cleanupBtn.textContent = "DB 정리";
+    cleanupBtn.textContent = "DB정리";
     cleanupBtn.title = "중복 시간표 카드와 교실 홈룸 데이터를 미리보기 후 정리합니다.";
     cleanupBtn.addEventListener("click", () => openDataCleanupDialog());
 
@@ -459,14 +459,15 @@ function setupTtSaveQuotaControls() {
     const healthBtn = document.createElement("button");
     healthBtn.type = "button";
     healthBtn.className = "tt-save-mode-btn app-health-check-btn dev-tool-control";
-    healthBtn.textContent = "앱 점검";
+    healthBtn.textContent = "앱점검";
     healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
     healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
 
+    // r172: 상단 검토 기능 정리
+    // - 상단에는 실행/관리 성격의 앱점검, DB정리만 둡니다.
+    // - Firestore 진단/사용량은 운영 화면 상단에서 숨겨 중복과 혼동을 줄입니다.
     parent.insertBefore(cleanupBtn, parent.firstChild);
-    parent.insertBefore(usageBtn, parent.firstChild);
     parent.insertBefore(healthBtn, parent.firstChild);
-    parent.insertBefore(diagBtn, parent.firstChild);
   }
 
   // 커리큘럼 상단바처럼 저장 상태/수동 저장/자동저장 전환을 #ttSaveBtn 하나로 통합합니다.
@@ -2231,6 +2232,7 @@ function renderGrid() {
     showEntryDetail,
     showEntryContextMenu,
     getEntryConflictSet,
+    getRooms,
     getRoomDisplayName,
     getRoomIdsForEntry: effectiveRoomIdsForEntry,
     entryRoomSummary,
