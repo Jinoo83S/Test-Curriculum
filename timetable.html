@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-gap-r174"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-grid-fill-r175"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1623,7 +1623,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
 
-/* r174: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
+/* r175: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
 #hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
 .tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip,
 #appHealthInlineStatus,#ttAppHealthStatus,#ttStatusMessage,#ttBottomMessage,.app-health-inline-status,
@@ -1661,12 +1661,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .his-toast-root{position:fixed;right:18px;bottom:18px;z-index:100000;display:grid;gap:8px;pointer-events:none}
 .his-toast{min-width:220px;max-width:min(420px,calc(100vw - 36px));background:#0f172a;color:#fff;border-radius:12px;padding:10px 13px;box-shadow:0 16px 40px rgba(15,23,42,.28);font-size:13px;font-weight:800;line-height:1.35;opacity:.98;pointer-events:none}
 .his-toast.ok{background:#166534}.his-toast.warn{background:#92400e}.his-toast.error{background:#991b1b}
+
+/* r175: 하단 패널을 접었을 때 남는 회색 공백 제거.
+   원인: #ttGrid는 화면 남는 높이를 차지하는데, 행 높이는 예전 하단 패널 높이를 계속 예약했습니다.
+   해결: 하단 패널 접힘 상태를 body class로 관리하고, 시간표 행 높이를 남는 공간에 맞춰 재계산합니다. */
+:root{
+  --tt-bottom-reserved-h: 0px;
+  --tt-grid-extra-gap: 4px;
+}
+body.tt-bottom-is-open{
+  --tt-bottom-reserved-h: min(var(--tt-bottom-current-height, 172px), 172px);
+}
+body.tt-bottom-is-collapsed{
+  --tt-bottom-reserved-h: 0px;
+}
+.tt-body{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  overflow:hidden!important;
+  background:#f8fafc!important;
+}
+#ttGrid{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  overflow:auto!important;
+  background:#f8fafc!important;
+}
+.tt-all-class-table tbody tr{
+  height:calc((100vh - 44px - 38px - 34px - var(--tt-bottom-reserved-h, 0px) - var(--tt-grid-extra-gap, 4px)) / var(--num-rows, 15))!important;
+  min-height:30px!important;
+}
+body.tt-bottom-is-collapsed .tt-all-class-table tbody tr{
+  height:calc((100vh - 44px - 38px - 34px - var(--tt-grid-extra-gap, 4px)) / var(--num-rows, 15))!important;
+}
+body.tt-bottom-is-collapsed #ttBottom{
+  display:none!important;
+  height:0!important;
+  max-height:0!important;
+  min-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+}
+body.tt-bottom-is-collapsed .tt-body{
+  padding-bottom:0!important;
+  margin-bottom:0!important;
+}
+
 </style>
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r174</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r175</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1735,9 +1784,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-bottom-gap-r174";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-grid-fill-r175";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-bottom-gap-r174";
+  import { versioned } from "./js/version.js?v=2026-06-26-grid-fill-r175";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1770,12 +1819,15 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
   function applyHeight(value, save = false) {
     const next = clampHeight(value);
-    // r174: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
+    // r175: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
     // max-height만 보관하고 실제 높이는 내용만큼 자동으로 줄어들게 합니다.
     bottom.style.height = "auto";
     bottom.style.maxHeight = next + "px";
     bottom.style.setProperty("--tt-bottom-current-height", next + "px");
     document.documentElement.style.setProperty("--tt-bottom-current-height", next + "px");
+    if (!document.body.classList.contains("tt-bottom-is-collapsed")) {
+      document.documentElement.style.setProperty("--tt-bottom-reserved-h", Math.min(next, 172) + "px");
+    }
     if (save) localStorage.setItem("tt_botH", String(next));
     return next;
   }
@@ -1850,6 +1902,9 @@ window._ttBottomToggle = (function() {
 
   function getH() { return parseInt(localStorage.getItem("tt_botH") || "172", 10); }
   function syncButton() {
+    document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
+    document.body.classList.toggle("tt-bottom-is-open", !collapsed);
+    document.documentElement.style.setProperty("--tt-bottom-reserved-h", collapsed ? "0px" : Math.min(getH(), 172) + "px");
     btn?.classList.toggle("active", collapsed);
     if (icon) icon.textContent = collapsed ? "▸" : "▾";
     if (btn) btn.title = collapsed ? "작업 패널 보이기" : "작업 패널 숨기기";
@@ -1884,6 +1939,12 @@ window._ttBottomToggle = (function() {
     collapsed ? show() : hide();
   }, { capture: true });
   if (collapsed) hide(); else show();
+  // r175 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
+  requestAnimationFrame(() => {
+    document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
+    document.body.classList.toggle("tt-bottom-is-open", !collapsed);
+    document.documentElement.style.setProperty("--tt-bottom-reserved-h", collapsed ? "0px" : Math.min(getH(), 172) + "px");
+  });
   return { show, hide, toggle: () => collapsed ? show() : hide(), isCollapsed: () => collapsed };
 })();
 
@@ -1966,7 +2027,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-gap-r174");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-grid-fill-r175");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
