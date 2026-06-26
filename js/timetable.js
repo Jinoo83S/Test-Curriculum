@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-cpsat-r172";
+import { versioned } from "./version.js?v=2026-06-26-cpsat-r173";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-r173";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -463,11 +463,16 @@ function setupTtSaveQuotaControls() {
     healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
     healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
 
-    // r172: 상단 검토 기능 정리
-    // - 상단에는 실행/관리 성격의 앱점검, DB정리만 둡니다.
-    // - Firestore 진단/사용량은 운영 화면 상단에서 숨겨 중복과 혼동을 줄입니다.
+    // r173: 운영자가 쓰는 진단/사용량 버튼은 다시 상단에 둡니다.
+    // 기능 구분:
+    // - Firestore 진단: 서버 저장 원본 JSON 내보내기
+    // - 앱점검: 현재 브라우저/모듈/DOM/참조 상태 점검
+    // - 사용량: Firestore 읽기/쓰기/삭제 추정량 확인
+    // - DB정리: 중복/깨진 참조 정리 미리보기와 실행
     parent.insertBefore(cleanupBtn, parent.firstChild);
+    parent.insertBefore(usageBtn, parent.firstChild);
     parent.insertBefore(healthBtn, parent.firstChild);
+    parent.insertBefore(diagBtn, parent.firstChild);
   }
 
   // 커리큘럼 상단바처럼 저장 상태/수동 저장/자동저장 전환을 #ttSaveBtn 하나로 통합합니다.

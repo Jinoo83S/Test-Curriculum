@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-interface-review-r172"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-ui-review-r173"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1623,19 +1623,28 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
 
-/* r172: remove obsolete bottom build strip and clean bottom toggle */
-#hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge{display:none!important}
+/* r173: remove obsolete bottom build/status strip and clean bottom toggle */
+#hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
+.tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip{display:none!important}
+.tt-bottom{flex:0 0 auto;min-height:0!important;height:172px}
+.tt-bottom-scroll{height:100%!important;max-height:100%!important;overflow:auto!important}
+.tt-bottom-content{min-height:0!important;max-height:calc(100% - 32px)!important;overflow:auto!important}
+.tt-bottom.tt-bottom-collapsed{display:none!important;height:0!important;min-height:0!important;border:0!important;overflow:hidden!important}
+.tt-bottom.tt-bottom-collapsed *{display:none!important}
 .tt-bottom-toggle-btn{gap:6px!important;border-radius:999px!important;background:#fff!important;color:#334155!important;border-color:#cbd5e1!important;font-weight:900!important}
 .tt-bottom-toggle-btn:hover{background:#eff6ff!important;color:#1d4ed8!important;border-color:#93c5fd!important}
 .tt-bottom-toggle-btn.active{background:#fee2e2!important;color:#b91c1c!important;border-color:#fecaca!important}
 #ttToggleIcon{font-size:12px;line-height:1;transition:transform .12s ease}
 .tt-bottom-toggle-btn.active #ttToggleIcon{transform:rotate(-90deg)!important}
+.his-toast-root{position:fixed;right:18px;bottom:18px;z-index:100000;display:grid;gap:8px;pointer-events:none}
+.his-toast{min-width:220px;max-width:min(420px,calc(100vw - 36px));background:#0f172a;color:#fff;border-radius:12px;padding:10px 13px;box-shadow:0 16px 40px rgba(15,23,42,.28);font-size:13px;font-weight:800;line-height:1.35;opacity:.98;pointer-events:none}
+.his-toast.ok{background:#166534}.his-toast.warn{background:#92400e}.his-toast.error{background:#991b1b}
 </style>
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r172</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r173</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1704,9 +1713,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-interface-review-r172";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-ui-review-r173";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-interface-review-r172";
+  import { versioned } from "./js/version.js?v=2026-06-26-ui-review-r173";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1728,9 +1737,9 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 (function() {
   const bottom  = document.getElementById("ttBottom");
   const resizer = document.getElementById("ttBottomResizer");
-  const DEFAULT_H = 260;
-  const MIN_H = 80;
-  const MAX_H = 720;
+  const DEFAULT_H = 172;
+  const MIN_H = 104;
+  const MAX_H = 520;
 
   function clampHeight(value) {
     const n = Number.parseInt(value, 10);
@@ -1810,25 +1819,45 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 window._ttBottomToggle = (function() {
   const bottom = document.getElementById("ttBottom");
   const btn    = document.getElementById("ttToggleBottom");
-  let collapsed = false;
+  const icon   = document.getElementById("ttToggleIcon");
+  let collapsed = localStorage.getItem("tt_bottom_collapsed") === "1";
 
-  function getH() { return parseInt(localStorage.getItem("tt_botH") || "260", 10); }
+  function getH() { return parseInt(localStorage.getItem("tt_botH") || "172", 10); }
+  function syncButton() {
+    btn?.classList.toggle("active", collapsed);
+    if (icon) icon.textContent = collapsed ? "▸" : "▾";
+    if (btn) btn.title = collapsed ? "작업 패널 보이기" : "작업 패널 숨기기";
+  }
 
   function show() {
     collapsed = false;
+    localStorage.setItem("tt_bottom_collapsed", "0");
+    bottom?.classList.remove("tt-bottom-collapsed");
+    if (bottom) {
+      bottom.style.display = "";
+      bottom.style.overflow = "";
+    }
     window._ttSetBottomHeight?.(getH(), false);
-    bottom.style.overflow = "";
-    btn?.classList.remove("active");
+    syncButton();
   }
   function hide() {
     collapsed = true;
-    bottom.style.height = "0";
-    bottom.style.overflow = "hidden";
-    btn?.classList.add("active");
+    localStorage.setItem("tt_bottom_collapsed", "1");
+    if (bottom) {
+      bottom.classList.add("tt-bottom-collapsed");
+      bottom.style.height = "0px";
+      bottom.style.overflow = "hidden";
+    }
+    syncButton();
   }
 
-  btn?.addEventListener("click", () => { collapsed ? show() : hide(); });
-  return { show, hide, isCollapsed: () => collapsed };
+  btn?.addEventListener("click", ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    collapsed ? show() : hide();
+  }, { capture: true });
+  if (collapsed) hide(); else show();
+  return { show, hide, toggle: () => collapsed ? show() : hide(), isCollapsed: () => collapsed };
 })();
 
 
@@ -1910,7 +1939,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-interface-review-r172");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-ui-review-r173");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

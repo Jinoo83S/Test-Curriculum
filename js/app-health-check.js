@@ -9,7 +9,7 @@ import {
   getFirestoreUsageStats,
 } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { APP_VERSION, versioned } from "./version.js?v=2026-06-23-real-table-merge-r102";
+import { APP_VERSION, versioned } from "./version.js";
 
 const MODULE_FILES = [
   "./js/app.js",
@@ -381,19 +381,57 @@ export async function runAppHealthCheck() {
   return report;
 }
 
+
+function ensureHealthToastRoot() {
+  let root = document.querySelector(".his-toast-root");
+  if (!root) {
+    root = document.createElement("div");
+    root.className = "his-toast-root";
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
+function showHealthToast(message, kind = "") {
+  const root = ensureHealthToastRoot();
+  const toast = document.createElement("div");
+  toast.className = `his-toast ${kind || ""}`.trim();
+  toast.textContent = message;
+  root.appendChild(toast);
+  setTimeout(() => { toast.style.opacity = "0"; toast.style.transform = "translateY(6px)"; }, 1600);
+  setTimeout(() => toast.remove(), 2200);
+}
+
+function applyHealthOverlayBaseStyle(overlay) {
+  if (!overlay) return;
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:24px;";
+}
+
+function applyHealthDialogBaseStyle(overlay) {
+  const dialog = overlay?.querySelector?.(".hc-dialog");
+  if (dialog) {
+    dialog.style.cssText = dialog.getAttribute("style") || "width:min(1040px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:#fff;border-radius:18px;box-shadow:0 24px 80px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;";
+  }
+}
+
 export async function openAppHealthCheckDialog() {
+  showHealthToast("앱 상태를 점검하는 중입니다…", "ok");
   let overlay = document.querySelector(".hc-overlay");
   if (!overlay) {
     overlay = document.createElement("div");
     overlay.className = "hc-overlay";
     document.body.appendChild(overlay);
   }
+  applyHealthOverlayBaseStyle(overlay);
   overlay.innerHTML = `<div class="hc-dialog"><div class="hc-header"><h2>🔍 앱 상태 점검</h2></div><div class="hc-body">점검 중입니다…</div></div>`;
+  applyHealthDialogBaseStyle(overlay);
 
   const render = async () => {
     try {
       const report = await runAppHealthCheck();
       overlay.innerHTML = buildReportHtml(report);
+      applyHealthOverlayBaseStyle(overlay);
+      showHealthToast(report.overall === "ok" ? "앱점검 완료: 정상" : "앱점검 완료: 확인 필요", report.overall === "ok" ? "ok" : "warn");
       overlay.querySelector("[data-hc-close]")?.addEventListener("click", () => overlay.remove());
       overlay.addEventListener("click", ev => { if (ev.target === overlay) overlay.remove(); }, { once: true });
       overlay.querySelector("[data-hc-refresh]")?.addEventListener("click", () => void render());
@@ -403,6 +441,9 @@ export async function openAppHealthCheckDialog() {
     } catch (error) {
       console.error("[app health check]", error);
       overlay.innerHTML = `<div class="hc-dialog"><div class="hc-header"><h2>🔍 앱 상태 점검 오류</h2><button type="button" class="hc-btn" data-hc-close>닫기</button></div><div class="hc-body">${esc(error?.message || error)}</div></div>`;
+      applyHealthOverlayBaseStyle(overlay);
+      applyHealthDialogBaseStyle(overlay);
+      showHealthToast("앱점검 오류", "error");
       overlay.querySelector("[data-hc-close]")?.addEventListener("click", () => overlay.remove());
     }
   };

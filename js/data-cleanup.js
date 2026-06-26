@@ -1,5 +1,5 @@
 // ================================================================
-// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers
+// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r173
 // ================================================================
 import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js";
 import { canEdit } from "./auth.js";
@@ -57,26 +57,38 @@ function titleOfCard(card = {}) {
   return clean(card.subject) || clean(card.nameKo) || clean(card.label) || clean(card.subjectEn) || clean(card.nameEn) || clean(card.templateId) || "이름 없음";
 }
 
+function extractCompoundPartIdFromCard(card = {}) {
+  const direct = clean(card.partId || card.compoundPartId || card.sourcePartId || card.templatePartId);
+  if (direct) return direct;
+  const id = clean(card.id);
+  const m = id.match(/_part_(.+)$/);
+  return m ? clean(m[1]) : "";
+}
+
 function isWholeGradeLikeCard(card = {}) {
   const labelText = [
     card.subject, card.subjectEn, card.label, card.nameKo, card.nameEn,
     card.category, card.track, card.group
   ].map(clean).filter(Boolean).join(" ");
-  if (!card.gradeKey) return false;
-  if (card.isWholeGrade) return true;
-  const hasStoredAudience = (Array.isArray(card.classKeys) && card.classKeys.length)
-    || (Array.isArray(card.classLabels) && card.classLabels.length);
-  if (hasStoredAudience) return false;
-  return isProtectedWholeGradeLabel(labelText);
+  return !!card.gradeKey && (
+    !!card.isWholeGrade ||
+    isChanCheCategory(card.category) ||
+    isProtectedWholeGradeLabel(labelText)
+  );
 }
 
 function duplicateKeyForWholeCard(card = {}) {
   if (!isWholeGradeLikeCard(card)) return "";
   const subjectKey = clean(card.templateId) || clean(card.subject) || clean(card.label);
   if (!subjectKey || !card.gradeKey) return "";
+  // r173: 복합/묶음 과목 파트 카드는 같은 templateId·gradeKey·sectionIdx를 공유해도
+  // 서로 다른 실제 수업입니다. partId를 key에 포함하지 않으면
+  // “심화물리(2) → 미적분(2)”처럼 잘못된 안전 정리 대상으로 잡힙니다.
+  const partKey = extractCompoundPartIdFromCard(card);
   return [
     clean(card.gradeKey),
     subjectKey,
+    partKey ? `part:${partKey}` : "whole",
     clean(card.category),
     clean(card.track),
     clean(card.group),
