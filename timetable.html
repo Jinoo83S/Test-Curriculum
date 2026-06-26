@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-measure-r176"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-measure-r177"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1623,7 +1623,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
 
-/* r176: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
+/* r177: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
 #hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
 .tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip,
 #appHealthInlineStatus,#ttAppHealthStatus,#ttStatusMessage,#ttBottomMessage,.app-health-inline-status,
@@ -1662,7 +1662,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .his-toast{min-width:220px;max-width:min(420px,calc(100vw - 36px));background:#0f172a;color:#fff;border-radius:12px;padding:10px 13px;box-shadow:0 16px 40px rgba(15,23,42,.28);font-size:13px;font-weight:800;line-height:1.35;opacity:.98;pointer-events:none}
 .his-toast.ok{background:#166534}.his-toast.warn{background:#92400e}.his-toast.error{background:#991b1b}
 
-/* r176: 하단 패널을 접었을 때 남는 회색 공백 제거.
+/* r177: 하단 패널을 접었을 때 남는 회색 공백 제거.
    원인: #ttGrid는 화면 남는 높이를 차지하는데, 행 높이는 예전 하단 패널 높이를 계속 예약했습니다.
    해결: 하단 패널 접힘 상태를 body class로 관리하고, 시간표 행 높이를 남는 공간에 맞춰 재계산합니다. */
 :root{
@@ -1711,7 +1711,7 @@ body.tt-bottom-is-collapsed .tt-body{
 }
 
 
-/* r176: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
+/* r177: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
 :root{
   --tt-bottom-measured-h:0px;
   --tt-bottom-reserved-h:0px;
@@ -1733,7 +1733,7 @@ body.tt-bottom-is-open #ttBottom{
   height:auto;
   min-height:0!important;
 }
-body.tt-bottom-is-open #ttBottom.tt-bottom-r176-measured{
+body.tt-bottom-is-open #ttBottom.tt-bottom-r177-measured{
   height:var(--tt-bottom-measured-h, auto)!important;
   max-height:var(--tt-bottom-measured-h, none)!important;
 }
@@ -1787,12 +1787,65 @@ body.tt-bottom-is-open .tt-body{
   height:calc((100vh - 44px - 38px - 34px - var(--tt-bottom-reserved-h, 0px) - 2px) / var(--num-rows, 15))!important;
 }
 
+
+
+/* r177: 작업 패널 닫힘 = 하단 패널 완전 제거 + 시간표 영역 전체 확장 */
+body.tt-bottom-is-collapsed #ttBottom,
+body.tt-bottom-is-collapsed #ttBottom *{
+  display:none!important;
+  visibility:hidden!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  flex-basis:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
+}
+body.tt-bottom-is-collapsed{
+  --tt-bottom-measured-h:0px!important;
+  --tt-bottom-reserved-h:0px!important;
+  --tt-bottom-current-height:0px!important;
+}
+body.tt-bottom-is-collapsed .tt-body{
+  flex:1 1 0!important;
+  min-height:0!important;
+  height:auto!important;
+  padding-bottom:0!important;
+  margin-bottom:0!important;
+  overflow:hidden!important;
+}
+body.tt-bottom-is-collapsed #ttGrid{
+  flex:1 1 0!important;
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:auto!important;
+}
+body.tt-bottom-is-collapsed .tt-all-class-wrap,
+body.tt-bottom-is-collapsed .tt-class-wrap,
+body.tt-bottom-is-collapsed .tt-grade-wrap,
+body.tt-bottom-is-collapsed .tt-room-wrap,
+body.tt-bottom-is-collapsed .tt-teacher-wrap{
+  height:100%!important;
+  min-height:0!important;
+}
+body.tt-bottom-is-collapsed .tt-bottom-toggle-btn{
+  background:#fee2e2!important;
+  color:#991b1b!important;
+  border-color:#fecaca!important;
+}
+body.tt-bottom-is-open .tt-bottom-toggle-btn{
+  background:#fff!important;
+  color:#334155!important;
+}
 </style>
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r176</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r177</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1861,9 +1914,9 @@ body.tt-bottom-is-open .tt-body{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-bottom-measure-r176";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-bottom-measure-r177";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-bottom-measure-r176";
+  import { versioned } from "./js/version.js?v=2026-06-26-bottom-measure-r177";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1896,7 +1949,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
   function applyHeight(value, save = false) {
     const next = clampHeight(value);
-    // r176: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
+    // r177: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
     // max-height만 보관하고 실제 높이는 내용만큼 자동으로 줄어들게 합니다.
     bottom.style.height = "auto";
     bottom.style.maxHeight = next + "px";
@@ -2016,7 +2069,7 @@ window._ttBottomToggle = (function() {
     collapsed ? show() : hide();
   }, { capture: true });
   if (collapsed) hide(); else show();
-  // r176 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
+  // r177 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
   requestAnimationFrame(() => {
     document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
     document.body.classList.toggle("tt-bottom-is-open", !collapsed);
@@ -2025,13 +2078,13 @@ window._ttBottomToggle = (function() {
   return { show, hide, toggle: () => collapsed ? show() : hide(), isCollapsed: () => collapsed };
 })();
 
-/* ── r176: Bottom panel measured-height reflow ──
+/* ── r177: Bottom panel measured-height reflow ──
    하단 패널의 저장 높이/과거 inline style이 아니라, 현재 활성 탭의 실제 콘텐츠 높이를 실측해
    그만큼만 화면을 차지하게 합니다. 과목 카드 아래 회색 공백의 직접 원인입니다. */
 (function() {
   const bottom = document.getElementById("ttBottom");
-  if (!bottom || bottom.dataset.r176Measured === "1") return;
-  bottom.dataset.r176Measured = "1";
+  if (!bottom || bottom.dataset.r177Measured === "1") return;
+  bottom.dataset.r177Measured = "1";
 
   const root = document.documentElement;
   const body = document.body;
@@ -2087,7 +2140,7 @@ window._ttBottomToggle = (function() {
     try {
     const collapsed = body.classList.contains("tt-bottom-is-collapsed") || bottom.classList.contains("tt-bottom-collapsed");
     if (collapsed) {
-      bottom.classList.remove("tt-bottom-r176-measured");
+      bottom.classList.remove("tt-bottom-r177-measured");
       setStyleValue(bottom, "height", "0px");
       setStyleValue(bottom, "maxHeight", "0px");
       setRootVar("--tt-bottom-measured-h", "0px");
@@ -2103,7 +2156,7 @@ window._ttBottomToggle = (function() {
     const desired = Math.max(MIN_OPEN_H, Math.min(MAX_OPEN_H, naturalHeight()));
     const hpx = desired + "px";
 
-    bottom.classList.add("tt-bottom-r176-measured");
+    bottom.classList.add("tt-bottom-r177-measured");
     setStyleValue(bottom, "height", hpx);
     setStyleValue(bottom, "maxHeight", hpx);
     setStyleValue(bottom, "minHeight", "0px");
@@ -2228,7 +2281,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-measure-r176");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-measure-r177");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
@@ -2240,5 +2293,99 @@ window._ttBottomToggle = (function() {
 })();
 </script>
 
+
+<script id="tt-bottom-toggle-hard-r177">
+(function(){
+  const bottom0 = document.getElementById("ttBottom");
+  const btn0 = document.getElementById("ttToggleBottom");
+  if (!bottom0 || !btn0) return;
+
+  // 이전 스크립트들이 붙인 click handler와 저장 높이 로직이 서로 충돌하므로 버튼을 한 번 복제해 이벤트를 정리합니다.
+  const btn = btn0.cloneNode(true);
+  btn0.replaceWith(btn);
+  const icon = btn.querySelector("#ttToggleIcon") || document.getElementById("ttToggleIcon");
+  const bottom = document.getElementById("ttBottom");
+  const root = document.documentElement;
+  const body = document.body;
+
+  function setImportant(el, prop, value){
+    try { el?.style?.setProperty(prop, value, "important"); } catch (_) {}
+  }
+  function clearInlineBottomSize(){
+    if (!bottom) return;
+    ["height","max-height","min-height","flex-basis","overflow","visibility","display","margin","padding","border"].forEach(p => {
+      try { bottom.style.removeProperty(p); } catch (_) {}
+    });
+    bottom.querySelectorAll(".tt-bottom-scroll").forEach(el => {
+      ["height","max-height","min-height"].forEach(p => { try { el.style.removeProperty(p); } catch (_) {} });
+    });
+  }
+  function notifyLayout(){
+    root.style.setProperty("--tt-bottom-reserved-h", "0px");
+    if (body.classList.contains("tt-bottom-is-open")) {
+      window._ttReflowBottomPanel?.();
+    }
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+      const grid = document.getElementById("ttGrid");
+      if (grid) {
+        grid.style.setProperty("height", "100%", "important");
+        grid.style.setProperty("min-height", "0", "important");
+      }
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    });
+  }
+  function apply(collapsed){
+    localStorage.setItem("tt_bottom_collapsed", collapsed ? "1" : "0");
+    body.classList.toggle("tt-bottom-is-collapsed", collapsed);
+    body.classList.toggle("tt-bottom-is-open", !collapsed);
+    btn.classList.toggle("active", collapsed);
+    if (icon) icon.textContent = collapsed ? "▸" : "▾";
+    btn.title = collapsed ? "작업 패널 열기" : "작업 패널 닫기";
+
+    if (collapsed) {
+      bottom.classList.add("tt-bottom-collapsed");
+      setImportant(bottom, "display", "none");
+      setImportant(bottom, "height", "0px");
+      setImportant(bottom, "max-height", "0px");
+      setImportant(bottom, "min-height", "0px");
+      setImportant(bottom, "flex-basis", "0px");
+      setImportant(bottom, "overflow", "hidden");
+      root.style.setProperty("--tt-bottom-measured-h", "0px");
+      root.style.setProperty("--tt-bottom-current-height", "0px");
+      root.style.setProperty("--tt-bottom-reserved-h", "0px");
+    } else {
+      bottom.classList.remove("tt-bottom-collapsed");
+      clearInlineBottomSize();
+      setImportant(bottom, "display", "flex");
+      setImportant(bottom, "overflow", "hidden");
+      body.classList.add("tt-bottom-is-open");
+      window._ttReflowBottomPanel?.();
+    }
+    notifyLayout();
+  }
+
+  window._ttBottomToggle = {
+    show(){ apply(false); },
+    hide(){ apply(true); },
+    toggle(){ apply(localStorage.getItem("tt_bottom_collapsed") !== "1"); },
+    isCollapsed(){ return localStorage.getItem("tt_bottom_collapsed") === "1"; }
+  };
+
+  btn.addEventListener("click", function(ev){
+    ev.preventDefault();
+    ev.stopPropagation();
+    window._ttBottomToggle.toggle();
+  }, { capture:true });
+
+  // 초기 상태 적용. 이전 버전에서 열려 있던 상태를 존중하되, 접힘이면 진짜 display:none까지 강제합니다.
+  apply(localStorage.getItem("tt_bottom_collapsed") === "1");
+
+  // 기존 r176 실측 스크립트/MutationObserver가 다시 height를 주는 경우를 한 번 더 눌러줍니다.
+  [50, 200, 700, 1500].forEach(ms => setTimeout(() => {
+    if (localStorage.getItem("tt_bottom_collapsed") === "1") apply(true);
+  }, ms));
+})();
+</script>
 </body>
 </html>
