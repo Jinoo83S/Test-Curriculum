@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r183: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
+// r184: 데이터 점검 /analyze 실패 시 /validate 및 로컬 점검으로 대체 표시.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -149,7 +149,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r183 CP-SAT API bridge",
+    source: "HIS webapp r184 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -366,7 +366,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
       ok: validation.ok !== false,
-      source: "cp-sat-webapp-r183",
+      source: "cp-sat-webapp-r184",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
       importedAt: nowIso(),
@@ -536,12 +536,63 @@ export function setupCpSatWebappImport(ctx = {}) {
           renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
           return;
         }
-        const data = await postJson(`${apiBase()}/analyze`, { state }, 30000);
-        const body = data?.data || data;
-        setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b><br>${escapeHtml(body?.validation?.summary || "점검 완료")}`, 100);
-        renderApiSummary(body, "analyze");
+
+        let analyzeError = null;
+        try {
+          const data = await postJson(`${apiBase()}/analyze`, { state }, 30000);
+          const body = data?.data || data;
+          setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b><br>${escapeHtml(body?.validation?.summary || "점검 완료")}`, 100);
+          renderApiSummary(body, "analyze");
+          return;
+        } catch (err) {
+          analyzeError = err;
+        }
+
+        // 일부 Windows/브라우저 조합에서 /analyze POST만 Failed to fetch로 끊기는 경우가 있어
+        // 같은 payload를 /validate로 다시 보내고, 그래도 실패하면 서버 health + 로컬 payload 점검 결과를 보여줍니다.
+        try {
+          setStatus("warn", "기본 점검 경로가 실패하여 대체 검증(/validate)을 시도합니다...", 45);
+          const data = await postJson(`${apiBase()}/validate`, { state }, 30000);
+          const body = data?.data || data;
+          const privacy = privacyReport(state);
+          const merged = {
+            ...body,
+            status: body?.status || "VALIDATE-FALLBACK",
+            counts: body?.counts || countSolverState(state),
+            privacy: body?.privacy || { solverPayload: privacy },
+          };
+          setStatus(merged?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b> <span style="font-size:11px;color:#64748b">(/validate 대체 경로)</span><br>${escapeHtml(merged?.validation?.summary || "점검 완료")}`, 100);
+          renderApiSummary(merged, "validate-fallback");
+          return;
+        } catch (validateErr) {
+          try {
+            const health = await getJson(`${apiBase()}/health`, 10000);
+            const counts = countSolverState(state);
+            const privacy = privacyReport(state);
+            const fallback = {
+              ok: true,
+              status: "LOCAL-PAYLOAD-OK",
+              version: health?.version || health?.data?.version || "local-server",
+              counts,
+              privacy: { solverPayload: privacy },
+              validation: {
+                ok: true,
+                summary: "서버는 정상입니다. 상세 점검 endpoint는 실패했지만 전송 JSON은 생성되었습니다. CP-SAT 실행은 가능합니다.",
+                details: [
+                  `analyze 실패: ${analyzeError?.message || analyzeError}`,
+                  `validate 실패: ${validateErr?.message || validateErr}`,
+                ],
+              },
+            };
+            setStatus("warn", `<b>간이 데이터 점검 완료</b><br>서버는 정상이나 상세 점검 endpoint가 브라우저에서 실패했습니다. CP-SAT 실행이 된다면 자동배치는 계속 진행할 수 있습니다.<br><span style="font-size:11px;color:#64748b">analyze: ${escapeHtml(analyzeError?.message || analyzeError)} / validate: ${escapeHtml(validateErr?.message || validateErr)}</span>`, 100);
+            renderApiSummary(fallback, "local-fallback-after-fetch-failure");
+            return;
+          } catch (_) {
+            throw analyzeError || validateErr;
+          }
+        }
       } catch (err) {
-        setStatus("bad", `<b>데이터 점검 실패</b><br>${escapeHtml(err?.message || err)}`, 0);
+        setStatus("bad", `<b>데이터 점검 실패</b><br>${escapeHtml(err?.message || err)}<br><br>먼저 [1. 서버 확인]을 눌러 로컬 서버가 살아 있는지 확인하세요. 서버 확인은 정상인데 이 메시지가 계속 뜨면 CP-SAT 실행 버튼은 그대로 사용할 수 있습니다.`, 0);
       } finally { setBusy(false); }
     });
     $('[data-action="solve"]')?.addEventListener("click", async () => {
