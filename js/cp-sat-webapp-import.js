@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r169: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
+// r170: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -90,7 +90,7 @@ function stripSolverOnlyState(state) {
   const copy = deepClone(state);
   const payload = copy?.data || copy?.normalized || copy;
 
-  // r169 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
+  // r170 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
   // 학생 충돌 계산은 rosters.rosters[].studentId만 사용합니다.
   asArray(payload?.classes?.classes).forEach(cls => {
     if (cls && typeof cls === "object") delete cls.students;
@@ -141,7 +141,7 @@ function makeSolverState(appState) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r169 CP-SAT API bridge",
+    source: "HIS webapp r170 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -200,7 +200,7 @@ function ensureStyle() {
   const style = document.createElement("style");
   style.id = CP_SAT_API_STYLE_ID;
   style.textContent = `
-    .tt-cpsat-api-btn{background:#059669!important;border-color:#059669!important}.tt-cpsat-api-btn:hover{background:#047857!important}
+    .tt-cpsat-api-btn{background:#16a34a!important;border-color:#16a34a!important;color:#fff!important}.tt-cpsat-api-btn:hover{background:#15803d!important}
     .tt-cpsat-api-overlay{position:fixed;inset:0;background:rgba(15,23,42,.48);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px}
     .tt-cpsat-api-modal{width:min(920px,96vw);max-height:92vh;overflow:auto;background:#fff;border-radius:14px;box-shadow:0 22px 70px rgba(0,0,0,.34);border:1px solid #cbd5e1;color:#0f172a}
     .tt-cpsat-api-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:16px 18px;border-bottom:1px solid #e2e8f0;background:#f8fafc}.tt-cpsat-api-head h3{margin:0 0 4px;font-size:18px}.tt-cpsat-api-head p{margin:0;color:#475569;font-size:13px}
@@ -236,22 +236,52 @@ export function setupCpSatWebappImport(ctx = {}) {
   } = ctx;
 
   ensureStyle();
-  if (!document.getElementById(CP_SAT_API_BUTTON_ID)) {
-    const btn = document.createElement("button");
-    btn.id = CP_SAT_API_BUTTON_ID;
-    btn.type = "button";
-    btn.className = "tt-cpsat-api-btn";
-    btn.textContent = "CP-SAT API";
-    const anchor = document.getElementById("ttAutoAssignBtn") || document.getElementById("ttScheduleVersionsBtn") || document.getElementById("ttSaveBtn");
-    anchor?.insertAdjacentElement("afterend", btn);
-    btn.addEventListener("click", () => openOverlay());
+  installCpSatButton();
+
+  function findExistingCpSatButton() {
+    const byId = document.getElementById(CP_SAT_API_BUTTON_ID)
+      || document.getElementById("ttCpSatApplyBtn")
+      || document.getElementById("ttCpSatBtn")
+      || document.getElementById("ttCpsatBtn");
+    if (byId) return byId;
+    return [...document.querySelectorAll("button")].find(b => /CP\s*-\s*SAT|CPSAT/i.test(String(b.textContent || b.id || b.className || ""))) || null;
+  }
+
+  function installCpSatButton() {
+    let btn = findExistingCpSatButton();
+    if (btn) {
+      // 기존 버튼에 구버전 이벤트가 붙어 있을 수 있으므로 복제해서 구버전 핸들러를 제거합니다.
+      const fresh = btn.cloneNode(true);
+      fresh.id = CP_SAT_API_BUTTON_ID;
+      fresh.type = "button";
+      fresh.classList.add("tt-cpsat-api-btn");
+      fresh.textContent = "☘ CP-SAT 적용";
+      fresh.title = "현재 시간표 데이터를 로컬/클라우드 CP-SAT API로 보내 자동배치합니다.";
+      btn.replaceWith(fresh);
+      btn = fresh;
+    } else {
+      btn = document.createElement("button");
+      btn.id = CP_SAT_API_BUTTON_ID;
+      btn.type = "button";
+      btn.className = "tt-cpsat-api-btn";
+      btn.textContent = "☘ CP-SAT 적용";
+      btn.title = "현재 시간표 데이터를 로컬/클라우드 CP-SAT API로 보내 자동배치합니다.";
+      const anchor = document.getElementById("ttAutoAssignBtn") || document.getElementById("ttScheduleVersionsBtn") || document.getElementById("ttSaveBtn");
+      if (anchor) anchor.insertAdjacentElement("afterend", btn);
+      else document.querySelector(".tt-topbar-right")?.appendChild(btn);
+    }
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      openOverlay();
+    });
   }
 
   function normalizeSolvedEntry(rawEntry) {
     const raw = deepClone(rawEntry || {});
     const normalized = normalizeTimetableEntry ? normalizeTimetableEntry(raw) : raw;
 
-    // r169 핵심: 현재 운영 웹앱의 state.js가 오래된 경우 normalizeTimetableEntry가
+    // r170 핵심: 현재 운영 웹앱의 state.js가 오래된 경우 normalizeTimetableEntry가
     // CP-SAT 결과의 roomAssignmentsByTtCardId/roomIds를 버릴 수 있습니다.
     // 그래서 사용자에게 필요한 배치 필드는 normalizer 뒤에 다시 강제 주입합니다.
     const preservedAssignments = sanitizeRoomAssignments(raw.roomAssignmentsByTtCardId);
@@ -327,7 +357,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
       ok: validation.ok !== false,
-      source: "cp-sat-api-r169",
+      source: "cp-sat-api-r170",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
       importedAt: nowIso(),
@@ -367,7 +397,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       <div class="tt-cpsat-api-modal" role="dialog" aria-modal="true" aria-labelledby="ttCpSatApiTitle">
         <div class="tt-cpsat-api-head">
           <div>
-            <h3 id="ttCpSatApiTitle">CP-SAT API 실행</h3>
+            <h3 id="ttCpSatApiTitle">CP-SAT 적용</h3>
             <p><b>START_API_LOCAL.bat</b>로 API 서버를 켠 뒤, 현재 열린 시간표 데이터를 그대로 전송합니다. 기본 주소는 <code>http://127.0.0.1:7860</code>입니다.</p>
           </div>
           <button type="button" class="tt-cpsat-api-close" data-action="close">×</button>
