@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-github-download-r181";
+import { versioned } from "./version.js?v=2026-06-26-compound-detail-r183";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-github-download-r181";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-compound-detail-r183";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -3060,14 +3060,73 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   toggleEntryPinnedBlock,
 });
 
+function getCompoundDetailBucketKeyForCard(card = {}) {
+  if (!card?.compoundParentTemplateId || !card?.compoundPartId) return "";
+  const classKey = (Array.isArray(card.classKeys) ? card.classKeys : []).map(clean).filter(Boolean).sort().join(",");
+  const classLabel = (Array.isArray(card.classLabels) ? card.classLabels : []).map(clean).filter(Boolean).sort().join(",");
+  return [
+    card.compoundParentTemplateId,
+    card.gradeKey || "",
+    card.sectionIdx ?? 0,
+    classKey || classLabel || ""
+  ].join("::");
+}
+
+function enrichEntryForCompoundGroupDetail(entry = {}) {
+  if (!entry?.groupId) return entry;
+  const ids = ttCardIdsFromPlacement(entry);
+  if (!ids.length) return entry;
+  const activeCards = ids.map(id => getTtCardById(id)).filter(Boolean);
+  const compoundKeys = new Set(activeCards.map(getCompoundDetailBucketKeyForCard).filter(Boolean));
+  if (!compoundKeys.size) return entry;
+
+  const group = (appState.timetable?.ttcardGroups || []).find(g => g.id === entry.groupId);
+  const groupCards = getGroupCards(group);
+  const siblingCards = groupCards.filter(card => {
+    const key = getCompoundDetailBucketKeyForCard(card);
+    return key && compoundKeys.has(key) && !ids.includes(card.id);
+  });
+  if (!siblingCards.length) return entry;
+
+  // r183: 미적분(2)+심화물리(2) 같은 복합과목은 시간표 한 슬롯에는 한 파트만 보이더라도
+  // 상세보기/교실배정 화면에서는 같은 복합 옵션의 모든 파트를 함께 보여줘야 운영자가
+  // 파트별 교사·교실 규칙을 빠뜨리지 않고 수정할 수 있습니다. 실제 저장 entry는 건드리지 않고
+  // 상세보기용 clone만 확장합니다.
+  const expandedIds = [...new Set([...ids, ...siblingCards.map(card => card.id)].filter(Boolean))];
+  const expandedCards = expandedIds.map(id => getTtCardById(id)).filter(Boolean);
+  const out = {
+    ...entry,
+    ttcardId: expandedIds.length === 1 ? expandedIds[0] : null,
+    ttcardIds: expandedIds,
+    templateIds: [...new Set([...(entry.templateIds || []), ...expandedCards.map(card => card.templateId)].filter(Boolean))],
+    __compoundDetailExpanded: true,
+  };
+  out.teacherName = [...new Set([
+    ...splitTeacherNames(entry.teacherName || ""),
+    ...expandedCards.flatMap(card => getTeachersForTtCard(card)).filter(Boolean)
+  ].map(clean).filter(Boolean))].join(", ");
+  const assignments = { ...(entry.roomAssignmentsByTtCardId || {}) };
+  expandedCards.forEach(card => {
+    if (!card?.id || clean(assignments[card.id])) return;
+    const roomId = resolveRoomForTtCard(card, entry);
+    if (roomId) assignments[card.id] = roomId;
+  });
+  out.roomAssignmentsByTtCardId = assignments;
+  return out;
+}
+
 const {
   showSidebarCardDetail,
   showEntryDetailByUnit,
   showEntryContextMenu,
   showSubjectAssignmentHistory,
   highlightSidebarCard,
-  showEntryDetail,
+  showEntryDetail: showEntryDetailBase,
 } = ttDetailHandlers;
+
+function showEntryDetail(entry) {
+  return showEntryDetailBase(enrichEntryForCompoundGroupDetail(entry));
+}
 
 function buildEntryCard(entry, opts = {}) {
   const { compact = false, showGrade = false } = opts;

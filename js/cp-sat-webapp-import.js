@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r182: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
+// r183: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -149,7 +149,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r182 CP-SAT API bridge",
+    source: "HIS webapp r183 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -366,7 +366,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
       ok: validation.ok !== false,
-      source: "cp-sat-webapp-r182",
+      source: "cp-sat-webapp-r183",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
       importedAt: nowIso(),
