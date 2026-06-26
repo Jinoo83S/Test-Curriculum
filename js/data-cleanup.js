@@ -1,5 +1,5 @@
 // ================================================================
-// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r179
+// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r180
 // ================================================================
 import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js";
 import { canEdit } from "./auth.js";
@@ -81,7 +81,7 @@ function duplicateKeyForWholeCard(card = {}) {
   if (!isWholeGradeLikeCard(card)) return "";
   const subjectKey = clean(card.templateId) || clean(card.subject) || clean(card.label);
   if (!subjectKey || !card.gradeKey) return "";
-  // r179: 복합/묶음 과목 파트 카드는 같은 templateId·gradeKey·sectionIdx를 공유해도
+  // r180: 복합/묶음 과목 파트 카드는 같은 templateId·gradeKey·sectionIdx를 공유해도
   // 서로 다른 실제 수업입니다. partId를 key에 포함하지 않으면
   // “심화물리(2) → 미적분(2)”처럼 잘못된 안전 정리 대상으로 잡힙니다.
   const partKey = extractCompoundPartIdFromCard(card);

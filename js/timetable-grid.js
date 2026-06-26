@@ -1045,7 +1045,7 @@ function renderRoomGrid(wrap, ctx) {
 
   const dayIndexes = Array.from({ length: DAYS.length }, (_, i) => i);
   const table = document.createElement("table");
-  table.className = "tt-table tt-all-class-table tt-room-table-r179";
+  table.className = "tt-table tt-all-class-table tt-room-table-r180";
   table.style.cssText = "table-layout:fixed;width:100%;height:calc(100% - 24px);min-width:0;border-collapse:separate;border-spacing:0";
 
   const rowCount = Math.max(1, selectedRooms.length);
@@ -1069,7 +1069,7 @@ function renderRoomGrid(wrap, ctx) {
   const thead = document.createElement("thead");
   const hr1 = document.createElement("tr");
   const corner = document.createElement("th");
-  corner.className = "tt-all-corner tt-room-corner-r179";
+  corner.className = "tt-all-corner tt-room-corner-r180";
   corner.rowSpan = 2;
   corner.innerHTML = `<span style="font-size:clamp(7px,0.7vw,10px)">교실</span>`;
   hr1.appendChild(corner);
@@ -1139,7 +1139,7 @@ function renderRoomGrid(wrap, ctx) {
     tr.dataset.roomId = roomId;
 
     const rowHdr = document.createElement("td");
-    rowHdr.className = "tt-all-row-hdr tt-room-row-hdr-r179";
+    rowHdr.className = "tt-all-row-hdr tt-room-row-hdr-r180";
     rowHdr.style.cssText = "background:#f8fafc;color:#0f172a;border-left:2px solid #0ea5e9;border-right:2px solid #94a3b8;overflow:hidden;font-size:clamp(8px,0.65vw,10px);width:74px;min-width:74px;max-width:74px;padding:2px 3px;white-space:normal;line-height:1.08";
     rowHdr.innerHTML = `<b style="display:block;font-size:clamp(9px,0.75vw,11px);line-height:1.05;overflow:hidden;text-overflow:ellipsis">${room.name || room.id}</b><span style="display:block;font-size:clamp(6px,0.55vw,8px);color:#64748b;line-height:1.05">${room.type || ""}</span>`;
     tr.appendChild(rowHdr);
@@ -1149,7 +1149,7 @@ function renderRoomGrid(wrap, ctx) {
         const td = document.createElement("td");
         const isDayStart = period === 0;
         const isDayEnd = period === periods.length - 1;
-        td.className = "tt-cell tt-all-cell tt-room-cell-r179" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+        td.className = "tt-cell tt-all-cell tt-room-cell-r180" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
         td.dataset.roomId = roomId;
         td.setAttribute("data-day", day);
         td.dataset.period = String(period);
@@ -1305,7 +1305,10 @@ function renderAllClassesGrid(wrap, ctx) {
   });
   table.appendChild(tbody);
   wrap.appendChild(table);
-  requestAnimationFrame(() => applyAllClassVisualSpans(table));
+  requestAnimationFrame(() => {
+    fitAllClassTableToCollapsedViewport(wrap, table);
+    applyAllClassVisualSpans(table);
+  });
 }
 
 function cardMergeSignature(card) {
@@ -1340,6 +1343,47 @@ function resetAllClassVisualSpans(table) {
   });
   table?.querySelectorAll(".tt-visual-span-hidden").forEach(card => {
     card.classList.remove("tt-visual-span-hidden");
+  });
+}
+
+
+function fitAllClassTableToCollapsedViewport(wrap, table) {
+  if (!wrap || !table || !document.body?.classList?.contains("tt-bottom-is-collapsed")) return;
+  const grid = document.getElementById("ttGrid");
+  if (!grid) return;
+
+  const viewportH = window.innerHeight || document.documentElement.clientHeight || 720;
+  const gridTop = Math.max(0, Math.floor(grid.getBoundingClientRect().top || 0));
+  const gridH = Math.max(220, viewportH - gridTop - 1);
+
+  grid.style.setProperty("height", `${gridH}px`, "important");
+  grid.style.setProperty("max-height", `${gridH}px`, "important");
+  grid.style.setProperty("overflow-y", "hidden", "important");
+  grid.style.setProperty("overflow-x", "auto", "important");
+  wrap.style.setProperty("height", "100%", "important");
+  wrap.style.setProperty("min-height", "0", "important");
+  wrap.style.setProperty("overflow", "hidden", "important");
+
+  const tableTop = Math.max(gridTop, Math.floor(table.getBoundingClientRect().top || gridTop));
+  const tableH = Math.max(160, viewportH - tableTop - 1);
+  table.style.setProperty("height", `${tableH}px`, "important");
+  table.style.setProperty("max-height", `${tableH}px`, "important");
+
+  const theadH = Math.ceil(table.querySelector("thead")?.getBoundingClientRect?.().height || 30);
+  const rows = [...table.querySelectorAll("tbody > tr")];
+  if (!rows.length) return;
+  const rowH = Math.max(12, Math.floor((tableH - theadH) / rows.length));
+  const rowPx = `${rowH}px`;
+
+  rows.forEach(row => {
+    row.style.setProperty("height", rowPx, "important");
+    row.style.setProperty("min-height", "0", "important");
+    row.style.setProperty("max-height", rowPx, "important");
+    row.querySelectorAll("td, th").forEach(cell => {
+      cell.style.setProperty("height", rowPx, "important");
+      cell.style.setProperty("min-height", "0", "important");
+      cell.style.setProperty("max-height", rowPx, "important");
+    });
   });
 }
 

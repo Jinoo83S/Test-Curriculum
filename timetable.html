@@ -562,6 +562,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-real-merge-card .tt-entry-title,
 .tt-real-merge-card .tt-all-summary-top{font-weight:950!important;}
 .tt-merged-suppressed{display:none!important;}
+
+
 </style>
 
 <style>
@@ -993,10 +995,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
 @media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
 
+
+
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-measure-r179"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-collapsed-fit-r180"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1011,6 +1015,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-span-overlay-card .tt-entry-title,
 .tt-span-overlay-card .tt-all-summary-top{font-weight:950!important;}
 .tt-entry-group-span-badge{color:inherit!important;}
+
+
 </style>
 
 
@@ -1249,6 +1255,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
 .tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
 @media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
+
+
 
 </style>
 <style>
@@ -1623,7 +1631,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
 
-/* r179: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
+/* r180: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
 #hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
 .tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip,
 #appHealthInlineStatus,#ttAppHealthStatus,#ttStatusMessage,#ttBottomMessage,.app-health-inline-status,
@@ -1662,7 +1670,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .his-toast{min-width:220px;max-width:min(420px,calc(100vw - 36px));background:#0f172a;color:#fff;border-radius:12px;padding:10px 13px;box-shadow:0 16px 40px rgba(15,23,42,.28);font-size:13px;font-weight:800;line-height:1.35;opacity:.98;pointer-events:none}
 .his-toast.ok{background:#166534}.his-toast.warn{background:#92400e}.his-toast.error{background:#991b1b}
 
-/* r179: 하단 패널을 접었을 때 남는 회색 공백 제거.
+/* r180: 하단 패널을 접었을 때 남는 회색 공백 제거.
    원인: #ttGrid는 화면 남는 높이를 차지하는데, 행 높이는 예전 하단 패널 높이를 계속 예약했습니다.
    해결: 하단 패널 접힘 상태를 body class로 관리하고, 시간표 행 높이를 남는 공간에 맞춰 재계산합니다. */
 :root{
@@ -1711,7 +1719,7 @@ body.tt-bottom-is-collapsed .tt-body{
 }
 
 
-/* r179: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
+/* r180: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
 :root{
   --tt-bottom-measured-h:0px;
   --tt-bottom-reserved-h:0px;
@@ -1733,7 +1741,7 @@ body.tt-bottom-is-open #ttBottom{
   height:auto;
   min-height:0!important;
 }
-body.tt-bottom-is-open #ttBottom.tt-bottom-r179-measured{
+body.tt-bottom-is-open #ttBottom.tt-bottom-r180-measured{
   height:var(--tt-bottom-measured-h, auto)!important;
   max-height:var(--tt-bottom-measured-h, none)!important;
 }
@@ -1789,7 +1797,7 @@ body.tt-bottom-is-open .tt-body{
 
 
 
-/* r179: 작업 패널 닫힘 = 하단 패널 완전 제거 + 시간표 영역 전체 확장 */
+/* r180: 작업 패널 닫힘 = 하단 패널 완전 제거 + 시간표 영역 전체 확장 */
 body.tt-bottom-is-collapsed #ttBottom,
 body.tt-bottom-is-collapsed #ttBottom *{
   display:none!important;
@@ -1840,12 +1848,38 @@ body.tt-bottom-is-open .tt-bottom-toggle-btn{
   background:#fff!important;
   color:#334155!important;
 }
+
+
+/* r180: 작업 패널 접힘 상태에서는 시간표를 남은 화면 100%에 맞추고 세로 스크롤을 제거합니다.
+   하단 패널 열림/리사이즈 상태는 r179 구조 그대로 유지합니다. */
+body.tt-bottom-is-collapsed #ttGrid{
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+}
+body.tt-bottom-is-collapsed #ttGrid.tt-all-summary-active{
+  height:100%!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:hidden!important;
+}
+body.tt-bottom-is-collapsed #ttGrid .tt-all-class-table tbody tr,
+body.tt-bottom-is-collapsed #ttGrid .tt-all-class-table tbody td,
+body.tt-bottom-is-collapsed #ttGrid .tt-all-class-table tbody th{
+  min-height:0!important;
+}
+body.tt-bottom-is-open #ttGrid{
+  overflow:auto!important;
+}
+
+
+
+
 </style>
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r179</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r180</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1914,9 +1948,9 @@ body.tt-bottom-is-open .tt-bottom-toggle-btn{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-bottom-measure-r179";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-collapsed-fit-r180";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-bottom-measure-r179";
+  import { versioned } from "./js/version.js?v=2026-06-26-collapsed-fit-r180";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1949,7 +1983,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
   function applyHeight(value, save = false) {
     const next = clampHeight(value);
-    // r179: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
+    // r180: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
     // max-height만 보관하고 실제 높이는 내용만큼 자동으로 줄어들게 합니다.
     bottom.style.height = "auto";
     bottom.style.maxHeight = next + "px";
@@ -2031,6 +2065,18 @@ window._ttBottomToggle = (function() {
   let collapsed = localStorage.getItem("tt_bottom_collapsed") === "1";
 
   function getH() { return parseInt(localStorage.getItem("tt_botH") || "172", 10); }
+  let fitRaf1 = 0;
+  let fitRaf2 = 0;
+  function scheduleGridFitRerender() {
+    if (fitRaf1) cancelAnimationFrame(fitRaf1);
+    if (fitRaf2) cancelAnimationFrame(fitRaf2);
+    fitRaf1 = requestAnimationFrame(() => {
+      try { window._ttRenderAll?.(); } catch (_) {}
+      fitRaf2 = requestAnimationFrame(() => {
+        try { window._ttRenderAll?.(); } catch (_) {}
+      });
+    });
+  }
   function syncButton() {
     document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
     document.body.classList.toggle("tt-bottom-is-open", !collapsed);
@@ -2050,6 +2096,7 @@ window._ttBottomToggle = (function() {
     }
     window._ttSetBottomHeight?.(getH(), false);
     syncButton();
+    scheduleGridFitRerender();
   }
   function hide() {
     collapsed = true;
@@ -2061,6 +2108,7 @@ window._ttBottomToggle = (function() {
       bottom.style.overflow = "hidden";
     }
     syncButton();
+    scheduleGridFitRerender();
   }
 
   btn?.addEventListener("click", ev => {
@@ -2069,7 +2117,8 @@ window._ttBottomToggle = (function() {
     collapsed ? show() : hide();
   }, { capture: true });
   if (collapsed) hide(); else show();
-  // r179 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
+  scheduleGridFitRerender();
+  // r180 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
   requestAnimationFrame(() => {
     document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
     document.body.classList.toggle("tt-bottom-is-open", !collapsed);
@@ -2078,13 +2127,13 @@ window._ttBottomToggle = (function() {
   return { show, hide, toggle: () => collapsed ? show() : hide(), isCollapsed: () => collapsed };
 })();
 
-/* ── r179: Bottom panel measured-height reflow ──
+/* ── r180: Bottom panel measured-height reflow ──
    하단 패널의 저장 높이/과거 inline style이 아니라, 현재 활성 탭의 실제 콘텐츠 높이를 실측해
    그만큼만 화면을 차지하게 합니다. 과목 카드 아래 회색 공백의 직접 원인입니다. */
 (function() {
   const bottom = document.getElementById("ttBottom");
-  if (!bottom || bottom.dataset.r179Measured === "1") return;
-  bottom.dataset.r179Measured = "1";
+  if (!bottom || bottom.dataset.r180Measured === "1") return;
+  bottom.dataset.r180Measured = "1";
 
   const root = document.documentElement;
   const body = document.body;
@@ -2140,7 +2189,7 @@ window._ttBottomToggle = (function() {
     try {
     const collapsed = body.classList.contains("tt-bottom-is-collapsed") || bottom.classList.contains("tt-bottom-collapsed");
     if (collapsed) {
-      bottom.classList.remove("tt-bottom-r179-measured");
+      bottom.classList.remove("tt-bottom-r180-measured");
       setStyleValue(bottom, "height", "0px");
       setStyleValue(bottom, "maxHeight", "0px");
       setRootVar("--tt-bottom-measured-h", "0px");
@@ -2156,7 +2205,7 @@ window._ttBottomToggle = (function() {
     const desired = Math.max(MIN_OPEN_H, Math.min(MAX_OPEN_H, naturalHeight()));
     const hpx = desired + "px";
 
-    bottom.classList.add("tt-bottom-r179-measured");
+    bottom.classList.add("tt-bottom-r180-measured");
     setStyleValue(bottom, "height", hpx);
     setStyleValue(bottom, "maxHeight", hpx);
     setStyleValue(bottom, "minHeight", "0px");
@@ -2281,7 +2330,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-measure-r179");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-collapsed-fit-r180");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
@@ -2294,7 +2343,7 @@ window._ttBottomToggle = (function() {
 </script>
 
 
-<script id="tt-bottom-toggle-hard-r179">
+<script id="tt-bottom-toggle-hard-r180">
 (function(){
   const bottom0 = document.getElementById("ttBottom");
   const btn0 = document.getElementById("ttToggleBottom");
@@ -2389,8 +2438,8 @@ window._ttBottomToggle = (function() {
 </script>
 
 
-<style id="tt-single-scroll-layout-css-r179">
-/* r179: 스크롤 구조 단일화
+<style id="tt-single-scroll-layout-css-r180">
+/* r180: 스크롤 구조 단일화
    - 전체 문서 스크롤 금지
    - 시간표 영역은 세로 스크롤 없이 남은 높이에 맞춤
    - 작업 패널만 열림 상태에서 내부 세로 스크롤 허용
@@ -2400,13 +2449,13 @@ html, body{
   min-height:0!important;
   overflow:hidden!important;
 }
-body.tt-single-scroll-layout-r179{
+body.tt-single-scroll-layout-r180{
   display:flex!important;
   flex-direction:column!important;
   min-height:0!important;
   max-height:100vh!important;
 }
-body.tt-single-scroll-layout-r179 .tt-body{
+body.tt-single-scroll-layout-r180 .tt-body{
   flex:1 1 0!important;
   min-height:0!important;
   max-height:none!important;
@@ -2414,20 +2463,20 @@ body.tt-single-scroll-layout-r179 .tt-body{
   display:flex!important;
   flex-direction:column!important;
 }
-body.tt-single-scroll-layout-r179 #ttGrid{
+body.tt-single-scroll-layout-r180 #ttGrid{
   flex:1 1 0!important;
   min-height:0!important;
   overflow-x:auto!important;
   overflow-y:hidden!important;
   background:#f8fafc!important;
 }
-body.tt-single-scroll-layout-r179 #ttBottom{
+body.tt-single-scroll-layout-r180 #ttBottom{
   flex:0 0 auto!important;
   min-height:0!important;
   overflow:hidden!important;
 }
-body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttBottom,
-body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttBottom *{
+body.tt-single-scroll-layout-r180.tt-bottom-is-collapsed #ttBottom,
+body.tt-single-scroll-layout-r180.tt-bottom-is-collapsed #ttBottom *{
   display:none!important;
   height:0!important;
   min-height:0!important;
@@ -2438,19 +2487,19 @@ body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttBottom *{
   border:0!important;
   overflow:hidden!important;
 }
-body.tt-single-scroll-layout-r179.tt-bottom-is-open #ttBottom{
+body.tt-single-scroll-layout-r180.tt-bottom-is-open #ttBottom{
   display:flex!important;
   flex-direction:column!important;
   height:var(--tt-bottom-user-h, 172px)!important;
   max-height:var(--tt-bottom-user-h, 172px)!important;
   min-height:0!important;
 }
-body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-resizer{
+body.tt-single-scroll-layout-r180 #ttBottom .tt-bottom-resizer{
   flex:0 0 8px!important;
   height:8px!important;
   cursor:row-resize!important;
 }
-body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-scroll{
+body.tt-single-scroll-layout-r180 #ttBottom .tt-bottom-scroll{
   flex:1 1 0!important;
   min-height:0!important;
   height:auto!important;
@@ -2458,26 +2507,28 @@ body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-scroll{
   overflow-y:auto!important;
   overflow-x:hidden!important;
 }
-body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-content{
+body.tt-single-scroll-layout-r180 #ttBottom .tt-bottom-content{
   min-height:0!important;
   height:auto!important;
   overflow:visible!important;
 }
-body.tt-single-scroll-layout-r179 .tt-all-class-table tbody tr,
-body.tt-single-scroll-layout-r179 .tt-all-class-table tbody td.tt-all-cell,
-body.tt-single-scroll-layout-r179 .tt-all-class-table tbody td.tt-all-row-hdr{
+body.tt-single-scroll-layout-r180 .tt-all-class-table tbody tr,
+body.tt-single-scroll-layout-r180 .tt-all-class-table tbody td.tt-all-cell,
+body.tt-single-scroll-layout-r180 .tt-all-class-table tbody td.tt-all-row-hdr{
   height:var(--tt-layout-row-h, var(--tt-all-row-height, 32px))!important;
 }
-body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttGrid{
+body.tt-single-scroll-layout-r180.tt-bottom-is-collapsed #ttGrid{
   overflow-y:hidden!important;
 }
+
+
 </style>
 
-<script id="tt-single-scroll-layout-r179">
+<script id="tt-single-scroll-layout-r180">
 (function(){
-  const VERSION = "r179";
-  if (window.__ttSingleScrollLayoutR179) return;
-  window.__ttSingleScrollLayoutR179 = true;
+  const VERSION = "r180";
+  if (window.__ttSingleScrollLayoutR180) return;
+  window.__ttSingleScrollLayoutR180 = true;
 
   const root = document.documentElement;
   const body = document.body;
@@ -2486,7 +2537,7 @@ body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttGrid{
   let resizer = document.getElementById("ttBottomResizer");
   if (!bottom || !btn || !resizer) return;
 
-  body.classList.add("tt-single-scroll-layout-r179");
+  body.classList.add("tt-single-scroll-layout-r180");
 
   const MIN_H = 112;
   const MAX_H = 420;

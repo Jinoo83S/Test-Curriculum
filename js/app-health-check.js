@@ -110,7 +110,7 @@ function extractCompoundPartIdFromCard(card = {}) {
 }
 
 function getCardTemplateKey(card = {}) {
-  // r179: 복합과목의 파트 카드(예: 미적분(2), 심화물리(2))는
+  // r180: 복합과목의 파트 카드(예: 미적분(2), 심화물리(2))는
   // 같은 학년·templateId·sectionIdx를 공유하지만 서로 다른 실제 수업입니다.
   // partId를 키에 포함하지 않으면 앱점검이 잘못된 중복 경고를 냅니다.
   const partId = extractCompoundPartIdFromCard(card);
