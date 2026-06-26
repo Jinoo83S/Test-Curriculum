@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-compound-detail-r183";
+import { versioned } from "./version.js?v=2026-06-26-print-dialog-r185";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-compound-detail-r183";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-print-dialog-r185";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { exportTimetableXlsx } from "./timetable-export.js";
+import { openTimetableExportDialog } from "./timetable-export.js";
 
 
 const [
@@ -4056,7 +4056,7 @@ const updateAuthUI = authUi.updateAuthUI;
 
 // ── Excel Export ──────────────────────────────────────────────────
 function exportXlsx() {
-  exportTimetableXlsx({
+  openTimetableExportDialog({
     GRADE_KEYS,
     entries,
     ttConfig,
@@ -4066,6 +4066,11 @@ function exportXlsx() {
     entryGradeKeys,
     gradeDisplay,
     getRooms,
+    appState,
+    getAllClasses,
+    getAllTimetableTeachers,
+    audienceForPlacement,
+    entryMatchesClass,
   });
 }
 
