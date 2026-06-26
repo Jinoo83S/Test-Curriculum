@@ -101,8 +101,25 @@ function getTtCardIdsFromEntry(entry = {}) {
   ]);
 }
 
+function extractCompoundPartIdFromCard(card = {}) {
+  const direct = card.partId || card.compoundPartId || card.sourcePartId || card.templatePartId;
+  if (direct) return String(direct).trim();
+  const id = String(card.id || "").trim();
+  const m = id.match(/_part_(.+)$/);
+  return m ? String(m[1] || "").trim() : "";
+}
+
 function getCardTemplateKey(card = {}) {
-  return [card.gradeKey || card.grade || "", card.templateId || "", card.sectionIdx ?? card.sectionIndex ?? ""].join("::");
+  // r174: 복합과목의 파트 카드(예: 미적분(2), 심화물리(2))는
+  // 같은 학년·templateId·sectionIdx를 공유하지만 서로 다른 실제 수업입니다.
+  // partId를 키에 포함하지 않으면 앱점검이 잘못된 중복 경고를 냅니다.
+  const partId = extractCompoundPartIdFromCard(card);
+  return [
+    card.gradeKey || card.grade || "",
+    card.templateId || "",
+    card.sectionIdx ?? card.sectionIndex ?? "",
+    partId ? `part:${partId}` : "whole"
+  ].join("::");
 }
 
 function collectGroupCardRefs(group = {}) {

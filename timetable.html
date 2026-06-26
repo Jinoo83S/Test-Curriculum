@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-ui-review-r173"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-gap-r174"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1623,13 +1623,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
 
-/* r173: remove obsolete bottom build/status strip and clean bottom toggle */
+/* r174: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
 #hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
-.tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip{display:none!important}
-.tt-bottom{flex:0 0 auto;min-height:0!important;height:172px}
-.tt-bottom-scroll{height:100%!important;max-height:100%!important;overflow:auto!important}
-.tt-bottom-content{min-height:0!important;max-height:calc(100% - 32px)!important;overflow:auto!important}
-.tt-bottom.tt-bottom-collapsed{display:none!important;height:0!important;min-height:0!important;border:0!important;overflow:hidden!important}
+.tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip,
+#appHealthInlineStatus,#ttAppHealthStatus,#ttStatusMessage,#ttBottomMessage,.app-health-inline-status,
+.app-health-status-row,.tt-inline-status,.tt-bottom-empty-space{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important}
+.tt-bottom{
+  flex:0 0 auto!important;
+  height:auto!important;
+  min-height:0!important;
+  max-height:var(--tt-bottom-current-height, 172px)!important;
+  overflow:hidden!important;
+  border-top:1px solid #cbd5e1!important;
+}
+.tt-bottom-resizer{flex:0 0 7px!important}
+.tt-bottom-scroll{
+  height:auto!important;
+  max-height:calc(var(--tt-bottom-current-height, 172px) - 7px)!important;
+  overflow:auto!important;
+}
+.tt-bottom-content{
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow:visible!important;
+  padding-bottom:6px!important;
+}
+.tt-bottom-content > div.hidden{display:none!important;height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
+.tt-bottom-content > div:not(.hidden){min-height:0!important;height:auto!important}
+.tt-bottom.tt-bottom-collapsed{display:none!important;height:0!important;max-height:0!important;min-height:0!important;border:0!important;overflow:hidden!important}
 .tt-bottom.tt-bottom-collapsed *{display:none!important}
 .tt-bottom-toggle-btn{gap:6px!important;border-radius:999px!important;background:#fff!important;color:#334155!important;border-color:#cbd5e1!important;font-weight:900!important}
 .tt-bottom-toggle-btn:hover{background:#eff6ff!important;color:#1d4ed8!important;border-color:#93c5fd!important}
@@ -1644,7 +1666,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r173</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r174</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1713,9 +1735,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-ui-review-r173";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-bottom-gap-r174";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-ui-review-r173";
+  import { versioned } from "./js/version.js?v=2026-06-26-bottom-gap-r174";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1748,14 +1770,18 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
   function applyHeight(value, save = false) {
     const next = clampHeight(value);
-    bottom.style.height = next + "px";
+    // r174: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
+    // max-height만 보관하고 실제 높이는 내용만큼 자동으로 줄어들게 합니다.
+    bottom.style.height = "auto";
+    bottom.style.maxHeight = next + "px";
     bottom.style.setProperty("--tt-bottom-current-height", next + "px");
     document.documentElement.style.setProperty("--tt-bottom-current-height", next + "px");
     if (save) localStorage.setItem("tt_botH", String(next));
     return next;
   }
 
-  let h = applyHeight(localStorage.getItem("tt_botH") || DEFAULT_H, true);
+  const savedH = Number.parseInt(localStorage.getItem("tt_botH") || "", 10);
+  let h = applyHeight(Number.isFinite(savedH) ? Math.min(savedH, DEFAULT_H) : DEFAULT_H, true);
 
   let resizeActive = false;
   function startResize(clientY, pointerId = null) {
@@ -1846,6 +1872,7 @@ window._ttBottomToggle = (function() {
     if (bottom) {
       bottom.classList.add("tt-bottom-collapsed");
       bottom.style.height = "0px";
+      bottom.style.maxHeight = "0px";
       bottom.style.overflow = "hidden";
     }
     syncButton();
@@ -1939,7 +1966,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-ui-review-r173");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-gap-r174");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
