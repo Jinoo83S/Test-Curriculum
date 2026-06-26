@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r170: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
+// r171: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -90,7 +90,7 @@ function stripSolverOnlyState(state) {
   const copy = deepClone(state);
   const payload = copy?.data || copy?.normalized || copy;
 
-  // r170 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
+  // r171 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
   // 학생 충돌 계산은 rosters.rosters[].studentId만 사용합니다.
   asArray(payload?.classes?.classes).forEach(cls => {
     if (cls && typeof cls === "object") delete cls.students;
@@ -141,7 +141,7 @@ function makeSolverState(appState) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r170 CP-SAT API bridge",
+    source: "HIS webapp r171 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -281,7 +281,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     const raw = deepClone(rawEntry || {});
     const normalized = normalizeTimetableEntry ? normalizeTimetableEntry(raw) : raw;
 
-    // r170 핵심: 현재 운영 웹앱의 state.js가 오래된 경우 normalizeTimetableEntry가
+    // r171 핵심: 현재 운영 웹앱의 state.js가 오래된 경우 normalizeTimetableEntry가
     // CP-SAT 결과의 roomAssignmentsByTtCardId/roomIds를 버릴 수 있습니다.
     // 그래서 사용자에게 필요한 배치 필드는 normalizer 뒤에 다시 강제 주입합니다.
     const preservedAssignments = sanitizeRoomAssignments(raw.roomAssignmentsByTtCardId);
@@ -357,7 +357,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
       ok: validation.ok !== false,
-      source: "cp-sat-api-r170",
+      source: "cp-sat-api-r171",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
       importedAt: nowIso(),
