@@ -996,7 +996,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-measure-r178"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-06-26-bottom-measure-r179"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1623,7 +1623,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
 
-/* r178: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
+/* r179: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
 #hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
 .tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip,
 #appHealthInlineStatus,#ttAppHealthStatus,#ttStatusMessage,#ttBottomMessage,.app-health-inline-status,
@@ -1662,7 +1662,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .his-toast{min-width:220px;max-width:min(420px,calc(100vw - 36px));background:#0f172a;color:#fff;border-radius:12px;padding:10px 13px;box-shadow:0 16px 40px rgba(15,23,42,.28);font-size:13px;font-weight:800;line-height:1.35;opacity:.98;pointer-events:none}
 .his-toast.ok{background:#166534}.his-toast.warn{background:#92400e}.his-toast.error{background:#991b1b}
 
-/* r178: 하단 패널을 접었을 때 남는 회색 공백 제거.
+/* r179: 하단 패널을 접었을 때 남는 회색 공백 제거.
    원인: #ttGrid는 화면 남는 높이를 차지하는데, 행 높이는 예전 하단 패널 높이를 계속 예약했습니다.
    해결: 하단 패널 접힘 상태를 body class로 관리하고, 시간표 행 높이를 남는 공간에 맞춰 재계산합니다. */
 :root{
@@ -1711,7 +1711,7 @@ body.tt-bottom-is-collapsed .tt-body{
 }
 
 
-/* r178: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
+/* r179: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
 :root{
   --tt-bottom-measured-h:0px;
   --tt-bottom-reserved-h:0px;
@@ -1733,7 +1733,7 @@ body.tt-bottom-is-open #ttBottom{
   height:auto;
   min-height:0!important;
 }
-body.tt-bottom-is-open #ttBottom.tt-bottom-r178-measured{
+body.tt-bottom-is-open #ttBottom.tt-bottom-r179-measured{
   height:var(--tt-bottom-measured-h, auto)!important;
   max-height:var(--tt-bottom-measured-h, none)!important;
 }
@@ -1789,7 +1789,7 @@ body.tt-bottom-is-open .tt-body{
 
 
 
-/* r178: 작업 패널 닫힘 = 하단 패널 완전 제거 + 시간표 영역 전체 확장 */
+/* r179: 작업 패널 닫힘 = 하단 패널 완전 제거 + 시간표 영역 전체 확장 */
 body.tt-bottom-is-collapsed #ttBottom,
 body.tt-bottom-is-collapsed #ttBottom *{
   display:none!important;
@@ -1845,7 +1845,7 @@ body.tt-bottom-is-open .tt-bottom-toggle-btn{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r178</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r179</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1914,9 +1914,9 @@ body.tt-bottom-is-open .tt-bottom-toggle-btn{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-06-26-bottom-measure-r178";</script>
+<script>window.HIS_APP_VERSION = "2026-06-26-bottom-measure-r179";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-06-26-bottom-measure-r178";
+  import { versioned } from "./js/version.js?v=2026-06-26-bottom-measure-r179";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -1949,7 +1949,7 @@ document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
 
   function applyHeight(value, save = false) {
     const next = clampHeight(value);
-    // r178: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
+    // r179: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
     // max-height만 보관하고 실제 높이는 내용만큼 자동으로 줄어들게 합니다.
     bottom.style.height = "auto";
     bottom.style.maxHeight = next + "px";
@@ -2069,7 +2069,7 @@ window._ttBottomToggle = (function() {
     collapsed ? show() : hide();
   }, { capture: true });
   if (collapsed) hide(); else show();
-  // r178 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
+  // r179 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
   requestAnimationFrame(() => {
     document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
     document.body.classList.toggle("tt-bottom-is-open", !collapsed);
@@ -2078,13 +2078,13 @@ window._ttBottomToggle = (function() {
   return { show, hide, toggle: () => collapsed ? show() : hide(), isCollapsed: () => collapsed };
 })();
 
-/* ── r178: Bottom panel measured-height reflow ──
+/* ── r179: Bottom panel measured-height reflow ──
    하단 패널의 저장 높이/과거 inline style이 아니라, 현재 활성 탭의 실제 콘텐츠 높이를 실측해
    그만큼만 화면을 차지하게 합니다. 과목 카드 아래 회색 공백의 직접 원인입니다. */
 (function() {
   const bottom = document.getElementById("ttBottom");
-  if (!bottom || bottom.dataset.r178Measured === "1") return;
-  bottom.dataset.r178Measured = "1";
+  if (!bottom || bottom.dataset.r179Measured === "1") return;
+  bottom.dataset.r179Measured = "1";
 
   const root = document.documentElement;
   const body = document.body;
@@ -2140,7 +2140,7 @@ window._ttBottomToggle = (function() {
     try {
     const collapsed = body.classList.contains("tt-bottom-is-collapsed") || bottom.classList.contains("tt-bottom-collapsed");
     if (collapsed) {
-      bottom.classList.remove("tt-bottom-r178-measured");
+      bottom.classList.remove("tt-bottom-r179-measured");
       setStyleValue(bottom, "height", "0px");
       setStyleValue(bottom, "maxHeight", "0px");
       setRootVar("--tt-bottom-measured-h", "0px");
@@ -2156,7 +2156,7 @@ window._ttBottomToggle = (function() {
     const desired = Math.max(MIN_OPEN_H, Math.min(MAX_OPEN_H, naturalHeight()));
     const hpx = desired + "px";
 
-    bottom.classList.add("tt-bottom-r178-measured");
+    bottom.classList.add("tt-bottom-r179-measured");
     setStyleValue(bottom, "height", hpx);
     setStyleValue(bottom, "maxHeight", hpx);
     setStyleValue(bottom, "minHeight", "0px");
@@ -2281,7 +2281,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-measure-r178");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-06-26-bottom-measure-r179");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
@@ -2294,7 +2294,7 @@ window._ttBottomToggle = (function() {
 </script>
 
 
-<script id="tt-bottom-toggle-hard-r178">
+<script id="tt-bottom-toggle-hard-r179">
 (function(){
   const bottom0 = document.getElementById("ttBottom");
   const btn0 = document.getElementById("ttToggleBottom");
@@ -2389,264 +2389,291 @@ window._ttBottomToggle = (function() {
 </script>
 
 
-<style id="tt-collapsed-100vh-fit-css-r178">
-/* r178: 작업 패널 접힘 상태에서는 시간표가 남은 화면 100%에 맞게 보이고, 세로 스크롤을 만들지 않습니다. */
-body.tt-bottom-is-collapsed,
-body.tt-bottom-is-collapsed .tt-body,
-body.tt-bottom-is-collapsed #ttGrid{
+<style id="tt-single-scroll-layout-css-r179">
+/* r179: 스크롤 구조 단일화
+   - 전체 문서 스크롤 금지
+   - 시간표 영역은 세로 스크롤 없이 남은 높이에 맞춤
+   - 작업 패널만 열림 상태에서 내부 세로 스크롤 허용
+*/
+html, body{
+  height:100%!important;
+  min-height:0!important;
   overflow:hidden!important;
 }
-body.tt-bottom-is-collapsed #ttGrid{
+body.tt-single-scroll-layout-r179{
+  display:flex!important;
+  flex-direction:column!important;
+  min-height:0!important;
+  max-height:100vh!important;
+}
+body.tt-single-scroll-layout-r179 .tt-body{
+  flex:1 1 0!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow:hidden!important;
+  display:flex!important;
+  flex-direction:column!important;
+}
+body.tt-single-scroll-layout-r179 #ttGrid{
+  flex:1 1 0!important;
+  min-height:0!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  background:#f8fafc!important;
+}
+body.tt-single-scroll-layout-r179 #ttBottom{
   flex:0 0 auto!important;
   min-height:0!important;
+  overflow:hidden!important;
+}
+body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttBottom,
+body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttBottom *{
+  display:none!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  flex-basis:0!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  overflow:hidden!important;
+}
+body.tt-single-scroll-layout-r179.tt-bottom-is-open #ttBottom{
+  display:flex!important;
+  flex-direction:column!important;
+  height:var(--tt-bottom-user-h, 172px)!important;
+  max-height:var(--tt-bottom-user-h, 172px)!important;
+  min-height:0!important;
+}
+body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-resizer{
+  flex:0 0 8px!important;
+  height:8px!important;
+  cursor:row-resize!important;
+}
+body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-scroll{
+  flex:1 1 0!important;
+  min-height:0!important;
+  height:auto!important;
   max-height:none!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
 }
-body.tt-bottom-is-collapsed .tt-all-class-table,
-body.tt-bottom-is-collapsed .tt-grade-percent-table,
-body.tt-bottom-is-collapsed .tt-teacher-class-table,
-body.tt-bottom-is-collapsed .tt-room-table-r178{
+body.tt-single-scroll-layout-r179 #ttBottom .tt-bottom-content{
   min-height:0!important;
-  max-height:none!important;
+  height:auto!important;
+  overflow:visible!important;
 }
-body.tt-bottom-is-collapsed .tt-all-class-table tbody,
-body.tt-bottom-is-collapsed .tt-all-class-table tbody tr,
-body.tt-bottom-is-collapsed .tt-all-class-table .tt-all-cell,
-body.tt-bottom-is-collapsed .tt-all-class-table .tt-cell,
-body.tt-bottom-is-collapsed .tt-grade-percent-table tbody tr,
-body.tt-bottom-is-collapsed .tt-grade-percent-table .tt-cell{
-  min-height:0!important;
-  max-height:var(--tt-fit-row-h, var(--tt-all-row-height, 24px))!important;
+body.tt-single-scroll-layout-r179 .tt-all-class-table tbody tr,
+body.tt-single-scroll-layout-r179 .tt-all-class-table tbody td.tt-all-cell,
+body.tt-single-scroll-layout-r179 .tt-all-class-table tbody td.tt-all-row-hdr{
+  height:var(--tt-layout-row-h, var(--tt-all-row-height, 32px))!important;
 }
-body.tt-bottom-is-collapsed .tt-entry-card,
-body.tt-bottom-is-collapsed .tt-all-summary-card{
-  min-height:0!important;
-}
-body.tt-bottom-is-collapsed .tt-cell-ph{
-  min-height:0!important;
+body.tt-single-scroll-layout-r179.tt-bottom-is-collapsed #ttGrid{
+  overflow-y:hidden!important;
 }
 </style>
 
-<script id="tt-collapsed-100vh-fit-r178">
+<script id="tt-single-scroll-layout-r179">
 (function(){
-  const VERSION = "r178";
-  if (window.__ttCollapsedFit100InstalledR178) return;
-  window.__ttCollapsedFit100InstalledR178 = true;
+  const VERSION = "r179";
+  if (window.__ttSingleScrollLayoutR179) return;
+  window.__ttSingleScrollLayoutR179 = true;
 
   const root = document.documentElement;
   const body = document.body;
+  const bottom = document.getElementById("ttBottom");
+  let btn = document.getElementById("ttToggleBottom");
+  let resizer = document.getElementById("ttBottomResizer");
+  if (!bottom || !btn || !resizer) return;
 
-  function px(n){
-    return Math.max(0, Math.floor(Number(n) || 0));
+  body.classList.add("tt-single-scroll-layout-r179");
+
+  const MIN_H = 112;
+  const MAX_H = 420;
+  const DEFAULT_H = 172;
+  let resizing = false;
+  let applying = false;
+  let collapsed = localStorage.getItem("tt_bottom_collapsed") === "1";
+  let userH = clamp(localStorage.getItem("tt_botH") || DEFAULT_H);
+
+  function clamp(v){
+    const n = Number.parseInt(v, 10);
+    return Math.max(MIN_H, Math.min(MAX_H, Number.isFinite(n) ? n : DEFAULT_H));
   }
-
-  function tableInGrid(grid){
-    if (!grid) return null;
-    return grid.querySelector(":scope > table.tt-table")
-      || grid.querySelector(".tt-all-class-table")
-      || grid.querySelector(".tt-grade-percent-table")
-      || grid.querySelector("table.tt-table");
+  function setImportant(el, prop, value){
+    try { el && el.style.setProperty(prop, value, "important"); } catch (_) {}
   }
-
-  function clearVisualSpans(table){
-    if (!table) return;
-    table.classList.remove("tt-visual-span-table");
-    table.querySelectorAll(".tt-visual-span-start,.tt-visual-span-cover").forEach(el => {
-      el.classList.remove("tt-visual-span-start", "tt-visual-span-cover");
-    });
-    table.querySelectorAll(".tt-visual-span-card").forEach(card => {
-      card.classList.remove("tt-visual-span-card");
-      card.style.height = "";
-    });
-    table.querySelectorAll(".tt-visual-span-hidden").forEach(card => {
-      card.classList.remove("tt-visual-span-hidden");
-    });
+  function clearImportant(el, props){
+    props.forEach(p => { try { el?.style?.removeProperty(p); } catch(_){} });
   }
-
-  function cardSignature(card){
-    if (!card) return "";
-    const groupKey = String(card.dataset.groupKey || "").trim();
-    if (groupKey && !groupKey.startsWith("entry:")) return groupKey;
-    const entryId = String(card.dataset.entryId || card.dataset.ttEntryId || "").trim();
-    return entryId ? `entry:${entryId}` : groupKey;
+  function setVars(){
+    const hpx = collapsed ? "0px" : `${userH}px`;
+    root.style.setProperty("--tt-bottom-user-h", hpx);
+    root.style.setProperty("--tt-bottom-current-height", hpx);
+    root.style.setProperty("--tt-bottom-measured-h", hpx);
+    root.style.setProperty("--tt-bottom-reserved-h", hpx);
   }
-
-  function onlyMergeableCard(td){
-    if (!td) return null;
-    const cards = [...td.querySelectorAll(":scope .tt-all-summary-card")].filter(card => cardSignature(card));
-    return cards.length === 1 ? cards[0] : null;
-  }
-
-  function refreshVisualSpans(table){
-    if (!table || !table.classList.contains("tt-all-summary-table")) return;
-    clearVisualSpans(table);
-    const cells = [...table.querySelectorAll("td.tt-all-cell[data-day]")];
-    if (!cells.length) return;
-    const bySlot = new Map();
-    cells.forEach(td => {
-      const day = td.getAttribute("data-day") ?? td.dataset.day ?? "";
-      const period = td.dataset.period ?? "";
-      const row = Number(td.dataset.allRowIndex ?? -1);
-      if (day === "" || period === "" || !Number.isFinite(row) || row < 0) return;
-      const key = `${day}:${period}`;
-      if (!bySlot.has(key)) bySlot.set(key, []);
-      bySlot.get(key).push({ td, row });
-    });
-    let applied = 0;
-    bySlot.forEach(items => {
-      items.sort((a,b) => a.row - b.row);
-      let i = 0;
-      while (i < items.length) {
-        const first = onlyMergeableCard(items[i].td);
-        const sig = cardSignature(first);
-        if (!sig) { i += 1; continue; }
-        let j = i + 1;
-        while (j < items.length && items[j].row === items[j - 1].row + 1) {
-          const next = onlyMergeableCard(items[j].td);
-          if (cardSignature(next) !== sig) break;
-          j += 1;
-        }
-        const run = items.slice(i, j);
-        if (run.length > 1) {
-          const startTd = run[0].td;
-          const endTd = run[run.length - 1].td;
-          const card = onlyMergeableCard(startTd);
-          const startRect = startTd.getBoundingClientRect();
-          const endRect = endTd.getBoundingClientRect();
-          const h = Math.max(1, Math.floor(endRect.bottom - startRect.top - 2));
-          startTd.classList.add("tt-visual-span-start");
-          card?.classList.add("tt-visual-span-card");
-          if (card) card.style.height = h + "px";
-          run.slice(1).forEach(({td}) => {
-            td.classList.add("tt-visual-span-cover");
-            onlyMergeableCard(td)?.classList.add("tt-visual-span-hidden");
-          });
-          applied += 1;
-        }
-        i = Math.max(j, i + 1);
-      }
-    });
-    if (applied) table.classList.add("tt-visual-span-table");
-  }
-
-  function fitCollapsed(){
+  function tableInGrid(){
     const grid = document.getElementById("ttGrid");
-    const bottom = document.getElementById("ttBottom");
-    const collapsed = body.classList.contains("tt-bottom-is-collapsed") || localStorage.getItem("tt_bottom_collapsed") === "1";
-
+    return grid?.querySelector("table.tt-table") || grid?.querySelector("table");
+  }
+  function estimateHeaderHeight(){
+    const topbar = document.querySelector(".tt-topbar")?.getBoundingClientRect().height || 0;
+    const toolbar = document.querySelector(".tt-toolbar")?.getBoundingClientRect().height || 0;
+    const subbar = document.querySelector(".tt-subbar,.tt-viewbar,.tt-filterbar")?.getBoundingClientRect().height || 0;
+    return Math.ceil(topbar + toolbar + subbar);
+  }
+  function fitGrid(){
+    const grid = document.getElementById("ttGrid");
     if (!grid) return;
-
-    if (!collapsed) {
-      grid.style.removeProperty("height");
-      grid.style.removeProperty("max-height");
-      grid.style.removeProperty("overflow-y");
-      grid.style.removeProperty("overflow");
-      root.style.removeProperty("--tt-fit-row-h");
-      return;
-    }
-
-    body.classList.add("tt-bottom-is-collapsed");
-    body.classList.remove("tt-bottom-is-open");
-    root.style.setProperty("--tt-bottom-reserved-h", "0px");
-    root.style.setProperty("--tt-bottom-measured-h", "0px");
-    root.style.setProperty("--tt-bottom-current-height", "0px");
-
-    if (bottom) {
-      bottom.classList.add("tt-bottom-collapsed");
-      ["display", "height", "max-height", "min-height", "flex-basis", "overflow", "margin", "padding", "border"].forEach(prop => {
-        const value = prop === "display" ? "none" : prop === "overflow" ? "hidden" : "0px";
-        bottom.style.setProperty(prop, value, "important");
-      });
-    }
-
     const gridTop = grid.getBoundingClientRect().top;
-    const available = Math.max(160, px(window.innerHeight - gridTop - 1));
-    grid.style.setProperty("height", available + "px", "important");
-    grid.style.setProperty("max-height", available + "px", "important");
-    grid.style.setProperty("overflow", "hidden", "important");
-    grid.style.setProperty("overflow-y", "hidden", "important");
-    grid.style.setProperty("min-height", "0", "important");
+    const bottomH = collapsed ? 0 : userH;
+    const available = Math.max(180, Math.floor(window.innerHeight - gridTop - bottomH));
 
-    const table = tableInGrid(grid);
-    if (!table) return;
+    setImportant(grid, "height", `${available}px`);
+    setImportant(grid, "max-height", `${available}px`);
+    setImportant(grid, "min-height", "0px");
+    setImportant(grid, "overflow-x", "auto");
+    setImportant(grid, "overflow-y", "hidden");
 
-    const tableTop = table.getBoundingClientRect().top;
-    const tableHeight = Math.max(80, px(gridTop + available - tableTop));
-    table.style.setProperty("height", tableHeight + "px", "important");
-    table.style.setProperty("max-height", tableHeight + "px", "important");
-    table.style.setProperty("min-height", "0", "important");
-
-    const theadH = Math.ceil(table.tHead?.getBoundingClientRect().height || 30);
-    const tbody = table.tBodies?.[0];
-    const rows = tbody ? [...tbody.rows] : [];
-    const rowCount = Math.max(1, rows.length);
-    const rowH = Math.max(10, Math.floor((tableHeight - theadH - 1) / rowCount));
-    const rowPx = rowH + "px";
-
-    root.style.setProperty("--tt-fit-row-h", rowPx);
+    const table = tableInGrid();
+    const rows = table?.tBodies?.[0]?.rows ? Array.from(table.tBodies[0].rows) : [];
+    const rowCount = Math.max(1, rows.length || Number(root.style.getPropertyValue("--num-rows")) || 15);
+    const theadH = Math.ceil(table?.tHead?.getBoundingClientRect().height || 42);
+    const rowH = Math.max(18, Math.floor((available - theadH - 2) / rowCount));
+    const rowPx = `${rowH}px`;
+    root.style.setProperty("--tt-layout-row-h", rowPx);
     root.style.setProperty("--tt-all-row-height", rowPx);
     grid.style.setProperty("--tt-all-row-height", rowPx);
-    grid.style.setProperty("--num-rows", String(rowCount));
-
-    if (tbody) {
-      tbody.style.setProperty("height", Math.max(1, tableHeight - theadH) + "px", "important");
-      tbody.style.setProperty("max-height", Math.max(1, tableHeight - theadH) + "px", "important");
+  }
+  function refreshAfterLayout(heavy=false){
+    fitGrid();
+    window.dispatchEvent(new Event("resize"));
+    if (heavy && typeof window._ttRenderAll === "function") {
+      setTimeout(() => {
+        try { window._ttRenderAll(); } catch(_) {}
+        requestAnimationFrame(fitGrid);
+      }, 0);
+    } else {
+      requestAnimationFrame(fitGrid);
     }
-    rows.forEach(tr => {
-      tr.style.setProperty("height", rowPx, "important");
-      tr.style.setProperty("min-height", "0", "important");
-      tr.style.setProperty("max-height", rowPx, "important");
-      tr.querySelectorAll("td,th").forEach(cell => {
-        cell.style.setProperty("height", rowPx, "important");
-        cell.style.setProperty("min-height", "0", "important");
-        cell.style.setProperty("max-height", rowPx, "important");
-      });
-    });
-    table.querySelectorAll(".tt-cell-card-grid,.tt-all-summary-cell-wrap").forEach(el => {
-      el.style.setProperty("height", "100%", "important");
-      el.style.setProperty("min-height", "0", "important");
-      el.style.setProperty("overflow", "hidden", "important");
-    });
-    table.querySelectorAll(".tt-entry-card,.tt-all-summary-card,.tt-cell-ph").forEach(el => {
-      el.style.setProperty("min-height", "0", "important");
-      el.style.setProperty("max-height", "100%", "important");
-    });
+  }
+  function updateButton(){
+    btn.classList.toggle("active", collapsed);
+    const icon = btn.querySelector("#ttToggleIcon");
+    if (icon) icon.textContent = collapsed ? "▸" : "▾";
+    btn.title = collapsed ? "작업 패널 열기" : "작업 패널 닫기";
+  }
+  function apply(options={}){
+    if (applying) return;
+    applying = true;
+    try {
+      setVars();
+      body.classList.toggle("tt-bottom-is-collapsed", collapsed);
+      body.classList.toggle("tt-bottom-is-open", !collapsed);
+      bottom.classList.toggle("tt-bottom-collapsed", collapsed);
+      updateButton();
 
-    requestAnimationFrame(() => refreshVisualSpans(table));
+      if (collapsed) {
+        setImportant(bottom, "display", "none");
+        setImportant(bottom, "height", "0px");
+        setImportant(bottom, "max-height", "0px");
+        setImportant(bottom, "min-height", "0px");
+        setImportant(bottom, "flex-basis", "0px");
+        setImportant(bottom, "overflow", "hidden");
+      } else {
+        setImportant(bottom, "display", "flex");
+        setImportant(bottom, "height", `${userH}px`);
+        setImportant(bottom, "max-height", `${userH}px`);
+        setImportant(bottom, "min-height", "0px");
+        setImportant(bottom, "flex-basis", `${userH}px`);
+        setImportant(bottom, "overflow", "hidden");
+        const scroll = bottom.querySelector(".tt-bottom-scroll");
+        if (scroll) {
+          setImportant(scroll, "height", `calc(${userH}px - 8px)`);
+          setImportant(scroll, "max-height", `calc(${userH}px - 8px)`);
+          setImportant(scroll, "overflow-y", "auto");
+        }
+      }
+      refreshAfterLayout(!!options.heavy);
+    } finally {
+      applying = false;
+    }
   }
 
-  let raf = 0;
-  function schedule(){
-    if (raf) cancelAnimationFrame(raf);
-    raf = requestAnimationFrame(() => {
-      raf = 0;
-      fitCollapsed();
-      requestAnimationFrame(fitCollapsed);
-    });
-  }
+  // 이전 패치의 익명 click/mouse 이벤트와 충돌하지 않게 버튼/리사이저를 복제합니다.
+  const newBtn = btn.cloneNode(true);
+  btn.replaceWith(newBtn);
+  btn = newBtn;
+  const newResizer = resizer.cloneNode(true);
+  resizer.replaceWith(newResizer);
+  resizer = newResizer;
 
-  window._ttFitCollapsedGrid100 = schedule;
-  window.addEventListener("resize", schedule, { passive:true });
-  document.addEventListener("DOMContentLoaded", schedule);
+  btn.addEventListener("click", ev => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    collapsed = !collapsed;
+    localStorage.setItem("tt_bottom_collapsed", collapsed ? "1" : "0");
+    apply({ heavy:true });
+  }, { capture:true });
 
-  const mo = new MutationObserver(schedule);
-  mo.observe(body, { attributes:true, attributeFilter:["class"] });
-  const gridObserverTarget = document.getElementById("ttGrid");
-  if (gridObserverTarget) mo.observe(gridObserverTarget, { childList:true, subtree:false, attributes:true, attributeFilter:["class", "style"] });
-
-  const originalToggle = window._ttBottomToggle;
-  if (originalToggle && !originalToggle.__r178Wrapped) {
-    const wrap = fn => function(){ const ret = fn?.apply(originalToggle, arguments); setTimeout(schedule, 0); setTimeout(schedule, 80); setTimeout(schedule, 240); return ret; };
-    window._ttBottomToggle = {
-      ...originalToggle,
-      show: wrap(originalToggle.show),
-      hide: wrap(originalToggle.hide),
-      toggle: wrap(originalToggle.toggle),
-      isCollapsed: originalToggle.isCollapsed,
-      __r178Wrapped: true,
+  function startResize(clientY){
+    if (collapsed) return;
+    resizing = true;
+    const startY = clientY;
+    const startH = userH;
+    body.classList.add("tt-resizing-bottom");
+    const move = ev => {
+      if (!resizing) return;
+      const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? startY;
+      userH = clamp(startH + (startY - y));
+      apply({ heavy:false });
+      ev.preventDefault?.();
     };
+    const end = () => {
+      if (!resizing) return;
+      resizing = false;
+      body.classList.remove("tt-resizing-bottom");
+      localStorage.setItem("tt_botH", String(userH));
+      document.removeEventListener("mousemove", move, true);
+      document.removeEventListener("mouseup", end, true);
+      document.removeEventListener("pointermove", move, true);
+      document.removeEventListener("pointerup", end, true);
+      document.removeEventListener("touchmove", move, true);
+      document.removeEventListener("touchend", end, true);
+      apply({ heavy:true });
+    };
+    document.addEventListener("mousemove", move, true);
+    document.addEventListener("mouseup", end, true);
+    document.addEventListener("pointermove", move, true);
+    document.addEventListener("pointerup", end, true);
+    document.addEventListener("touchmove", move, { capture:true, passive:false });
+    document.addEventListener("touchend", end, true);
   }
+  resizer.addEventListener("mousedown", ev => { ev.preventDefault(); startResize(ev.clientY); }, true);
+  resizer.addEventListener("pointerdown", ev => { if (ev.pointerType === "mouse" && ev.button !== 0) return; ev.preventDefault(); startResize(ev.clientY); }, true);
+  resizer.addEventListener("touchstart", ev => { const t = ev.touches?.[0]; if (!t) return; ev.preventDefault(); startResize(t.clientY); }, { capture:true, passive:false });
+  resizer.addEventListener("dblclick", ev => { ev.preventDefault(); userH = DEFAULT_H; localStorage.setItem("tt_botH", String(userH)); apply({heavy:true}); }, true);
 
-  [0, 50, 150, 400, 900, 1600].forEach(ms => setTimeout(schedule, ms));
+  window._ttBottomToggle = {
+    show(){ collapsed = false; localStorage.setItem("tt_bottom_collapsed", "0"); apply({heavy:true}); },
+    hide(){ collapsed = true; localStorage.setItem("tt_bottom_collapsed", "1"); apply({heavy:true}); },
+    toggle(){ collapsed = !collapsed; localStorage.setItem("tt_bottom_collapsed", collapsed ? "1" : "0"); apply({heavy:true}); },
+    isCollapsed(){ return collapsed; },
+    setHeight(h){ userH = clamp(h); localStorage.setItem("tt_botH", String(userH)); if (!collapsed) apply({heavy:true}); }
+  };
+  window._ttSetBottomHeight = (h, save=true) => { userH = clamp(h); if (save) localStorage.setItem("tt_botH", String(userH)); if (!collapsed) apply({heavy:false}); return userH; };
+
+  const mo = new MutationObserver(() => {
+    if (applying || resizing) return;
+    // 오래된 실측 스크립트가 높이를 되살리는 경우 마지막에 다시 정리합니다.
+    requestAnimationFrame(() => apply({heavy:false}));
+  });
+  mo.observe(bottom, { attributes:true, attributeFilter:["style", "class"] });
+  window.addEventListener("resize", () => apply({heavy:false}), { passive:true });
+
+  apply({heavy:true});
+  [80, 250, 800, 1600].forEach(ms => setTimeout(() => apply({heavy:false}), ms));
 })();
 </script>
 
