@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r180: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
+// r181: 현재 웹앱 연결 + solver 전송 JSON에서 학생 객체/시간표 학생필드 제거 + 결과 적용 시 교실 배정 보존.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -8,6 +8,7 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r181/HIS_CP_SAT_Local_Server_r181.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -90,7 +91,7 @@ function stripSolverOnlyState(state) {
   const copy = deepClone(state);
   const payload = copy?.data || copy?.normalized || copy;
 
-  // r180 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
+  // r181 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
   // 학생 충돌 계산은 rosters.rosters[].studentId만 사용합니다.
   asArray(payload?.classes?.classes).forEach(cls => {
     if (cls && typeof cls === "object") delete cls.students;
@@ -141,7 +142,7 @@ function makeSolverState(appState) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r180 CP-SAT API bridge",
+    source: "HIS webapp r181 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -211,6 +212,7 @@ function ensureStyle() {
     .tt-cpsat-api-table{border-collapse:collapse;width:100%;font-size:12px}.tt-cpsat-api-table th,.tt-cpsat-api-table td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}.tt-cpsat-api-table th{width:210px;background:#f1f5f9}.tt-cpsat-api-pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:10px;border-radius:8px;max-height:210px;overflow:auto;font-size:12px}
     .tt-cpsat-api-progress{height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-top:8px}.tt-cpsat-api-progress span{display:block;height:100%;width:0%;background:#2563eb;transition:width .25s}
     .tt-cpsat-api-checkline{display:flex;gap:8px;align-items:center;margin-top:8px;color:#334155;font-size:12px}.tt-cpsat-api-checkline input{width:auto;height:auto}
+    .tt-cpsat-api-download-note{margin-top:10px;padding:10px 12px;border:1px dashed #94a3b8;border-radius:10px;background:#f8fafc;color:#334155;font-size:12px;line-height:1.55}.tt-cpsat-api-download-note code{font-weight:800;color:#0f172a}
   `;
   document.head.appendChild(style);
 }
@@ -281,7 +283,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     const raw = deepClone(rawEntry || {});
     const normalized = normalizeTimetableEntry ? normalizeTimetableEntry(raw) : raw;
 
-    // r180 핵심: 현재 운영 웹앱의 state.js가 오래된 경우 normalizeTimetableEntry가
+    // r181 핵심: 현재 운영 웹앱의 state.js가 오래된 경우 normalizeTimetableEntry가
     // CP-SAT 결과의 roomAssignmentsByTtCardId/roomIds를 버릴 수 있습니다.
     // 그래서 사용자에게 필요한 배치 필드는 normalizer 뒤에 다시 강제 주입합니다.
     const preservedAssignments = sanitizeRoomAssignments(raw.roomAssignmentsByTtCardId);
@@ -357,7 +359,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.autoAssignMeta = {
       ...(domain.autoAssignMeta || {}),
       ok: validation.ok !== false,
-      source: "cp-sat-api-r180",
+      source: "cp-sat-api-r181",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
       importedAt: nowIso(),
@@ -398,7 +400,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         <div class="tt-cpsat-api-head">
           <div>
             <h3 id="ttCpSatApiTitle">CP-SAT 적용</h3>
-            <p><b>START_API_LOCAL.bat</b>로 API 서버를 켠 뒤, 현재 열린 시간표 데이터를 그대로 전송합니다. 기본 주소는 <code>http://127.0.0.1:7860</code>입니다.</p>
+            <p>CP-SAT 로컬 서버를 실행한 뒤 현재 열린 시간표 데이터를 전송합니다. 기본 주소는 <code>http://127.0.0.1:7860</code>입니다.</p>
           </div>
           <button type="button" class="tt-cpsat-api-close" data-action="close">×</button>
         </div>
@@ -409,7 +411,9 @@ export function setupCpSatWebappImport(ctx = {}) {
             <div class="tt-cpsat-api-field"><label>Workers</label><input id="ttCpSatApiWorkers" type="number" min="1" max="32" value="4"></div>
           </div>
           <div class="tt-cpsat-api-checkline">🔒 학생 객체는 전송하지 않습니다. 시간표 카드/배치 결과의 학생 필드도 제거하고, 학생 충돌은 과목카드 roster의 studentId만 사용합니다.</div>
+          <div class="tt-cpsat-api-download-note">로컬 서버가 아직 없으면 <b>로컬 서버 다운로드</b>를 눌러 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요. 웹페이지가 자동 실행할 수는 없고, 실행은 Windows에서 직접 해야 합니다.</div>
           <div class="tt-cpsat-api-actions">
+            <button type="button" data-action="download-local-server">로컬 서버 다운로드</button>
             <button type="button" data-action="health">1. 서버 확인</button>
             <button type="button" data-action="analyze">2. 데이터 점검</button>
             <button type="button" class="primary" data-action="solve">3. CP-SAT 실행</button>
@@ -491,6 +495,18 @@ export function setupCpSatWebappImport(ctx = {}) {
       if (running && !confirm("CP-SAT 실행 중입니다. 창을 닫을까요? 실행은 서버에서 계속될 수 있습니다.")) return;
       overlay.remove();
     });
+    $('[data-action="download-local-server"]')?.addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = LOCAL_SERVER_RELEASE_URL;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.download = "HIS_CP_SAT_Local_Server_r181.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r181에 <code>HIS_CP_SAT_Local_Server_r181.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+    });
+
     $('[data-action="health"]')?.addEventListener("click", async () => {
       try {
         setBusy(true); setStatus("warn", "서버 확인 중...", 10);
@@ -498,7 +514,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         setStatus("ok", `<b>서버 정상</b> · OR-Tools ${escapeHtml(data?.data?.ortools || data?.ortools || "installed")}`, 100);
         renderApiSummary(data?.data || data, "health");
       } catch (err) {
-        setStatus("bad", `<b>서버 연결 실패</b><br>${escapeHtml(err?.message || err)}<br><br>START_API_LOCAL.bat가 실행 중인지 확인하세요.`, 0);
+        setStatus("bad", `<b>서버 연결 실패</b><br>${escapeHtml(err?.message || err)}<br><br>START_CP_SAT_LOCAL_SERVER.bat 또는 START_API_LOCAL.bat가 실행 중인지 확인하세요.<br>로컬 서버가 없으면 [로컬 서버 다운로드] 버튼으로 받은 뒤 압축 해제 후 실행하세요.`, 0);
       } finally { setBusy(false); }
     });
     $('[data-action="analyze"]')?.addEventListener("click", async () => {

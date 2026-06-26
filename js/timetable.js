@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-cpsat-r180";
+import { versioned } from "./version.js?v=2026-06-26-github-download-r181";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-r180";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-github-download-r181";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -463,7 +463,7 @@ function setupTtSaveQuotaControls() {
     healthBtn.title = "현재 앱 상태, 도메인 로드, 시간표 참조, 주요 모듈 접근성을 점검합니다.";
     healthBtn.addEventListener("click", () => openAppHealthCheckDialog());
 
-    // r180: 운영자가 쓰는 진단/사용량 버튼은 다시 상단에 둡니다.
+    // r181: 운영자가 쓰는 진단/사용량 버튼은 다시 상단에 둡니다.
     // 기능 구분:
     // - Firestore 진단: 서버 저장 원본 JSON 내보내기
     // - 앱점검: 현재 브라우저/모듈/DOM/참조 상태 점검
