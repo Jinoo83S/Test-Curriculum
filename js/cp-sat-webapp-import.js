@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-cpsat-run-phase-r200";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-cpsat-partial-apply-r201";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r200: 실행 전 현재 배치 검증과 실제 CP-SAT 실행 결과를 분리 표시합니다.
+// r201: 부분 배치 결과의 적용 정책과 경고/차단 흐름을 분리합니다.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -237,7 +237,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r200 CP-SAT API bridge",
+    source: "HIS webapp r201 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -282,6 +282,76 @@ function entriesSummary(entries = []) {
 }
 function validationCounts(apiResult = {}) {
   return apiResult?.validation?.counts || {};
+}
+function hardValidationBlock(apiResult = {}) {
+  const vc = validationCounts(apiResult);
+  const hardKeys = [
+    "overageCount",
+    "teacherConflictCount",
+    "studentConflictCount",
+    "roomConflictCount",
+    "classConflictCount",
+    "timeViolationCount",
+  ];
+  const hit = hardKeys.map(k => Number(vc[k] || 0)).reduce((a, b) => a + b, 0);
+  if (hit > 0) {
+    return {
+      block: true,
+      reason: `초과/충돌/시간조건 위반 ${hit}건이 있어 자동 적용을 막았습니다.`,
+    };
+  }
+  return { block: false, reason: "" };
+}
+function softValidationSummary(apiResult = {}) {
+  const vc = validationCounts(apiResult);
+  const parts = [];
+  const shortage = Number(vc.shortageCount || 0);
+  const capacity = Number(vc.capacityWarningCount || 0);
+  if (shortage > 0) parts.push(`미배치 ${shortage}개`);
+  if (capacity > 0) parts.push(`수용인원 확인 ${capacity}건`);
+  return parts.join(" · ");
+}
+function issueLines(apiResult = {}, limit = 8) {
+  const lines = [];
+  const details = asArray(apiResult?.validation?.details);
+  details.forEach(item => {
+    const type = item?.type || "";
+    const value = item?.value;
+    if (type === "shortages" && Array.isArray(value)) {
+      const [cardId, need, got] = value;
+      lines.push(`미배치: ${cardId} · 필요 ${need}, 배치 ${got}`);
+    } else if ((type === "capacityViolations" || type === "capacityWarnings") && Array.isArray(value)) {
+      const [cardId, roomId, students, capacity] = value;
+      lines.push(`수용인원 확인: ${cardId} · ${students}/${capacity} · ${roomId}`);
+    } else if (type || value != null) {
+      lines.push(`${type || "확인"}: ${Array.isArray(value) ? value.join(" / ") : JSON.stringify(value)}`);
+    }
+  });
+  asArray(apiResult?.meta?.log || apiResult?.log).forEach(line => {
+    const text = cleanLocal(line);
+    if (text && !lines.includes(text)) lines.push(text);
+  });
+  return lines.slice(0, limit);
+}
+function issueText(apiResult = {}, limit = 8) {
+  const lines = issueLines(apiResult, limit);
+  return lines.length ? lines.map(x => `- ${x}`).join("\n") : "- 상세 원인 없음";
+}
+function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount = 0) {
+  const severe = severeCoverageFailure(apiResult, normalizedEntries, currentEntryCount);
+  if (severe.block) return { canApply: false, level: "bad", reason: severe.reason };
+  const hard = hardValidationBlock(apiResult);
+  if (hard.block) return { canApply: false, level: "bad", reason: hard.reason };
+  const validation = apiResult?.validation || {};
+  if (validation.ok === false) {
+    return {
+      canApply: true,
+      level: "warn",
+      reason: softValidationSummary(apiResult) || validation.summary || "부분 배치 결과입니다.",
+      soft: true,
+    };
+  }
+  return { canApply: asArray(normalizedEntries).length > 0, level: "ok", reason: "정상 적용 가능", soft: false };
 }
 function solvePhaseLabel(apiResult = {}) {
   const phase = cleanLocal(apiResult?.phase || apiResult?.meta?.phase || "");
@@ -452,9 +522,13 @@ export function setupCpSatWebappImport(ctx = {}) {
   function normalizeEntryList(list) {
     return asArray(list).map(normalizeSolvedEntry).filter(e => e && typeof e === "object" && (e.templateId || asArray(e.templateIds).length));
   }
-  function resultMayBeApplied(apiResult = {}) {
+  function resultApplyPolicy(apiResult = {}) {
     const normalized = normalizeEntryList(apiResult?.entries || []);
-    return !severeCoverageFailure(apiResult, normalized, asArray(entries?.()).length).block && normalized.length > 0;
+    if (!normalized.length) return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다." };
+    return applyPolicy(apiResult, normalized, asArray(entries?.()).length);
+  }
+  function resultMayBeApplied(apiResult = {}) {
+    return !!resultApplyPolicy(apiResult).canApply;
   }
   function makeBackupVersion(name = "CP-SAT API 적용 전 백업") {
     const domain = ttDomain?.();
@@ -490,8 +564,9 @@ export function setupCpSatWebappImport(ctx = {}) {
       alert(`이 CP-SAT 결과는 적용하지 않습니다.\n\n${severe.reason}\n\n${validation.summary || "검증 필요"}\n\n기존 시간표 보호를 위해 결과 적용을 차단했습니다. [결과 JSON 저장]으로 진단 파일만 저장하세요.`);
       return false;
     }
-    if (validation.ok === false) {
-      alert(`API 검증이 정상 상태가 아니므로 바로 적용하지 않습니다.\n\n${validation.summary || "검증 필요"}\n\n부분 결과는 [결과 JSON 저장]으로 보관하고, 부족/충돌 원인을 먼저 수정하세요.`);
+    const policy = applyPolicy(apiResult, nextEntries, asArray(entries?.()).length);
+    if (!policy.canApply) {
+      alert(`이 CP-SAT 결과는 적용하지 않습니다.\n\n${policy.reason}\n\n${validation.summary || "검증 필요"}\n\n${issueText(apiResult)}\n\n[결과 JSON 저장]으로 진단 파일만 보관하세요.`);
       return false;
     }
 
@@ -506,7 +581,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     });
     domain.autoAssignMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r200",
+      source: "cp-sat-webapp-r201",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
       cpSatServerValidationOk: validation.ok !== false,
@@ -616,7 +691,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       running = isBusy;
       overlay.querySelectorAll("button").forEach(btn => {
         if (btn.dataset.action === "close") return;
-        if (btn.dataset.action === "apply") btn.disabled = isBusy || !latestResult?.entries?.length;
+        if (btn.dataset.action === "apply") btn.disabled = isBusy || !resultMayBeApplied(latestResult);
         else if (btn.dataset.action === "download-result") btn.disabled = isBusy || !latestResult;
         else btn.disabled = isBusy;
       });
@@ -626,9 +701,13 @@ export function setupCpSatWebappImport(ctx = {}) {
       const counts = data?.counts || {};
       const assignCount = asArray(data?.entries).filter(e => e?.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
       const privacy = data?.privacy?.solverPayload || privacyReport(latestState);
+      const policy = applyPolicy(data || {}, normalizeEntryList(data?.entries || []), asArray(entries?.()).length);
+      const issuePreview = issueLines(data, 5).join(" / ");
       const rowData = [
         ["상태", data?.status || data?.state || (data?.ok ? "OK" : "확인 필요")],
         ["검증", validation.summary || (validation.ok === true ? "정상" : "-")],
+        ["적용판정", policy.canApply ? (policy.soft ? `부분 적용 가능 · ${policy.reason}` : "적용 가능") : `적용 차단 · ${policy.reason}`],
+        ["원인요약", issuePreview || "-"],
         ["카드", counts.cards ?? "-"],
         ["그룹카드", counts.groups ?? "-"],
         ["entries", counts.resultEntries ?? counts.entries ?? asArray(data?.entries).length ?? "-"],
@@ -638,7 +717,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         ["시간표 학생필드", `카드 ${privacy?.ttcardsWithStudentKeys ?? 0}개 / entries ${privacy?.entriesWithAudienceStudentKeys ?? 0}개`],
         ["소요 시간", data?.elapsedSeconds != null ? `${data.elapsedSeconds}초` : "-"],
       ];
-      summaryEl.className = `tt-cpsat-api-box ${validation.ok === false || data?.ok === false ? "warn" : "ok"}`;
+      summaryEl.className = `tt-cpsat-api-box ${policy.level || (validation.ok === false || data?.ok === false ? "warn" : "ok")}`;
       summaryEl.innerHTML = tableRows(rowData, escapeHtml);
       detailsEl.textContent = JSON.stringify({ kind, data }, null, 2);
     }
@@ -764,19 +843,27 @@ export function setupCpSatWebappImport(ctx = {}) {
           detailsEl.textContent = JSON.stringify({ jobId, state: job.state, phase: job.phase, message: job.message }, null, 2);
           if (job.state === "done") {
             latestResult = job.result;
-            const mayApply = resultMayBeApplied(latestResult);
-            setStatus(latestResult?.validation?.ok === false ? "warn" : "ok", `<b>${escapeHtml(solvePhaseLabel(latestResult))}</b><br>${escapeHtml(latestResult?.validation?.summary || latestResult?.status || "완료")}${mayApply ? "" : "<br><b>적용 차단:</b> 검증이 정상인 결과만 현재 시간표에 적용합니다. 결과 JSON은 저장할 수 있습니다."}`, 100);
+            const policy = resultApplyPolicy(latestResult);
+            const issues = issueLines(latestResult, 4);
+            const issueHtml = issues.length ? `<br><span style="font-size:11px;color:#64748b">${escapeHtml(issues.join(" / "))}</span>` : "";
+            const applyHtml = policy.canApply
+              ? (policy.soft ? `<br><b>부분 배치 적용 가능:</b> ${escapeHtml(policy.reason)} · 적용 전 결과 JSON 저장을 권장합니다.` : "")
+              : `<br><b>적용 차단:</b> ${escapeHtml(policy.reason)} 결과 JSON은 저장할 수 있습니다.`;
+            setStatus(policy.level || "ok", `<b>${escapeHtml(solvePhaseLabel(latestResult))}</b><br>${escapeHtml(latestResult?.validation?.summary || latestResult?.status || "완료")}${applyHtml}${issueHtml}`, 100);
             renderApiSummary(latestResult, "solve");
-            applyBtn.disabled = !mayApply;
+            applyBtn.textContent = policy.soft ? "4. 부분결과 적용" : "4. 결과 적용";
+            applyBtn.disabled = !policy.canApply;
             resultBtn.disabled = false;
             break;
           }
           if (["failed", "error"].includes(String(job.state))) {
             if (job.result && asArray(job.result.entries).length) {
               latestResult = job.result;
-              setStatus("warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br><b>검증이 정상인 결과만 적용합니다. 먼저 결과 JSON을 저장해 확인하세요.</b>`, 100);
+              const policy = resultApplyPolicy(latestResult);
+              setStatus(policy.level || "warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>부분 배치 적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
               renderApiSummary(latestResult, "solve-failed-with-result");
-              applyBtn.disabled = true;
+              applyBtn.textContent = policy.soft ? "4. 부분결과 적용" : "4. 결과 적용";
+              applyBtn.disabled = !policy.canApply;
               resultBtn.disabled = false;
               break;
             }
@@ -789,8 +876,15 @@ export function setupCpSatWebappImport(ctx = {}) {
     });
     applyBtn?.addEventListener("click", async () => {
       if (!latestResult?.entries?.length) { alert("적용할 결과가 없습니다."); return; }
+      const policy = resultApplyPolicy(latestResult);
+      if (!policy.canApply) {
+        alert(`이 결과는 적용할 수 없습니다.\n\n${policy.reason}\n\n${issueText(latestResult)}`);
+        return;
+      }
       const assignCount = asArray(latestResult.entries).filter(e => e?.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
-      const msg = `CP-SAT API 결과를 현재 시간표에 적용할까요?\n\nentries: ${latestResult.entries.length}\n교실 배정 포함 entry: ${assignCount}\n검증: ${latestResult.validation?.summary || "-"}\n\n현재 시간표는 배치 보관에 자동 백업됩니다.`;
+      const prefix = policy.soft ? "CP-SAT 부분 배치 결과를 현재 시간표에 적용할까요?" : "CP-SAT API 결과를 현재 시간표에 적용할까요?";
+      const warning = policy.soft ? `\n주의: ${policy.reason}\n${issueText(latestResult, 6)}\n` : "";
+      const msg = `${prefix}\n\nentries: ${latestResult.entries.length}\n교실 배정 포함 entry: ${assignCount}\n검증: ${latestResult.validation?.summary || "-"}${warning}\n현재 시간표는 배치 보관에 자동 백업됩니다.`;
       if (!confirm(msg)) return;
       try { if (await applySolvedEntries(latestResult.entries, latestResult)) overlay.remove(); }
       catch (err) { alert(`적용 실패: ${err?.message || err}`); }
