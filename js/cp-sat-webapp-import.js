@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r188: 실제 교사/교실/학급 충돌을 숨기지 않는 엄격 검토 기준 적용.
+// r189: 실제 교사/교실/학급 충돌을 숨기지 않는 엄격 검토 기준 적용.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -232,7 +232,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r188 CP-SAT API bridge",
+    source: "HIS webapp r189 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -446,17 +446,23 @@ export function setupCpSatWebappImport(ctx = {}) {
     captureTimetableUndo?.("CP-SAT API 결과 적용");
 
     domain.entries = nextEntries;
+    const previousMeta = { ...(domain.autoAssignMeta || {}) };
+    ["validationSummary", "ok", "validatorOk", "validationOk", "conflictSummary", "conflictStatus", "legacyValidationSummary"].forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(previousMeta, key)) delete previousMeta[key];
+    });
     domain.autoAssignMeta = {
-      ...(domain.autoAssignMeta || {}),
-      ok: validation.ok !== false,
-      source: "cp-sat-webapp-r184",
+      ...previousMeta,
+      source: "cp-sat-webapp-r189",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
-      validationSummary: validation.summary || apiResult?.status || "CP-SAT API 결과 적용",
+      cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
+      cpSatServerValidationOk: validation.ok !== false,
+      cpSatServerValidationSummary: validation.summary || "",
+      strictValidationRequired: true,
+      strictValidationMode: "runtime-recomputed-teacher-room-class",
+      strictValidationNotice: "정상 여부는 저장된 CP-SAT 메타가 아니라 현재 화면의 실시간 교사/교실/학급 충돌 검토 결과만 기준으로 판단합니다.",
       importedAt: nowIso(),
       generatedAt: apiResult?.meta?.apiFinishedAt || nowIso(),
       importedEntryCount: nextEntries.length,
-      placedEntryCount: nextEntries.length,
-      placedBlockCount: nextEntries.length,
       importedClassSlotCount: summary.classSlotCount,
       importedRoomAssignmentEntryCount: assignmentCount,
       apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,

@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-30-strict-conflict-r188";
+import { versioned } from "./version.js?v=2026-06-30-strict-integrity-r189";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-30-strict-conflict-r188";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-30-strict-integrity-r189";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-30-strict-conflict-r188";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-30-strict-integrity-r189";
 
 
 const [
@@ -1529,6 +1529,75 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
     try { console.info(`[room-sync] 카드 교실 조건 기준으로 기존 배치 ${changed}개를 보정했습니다.`); } catch (_) {}
   }
   return changed;
+}
+
+
+function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
+  const domain = ttDomain?.() || appState.timetable;
+  if (!domain || typeof domain !== "object") return false;
+  const meta = domain.autoAssignMeta;
+  if (!meta || typeof meta !== "object") return false;
+  const legacyKeys = [
+    "validationSummary",
+    "ok",
+    "validatorOk",
+    "validationOk",
+    "conflictSummary",
+    "conflictStatus",
+    "legacyValidationSummary"
+  ];
+  let changed = false;
+  legacyKeys.forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(meta, key)) {
+      delete meta[key];
+      changed = true;
+    }
+  });
+  const notice = "r189 이후 정상 여부는 저장된 autoAssignMeta가 아니라 현재 화면의 실시간 엄격 충돌 검토 결과만 기준으로 판단합니다.";
+  if (meta.strictValidationNotice !== notice) {
+    meta.strictValidationNotice = notice;
+    changed = true;
+  }
+  if (changed) {
+    meta.strictValidationMode = "runtime-recomputed-teacher-room-class";
+    meta.strictValidationUpdatedAt = new Date().toISOString();
+    domain.autoAssignMeta = meta;
+    if (persist) scheduleSave("timetable");
+  }
+  return changed;
+}
+
+function buildStrictConflictRuntimeSummary() {
+  const counts = { teacher: 0, room: 0, student: 0, roomMissing: 0, roomUnavailable: 0, syncRequired: 0, maxPerDay: 0, maxConsecutive: 0, unavailable: 0 };
+  let affected = 0;
+  conflictMap.forEach(set => {
+    if (!set || !set.size) return;
+    affected += 1;
+    set.forEach(type => { counts[type] = (counts[type] || 0) + 1; });
+  });
+  constraintMap.forEach(set => {
+    if (!set || !set.size) return;
+    set.forEach(type => { counts[type] = (counts[type] || 0) + 1; });
+  });
+  return {
+    mode: "strict-runtime",
+    affectedEntryCount: affected,
+    counts,
+    hardOk: !counts.teacher && !counts.room && !counts.student && !counts.roomMissing && !counts.roomUnavailable,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function refreshStrictRuntimeSummaryMeta({ persist = false } = {}) {
+  const domain = ttDomain?.() || appState.timetable;
+  if (!domain || typeof domain !== "object") return;
+  const summary = buildStrictConflictRuntimeSummary();
+  const prev = domain.autoAssignMeta?.strictRuntimeSummary;
+  const same = JSON.stringify({ ...prev, checkedAt: "" }) === JSON.stringify({ ...summary, checkedAt: "" });
+  if (!domain.autoAssignMeta) domain.autoAssignMeta = {};
+  domain.autoAssignMeta.strictRuntimeSummary = summary;
+  domain.autoAssignMeta.strictValidationMode = "runtime-recomputed-teacher-room-class";
+  if (!same && persist) scheduleSave("timetable");
 }
 
 function entryRoomSummary(entry = {}) {
@@ -3720,7 +3789,9 @@ function renderAll() {
     // 로그인 전/읽기 권한 상태에서는 화면 계산만 우선 적용되고, 편집 가능 상태에서만 Firestore 저장까지 진행합니다.
     reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
   }
+  stripLegacyAutoAssignValidationMeta({ persist: canEdit() });
   recomputeConflicts();
+  refreshStrictRuntimeSummaryMeta({ persist: false });
   renderViewSelectors();
   renderScheduleControls();
   renderSubjectPanel();

@@ -1,5 +1,5 @@
 // ================================================================
-// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r181
+// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r189
 // ================================================================
 import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js";
 import { canEdit } from "./auth.js";
@@ -354,22 +354,213 @@ function buildActualEntrySlotSnapshot(entries = appState.timetable?.entries || [
     .map(([label, set]) => ({ label, credits: set.size }));
 }
 
+
+function normalizeRoomRuleValue(rule = "teacher") {
+  const r = clean(rule);
+  if (!r || r === "auto") return "teacher";
+  return ["teacher", "fixed", "homeroom", "autoRoom", "none"].includes(r) ? r : "teacher";
+}
+
+function roomDisplayName(roomId = "") {
+  const id = clean(roomId);
+  if (!id) return "";
+  return (appState.rooms?.rooms || []).find(r => r.id === id)?.name || id;
+}
+
+function normalizeClassKey(value = "", fallbackGrade = "") {
+  const raw = clean(value).replace(/학년/g, "").replace(/\s+/g, "").toUpperCase();
+  if (!raw) return "";
+  if (raw.includes(":")) {
+    const [g, s] = raw.split(":");
+    const n = Number(String(g || "").replace(/[^0-9]/g, ""));
+    return n && s ? `${n}${clean(s).toUpperCase()}` : "";
+  }
+  const m = raw.match(/^(\d{1,2})([A-Z])$/);
+  if (m) return `${Number(m[1])}${m[2]}`;
+  const fg = gradeNumber(fallbackGrade);
+  return fg && /^[A-Z]$/.test(raw) ? `${fg}${raw}` : "";
+}
+
+function classHomeRoomMap() {
+  const classMap = new Map();
+  (appState.classes?.classes || []).forEach(cls => {
+    const label = classLabelForClass(cls);
+    if (label) classMap.set(cls.id, label);
+  });
+  const out = new Map();
+  (appState.rooms?.rooms || []).forEach(room => {
+    const label = classMap.get(room.homeRoomClassId);
+    if (label && room.id) out.set(label, room.id);
+  });
+  return out;
+}
+
+function cardTeacherNames(card = {}) {
+  const names = [];
+  if (Array.isArray(card.teachers)) names.push(...card.teachers);
+  if (card.teacherName) names.push(...String(card.teacherName).split(/[,，·/]+/));
+  return [...new Set(names.map(clean).filter(Boolean))];
+}
+
+function teacherRoomIdForCard(card = {}) {
+  const names = cardTeacherNames(card);
+  if (!names.length) return "";
+  const rooms = appState.rooms?.rooms || [];
+  const matched = names.map(name => rooms.find(r => clean(r.teacherName) === name)?.id || "").filter(Boolean);
+  return [...new Set(matched)].length === 1 ? matched[0] : "";
+}
+
+function homeRoomIdForCardAndEntry(card = {}, entry = {}) {
+  const homeMap = classHomeRoomMap();
+  const candidates = [];
+  (Array.isArray(card.classKeys) ? card.classKeys : []).forEach(v => candidates.push(normalizeClassKey(v, card.gradeKey || entry.gradeKey)));
+  (Array.isArray(card.classLabels) ? card.classLabels : []).forEach(v => candidates.push(normalizeClassKey(v, card.gradeKey || entry.gradeKey)));
+  if (!candidates.length) (Array.isArray(entry.audienceClassKeys) ? entry.audienceClassKeys : []).forEach(v => candidates.push(normalizeClassKey(v, card.gradeKey || entry.gradeKey)));
+  const roomIds = [...new Set(candidates.map(v => homeMap.get(v)).filter(Boolean))];
+  return roomIds.length === 1 ? roomIds[0] : "";
+}
+
+function expectedExplicitRoomForCard(card = {}, entry = {}) {
+  const rule = normalizeRoomRuleValue(card.roomRule || "teacher");
+  if (rule === "none") return null;
+  if (rule === "fixed") return clean(card.fixedRoomId || "") || "";
+  if (rule === "homeroom") return homeRoomIdForCardAndEntry(card, entry);
+  // teacher/autoRoom은 기존 배치가 의도적 자동배정일 수 있으므로 DB 정리에서 강제로 덮지 않습니다.
+  return undefined;
+}
+
+function findEntryRoomAssignmentSyncIssues() {
+  const cardMap = getCardMap();
+  const issues = [];
+  (appState.timetable?.entries || []).forEach((entry, index) => {
+    const ids = getEntryCardIds(entry).filter(id => cardMap.has(id));
+    if (!ids.length) return;
+    const assignments = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object" ? entry.roomAssignmentsByTtCardId : {};
+    const perCard = [];
+    ids.forEach(id => {
+      const card = cardMap.get(id);
+      const expected = expectedExplicitRoomForCard(card, entry);
+      if (expected === undefined) return;
+      const actual = clean(assignments[id] || (ids.length === 1 ? entry.roomId : ""));
+      if (expected === null) {
+        if (actual) perCard.push({ cardId: id, title: titleOfCard(card), rule: "none", actual, expected: "" });
+        return;
+      }
+      if (expected && actual !== expected) perCard.push({ cardId: id, title: titleOfCard(card), rule: normalizeRoomRuleValue(card.roomRule), actual, expected });
+    });
+    if (perCard.length) {
+      issues.push({
+        index,
+        entryId: entry.id || "",
+        day: entry.day,
+        period: entry.period,
+        title: clean(entry.subject) || clean(entry.label) || clean(entry.groupName) || "배치 엔트리",
+        perCard
+      });
+    }
+  });
+  return issues;
+}
+
+function findStaleValidationMetaIssues() {
+  const meta = appState.timetable?.autoAssignMeta;
+  if (!meta || typeof meta !== "object") return [];
+  const keys = ["validationSummary", "ok", "validatorOk", "validationOk", "conflictSummary", "conflictStatus", "legacyValidationSummary"].filter(k => Object.prototype.hasOwnProperty.call(meta, k));
+  if (!keys.length) return [];
+  return [{
+    keys,
+    summary: clean(meta.validationSummary || meta.conflictSummary || meta.conflictStatus || "과거 검증 메타데이터"),
+    reason: "실제 충돌은 현재 화면에서 실시간 재계산해야 하므로 과거 정상/검증 메타를 제거"
+  }];
+}
+
+function applyStaleValidationMetaCleanup(preview = {}) {
+  if (!preview?.staleValidationMeta?.length) return false;
+  const meta = appState.timetable?.autoAssignMeta;
+  if (!meta || typeof meta !== "object") return false;
+  let changed = false;
+  ["validationSummary", "ok", "validatorOk", "validationOk", "conflictSummary", "conflictStatus", "legacyValidationSummary"].forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(meta, key)) {
+      delete meta[key];
+      changed = true;
+    }
+  });
+  const notice = "r189 이후 정상 여부는 저장된 autoAssignMeta가 아니라 현재 화면의 실시간 엄격 충돌 검토 결과만 기준으로 판단합니다.";
+  if (meta.strictValidationNotice !== notice) {
+    meta.strictValidationNotice = notice;
+    changed = true;
+  }
+  if (changed) {
+    meta.strictValidationMode = "runtime-recomputed-teacher-room-class";
+    meta.strictValidationUpdatedAt = new Date().toISOString();
+  }
+  return changed;
+}
+
+function applyEntryRoomAssignmentSync(preview = {}) {
+  const issues = preview?.roomAssignmentSync || [];
+  if (!issues.length) return false;
+  const cardMap = getCardMap();
+  let changed = false;
+  const byEntryId = new Map(issues.filter(x => x.entryId).map(x => [x.entryId, x]));
+  (appState.timetable?.entries || []).forEach((entry, index) => {
+    const issue = byEntryId.get(entry.id || "") || issues.find(x => x.index === index);
+    if (!issue) return;
+    const ids = getEntryCardIds(entry).filter(id => cardMap.has(id));
+    const nextAssignments = { ...(entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object" ? entry.roomAssignmentsByTtCardId : {}) };
+    let touched = false;
+    ids.forEach(id => {
+      const expected = expectedExplicitRoomForCard(cardMap.get(id), entry);
+      if (expected === undefined) return;
+      if (expected === null) {
+        if (clean(nextAssignments[id])) { delete nextAssignments[id]; touched = true; }
+        return;
+      }
+      if (expected && clean(nextAssignments[id]) !== expected) {
+        nextAssignments[id] = expected;
+        touched = true;
+      }
+    });
+    if (!touched) return;
+    entry.roomAssignmentsByTtCardId = nextAssignments;
+    const rooms = [...new Set(Object.values(nextAssignments).map(clean).filter(Boolean))];
+    if (ids.length > 1 || entry.groupId || entry.unitId) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    } else if (rooms.length === 1) {
+      entry.roomId = rooms[0];
+      entry.roomPinned = true;
+    } else if (rooms.length > 1) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    } else if (!entry.roomPinned) {
+      entry.roomId = null;
+    }
+    changed = true;
+  });
+  return changed;
+}
+
 function buildCleanupPlan() {
   const duplicateCards = findDuplicateWholeGradeCards();
   const brokenRefs = findBrokenCardReferences();
   const emptyGroups = findEmptyGroups();
   const duplicateEntries = findDuplicateEntries();
   const roomMigrations = findRoomHomeRoomMigrations();
+  const roomAssignmentSync = findEntryRoomAssignmentSyncIssues();
+  const staleValidationMeta = findStaleValidationMetaIssues();
   const removeIds = new Set(duplicateCards.map(x => x.removeId));
   const afterCards = (appState.timetable?.ttcards || []).filter(c => !removeIds.has(c.id));
-  const safeCount = duplicateCards.length + brokenRefs.brokenEntries.length + brokenRefs.brokenGroups.reduce((sum, g) => sum + g.count, 0) + emptyGroups.length;
-  const cautionCount = duplicateEntries.length + roomMigrations.length;
+  const safeCount = duplicateCards.length + brokenRefs.brokenEntries.length + brokenRefs.brokenGroups.reduce((sum, g) => sum + g.count, 0) + emptyGroups.length + staleValidationMeta.length;
+  const cautionCount = duplicateEntries.length + roomMigrations.length + roomAssignmentSync.length;
   return {
     duplicateCards,
     brokenRefs,
     emptyGroups,
     duplicateEntries,
     roomMigrations,
+    roomAssignmentSync,
+    staleValidationMeta,
     dangerous: [
       { title: "모든 시간표 카드 재생성", description: "현재 배치와 그룹 참조에 영향이 있을 수 있으므로 DB 정리 팝업에서는 실행하지 않습니다." },
       { title: "시간표 배치 전체 초기화", description: "시간표 편집 화면의 전용 초기화 기능에서만 실행하는 것이 안전합니다." },
@@ -387,6 +578,8 @@ function buildCleanupPlan() {
       emptyGroupCount: emptyGroups.length,
       duplicateEntryCount: duplicateEntries.length,
       roomMigrationCount: roomMigrations.length,
+      roomAssignmentSyncCount: roomAssignmentSync.length,
+      staleValidationMetaCount: staleValidationMeta.length,
     }
   };
 }
@@ -477,6 +670,8 @@ function applySafeCleanup(preview) {
   appState.timetable.entries = cleanupEntries(appState.timetable.entries || [], idMap, removeIds, { validIds, dedupe: false });
   if (JSON.stringify(appState.timetable.entries || []) !== beforeEntryJson) changed = true;
 
+  if (applyStaleValidationMetaCleanup(preview)) changed = true;
+
   return changed;
 }
 
@@ -493,6 +688,7 @@ function applyCautionCleanup(preview) {
   if (JSON.stringify(appState.timetable.ttcardGroups || []) !== beforeGroupJson) changed = true;
 
   if (applyRoomHomeRoomMigration(preview)) changed = true;
+  if (applyEntryRoomAssignmentSync(preview)) changed = true;
   return changed;
 }
 
@@ -578,7 +774,7 @@ function renderPreviewBody(body, preview) {
     <h4>정리 단계 구분</h4>
     <p style="margin:0;color:#64748b;font-size:12px;line-height:1.55;">
       <b>안전 정리</b>는 깨진 카드 참조, 빈 그룹, 전체학년/창체 중복 카드처럼 명백한 정리 대상만 처리합니다.<br>
-      <b>주의 정리</b>는 중복 배치 엔트리 정리와 교실 홈룸 마이그레이션까지 포함합니다.<br>
+      <b>주의 정리</b>는 중복 배치 엔트리, 교실 홈룸 마이그레이션, 과목카드 교실조건과 배치 entry 교실값 동기화까지 포함합니다.<br>
       <b>위험 정리</b>인 전체 카드 재생성/시간표 초기화는 이 팝업에서 실행하지 않습니다.
     </p>
     <div style="display:grid;gap:5px;margin-top:10px;font-size:13px;">
@@ -588,6 +784,8 @@ function renderPreviewBody(body, preview) {
       ${countLine("빈 그룹", preview.totals.emptyGroupCount)}
       ${countLine("중복 배치 엔트리", preview.totals.duplicateEntryCount)}
       ${countLine("교실 홈룸 마이그레이션", preview.totals.roomMigrationCount)}
+      ${countLine("교실 조건-배치값 동기화", preview.totals.roomAssignmentSyncCount)}
+      ${countLine("과거 검증 메타 제거", preview.totals.staleValidationMetaCount)}
     </div>
   `;
   body.appendChild(modeGuide);
@@ -610,12 +808,14 @@ function renderPreviewBody(body, preview) {
   renderList(safeBox, preview.brokenRefs.brokenEntries, item => `${item.title} ${item.day ?? "-"}요일 ${item.period ?? "-"}교시 · 누락 ${item.missing.join(", ")}`, "깨진 배치 엔트리 참조가 없습니다.");
   renderList(safeBox, preview.brokenRefs.brokenGroups, item => `${item.groupName} · 누락 카드 ${item.count}개`, "깨진 그룹 카드 참조가 없습니다.");
   renderList(safeBox, preview.emptyGroups, item => `${item.groupName} · ${item.groupId || "id 없음"}`, "빈 그룹이 없습니다.");
+  renderList(safeBox, preview.staleValidationMeta, item => `${item.reason} · 제거 필드: ${item.keys.join(", ")}${item.summary ? ` · 기존값: ${item.summary}` : ""}`, "제거할 과거 검증 메타가 없습니다.");
   body.appendChild(safeBox);
 
   const cautionBox = el("div", "cleanup-section");
   cautionBox.innerHTML = `<h4>주의 정리 대상</h4>`;
   renderList(cautionBox, preview.duplicateEntries, item => `${item.title} · ${item.day ?? "-"}요일 ${item.period ?? "-"}교시 · #${item.index}`, "중복 배치 엔트리가 없습니다.");
   renderList(cautionBox, preview.roomMigrations, item => `${item.roomName}: ${item.homeRoomLabel} 홈룸 지정, 담당 교사 ${item.newTeacherName || "-"}`, "마이그레이션할 교실 홈룸 데이터가 없습니다.");
+  renderList(cautionBox, preview.roomAssignmentSync, item => `${item.title} · ${item.day ?? "-"}요일 ${item.period ?? "-"}교시 · ${item.perCard.map(x => `${x.title}: ${x.actual ? roomDisplayName(x.actual) : "미배정"} → ${x.expected ? roomDisplayName(x.expected) : "교실 없음"}`).join(" / ")}`, "동기화할 과목카드 교실조건-배치값 불일치가 없습니다.");
   body.appendChild(cautionBox);
 
   const dangerBox = el("div", "cleanup-section");
@@ -792,7 +992,7 @@ export async function openDataCleanupDialog() {
       return;
     }
     const message = isCaution
-      ? "주의 정리는 안전 정리에 더해 중복 배치 엔트리와 교실 홈룸 마이그레이션까지 처리합니다. 실행할까요?"
+      ? "주의 정리는 안전 정리에 더해 중복 배치 엔트리, 교실 홈룸 마이그레이션, 과목카드 교실조건-배치값 동기화까지 처리합니다. 실행할까요?"
       : "안전 정리는 깨진 참조, 빈 그룹, 전체학년/창체 중복 카드만 정리합니다. 실행할까요?";
     if (!confirm(message)) return;
     setButtonBusy(safeBtn, true, "정리 중…");
