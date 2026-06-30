@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-export-layout-r186";
+import { versioned } from "./version.js?v=2026-06-26-room-sync-r187";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-export-layout-r186";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-room-sync-r187";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-26-export-layout-r186";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-26-room-sync-r187";
 
 
 const [
@@ -1366,10 +1366,23 @@ function roomAssignmentsForEntry(entry = {}) {
     return out;
   }
   ids.forEach(id => {
+    const card = getTtCardById(id);
+    const cardRule = roomRuleForCard(card || {});
+    const cardRoom = resolveRoomForTtCard(card, entry);
+
+    // r187: 과목카드의 명시 규칙이 최우선입니다.
+    // 기존 entry.roomAssignmentsByTtCardId는 과거 배치 결과일 수 있으므로,
+    // fixed / homeroom / none 같은 사용자 확정 규칙은 stale entry 값을 덮어씁니다.
+    if (cardRule === "none") return;
+    if ((cardRule === "fixed" || cardRule === "homeroom") && cardRoom) {
+      out[id] = cardRoom;
+      return;
+    }
+
     const explicitRoom = clean(explicit[id]);
     if (explicitRoom) { out[id] = explicitRoom; return; }
-    const card = getTtCardById(id);
-    let roomId = resolveRoomForTtCard(card, entry);
+
+    let roomId = cardRoom;
     // r118: 단일 수동카드에서 카드 규칙/entry 규칙이 서로 어긋나 있어도
     // entry 자체의 홈룸/지정교실 계산값을 마지막으로 확인합니다.
     if (!roomId && ids.length === 1) roomId = resolveRoomForPlacementData({ ...entry, ttcardId: id, ttcardIds: [id] });
@@ -1454,6 +1467,68 @@ function refreshEntryRoomAssignmentsFromCards(cardIds = []) {
     else if (rooms.length > 1) entry.roomId = null;
     else if (!entry.roomPinned) entry.roomId = null;
   });
+}
+
+let didAutoReconcileCardRoomAssignments = false;
+
+function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}) {
+  let changed = 0;
+  entries().forEach(entry => {
+    const ids = ttCardIdsFromPlacement(entry);
+    if (!ids.length) return;
+    const currentAssignments = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+      ? entry.roomAssignmentsByTtCardId
+      : {};
+    const nextAssignments = { ...currentAssignments };
+    let touched = false;
+
+    ids.forEach(id => {
+      const card = getTtCardById(id);
+      if (!card) return;
+      const rule = roomRuleForCard(card);
+      if (!["fixed", "homeroom", "none"].includes(rule)) return;
+
+      if (rule === "none") {
+        if (clean(nextAssignments[id])) {
+          delete nextAssignments[id];
+          touched = true;
+        }
+        return;
+      }
+
+      const expectedRoomId = resolveRoomForTtCard(card, entry);
+      if (expectedRoomId && clean(nextAssignments[id]) !== expectedRoomId) {
+        nextAssignments[id] = expectedRoomId;
+        touched = true;
+      }
+    });
+
+    if (!touched) return;
+    changed += 1;
+    if (!persist) return;
+
+    entry.roomAssignmentsByTtCardId = nextAssignments;
+    const rooms = [...new Set(Object.values(nextAssignments).map(clean).filter(Boolean))];
+    if (isGroupedRoomEntry(entry)) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    } else if (rooms.length === 1) {
+      entry.roomId = rooms[0];
+      entry.roomPinned = true;
+    } else if (rooms.length > 1) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    } else if (!entry.roomPinned) {
+      entry.roomId = null;
+    }
+  });
+
+  if (changed && persist) {
+    scheduleSave("timetable");
+    try { recomputeConflicts(); } catch (_) {}
+    try { console.info(`[room-sync] 카드 교실 조건 기준으로 기존 배치 ${changed}개를 보정했습니다.`); } catch (_) {}
+  }
+  return changed;
 }
 
 function entryRoomSummary(entry = {}) {
@@ -3639,6 +3714,12 @@ function renderScheduleControls() {
 
 function renderAll() {
   ensureTeacherCardsBottomTab();
+  if (!didAutoReconcileCardRoomAssignments && entries().length && getTtCards().length) {
+    didAutoReconcileCardRoomAssignments = true;
+    // r187: 과목카드의 fixed/homeroom/none 교실 규칙과 과거 entry 교실 배정이 다르면 1회 자동 보정합니다.
+    // 로그인 전/읽기 권한 상태에서는 화면 계산만 우선 적용되고, 편집 가능 상태에서만 Firestore 저장까지 진행합니다.
+    reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
+  }
   recomputeConflicts();
   renderViewSelectors();
   renderScheduleControls();

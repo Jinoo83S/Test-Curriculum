@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r184: 데이터 점검 /analyze 실패 시 /validate 및 로컬 점검으로 대체 표시.
+// r187: 카드 교실 조건을 기준으로 CP-SAT 전송 전 roomAssignments를 재정규화.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -128,6 +128,89 @@ function privacyReport(state) {
     entriesWithAudienceStudentKeys: entries.filter(e => asArray(e?.audienceStudentKeys).length).length,
   };
 }
+
+function normalizeRoomRuleForPayload(rule = "teacher") {
+  const r = cleanLocal(rule);
+  if (!r || r === "auto") return "teacher";
+  return ["teacher", "fixed", "homeroom", "autoRoom", "none"].includes(r) ? r : "teacher";
+}
+function cardIdsFromEntryForPayload(entry = {}) {
+  return unique([...(entry.ttcardIds || []), entry.ttcardId]);
+}
+function classKeyForPayload(raw = "", fallbackGradeKey = "") {
+  const s = cleanLocal(raw).replace(/학년/g, "").replace(/\s+/g, "").toUpperCase();
+  if (!s) return "";
+  if (s.includes(":")) {
+    const [g, sec] = s.split(":");
+    const n = Number(String(g || "").replace(/[^0-9]/g, ""));
+    return n && sec ? `${n}:${sec}` : "";
+  }
+  const m = s.match(/^(\d{1,2})(.+)$/);
+  if (m) return `${Number(m[1])}:${m[2]}`;
+  const fg = Number(String(fallbackGradeKey || "").replace(/[^0-9]/g, ""));
+  return fg && s ? `${fg}:${s}` : "";
+}
+function homeRoomIdForCardPayload(card = {}, entry = {}, classes = [], rooms = []) {
+  const keys = unique([
+    ...(card.classKeys || []),
+    ...(entry.audienceClassKeys || []),
+    ...(card.classLabels || []),
+  ].map(v => classKeyForPayload(v, card.gradeKey || entry.gradeKey)));
+  const roomIds = keys.map(key => {
+    const [gradeNo, section] = String(key || "").split(":");
+    const cls = classes.find(c => cleanLocal(c?.grade) === `${Number(gradeNo)}학년` && cleanLocal(c?.name).toUpperCase() === cleanLocal(section).toUpperCase());
+    if (!cls) return "";
+    return rooms.find(r => cleanLocal(r?.homeRoomClassId) === cleanLocal(cls.id))?.id || "";
+  }).filter(Boolean);
+  const uniqueRooms = unique(roomIds);
+  return uniqueRooms.length === 1 ? uniqueRooms[0] : "";
+}
+function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
+  const tt = data?.timetable || {};
+  const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+  const entries = asArray(tt.entries);
+  const classes = asArray(data?.classes?.classes);
+  const rooms = asArray(data?.rooms?.rooms);
+  const cardById = new Map(cards.map(c => [cleanLocal(c?.id), c]).filter(([id]) => id));
+
+  entries.forEach(entry => {
+    const ids = cardIdsFromEntryForPayload(entry);
+    if (!ids.length) return;
+    const assignments = { ...(entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object" ? entry.roomAssignmentsByTtCardId : {}) };
+    let touched = false;
+    ids.forEach(id => {
+      const card = cardById.get(id);
+      if (!card) return;
+      const rule = normalizeRoomRuleForPayload(card.roomRule);
+      if (rule === "none") {
+        if (assignments[id]) { delete assignments[id]; touched = true; }
+        return;
+      }
+      let expected = "";
+      if (rule === "fixed") expected = cleanLocal(card.fixedRoomId);
+      else if (rule === "homeroom") expected = homeRoomIdForCardPayload(card, entry, classes, rooms);
+      if (expected && cleanLocal(assignments[id]) !== expected) {
+        assignments[id] = expected;
+        touched = true;
+      }
+    });
+    if (!touched) return;
+    entry.roomAssignmentsByTtCardId = Object.fromEntries(Object.entries(assignments).filter(([, v]) => cleanLocal(v)));
+    const roomIds = unique(Object.values(entry.roomAssignmentsByTtCardId));
+    if (entry.groupId || ids.length > 1) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    } else if (roomIds.length === 1) {
+      entry.roomId = roomIds[0];
+      entry.roomPinned = true;
+    } else if (roomIds.length > 1) {
+      entry.roomId = null;
+      entry.roomPinned = false;
+    }
+    entry.roomIds = unique([...(entry.roomIds || []), ...roomIds]);
+  });
+  return data;
+}
 function makeSolverState(appState, live = {}) {
   // r182: CP-SAT에는 화면에 실제로 렌더링 중인 현재 entries()를 전송해야 합니다.
   // appState.timetable.entries가 저장/동기화 지연으로 4개처럼 오래된 값을 가질 수 있어서,
@@ -136,7 +219,7 @@ function makeSolverState(appState, live = {}) {
   if (Array.isArray(live.entries)) {
     liveTimetable.entries = deepClone(live.entries);
   }
-  const data = {
+  const data = normalizeEntryRoomsFromCardRulesForPayload({
     curriculum: appState?.curriculum || {},
     templates: appState?.templates || {},
     classes: appState?.classes || {},
@@ -144,12 +227,12 @@ function makeSolverState(appState, live = {}) {
     rosters: appState?.rosters || {},
     rooms: appState?.rooms || {},
     timetable: liveTimetable,
-  };
+  });
   const wrapped = {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r184 CP-SAT API bridge",
+    source: "HIS webapp r187 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
