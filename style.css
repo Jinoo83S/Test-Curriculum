@@ -8282,3 +8282,36 @@ body.his-dev-tools-off .developer-toggle-btn {
   opacity: .45;
   cursor: not-allowed;
 }
+
+/* r194: 그룹관리 > 묶음수업 단위 교실 고정값 */
+.group-unit-room-defaults {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px dashed var(--border-color, #cbd5e1);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.65);
+}
+.group-unit-room-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text-strong, #1f2937);
+  margin-bottom: 6px;
+}
+.group-unit-room-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.group-unit-room-select {
+  min-width: 150px;
+}
+.group-unit-room-note {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+  line-height: 1.35;
+}
+.group-unit-apply-btn {
+  white-space: nowrap;
+}

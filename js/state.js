@@ -461,6 +461,10 @@ function normalizeUnit(u = {}) {
     name: clean(u.name),
     templateIds: Array.isArray(u.templateIds) ? u.templateIds.filter(Boolean) : [],
     ttcardIds:   Array.isArray(u.ttcardIds)   ? u.ttcardIds.filter(Boolean)   : [],
+    // 묶음수업 단위의 교실 고정값입니다.
+    // 같은 그룹 안에서도 묶음수업은 한 교실, 나머지 그룹 카드는 각자 교실을 쓰는 경우를 지원합니다.
+    roomRule: clean(u.roomRule || u.defaultRoomRule || u.unitRoomRule || ""),
+    fixedRoomId: clean(u.fixedRoomId || u.defaultFixedRoomId || u.unitFixedRoomId || "") || null,
   };
 }
 

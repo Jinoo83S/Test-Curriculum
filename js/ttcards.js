@@ -137,6 +137,32 @@ function applyGroupDefaultsToCards(group) {
   });
   return changed;
 }
+
+function unitDefaultSummary(unit = {}) {
+  const rule = normalizeGroupDefaultRoomRule(unit.roomRule || unit.defaultRoomRule || "");
+  if (rule === "teacher") return "교사교실";
+  if (rule === "fixed") return `한 교실 고정 ${roomNameByIdForGroup(unit.fixedRoomId || unit.defaultFixedRoomId || "") || "교실 미지정"}`;
+  if (rule === "homeroom") return "홈룸";
+  if (rule === "none") return "교실 없음";
+  return "개별 카드 유지";
+}
+
+function applyUnitDefaultsToCards(unit) {
+  if (!unit) return 0;
+  const rule = normalizeGroupDefaultRoomRule(unit.roomRule || unit.defaultRoomRule || "");
+  const fixedRoomId = clean(unit.fixedRoomId || unit.defaultFixedRoomId || "") || null;
+  const ids = Array.isArray(unit.ttcardIds) ? unit.ttcardIds : [];
+  let changed = 0;
+  ids.forEach(id => {
+    const card = getTtCardById(id);
+    if (!card || !rule) return;
+    card.roomRule = rule;
+    card.fixedRoomId = rule === "fixed" ? fixedRoomId : (rule === "teacher" ? null : card.fixedRoomId || null);
+    card.manualEdited = true;
+    changed += 1;
+  });
+  return changed;
+}
 function getHomeroomTeachersForClassLabels(classLabels = []) {
   const labels = new Set((classLabels || []).map(normalizeClassLabel).filter(Boolean));
   if (!labels.size) return [];
@@ -2138,6 +2164,83 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
+
+  const roomBox = document.createElement("div");
+  roomBox.className = "group-unit-room-defaults";
+
+  const roomLabel = document.createElement("div");
+  roomLabel.className = "group-unit-room-label";
+  roomLabel.textContent = `묶음 교실 · ${unitDefaultSummary(unit)}`;
+  roomBox.appendChild(roomLabel);
+
+  const roomRow = document.createElement("div");
+  roomRow.className = "group-unit-room-row";
+
+  const ruleSel = document.createElement("select");
+  ruleSel.className = "group-defaults-select group-unit-room-select";
+  [
+    ["", "개별 카드 유지"],
+    ["fixed", "묶음 한 교실 고정"],
+    ["teacher", "각 카드 교사교실"],
+    ["homeroom", "각 카드 대상반 홈룸"],
+    ["none", "교실 없음 허용"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    ruleSel.appendChild(opt);
+  });
+  ruleSel.value = normalizeGroupDefaultRoomRule(unit.roomRule || unit.defaultRoomRule || "");
+  ruleSel.disabled = !canEdit();
+
+  const roomSel = document.createElement("select");
+  roomSel.className = "group-defaults-select group-unit-room-select";
+  const blank = document.createElement("option");
+  blank.value = "";
+  blank.textContent = getGroupDefaultRooms().length ? "교실 선택" : "교실 목록 로딩/없음";
+  roomSel.appendChild(blank);
+  getGroupDefaultRooms().forEach(room => {
+    const opt = document.createElement("option");
+    opt.value = room.id;
+    opt.textContent = `${room.name}${room.capacity ? ` (${room.capacity})` : ""}`;
+    roomSel.appendChild(opt);
+  });
+  roomSel.value = clean(unit.fixedRoomId || unit.defaultFixedRoomId || "");
+  roomSel.disabled = !canEdit() || normalizeGroupDefaultRoomRule(unit.roomRule || unit.defaultRoomRule || "") !== "fixed";
+
+  ruleSel.addEventListener("change", () => {
+    if (!canEdit()) return;
+    unit.roomRule = normalizeGroupDefaultRoomRule(ruleSel.value);
+    if (unit.roomRule !== "fixed") unit.fixedRoomId = null;
+    scheduleSave("timetable");
+    onStructureChange();
+  });
+  roomSel.addEventListener("change", () => {
+    if (!canEdit()) return;
+    unit.fixedRoomId = clean(roomSel.value) || null;
+    scheduleSave("timetable");
+    onStructureChange();
+  });
+
+  const applyBtn = makeBtn("묶음 카드에 적용", "group-defaults-mini-btn group-unit-apply-btn", () => {
+    if (!canEdit()) return;
+    const count = applyUnitDefaultsToCards(unit);
+    scheduleSave("timetable");
+    onStructureChange();
+    alert(`${count}개 묶음수업 카드에 교실 고정값을 적용했습니다.`);
+  });
+  applyBtn.disabled = !canEdit() || !ttcards.length || !normalizeGroupDefaultRoomRule(unit.roomRule || unit.defaultRoomRule || "");
+  applyBtn.title = "이 묶음수업 안의 카드에만 적용합니다. 같은 그룹의 다른 카드는 변경하지 않습니다.";
+
+  roomRow.append(ruleSel, roomSel, applyBtn);
+  roomBox.appendChild(roomRow);
+
+  const note = document.createElement("div");
+  note.className = "group-unit-room-note";
+  note.textContent = "묶음수업만 한 교실로 고정할 때 사용합니다. 그룹 카드(묶음 미배정)는 각 카드의 교실값을 유지합니다.";
+  roomBox.appendChild(note);
+  wrap.appendChild(roomBox);
+
   return wrap;
 }
 
@@ -2153,7 +2256,7 @@ function createGroupDefaultsPanel(group, onStructureChange) {
 
   const help = document.createElement("div");
   help.className = "group-defaults-help";
-  help.textContent = "그룹 자체에 교실/가능시간 기본값을 저장하고, 적용 버튼으로 포함된 시간표카드에 같은 조건을 씁니다.";
+  help.textContent = "그룹 전체에 같은 교실/가능시간 기본값을 저장합니다. 묶음수업만 한 교실로 고정해야 하면 각 묶음수업 블록의 '묶음 교실'을 사용하세요.";
   details.appendChild(help);
 
   const row = document.createElement("div");
@@ -2184,7 +2287,7 @@ function createGroupDefaultsPanel(group, onStructureChange) {
   const roomSel = document.createElement("select");
   roomSel.className = "group-defaults-select";
   const blank = document.createElement("option");
-  blank.value = ""; blank.textContent = "교실 선택"; roomSel.appendChild(blank);
+  blank.value = ""; blank.textContent = getGroupDefaultRooms().length ? "교실 선택" : "교실 목록 로딩/없음"; roomSel.appendChild(blank);
   getGroupDefaultRooms().forEach(room => {
     const opt = document.createElement("option");
     opt.value = room.id;
@@ -2402,7 +2505,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
   const addUnitBtn = makeBtn("+ 묶음수업 추가", "group-add-unit-btn", () => {
     if (!canEdit()) return;
     if (!grpObj.units) grpObj.units = [];
-    grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [] });
+    grpObj.units.push({ id: uid("unit"), name: "", templateIds: [], ttcardIds: [], roomRule: "", fixedRoomId: null });
     scheduleSave("timetable"); onStructureChange();
   }); addUnitBtn.disabled = !canEdit();
   body.appendChild(addUnitBtn);

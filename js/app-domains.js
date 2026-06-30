@@ -14,8 +14,8 @@ export const VIEW_DOMAIN_SETS = {
   rooms:        ["rooms", "teachers", "classes"],
   subjectsetup: ["curriculum", "templates", "rosters"],
   rosters:      ["curriculum", "templates", "classes", "rosters"],
-  ttcards:      ["curriculum", "templates", "classes", "rosters", "timetable"],
-  groups:       ["curriculum", "templates", "classes", "rosters", "timetable"],
+  ttcards:      ["curriculum", "templates", "classes", "rosters", "rooms", "timetable"],
+  groups:       ["curriculum", "templates", "classes", "rosters", "rooms", "timetable"],
   results:      ["curriculum", "templates", "rosters"],
 };
 
