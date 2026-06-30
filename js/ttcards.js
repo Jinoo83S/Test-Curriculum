@@ -2100,6 +2100,134 @@ function unexcludeCardFromGroup(group, cardId) {
   group.excludedCardIds = (group.excludedCardIds || []).filter(id => id !== cardId);
 }
 
+
+function getUnitCardClassesLabel(card) {
+  const labels = (card?.classLabels || []).map(clean).filter(Boolean);
+  if (labels.length) return labels.join(", ");
+  return getSectionLabelFromRoster(card) || gradeDisplay(card?.gradeKey || "");
+}
+
+function getUnitCardSubjectLabel(card) {
+  return clean(card?.subject) || clean(card?.label) || getTtCardLabel(card);
+}
+
+function getUnitCardTeacherLabel(card) {
+  const tpl = getTemplateById(card?.templateId);
+  return clean(card?.teacherName) || (tpl ? clean(getTemplateTeacherSummary(tpl)) : "") || "-";
+}
+
+function getUnitSharedCreditLabel(cards = []) {
+  const credits = [...new Set((cards || [])
+    .map(card => getGmCardCredit(card))
+    .filter(v => Number.isFinite(v) && v > 0)
+    .map(formatGmCreditValue))];
+  return credits.length === 1 ? `${credits[0]}시수` : (credits.length ? `${credits.join(", ")}시수` : "");
+}
+
+function summarizeUnitSubjects(cards = []) {
+  const subjects = [...new Set((cards || []).map(getUnitCardSubjectLabel).map(clean).filter(Boolean))];
+  if (!subjects.length) return "동일 수업";
+  if (subjects.length === 1) return subjects[0];
+  if (subjects.length <= 3) return subjects.join(" / ");
+  return `${subjects.slice(0, 3).join(" / ")} 외 ${subjects.length - 3}`;
+}
+
+function groupUnitCardsByTeacher(cards = []) {
+  const map = new Map();
+  (cards || []).filter(Boolean).forEach(card => {
+    const teacher = getUnitCardTeacherLabel(card);
+    if (!map.has(teacher)) map.set(teacher, []);
+    map.get(teacher).push(card);
+  });
+  return [...map.entries()].map(([teacher, teacherCards]) => ({
+    teacher,
+    cards: teacherCards.sort((a, b) => getTtCardLabel(a).localeCompare(getTtCardLabel(b), "ko", { numeric: true })),
+  })).sort((a, b) => a.teacher.localeCompare(b.teacher, "ko", { numeric: true }));
+}
+
+function createUnitCompactView(groupId, unit, cards, onStructureChange) {
+  const compact = document.createElement("div");
+  compact.className = "group-unit-compact";
+
+  const teacherGroups = groupUnitCardsByTeacher(cards);
+  const isSingleTeacher = teacherGroups.length === 1;
+  const head = document.createElement("div");
+  head.className = "group-unit-compact-head";
+
+  const title = document.createElement("div");
+  title.className = "group-unit-compact-title";
+  title.textContent = isSingleTeacher ? summarizeUnitSubjects(cards) : `동일시간 묶음 ${teacherGroups.length}교사`;
+
+  const meta = document.createElement("div");
+  meta.className = "group-unit-compact-meta";
+  const credit = getUnitSharedCreditLabel(cards);
+  meta.textContent = [isSingleTeacher ? teacherGroups[0].teacher : `${teacherGroups.length}명`, credit].filter(Boolean).join(" · ");
+  head.append(title, meta);
+  compact.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "group-unit-compact-body";
+
+  teacherGroups.forEach(group => {
+    const line = document.createElement("div");
+    line.className = "group-unit-teacher-line";
+    if (!isSingleTeacher) {
+      const teacher = document.createElement("span");
+      teacher.className = "group-unit-teacher-name";
+      teacher.textContent = group.teacher;
+      line.appendChild(teacher);
+    }
+    const chips = document.createElement("div");
+    chips.className = "group-unit-classchips";
+    group.cards.forEach(card => {
+      const chip = document.createElement("span");
+      chip.className = "group-unit-classchip";
+      chip.draggable = canEdit();
+      chip.dataset.ttcardId = card.id;
+      chip.title = `${getUnitCardSubjectLabel(card)} · ${group.teacher} · ${getUnitCardClassesLabel(card)}`;
+      chip.addEventListener("dragstart", () => { setDrag({ kind:"ttcard", ttcardId: card.id }); chip.classList.add("dragging"); });
+      chip.addEventListener("dragend", () => { setDrag(null); chip.classList.remove("dragging"); });
+
+      const cls = document.createElement("b");
+      cls.textContent = getUnitCardClassesLabel(card);
+      chip.appendChild(cls);
+      if (!isSingleTeacher) {
+        const subj = document.createElement("em");
+        subj.textContent = getUnitCardSubjectLabel(card);
+        chip.appendChild(subj);
+      }
+      if (canEdit()) {
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "group-unit-chip-remove";
+        rm.textContent = "×";
+        rm.title = "이 카드를 묶음수업에서 제외";
+        rm.addEventListener("click", (e) => {
+          e.stopPropagation();
+          excludeCardFromGroup(groupId, card.id);
+          scheduleSave("timetable");
+          onStructureChange();
+        });
+        chip.appendChild(rm);
+      }
+      chips.appendChild(chip);
+    });
+    line.appendChild(chips);
+    body.appendChild(line);
+  });
+
+  compact.appendChild(body);
+
+  if (isSingleTeacher && new Set(cards.map(getUnitCardSubjectLabel).map(clean).filter(Boolean)).size > 1) {
+    const foot = document.createElement("div");
+    foot.className = "group-unit-compact-foot";
+    foot.textContent = "교육과정명만 다른 같은 수업으로 표시합니다.";
+    compact.appendChild(foot);
+  }
+
+  return compact;
+}
+
 function deleteCard(card) {
   if (!confirm(`"${getTtCardLabel(card)}" 카드를 삭제할까요?`)) return;
   grps().forEach(g => {
@@ -2147,30 +2275,35 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
     scheduleSave("timetable"); onStructureChange();
   });
 
-  ttcards.forEach(card => {
-    const c = createTtCardChip(card, {
-      showDelete: false,
-      onDelete: () => {}
+  if (ttcards.length > 1) {
+    cardArea.appendChild(createUnitCompactView(groupId, unit, ttcards, onStructureChange));
+  } else {
+    ttcards.forEach(card => {
+      const c = createTtCardChip(card, {
+        showDelete: false,
+        onDelete: () => {}
+      });
+      const rx = makeBtn("↩", "gm-card-remove", () => {
+        if (!canEdit()) return;
+        excludeCardFromGroup(groupId, card.id);
+        scheduleSave("timetable"); onStructureChange();
+      }); rx.title = "이 자동 그룹에서 제외"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
+      c.appendChild(rx);
+      cardArea.appendChild(c);
     });
-    const rx = makeBtn("↩", "gm-card-remove", () => {
-      if (!canEdit()) return;
-      excludeCardFromGroup(groupId, card.id);
-      scheduleSave("timetable"); onStructureChange();
-    }); rx.title = "이 자동 그룹에서 제외"; rx.disabled = !canEdit(); rx.className = "gm-card-remove";
-    c.appendChild(rx);
-    cardArea.appendChild(c);
-  });
+  }
   if (!ttcards.length) {
     const ph = document.createElement("div"); ph.className = "group-unit-placeholder"; ph.textContent = "여기로 드래그"; cardArea.appendChild(ph);
   }
   wrap.appendChild(cardArea);
 
-  const roomBox = document.createElement("div");
+  const roomBox = document.createElement("details");
   roomBox.className = "group-unit-room-defaults";
+  if (normalizeGroupDefaultRoomRule(unit.roomRule || unit.defaultRoomRule || "")) roomBox.open = true;
 
-  const roomLabel = document.createElement("div");
+  const roomLabel = document.createElement("summary");
   roomLabel.className = "group-unit-room-label";
-  roomLabel.textContent = `묶음 교실 · ${unitDefaultSummary(unit)}`;
+  roomLabel.textContent = `교실 · ${unitDefaultSummary(unit)}`;
   roomBox.appendChild(roomLabel);
 
   const roomRow = document.createElement("div");
@@ -2237,7 +2370,7 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
 
   const note = document.createElement("div");
   note.className = "group-unit-room-note";
-  note.textContent = "묶음수업만 한 교실로 고정할 때 사용합니다. 그룹 카드(묶음 미배정)는 각 카드의 교실값을 유지합니다.";
+  note.textContent = "필요할 때만 열어 묶음수업 교실 규칙을 적용합니다.";
   roomBox.appendChild(note);
   wrap.appendChild(roomBox);
 
