@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-30-strict-integrity-r189";
+import { versioned } from "./version.js?v=2026-06-30-operational-constraints-r190";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-30-strict-integrity-r189";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-30-operational-constraints-r190";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-30-strict-integrity-r189";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-30-operational-constraints-r190";
 
 
 const [
@@ -557,6 +557,7 @@ function getRoomDisplayName(roomId) {
 }
 
 const ROOM_UNAVAILABLE_PREFIX = "__room_unavailable__:";
+const CLASS_UNAVAILABLE_PREFIX = "__class_unavailable__:";
 
 function roomUnavailableConstraintKey(roomId) {
   return ROOM_UNAVAILABLE_PREFIX + clean(roomId);
@@ -606,6 +607,57 @@ function getEffectiveRoomsForTimetable() {
     ...room,
     unavailableSlots: getRoomUnavailableSlots(room.id)
   }));
+}
+
+function normalizeGenericSlots(slots = []) {
+  const seen = new Set();
+  return (Array.isArray(slots) ? slots : [])
+    .map(s => ({ day: Number(s?.day), period: Number(s?.period) }))
+    .filter(s => Number.isInteger(s.day) && s.day >= 0 && s.day <= 4 && Number.isInteger(s.period) && s.period >= 0 && s.period <= 11)
+    .filter(s => { const key = `${s.day}:${s.period}`; if (seen.has(key)) return false; seen.add(key); return true; })
+    .sort((a, b) => a.day - b.day || a.period - b.period);
+}
+function slotsFromObjects(objects = [], fields = []) {
+  const out = [];
+  (objects || []).filter(Boolean).forEach(obj => fields.forEach(field => out.push(...normalizeGenericSlots(obj?.[field] || []))));
+  return normalizeGenericSlots(out);
+}
+function getCurriculumRowsForTtCard(card = {}) {
+  const board = appState.curriculum?.gradeBoards?.[card.gradeKey] || [];
+  return board.filter(row => row && (row.sem1TemplateId === card.templateId || row.sem2TemplateId === card.templateId));
+}
+function getCardTimeInfo(cardId) {
+  const card = getTtCardById(cardId);
+  if (!card) return null;
+  const tpl = getTemplateById(card.templateId);
+  const rows = getCurriculumRowsForTtCard(card);
+  const sources = [card, tpl, ...rows].filter(Boolean);
+  return {
+    allowedSlots: slotsFromObjects(sources, ["allowedSlots", "availableSlots", "possibleSlots", "assignableSlots", "배정가능시간", "수업가능시간"]),
+    unavailableSlots: slotsFromObjects(sources, ["unavailableSlots", "blockedSlots", "disabledSlots", "불가시간", "수업불가시간"]),
+  };
+}
+function classConstraintKeysFor(classKey = "") {
+  const raw = clean(classKey);
+  const normalized = occNormalizeClassKey(raw);
+  const compact = raw.replace(/[^0-9A-Za-z가-힣]/g, "").toUpperCase();
+  const cls = (appState.classes?.classes || []).find(c => occNormalizeClassKey(`${String(c.grade || "").replace(/학년/g, "")}:${c.name}`) === normalized);
+  return [cls?.id, normalized, compact ? compact.replace(/^(\d{1,2})([A-Z])$/, "$1:$2") : "", compact].map(clean).filter(Boolean);
+}
+function getClassTimeInfo(classKey = "") {
+  const tc = constraints() || {};
+  const keys = classConstraintKeysFor(classKey);
+  const sources = [];
+  keys.forEach(key => {
+    const cfg = tc[CLASS_UNAVAILABLE_PREFIX + key];
+    if (cfg) sources.push(cfg);
+  });
+  const cls = (appState.classes?.classes || []).find(c => classConstraintKeysFor(classKey).includes(c.id));
+  if (cls) sources.push(cls);
+  return {
+    allowedSlots: slotsFromObjects(sources, ["allowedSlots", "availableSlots", "possibleSlots", "assignableSlots", "배정가능시간", "수업가능시간"]),
+    unavailableSlots: slotsFromObjects(sources, ["unavailableSlots", "blockedSlots", "disabledSlots", "불가시간", "수업불가시간"]),
+  };
 }
 
 function getEffectiveAssignedRoomId(teacher) {
@@ -1553,13 +1605,13 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
       changed = true;
     }
   });
-  const notice = "r189 이후 정상 여부는 저장된 autoAssignMeta가 아니라 현재 화면의 실시간 엄격 충돌 검토 결과만 기준으로 판단합니다.";
+  const notice = "r190 이후 정상 여부는 저장된 autoAssignMeta가 아니라 현재 화면의 실시간 엄격 충돌/운영 데이터 감지 결과만 기준으로 판단합니다.";
   if (meta.strictValidationNotice !== notice) {
     meta.strictValidationNotice = notice;
     changed = true;
   }
   if (changed) {
-    meta.strictValidationMode = "runtime-recomputed-teacher-room-class";
+    meta.strictValidationMode = "runtime-recomputed-teacher-room-class-card-class-time";
     meta.strictValidationUpdatedAt = new Date().toISOString();
     domain.autoAssignMeta = meta;
     if (persist) scheduleSave("timetable");
@@ -1568,7 +1620,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
 }
 
 function buildStrictConflictRuntimeSummary() {
-  const counts = { teacher: 0, room: 0, student: 0, roomMissing: 0, roomUnavailable: 0, syncRequired: 0, maxPerDay: 0, maxConsecutive: 0, unavailable: 0 };
+  const counts = { teacher: 0, room: 0, student: 0, roomMissing: 0, roomUnavailable: 0, syncRequired: 0, maxPerDay: 0, maxConsecutive: 0, unavailable: 0, cardUnavailable: 0, classUnavailable: 0 };
   let affected = 0;
   conflictMap.forEach(set => {
     if (!set || !set.size) return;
@@ -1583,7 +1635,7 @@ function buildStrictConflictRuntimeSummary() {
     mode: "strict-runtime",
     affectedEntryCount: affected,
     counts,
-    hardOk: !counts.teacher && !counts.room && !counts.student && !counts.roomMissing && !counts.roomUnavailable,
+    hardOk: !counts.teacher && !counts.room && !counts.student && !counts.roomMissing && !counts.roomUnavailable && !counts.cardUnavailable && !counts.classUnavailable,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -1596,7 +1648,7 @@ function refreshStrictRuntimeSummaryMeta({ persist = false } = {}) {
   const same = JSON.stringify({ ...prev, checkedAt: "" }) === JSON.stringify({ ...summary, checkedAt: "" });
   if (!domain.autoAssignMeta) domain.autoAssignMeta = {};
   domain.autoAssignMeta.strictRuntimeSummary = summary;
-  domain.autoAssignMeta.strictValidationMode = "runtime-recomputed-teacher-room-class";
+  domain.autoAssignMeta.strictValidationMode = "runtime-recomputed-teacher-room-class-card-class-time";
   if (!same && persist) scheduleSave("timetable");
 }
 
@@ -1793,6 +1845,8 @@ function getConstraintConflictMessage(type, entry) {
   const teachers = entryTeachers(entry).join(", ") || "담당 교사";
   if (type === "roomMissing") return "이 수업 또는 그룹 구성 과목 중 교실이 배정되지 않은 항목이 있습니다. 상세보기에서 구성 과목별 교실을 지정해 주세요.";
   if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
+  if (type === "cardUnavailable") return `이 과목카드는 현재 교시에 배정할 수 없는 시간으로 설정되어 있습니다.`;
+  if (type === "classUnavailable") return `이 반은 현재 교시에 수업할 수 없는 시간으로 설정되어 있습니다.`;
   if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
   if (type === "maxPerDay") return `${teachers} 선생님의 일일 수업 수 제한을 초과했습니다.`;
   if (type === "maxPerWeek") return `${teachers} 선생님의 주간 수업 수 제한을 초과했습니다.`;
@@ -2253,7 +2307,12 @@ function recomputeConflicts() {
       entryHasRoomMissing: entryHasMissingRoomAssignment
     }
   );
-  constraintMap = detectConstraintViolations(entries(), constraints());
+  constraintMap = detectConstraintViolations(entries(), constraints(), {
+    getEntryCardIds: ttCardIdsFromPlacement,
+    getCardTimeInfo,
+    getEntryClassKeys: e => [...(audienceForPlacement(e)?.classKeys || [])],
+    getClassTimeInfo,
+  });
 }
 
 // ── Grid rendering ────────────────────────────────────────────────

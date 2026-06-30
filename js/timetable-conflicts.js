@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-conflicts.js · Pure Conflict Detection
-// r188: strict conflict audit. Do not hide real teacher / room / class conflicts.
+// r190: strict conflict audit + card/class time-availability violations.
 // ================================================================
 import { splitTeacherNames } from "./templates.js";
 import {
@@ -279,9 +279,9 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
 }
 
 /**
- * Returns Map<entryId, Set<"maxPerDay"|"maxConsecutive"|"unavailable">>
+ * Returns Map<entryId, Set<"maxPerDay"|"maxConsecutive"|"unavailable"|"cardUnavailable"|"classUnavailable">>
  */
-export function detectConstraintViolations(entries, teacherConstraints = {}) {
+export function detectConstraintViolations(entries, teacherConstraints = {}, options = {}) {
   const safeEntries = Array.isArray(entries) ? entries.filter(Boolean) : [];
   const result = new Map();
   safeEntries.forEach(e => result.set(e.id, new Set()));
@@ -326,6 +326,32 @@ export function detectConstraintViolations(entries, teacherConstraints = {}) {
       });
     }
   });
+
+  const slotKey = e => `${Number(e?.day)}:${Number(e?.period)}`;
+  const isSlotAllowed = (info, e) => {
+    if (!info) return true;
+    const key = slotKey(e);
+    const allowed = Array.isArray(info.allowedSlots) ? info.allowedSlots.map(s => `${Number(s.day)}:${Number(s.period)}`) : [];
+    const unavailable = Array.isArray(info.unavailableSlots) ? info.unavailableSlots.map(s => `${Number(s.day)}:${Number(s.period)}`) : [];
+    if (allowed.length && !allowed.includes(key)) return false;
+    if (unavailable.includes(key)) return false;
+    return true;
+  };
+
+  safeEntries.forEach(e => {
+    if (typeof options.getCardTimeInfo === "function") {
+      const cardIds = typeof options.getEntryCardIds === "function" ? (options.getEntryCardIds(e) || []) : [...(e.ttcardIds || []), e.ttcardId].filter(Boolean);
+      if (cardIds.some(id => !isSlotAllowed(options.getCardTimeInfo(id), e))) {
+        result.get(e.id)?.add("cardUnavailable");
+      }
+    }
+    if (typeof options.getClassTimeInfo === "function") {
+      const classKeys = typeof options.getEntryClassKeys === "function" ? (options.getEntryClassKeys(e) || []) : (e.audienceClassKeys || []);
+      if (classKeys.some(key => !isSlotAllowed(options.getClassTimeInfo(key), e))) {
+        result.get(e.id)?.add("classUnavailable");
+      }
+    }
+  });
   return result;
 }
 
@@ -338,7 +364,9 @@ export function getConflictLabel(set) {
   if (set.has("student")) labels.push("학급 중복");
   if (set.has("maxPerDay")) labels.push("일일 최대 초과");
   if (set.has("maxConsecutive")) labels.push("연속수업 초과");
-  if (set.has("unavailable")) labels.push("불가 시간대");
+  if (set.has("unavailable")) labels.push("교사 불가 시간대");
+  if (set.has("cardUnavailable")) labels.push("과목카드 배정불가 시간");
+  if (set.has("classUnavailable")) labels.push("반 수업불가 시간");
   if (set.has("syncRequired")) labels.push("동시배정 불일치");
   return labels.join(", ");
 }

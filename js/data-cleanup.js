@@ -1,9 +1,10 @@
 // ================================================================
-// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r189
+// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r190
 // ================================================================
 import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js";
 import { canEdit } from "./auth.js";
 import { clean, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js";
+import { buildOperationalConstraintModel } from "./timetable-constraint-model.js?v=2026-06-30-operational-r190";
 
 const CLEANUP_DOMAINS = ["classes", "templates", "rooms", "rosters", "timetable"];
 
@@ -549,6 +550,7 @@ function buildCleanupPlan() {
   const roomMigrations = findRoomHomeRoomMigrations();
   const roomAssignmentSync = findEntryRoomAssignmentSyncIssues();
   const staleValidationMeta = findStaleValidationMetaIssues();
+  const operationalConstraintModel = buildOperationalConstraintModel(appState);
   const removeIds = new Set(duplicateCards.map(x => x.removeId));
   const afterCards = (appState.timetable?.ttcards || []).filter(c => !removeIds.has(c.id));
   const safeCount = duplicateCards.length + brokenRefs.brokenEntries.length + brokenRefs.brokenGroups.reduce((sum, g) => sum + g.count, 0) + emptyGroups.length + staleValidationMeta.length;
@@ -561,6 +563,7 @@ function buildCleanupPlan() {
     roomMigrations,
     roomAssignmentSync,
     staleValidationMeta,
+    operationalConstraintModel,
     dangerous: [
       { title: "모든 시간표 카드 재생성", description: "현재 배치와 그룹 참조에 영향이 있을 수 있으므로 DB 정리 팝업에서는 실행하지 않습니다." },
       { title: "시간표 배치 전체 초기화", description: "시간표 편집 화면의 전용 초기화 기능에서만 실행하는 것이 안전합니다." },
@@ -789,6 +792,29 @@ function renderPreviewBody(body, preview) {
     </div>
   `;
   body.appendChild(modeGuide);
+
+  const op = preview.operationalConstraintModel || {};
+  const opSummary = op.summary || {};
+  const opBox = el("div", "cleanup-section");
+  opBox.innerHTML = `
+    <h4>운영 데이터 감지 모델 r190</h4>
+    <p style="margin:0 0 8px;color:#64748b;font-size:12px;line-height:1.55;">
+      선생님이 정리한 기준대로 <b>커리큘럼 → 과목 템플릿 → 수강명단 → 시간표과목카드 → 배치 entry</b> 흐름을 추적합니다.
+      정상/오류 판단은 저장된 과거 메타가 아니라 현재 데이터에서 다시 계산합니다.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;font-size:13px;">
+      ${countLine("카드 원본 연결", (opSummary.cardCount || 0) - (opSummary.cardSourceOkCount || 0), `${opSummary.cardSourceOkCount || 0}/${opSummary.cardCount || 0} 정상`)}
+      ${countLine("카드별 배정가능시간 미설정", opSummary.cardTimeMissingCount || 0)}
+      ${countLine("학급 과목 감지", (opSummary.classCount || 0) - (opSummary.classSubjectOkCount || 0), `${opSummary.classSubjectOkCount || 0}/${opSummary.classCount || 0} 정상`)}
+      ${countLine("학급 홈룸 누락", (opSummary.classCount || 0) - (opSummary.classHomeRoomOkCount || 0))}
+      ${countLine("학급 홈룸교사 누락", (opSummary.classCount || 0) - (opSummary.classHomeRoomTeacherOkCount || 0))}
+      ${countLine("반별 수업가능시간 미설정", (opSummary.classCount || 0) - (opSummary.classTimeConfiguredCount || 0))}
+      ${countLine("교실 수용인원 이상", (opSummary.roomCount || 0) - (opSummary.roomCapacityOkCount || 0))}
+      ${countLine("교사 과목 직접입력 없음", (opSummary.teacherCount || 0) - (opSummary.teacherDirectSubjectCount || 0))}
+    </div>
+  `;
+  renderList(opBox, (op.issues || []).filter(x => x.level !== "info"), item => `${item.level === "hard" ? "[필수]" : "[주의]"} ${item.message}`, "운영 감지 필수/주의 이슈가 없습니다.");
+  body.appendChild(opBox);
 
   const creditBox = el("div", "cleanup-section");
   creditBox.innerHTML = `

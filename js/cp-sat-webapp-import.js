@@ -1,6 +1,7 @@
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-operational-r190";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r189: 실제 교사/교실/학급 충돌을 숨기지 않는 엄격 검토 기준 적용.
+// r190: 운영 데이터 4축 감지 모델을 solver payload에 포함.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -228,11 +229,12 @@ function makeSolverState(appState, live = {}) {
     rooms: appState?.rooms || {},
     timetable: liveTimetable,
   });
+  data.constraintDetection = buildSolverConstraintSummary(data);
   const wrapped = {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r189 CP-SAT API bridge",
+    source: "HIS webapp r190 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -452,7 +454,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     });
     domain.autoAssignMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r189",
+      source: "cp-sat-webapp-r190",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
       cpSatServerValidationOk: validation.ok !== false,
