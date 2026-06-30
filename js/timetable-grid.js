@@ -246,6 +246,85 @@ function entryMatchesClassForGrid(entry = {}, cls = {}) {
   return entryMatchesClass(entry, cls);
 }
 
+
+function classInfoEquals(a = {}, b = {}) {
+  if (!a || !b) return false;
+  return cleanText(a.gradeKey) === cleanText(b.gradeKey)
+    && Number(a.sectionIdx ?? 0) === Number(b.sectionIdx ?? 0);
+}
+
+function cardMatchesClassForGrid(card = {}, cls = {}) {
+  if (!card || !cls) return false;
+  const infos = getTtCardClassInfos(card);
+  if (infos.length) return infos.some(info => classInfoEquals(info, cls));
+  const target = gridClassKeyForInfo(cls);
+  const keys = localUnique([
+    ...safeArray(card.classKeys),
+    ...safeArray(card.audienceClassKeys),
+  ]);
+  if (target && keys.includes(target)) return true;
+  return cleanText(card.gradeKey) === cleanText(cls.gradeKey)
+    && Number(card.sectionIdx ?? 0) === Number(cls.sectionIdx ?? 0);
+}
+
+function makeVisualEntryForCard(entry = {}, card = {}) {
+  const assignments = entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object"
+    ? entry.roomAssignmentsByTtCardId
+    : {};
+  const roomId = cleanText(assignments[card.id] || "");
+  const classKeys = safeArray(card.classKeys).length ? safeArray(card.classKeys) : safeArray(entry.audienceClassKeys);
+  const classLabels = safeArray(card.classLabels).length ? safeArray(card.classLabels) : safeArray(entry.audienceClassLabels || entry.classLabels);
+  const gradeKey = cleanText(card.gradeKey || entry.gradeKey || "");
+  const sectionIdx = card.sectionIdx ?? entry.sectionIdx ?? 0;
+  return {
+    ...entry,
+    id: `${entry.id || "entry"}__visual_${card.id || "card"}`,
+    __sourceEntryId: entry.id || "",
+    __visualExpandedGroupEntry: true,
+    __visualOriginalGroupId: entry.groupId || "",
+    __visualOriginalGroupName: entry.groupName || "",
+    groupId: null,
+    unitId: null,
+    groupName: "",
+    ttcardId: card.id || null,
+    ttcardIds: card.id ? [card.id] : [],
+    templateId: card.templateId || entry.templateId || null,
+    templateIds: [card.templateId || entry.templateId].filter(Boolean),
+    subject: cardTitle(card),
+    label: cardTitle(card),
+    teacherName: card.teacherName || (Array.isArray(card.teachers) ? card.teachers.join(", ") : "") || entry.teacherName || "",
+    teacherNames: Array.isArray(card.teachers) && card.teachers.length ? card.teachers : null,
+    gradeKey,
+    gradeKeys: gradeKey ? [gradeKey] : safeArray(entry.gradeKeys),
+    sectionIdx,
+    classKeys,
+    classLabels,
+    audienceClassKeys: classKeys,
+    audienceClassLabels: classLabels,
+    roomId: roomId || null,
+    roomIds: roomId ? [roomId] : [],
+    roomAssignmentsByTtCardId: roomId && card.id ? { [card.id]: roomId } : {},
+  };
+}
+
+function expandGroupedEntriesForClassCell(slotEntries = [], cls = null) {
+  if (!cls) return slotEntries;
+  const out = [];
+  slotEntries.forEach(entry => {
+    const ids = entryCardIds(entry);
+    if (!entry?.groupId || ids.length <= 1) {
+      out.push(entry);
+      return;
+    }
+    const matchingCards = ids.map(id => getTtCardById(id)).filter(card => cardMatchesClassForGrid(card, cls));
+    // 같은 반 셀 안에 그룹 내부 구성 카드가 2개 이상 들어가는 경우에는
+    // 한 장짜리 그룹 요약으로 접지 않고 실제 차지하는 카드 수만큼 보여줍니다.
+    if (matchingCards.length > 1) matchingCards.forEach(card => out.push(makeVisualEntryForCard(entry, card)));
+    else out.push(entry);
+  });
+  return out;
+}
+
 function entryTeachers(entry = {}) {
   const direct = Array.isArray(entry.teacherNames) && entry.teacherNames.length ? entry.teacherNames : splitTeacherNames(entry.teacherName || "");
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
@@ -282,6 +361,7 @@ function entryStudents(entry = {}) {
 }
 
 function groupKeyForEntry(entry = {}) {
+  if (entry.__visualExpandedGroupEntry) return `entry:${entry.__sourceEntryId || entry.id}:${entry.ttcardId || entryCardIds(entry).join("+")}`;
   if (entry.groupId) return `group:${entry.groupId}`;
   const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
   const first = cards[0];
@@ -339,6 +419,7 @@ function getSummaryDragData(summary = {}) {
   const movable = (summary.entries || []).filter(e => e && !e.pinned);
   if (!movable.length) return null;
   const first = movable[0];
+  if (movable.some(e => e?.__visualExpandedGroupEntry)) return null;
 
   // 단일 배치이거나 같은 시간의 같은 그룹/unit으로 묶인 요약 카드만 안전하게 이동합니다.
   const isGrouped = !!(first.groupId || first.unitId);
@@ -398,9 +479,10 @@ function makeSummaryCard(summary, ctx = {}, mode = "summary") {
 
   card.append(top, mid, bottom);
   const contextEntry = summary.entries?.[0];
-  if (contextEntry?.id) {
-    card.dataset.entryId = contextEntry.id;
-    card.dataset.ttEntryId = contextEntry.id;
+  const sourceEntryId = contextEntry?.__sourceEntryId || contextEntry?.id;
+  if (sourceEntryId) {
+    card.dataset.entryId = sourceEntryId;
+    card.dataset.ttEntryId = sourceEntryId;
   }
   if (summary.conflictCount) card.title = `문제 ${summary.conflictCount}건 · ${subjectText}`;
   else card.title = [subjectText, teacherText, roomText].filter(Boolean).join(" · ");
@@ -478,21 +560,28 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
   });
   body.appendChild(stats);
 
-  const entryToCards = new Map();
+  const detailRows = [];
   summary.entries.forEach(entry => {
-    entryToCards.set(entry, entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean));
+    const cards = entryCardIds(entry).map(id => getTtCardById(id)).filter(Boolean);
+    if (!entry.__visualExpandedGroupEntry && (entry.groupId || cards.length > 1) && cards.length > 1) {
+      cards.forEach(card => detailRows.push({
+        entry: makeVisualEntryForCard(entry, card),
+        originalEntry: entry,
+        cards: [card],
+      }));
+    } else {
+      detailRows.push({ entry, originalEntry: entry, cards });
+    }
   });
 
-  summary.entries.forEach((entry, idx) => {
+  detailRows.forEach(({ entry, originalEntry, cards }) => {
     const item = document.createElement("div");
     item.className = "tt-all-detail-item";
     item.style.setProperty("--tt-sum-border", summary.gradeColor.border || "#2563eb");
-    const cards = entryToCards.get(entry) || [];
-    const names = localUnique(cards.map(cardTitle));
     const itemTitle = document.createElement("div");
     itemTitle.className = "tt-all-detail-item-title";
     itemTitle.textContent = displayTitleForEntry(entry, ctx);
-    const conflictSet = ctx.getEntryConflictSet?.(entry) || new Set();
+    const conflictSet = ctx.getEntryConflictSet?.(originalEntry) || new Set();
     if (conflictSet.size) {
       const badge = document.createElement("span");
       badge.className = "tt-all-detail-problem-badge";
@@ -514,7 +603,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
       btn.type = "button";
       btn.className = "tt-all-detail-open-btn";
       btn.textContent = "배치 상세 열기";
-      btn.addEventListener("click", () => ctx.showEntryDetail(entry));
+      btn.addEventListener("click", () => ctx.showEntryDetail(originalEntry));
       actions.appendChild(btn);
       item.appendChild(actions);
     }
@@ -525,7 +614,7 @@ function openAllSummaryDetailPanel(summary, ctx = {}) {
   document.body.append(backdrop, panel);
 }
 
-function appendAllSlotContents(td, slotEntries, ctx, mode) {
+function appendAllSlotContents(td, slotEntries, ctx, mode, scope = {}) {
   if (!slotEntries.length) {
     const ph = document.createElement("div");
     ph.className = "tt-cell-ph";
@@ -543,7 +632,8 @@ function appendAllSlotContents(td, slotEntries, ctx, mode) {
     return;
   }
 
-  const groups = buildEntryGroups(slotEntries, ctx);
+  const scopedEntries = expandGroupedEntriesForClassCell(slotEntries, scope.classInfo || null);
+  const groups = buildEntryGroups(scopedEntries, ctx);
   const visibleGroups = mode === "problem" ? groups.filter(g => g.conflictCount) : groups;
   if (!visibleGroups.length) {
     const ph = document.createElement("div");
@@ -1297,7 +1387,7 @@ function renderAllClassesGrid(wrap, ctx) {
         attachDropHandlers(td, day, period, ctx, dragData => ({ ...dragData, sectionIdx: cls.sectionIdx, gradeKey: cls.gradeKey }));
 
         const slotEntries = ctx.entries.filter(e => e.day === day && e.period === period && entryMatchesClassForGrid(e, cls));
-        appendAllSlotContents(td, slotEntries, ctx, mode);
+        appendAllSlotContents(td, slotEntries, ctx, mode, { classInfo: cls });
         tr.appendChild(td);
       });
     });
