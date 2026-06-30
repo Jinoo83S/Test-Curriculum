@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-operational-r191";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-cpsat-run-phase-r200";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r191: 운영 데이터 4축 + 교실 수용인원/고정교실 모델을 solver payload에 포함.
+// r200: 실행 전 현재 배치 검증과 실제 CP-SAT 실행 결과를 분리 표시합니다.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -9,7 +9,7 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r182/HIS_CP_SAT_Local_Server_r182.zip";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r184/HIS_CP_SAT_Local_Server_r184.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -237,7 +237,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r191 CP-SAT API bridge",
+    source: "HIS webapp r200 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -279,6 +279,46 @@ function entriesSummary(entries = []) {
     classes.forEach(k => slotSet.add(`${String(k)}@${day}:${period}`));
   });
   return { entryCount: list.length, classSlotCount: slotSet.size };
+}
+function validationCounts(apiResult = {}) {
+  return apiResult?.validation?.counts || {};
+}
+function solvePhaseLabel(apiResult = {}) {
+  const phase = cleanLocal(apiResult?.phase || apiResult?.meta?.phase || "");
+  const status = cleanLocal(apiResult?.status || apiResult?.state || "");
+  if (phase === "solving") return "CP-SAT 실행 중";
+  if (phase === "solved" && apiResult?.validation?.ok === false) return "CP-SAT 부분 배치 완료";
+  if (phase === "solved") return "CP-SAT 완료";
+  if (phase === "solve_failed" || /FAILED|ERROR|INVALID|UNKNOWN/.test(status)) return "CP-SAT 결과 없음";
+  return status || "확인 필요";
+}
+function severeCoverageFailure(apiResult = {}, normalizedEntries = [], currentEntryCount = 0) {
+  const counts = apiResult?.counts || {};
+  const vc = validationCounts(apiResult);
+  const cardCount = Number(counts.cards || 0);
+  const shortageCount = Number(vc.shortageCount || 0);
+  const resultEntryCount = asArray(normalizedEntries).length || Number(counts.resultEntries || 0);
+  const currentCount = Number(currentEntryCount || 0);
+
+  if (cardCount > 0 && shortageCount >= cardCount) {
+    return {
+      block: true,
+      reason: `카드 ${cardCount}개 중 ${shortageCount}개가 부족합니다. 결과가 사실상 빈 배치입니다.`,
+    };
+  }
+  if (cardCount > 0 && shortageCount >= Math.max(20, Math.ceil(cardCount * 0.25))) {
+    return {
+      block: true,
+      reason: `카드 부족 ${shortageCount}개가 감지되었습니다. 현재 시간표를 덮어쓰면 배치가 대량 삭제될 수 있습니다.`,
+    };
+  }
+  if (currentCount >= 50 && resultEntryCount > 0 && resultEntryCount < Math.ceil(currentCount * 0.5)) {
+    return {
+      block: true,
+      reason: `현재 entries ${currentCount}개보다 결과 entries ${resultEntryCount}개가 지나치게 적습니다.`,
+    };
+  }
+  return { block: false, reason: "" };
 }
 function sanitizeRoomAssignments(raw = {}) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -412,6 +452,10 @@ export function setupCpSatWebappImport(ctx = {}) {
   function normalizeEntryList(list) {
     return asArray(list).map(normalizeSolvedEntry).filter(e => e && typeof e === "object" && (e.templateId || asArray(e.templateIds).length));
   }
+  function resultMayBeApplied(apiResult = {}) {
+    const normalized = normalizeEntryList(apiResult?.entries || []);
+    return !severeCoverageFailure(apiResult, normalized, asArray(entries?.()).length).block && normalized.length > 0;
+  }
   function makeBackupVersion(name = "CP-SAT API 적용 전 백업") {
     const domain = ttDomain?.();
     if (!domain) return null;
@@ -441,9 +485,14 @@ export function setupCpSatWebappImport(ctx = {}) {
       if (!proceed) return false;
     }
     const validation = apiResult?.validation || {};
+    const severe = severeCoverageFailure(apiResult, nextEntries, asArray(entries?.()).length);
+    if (severe.block) {
+      alert(`이 CP-SAT 결과는 적용하지 않습니다.\n\n${severe.reason}\n\n${validation.summary || "검증 필요"}\n\n기존 시간표 보호를 위해 결과 적용을 차단했습니다. [결과 JSON 저장]으로 진단 파일만 저장하세요.`);
+      return false;
+    }
     if (validation.ok === false) {
-      const proceed = confirm(`API 검증이 정상 상태가 아닙니다. 그래도 적용할까요?\n\n${validation.summary || "검증 필요"}`);
-      if (!proceed) return false;
+      alert(`API 검증이 정상 상태가 아니므로 바로 적용하지 않습니다.\n\n${validation.summary || "검증 필요"}\n\n부분 결과는 [결과 JSON 저장]으로 보관하고, 부족/충돌 원인을 먼저 수정하세요.`);
+      return false;
     }
 
     const summary = entriesSummary(nextEntries);
@@ -457,7 +506,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     });
     domain.autoAssignMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r191",
+      source: "cp-sat-webapp-r200",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
       cpSatServerValidationOk: validation.ok !== false,
@@ -604,11 +653,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r182.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r184.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r182에 <code>HIS_CP_SAT_Local_Server_r182.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r184에 <code>HIS_CP_SAT_Local_Server_r184.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
     $('[data-action="health"]')?.addEventListener("click", async () => {
@@ -635,7 +684,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         try {
           const data = await postJson(`${apiBase()}/analyze`, { state }, 30000);
           const body = data?.data || data;
-          setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b><br>${escapeHtml(body?.validation?.summary || "점검 완료")}`, 100);
+          setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b><br>${escapeHtml(body?.validation?.summary || "점검 완료")}<br><span style="font-size:11px;color:#64748b">이 검증은 현재 시간표 entries 기준입니다. 고정과목만 남은 초기화 상태에서는 부족이 나오는 것이 정상이며, CP-SAT 실행을 막지 않습니다.</span>`, 100);
           renderApiSummary(body, "analyze");
           return;
         } catch (err) {
@@ -655,7 +704,7 @@ export function setupCpSatWebappImport(ctx = {}) {
             counts: body?.counts || countSolverState(state),
             privacy: body?.privacy || { solverPayload: privacy },
           };
-          setStatus(merged?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b> <span style="font-size:11px;color:#64748b">(/validate 대체 경로)</span><br>${escapeHtml(merged?.validation?.summary || "점검 완료")}`, 100);
+          setStatus(merged?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b> <span style="font-size:11px;color:#64748b">(/validate 대체 경로)</span><br>${escapeHtml(merged?.validation?.summary || "점검 완료")}<br><span style="font-size:11px;color:#64748b">현재 entries 검증 결과입니다. 자동배치 실행 결과가 아닙니다.</span>`, 100);
           renderApiSummary(merged, "validate-fallback");
           return;
         } catch (validateErr) {
@@ -700,27 +749,39 @@ export function setupCpSatWebappImport(ctx = {}) {
           renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
           return;
         }
-        setStatus("warn", `CP-SAT 작업 요청 중... 제한 ${opt.timeLimitSeconds}초`, 10);
+        setStatus("warn", `<b>CP-SAT 실행 요청 중</b><br>현재 entries 검증이 아니라 새 배치를 생성합니다. 제한 ${opt.timeLimitSeconds}초`, 10);
         const start = await postJson(`${apiBase()}/solve/start`, { state, ...opt }, 30000);
         const jobId = start?.jobId;
         if (!jobId) throw new Error("jobId가 반환되지 않았습니다.");
+        setStatus("warn", `<b>CP-SAT 작업 시작됨</b><br>jobId: ${escapeHtml(jobId)}<br>서버가 새 배치를 계산 중입니다.`, 14);
         let tick = 0;
         while (true) {
           await sleep(1000);
           tick += 1;
           const p = Math.min(92, 15 + Math.round((tick / Math.max(1, opt.timeLimitSeconds)) * 75));
           const job = await getJson(`${apiBase()}/solve/status/${encodeURIComponent(jobId)}`, 15000);
-          setStatus("warn", `<b>실행 중</b> · ${escapeHtml(job.message || job.state || "running")}<br>jobId: ${escapeHtml(jobId)}`, p);
-          detailsEl.textContent = JSON.stringify({ jobId, state: job.state, message: job.message }, null, 2);
+          setStatus("warn", `<b>${escapeHtml(solvePhaseLabel(job))}</b> · ${escapeHtml(job.message || job.state || "running")}<br>jobId: ${escapeHtml(jobId)}`, p);
+          detailsEl.textContent = JSON.stringify({ jobId, state: job.state, phase: job.phase, message: job.message }, null, 2);
           if (job.state === "done") {
             latestResult = job.result;
-            setStatus(latestResult?.validation?.ok === false ? "warn" : "ok", `<b>CP-SAT 완료</b><br>${escapeHtml(latestResult?.validation?.summary || latestResult?.status || "완료")}`, 100);
+            const mayApply = resultMayBeApplied(latestResult);
+            setStatus(latestResult?.validation?.ok === false ? "warn" : "ok", `<b>${escapeHtml(solvePhaseLabel(latestResult))}</b><br>${escapeHtml(latestResult?.validation?.summary || latestResult?.status || "완료")}${mayApply ? "" : "<br><b>적용 차단:</b> 검증이 정상인 결과만 현재 시간표에 적용합니다. 결과 JSON은 저장할 수 있습니다."}`, 100);
             renderApiSummary(latestResult, "solve");
-            applyBtn.disabled = !asArray(latestResult?.entries).length;
+            applyBtn.disabled = !mayApply;
             resultBtn.disabled = false;
             break;
           }
-          if (["failed", "error"].includes(String(job.state))) throw new Error(job.message || "CP-SAT 실행 실패");
+          if (["failed", "error"].includes(String(job.state))) {
+            if (job.result && asArray(job.result.entries).length) {
+              latestResult = job.result;
+              setStatus("warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br><b>검증이 정상인 결과만 적용합니다. 먼저 결과 JSON을 저장해 확인하세요.</b>`, 100);
+              renderApiSummary(latestResult, "solve-failed-with-result");
+              applyBtn.disabled = true;
+              resultBtn.disabled = false;
+              break;
+            }
+            throw new Error(job.message ? `${job.message} (서버가 적용 가능한 entries를 반환하지 않았습니다.)` : "CP-SAT 실행 실패: 서버가 적용 가능한 entries를 반환하지 않았습니다.");
+          }
         }
       } catch (err) {
         setStatus("bad", `<b>CP-SAT 실행 실패</b><br>${escapeHtml(err?.message || err)}`, 0);
