@@ -8441,3 +8441,42 @@ body.his-dev-tools-off .developer-toggle-btn {
 .group-unit-room-defaults[open] > summary.group-unit-room-label {
   margin-bottom: 6px;
 }
+
+
+/* r196: 묶음수업=같은 교사·같은 교실, 그룹카드=동시간·각자 교사/교실 */
+.group-unit-label {
+  color: #0f172a;
+}
+.group-unit-warning {
+  margin: 3px 0 5px;
+  padding: 5px 7px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fff1f2;
+  color: #b91c1c;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.group-unit-room-summary {
+  margin: 2px 0 6px;
+  color: #1d4ed8;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+.group-unit-room-defaults.group-unit-room-defaults-compact {
+  margin-top: 6px;
+  padding: 7px;
+  border-style: solid;
+  background: #f8fbff;
+}
+.group-unit-room-defaults-compact .group-unit-room-label {
+  margin-bottom: 5px;
+  color: #1d4ed8;
+}
+.group-unit-room-defaults-compact .group-unit-room-note {
+  color: #475569;
+}
+.group-unit-compact-foot {
+  color: #475569;
+}
