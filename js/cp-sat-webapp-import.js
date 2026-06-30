@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-cpsat-partial-apply-r201";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-cpsat-save-group-stable-r202";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r201: 부분 배치 결과의 적용 정책과 경고/차단 흐름을 분리합니다.
+// r202: CP-SAT 적용 저장/메타 동기화와 시간표 그룹카드 표시 고정.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -401,6 +401,61 @@ function isGroupedSolvedEntry(entry = {}) {
   return !!entry.groupId || ids.length > 1;
 }
 
+function assignArrayInPlace(target, source) {
+  const cloned = deepClone(asArray(source));
+  if (Array.isArray(target)) {
+    target.splice(0, target.length, ...cloned);
+    return target;
+  }
+  return cloned;
+}
+
+function syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, backup = null) {
+  if (!domain) return;
+  domain.entries = assignArrayInPlace(domain.entries, nextEntries);
+  domain.autoAssignMeta = deepClone(nextMeta);
+  if (backup && Array.isArray(domain.savedSchedules) && !domain.savedSchedules.some(s => cleanLocal(s?.id) === cleanLocal(backup.id))) {
+    domain.savedSchedules = [backup, ...domain.savedSchedules].slice(0, 30);
+  }
+  if (appStateRef?.timetable && appStateRef.timetable !== domain) {
+    appStateRef.timetable.entries = assignArrayInPlace(appStateRef.timetable.entries, nextEntries);
+    appStateRef.timetable.autoAssignMeta = deepClone(nextMeta);
+    if (backup && Array.isArray(domain.savedSchedules)) appStateRef.timetable.savedSchedules = deepClone(domain.savedSchedules);
+  }
+}
+
+function cpSatSaveVerification(domain, expectedCount, expectedSource = "cp-sat-webapp-r202") {
+  const actual = asArray(domain?.entries).length;
+  const source = cleanLocal(domain?.autoAssignMeta?.source);
+  const imported = Number(domain?.autoAssignMeta?.importedEntryCount || 0);
+  if (actual !== expectedCount) {
+    throw new Error(`CP-SAT 저장 확인 실패: 화면 entries ${actual}개 / 예상 ${expectedCount}개`);
+  }
+  if (source !== expectedSource || imported !== expectedCount) {
+    throw new Error(`CP-SAT 메타 저장 확인 실패: source=${source || "없음"}, imported=${imported || 0}`);
+  }
+}
+
+async function persistCpSatTimetable({ domain, appStateRef, nextEntries, nextMeta, backup, saveNow, recomputeConflicts, renderAll }) {
+  syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, backup);
+  recomputeConflicts?.();
+  renderAll?.();
+
+  if (typeof saveNow !== "function") {
+    throw new Error("저장 함수가 연결되지 않았습니다. CP-SAT 결과를 화면에 넣었지만 저장을 확정할 수 없습니다.");
+  }
+
+  // 1차 저장 후에도 구버전 normalizer/비동기 동기화가 entries 또는 meta를 건드릴 수 있어
+  // 동일 상태를 다시 주입하고 2차 저장으로 확정합니다.
+  await saveNow("timetable", { force: true, throwOnError: true });
+  syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, backup);
+  recomputeConflicts?.();
+  renderAll?.();
+  await saveNow("timetable", { force: true, throwOnError: true });
+  syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, backup);
+  cpSatSaveVerification(domain, asArray(nextEntries).length);
+}
+
 function ensureStyle() {
   if (document.getElementById(CP_SAT_API_STYLE_ID)) return;
   const style = document.createElement("style");
@@ -574,18 +629,25 @@ export function setupCpSatWebappImport(ctx = {}) {
     const backup = makeBackupVersion(`CP-SAT API 적용 전 백업 ${new Date().toLocaleString("ko-KR")}`);
     captureTimetableUndo?.("CP-SAT API 결과 적용");
 
-    domain.entries = nextEntries;
     const previousMeta = { ...(domain.autoAssignMeta || {}) };
-    ["validationSummary", "ok", "validatorOk", "validationOk", "conflictSummary", "conflictStatus", "legacyValidationSummary"].forEach(key => {
+    [
+      "validationSummary", "ok", "validatorOk", "validationOk",
+      "conflictSummary", "conflictStatus", "legacyValidationSummary",
+      "failedDiagnostics", "failedCount", "failedUnitCount", "failedOccurrenceCount",
+      "classIssueCount", "cardCoverageIssueCount", "groupCoverageIssueCount"
+    ].forEach(key => {
       if (Object.prototype.hasOwnProperty.call(previousMeta, key)) delete previousMeta[key];
     });
-    domain.autoAssignMeta = {
+
+    const nextMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r201",
+      source: "cp-sat-webapp-r202",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
+      cpSatApplied: true,
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
       cpSatServerValidationOk: validation.ok !== false,
       cpSatServerValidationSummary: validation.summary || "",
+      cpSatIssueText: issueText(apiResult, 20),
       strictValidationRequired: true,
       strictValidationMode: "runtime-recomputed-teacher-room-class",
       strictValidationNotice: "정상 여부는 저장된 CP-SAT 메타가 아니라 현재 화면의 실시간 교사/교실/학급 충돌 검토 결과만 기준으로 판단합니다.",
@@ -597,17 +659,45 @@ export function setupCpSatWebappImport(ctx = {}) {
       apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,
       apiStatus: apiResult?.status || "",
       apiVersion: apiResult?.version || "",
+      apiCounts: deepClone(apiResult?.counts || {}),
+      apiValidationCounts: deepClone(validationCounts(apiResult)),
       backupVersionId: backup?.id || null,
     };
 
-    // 저장 과정에서 구버전 normalizer가 필드를 정리해도 화면에는 보존된 결과가 남도록 저장 후 1회 재주입합니다.
-    try { await saveNow?.("timetable", { force: true, throwOnError: true }); } catch (err) { console.warn("CP-SAT 저장 경고", err); }
-    domain.entries = nextEntries;
-    recomputeConflicts?.();
-    renderAll?.();
+    domain.bestAutoAssignSnapshot = {
+      id: uid ? uid("cpsat") : `cpsat-${Date.now()}`,
+      name: "CP-SAT 적용 결과",
+      source: "cp-sat-webapp-r202",
+      createdAt: nowIso(),
+      entryCount: nextEntries.length,
+      classSlotCount: summary.classSlotCount,
+      validationSummary: validation.summary || "",
+      entries: deepClone(nextEntries),
+      meta: deepClone(nextMeta),
+    };
+
+    try {
+      await persistCpSatTimetable({
+        domain,
+        appStateRef: appState,
+        nextEntries,
+        nextMeta,
+        backup,
+        saveNow,
+        recomputeConflicts,
+        renderAll,
+      });
+    } catch (err) {
+      console.error("CP-SAT 저장 실패", err);
+      recomputeConflicts?.();
+      renderAll?.();
+      alert(`CP-SAT 결과를 화면에는 반영했지만 저장 확인에 실패했습니다.\n\n${err?.message || err}\n\n페이지를 새로고침하지 말고 [저장]을 먼저 누른 뒤 진단 파일을 다시 확인하세요.`);
+      return false;
+    }
+
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n메타 source: cp-sat-webapp-r202\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 

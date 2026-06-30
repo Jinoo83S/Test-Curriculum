@@ -1,5 +1,6 @@
 // ================================================================
 // timetable-grid.js · Timetable Grid Rendering
+// r202: group-card visual shape fixed; no auto row/column span changes.
 // ================================================================
 import { canEdit } from "./auth.js";
 import { sectionLabel, gradeDisplay } from "./utils.js";
@@ -18,6 +19,7 @@ const TT_DRAG_MIME = "application/x-his-timetable-drag";
 const ALL_VIEW_MODE_KEY = "his:timetable:allViewMode";
 let allSummaryStyleInjected = false;
 let groupMergeStyleInjected = false;
+const STABLE_GROUP_CARD_SHAPE = true; // r202: 시간표의 여러 학급/학년 그룹카드 모양은 데이터/CP-SAT 패치와 분리해 고정합니다.
 
 function cleanText(v) {
   return String(v ?? "").trim();
@@ -308,6 +310,10 @@ function makeVisualEntryForCard(entry = {}, card = {}) {
 }
 
 function expandGroupedEntriesForClassCell(slotEntries = [], cls = null) {
+  // r202: 묶음수업/그룹관리 변경 때문에 시간표 카드 모양이 바뀌지 않도록
+  // 같은 시간·같은 그룹 entry는 그리드에서 항상 한 장 요약 카드로 둡니다.
+  // 내부 구성 과목/교사/교실은 상세 패널에서만 펼칩니다.
+  if (STABLE_GROUP_CARD_SHAPE) return slotEntries;
   if (!cls) return slotEntries;
   const out = [];
   slotEntries.forEach(entry => {
@@ -678,6 +684,7 @@ function isSpanCandidateEntry(entry = {}, matchedCount = 0) {
 function buildAxisSpanMap({ axisItems = [], entries = [], days = [], periods = [], ctx = {}, mode = "summary", matchEntry }) {
   const starts = new Map();
   const skips = new Set();
+  if (STABLE_GROUP_CARD_SHAPE) return { starts, skips };
   if (!axisItems.length || typeof matchEntry !== "function") return { starts, skips };
 
   days.forEach(day => {
@@ -1478,6 +1485,10 @@ function fitAllClassTableToCollapsedViewport(wrap, table) {
 }
 
 function applyAllClassVisualSpans(table) {
+  if (STABLE_GROUP_CARD_SHAPE) {
+    resetAllClassVisualSpans(table);
+    return;
+  }
   if (!table || !table.isConnected) return;
   resetAllClassVisualSpans(table);
   const cells = [...table.querySelectorAll("td.tt-all-cell")];
