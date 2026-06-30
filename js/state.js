@@ -464,6 +464,22 @@ function normalizeUnit(u = {}) {
   };
 }
 
+function normalizeSlotList(list = []) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const out = [];
+  list.forEach(slot => {
+    const day = parseInt(slot?.day, 10);
+    const period = parseInt(slot?.period, 10);
+    if (!Number.isInteger(day) || !Number.isInteger(period)) return;
+    const key = `${day}:${period}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ day, period });
+  });
+  return out.sort((a, b) => (a.day - b.day) || (a.period - b.period));
+}
+
 export function normalizeTemplateGroup(item = {}) {
   const isConcurrent = item.isConcurrent !== false;
   const isCrossGrade = !!item.isCrossGrade;
@@ -477,6 +493,13 @@ export function normalizeTemplateGroup(item = {}) {
     // 자동 생성 그룹에서 사용자가 제외한 카드입니다.
     // 카드 자체를 삭제하지 않고 그룹 동시배정 대상에서만 제외하기 위해 별도로 보존합니다.
     excludedCardIds: Array.isArray(item.excludedCardIds) ? item.excludedCardIds.filter(Boolean) : [],
+    // 그룹관리에서 시간표카드처럼 지정하는 기본 고정값입니다.
+    // 실제 배치 엔진은 카드 단위 조건을 읽으므로, 그룹 기본값은 UI에서
+    // 구성 카드에 적용해 카드의 roomRule/fixedRoomId/allowedSlots로 동기화합니다.
+    defaultRoomRule: clean(item.defaultRoomRule || item.roomRule || item.groupRoomRule || ""),
+    defaultFixedRoomId: clean(item.defaultFixedRoomId || item.fixedRoomId || item.groupFixedRoomId || "") || null,
+    allowedSlots: normalizeSlotList(item.allowedSlots || item.groupAllowedSlots || item.defaultAllowedSlots || []),
+    unavailableSlots: normalizeSlotList(item.unavailableSlots || item.groupUnavailableSlots || item.defaultUnavailableSlots || []),
     groupType: isConcurrent ? "concurrent" : (isCrossGrade ? "cross-grade" : "off"),
     linkedGroupId: clean(item.linkedGroupId) || null
   };
@@ -677,6 +700,9 @@ export function normalizeTtCard(item = {}) {
     isWholeGrade: !!item.isWholeGrade,
     roomRule:    (clean(item.roomRule) === "auto" ? "teacher" : (clean(item.roomRule) || "teacher")),
     fixedRoomId: clean(item.fixedRoomId) || null,
+    // 카드별 배정가능/불가 시간. 그룹 기본값 적용 시 이 필드가 채워집니다.
+    allowedSlots: normalizeSlotList(item.allowedSlots || item.availableSlots || item.possibleSlots || item.assignableSlots || item["배정가능시간"] || []),
+    unavailableSlots: normalizeSlotList(item.unavailableSlots || item.blockedSlots || item.disabledSlots || item["불가시간"] || item["수업불가시간"] || []),
     generatedAt: clean(item.generatedAt),
     manualEdited: !!item.manualEdited,
     // 커리큘럼 원본 없이 시간표 편집 화면에서 직접 만든 보정 카드입니다.

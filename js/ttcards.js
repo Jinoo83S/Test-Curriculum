@@ -59,6 +59,84 @@ function getAllTeacherNames() {
     ]);
   return uniqueNames([...fromTeacherTable, ...fromTemplates]).sort((a, b) => a.localeCompare(b, "ko"));
 }
+
+function getGroupDefaultRooms() {
+  return (appState.rooms?.rooms || [])
+    .filter(room => clean(room.id) && clean(room.name))
+    .slice()
+    .sort((a, b) => clean(a.name).localeCompare(clean(b.name), "ko", { numeric: true }));
+}
+function roomNameByIdForGroup(roomId = "") {
+  const id = clean(roomId);
+  if (!id) return "";
+  return getGroupDefaultRooms().find(room => room.id === id)?.name || id;
+}
+const GROUP_DEFAULT_ROOM_RULES = new Set(["", "teacher", "fixed", "homeroom", "none"]);
+function normalizeGroupDefaultRoomRule(rule = "") {
+  const v = clean(rule);
+  return GROUP_DEFAULT_ROOM_RULES.has(v) ? v : "";
+}
+function cloneSlotList(slots = []) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(slots) ? slots : []).forEach(slot => {
+    const day = parseInt(slot?.day, 10);
+    const period = parseInt(slot?.period, 10);
+    if (!Number.isInteger(day) || !Number.isInteger(period)) return;
+    const key = `${day}:${period}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ day, period });
+  });
+  return out.sort((a, b) => (a.day - b.day) || (a.period - b.period));
+}
+function slotKey(slot) { return `${Number(slot?.day)}:${Number(slot?.period)}`; }
+function slotListHas(slots = [], day, period) {
+  const key = `${day}:${period}`;
+  return cloneSlotList(slots).some(slot => slotKey(slot) === key);
+}
+function toggleSlotInGroupAllowed(group, day, period) {
+  if (!group) return;
+  const slots = cloneSlotList(group.allowedSlots || []);
+  const key = `${day}:${period}`;
+  const idx = slots.findIndex(slot => slotKey(slot) === key);
+  if (idx >= 0) slots.splice(idx, 1);
+  else slots.push({ day, period });
+  group.allowedSlots = cloneSlotList(slots);
+}
+function groupDefaultSummary(group = {}) {
+  const parts = [];
+  const rule = normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "");
+  if (rule === "teacher") parts.push("교사교실");
+  else if (rule === "fixed") parts.push(`고정 ${roomNameByIdForGroup(group.defaultFixedRoomId || group.fixedRoomId || "") || "교실 미지정"}`);
+  else if (rule === "homeroom") parts.push("홈룸");
+  else if (rule === "none") parts.push("교실 없음");
+  const slotCount = cloneSlotList(group.allowedSlots || []).length;
+  if (slotCount) parts.push(`가능시간 ${slotCount}칸`);
+  return parts.join(" · ");
+}
+function applyGroupDefaultsToCards(group) {
+  if (!group) return 0;
+  const rule = normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "");
+  const fixedRoomId = clean(group.defaultFixedRoomId || group.fixedRoomId || "") || null;
+  const allowedSlots = cloneSlotList(group.allowedSlots || []);
+  const unavailableSlots = cloneSlotList(group.unavailableSlots || []);
+  const cards = getGroupActiveCards(group);
+  let changed = 0;
+  cards.forEach(card => {
+    if (!card) return;
+    if (rule) {
+      card.roomRule = rule;
+      card.fixedRoomId = rule === "fixed" ? fixedRoomId : (rule === "teacher" ? null : card.fixedRoomId || null);
+      changed += 1;
+    }
+    card.allowedSlots = cloneSlotList(allowedSlots);
+    card.unavailableSlots = cloneSlotList(unavailableSlots);
+    card.manualEdited = true;
+    changed += 1;
+  });
+  return changed;
+}
 function getHomeroomTeachersForClassLabels(classLabels = []) {
   const labels = new Set((classLabels || []).map(normalizeClassLabel).filter(Boolean));
   if (!labels.size) return [];
@@ -369,6 +447,8 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     isWholeGrade: row ? isWholeGradeRow(row, tpl, gradeKey, sectionIdx) : !!existing?.isWholeGrade,
     roomRule: existing?.roomRule || "teacher",
     fixedRoomId: existing?.fixedRoomId || null,
+    allowedSlots: cloneSlotList(existing?.allowedSlots || existing?.availableSlots || []),
+    unavailableSlots: cloneSlotList(existing?.unavailableSlots || []),
     generatedAt: new Date().toISOString(),
     manualEdited: !!existing?.manualEdited,
     compoundParentTemplateId: isCompoundPart ? templateId : null,
@@ -381,7 +461,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
-    ["label","teacherName","teachers","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId"].forEach(k => {
+    ["label","teacherName","teachers","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots"].forEach(k => {
       if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
@@ -2061,6 +2141,123 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
   return wrap;
 }
 
+function createGroupDefaultsPanel(group, onStructureChange) {
+  const details = document.createElement("details");
+  details.className = "group-defaults-panel";
+  if (groupDefaultSummary(group)) details.open = true;
+
+  const summary = document.createElement("summary");
+  const text = groupDefaultSummary(group);
+  summary.textContent = text ? `그룹 고정값 · ${text}` : "그룹 고정값";
+  details.appendChild(summary);
+
+  const help = document.createElement("div");
+  help.className = "group-defaults-help";
+  help.textContent = "그룹 자체에 교실/가능시간 기본값을 저장하고, 적용 버튼으로 포함된 시간표카드에 같은 조건을 씁니다.";
+  details.appendChild(help);
+
+  const row = document.createElement("div");
+  row.className = "group-defaults-row";
+
+  const ruleSel = document.createElement("select");
+  ruleSel.className = "group-defaults-select";
+  [
+    ["", "개별 카드 유지"],
+    ["teacher", "교사 교실"],
+    ["fixed", "지정교실 고정"],
+    ["homeroom", "대상반 홈룸"],
+    ["none", "교실 없음 허용"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value; opt.textContent = label;
+    ruleSel.appendChild(opt);
+  });
+  ruleSel.value = normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "");
+  ruleSel.disabled = !canEdit();
+  ruleSel.addEventListener("change", () => {
+    if (!canEdit()) return;
+    group.defaultRoomRule = normalizeGroupDefaultRoomRule(ruleSel.value);
+    scheduleSave("timetable");
+    onStructureChange();
+  });
+
+  const roomSel = document.createElement("select");
+  roomSel.className = "group-defaults-select";
+  const blank = document.createElement("option");
+  blank.value = ""; blank.textContent = "교실 선택"; roomSel.appendChild(blank);
+  getGroupDefaultRooms().forEach(room => {
+    const opt = document.createElement("option");
+    opt.value = room.id;
+    opt.textContent = `${room.name}${room.capacity ? ` (${room.capacity})` : ""}`;
+    roomSel.appendChild(opt);
+  });
+  roomSel.value = clean(group.defaultFixedRoomId || group.fixedRoomId || "");
+  roomSel.disabled = !canEdit() || normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "") !== "fixed";
+  roomSel.addEventListener("change", () => {
+    if (!canEdit()) return;
+    group.defaultFixedRoomId = clean(roomSel.value) || null;
+    scheduleSave("timetable");
+  });
+
+  row.append(ruleSel, roomSel);
+  details.appendChild(row);
+
+  const slotNote = document.createElement("div");
+  slotNote.className = "group-defaults-help";
+  const allowedCount = cloneSlotList(group.allowedSlots || []).length;
+  slotNote.textContent = allowedCount ? `선택한 ${allowedCount}칸만 배정 가능` : "가능시간 미지정: 모든 시간 가능";
+  details.appendChild(slotNote);
+
+  const grid = document.createElement("div");
+  grid.className = "group-defaults-slot-grid";
+  const periodCount = Math.max(1, parseInt(appState.timetable?.config?.periodCount, 10) || 7);
+  const days = ["월", "화", "수", "목", "금"];
+  days.forEach((dayLabel, dayIdx) => {
+    const dayCell = document.createElement("div");
+    dayCell.className = "group-defaults-day-label";
+    dayCell.textContent = dayLabel;
+    grid.appendChild(dayCell);
+    for (let p = 1; p <= periodCount; p += 1) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "group-defaults-slot-btn" + (slotListHas(group.allowedSlots || [], dayIdx, p) ? " active" : "");
+      btn.textContent = String(p);
+      btn.disabled = !canEdit();
+      btn.title = `${dayLabel} ${p}교시`;
+      btn.addEventListener("click", () => {
+        if (!canEdit()) return;
+        toggleSlotInGroupAllowed(group, dayIdx, p);
+        scheduleSave("timetable");
+        onStructureChange();
+      });
+      grid.appendChild(btn);
+    }
+  });
+  details.appendChild(grid);
+
+  const actions = document.createElement("div");
+  actions.className = "group-defaults-actions";
+  const clearBtn = makeBtn("가능시간 초기화", "group-defaults-mini-btn", () => {
+    if (!canEdit()) return;
+    group.allowedSlots = [];
+    scheduleSave("timetable");
+    onStructureChange();
+  });
+  clearBtn.disabled = !canEdit();
+  const applyBtn = makeBtn("현재 그룹 카드에 적용", "group-defaults-apply-btn", () => {
+    if (!canEdit()) return;
+    const count = applyGroupDefaultsToCards(group);
+    scheduleSave("timetable");
+    onStructureChange();
+    alert(`${count ? getGroupActiveCards(group).length : 0}개 시간표카드에 그룹 고정값을 적용했습니다.`);
+  });
+  applyBtn.disabled = !canEdit() || !getGroupActiveCardIds(group).length;
+  actions.append(clearBtn, applyBtn);
+  details.appendChild(actions);
+
+  return details;
+}
+
 function createGroupBlockGM(groupId, onStructureChange) {
   const grpObj = grps().find(g => g.id === groupId); if (!grpObj) return document.createElement("div");
   grpObj.isConcurrent = true; grpObj.groupType = "concurrent";
@@ -2130,6 +2327,8 @@ function createGroupBlockGM(groupId, onStructureChange) {
 
   const body = document.createElement("div"); body.className = "group-block-body";
   if (isGroupCollapsed(groupId)) body.style.display = "none";
+
+  body.appendChild(createGroupDefaultsPanel(grpObj, onStructureChange));
 
   const allUnitCardIds = new Set((grpObj.units||[]).flatMap(u => u.ttcardIds||[]));
 
@@ -2300,6 +2499,7 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
       // Cards go into the group pool (unassigned to units) — user creates 묶음수업 manually
       ensureTtCardGroups().push(normalizeTemplateGroup({
         id: grpId, name, isConcurrent: true, groupType: "concurrent",
+        defaultRoomRule: "", defaultFixedRoomId: null, allowedSlots: [], unavailableSlots: [],
         units: [], poolCardIds: [...cardIds]  // pool: cards in group but not yet in any unit
       }));
     });
@@ -2387,6 +2587,10 @@ function buildGroupManagerDOM(board, savedRightScroll = 0, savedLeftScroll = 0) 
       name,
       isConcurrent: true,
       groupType: "concurrent",
+      defaultRoomRule: "",
+      defaultFixedRoomId: null,
+      allowedSlots: [],
+      unavailableSlots: [],
       units: [],
       poolCardIds: []
     }));
