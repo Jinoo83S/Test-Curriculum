@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-operational-r190";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-operational-r191";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r190: 운영 데이터 4축 감지 모델을 solver payload에 포함.
+// r191: 운영 데이터 4축 + 교실 수용인원/고정교실 모델을 solver payload에 포함.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -9,7 +9,7 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r181/HIS_CP_SAT_Local_Server_r181.zip";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r182/HIS_CP_SAT_Local_Server_r182.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -95,7 +95,10 @@ function stripSolverOnlyState(state) {
   // r181 원칙: 시간표/solver 전송 JSON에는 학급 학생 객체를 싣지 않습니다.
   // 학생 충돌 계산은 rosters.rosters[].studentId만 사용합니다.
   asArray(payload?.classes?.classes).forEach(cls => {
-    if (cls && typeof cls === "object") delete cls.students;
+    if (!cls || typeof cls !== "object") return;
+    const students = asArray(cls.students);
+    if (students.length && !Number(cls.studentCount)) cls.studentCount = students.length;
+    delete cls.students;
   });
 
   const tt = payload?.timetable || {};
@@ -234,7 +237,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r190 CP-SAT API bridge",
+    source: "HIS webapp r191 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -454,7 +457,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     });
     domain.autoAssignMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r190",
+      source: "cp-sat-webapp-r191",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
       cpSatServerValidationOk: validation.ok !== false,
@@ -601,11 +604,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r181.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r182.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r181에 <code>HIS_CP_SAT_Local_Server_r181.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r182에 <code>HIS_CP_SAT_Local_Server_r182.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
     $('[data-action="health"]')?.addEventListener("click", async () => {

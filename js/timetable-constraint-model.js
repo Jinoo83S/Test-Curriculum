@@ -1,5 +1,5 @@
 // ================================================================
-// timetable-constraint-model.js · Operational data detection model · r190
+// timetable-constraint-model.js · Operational data detection model · r191
 // ---------------------------------------------------------------
 // 선생님이 정의한 4축 데이터 모델을 한 곳에서 감지합니다.
 // 1) 시간표과목카드: 교사 / 교실 / 배정가능시간
@@ -374,7 +374,7 @@ export function buildOperationalConstraintModel(state = {}) {
   const classes = asArray(state?.classes?.classes).map(cls => buildClassConstraint(state, cls));
   const rooms = asArray(state?.rooms?.rooms).map(room => buildRoomConstraint(state, room));
   const teachers = asArray(state?.teachers?.teachers).map(t => buildTeacherConstraint(state, t));
-  const model = { schemaVersion: "r190-operational-constraint-model", generatedAt: new Date().toISOString(), cards, classes, rooms, teachers };
+  const model = { schemaVersion: "r191-operational-constraint-model", generatedAt: new Date().toISOString(), cards, classes, rooms, teachers };
   const issues = buildIssues(model);
   const hardCount = issues.filter(x => x.level === "hard").length;
   const warnCount = issues.filter(x => x.level === "warn").length;
