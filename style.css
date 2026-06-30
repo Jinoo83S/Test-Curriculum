@@ -8283,45 +8283,22 @@ body.his-dev-tools-off .developer-toggle-btn {
   cursor: not-allowed;
 }
 
-/* r194: 그룹관리 > 묶음수업 단위 교실 고정값 */
-.group-unit-room-defaults {
-  margin-top: 8px;
-  padding: 8px;
-  border: 1px dashed var(--border-color, #cbd5e1);
-  border-radius: 10px;
-  background: rgba(255,255,255,0.65);
-}
-.group-unit-room-label {
-  font-size: 12px;
-  font-weight: 800;
-  color: var(--text-strong, #1f2937);
-  margin-bottom: 6px;
-}
-.group-unit-room-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-}
-.group-unit-room-select {
-  min-width: 150px;
-}
-.group-unit-room-note {
-  margin-top: 5px;
-  font-size: 11px;
-  color: var(--text-muted, #64748b);
-  line-height: 1.35;
-}
-.group-unit-apply-btn {
-  white-space: nowrap;
-}
 
 
-/* r195: 묶음수업은 같은 교사·같은 실제 수업 기준으로 간결 표시 */
+/* r197: 묶음수업은 교실 옵션 없이 하나의 수업카드로 간결 표시 */
 .group-unit-cards {
   flex-wrap: wrap;
   overflow-x: visible;
 }
+
+.group-unit-single-card {
+  border-color: #c7d2fe;
+  background: #fff;
+}
+.group-unit-single-card .group-unit-classchips {
+  margin-top: 4px;
+}
+
 .group-unit-compact {
   width: 100%;
   border: 1px solid #bfdbfe;
@@ -8429,53 +8406,6 @@ body.his-dev-tools-off .developer-toggle-btn {
   margin-top: 5px;
   font-size: 10px;
   color: #64748b;
-}
-.group-unit-room-defaults {
-  padding: 6px 8px;
-}
-.group-unit-room-defaults > summary.group-unit-room-label {
-  margin-bottom: 0;
-  cursor: pointer;
-  list-style-position: inside;
-}
-.group-unit-room-defaults[open] > summary.group-unit-room-label {
-  margin-bottom: 6px;
-}
-
-
-/* r196: 묶음수업=같은 교사·같은 교실, 그룹카드=동시간·각자 교사/교실 */
-.group-unit-label {
-  color: #0f172a;
-}
-.group-unit-warning {
-  margin: 3px 0 5px;
-  padding: 5px 7px;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fff1f2;
-  color: #b91c1c;
-  font-size: 10.5px;
-  font-weight: 800;
-  line-height: 1.35;
-}
-.group-unit-room-summary {
-  margin: 2px 0 6px;
-  color: #1d4ed8;
-  font-size: 10.5px;
-  font-weight: 800;
-}
-.group-unit-room-defaults.group-unit-room-defaults-compact {
-  margin-top: 6px;
-  padding: 7px;
-  border-style: solid;
-  background: #f8fbff;
-}
-.group-unit-room-defaults-compact .group-unit-room-label {
-  margin-bottom: 5px;
-  color: #1d4ed8;
-}
-.group-unit-room-defaults-compact .group-unit-room-note {
-  color: #475569;
 }
 .group-unit-compact-foot {
   color: #475569;

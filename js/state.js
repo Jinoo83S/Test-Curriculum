@@ -461,10 +461,6 @@ function normalizeUnit(u = {}) {
     name: clean(u.name),
     templateIds: Array.isArray(u.templateIds) ? u.templateIds.filter(Boolean) : [],
     ttcardIds:   Array.isArray(u.ttcardIds)   ? u.ttcardIds.filter(Boolean)   : [],
-    // 묶음수업 단위의 교실 고정값입니다.
-    // 같은 그룹 안에서도 묶음수업은 한 교실, 나머지 그룹 카드는 각자 교실을 쓰는 경우를 지원합니다.
-    roomRule: clean(u.roomRule || u.defaultRoomRule || u.unitRoomRule || ""),
-    fixedRoomId: clean(u.fixedRoomId || u.defaultFixedRoomId || u.unitFixedRoomId || "") || null,
   };
 }
 
@@ -497,9 +493,8 @@ export function normalizeTemplateGroup(item = {}) {
     // 자동 생성 그룹에서 사용자가 제외한 카드입니다.
     // 카드 자체를 삭제하지 않고 그룹 동시배정 대상에서만 제외하기 위해 별도로 보존합니다.
     excludedCardIds: Array.isArray(item.excludedCardIds) ? item.excludedCardIds.filter(Boolean) : [],
-    // 그룹관리에서 시간표카드처럼 지정하는 기본 고정값입니다.
-    // 실제 배치 엔진은 카드 단위 조건을 읽으므로, 그룹 기본값은 UI에서
-    // 구성 카드에 적용해 카드의 roomRule/fixedRoomId/allowedSlots로 동기화합니다.
+    // 그룹카드는 같은 시간에만 묶습니다. 교실은 각 카드 값을 유지하고,
+    // 채플/Ground 등 예외 공통교실이 필요한 경우에만 defaultFixedRoomId를 사용합니다.
     defaultRoomRule: clean(item.defaultRoomRule || item.roomRule || item.groupRoomRule || ""),
     defaultFixedRoomId: clean(item.defaultFixedRoomId || item.fixedRoomId || item.groupFixedRoomId || "") || null,
     allowedSlots: normalizeSlotList(item.allowedSlots || item.groupAllowedSlots || item.defaultAllowedSlots || []),
