@@ -1,6 +1,6 @@
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r187: 카드 교실 조건을 기준으로 CP-SAT 전송 전 roomAssignments를 재정규화.
+// r188: 실제 교사/교실/학급 충돌을 숨기지 않는 엄격 검토 기준 적용.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -232,7 +232,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r187 CP-SAT API bridge",
+    source: "HIS webapp r188 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);

@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-26-room-sync-r187";
+import { versioned } from "./version.js?v=2026-06-30-strict-conflict-r188";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-26-room-sync-r187";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-30-strict-conflict-r188";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-26-room-sync-r187";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-06-30-strict-conflict-r188";
 
 
 const [
@@ -2507,7 +2507,7 @@ function alertProtectedSlot(block) {
   alert(`이 시간에는 고정된 전체학년 수업(${name})이 있어 다른 과목을 배치할 수 없습니다.`);
 }
 
-const MANUAL_BLOCKING_CONFLICTS = new Set(["teacher", "room", "roomUnavailable", "student"]);
+const MANUAL_BLOCKING_CONFLICTS = new Set(["teacher", "room", "roomUnavailable", "roomMissing", "student"]);
 
 function getManualPlacementBlock(candidates, options = {}) {
   const candidateList = (Array.isArray(candidates) ? candidates : [candidates])
