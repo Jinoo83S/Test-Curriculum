@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-06-30-cpsat-save-group-stable-r202";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-01-cpsat-fixed-seed-r203";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r202: CP-SAT 적용 저장/메타 동기화와 시간표 그룹카드 표시 고정.
+// r203: 고정과목 seed 보존 서버 r185 연동 및 적용/원인 표시 안정화.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -9,7 +9,7 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r184/HIS_CP_SAT_Local_Server_r184.zip";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r185/HIS_CP_SAT_Local_Server_r185.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -237,7 +237,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r201 CP-SAT API bridge",
+    source: "HIS webapp r203 CP-SAT API bridge",
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -424,7 +424,7 @@ function syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, bac
   }
 }
 
-function cpSatSaveVerification(domain, expectedCount, expectedSource = "cp-sat-webapp-r202") {
+function cpSatSaveVerification(domain, expectedCount, expectedSource = "cp-sat-webapp-r203") {
   const actual = asArray(domain?.entries).length;
   const source = cleanLocal(domain?.autoAssignMeta?.source);
   const imported = Number(domain?.autoAssignMeta?.importedEntryCount || 0);
@@ -641,7 +641,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     const nextMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r202",
+      source: "cp-sat-webapp-r203",
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       cpSatApplied: true,
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
@@ -667,7 +667,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.bestAutoAssignSnapshot = {
       id: uid ? uid("cpsat") : `cpsat-${Date.now()}`,
       name: "CP-SAT 적용 결과",
-      source: "cp-sat-webapp-r202",
+      source: "cp-sat-webapp-r203",
       createdAt: nowIso(),
       entryCount: nextEntries.length,
       classSlotCount: summary.classSlotCount,
@@ -697,7 +697,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n메타 source: cp-sat-webapp-r202\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n메타 source: cp-sat-webapp-r203\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -722,7 +722,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         <div class="tt-cpsat-api-body">
           <div class="tt-cpsat-api-grid">
             <div class="tt-cpsat-api-field"><label>API 주소</label><input id="ttCpSatApiBase" value="${escapeHtml(localStorage.getItem(API_URL_KEY) || API_DEFAULT)}"></div>
-            <div class="tt-cpsat-api-field"><label>제한 시간(초)</label><input id="ttCpSatApiTime" type="number" min="1" max="300" value="30"></div>
+            <div class="tt-cpsat-api-field"><label>제한 시간(초)</label><input id="ttCpSatApiTime" type="number" min="1" max="300" value="120"></div>
             <div class="tt-cpsat-api-field"><label>Workers</label><input id="ttCpSatApiWorkers" type="number" min="1" max="32" value="4"></div>
           </div>
           <div class="tt-cpsat-api-checkline">🔒 학생 객체는 전송하지 않습니다. 시간표 카드/배치 결과의 학생 필드도 제거하고, 학생 충돌은 과목카드 roster의 studentId만 사용합니다.</div>
@@ -759,7 +759,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     }
     function options() {
       return {
-        timeLimitSeconds: Math.max(1, Math.min(300, parseInt($("#ttCpSatApiTime")?.value || "30", 10) || 30)),
+        timeLimitSeconds: Math.max(1, Math.min(300, parseInt($("#ttCpSatApiTime")?.value || "120", 10) || 120)),
         workers: Math.max(1, Math.min(32, parseInt($("#ttCpSatApiWorkers")?.value || "4", 10) || 4)),
         preferCpSat: true,
         returnFullState: false,
@@ -822,11 +822,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r184.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r185.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r184에 <code>HIS_CP_SAT_Local_Server_r184.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r185에 <code>HIS_CP_SAT_Local_Server_r185.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
     $('[data-action="health"]')?.addEventListener("click", async () => {
