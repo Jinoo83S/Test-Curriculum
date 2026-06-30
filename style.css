@@ -8410,3 +8410,62 @@ body.his-dev-tools-off .developer-toggle-btn {
 .group-unit-compact-foot {
   color: #475569;
 }
+
+/* r198: 그룹관리 화면 단순화 */
+.group-concurrent-hint { display: none !important; }
+.group-unit-hdr { margin-bottom: 4px; }
+.group-unit-label,
+.group-pool-area-label { font-size: 11px; font-weight: 900; color: #334155; }
+.group-unit-same-badge,
+.group-unit-compact-foot,
+.group-defaults-help { display: none !important; }
+.group-defaults-panel.compact {
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 6px 8px;
+}
+.group-defaults-panel.compact summary {
+  font-size: 11px;
+  font-weight: 900;
+  color: #1e40af;
+}
+.group-defaults-row.compact {
+  display: block;
+  margin-top: 6px;
+}
+.group-defaults-row.compact .group-defaults-select {
+  width: 100%;
+}
+.group-defaults-slot-grid.compact {
+  margin-top: 6px;
+}
+.group-defaults-actions.compact {
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.group-unit-compact {
+  padding: 7px 8px;
+  border-radius: 8px;
+}
+.group-unit-warning.compact {
+  display: inline-flex;
+  width: fit-content;
+  margin: 0 0 4px 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 10px;
+  font-weight: 900;
+}
+.group-unit-cards {
+  padding: 5px;
+  gap: 5px;
+}
+.group-pool-area {
+  margin-top: 6px;
+}
+.group-pool-area-label {
+  margin-bottom: 4px;
+}

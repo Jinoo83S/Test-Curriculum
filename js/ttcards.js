@@ -106,12 +106,13 @@ function toggleSlotInGroupAllowed(group, day, period) {
 }
 function groupDefaultSummary(group = {}) {
   const parts = [];
-  const rule = normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "");
-  if (rule === "fixed") parts.push(`예외 공통교실 ${roomNameByIdForGroup(group.defaultFixedRoomId || group.fixedRoomId || "") || "미지정"}`);
+  const roomId = clean(group.defaultFixedRoomId || group.fixedRoomId || "");
+  if (roomId) parts.push(`예외교실 ${roomNameByIdForGroup(roomId) || "미지정"}`);
   const slotCount = cloneSlotList(group.allowedSlots || []).length;
   if (slotCount) parts.push(`가능시간 ${slotCount}칸`);
   return parts.join(" · ");
 }
+
 function applyGroupDefaultsToCards(group) {
   if (!group) return 0;
   const rule = normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "");
@@ -2149,8 +2150,8 @@ function createUnitCompactView(groupId, unit, cards, onStructureChange) {
 
   if (!isSingleTeacher) {
     const warn = document.createElement("div");
-    warn.className = "group-unit-warning";
-    warn.textContent = "묶음수업은 하나의 수업카드입니다. 교사가 다른 카드는 묶음수업이 아니라 아래 그룹카드로 두세요.";
+    warn.className = "group-unit-warning compact";
+    warn.textContent = "교사 확인";
     compact.appendChild(warn);
   }
 
@@ -2173,7 +2174,7 @@ function createUnitCompactView(groupId, unit, cards, onStructureChange) {
       rm.type = "button";
       rm.className = "group-unit-chip-remove";
       rm.textContent = "×";
-      rm.title = "이 카드를 묶음수업에서 제외";
+      rm.title = "묶음에서 제외";
       rm.addEventListener("click", (e) => {
         e.stopPropagation();
         excludeCardFromGroup(groupId, card.id);
@@ -2185,11 +2186,6 @@ function createUnitCompactView(groupId, unit, cards, onStructureChange) {
     chips.appendChild(chip);
   });
   compact.appendChild(chips);
-
-  const foot = document.createElement("div");
-  foot.className = "group-unit-compact-foot";
-  foot.textContent = "하나의 수업카드로 처리됩니다. 교사와 교실은 대표 수업카드 값 하나만 사용합니다.";
-  compact.appendChild(foot);
 
   return compact;
 }
@@ -2209,14 +2205,9 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
   const wrap = document.createElement("div"); wrap.className = "group-unit-block";
 
   const hdr = document.createElement("div"); hdr.className = "group-unit-hdr";
-  const label = document.createElement("span"); label.className = "group-unit-label"; label.textContent = "묶음수업 · 하나의 수업카드";
+  const label = document.createElement("span"); label.className = "group-unit-label"; label.textContent = "묶음수업";
   hdr.appendChild(label);
   const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean);
-  if (ttcards.length > 1) {
-    const badge = document.createElement("span"); badge.className = "group-unit-same-badge";
-    badge.textContent = "🔗 하나의 수업"; badge.title = "교육과정명만 다르고 실제로는 하나의 수업카드로 처리합니다.";
-    hdr.appendChild(badge);
-  }
   const spacer = document.createElement("span"); spacer.style.flex = "1"; hdr.appendChild(spacer);
   const delBtn = makeBtn("×", "group-unit-del-btn", () => {
     if (!canEdit()) return;
@@ -2268,45 +2259,23 @@ function createUnitBlockGM(groupId, unit, onStructureChange) {
 
 function createGroupDefaultsPanel(group, onStructureChange) {
   const details = document.createElement("details");
-  details.className = "group-defaults-panel";
+  details.className = "group-defaults-panel compact";
   if (groupDefaultSummary(group)) details.open = true;
 
   const summary = document.createElement("summary");
   const text = groupDefaultSummary(group);
-  summary.textContent = text ? `그룹시간 예외교실 · ${text}` : "그룹시간 예외교실";
+  summary.textContent = text ? `그룹 시간/예외교실 · ${text}` : "그룹 시간/예외교실";
   details.appendChild(summary);
 
-  const help = document.createElement("div");
-  help.className = "group-defaults-help";
-  help.textContent = "그룹카드는 같은 시간에만 묶고, 교사와 교실은 각 카드 값을 유지합니다. 채플·Ground처럼 모두 같은 공간일 때만 예외교실만 지정하세요.";
-  details.appendChild(help);
-
-  const row = document.createElement("div");
-  row.className = "group-defaults-row";
-
-  const ruleSel = document.createElement("select");
-  ruleSel.className = "group-defaults-select";
-  [
-    ["", "각 카드 교실 유지(기본)"],
-    ["fixed", "그룹시간 예외교실"],
-  ].forEach(([value, label]) => {
-    const opt = document.createElement("option");
-    opt.value = value; opt.textContent = label;
-    ruleSel.appendChild(opt);
-  });
-  ruleSel.value = normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "");
-  ruleSel.disabled = !canEdit();
-  ruleSel.addEventListener("change", () => {
-    if (!canEdit()) return;
-    group.defaultRoomRule = normalizeGroupDefaultRoomRule(ruleSel.value);
-    scheduleSave("timetable");
-    onStructureChange();
-  });
+  const roomRow = document.createElement("div");
+  roomRow.className = "group-defaults-row compact";
 
   const roomSel = document.createElement("select");
   roomSel.className = "group-defaults-select";
   const blank = document.createElement("option");
-  blank.value = ""; blank.textContent = getGroupDefaultRooms().length ? "교실 선택" : "교실 목록 로딩/없음"; roomSel.appendChild(blank);
+  blank.value = "";
+  blank.textContent = getGroupDefaultRooms().length ? "예외교실 없음" : "교실 목록 로딩/없음";
+  roomSel.appendChild(blank);
   getGroupDefaultRooms().forEach(room => {
     const opt = document.createElement("option");
     opt.value = room.id;
@@ -2314,24 +2283,19 @@ function createGroupDefaultsPanel(group, onStructureChange) {
     roomSel.appendChild(opt);
   });
   roomSel.value = clean(group.defaultFixedRoomId || group.fixedRoomId || "");
-  roomSel.disabled = !canEdit() || normalizeGroupDefaultRoomRule(group.defaultRoomRule || group.roomRule || "") !== "fixed";
+  roomSel.disabled = !canEdit();
   roomSel.addEventListener("change", () => {
     if (!canEdit()) return;
     group.defaultFixedRoomId = clean(roomSel.value) || null;
+    group.defaultRoomRule = group.defaultFixedRoomId ? "fixed" : "";
     scheduleSave("timetable");
+    onStructureChange();
   });
-
-  row.append(ruleSel, roomSel);
-  details.appendChild(row);
-
-  const slotNote = document.createElement("div");
-  slotNote.className = "group-defaults-help";
-  const allowedCount = cloneSlotList(group.allowedSlots || []).length;
-  slotNote.textContent = allowedCount ? `선택한 ${allowedCount}칸만 배정 가능` : "가능시간 미지정: 모든 시간 가능";
-  details.appendChild(slotNote);
+  roomRow.appendChild(roomSel);
+  details.appendChild(roomRow);
 
   const grid = document.createElement("div");
-  grid.className = "group-defaults-slot-grid";
+  grid.className = "group-defaults-slot-grid compact";
   const periodCount = Math.max(1, parseInt(appState.timetable?.config?.periodCount, 10) || 7);
   const days = ["월", "화", "수", "목", "금"];
   days.forEach((dayLabel, dayIdx) => {
@@ -2358,23 +2322,17 @@ function createGroupDefaultsPanel(group, onStructureChange) {
   details.appendChild(grid);
 
   const actions = document.createElement("div");
-  actions.className = "group-defaults-actions";
-  const clearBtn = makeBtn("가능시간 초기화", "group-defaults-mini-btn", () => {
+  actions.className = "group-defaults-actions compact";
+  const clearBtn = makeBtn("초기화", "group-defaults-mini-btn", () => {
     if (!canEdit()) return;
     group.allowedSlots = [];
+    group.defaultRoomRule = "";
+    group.defaultFixedRoomId = null;
     scheduleSave("timetable");
     onStructureChange();
   });
   clearBtn.disabled = !canEdit();
-  const applyBtn = makeBtn("그룹시간/예외교실 적용", "group-defaults-apply-btn", () => {
-    if (!canEdit()) return;
-    const count = applyGroupDefaultsToCards(group);
-    scheduleSave("timetable");
-    onStructureChange();
-    alert(`${count ? getGroupActiveCards(group).length : 0}개 그룹카드에 그룹시간/예외교실 값을 적용했습니다.`);
-  });
-  applyBtn.disabled = !canEdit() || !getGroupActiveCardIds(group).length;
-  actions.append(clearBtn, applyBtn);
+  actions.appendChild(clearBtn);
   details.appendChild(actions);
 
   return details;
@@ -2445,7 +2403,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
   hdr.append(dragHandle, colBtn, nameInp, creditBadge, delBtn); block.appendChild(hdr);
 
   const hint = document.createElement("div"); hint.className = "group-concurrent-hint";
-  hint.textContent = "이 그룹의 과목들은 같은 시간대에 배정됩니다."; block.appendChild(hint);
+  hint.textContent = ""; hint.style.display = "none";
 
   const body = document.createElement("div"); body.className = "group-block-body";
   if (isGroupCollapsed(groupId)) body.style.display = "none";
@@ -2461,7 +2419,7 @@ function createGroupBlockGM(groupId, onStructureChange) {
   // ── Pool area: cards in group but not in any unit (always visible for drop) ──
   const poolArea = document.createElement("div"); poolArea.className = "group-pool-area";
   const poolLbl = document.createElement("div"); poolLbl.className = "group-pool-area-label";
-  poolLbl.textContent = "그룹카드 · 동시간/각자 교사·교실";
+  poolLbl.textContent = "그룹카드";
   poolArea.appendChild(poolLbl);
   const poolCards = document.createElement("div"); poolCards.className = "group-pool-cards";
   setupDropZone(poolCards, drag => {
