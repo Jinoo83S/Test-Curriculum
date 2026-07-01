@@ -196,10 +196,13 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         // r205 예외: 교실이 특정 학급의 홈룸이자 그 학급 담임교사의 전담교실인 경우,
         // 담임교사가 자기 교실에서 다른 학급을 가르치는 것과 그 학급의 홈룸 카드가
         // 같은 물리적 공간을 공유하는 것은 실제 충돌이 아닙니다.
+        // r207: Ground/TH201/TH301처럼 sharedUse로 표시된 교실은 여러 카드가
+        // 같은 시간에 같이 써도 정상이므로 애초에 충돌 검사 대상에서 제외합니다.
         const roomsA = roomIdsForEntry(a);
         const roomsB = roomIdsForEntry(b);
         if (roomsA.length && roomsB.length) {
-          const sharedRoomIds = roomsA.filter(roomId => roomsB.includes(roomId));
+          const isShared = roomId => typeof options.isSharedUseRoom === "function" && !!options.isSharedUseRoom(roomId);
+          const sharedRoomIds = roomsA.filter(roomId => roomsB.includes(roomId) && !isShared(roomId));
           const hasRealRoomConflict = sharedRoomIds.some(roomId => {
             if (typeof options.isRoomOwnerException === "function") {
               try {

@@ -2263,6 +2263,14 @@ function isHomeroomOwnerRoomException(entryA = {}, entryB = {}, roomId = "") {
   return ownerSideMatches(entryA, entryB) || ownerSideMatches(entryB, entryA);
 }
 
+// r207: Ground/TH201/TH301처럼 room.sharedUse === true로 표시된 교실은
+// 여러 카드가 같은 시간에 같이 써도 정상이므로 room 충돌 검사에서 제외합니다.
+function isSharedUseRoom(roomId = "") {
+  if (!roomId) return false;
+  const room = getRooms().find(r => r.id === roomId);
+  return room?.sharedUse === true;
+}
+
 function resolveHardTeachersForEntry(e = {}) {
   const all = splitTeacherNames(e.teacherName || "").map(s => String(s).trim()).filter(Boolean);
   const explicitHard = ttCollectRole(e, "hard");
@@ -2327,7 +2335,8 @@ function recomputeConflicts() {
       getRoomIdsForEntry: effectiveRoomIdsForEntry,
       entryNeedsRoom: entryNeedsAnyRoom,
       entryHasRoomMissing: entryHasMissingRoomAssignment,
-      isRoomOwnerException: isHomeroomOwnerRoomException
+      isRoomOwnerException: isHomeroomOwnerRoomException,
+      isSharedUseRoom
     }
   );
   constraintMap = detectConstraintViolations(entries(), constraints(), {
@@ -2691,7 +2700,8 @@ function getManualPlacementBlock(candidates, options = {}) {
         getRoomIdsForEntry: effectiveRoomIdsForEntry,
         entryNeedsRoom: entryNeedsAnyRoom,
         entryHasRoomMissing: entryHasMissingRoomAssignment,
-        isRoomOwnerException: isHomeroomOwnerRoomException
+        isRoomOwnerException: isHomeroomOwnerRoomException,
+        isSharedUseRoom
       }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]

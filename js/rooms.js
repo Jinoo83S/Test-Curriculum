@@ -684,6 +684,7 @@ function formatRoomSummaryLine(room = {}) {
   const home = getHomeRoomLabelByClassId(room.homeRoomClassId);
   if (home) parts.push(`홈룸 ${home}`);
   if (room.teacherName) parts.push(`담당 ${room.teacherName}`);
+  if (room.sharedUse === true) parts.push("복수배정");
   return parts.join(" · ") || "기본 정보 없음";
 }
 
@@ -926,7 +927,7 @@ function renderRoomsFullPageView(container, onUpdate, options = {}) {
   const table = document.createElement("table");
   table.className = "rooms-table rooms-fullpage-table";
   table.innerHTML = `<thead><tr>
-    <th>이름</th><th>유형</th><th>수용인원</th><th>전용학년</th><th>홈룸</th><th>담당 교사</th><th>메모</th><th>삭제</th>
+    <th>이름</th><th>유형</th><th>수용인원</th><th>전용학년</th><th>홈룸</th><th>담당 교사</th><th>복수배정</th><th>메모</th><th>삭제</th>
   </tr></thead>`;
   const tbody = document.createElement("tbody");
 
@@ -1037,6 +1038,21 @@ function renderRoomsFullPageView(container, onUpdate, options = {}) {
     });
     teacherTd.appendChild(teacherInput);
     tr.appendChild(teacherTd);
+
+    const sharedTd = document.createElement("td");
+    sharedTd.style.cssText = "text-align:center;";
+    const sharedChk = document.createElement("input");
+    sharedChk.type = "checkbox";
+    sharedChk.checked = room.sharedUse === true;
+    sharedChk.disabled = !canEdit();
+    sharedChk.title = "체크하면 이 교실은 같은 시간에 여러 카드가 함께 배정돼도 충돌로 보지 않습니다 (예: Ground, TH201, TH301처럼 여러 반이 동시에 쓰는 공용 공간).";
+    sharedChk.addEventListener("change", e => {
+      updateRoom(room.id, "sharedUse", !!e.target.checked);
+      onUpdate?.();
+      renderRoomsView(container, onUpdate, options);
+    });
+    sharedTd.appendChild(sharedChk);
+    tr.appendChild(sharedTd);
 
     const noteTd = document.createElement("td");
     const noteInp = document.createElement("input");

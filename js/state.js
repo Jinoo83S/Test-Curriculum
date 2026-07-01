@@ -614,6 +614,9 @@ export function normalizeRoom(r = {}) {
     homeRoomClassId: clean(r.homeRoomClassId || r.homeRoomId),
     // 담당/전용 교사 표시용. 시간표 교사 조건의 홈룸/본인 교실과 연동됩니다.
     teacherName: clean(r.teacherName),
+    // r207: Ground/TH201/TH301처럼 같은 시간에 여러 카드가 동시에 배정돼도
+    // 정상인 공용 교실 표시. true일 때만 room 충돌 검사에서 제외됩니다.
+    sharedUse: r.sharedUse === true,
     note: clean(r.note)
   };
 }
