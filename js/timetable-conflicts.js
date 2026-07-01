@@ -193,11 +193,25 @@ export function detectConflicts(entries, templateGroups = [], templates = [], ge
         }
 
         // r188: 같은 unit/group 안의 공간 공유도 자동 면제하지 않습니다.
+        // r205 예외: 교실이 특정 학급의 홈룸이자 그 학급 담임교사의 전담교실인 경우,
+        // 담임교사가 자기 교실에서 다른 학급을 가르치는 것과 그 학급의 홈룸 카드가
+        // 같은 물리적 공간을 공유하는 것은 실제 충돌이 아닙니다.
         const roomsA = roomIdsForEntry(a);
         const roomsB = roomIdsForEntry(b);
-        if (roomsA.length && roomsB.length && roomsA.some(roomId => roomsB.includes(roomId))) {
-          setA?.add("room");
-          setB?.add("room");
+        if (roomsA.length && roomsB.length) {
+          const sharedRoomIds = roomsA.filter(roomId => roomsB.includes(roomId));
+          const hasRealRoomConflict = sharedRoomIds.some(roomId => {
+            if (typeof options.isRoomOwnerException === "function") {
+              try {
+                if (options.isRoomOwnerException(a, b, roomId)) return false;
+              } catch (err) { console.warn("Room owner exception resolver failed:", err); }
+            }
+            return true;
+          });
+          if (hasRealRoomConflict) {
+            setA?.add("room");
+            setB?.add("room");
+          }
         }
 
         if (hasCompoundSiblingConflict(a, b)) {

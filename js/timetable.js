@@ -2241,6 +2241,28 @@ function ttCollectRole(e, mode) {
   }
   return [...new Set(out)];
 }
+// r205: 교실이 "특정 학급의 홈룸"이면서 동시에 "그 학급 담임교사의 전담교실"로도
+// 등록된 경우, 담임교사가 다른 학급을 그 교실에서 가르치는 시간과 해당 학급의
+// 홈룸 카드가 물리적으로 같은 교실을 공유하는 것은 실제 충돌이 아닙니다.
+// (담임교사 = 교실 소유자이므로 동일 인물의 자기 교실 사용으로 간주합니다.)
+function isHomeroomOwnerRoomException(entryA = {}, entryB = {}, roomId = "") {
+  if (!roomId) return false;
+  const room = getRooms().find(r => r.id === roomId);
+  const ownerTeacher = clean(room?.teacherName || "");
+  const homeRoomClassId = clean(room?.homeRoomClassId || "");
+  if (!ownerTeacher || !homeRoomClassId) return false;
+
+  const teachersOf = e => resolveHardTeachersForEntry(e);
+  const classIdsOf = e => [...(audienceForPlacement(e)?.classKeys || [])]
+    .map(classIdForAudienceClassKey)
+    .filter(Boolean);
+
+  const ownerSideMatches = (owner, homeroomSide) =>
+    teachersOf(owner).includes(ownerTeacher) && classIdsOf(homeroomSide).includes(homeRoomClassId);
+
+  return ownerSideMatches(entryA, entryB) || ownerSideMatches(entryB, entryA);
+}
+
 function resolveHardTeachersForEntry(e = {}) {
   const all = splitTeacherNames(e.teacherName || "").map(s => String(s).trim()).filter(Boolean);
   const explicitHard = ttCollectRole(e, "hard");
@@ -2304,7 +2326,8 @@ function recomputeConflicts() {
       getHardTeachers: resolveHardTeachersForEntry,
       getRoomIdsForEntry: effectiveRoomIdsForEntry,
       entryNeedsRoom: entryNeedsAnyRoom,
-      entryHasRoomMissing: entryHasMissingRoomAssignment
+      entryHasRoomMissing: entryHasMissingRoomAssignment,
+      isRoomOwnerException: isHomeroomOwnerRoomException
     }
   );
   constraintMap = detectConstraintViolations(entries(), constraints(), {
@@ -2667,7 +2690,8 @@ function getManualPlacementBlock(candidates, options = {}) {
         getHardTeachers: resolveHardTeachersForEntry,
         getRoomIdsForEntry: effectiveRoomIdsForEntry,
         entryNeedsRoom: entryNeedsAnyRoom,
-        entryHasRoomMissing: entryHasMissingRoomAssignment
+        entryHasRoomMissing: entryHasMissingRoomAssignment,
+        isRoomOwnerException: isHomeroomOwnerRoomException
       }
     );
     const blockingTypes = [...(conflictResult.get(candidate.id) || [])]
