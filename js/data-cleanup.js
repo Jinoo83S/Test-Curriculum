@@ -1,10 +1,10 @@
 // ================================================================
-// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r191
+// data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r205
 // ================================================================
 import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js";
 import { canEdit } from "./auth.js";
 import { clean, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js";
-import { buildOperationalConstraintModel } from "./timetable-constraint-model.js?v=2026-06-30-operational-r191";
+import { buildOperationalConstraintModel } from "./timetable-constraint-model.js?v=2026-07-02-card-room-time-conflict-r205";
 
 const CLEANUP_DOMAINS = ["classes", "templates", "rooms", "rosters", "timetable"];
 
@@ -797,7 +797,7 @@ function renderPreviewBody(body, preview) {
   const opSummary = op.summary || {};
   const opBox = el("div", "cleanup-section");
   opBox.innerHTML = `
-    <h4>운영 데이터 감지 모델 r191</h4>
+    <h4>운영 데이터 감지 모델 r205</h4>
     <p style="margin:0 0 8px;color:#64748b;font-size:12px;line-height:1.55;">
       선생님이 정리한 기준대로 <b>커리큘럼 → 과목 템플릿 → 수강명단 → 시간표과목카드 → 배치 entry</b> 흐름을 추적합니다.
       정상/오류 판단은 저장된 과거 메타가 아니라 현재 데이터에서 다시 계산합니다.

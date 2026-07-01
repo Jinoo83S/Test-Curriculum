@@ -1,5 +1,5 @@
 // ================================================================
-// timetable-constraint-model.js · Operational data detection model · r191
+// timetable-constraint-model.js · Operational data detection model · r205
 // ---------------------------------------------------------------
 // 선생님이 정의한 4축 데이터 모델을 한 곳에서 감지합니다.
 // 1) 시간표과목카드: 교사 / 교실 / 배정가능시간
@@ -346,13 +346,36 @@ function buildTeacherConstraint(state, teacher = {}) {
   };
 }
 function pushIssue(issues, level, code, message, data = {}) { issues.push({ level, code, message, ...data }); }
+function slotSetKey(s) { return `${s.day}:${s.period}`; }
+// r205: 카드 가능시간과, 그 카드가 실제로 배정될 수 있는 모든 교실의 사용가능시간이
+// 전혀 겹치지 않으면 CP-SAT/자동배치가 그 카드를 절대 배치할 수 없습니다.
+// (예: 카드는 오전만 허용, 교실은 오전 사용불가 → 교집합 0칸)
+// 솔버 실행 전에 미리 잡아, 매번 자동배치를 돌려보고서야 "미배치"로
+// 발견하는 대신 데이터 입력 단계에서 바로 알 수 있게 합니다.
+function cardRoomTimeConflict(card, roomById) {
+  if (!card.time.allowedSlots.length || !card.resolvedRoomIds.length) return null;
+  const blockedRooms = [];
+  const overlapsAnyRoom = card.resolvedRoomIds.some(rid => {
+    const room = roomById.get(rid);
+    if (!room) return true; // 교실 정보를 못 찾으면 과탐지 방지를 위해 통과 처리
+    const blocked = new Set(room.time.unavailableSlots.map(slotSetKey));
+    const hasOverlap = card.time.allowedSlots.some(s => !blocked.has(slotSetKey(s)));
+    if (!hasOverlap) blockedRooms.push(room.name || room.id);
+    return hasOverlap;
+  });
+  if (overlapsAnyRoom) return null;
+  return blockedRooms;
+}
 function buildIssues(model) {
   const issues = [];
+  const roomById = new Map(model.rooms.map(r => [r.id, r]));
   model.cards.forEach(card => {
     if (!["ok", "manual"].includes(card.curriculumSource.status)) pushIssue(issues, "hard", `card-${card.curriculumSource.status}`, `${card.title}: 커리큘럼→템플릿→카드 원본 연결 확인 필요`, { cardId: card.id });
     if (!card.teachers.length && card.roomRule !== "none") pushIssue(issues, "hard", "card-missing-teacher", `${card.title}: 교사가 없습니다.`, { cardId: card.id });
     if (card.roomRule === "fixed" && !card.fixedRoomId) pushIssue(issues, "hard", "card-fixed-room-missing", `${card.title}: 고정교실 규칙인데 교실이 없습니다.`, { cardId: card.id });
     if (card.roomRule !== "none" && !card.resolvedRoomIds.length) pushIssue(issues, "warn", "card-room-unresolved", `${card.title}: 교실 규칙을 실제 교실로 해석하지 못했습니다.`, { cardId: card.id });
+    const blockedRooms = cardRoomTimeConflict(card, roomById);
+    if (blockedRooms) pushIssue(issues, "hard", "card-room-time-conflict", `${card.title}: 카드 가능시간과 배정 가능 교실(${blockedRooms.join(", ")})의 사용 가능 시간이 전혀 겹치지 않습니다. 자동배치가 이 카드를 배치할 수 없습니다 — 카드 가능시간 또는 교실 사용가능시간을 조정하세요.`, { cardId: card.id, roomIds: card.resolvedRoomIds });
   });
   model.classes.forEach(cls => {
     if (!cls.subjects.length) pushIssue(issues, "hard", "class-no-subject", `${cls.label}: 연결 과목이 감지되지 않습니다.`, { classId: cls.id });
@@ -374,7 +397,7 @@ export function buildOperationalConstraintModel(state = {}) {
   const classes = asArray(state?.classes?.classes).map(cls => buildClassConstraint(state, cls));
   const rooms = asArray(state?.rooms?.rooms).map(room => buildRoomConstraint(state, room));
   const teachers = asArray(state?.teachers?.teachers).map(t => buildTeacherConstraint(state, t));
-  const model = { schemaVersion: "r191-operational-constraint-model", generatedAt: new Date().toISOString(), cards, classes, rooms, teachers };
+  const model = { schemaVersion: "r205-operational-constraint-model", generatedAt: new Date().toISOString(), cards, classes, rooms, teachers };
   const issues = buildIssues(model);
   const hardCount = issues.filter(x => x.level === "hard").length;
   const warnCount = issues.filter(x => x.level === "warn").length;
@@ -383,6 +406,7 @@ export function buildOperationalConstraintModel(state = {}) {
     cardSourceOkCount: cards.filter(c => c.curriculumSource.status === "ok" || c.curriculumSource.status === "manual").length,
     cardTimeConfiguredCount: cards.filter(c => c.time.configured).length,
     cardTimeMissingCount: cards.filter(c => !c.time.configured).length,
+    cardRoomTimeConflictCount: issues.filter(x => x.code === "card-room-time-conflict").length,
     classCount: classes.length,
     classSubjectOkCount: classes.filter(c => c.subjects.length).length,
     classHomeRoomOkCount: classes.filter(c => c.homeRoomId).length,
