@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-06-23-real-table-merge-r102";
+import { versioned } from "./version.js?v=2026-07-01-cpsat-current-meta-r204";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",
