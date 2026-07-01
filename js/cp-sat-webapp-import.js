@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-01-cpsat-fixed-seed-r203";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-01-cpsat-current-meta-r204";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r203: 고정과목 seed 보존 서버 r185 연동 및 적용/원인 표시 안정화.
+// r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
 // ================================================================
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
@@ -9,7 +9,9 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r185/HIS_CP_SAT_Local_Server_r185.zip";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r204";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r204 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -237,7 +239,7 @@ function makeSolverState(appState, live = {}) {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
-    source: "HIS webapp r203 CP-SAT API bridge",
+    source: CP_SAT_BRIDGE_SOURCE,
     data: deepClone(data),
   };
   return stripSolverOnlyState(wrapped);
@@ -401,6 +403,81 @@ function isGroupedSolvedEntry(entry = {}) {
   return !!entry.groupId || ids.length > 1;
 }
 
+
+const STALE_AUTO_ASSIGN_META_KEYS = [
+  "validationSummary", "ok", "validatorOk", "validationOk",
+  "conflictSummary", "conflictStatus", "legacyValidationSummary",
+  "failedDiagnostics", "failedCount", "failedUnitCount", "failedOccurrenceCount",
+  "classIssueCount", "cardCoverageIssueCount", "groupCoverageIssueCount",
+  "actualEntryCount", "currentEntryCount", "placedEntryCount", "currentClassSlotCount",
+  "currentValidationAt", "currentValidationOk", "currentValidationSummary", "currentValidationCounts",
+  "currentValidationDetails", "currentValidationStatus", "currentValidationIssueText"
+];
+function dropStaleAutoAssignMetaFields(meta = {}) {
+  const next = { ...(meta && typeof meta === "object" ? meta : {}) };
+  STALE_AUTO_ASSIGN_META_KEYS.forEach(key => { if (Object.prototype.hasOwnProperty.call(next, key)) delete next[key]; });
+  return next;
+}
+function validationHardIssueCount(counts = {}) {
+  return [
+    "overageCount", "teacherConflictCount", "studentConflictCount",
+    "roomConflictCount", "classConflictCount", "timeViolationCount"
+  ].map(k => Number(counts[k] || 0)).reduce((a, b) => a + b, 0);
+}
+function buildCurrentValidationMeta(previousMeta = {}, validationBody = {}, entryList = [], sourceNote = "") {
+  const base = dropStaleAutoAssignMetaFields(previousMeta);
+  const validation = validationBody?.validation || {};
+  const counts = validationCounts(validationBody);
+  const summary = entriesSummary(entryList);
+  const entryCount = asArray(entryList).length;
+  const shortage = Number(counts.shortageCount || 0);
+  const overage = Number(counts.overageCount || 0);
+  const hard = validationHardIssueCount(counts);
+  const ok = validation.ok !== false;
+  const summaryText = validation.summary || (ok ? "현재 시간표 검증 정상" : "현재 시간표 검증 필요");
+  const details = asArray(validation.details).slice(0, 50);
+  return {
+    ...base,
+    source: CP_SAT_WEBAPP_SOURCE,
+    metricSource: "currentEntriesRevalidatedAfterCpSatApi",
+    metaSyncSource: sourceNote || "current-entries-revalidate",
+    cpSatApplied: true,
+    strictValidationRequired: true,
+    strictValidationMode: "runtime-recomputed-teacher-room-class-card",
+    strictValidationNotice: "정상 여부는 저장된 과거 메타가 아니라 현재 entries를 재검증한 결과를 기준으로 표시합니다.",
+    currentValidationAt: nowIso(),
+    currentValidationStatus: validationBody?.status || validationBody?.state || "VALIDATE-CURRENT-ENTRIES",
+    currentValidationOk: ok,
+    currentValidationSummary: summaryText,
+    currentValidationCounts: deepClone(counts),
+    currentValidationDetails: deepClone(details),
+    currentValidationIssueText: issueText(validationBody, 20),
+    validationSummary: summaryText,
+    ok,
+    validatorOk: ok,
+    validationOk: ok,
+    cpSatServerValidationOk: ok,
+    cpSatServerValidationSummary: summaryText,
+    cpSatIssueText: issueText(validationBody, 20),
+    actualEntryCount: entryCount,
+    currentEntryCount: entryCount,
+    placedEntryCount: entryCount,
+    importedEntryCount: entryCount,
+    currentClassSlotCount: summary.classSlotCount,
+    importedClassSlotCount: summary.classSlotCount,
+    currentEntrySummary: deepClone(summary),
+    apiValidationCounts: deepClone(counts),
+    apiCounts: deepClone(validationBody?.counts || {}),
+    failedDiagnostics: deepClone(details),
+    failedCount: shortage + overage + hard,
+    failedUnitCount: shortage + overage,
+    failedOccurrenceCount: shortage + overage,
+    classIssueCount: Number(counts.classConflictCount || 0),
+    cardCoverageIssueCount: shortage + overage,
+    groupCoverageIssueCount: 0,
+  };
+}
+
 function assignArrayInPlace(target, source) {
   const cloned = deepClone(asArray(source));
   if (Array.isArray(target)) {
@@ -424,7 +501,7 @@ function syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, bac
   }
 }
 
-function cpSatSaveVerification(domain, expectedCount, expectedSource = "cp-sat-webapp-r203") {
+function cpSatSaveVerification(domain, expectedCount, expectedSource = CP_SAT_WEBAPP_SOURCE) {
   const actual = asArray(domain?.entries).length;
   const source = cleanLocal(domain?.autoAssignMeta?.source);
   const imported = Number(domain?.autoAssignMeta?.importedEntryCount || 0);
@@ -601,7 +678,44 @@ export function setupCpSatWebappImport(ctx = {}) {
     domain.savedSchedules = [backup, ...asArray(domain.savedSchedules)].slice(0, 30);
     return backup;
   }
-  async function applySolvedEntries(rawEntries, apiResult) {
+
+  function buildSolverStateForEntries(entryList = null) {
+    const domain = ttDomain?.() || appState?.timetable || {};
+    const timetable = deepClone(domain || {});
+    const useEntries = entryList == null ? asArray(entries?.()) : asArray(entryList);
+    timetable.entries = deepClone(useEntries);
+    return makeSolverState(appState, { timetable, entries: useEntries });
+  }
+
+  async function validateCurrentEntriesViaApi(base, entryList = null, timeoutMs = 45000) {
+    const state = buildSolverStateForEntries(entryList);
+    const data = await postJson(`${normalizeApiBase(base)}/validate`, { state }, timeoutMs);
+    const body = data?.data || data;
+    return {
+      ...body,
+      counts: body?.counts || countSolverState(state),
+      privacy: body?.privacy || { solverPayload: privacyReport(state) },
+    };
+  }
+
+  async function refreshCurrentValidationMeta(base, reason = "manual-current-entries") {
+    if (!canEdit?.()) { alert("편집 권한이 없습니다. 로그인/권한을 확인하세요."); return false; }
+    const domain = ttDomain?.();
+    if (!domain) { alert("시간표 데이터가 아직 로드되지 않았습니다."); return false; }
+    if (typeof saveNow !== "function") { alert("저장 함수가 연결되지 않았습니다. 현재검증 메타를 저장할 수 없습니다."); return false; }
+    const currentEntries = deepClone(asArray(entries?.()));
+    const validationBody = await validateCurrentEntriesViaApi(base, currentEntries);
+    const nextMeta = buildCurrentValidationMeta(domain.autoAssignMeta || {}, validationBody, currentEntries, reason);
+    syncCpSatTimetableState(domain, appState, currentEntries, nextMeta, null);
+    recomputeConflicts?.();
+    renderAll?.();
+    await saveNow("timetable", { force: true, throwOnError: true });
+    syncCpSatTimetableState(domain, appState, currentEntries, nextMeta, null);
+    cpSatSaveVerification(domain, currentEntries.length);
+    return { meta: nextMeta, validation: validationBody };
+  }
+
+  async function applySolvedEntries(rawEntries, apiResult, validateBase = "") {
     if (!canEdit?.()) { alert("편집 권한이 없습니다. 로그인/권한을 확인하세요."); return false; }
     const domain = ttDomain?.();
     if (!domain) { alert("시간표 데이터가 아직 로드되지 않았습니다."); return false; }
@@ -629,19 +743,11 @@ export function setupCpSatWebappImport(ctx = {}) {
     const backup = makeBackupVersion(`CP-SAT API 적용 전 백업 ${new Date().toLocaleString("ko-KR")}`);
     captureTimetableUndo?.("CP-SAT API 결과 적용");
 
-    const previousMeta = { ...(domain.autoAssignMeta || {}) };
-    [
-      "validationSummary", "ok", "validatorOk", "validationOk",
-      "conflictSummary", "conflictStatus", "legacyValidationSummary",
-      "failedDiagnostics", "failedCount", "failedUnitCount", "failedOccurrenceCount",
-      "classIssueCount", "cardCoverageIssueCount", "groupCoverageIssueCount"
-    ].forEach(key => {
-      if (Object.prototype.hasOwnProperty.call(previousMeta, key)) delete previousMeta[key];
-    });
+    const previousMeta = dropStaleAutoAssignMetaFields(domain.autoAssignMeta || {});
 
-    const nextMeta = {
+    let nextMeta = {
       ...previousMeta,
-      source: "cp-sat-webapp-r203",
+      source: CP_SAT_WEBAPP_SOURCE,
       metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
       cpSatApplied: true,
       cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
@@ -664,14 +770,44 @@ export function setupCpSatWebappImport(ctx = {}) {
       backupVersionId: backup?.id || null,
     };
 
+    let currentValidationBody = null;
+    if (validateBase) {
+      try {
+        currentValidationBody = await validateCurrentEntriesViaApi(validateBase, nextEntries, 45000);
+        nextMeta = {
+          ...buildCurrentValidationMeta(nextMeta, currentValidationBody, nextEntries, "apply-after-cp-sat"),
+          cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
+          rawCpSatServerValidationSummary: validation.summary || "",
+          rawCpSatServerValidationCounts: deepClone(validationCounts(apiResult)),
+          rawCpSatIssueText: issueText(apiResult, 20),
+          importedRoomAssignmentEntryCount: assignmentCount,
+          apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,
+          apiStatus: apiResult?.status || "",
+          apiVersion: apiResult?.version || "",
+          apiCounts: deepClone(apiResult?.counts || currentValidationBody?.counts || {}),
+          backupVersionId: backup?.id || null,
+        };
+      } catch (err) {
+        console.warn("CP-SAT 적용 후 현재검증 실패", err);
+        nextMeta = {
+          ...nextMeta,
+          currentValidationAt: nowIso(),
+          currentValidationOk: false,
+          currentValidationSummary: `현재 entries 재검증 실패: ${err?.message || err}`,
+          validationSummary: validation.summary || `현재 entries 재검증 실패: ${err?.message || err}`,
+          metaSyncSource: "apply-after-cp-sat-validate-failed",
+        };
+      }
+    }
+
     domain.bestAutoAssignSnapshot = {
       id: uid ? uid("cpsat") : `cpsat-${Date.now()}`,
       name: "CP-SAT 적용 결과",
-      source: "cp-sat-webapp-r203",
+      source: CP_SAT_WEBAPP_SOURCE,
       createdAt: nowIso(),
       entryCount: nextEntries.length,
       classSlotCount: summary.classSlotCount,
-      validationSummary: validation.summary || "",
+      validationSummary: nextMeta.currentValidationSummary || validation.summary || "",
       entries: deepClone(nextEntries),
       meta: deepClone(nextMeta),
     };
@@ -697,7 +833,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n메타 source: cp-sat-webapp-r203\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r204\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -735,6 +871,7 @@ export function setupCpSatWebappImport(ctx = {}) {
             <button type="button" class="good" data-action="apply" disabled>4. 결과 적용</button>
             <button type="button" data-action="download-payload">전송 JSON 저장</button>
             <button type="button" data-action="download-result" disabled>결과 JSON 저장</button>
+            <button type="button" data-action="refresh-current-meta">현재검증 메타갱신</button>
           </div>
           <div id="ttCpSatApiStatus" class="tt-cpsat-api-box warn">대기 중입니다. 서버 확인부터 눌러 주세요.</div>
           <div class="tt-cpsat-api-progress"><span id="ttCpSatApiProgress"></span></div>
@@ -822,11 +959,24 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r185.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r187.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r185에 <code>HIS_CP_SAT_Local_Server_r185.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r187에 <code>HIS_CP_SAT_Local_Server_r187.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+    });
+
+
+    $('[data-action="refresh-current-meta"]')?.addEventListener("click", async () => {
+      try {
+        setBusy(true); setStatus("warn", "현재 시간표 entries를 재검증하고 autoAssignMeta를 갱신 중...", 20);
+        const result = await refreshCurrentValidationMeta(apiBase(), "manual-current-validation-refresh");
+        const body = result?.validation || {};
+        setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>현재검증 메타 갱신 완료</b><br>${escapeHtml(body?.validation?.summary || "현재검증 완료")}<br><span style="font-size:11px;color:#64748b">현재 entries ${asArray(entries?.()).length}개 기준으로 autoAssignMeta를 저장했습니다.</span>`, 100);
+        renderApiSummary(body, "refresh-current-meta");
+      } catch (err) {
+        setStatus("bad", `<b>현재검증 메타 갱신 실패</b><br>${escapeHtml(err?.message || err)}<br><br>로컬 서버 r187 이상이 실행 중인지 확인하세요.`, 0);
+      } finally { setBusy(false); }
     });
 
     $('[data-action="health"]')?.addEventListener("click", async () => {
@@ -976,7 +1126,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       const warning = policy.soft ? `\n주의: ${policy.reason}\n${issueText(latestResult, 6)}\n` : "";
       const msg = `${prefix}\n\nentries: ${latestResult.entries.length}\n교실 배정 포함 entry: ${assignCount}\n검증: ${latestResult.validation?.summary || "-"}${warning}\n현재 시간표는 배치 보관에 자동 백업됩니다.`;
       if (!confirm(msg)) return;
-      try { if (await applySolvedEntries(latestResult.entries, latestResult)) overlay.remove(); }
+      try { if (await applySolvedEntries(latestResult.entries, latestResult, apiBase())) overlay.remove(); }
       catch (err) { alert(`적용 실패: ${err?.message || err}`); }
     });
     $('[data-action="download-payload"]')?.addEventListener("click", () => downloadJson(`his_solver_payload_${Date.now()}.json`, solverState()));
@@ -995,6 +1145,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       timetable: ttDomain?.() || appState?.timetable || {},
       entries: asArray(entries?.()),
     })),
+    refreshCurrentValidationMeta: (base = localStorage.getItem(API_URL_KEY) || API_DEFAULT) => refreshCurrentValidationMeta(base, "console-current-validation-refresh"),
     entriesSummary,
   };
 }
