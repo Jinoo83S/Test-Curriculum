@@ -3794,6 +3794,16 @@ function renderRoomUnavailableManager(container) {
   body.style.cssText = "padding:8px 10px 10px;overflow:auto;";
   section.appendChild(body);
 
+  // r206: 셀을 연달아 빠르게 클릭하면 매 클릭마다 무거운 renderAll()이 겹쳐 실행되면서
+  // Firestore 실시간 구독의 원격 스냅샷 보호 로직과 타이밍이 꼬여, 직전 클릭이 다시
+  // 풀린 것처럼 보이는 문제가 있었습니다. 로컬 그리드(renderGrid)는 클릭마다 즉시
+  // 갱신하되, 전역 renderAll()은 클릭이 멈춘 뒤 한 번만 실행되도록 미룹니다.
+  let deferredRenderAllTimer = null;
+  const scheduleDeferredRenderAll = () => {
+    clearTimeout(deferredRenderAllTimer);
+    deferredRenderAllTimer = setTimeout(() => { renderAll(); }, 300);
+  };
+
   const renderGrid = () => {
     body.innerHTML = "";
     const roomId = roomSelect.value;
@@ -3843,10 +3853,10 @@ function renderRoomUnavailableManager(container) {
           if (!on) next.push({ day, period });
           setRoomUnavailableSlots(roomId, next);
           recomputeConflicts();
-          // 기존에는 저장은 되었지만 현재 팝업의 표시는 renderAll()의 보호 로직 때문에
-          // 즉시 갱신되지 않았습니다. 교실 불가시간 표만 먼저 다시 그린 뒤 전체 화면을 동기화합니다.
+          // r206: 로컬 그리드는 매 클릭마다 즉시 다시 그리되, 무거운 전역 renderAll()은
+          // 연속 클릭 중에는 미뤘다가 클릭이 멈춘 뒤 한 번만 실행합니다(위 scheduleDeferredRenderAll 참고).
           renderGrid();
-          renderAll();
+          scheduleDeferredRenderAll();
         });
         grid.appendChild(btn);
       });
