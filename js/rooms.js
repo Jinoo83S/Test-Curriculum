@@ -770,6 +770,10 @@ function openRoomManagerModal(sourceContainer, onUpdate, options = {}) {
 }
 
 function renderRoomsCompactView(container, onUpdate, options = {}) {
+  // r206: renderAll()이 다른 이유로도 이 패널을 계속 다시 그리기 때문에,
+  // 다시 그리기 전에 스크롤 위치를 저장해뒀다가 끝에 복원합니다.
+  const prevList = container.querySelector(".room-management-summary-list");
+  const prevScrollTop = prevList ? prevList.scrollTop : 0;
   container.innerHTML = "";
   container.classList.add("rooms-view-panel");
   ensureRoomAssignmentStatusStyles();
@@ -843,6 +847,7 @@ function renderRoomsCompactView(container, onUpdate, options = {}) {
     });
   }
   container.appendChild(list);
+  if (prevScrollTop) list.scrollTop = prevScrollTop;
 }
 
 
