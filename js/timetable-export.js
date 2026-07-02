@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r196: 교사 개별 출력에서 본인 과목/교실/학반만 표시
+// r197: 교실 개별 출력 대상 복구 및 홈룸 표시
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -240,6 +240,100 @@ function roomNamesForEntry(entry, rooms = [], deps = {}) {
   const ids = roomIdsForEntry(entry, rooms, deps);
   if (!ids.length) return "교실 없음";
   return ids.map(id => roomNameForId(id, rooms, deps)).join(", ");
+}
+
+
+function getClassList(deps = {}) {
+  try {
+    const direct = deps.getAllClasses?.();
+    if (Array.isArray(direct) && direct.length) return direct;
+  } catch (_) {}
+  return deps.appState?.classes?.classes || [];
+}
+
+function classFromIdOrKey(value = "", deps = {}) {
+  const raw = clean(value);
+  if (!raw) return null;
+  const classes = getClassList(deps);
+  const byId = classes.find(cls => clean(cls.id) === raw);
+  if (byId) return byId;
+  const key = normalizeClassKey(raw);
+  if (!key) return null;
+  return classes.find(cls => makeClassKey(cls) === key) || null;
+}
+
+function classLabelFromIdOrKey(value = "", deps = {}) {
+  const cls = classFromIdOrKey(value, deps);
+  if (cls) return classLabel(cls);
+  return classLabelFromKey(value) || clean(value);
+}
+
+function homeRoomLabelForRoom(room = {}, deps = {}) {
+  const label = classLabelFromIdOrKey(room?.homeRoomClassId || room?.homeRoomId || "", deps);
+  return /^\d{1,2}[A-Z]$/.test(label) ? label : "";
+}
+
+function roomLabelForExport(room = {}, deps = {}) {
+  return clean(room?.name || room?.short || room?.id) || "교실";
+}
+
+function roomSubtitleForExport(room = {}, deps = {}) {
+  const home = homeRoomLabelForRoom(room, deps);
+  return home ? `Homeroom: ${home}` : "";
+}
+
+function normalizedRoomRuleForExport(value = "") {
+  const rule = clean(value || "teacher");
+  if (["teacher", "fixed", "homeroom", "autoRoom", "none"].includes(rule)) return rule;
+  if (rule === "auto") return "teacher";
+  return "teacher";
+}
+
+function homeRoomIdForClassKeyExport(classKey = "", rooms = [], deps = {}) {
+  const cls = classFromIdOrKey(classKey, deps);
+  if (!cls?.id) return "";
+  return clean((rooms || []).find(room => clean(room.homeRoomClassId || room.homeRoomId) === clean(cls.id))?.id);
+}
+
+function homeRoomIdsForCardExport(card = {}, entry = {}, rooms = [], deps = {}) {
+  const candidates = [];
+  classKeysForCard(card).forEach(key => candidates.push(key));
+  if (!candidates.length && Array.isArray(entry?.audienceClassKeys)) candidates.push(...entry.audienceClassKeys);
+  return unique(candidates.map(key => homeRoomIdForClassKeyExport(key, rooms, deps)).filter(Boolean));
+}
+
+function roomIdForCardExport(cardId = "", card = {}, entry = {}, rooms = [], deps = {}) {
+  const assignments = getRoomAssignments(entry, deps);
+  const assigned = clean(assignments?.[cardId]);
+  if (assigned) return assigned;
+  const fixed = clean(card?.fixedRoomId || card?.roomId || "");
+  if (fixed) return fixed;
+  const rule = normalizedRoomRuleForExport(card?.roomRule || entry?.roomRule || "teacher");
+  if (rule === "homeroom") {
+    const ids = homeRoomIdsForCardExport(card, entry, rooms, deps);
+    if (ids.length === 1) return ids[0];
+  }
+  const ids = roomIdsForEntry(entry, rooms, deps);
+  if (ids.length === 1) return ids[0];
+  return "";
+}
+
+function cardRoomMatchesExport(cardId = "", card = {}, entry = {}, room = {}, rooms = [], deps = {}) {
+  const target = clean(room?.id);
+  if (!target) return false;
+  const cardRoomId = roomIdForCardExport(cardId, card, entry, rooms, deps);
+  if (cardRoomId && cardRoomId === target) return true;
+  if (homeRoomIdsForCardExport(card, entry, rooms, deps).includes(target)) return true;
+  const assignments = getRoomAssignments(entry, deps);
+  if (Object.values(assignments || {}).map(clean).includes(target)) return true;
+  return false;
+}
+
+function roomScopedCardsForEntry(entry = {}, room = {}, rooms = [], deps = {}) {
+  const ids = entryCardIds(entry);
+  if (!ids.length || typeof deps.getTtCardById !== "function") return [];
+  return ids.map(cardId => ({ cardId, card: deps.getTtCardById(cardId) }))
+    .filter(item => item.card && cardRoomMatchesExport(item.cardId, item.card, entry, room, rooms, deps));
 }
 
 function teacherNamesForCard(card = {}, deps = {}) {
@@ -523,12 +617,8 @@ function cardMatchesTeacher(card = {}, teacher = "", deps = {}) {
 }
 
 function teacherRoomForCard(cardId = "", card = {}, entry = {}, rooms = [], deps = {}) {
-  const assignments = getRoomAssignments(entry, deps);
-  const directRoomId = clean(assignments?.[cardId] || card?.fixedRoomId || card?.roomId || "");
-  if (directRoomId) return roomNameForId(directRoomId, rooms, deps);
-  const ids = roomIdsForEntry(entry, rooms, deps);
-  if (ids.length === 1) return roomNameForId(ids[0], rooms, deps);
-  return "";
+  const roomId = roomIdForCardExport(cardId, card, entry, rooms, deps);
+  return roomId ? roomNameForId(roomId, rooms, deps) : "";
 }
 
 function teacherScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
@@ -582,8 +672,68 @@ function teacherScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
   return lines.filter(line => clean(line)).join("\n");
 }
 
+function roomScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
+  const room = (rooms || []).find(r => clean(r.id) === clean(scope.key || scope.roomId || scope.id)) || scope;
+  const targetRoomId = clean(room?.id || scope.key || "");
+  if (!targetRoomId) return "";
+
+  const matchingCards = roomScopedCardsForEntry(entry, room, rooms, deps);
+  const matching = [];
+
+  if (matchingCards.length) {
+    matchingCards.forEach(({ cardId, card }) => {
+      const titleParts = cardTitlePartsForExport(card, deps);
+      const teachers = teacherNamesForCard(card, deps).join(" / ");
+      const classes = classLabelsForCard(card);
+      matching.push({ titleParts, teachers, classes });
+    });
+  }
+
+  if (!matching.length) {
+    const ids = roomIdsForEntry(entry, rooms, deps);
+    if (!ids.includes(targetRoomId)) return "";
+    matching.push({
+      titleParts: entryTitlePartsForExport(entry, deps),
+      teachers: clean(entry.teacherName || (entry.teacherNames || []).join(", ")),
+      classes: [],
+    });
+  }
+
+  const homeLabel = homeRoomLabelForRoom(room, deps);
+  const classColumns = matching.map(item => {
+    let labels = unique(item.classes || []);
+    if (!labels.length) {
+      try {
+        const audience = deps.audienceForPlacement?.(entry);
+        labels = unique(toArrayFromSet(audience?.classLabels).filter(Boolean));
+      } catch (_) {}
+    }
+    if (!labels.length && Array.isArray(entry?.audienceClassKeys)) {
+      labels = unique(entry.audienceClassKeys.map(classLabelFromKey).filter(Boolean));
+    }
+    const label = labels.join("/");
+    return label && homeLabel && labels.includes(homeLabel) ? `${label} · Homeroom` : label;
+  });
+  const teacherColumns = matching.map(item => item.teachers || "교사 없음");
+  const primaryColumns = matching.map((item, idx) => unique([classColumns[idx], teacherColumns[idx]]).join(" · "));
+  const koColumns = matching.map(item => item.titleParts?.ko || item.titleParts?.en || "-");
+  const enColumns = matching.map(item => item.titleParts?.en || "");
+
+  const lines = [];
+  if (primaryColumns.some(clean)) lines.push(primaryColumns.join("\t"));
+  if (koColumns.some(clean)) lines.push(koColumns.join("\t"));
+  if (enColumns.some(clean)) lines.push(enColumns.join("\t"));
+  return lines.filter(line => clean(line)).join("\n");
+}
+
 function buildExportContext(deps = {}) {
-  const rooms = deps.getRooms?.() || [];
+  const rooms = (() => {
+    try {
+      const direct = deps.getRooms?.();
+      if (Array.isArray(direct) && direct.length) return direct;
+    } catch (_) {}
+    return deps.appState?.rooms?.rooms || [];
+  })();
   const periods = getPeriodLabels(deps.ttConfig);
   const entries = deps.entries?.() || [];
   const appState = deps.appState || {};
@@ -631,7 +781,7 @@ function buildExportContext(deps = {}) {
     const classes = entryClassLabels(entry).join(", ");
     if (mode === "teacher") return teacherScopedLessonLines(entry, rooms, deps, scope) || [room, classes, ...titleLines].filter(Boolean).join("\n");
     if (mode === "class") return buildParallelLessonLines(entry, rooms, deps, scope);
-    if (mode === "room") return [...titleLines, teacher, classes].filter(Boolean).join("\n");
+    if (mode === "room") return roomScopedLessonLines(entry, rooms, deps, scope) || [classes, teacher, ...titleLines].filter(Boolean).join("\n");
     if (mode === "student") return buildParallelLessonLines(entry, rooms, deps, scope);
     return [...titleLines, teacher, classes, room].filter(Boolean).join("\n");
   };
@@ -656,7 +806,12 @@ function buildExportContext(deps = {}) {
     return toArrayFromSet(audience?.classKeys).includes(key) || (entry.audienceClassKeys || []).includes(key);
   };
 
-  const roomMatches = (entry, room) => roomIdsForEntry(entry, rooms, deps).includes(room.id);
+  const roomMatches = (entry, room) => {
+    const target = clean(room?.id);
+    if (!target) return false;
+    if (roomIdsForEntry(entry, rooms, deps).includes(target)) return true;
+    return roomScopedCardsForEntry(entry, room, rooms, deps).length > 0;
+  };
 
   const studentMatches = (entry, student) => {
     const tids = entryTemplateIds(entry);
@@ -701,9 +856,24 @@ function buildEntities(type, bands, deps, ctx) {
   }
   if (type === "room") {
     return (ctx.rooms || [])
-      .filter(room => ctx.entries.some(e => ctx.roomMatches(e, room) && ctx.entryAllowedByBands(e, bands)))
+      .filter(room => clean(room.id || room.name))
+      .filter(room => {
+        const scheduled = ctx.entries.some(e => ctx.roomMatches(e, room) && ctx.entryAllowedByBands(e, bands));
+        if (scheduled) return true;
+        const home = homeRoomLabelForRoom(room, deps);
+        const grade = normalizeGradeNumber(home);
+        return !!home && gradeAllowed(grade, bands);
+      })
       .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), "ko", { numeric: true }))
-      .map(room => ({ type, key: room.id, label: room.name || room.id, mode: "room", groupLabel: room.type || "교실", filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByBands(e, bands) }));
+      .map(room => ({
+        type,
+        key: room.id || room.name,
+        label: roomLabelForExport(room, deps),
+        subtitle: roomSubtitleForExport(room, deps),
+        mode: "room",
+        groupLabel: room.type || "교실",
+        filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByBands(e, bands)
+      }));
   }
   if (type === "student") {
     return buildStudentList(deps.appState)
@@ -889,7 +1059,8 @@ function buildIndividualSections(entities, ctx, type) {
       return `<tr><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
     }).join("");
     const colgroup = `<colgroup><col class="period-col">${DAYS.map(() => `<col>`).join("")}</colgroup>`;
-    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} Timetable</h1><table>${colgroup}<thead><tr><th class="corner-head"></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
+    const subtitle = entity.subtitle ? `<div class="section-meta">${escapeHtml(entity.subtitle)}</div>` : "";
+    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} Timetable</h1>${subtitle}<table>${colgroup}<thead><tr><th class="corner-head"></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join("\n");
 }
 
@@ -914,7 +1085,7 @@ function buildPrintHtml(entities, ctx, { layout, type, bands }) {
   const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} Timetable`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 5px;font-size:20px;text-align:center;line-height:1.12}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:2.5mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined td{height:18.5mm}col.period-col{width:25px}col.entity-col{width:72px}}
+    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined td{height:18.5mm}col.period-col{width:25px}col.entity-col{width:72px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="fitAllTimetableCells();window.print()">PDF 저장/인쇄</button></div>${sections}<script>
 function fitAllTimetableCells(){
   document.querySelectorAll("td:not(.empty)").forEach(td=>{
