@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r197: 교실 개별 출력 대상 복구 및 홈룸 표시
+// r198: 학생 개별 출력 대상/내용 복구 및 학생별 수강카드 필터
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -164,21 +164,39 @@ function buildRosterStudentTemplateIndex(appState = {}) {
     out.get(sid).add(tid);
   };
   const rosters = appState.rosters?.rosters || appState.rosters || {};
+  const visitTemplateRows = (templateId, rows) => {
+    const tid = clean(templateId);
+    if (!tid || !rows) return;
+    if (Array.isArray(rows)) {
+      rows.forEach(row => add(row?.studentId || row?.id || row?.studentKey, tid));
+      return;
+    }
+    if (rows instanceof Set) {
+      rows.forEach(sid => add(sid, tid));
+      return;
+    }
+    if (rows instanceof Map) {
+      rows.forEach((value, key) => {
+        if (value && typeof value === "object") add(value.studentId || value.id || key, tid);
+        else add(key || value, tid);
+      });
+      return;
+    }
+    if (rows && typeof rows === "object") {
+      (rows.studentIds || rows.studentKeys || []).forEach(sid => add(sid, tid));
+      (rows.students || []).forEach(st => add(st.studentId || st.id, tid));
+      (rows.entries || []).forEach(row => add(row?.studentId || row?.id || row?.studentKey, tid));
+    }
+  };
   if (Array.isArray(rosters)) {
     rosters.forEach(r => {
-      const tid = r.templateId || r.id || r.subjectTemplateId;
-      (r.studentIds || r.studentKeys || []).forEach(sid => add(sid, tid));
-      (r.students || []).forEach(st => add(st.studentId || st.id, tid));
+      const tid = r?.templateId || r?.id || r?.subjectTemplateId;
+      visitTemplateRows(tid, r?.entries || r?.rows || r);
     });
+  } else if (rosters instanceof Map) {
+    rosters.forEach((rows, templateId) => visitTemplateRows(templateId, rows));
   } else if (rosters && typeof rosters === "object") {
-    Object.entries(rosters).forEach(([templateId, rows]) => {
-      if (Array.isArray(rows)) {
-        rows.forEach(row => add(row.studentId || row.id || row.studentKey, templateId));
-      } else if (rows && typeof rows === "object") {
-        (rows.studentIds || rows.studentKeys || []).forEach(sid => add(sid, templateId));
-        (rows.students || []).forEach(st => add(st.studentId || st.id, templateId));
-      }
-    });
+    Object.entries(rosters).forEach(([templateId, rows]) => visitTemplateRows(templateId, rows));
   }
   return out;
 }
@@ -520,6 +538,63 @@ function scopedCardIdsForEntry(entry = {}, scope = {}, deps = {}) {
   return ids;
 }
 
+function studentTemplateSet(student = {}, ctx = {}) {
+  const sets = [];
+  const sid = clean(student.studentId || student.id || student.studentKey || student.key);
+  if (sid && ctx.rosterByStudent?.get) sets.push(ctx.rosterByStudent.get(sid));
+  if (Array.isArray(student.templateIds)) sets.push(new Set(student.templateIds.map(clean).filter(Boolean)));
+  const out = new Set();
+  sets.forEach(set => {
+    if (!set) return;
+    if (set instanceof Set) set.forEach(id => { const tid = clean(id); if (tid) out.add(tid); });
+    else if (Array.isArray(set)) set.forEach(id => { const tid = clean(id); if (tid) out.add(tid); });
+  });
+  return out;
+}
+
+function studentKeyCandidates(student = {}) {
+  return unique([
+    student.studentId,
+    student.id,
+    student.studentKey,
+    student.key,
+    student.name,
+    student.label,
+  ].filter(Boolean));
+}
+
+function cardMatchesStudentRoster(card = {}, student = {}, ctx = {}) {
+  if (!card) return false;
+  const rosterSet = studentTemplateSet(student, ctx);
+  const tplIds = unique([card.templateId, card.compoundParentTemplateId].filter(Boolean));
+  if (rosterSet.size && tplIds.some(id => rosterSet.has(clean(id)))) return true;
+  const keys = studentKeyCandidates(student);
+  const cardStudentKeys = unique([...(card.studentKeys || []), ...(card.studentIds || [])]);
+  if (cardStudentKeys.length && keys.some(key => cardStudentKeys.map(clean).includes(clean(key)))) return true;
+  return false;
+}
+
+function studentScopedCardIdsForEntry(entry = {}, student = {}, deps = {}, ctx = {}) {
+  const ids = entryCardIds(entry);
+  const rosterSet = studentTemplateSet(student, ctx);
+  const keys = studentKeyCandidates(student);
+  const directAudience = unique([...(entry.audienceStudentKeys || []), ...(entry.studentKeys || []), ...(entry.studentIds || [])]);
+  if (directAudience.length && keys.some(key => directAudience.map(clean).includes(clean(key)))) return ids;
+
+  if (ids.length && typeof deps.getTtCardById === "function") {
+    const matched = ids.filter(id => cardMatchesStudentRoster(deps.getTtCardById(id), student, ctx));
+    if (matched.length) return matched;
+  }
+
+  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])].filter(Boolean));
+  if (rosterSet.size && templateIds.length && templateIds.some(id => rosterSet.has(clean(id)))) {
+    if (ids.length) return ids;
+    return ["__entry__"];
+  }
+
+  return [];
+}
+
 function buildScopedCardLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
   const allIds = entryCardIds(entry);
   const targetClassKey = scopeClassKey(scope);
@@ -608,6 +683,36 @@ function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
     return [...titleLines, teacherLine, roomLine].filter(line => clean(line)).join("\n");
   }
   return [...titleLines, teachers[0] || "", roomsUnique[0] || ""].filter(line => clean(line)).join("\n");
+}
+
+function studentScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {}, ctx = {}) {
+  const matchedIds = studentScopedCardIdsForEntry(entry, scope, deps, ctx);
+  if (!matchedIds.length) return "";
+
+  if (matchedIds.length === 1 && matchedIds[0] === "__entry__") {
+    return buildParallelLessonLines(entry, rooms, deps, scope);
+  }
+
+  const assignments = getRoomAssignments(entry, deps);
+  const titlePartsColumns = [];
+  const teacherColumns = [];
+  const roomColumns = [];
+
+  matchedIds.forEach(cardId => {
+    const card = deps.getTtCardById?.(cardId);
+    if (!card) return;
+    const parts = cardTitlePartsForExport(card, deps);
+    titlePartsColumns.push((parts.ko || parts.en) ? parts : entryTitlePartsForExport({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }, deps));
+    teacherColumns.push(teacherNamesForCard(card, deps).join(" / "));
+    const roomId = clean(assignments?.[cardId] || roomIdForCardExport(cardId, card, entry, rooms, deps));
+    roomColumns.push(roomId ? roomNameForId(roomId, rooms, deps) : "");
+  });
+
+  if (!titlePartsColumns.length) return "";
+  const lines = titleLinesForParts(titlePartsColumns);
+  if (teacherColumns.some(clean)) lines.push(teacherColumns.join("	"));
+  if (roomColumns.some(clean)) lines.push(roomColumns.join("	"));
+  return lines.filter(line => clean(line)).join("\n");
 }
 
 function cardMatchesTeacher(card = {}, teacher = "", deps = {}) {
@@ -738,6 +843,7 @@ function buildExportContext(deps = {}) {
   const entries = deps.entries?.() || [];
   const appState = deps.appState || {};
   const rosterByStudent = buildRosterStudentTemplateIndex(appState);
+  const rosterCtx = { rosterByStudent };
 
   const entryClassLabels = entry => {
     const audience = deps.audienceForPlacement?.(entry);
@@ -782,7 +888,7 @@ function buildExportContext(deps = {}) {
     if (mode === "teacher") return teacherScopedLessonLines(entry, rooms, deps, scope) || [room, classes, ...titleLines].filter(Boolean).join("\n");
     if (mode === "class") return buildParallelLessonLines(entry, rooms, deps, scope);
     if (mode === "room") return roomScopedLessonLines(entry, rooms, deps, scope) || [classes, teacher, ...titleLines].filter(Boolean).join("\n");
-    if (mode === "student") return buildParallelLessonLines(entry, rooms, deps, scope);
+    if (mode === "student") return studentScopedLessonLines(entry, rooms, deps, scope, rosterCtx) || buildParallelLessonLines(entry, rooms, deps, scope);
     return [...titleLines, teacher, classes, room].filter(Boolean).join("\n");
   };
 
@@ -814,13 +920,25 @@ function buildExportContext(deps = {}) {
   };
 
   const studentMatches = (entry, student) => {
+    const matchedCardIds = studentScopedCardIdsForEntry(entry, student, deps, rosterCtx);
+    if (matchedCardIds.length) return true;
+
+    const rosterSet = studentTemplateSet(student, rosterCtx);
     const tids = entryTemplateIds(entry);
-    const rosterSet = rosterByStudent.get(clean(student.studentId));
-    if (tids.length && rosterSet && tids.some(t => rosterSet.has(t))) return true;
+    if (tids.length && rosterSet.size && tids.some(t => rosterSet.has(clean(t)))) return true;
+
     const audience = deps.audienceForPlacement?.(entry);
-    const classKeys = toArrayFromSet(audience?.classKeys);
-    if (classKeys.length && student.classKey) return classKeys.includes(student.classKey);
-    return classMatches(entry, student);
+    const classKeys = toArrayFromSet(audience?.classKeys).map(normalizeClassKey).filter(Boolean);
+    const studentClassKey = scopeClassKey(student);
+    if (classKeys.length && studentClassKey && classKeys.includes(studentClassKey)) {
+      // 학생별 수강명단이 있으면 수강명단/카드 매칭이 통과한 수업만 표시합니다.
+      // 수동 HR처럼 template/card가 없는 entry만 학급 기준 fallback으로 살립니다.
+      const entryTemplates = entryTemplateIds(entry);
+      const hasStudentRoster = rosterSet.size > 0;
+      const hasTemplateOrCard = entryTemplates.length > 0 || entryCardIds(entry).length > 0;
+      return !hasStudentRoster || !hasTemplateOrCard;
+    }
+    return !rosterSet.size && classMatches(entry, student);
   };
 
   const getGridEntries = (day, period, filterFn) => entries
