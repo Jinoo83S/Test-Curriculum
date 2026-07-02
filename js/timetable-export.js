@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r190: 출력 구조 정리 + 학급 개별 출력 교사/교실 행 분리
+// r191: 출력 시간표 레이아웃 정리 + 카드형 제거
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -413,7 +413,7 @@ function buildEntities(type, bands, deps, ctx) {
 }
 
 function buildGridData(entity, ctx) {
-  const data = [["교시/요일", ...DAYS]];
+  const data = [["교시", ...DAYS]];
   ctx.periods.forEach((label, period) => {
     const row = [label];
     DAYS.forEach((_, day) => {
@@ -428,7 +428,7 @@ function buildGridData(entity, ctx) {
 }
 
 function buildCombinedGridData(entities, ctx) {
-  const data = [["대상", "교시/요일", ...DAYS]];
+  const data = [["대상", "교시", ...DAYS]];
   entities.forEach(entity => {
     ctx.periods.forEach((label, period) => {
       const row = [entity.label, label];
@@ -490,7 +490,7 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
     const data = buildCombinedGridData(entities, ctx);
     const ws = XLSX.utils.aoa_to_sheet(data);
     applyWorksheetWrap(ws, XLSX);
-    ws["!cols"] = [{ wch: 16 }, { wch: 10 }, ...DAYS.map(() => ({ wch: 38 }))];
+    ws["!cols"] = [{ wch: 16 }, { wch: 6 }, ...DAYS.map(() => ({ wch: 38 }))];
     ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : estimateRowHeight(row, 54) }));
     XLSX.utils.book_append_sheet(wb, ws, makeSheetName(`${bandLabel(bands)}_전체표`, used));
   } else if (type === "student") {
@@ -509,7 +509,7 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
       });
       const ws = XLSX.utils.aoa_to_sheet(data);
       applyWorksheetWrap(ws, XLSX);
-      ws["!cols"] = [{ wch: 12 }, ...DAYS.map(() => ({ wch: 38 }))];
+      ws["!cols"] = [{ wch: 6 }, ...DAYS.map(() => ({ wch: 38 }))];
       ws["!rows"] = data.map((row, idx) => ({ hpt: row.length === 1 ? 22 : estimateRowHeight(row, 54) }));
       XLSX.utils.book_append_sheet(wb, ws, makeSheetName(className, used));
     });
@@ -518,7 +518,7 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
       const data = buildGridData(entity, ctx);
       const ws = XLSX.utils.aoa_to_sheet(data);
       applyWorksheetWrap(ws, XLSX);
-      ws["!cols"] = [{ wch: 10 }, ...DAYS.map(() => ({ wch: 38 }))];
+      ws["!cols"] = [{ wch: 6 }, ...DAYS.map(() => ({ wch: 38 }))];
       ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : estimateRowHeight(row, 54) }));
       XLSX.utils.book_append_sheet(wb, ws, makeSheetName(entity.label, used));
     });
@@ -553,11 +553,12 @@ function buildIndividualSections(entities, ctx, type) {
       const tds = DAYS.map((_, day) => {
         const html = ctx.getGridEntries(day, period, entity.filterFn)
           .map(e => lessonHtml(ctx.entrySummary(e, entity.mode))).join("");
-        return `<td>${html}</td>`;
+        return `<td${html ? "" : " class='empty'"}>${html}</td>`;
       }).join("");
-      return `<tr><th>${escapeHtml(label)}</th>${tds}</tr>`;
+      return `<tr><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
     }).join("");
-    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} 시간표</h1><table><thead><tr><th>교시/요일</th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
+    const colgroup = `<colgroup><col class="period-col">${DAYS.map(() => `<col>`).join("")}</colgroup>`;
+    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} 시간표</h1><table>${colgroup}<thead><tr><th class="corner-head">교시</th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join("\n");
 }
 
@@ -567,12 +568,13 @@ function buildCombinedSection(entities, ctx, title) {
       const tds = DAYS.map((_, day) => {
         const html = ctx.getGridEntries(day, period, entity.filterFn)
           .map(e => lessonHtml(ctx.entrySummary(e, entity.mode))).join("");
-        return `<td>${html}</td>`;
+        return `<td${html ? "" : " class='empty'"}>${html}</td>`;
       }).join("");
-      return `<tr><th class="entity">${escapeHtml(entity.label)}</th><th>${escapeHtml(label)}</th>${tds}</tr>`;
+      return `<tr><th class="entity">${escapeHtml(entity.label)}</th><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
     }).join("");
   }).join("\n");
-  return `<section class="print-section combined"><h1>${escapeHtml(title)}</h1><table><thead><tr><th>대상</th><th>교시/요일</th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
+  const colgroup = `<colgroup><col class="entity-col"><col class="period-col">${DAYS.map(() => `<col>`).join("")}</colgroup>`;
+  return `<section class="print-section combined"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th>대상</th><th>교시</th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
 function buildPrintHtml(entities, ctx, { layout, type, bands }) {
@@ -581,7 +583,7 @@ function buildPrintHtml(entities, ctx, { layout, type, bands }) {
   const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} 시간표`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    *{box-sizing:border-box}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#0f172a}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#64748b}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:16px}h1{margin:0 0 10px;font-size:20px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #cbd5e1;padding:7px;vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}th{background:#173b68;color:white;font-size:12px}tbody th{width:72px;background:#eef4ff;color:#173b68}.combined tbody th.entity{width:96px;background:#dbeafe;color:#1e3a8a}td{height:78px;font-size:10.5px}.lesson{margin:0 0 5px;padding:5px 6px;border-left:3px solid #2563eb;border-radius:6px;background:#eff6ff;line-height:1.35}.lesson-title{font-weight:900;margin-bottom:3px}.lesson-line{margin-top:2px}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;margin-top:2px}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere}@media print{body{margin:7mm}.print-toolbar{display:none}h1{font-size:15px}th,td{padding:4px}td{height:58px;font-size:9px}.lesson{padding:3px 4px;margin-bottom:3px}.lesson-parallel{gap:2px}.combined th,.combined td{font-size:8.5px}.combined td{height:44px}}
+    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 8px;padding:6px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 8px;font-size:20px;text-align:center;line-height:1.2}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:46px}col.entity-col{width:86px}th,td{border:1px solid #9ca3af;padding:4px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:78px;font-size:10px;line-height:1.28}.empty{background:#fff}.lesson{margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.28;text-align:center}.lesson+.lesson{margin-top:3px;padding-top:3px;border-top:1px dotted #d1d5db}.lesson-title{font-weight:900;font-size:1.12em;margin:0 0 2px;text-align:center}.lesson-line{margin:1px 0 0;text-align:center;color:#374151}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;margin-top:1px;align-items:center}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:5px}th,td{padding:3px}td{height:25mm;font-size:8.5px}.lesson-title{font-size:1.12em}.lesson-line,.lesson-parallel span{font-size:.86em}.combined th,.combined td{font-size:8px}.combined td{height:18mm}col.period-col{width:38px}col.entity-col{width:76px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="window.print()">PDF 저장/인쇄</button></div>${sections}<script>setTimeout(()=>window.focus(),100);</script></body></html>`;
 }
 
