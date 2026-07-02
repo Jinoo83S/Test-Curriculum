@@ -1448,6 +1448,14 @@ function roomAssignmentsForEntry(entry = {}) {
       return;
     }
 
+    // r207: 교사 교실 고정도 fixed/homeroom과 같은 "확정 교실"입니다.
+    // CP-SAT/이전 배치 결과의 explicit roomAssignments가 남아 있어도
+    // 과목카드 규칙이 teacher이고 교사 고정교실이 있으면 교사 교실을 우선합니다.
+    if (cardRule === "teacher" && cardRoom) {
+      out[id] = cardRoom;
+      return;
+    }
+
     const explicitRoom = clean(explicit[id]);
     if (explicitRoom) { out[id] = explicitRoom; return; }
 
@@ -1555,7 +1563,7 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
       const card = getTtCardById(id);
       if (!card) return;
       const rule = roomRuleForCard(card);
-      if (!["fixed", "homeroom", "none"].includes(rule)) return;
+      if (!["fixed", "homeroom", "teacher", "none"].includes(rule)) return;
 
       if (rule === "none") {
         if (clean(nextAssignments[id])) {
@@ -1578,12 +1586,13 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
 
     entry.roomAssignmentsByTtCardId = nextAssignments;
     const rooms = [...new Set(Object.values(nextAssignments).map(clean).filter(Boolean))];
+    const shouldPinSingleRoom = ids.length === 1 && ["fixed", "homeroom"].includes(roomRuleForCard(getTtCardById(ids[0]) || {}));
     if (isGroupedRoomEntry(entry)) {
       entry.roomId = null;
       entry.roomPinned = false;
     } else if (rooms.length === 1) {
       entry.roomId = rooms[0];
-      entry.roomPinned = true;
+      entry.roomPinned = shouldPinSingleRoom;
     } else if (rooms.length > 1) {
       entry.roomId = null;
       entry.roomPinned = false;
@@ -3938,7 +3947,7 @@ function renderAll() {
   ensureTeacherCardsBottomTab();
   if (!didAutoReconcileCardRoomAssignments && entries().length && getTtCards().length) {
     didAutoReconcileCardRoomAssignments = true;
-    // r187: 과목카드의 fixed/homeroom/none 교실 규칙과 과거 entry 교실 배정이 다르면 1회 자동 보정합니다.
+    // r207: 과목카드의 fixed/homeroom/teacher/none 교실 규칙과 과거 entry 교실 배정이 다르면 1회 자동 보정합니다.
     // 로그인 전/읽기 권한 상태에서는 화면 계산만 우선 적용되고, 편집 가능 상태에서만 Firestore 저장까지 진행합니다.
     reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
   }

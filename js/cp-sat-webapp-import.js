@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r204";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r204 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r207";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r207 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -171,12 +171,38 @@ function homeRoomIdForCardPayload(card = {}, entry = {}, classes = [], rooms = [
   const uniqueRooms = unique(roomIds);
   return uniqueRooms.length === 1 ? uniqueRooms[0] : "";
 }
+function teacherNamesForPayloadValue(value) {
+  if (Array.isArray(value)) return unique(value.flatMap(teacherNamesForPayloadValue));
+  return cleanLocal(value).split(/[,，·]/).map(v => cleanLocal(v)).filter(Boolean);
+}
+function teacherNamesForCardPayload(card = {}, entry = {}) {
+  return unique([
+    ...(Array.isArray(card.teachers) ? card.teachers : []),
+    ...teacherNamesForPayloadValue(card.teacherName || ""),
+    ...teacherNamesForPayloadValue(entry.teacherName || "")
+  ]);
+}
+function teacherRoomIdForNamesPayload(names = [], teacherConstraints = {}, rooms = []) {
+  const roomIds = unique((names || []).map(name => {
+    const cfg = teacherConstraints?.[name] || {};
+    const fromConstraint = cleanLocal(cfg.assignedRoomId || cfg.homeRoomId || "");
+    if (fromConstraint) return fromConstraint;
+    const matches = rooms.filter(room => cleanLocal(room?.teacherName) === cleanLocal(name) && room?.id).map(room => room.id);
+    const uniqueMatches = unique(matches);
+    return uniqueMatches.length === 1 ? uniqueMatches[0] : "";
+  }));
+  return roomIds.length === 1 ? roomIds[0] : "";
+}
+function teacherRoomIdForCardPayload(card = {}, entry = {}, teacherConstraints = {}, rooms = []) {
+  return teacherRoomIdForNamesPayload(teacherNamesForCardPayload(card, entry), teacherConstraints, rooms);
+}
 function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
   const tt = data?.timetable || {};
   const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
   const entries = asArray(tt.entries);
   const classes = asArray(data?.classes?.classes);
   const rooms = asArray(data?.rooms?.rooms);
+  const teacherConstraints = tt.teacherConstraints || {};
   const cardById = new Map(cards.map(c => [cleanLocal(c?.id), c]).filter(([id]) => id));
 
   entries.forEach(entry => {
@@ -195,6 +221,7 @@ function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
       let expected = "";
       if (rule === "fixed") expected = cleanLocal(card.fixedRoomId);
       else if (rule === "homeroom") expected = homeRoomIdForCardPayload(card, entry, classes, rooms);
+      else if (rule === "teacher") expected = teacherRoomIdForCardPayload(card, entry, teacherConstraints, rooms);
       if (expected && cleanLocal(assignments[id]) !== expected) {
         assignments[id] = expected;
         touched = true;
@@ -719,8 +746,21 @@ export function setupCpSatWebappImport(ctx = {}) {
     if (!canEdit?.()) { alert("편집 권한이 없습니다. 로그인/권한을 확인하세요."); return false; }
     const domain = ttDomain?.();
     if (!domain) { alert("시간표 데이터가 아직 로드되지 않았습니다."); return false; }
-    const nextEntries = normalizeEntryList(rawEntries);
+    let nextEntries = normalizeEntryList(rawEntries);
     if (!nextEntries.length) { alert("적용할 entries가 없습니다."); return false; }
+
+    // r207: CP-SAT 결과가 임의/과거 교실 배정을 포함해도 웹앱의 과목카드 교실 규칙을 최종 우선합니다.
+    // 특히 teacher 규칙은 교사 고정교실이 있으면 그 교실로 다시 정규화해야 합니다.
+    const roomNormalized = normalizeEntryRoomsFromCardRulesForPayload({
+      curriculum: appState?.curriculum || {},
+      templates: appState?.templates || {},
+      classes: appState?.classes || {},
+      teachers: appState?.teachers || {},
+      rosters: appState?.rosters || {},
+      rooms: appState?.rooms || {},
+      timetable: { ...(domain || appState?.timetable || {}), entries: nextEntries },
+    });
+    nextEntries = asArray(roomNormalized?.timetable?.entries).length ? asArray(roomNormalized.timetable.entries) : nextEntries;
 
     const assignmentCount = nextEntries.filter(e => e.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
     if (assignmentCount <= 0) {

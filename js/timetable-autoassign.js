@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-06-24-room-rules-hard-r139";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-teacher-room-hard-r207";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -2536,6 +2536,7 @@ export function createAutoAssignAll(deps) {
     ids.forEach(id => {
       const card = getTtCardById(id);
       if (!card || !cardNeedsRoomForAuto(card, entryData)) { delete assignments[id]; return; }
+      const rule = normalizeRoomRuleForAuto(card.roomRule || entryData.roomRule || "teacher");
 
       const fixedRoomId = fixedRoomForCardDuringAuto(card, entryData);
       if (fixedRoomId) {
