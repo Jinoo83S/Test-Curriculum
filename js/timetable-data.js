@@ -141,6 +141,7 @@ export function getCreditsForTtCard(card) {
 
 export function getTeachersForTtCard(card) {
   if (!card) return [];
+  if (clean(card.teacherMode) === "none") return [];
   if (Array.isArray(card.teachers) && card.teachers.length) return card.teachers;
   if (card.teacherName) return splitTeacherNames(card.teacherName);
   return getTeachersForTemplate(card.templateId);

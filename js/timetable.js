@@ -1201,8 +1201,13 @@ function getDefaultRoomForTeacherNames(teacherNames = []) {
   return fromRooms.length === 1 ? fromRooms[0] : null;
 }
 
+function normalizeAudienceClassKeyForRoom(value = "", fallbackGradeKey = "") {
+  return occNormalizeClassKey(value, fallbackGradeKey || "");
+}
+
 function classIdForAudienceClassKey(classKey = "") {
-  const [gradeNo, section] = String(classKey || "").split(":");
+  const normalized = normalizeAudienceClassKeyForRoom(classKey);
+  const [gradeNo, section] = normalized.split(":");
   if (!gradeNo || !section) return "";
   const grade = `${Number(gradeNo)}학년`;
   const sec = clean(section).toUpperCase();
@@ -1213,24 +1218,25 @@ function classIdForAudienceClassKey(classKey = "") {
 }
 
 function getAudienceClassKeysForPlacementData(data = {}) {
+  const fallbackGradeKey = data.gradeKey || (Array.isArray(data.gradeKeys) ? data.gradeKeys[0] : "");
   const direct = (Array.isArray(data.audienceClassKeys) ? data.audienceClassKeys : [])
-    .map(clean)
+    .map(key => normalizeAudienceClassKeyForRoom(key, fallbackGradeKey))
     .filter(Boolean);
   if (direct.length) return [...new Set(direct)];
 
   const cardKeys = ttCardIdsFromPlacement(data)
     .map(id => getTtCardById(id))
     .filter(Boolean)
-    .flatMap(card => getTtCardClassInfos(card).map(info => classKey(info)).filter(Boolean));
+    .flatMap(card => getTtCardClassInfos(card).map(info => normalizeAudienceClassKeyForRoom(classKey(info), card.gradeKey || fallbackGradeKey)).filter(Boolean));
   if (cardKeys.length) return [...new Set(cardKeys)];
 
-  const gradeKey = data.gradeKey || (Array.isArray(data.gradeKeys) ? data.gradeKeys[0] : "");
-  if (!gradeKey) return [];
-  return [classKey({ gradeKey, sectionIdx: data.sectionIdx ?? 0, section: sectionLabel(data.sectionIdx ?? 0) })].filter(Boolean);
+  if (!fallbackGradeKey) return [];
+  return [normalizeAudienceClassKeyForRoom(classKey({ gradeKey: fallbackGradeKey, sectionIdx: data.sectionIdx ?? 0, section: sectionLabel(data.sectionIdx ?? 0) }), fallbackGradeKey)].filter(Boolean);
 }
 
 function classInfoFromAudienceClassKey(key = "") {
-  const [gradeNo, rawSection] = String(key || "").split(":");
+  const normalized = normalizeAudienceClassKeyForRoom(key);
+  const [gradeNo, rawSection] = normalized.split(":");
   const gradeNum = Number(gradeNo);
   const section = clean(rawSection).toUpperCase();
   const gradeKey = Number.isFinite(gradeNum) && gradeNum > 0 ? `${gradeNum}학년` : "";
@@ -1398,7 +1404,18 @@ function resolveRoomForTtCard(card = {}, fallbackEntry = {}) {
     sectionIdx: card.sectionIdx ?? fallbackEntry.sectionIdx ?? 0,
     classKeys: Array.isArray(card.classKeys) ? card.classKeys : [],
     classLabels: Array.isArray(card.classLabels) ? card.classLabels : [],
-    audienceClassKeys: Array.isArray(fallbackEntry.audienceClassKeys) ? fallbackEntry.audienceClassKeys : [],
+    // 그룹 entry는 audienceClassKeys에 여러 반을 함께 갖습니다.
+    // 홈룸 고정은 카드별 반 기준으로 풀어야 하므로 카드의 classKeys/classLabels를 우선합니다.
+    audienceClassKeys: (() => {
+      const cardKeys = [
+        ...(Array.isArray(card.classKeys) ? card.classKeys : []),
+        ...(Array.isArray(card.classLabels) ? card.classLabels : []),
+      ].map(v => normalizeAudienceClassKeyForRoom(v, card.gradeKey || fallbackEntry.gradeKey)).filter(Boolean);
+      if (cardKeys.length) return [...new Set(cardKeys)];
+      return Array.isArray(fallbackEntry.audienceClassKeys)
+        ? fallbackEntry.audienceClassKeys.map(v => normalizeAudienceClassKeyForRoom(v, fallbackEntry.gradeKey)).filter(Boolean)
+        : [];
+    })(),
     teacherName,
     roomRule: rule,
     fixedRoomId: clean(card.fixedRoomId || "")
@@ -1695,6 +1712,38 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, opt
     card.editedAt = new Date().toISOString();
   });
   refreshEntryRoomAssignmentsFromCards(ids);
+  scheduleSave("timetable");
+  try { recomputeConflicts(); } catch (_) {}
+  return true;
+}
+
+function setTtCardTeacherNone(cardIds = []) {
+  if (!canEdit()) return false;
+  const ids = [...new Set((cardIds || []).map(clean).filter(Boolean))];
+  if (!ids.length) return false;
+  captureTimetableUndo("과목카드 교사 없음 허용");
+
+  (appState.timetable.ttcards || []).forEach(card => {
+    if (!ids.includes(card.id)) return;
+    card.teacherMode = "none";
+    card.teacherName = "";
+    card.teachers = [];
+    card.manualEdited = true;
+    card.editedAt = new Date().toISOString();
+  });
+
+  entries().forEach(entry => {
+    const entryCardIds = ttCardIdsFromPlacement(entry);
+    if (!entryCardIds.some(id => ids.includes(id))) return;
+    const teachers = [...new Set(entryCardIds
+      .map(id => getTtCardById(id))
+      .filter(Boolean)
+      .flatMap(card => getTeachersForTtCard(card))
+      .map(clean)
+      .filter(Boolean))];
+    entry.teacherName = teachers.join(", ");
+  });
+
   scheduleSave("timetable");
   try { recomputeConflicts(); } catch (_) {}
   return true;
@@ -3291,6 +3340,7 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   getHomeRoomIdForPlacementData,
   getDefaultRoomForTeacherNames,
   setTtCardRoomPreference,
+  setTtCardTeacherNone,
   applyRoomRuleToEntry,
   getRoomDisplayName,
   getEntryPinBlockEntries,

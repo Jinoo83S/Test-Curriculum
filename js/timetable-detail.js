@@ -446,6 +446,50 @@ function targetRoomSummaryText(cards = [], itemsByCardId = new Map()) {
   return cardRoomSummaryText(valid[0], itemsByCardId.get(valid[0].id) || {});
 }
 
+function cardTeacherSummaryTextForCards(cards = []) {
+  const valid = (cards || []).filter(Boolean);
+  if (!valid.length) return "교사 없음";
+  const teacherNames = uniqueIds(valid.flatMap(card => teacherNamesForItemOrCard({}, card)));
+  const noneAllowedCount = valid.filter(card => !teacherNamesForItemOrCard({}, card).length && clean(card.teacherMode) === "none").length;
+  if (teacherNames.length) return teacherNames.join(", ");
+  if (noneAllowedCount === valid.length) return "교사 없음 허용";
+  if (noneAllowedCount) return `교사 없음 허용 ${noneAllowedCount}/${valid.length}`;
+  return "교사 없음";
+}
+
+function appendTeacherNoneEditor(section, cardIds = [], ctx, modal) {
+  const ids = uniqueIds(cardIds);
+  if (!ids.length || !canEdit()) return;
+  const cards = ids.map(id => getTtCardById(id)).filter(Boolean);
+  const teacherBox = document.createElement("div");
+  teacherBox.style.cssText = "margin-top:10px;padding-top:9px;border-top:1px dashed #cbd5e1";
+
+  const title = document.createElement("div");
+  title.style.cssText = "font-size:11px;font-weight:900;color:#334155;margin-bottom:5px";
+  title.textContent = "교사 배정";
+
+  const status = document.createElement("div");
+  status.style.cssText = "font-size:10px;color:#64748b;line-height:1.35;margin-bottom:7px";
+  status.textContent = `현재: ${cardTeacherSummaryTextForCards(cards)}`;
+
+  const btn = makeTinyButton("교사 없음 허용", () => {
+    if (!confirm("선택한 구성 과목의 담당 교사를 비우고, 교사 없음 허용으로 저장할까요? CA/SA처럼 교사를 점유하지 않는 수업에 사용합니다.")) return;
+    const ok = ctx.setTtCardTeacherNone?.(ids);
+    if (ok) {
+      ctx.renderAll?.();
+      modal?.remove?.();
+    }
+  });
+  btn.style.width = "100%";
+
+  const hint = document.createElement("div");
+  hint.style.cssText = "font-size:10px;color:#64748b;line-height:1.35;margin-top:5px";
+  hint.textContent = "교사 없음 허용은 교사 충돌/교사 미지정 점검에서 제외하기 위한 명시 설정입니다. 교실 배정 규칙과는 별도로 저장됩니다.";
+
+  teacherBox.append(title, status, btn, hint);
+  section.appendChild(teacherBox);
+}
+
 function buildRoomRuleTargets(items = [], groupId = "") {
   const validItems = (items || []).filter(x => x.card?.id);
   const byCardId = new Map(validItems.map(x => [x.card.id, x]));
@@ -680,6 +724,8 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   refreshHint();
   bulk.append(hint, apply);
   section.appendChild(bulk);
+
+  appendTeacherNoneEditor(section, cardIds, ctx, modal);
 
   box.appendChild(section);
 }

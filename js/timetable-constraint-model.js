@@ -266,6 +266,7 @@ function buildCardConstraint(state, card = {}) {
     sectionIdx: card.sectionIdx ?? 0,
     classLabels: classLabelsForCard(card),
     teachers: teacherNames,
+    teacherMode: clean(card.teacherMode),
     roomRule: clean(card.roomRule) || "teacher",
     fixedRoomId: clean(card.fixedRoomId),
     resolvedRoomIds: rooms.map(r => r.id),
@@ -371,7 +372,7 @@ function buildIssues(model) {
   const roomById = new Map(model.rooms.map(r => [r.id, r]));
   model.cards.forEach(card => {
     if (!["ok", "manual"].includes(card.curriculumSource.status)) pushIssue(issues, "hard", `card-${card.curriculumSource.status}`, `${card.title}: 커리큘럼→템플릿→카드 원본 연결 확인 필요`, { cardId: card.id });
-    if (!card.teachers.length && card.roomRule !== "none") pushIssue(issues, "hard", "card-missing-teacher", `${card.title}: 교사가 없습니다.`, { cardId: card.id });
+    if (!card.teachers.length && card.teacherMode !== "none" && card.roomRule !== "none") pushIssue(issues, "hard", "card-missing-teacher", `${card.title}: 교사가 없습니다.`, { cardId: card.id });
     if (card.roomRule === "fixed" && !card.fixedRoomId) pushIssue(issues, "hard", "card-fixed-room-missing", `${card.title}: 고정교실 규칙인데 교실이 없습니다.`, { cardId: card.id });
     if (card.roomRule !== "none" && !card.resolvedRoomIds.length) pushIssue(issues, "warn", "card-room-unresolved", `${card.title}: 교실 규칙을 실제 교실로 해석하지 못했습니다.`, { cardId: card.id });
     const blockedRooms = cardRoomTimeConflict(card, roomById);

@@ -444,6 +444,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     subjectEn: isCompoundPart ? (clean(compoundPart.nameEn) || clean(compoundPart.nameKo) || existing?.subjectEn || "") : (tpl?.nameEn || existing?.subjectEn || ""),
     teacherName: teacherInfo.teacherName,
     teachers: teacherInfo.teachers,
+    teacherMode: clean(existing?.teacherMode) || (teacherInfo.source === "none" ? "none" : ""),
     credits: isCompoundPart ? partCredits : (row ? getEffectiveCredit(row) : (existing?.credits || 0)),
     category: row?.category || existing?.category || "",
     track: row?.track || existing?.track || "",
@@ -469,7 +470,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
-    ["label","teacherName","teachers","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots"].forEach(k => {
+    ["label","teacherName","teachers","teacherMode","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots"].forEach(k => {
       if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
@@ -1073,7 +1074,7 @@ function repairTimetableEntryAudienceFromCards(cards, meta) {
     }
     const teachers = uniqueNames(related.flatMap(card => [card.teacherName, ...(card.teachers || [])].flatMap(t => splitTeacherNames(t))));
     const joined = teachers.join(", ");
-    if (joined && clean(entry.teacherName) !== joined) {
+    if (clean(entry.teacherName) !== joined) {
       entry.teacherName = joined;
       meta.repairedEntryCount += 1;
       pushCardGenerationIssue(meta, "warning", "entry-teacher-repaired", `배치 entry의 teacherName을 카드 기준으로 보정했습니다.`, { entryId: entry.id, repaired: true });
@@ -2007,7 +2008,9 @@ function createTtCardChip(card, opts = {}) {
   // Row 2: teacher | delete button
   const r2 = document.createElement("div"); r2.className = "gm-card-r2";
   const tchEl = document.createElement("div"); tchEl.className = "gm-card-teacher";
-  tchEl.textContent = card.teacherName || (tpl ? getTemplateTeacherSummary(tpl) : "-");
+  tchEl.textContent = clean(card.teacherMode) === "none"
+    ? "교사 없음 허용"
+    : (card.teacherName || (tpl ? getTemplateTeacherSummary(tpl) : "-"));
   r2.appendChild(tchEl);
   if (showDelete && canEdit() && onDelete) {
     const del = document.createElement("button"); del.type = "button"; del.className = "gm-card-del"; del.textContent = "×";
@@ -2095,6 +2098,7 @@ function getUnitCardSubjectLabel(card) {
 
 function getUnitCardTeacherLabel(card) {
   const tpl = getTemplateById(card?.templateId);
+  if (clean(card?.teacherMode) === "none") return "교사 없음 허용";
   return clean(card?.teacherName) || (tpl ? clean(getTemplateTeacherSummary(tpl)) : "") || "-";
 }
 

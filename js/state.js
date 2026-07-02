@@ -691,6 +691,8 @@ export function normalizeTtCard(item = {}) {
     subjectEn:   clean(item.subjectEn),
     teacherName: clean(item.teacherName),
     teachers:    arr(item.teachers),
+    // none: 이 카드는 실제 담당 교사를 점유하지 않도록 사용자가 명시적으로 허용했습니다.
+    teacherMode: clean(item.teacherMode || item.teacherPolicy || item.teacherAssignMode),
     credits:     num(item.credits),
     category:    clean(item.category),
     track:       clean(item.track),
