@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r193: 커리큘럼/템플릿 원본 과목명 추적 + 시간표카드 반 suffix 제거
+// r194: 셀 여백 축소 + 영어 과목명 병기 + 출력 셀 자동 글씨 축소
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -262,57 +262,105 @@ function templateById(templateId = "", deps = {}) {
   return getTemplateList(deps).find(tpl => clean(tpl.id) === id) || null;
 }
 
-function templateTitleForExport(tpl = null) {
-  if (!tpl) return "";
-  return clean(tpl.nameKo) || clean(tpl.sem1NameKo) || clean(tpl.nameEn) || clean(tpl.sem1NameEn) || clean(tpl.sem2NameKo) || clean(tpl.sem2NameEn);
+function titleParts(ko = "", en = "") {
+  const koText = stripGeneratedSectionSuffix(ko);
+  const enText = stripGeneratedSectionSuffix(en);
+  return { ko: koText || enText, en: enText && enText !== koText ? enText : "" };
 }
 
-function compoundPartTitleForExport(card = {}, deps = {}) {
+function templateTitlePartsForExport(tpl = null) {
+  if (!tpl) return titleParts("", "");
+  const ko = clean(tpl.nameKo) || clean(tpl.sem1NameKo) || clean(tpl.sem2NameKo);
+  const en = clean(tpl.nameEn) || clean(tpl.sem1NameEn) || clean(tpl.sem2NameEn);
+  return titleParts(ko, en);
+}
+
+function templateTitleForExport(tpl = null) {
+  const parts = templateTitlePartsForExport(tpl);
+  return parts.ko || parts.en || "";
+}
+
+function compoundPartTitlePartsForExport(card = {}, deps = {}) {
   const partId = clean(card?.compoundPartId);
-  if (!partId) return "";
+  if (!partId) return titleParts("", "");
   const parentId = clean(card.compoundParentTemplateId || card.templateId);
   const tpl = templateById(parentId, deps);
   const parts = Array.isArray(tpl?.compoundParts) ? tpl.compoundParts : [];
   const part = parts.find((item, idx) => clean(item?.id || `part${idx + 1}`) === partId);
-  return clean(part?.nameKo) || clean(part?.nameEn) || "";
+  return titleParts(clean(part?.nameKo), clean(part?.nameEn));
+}
+
+function compoundPartTitleForExport(card = {}, deps = {}) {
+  const parts = compoundPartTitlePartsForExport(card, deps);
+  return parts.ko || parts.en || "";
+}
+
+function curriculumTitlePartsForCard(card = {}, deps = {}) {
+  if (!card) return titleParts("", "");
+  const partTitle = compoundPartTitlePartsForExport(card, deps);
+  if (partTitle.ko || partTitle.en) return partTitle;
+  const tpl = templateById(card.templateId, deps);
+  return templateTitlePartsForExport(tpl);
 }
 
 function curriculumTitleForCard(card = {}, deps = {}) {
-  if (!card) return "";
-  const partTitle = compoundPartTitleForExport(card, deps);
-  if (partTitle) return partTitle;
-  const tpl = templateById(card.templateId, deps);
-  return templateTitleForExport(tpl);
+  const parts = curriculumTitlePartsForCard(card, deps);
+  return parts.ko || parts.en || "";
+}
+
+function cardTitlePartsForExport(card = {}, deps = {}) {
+  if (!card) return titleParts("", "");
+  const fromCurriculum = curriculumTitlePartsForCard(card, deps);
+  if (fromCurriculum.ko || fromCurriculum.en) return fromCurriculum;
+  const ko = clean(card.subject || card.label || card.subjectKo || card.nameKo || card.title);
+  const en = clean(card.subjectEn || card.nameEn);
+  const rawParts = titleParts(ko, en);
+  if (rawParts.ko || rawParts.en) return rawParts;
+  if (typeof deps.getTtCardTitle === "function") {
+    try { return titleParts(deps.getTtCardTitle(card), ""); } catch (_) {}
+  }
+  return titleParts("", "");
 }
 
 function cardTitleForExport(card = {}, deps = {}) {
-  if (!card) return "";
-  const fromCurriculum = curriculumTitleForCard(card, deps);
-  if (fromCurriculum) return fromCurriculum;
-  const raw = clean(card.subject || card.label || card.subjectKo || card.nameKo || card.title || card.subjectEn || card.nameEn);
-  if (raw) return stripGeneratedSectionSuffix(raw);
-  if (typeof deps.getTtCardTitle === "function") {
-    try { return stripGeneratedSectionSuffix(deps.getTtCardTitle(card)); } catch (_) {}
+  const parts = cardTitlePartsForExport(card, deps);
+  return parts.ko || parts.en || "";
+}
+
+function entryTitlePartsForExport(entry = {}, deps = {}) {
+  const cardIds = entryCardIds(entry);
+  if (cardIds.length && typeof deps.getTtCardById === "function") {
+    const partsList = cardIds.map(id => cardTitlePartsForExport(deps.getTtCardById(id), deps)).filter(p => p.ko || p.en);
+    const koTitles = unique(partsList.map(p => p.ko || p.en).filter(Boolean));
+    const enTitles = unique(partsList.map(p => p.en).filter(Boolean));
+    if (koTitles.length === 1) return titleParts(koTitles[0], enTitles.length === 1 ? enTitles[0] : "");
+    if (koTitles.length > 1) return titleParts(koTitles.join(" / "), enTitles.join(" / "));
   }
-  return "";
+  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])]);
+  const partsList = templateIds.map(id => templateTitlePartsForExport(templateById(id, deps))).filter(p => p.ko || p.en);
+  const koTitles = unique(partsList.map(p => p.ko || p.en).filter(Boolean));
+  const enTitles = unique(partsList.map(p => p.en).filter(Boolean));
+  if (koTitles.length === 1) return titleParts(koTitles[0], enTitles.length === 1 ? enTitles[0] : "");
+  if (koTitles.length > 1) return titleParts(koTitles.join(" / "), enTitles.join(" / "));
+  const fallback = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
+  return titleParts(fallback, "");
 }
 
 function entryTitleForExport(entry = {}, deps = {}) {
-  const cardIds = entryCardIds(entry);
-  if (cardIds.length && typeof deps.getTtCardById === "function") {
-    const titles = cardIds
-      .map(id => cardTitleForExport(deps.getTtCardById(id), deps))
-      .filter(Boolean);
-    const uniq = unique(titles);
-    if (uniq.length === 1) return uniq[0];
-    if (uniq.length > 1) return uniq.join(" / ");
-  }
-  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])]);
-  const titles = unique(templateIds.map(id => templateTitleForExport(templateById(id, deps))).filter(Boolean));
-  if (titles.length === 1) return titles[0];
-  if (titles.length > 1) return titles.join(" / ");
-  const fallback = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
-  return stripGeneratedSectionSuffix(fallback);
+  const parts = entryTitlePartsForExport(entry, deps);
+  return parts.ko || parts.en || "-";
+}
+
+function titleLinesForParts(partsList = []) {
+  const list = partsList.filter(p => p && (p.ko || p.en));
+  if (!list.length) return ["-"];
+  const koLine = list.map(p => p.ko || p.en || "-").join("	");
+  const enLine = list.map(p => p.en || "").join("	");
+  return enLine.split("	").some(clean) ? [koLine, enLine] : [koLine];
+}
+
+function singleTitleLinesForEntry(entry = {}, deps = {}) {
+  return titleLinesForParts([entryTitlePartsForExport(entry, deps)]);
 }
 
 function classKeyForSection(gradeKey, sectionIdx = 0) {
@@ -369,26 +417,26 @@ function buildScopedCardLessonLines(entry = {}, rooms = [], deps = {}, scope = {
   if (!scopedIds.length || scopedIds.length === allIds.length) return "";
 
   const assignments = getRoomAssignments(entry, deps);
-  const titleColumns = [];
+  const titlePartsColumns = [];
   const teacherColumns = [];
   const roomColumns = [];
 
   scopedIds.forEach(cardId => {
     const card = deps.getTtCardById(cardId);
     if (!card) return;
-    const title = cardTitleForExport(card, deps) || entryTitleForExport({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }, deps) || "-";
+    const parts = cardTitlePartsForExport(card, deps);
+    titlePartsColumns.push((parts.ko || parts.en) ? parts : entryTitlePartsForExport({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }, deps));
     const teachers = teacherNamesForCard(card, deps).join(" / ");
     const roomId = clean(assignments?.[cardId] || card.fixedRoomId || card.roomId || "");
     const room = roomNameForId(roomId, rooms, deps);
-    titleColumns.push(title);
     teacherColumns.push(teachers);
     roomColumns.push(room || "");
   });
 
-  if (!titleColumns.length) return "";
-  const lines = [titleColumns.join("\t")];
-  if (teacherColumns.some(clean)) lines.push(teacherColumns.join("\t"));
-  if (roomColumns.some(clean)) lines.push(roomColumns.join("\t"));
+  if (!titlePartsColumns.length) return "";
+  const lines = titleLinesForParts(titlePartsColumns);
+  if (teacherColumns.some(clean)) lines.push(teacherColumns.join("	"));
+  if (roomColumns.some(clean)) lines.push(roomColumns.join("	"));
   return lines.filter(line => clean(line)).join("\n");
 }
 
@@ -396,15 +444,17 @@ function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
   const scopedCardLines = buildScopedCardLessonLines(entry, rooms, deps, scope);
   if (scopedCardLines) return scopedCardLines;
 
-  const title = entryTitleForExport(entry, deps) || "-";
   const cardIds = entryCardIds(entry);
   const assignments = getRoomAssignments(entry, deps);
+  const titlePartsColumns = [];
   const teacherColumns = [];
   const roomColumns = [];
 
   if (cardIds.length > 1 && typeof deps.getTtCardById === "function") {
     cardIds.forEach(cardId => {
       const card = deps.getTtCardById(cardId);
+      const titleParts = cardTitlePartsForExport(card || {}, deps);
+      if (titleParts.ko || titleParts.en) titlePartsColumns.push(titleParts);
       const teachers = teacherNamesForCard(card || {}, deps);
       const roomId = clean(assignments?.[cardId]);
       const room = roomNameForId(roomId, rooms, deps);
@@ -418,6 +468,10 @@ function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
       }
     });
   }
+
+  const titleLines = titlePartsColumns.length > 1
+    ? titleLinesForParts(titlePartsColumns)
+    : singleTitleLinesForEntry(entry, deps);
 
   if (!teacherColumns.length) {
     teacherColumns.push(...splitTeacherField(entry.teacherName || entry.teacherNames || "", deps));
@@ -436,12 +490,12 @@ function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
   }
   const roomsUnique = unique(roomSource);
 
-  if (teachers.length > 1 || roomSource.length > 1) {
-    const teacherLine = teachers.join("\t");
-    const roomLine = roomsByColumn.slice(0, Math.max(teachers.length, roomsByColumn.length)).join("\t");
-    return [title, teacherLine, roomLine].filter(line => clean(line)).join("\n");
+  if (teachers.length > 1 || roomSource.length > 1 || titlePartsColumns.length > 1) {
+    const teacherLine = teachers.join("	");
+    const roomLine = roomsByColumn.slice(0, Math.max(teachers.length, roomsByColumn.length)).join("	");
+    return [...titleLines, teacherLine, roomLine].filter(line => clean(line)).join("\n");
   }
-  return [title, teachers[0] || "", roomsUnique[0] || ""].filter(line => clean(line)).join("\n");
+  return [...titleLines, teachers[0] || "", roomsUnique[0] || ""].filter(line => clean(line)).join("\n");
 }
 
 function buildExportContext(deps = {}) {
@@ -487,15 +541,15 @@ function buildExportContext(deps = {}) {
   };
 
   const entrySummary = (entry, mode = "normal", scope = {}) => {
-    const title = entryTitleForExport(entry, deps) || "-";
+    const titleLines = singleTitleLinesForEntry(entry, deps);
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
     const room = roomNamesForEntry(entry, rooms, deps);
     const classes = entryClassLabels(entry).join(", ");
-    if (mode === "teacher") return [title, classes, room].filter(Boolean).join(" / ");
+    if (mode === "teacher") return [...titleLines, classes, room].filter(Boolean).join("\n");
     if (mode === "class") return buildParallelLessonLines(entry, rooms, deps, scope);
-    if (mode === "room") return [title, teacher, classes].filter(Boolean).join(" / ");
+    if (mode === "room") return [...titleLines, teacher, classes].filter(Boolean).join("\n");
     if (mode === "student") return buildParallelLessonLines(entry, rooms, deps, scope);
-    return [title, teacher, classes, room].filter(Boolean).join(" / ");
+    return [...titleLines, teacher, classes, room].filter(Boolean).join("\n");
   };
 
   const teacherMatches = (entry, teacher) => (deps.splitTeacherNames?.(entry.teacherName || "") || [])
@@ -610,7 +664,7 @@ function makeSheetName(raw, used) {
 function estimateRowHeight(row = [], fallback = 54) {
   const maxLines = Math.max(1, ...row.map(cell => String(cell ?? "").split(/\n/).length));
   if (maxLines <= 1) return fallback;
-  return Math.max(fallback, Math.min(150, 17 * maxLines + 12));
+  return Math.max(fallback, Math.min(132, 13 * maxLines + 10));
 }
 
 function applyWorksheetWrap(ws, XLSX) {
@@ -622,7 +676,7 @@ function applyWorksheetWrap(ws, XLSX) {
       const cell = ws[addr];
       if (!cell || typeof cell.v !== "string") continue;
       if (!cell.v.includes("\n") && !cell.v.includes("\t")) continue;
-      cell.s = { ...(cell.s || {}), alignment: { ...(cell.s?.alignment || {}), wrapText: true, vertical: "top" } };
+      cell.s = { ...(cell.s || {}), alignment: { ...(cell.s?.alignment || {}), wrapText: true, shrinkToFit: true, horizontal: "center", vertical: "center" } };
     }
   }
 }
@@ -682,19 +736,35 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
   XLSX.writeFile(wb, safeFileName(filename));
 }
 
+function looksLikeEnglishSubjectLine(line = "") {
+  const raw = clean(line);
+  if (!raw) return false;
+  return /[A-Za-z]/.test(raw) && !/[가-힣]/.test(raw);
+}
+
+function lessonDensityClass(lines = []) {
+  const totalLength = lines.join(" ").replace(/\s+/g, " ").length;
+  const lineCount = lines.length;
+  if (lineCount >= 9 || totalLength >= 170) return " lesson-micro";
+  if (lineCount >= 7 || totalLength >= 125) return " lesson-compact";
+  if (lineCount >= 5 || totalLength >= 85) return " lesson-dense";
+  return "";
+}
+
 function lessonHtml(text) {
   if (!text) return "";
-  const lines = String(text).split(/\n/);
+  const lines = String(text).split(/\n/).map(line => line.trim()).filter(Boolean);
   const body = lines.map((line, idx) => {
     const parts = line.split("\t").map(clean).filter(Boolean);
+    const englishLine = idx > 0 && looksLikeEnglishSubjectLine(line);
     if (parts.length > 1) {
-      const extra = idx === 0 ? " lesson-parallel-title" : "";
+      const extra = idx === 0 ? " lesson-parallel-title" : englishLine ? " lesson-parallel-en" : "";
       return `<div class="lesson-parallel${extra}">${parts.map(part => `<span>${escapeHtml(part)}</span>`).join("")}</div>`;
     }
-    const cls = idx === 0 ? "lesson-title" : "lesson-line";
+    const cls = idx === 0 ? "lesson-title" : englishLine ? "lesson-subtitle" : "lesson-line";
     return `<div class="${cls}">${escapeHtml(line)}</div>`;
   }).join("");
-  return `<div class="lesson">${body}</div>`;
+  return `<div class="lesson${lessonDensityClass(lines)}" data-fit="1">${body}</div>`;
 }
 
 function buildIndividualSections(entities, ctx, type) {
@@ -738,8 +808,22 @@ function buildPrintHtml(entities, ctx, { layout, type, bands }) {
   const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} 시간표`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 8px;padding:6px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 8px;font-size:20px;text-align:center;line-height:1.2}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:46px}col.entity-col{width:86px}th,td{border:1px solid #9ca3af;padding:4px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:78px;font-size:10px;line-height:1.28}.empty{background:#fff}.lesson{margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.28;text-align:center}.lesson+.lesson{margin-top:3px;padding-top:3px;border-top:1px dotted #d1d5db}.lesson-title{font-weight:900;font-size:1.12em;margin:0 0 2px;text-align:center}.lesson-line{margin:1px 0 0;text-align:center;color:#374151}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;margin-top:1px;align-items:center}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.12em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:5px}th,td{padding:3px}td{height:25mm;font-size:8.5px}.lesson-title{font-size:1.12em}.lesson-line,.lesson-parallel span{font-size:.86em}.lesson-parallel-title span{font-size:1.12em}.combined th,.combined td{font-size:8px}.combined td{height:18mm}col.period-col{width:38px}col.entity-col{width:76px}}
-  </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="window.print()">PDF 저장/인쇄</button></div>${sections}<script>setTimeout(()=>window.focus(),100);</script></body></html>`;
+    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 8px;padding:6px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 8px;font-size:20px;text-align:center;line-height:1.2}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:42px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:76px;font-size:9.2px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:1px;padding-top:1px;border-top:1px dotted #d1d5db}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.78em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.9em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:1px;margin-top:0;align-items:center}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.78em;line-height:1.05}.lesson-dense{font-size:.9em}.lesson-compact{font-size:.8em}.lesson-micro{font-size:.7em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:4px}th,td{padding:1px 2px}td{height:24mm;font-size:7.8px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.76em}.lesson-line,.lesson-parallel span{font-size:.84em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.76em}.combined th,.combined td{font-size:7.4px}.combined td{height:17mm}col.period-col{width:34px}col.entity-col{width:72px}}
+  </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="fitAllTimetableCells();window.print()">PDF 저장/인쇄</button></div>${sections}<script>
+function fitAllTimetableCells(){
+  document.querySelectorAll("td:not(.empty)").forEach(td=>{
+    let size=parseFloat(getComputedStyle(td).fontSize)||8;
+    const min=5.4;
+    for(let i=0;i<18 && size>min;i+=1){
+      if(td.scrollHeight<=td.clientHeight+1 && td.scrollWidth<=td.clientWidth+1) break;
+      size-=0.35;
+      td.style.fontSize=size+"px";
+    }
+  });
+}
+window.addEventListener("load",()=>{fitAllTimetableCells();setTimeout(fitAllTimetableCells,120);setTimeout(()=>window.focus(),100);});
+window.addEventListener("beforeprint",fitAllTimetableCells);
+</script></body></html>`;
 }
 
 function exportPdf(entities, deps, ctx, options) {
