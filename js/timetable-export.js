@@ -1,14 +1,14 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r202: 대표 출력 교과 직접 선택, 그룹/홈룸 대표 표시 보정
-//  - CA/SA 고정 목록 대신 현재 시간표 과목·그룹명에서 대표 출력 대상을 직접 선택
-//  - 선택한 대표 출력 교과는 상세 과목/교사/교실 나열 대신 그룹명 + 홈룸 중심으로 간단히 표시
-//  - CA/SA는 기본 대표 출력 대상으로 유지
+// r203: 간략 출력 과목 직접 선택 의미 정리
+//  - 체크한 과목으로 출력 대상을 필터링하지 않고, 해당 과목만 간략 표시
+//  - CA/SA는 기본 간략 표시로 유지하고 다른 과목을 추가 선택 가능
+//  - 대표 출력 교과라는 오해 소지가 있는 UI 문구 정리
 // ================================================================
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DEFAULT_REPRESENTATIVE_SUBJECTS = ["CA", "SA"];
-const EXPORT_STYLE_ID = "ttExportDialogR202Style";
+const EXPORT_STYLE_ID = "ttExportDialogR203Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -137,9 +137,13 @@ function defaultRepresentativeSubjectCodes() {
   return DEFAULT_REPRESENTATIVE_SUBJECTS.map(normalizeSpecialSubjectCode).filter(Boolean);
 }
 
+function effectiveBriefSubjectCodes(values = []) {
+  return unique([...defaultRepresentativeSubjectCodes(), ...normalizeSpecialSubjectSelection(values)]);
+}
+
 function specialSubjectLabel(values = []) {
   const codes = normalizeSpecialSubjectSelection(values);
-  return codes.length ? codes.join("/") : "전체수업";
+  return codes.length ? `간략 ${codes.join("/")}` : "기본간략";
 }
 
 function getSpecialSubjectsFromDialog(backdrop) {
@@ -604,13 +608,8 @@ function specialSubjectCodeForEntry(entry = {}, deps = {}) {
 function selectedRepresentativeCandidate(entry = {}, deps = {}, selectedCodes = []) {
   const candidates = representativeSubjectCandidatesForEntry(entry, deps);
   if (!candidates.length) return null;
-  const selected = normalizeSpecialSubjectSelection(selectedCodes || []);
-  if (selected.length) {
-    const picked = candidates.find(item => selected.includes(item.key));
-    if (picked) return picked;
-  }
-  const defaults = defaultRepresentativeSubjectCodes();
-  return candidates.find(item => defaults.includes(item.key)) || null;
+  const briefCodes = effectiveBriefSubjectCodes(selectedCodes || []);
+  return candidates.find(item => briefCodes.includes(item.key)) || null;
 }
 
 function shouldUseRepresentativeOutput(entry = {}, deps = {}, selectedCodes = []) {
@@ -643,7 +642,14 @@ function buildSpecialSubjectOptions(deps = {}, ctx = {}) {
     if (!old || priority < old.priority) optionMap.set(key, { key, label: text, priority });
   };
   DEFAULT_REPRESENTATIVE_SUBJECTS.forEach((label, idx) => add(label, idx));
-  (ctx.entries || []).forEach(entry => representativeSubjectCandidatesForEntry(entry, deps).forEach(item => add(item.label, item.priority)));
+  (ctx.entries || []).forEach(entry => representativeSubjectCandidatesForEntry(entry, deps).forEach(item => {
+    // 여러 과목명이 "/"로 길게 합쳐진 후보는 체크 목록을 오염시킵니다.
+    // 사용자는 실제 과목/그룹 단위로 골라야 하므로 카드·템플릿별 후보를 남기고 병합 후보는 제외합니다.
+    const slashCount = (clean(item.label).match(/\//g) || []).length;
+    if ((item.kind || "").includes("entry-title") && slashCount >= 1) return;
+    if (slashCount >= 2) return;
+    add(item.label, item.priority);
+  }));
   return [...optionMap.values()].sort((a, b) => {
     const ad = defaultRepresentativeSubjectCodes().includes(a.key) ? -100 : a.priority;
     const bd = defaultRepresentativeSubjectCodes().includes(b.key) ? -100 : b.priority;
@@ -1243,8 +1249,8 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
       .map(clean).filter(Boolean)
       .sort((a, b) => a.localeCompare(b, "ko"));
     return teachers
-      .filter(t => ctx.entries.some(e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects)))
-      .map(t => ({ type, key: t, label: t, mode: "teacher", groupLabel: "교사", specialSubjects, filterFn: e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
+      .filter(t => ctx.entries.some(e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands)))
+      .map(t => ({ type, key: t, label: t, mode: "teacher", groupLabel: "교사", specialSubjects, filterFn: e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) }));
   }
   if (type === "class") {
     const classes = (deps.getAllClasses?.() || [])
@@ -1252,16 +1258,15 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
       .filter(cls => cls.key && classAllowedByScope(cls, normalizedScope))
       .sort((a, b) => a.label.localeCompare(b.label, "ko", { numeric: true }));
     return classes
-      .filter(cls => ctx.entries.some(e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects)))
-      .map(cls => ({ type, key: cls.key, label: cls.label, mode: "class", specialSubjects, groupLabel: gradeBandOf(cls.gradeNo) === "middle" ? "중등" : "고등", filterFn: e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
+      .filter(cls => ctx.entries.some(e => ctx.classMatches(e, cls)))
+      .map(cls => ({ type, key: cls.key, label: cls.label, mode: "class", specialSubjects, groupLabel: gradeBandOf(cls.gradeNo) === "middle" ? "중등" : "고등", filterFn: e => ctx.classMatches(e, cls) }));
   }
   if (type === "room") {
     return (ctx.rooms || [])
       .filter(room => clean(room.id || room.name))
       .filter(room => {
-        const scheduled = ctx.entries.some(e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects));
+        const scheduled = ctx.entries.some(e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope));
         if (scheduled) return true;
-        if (specialSubjects.length) return false;
         const home = homeRoomLabelForRoom(room, deps);
         const grade = normalizeGradeNumber(home);
         return !!home && classAllowedByScope({ gradeKey: grade, section: clean(home).replace(/\d{1,2}/, "") }, normalizedScope);
@@ -1278,15 +1283,15 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
           mode: "room",
           specialSubjects,
           groupLabel: room.type || "교실",
-          filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects)
+          filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope)
         };
       });
   }
   if (type === "student") {
     return buildStudentList(deps.appState)
       .filter(s => classAllowedByScope({ gradeKey: s.gradeKey, section: s.section, sectionIdx: s.sectionIdx }, normalizedScope))
-      .filter(s => ctx.entries.some(e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects)))
-      .map(s => ({ ...s, type, mode: "student", specialSubjects, groupLabel: s.classLabel, filterFn: e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
+      .filter(s => ctx.entries.some(e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope)))
+      .map(s => ({ ...s, type, mode: "student", specialSubjects, groupLabel: s.classLabel, filterFn: e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) }));
   }
   return [];
 }
@@ -1576,10 +1581,10 @@ export function openTimetableExportDialog(deps = {}) {
           <label><input type="checkbox" data-scope="high"> 고등 10–12학년</label>
           <div class="tt-export-class-scopes" data-role="class-scopes"></div>
           <div class="tt-export-special-scopes" data-role="special-scopes">
-            <strong>대표 출력 교과 선택</strong>
+            <strong>간략 출력 과목 선택</strong>
             <div class="tt-export-special-list" data-role="special-list"></div>
           </div>
-          <p>선택한 교과/그룹만 출력하며, 선택한 항목은 과목별 세부 나열 대신 대표명과 홈룸 중심으로 간단히 표시됩니다. 선택하지 않으면 전체 수업을 출력합니다.</p>
+          <p>전체 시간표는 그대로 출력하고, 여기서 체크한 과목/그룹만 셀 안에서 세부 과목·교사·교실 나열 없이 간략 표시합니다. CA/SA는 기본 간략 표시됩니다.</p>
         </aside>
       </div>
       <div class="tt-export-foot"><button type="button" class="tt-export-cancel">닫기</button><button type="button" class="tt-export-run">출력</button></div>
@@ -1666,7 +1671,7 @@ export function openTimetableExportDialog(deps = {}) {
     const layoutName = layoutEl.value === "combined" ? "전체표" : "개별";
     const studentNote = typeEl.value === "student" && layoutEl.value === "individual" ? " 학생은 이름을 하나씩 고르지 않고 학급별로 묶어 한 번에 출력합니다." : "";
     const teacherNote = typeEl.value === "teacher" ? " 교사 출력에는 학반별 체크 범위를 적용하지 않습니다." : "";
-    infoEl.textContent = `${typeName} · ${scopeLabel(scope)} · ${specialSubjectLabel(specialSubjects)} · ${layoutName} 출력입니다.${studentNote}${teacherNote}`;
+    infoEl.textContent = `${typeName} · ${scopeLabel(scope)} · ${layoutName} · ${specialSubjectLabel(specialSubjects)} 표시입니다.${studentNote}${teacherNote}`;
     const previewItems = entities.slice(0, 18).map(e => e.label).join(" · ");
     previewEl.innerHTML = `<b>출력 대상 ${entities.length}개</b><br>${escapeHtml(previewItems || "대상 없음")}${entities.length > 18 ? ` · 외 ${entities.length - 18}개` : ""}`;
   }
