@@ -1,14 +1,14 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r201: 특수교과(CA/SA) 선택 출력, 균일 행높이, 개별 제목 형식 보정
-//  - CA/SA는 출력 셀에서 교사/교실/학반 상세 없이 CA/SA만 표시
-//  - 특수교과 선택 시 해당 과목만 필터링하여 출력
-//  - 교실 제목: 교실 (홈룸) Timetable, 학생 제목: 홈룸 학생 Timetable
+// r202: 대표 출력 교과 직접 선택, 그룹/홈룸 대표 표시 보정
+//  - CA/SA 고정 목록 대신 현재 시간표 과목·그룹명에서 대표 출력 대상을 직접 선택
+//  - 선택한 대표 출력 교과는 상세 과목/교사/교실 나열 대신 그룹명 + 홈룸 중심으로 간단히 표시
+//  - CA/SA는 기본 대표 출력 대상으로 유지
 // ================================================================
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const SPECIAL_SUBJECT_CODES = ["CA", "SA"];
-const EXPORT_STYLE_ID = "ttExportDialogR201Style";
+const DEFAULT_REPRESENTATIVE_SUBJECTS = ["CA", "SA"];
+const EXPORT_STYLE_ID = "ttExportDialogR202Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -122,12 +122,19 @@ function unique(list = []) {
 }
 
 function normalizeSpecialSubjectCode(value = "") {
-  const raw = clean(value).replace(/\s+/g, "").toUpperCase();
-  return SPECIAL_SUBJECT_CODES.includes(raw) ? raw : "";
+  const raw = clean(value).normalize("NFKC");
+  if (!raw) return "";
+  // 사용자가 직접 고르는 대표 출력 대상이므로 CA/SA에 한정하지 않습니다.
+  // 공백·구두점 차이를 줄여 같은 교과/그룹명을 안정적으로 매칭합니다.
+  return raw.replace(/[\s\-_·,，/()\[\]]+/g, "").toUpperCase();
 }
 
 function normalizeSpecialSubjectSelection(values = []) {
   return unique((values || []).map(normalizeSpecialSubjectCode).filter(Boolean));
+}
+
+function defaultRepresentativeSubjectCodes() {
+  return DEFAULT_REPRESENTATIVE_SUBJECTS.map(normalizeSpecialSubjectCode).filter(Boolean);
 }
 
 function specialSubjectLabel(values = []) {
@@ -163,7 +170,7 @@ function ensureStyle() {
     .tt-export-body{display:grid;grid-template-columns:minmax(360px,1fr) 230px;gap:14px;padding:14px 16px;overflow:auto}@media(max-width:760px){.tt-export-body{grid-template-columns:1fr}}
     .tt-export-options{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.tt-export-options label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:900;color:#475569}.tt-export-options select{height:34px;border:1px solid #cbd5e1;border-radius:8px;padding:4px 8px;font-size:13px;background:#fff}
     .tt-export-info{margin-top:12px;padding:12px;border:1px dashed #bfdbfe;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:12px;line-height:1.55}.tt-export-preview{margin-top:10px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;font-size:12px;color:#334155;line-height:1.55;max-height:180px;overflow:auto}
-    .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-class-scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-class-scopes label{justify-content:center;margin:0;padding:7px 5px;font-size:12px}.tt-export-class-scopes.is-disabled{opacity:.42;pointer-events:none}.tt-export-special-scopes{margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-special-scopes strong{display:block;margin-bottom:6px;font-size:12px;color:#334155}.tt-export-special-scopes label{justify-content:center;margin:6px 0;padding:7px 8px;font-size:12px}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}
+    .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-class-scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-class-scopes label{justify-content:center;margin:0;padding:7px 5px;font-size:12px}.tt-export-class-scopes.is-disabled{opacity:.42;pointer-events:none}.tt-export-special-scopes{margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-special-scopes strong{display:block;margin-bottom:6px;font-size:12px;color:#334155}.tt-export-special-list{display:grid;grid-template-columns:1fr;gap:6px;max-height:210px;overflow:auto;padding-right:2px}.tt-export-special-scopes label{justify-content:flex-start;margin:0;padding:7px 8px;font-size:12px}.tt-export-special-scopes label.is-default{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}
     .tt-export-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e2e8f0;background:#f8fafc}.tt-export-foot button{height:34px;padding:0 14px;border:1px solid #94a3b8;border-radius:8px;background:#fff;font-weight:900;cursor:pointer}.tt-export-foot .tt-export-run{background:#2563eb;border-color:#2563eb;color:#fff}
   `;
   document.head.appendChild(style);
@@ -540,31 +547,108 @@ function entryTitleForExport(entry = {}, deps = {}) {
   return parts.ko || parts.en || "-";
 }
 
-function specialSubjectCodeForCard(card = {}, deps = {}) {
-  if (!card) return "";
-  const candidates = [];
+function pushRepresentativeCandidate(list, label = "", kind = "subject", priority = 50) {
+  const text = clean(label);
+  const key = normalizeSpecialSubjectCode(text);
+  if (!text || !key) return;
+  if (list.some(item => item.key === key)) return;
+  list.push({ key, label: text, kind, priority });
+}
+
+function representativeSubjectCandidatesForCard(card = {}, deps = {}) {
+  const out = [];
+  if (!card) return out;
   const parts = cardTitlePartsForExport(card, deps);
-  candidates.push(parts.ko, parts.en);
-  candidates.push(card.subject, card.label, card.subjectKo, card.subjectEn, card.nameKo, card.nameEn, card.title, card.short);
-  return candidates.map(normalizeSpecialSubjectCode).find(Boolean) || "";
+  pushRepresentativeCandidate(out, parts.ko || parts.en, "card", 30);
+  pushRepresentativeCandidate(out, parts.en, "card-en", 70);
+  [card.subject, card.label, card.subjectKo, card.subjectEn, card.nameKo, card.nameEn, card.title, card.short]
+    .forEach(value => pushRepresentativeCandidate(out, value, "card-raw", 80));
+  return out;
+}
+
+function representativeSubjectCandidatesForEntry(entry = {}, deps = {}) {
+  const out = [];
+  pushRepresentativeCandidate(out, entry.groupName, "group", 5);
+  pushRepresentativeCandidate(out, entry.groupLabel, "group", 8);
+  [entry.subject, entry.subjectKo, entry.subjectEn, entry.title, entry.label, entry.name, entry.short]
+    .forEach(value => pushRepresentativeCandidate(out, value, "entry", 20));
+  const parts = entryTitlePartsForExport(entry, deps);
+  pushRepresentativeCandidate(out, parts.ko || parts.en, "entry-title", 30);
+  pushRepresentativeCandidate(out, parts.en, "entry-title-en", 70);
+  const cardIds = entryCardIds(entry);
+  if (cardIds.length && typeof deps.getTtCardById === "function") {
+    cardIds.forEach(id => representativeSubjectCandidatesForCard(deps.getTtCardById(id), deps)
+      .forEach(item => pushRepresentativeCandidate(out, item.label, item.kind, item.priority + 10)));
+  }
+  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])]);
+  templateIds.forEach(id => {
+    const tplParts = templateTitlePartsForExport(templateById(id, deps));
+    pushRepresentativeCandidate(out, tplParts.ko || tplParts.en, "template", 60);
+    pushRepresentativeCandidate(out, tplParts.en, "template-en", 90);
+  });
+  return out.sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label, "ko", { numeric: true }));
+}
+
+function specialSubjectCodeForCard(card = {}, deps = {}) {
+  return representativeSubjectCandidatesForCard(card, deps)[0]?.key || "";
+}
+
+function specialSubjectCodesForEntry(entry = {}, deps = {}) {
+  return unique(representativeSubjectCandidatesForEntry(entry, deps).map(item => item.key).filter(Boolean));
 }
 
 function specialSubjectCodeForEntry(entry = {}, deps = {}) {
-  const cardIds = entryCardIds(entry);
-  if (cardIds.length && typeof deps.getTtCardById === "function") {
-    const codes = unique(cardIds.map(id => specialSubjectCodeForCard(deps.getTtCardById(id), deps)).filter(Boolean));
-    if (codes.length === 1) return codes[0];
+  return specialSubjectCodesForEntry(entry, deps)[0] || "";
+}
+
+function selectedRepresentativeCandidate(entry = {}, deps = {}, selectedCodes = []) {
+  const candidates = representativeSubjectCandidatesForEntry(entry, deps);
+  if (!candidates.length) return null;
+  const selected = normalizeSpecialSubjectSelection(selectedCodes || []);
+  if (selected.length) {
+    const picked = candidates.find(item => selected.includes(item.key));
+    if (picked) return picked;
   }
-  const parts = entryTitlePartsForExport(entry, deps);
-  const candidates = [parts.ko, parts.en, entry.subject, entry.subjectKo, entry.subjectEn, entry.title, entry.label, entry.name, entry.short];
-  const code = candidates.map(normalizeSpecialSubjectCode).find(Boolean);
-  if (code) return code;
-  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])]);
-  const templateCodes = unique(templateIds.map(id => {
-    const tplParts = templateTitlePartsForExport(templateById(id, deps));
-    return normalizeSpecialSubjectCode(tplParts.ko) || normalizeSpecialSubjectCode(tplParts.en);
-  }).filter(Boolean));
-  return templateCodes.length === 1 ? templateCodes[0] : "";
+  const defaults = defaultRepresentativeSubjectCodes();
+  return candidates.find(item => defaults.includes(item.key)) || null;
+}
+
+function shouldUseRepresentativeOutput(entry = {}, deps = {}, selectedCodes = []) {
+  return !!selectedRepresentativeCandidate(entry, deps, selectedCodes);
+}
+
+function representativeLessonLines(entry = {}, mode = "normal", scope = {}, rooms = [], deps = {}, selectedCodes = []) {
+  const candidate = selectedRepresentativeCandidate(entry, deps, selectedCodes);
+  if (!candidate) return "";
+  const label = candidate.label;
+  if (mode === "room") {
+    const room = (rooms || []).find(r => clean(r.id) === clean(scope.key || scope.roomId || scope.id)) || scope;
+    const home = homeRoomLabelForRoom(room, deps);
+    if (home) return `${label}
+${home} Homeroom`;
+    const classes = unique(roomScopedCardsForEntry(entry, room, rooms, deps).flatMap(({ card }) => classLabelsForCard(card)));
+    if (classes.length) return `${label}
+${classes.join(", ")}`;
+  }
+  return label;
+}
+
+function buildSpecialSubjectOptions(deps = {}, ctx = {}) {
+  const optionMap = new Map();
+  const add = (label = "", priority = 50) => {
+    const text = clean(label);
+    const key = normalizeSpecialSubjectCode(text);
+    if (!text || !key) return;
+    const old = optionMap.get(key);
+    if (!old || priority < old.priority) optionMap.set(key, { key, label: text, priority });
+  };
+  DEFAULT_REPRESENTATIVE_SUBJECTS.forEach((label, idx) => add(label, idx));
+  (ctx.entries || []).forEach(entry => representativeSubjectCandidatesForEntry(entry, deps).forEach(item => add(item.label, item.priority)));
+  return [...optionMap.values()].sort((a, b) => {
+    const ad = defaultRepresentativeSubjectCodes().includes(a.key) ? -100 : a.priority;
+    const bd = defaultRepresentativeSubjectCodes().includes(b.key) ? -100 : b.priority;
+    return ad - bd || a.label.localeCompare(b.label, "ko", { numeric: true });
+  });
 }
 
 function titleLinesForParts(partsList = []) {
@@ -1048,13 +1132,16 @@ function buildExportContext(deps = {}) {
   const entryAllowedBySpecial = (entry, specialSubjects = []) => {
     const codes = normalizeSpecialSubjectSelection(specialSubjects);
     if (!codes.length) return true;
-    const code = specialSubjectCodeForEntry(entry, deps);
-    return !!code && codes.includes(code);
+    const entryCodes = specialSubjectCodesForEntry(entry, deps);
+    return entryCodes.some(code => codes.includes(code));
   };
 
   const entrySummary = (entry, mode = "normal", scope = {}) => {
-    const specialCode = specialSubjectCodeForEntry(entry, deps);
-    if (specialCode && mode !== "teacher") return specialCode;
+    const selectedSpecialSubjects = normalizeSpecialSubjectSelection(scope?.specialSubjects || []);
+    if (mode !== "teacher" && shouldUseRepresentativeOutput(entry, deps, selectedSpecialSubjects)) {
+      const represented = representativeLessonLines(entry, mode, scope, rooms, deps, selectedSpecialSubjects);
+      if (represented) return represented;
+    }
     const titleLines = singleTitleLinesForEntry(entry, deps);
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
     const room = roomNamesForEntry(entry, rooms, deps);
@@ -1157,7 +1244,7 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
       .sort((a, b) => a.localeCompare(b, "ko"));
     return teachers
       .filter(t => ctx.entries.some(e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects)))
-      .map(t => ({ type, key: t, label: t, mode: "teacher", groupLabel: "교사", filterFn: e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
+      .map(t => ({ type, key: t, label: t, mode: "teacher", groupLabel: "교사", specialSubjects, filterFn: e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
   }
   if (type === "class") {
     const classes = (deps.getAllClasses?.() || [])
@@ -1166,7 +1253,7 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
       .sort((a, b) => a.label.localeCompare(b.label, "ko", { numeric: true }));
     return classes
       .filter(cls => ctx.entries.some(e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects)))
-      .map(cls => ({ type, key: cls.key, label: cls.label, mode: "class", groupLabel: gradeBandOf(cls.gradeNo) === "middle" ? "중등" : "고등", filterFn: e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
+      .map(cls => ({ type, key: cls.key, label: cls.label, mode: "class", specialSubjects, groupLabel: gradeBandOf(cls.gradeNo) === "middle" ? "중등" : "고등", filterFn: e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
   }
   if (type === "room") {
     return (ctx.rooms || [])
@@ -1189,6 +1276,7 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
           label: homeLabel ? `${roomLabel} (${homeLabel})` : roomLabel,
           subtitle: "",
           mode: "room",
+          specialSubjects,
           groupLabel: room.type || "교실",
           filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects)
         };
@@ -1198,7 +1286,7 @@ function buildEntities(type, scope, deps, ctx, filters = {}) {
     return buildStudentList(deps.appState)
       .filter(s => classAllowedByScope({ gradeKey: s.gradeKey, section: s.section, sectionIdx: s.sectionIdx }, normalizedScope))
       .filter(s => ctx.entries.some(e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects)))
-      .map(s => ({ ...s, type, mode: "student", groupLabel: s.classLabel, filterFn: e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
+      .map(s => ({ ...s, type, mode: "student", specialSubjects, groupLabel: s.classLabel, filterFn: e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
   }
   return [];
 }
@@ -1488,11 +1576,10 @@ export function openTimetableExportDialog(deps = {}) {
           <label><input type="checkbox" data-scope="high"> 고등 10–12학년</label>
           <div class="tt-export-class-scopes" data-role="class-scopes"></div>
           <div class="tt-export-special-scopes" data-role="special-scopes">
-            <strong>특수 교과만 출력</strong>
-            <label><input type="checkbox" data-special-subject="CA"> CA</label>
-            <label><input type="checkbox" data-special-subject="SA"> SA</label>
+            <strong>대표 출력 교과 선택</strong>
+            <div class="tt-export-special-list" data-role="special-list"></div>
           </div>
-          <p>CA/SA를 선택하면 해당 특수교과 시간만 출력합니다. 선택하지 않으면 전체 수업을 출력합니다. CA/SA는 셀 안에서 과목명만 간단히 표시됩니다.</p>
+          <p>선택한 교과/그룹만 출력하며, 선택한 항목은 과목별 세부 나열 대신 대표명과 홈룸 중심으로 간단히 표시됩니다. 선택하지 않으면 전체 수업을 출력합니다.</p>
         </aside>
       </div>
       <div class="tt-export-foot"><button type="button" class="tt-export-cancel">닫기</button><button type="button" class="tt-export-run">출력</button></div>
@@ -1519,6 +1606,17 @@ export function openTimetableExportDialog(deps = {}) {
     `).join("");
   }
   const classScopeInputs = () => [...backdrop.querySelectorAll('[data-scope-class]')];
+  const specialListEl = backdrop.querySelector('[data-role="special-list"]');
+  const renderSpecialSubjectOptions = () => {
+    const options = buildSpecialSubjectOptions(deps, ctx);
+    const defaults = defaultRepresentativeSubjectCodes();
+    specialListEl.innerHTML = options.map(opt => {
+      const isDefault = defaults.includes(opt.key);
+      return `<label class="${isDefault ? "is-default" : ""}"><input type="checkbox" data-special-subject="${escapeHtml(opt.label)}"> ${escapeHtml(opt.label)}</label>`;
+    }).join("") || `<div style="font-size:12px;color:#64748b;line-height:1.4">현재 시간표에서 선택할 교과/그룹을 찾지 못했습니다.</div>`;
+  };
+  renderSpecialSubjectOptions();
+
   const specialInputs = () => [...backdrop.querySelectorAll('[data-special-subject]')];
   const specialSubjectSelection = () => getSpecialSubjectsFromDialog(backdrop);
 
