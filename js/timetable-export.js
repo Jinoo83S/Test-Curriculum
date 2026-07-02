@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r192: 묶음수업 학급별 출력 보정 + 과목명 우선 표시
+// r193: 커리큘럼/템플릿 원본 과목명 추적 + 시간표카드 반 suffix 제거
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -241,14 +241,78 @@ function teacherNamesForCard(card = {}, deps = {}) {
   return splitTeacherField(card.teacherName || card.teacher || "", deps);
 }
 
+function stripGeneratedSectionSuffix(title = "") {
+  const raw = clean(title);
+  if (!raw) return "";
+  // 시간표카드 생성 시 반/분반 표시용으로 붙는 A, B, C suffix는 출력 과목명에서는 제거합니다.
+  // 예: "기독교 연구 A" → "기독교 연구", "선교적 리더십 A, B, C" → "선교적 리더십"
+  return raw
+    .replace(/\s+[A-Z](?:\s*[,·/]\s*[A-Z])+\s*$/u, "")
+    .replace(/\s+[A-Z]\s*$/u, "")
+    .trim() || raw;
+}
+
+function getTemplateList(deps = {}) {
+  return deps.appState?.templates?.templates || [];
+}
+
+function templateById(templateId = "", deps = {}) {
+  const id = clean(templateId);
+  if (!id) return null;
+  return getTemplateList(deps).find(tpl => clean(tpl.id) === id) || null;
+}
+
+function templateTitleForExport(tpl = null) {
+  if (!tpl) return "";
+  return clean(tpl.nameKo) || clean(tpl.sem1NameKo) || clean(tpl.nameEn) || clean(tpl.sem1NameEn) || clean(tpl.sem2NameKo) || clean(tpl.sem2NameEn);
+}
+
+function compoundPartTitleForExport(card = {}, deps = {}) {
+  const partId = clean(card?.compoundPartId);
+  if (!partId) return "";
+  const parentId = clean(card.compoundParentTemplateId || card.templateId);
+  const tpl = templateById(parentId, deps);
+  const parts = Array.isArray(tpl?.compoundParts) ? tpl.compoundParts : [];
+  const part = parts.find((item, idx) => clean(item?.id || `part${idx + 1}`) === partId);
+  return clean(part?.nameKo) || clean(part?.nameEn) || "";
+}
+
+function curriculumTitleForCard(card = {}, deps = {}) {
+  if (!card) return "";
+  const partTitle = compoundPartTitleForExport(card, deps);
+  if (partTitle) return partTitle;
+  const tpl = templateById(card.templateId, deps);
+  return templateTitleForExport(tpl);
+}
+
 function cardTitleForExport(card = {}, deps = {}) {
   if (!card) return "";
+  const fromCurriculum = curriculumTitleForCard(card, deps);
+  if (fromCurriculum) return fromCurriculum;
   const raw = clean(card.subject || card.label || card.subjectKo || card.nameKo || card.title || card.subjectEn || card.nameEn);
-  if (raw) return raw;
+  if (raw) return stripGeneratedSectionSuffix(raw);
   if (typeof deps.getTtCardTitle === "function") {
-    try { return clean(deps.getTtCardTitle(card)); } catch (_) {}
+    try { return stripGeneratedSectionSuffix(deps.getTtCardTitle(card)); } catch (_) {}
   }
   return "";
+}
+
+function entryTitleForExport(entry = {}, deps = {}) {
+  const cardIds = entryCardIds(entry);
+  if (cardIds.length && typeof deps.getTtCardById === "function") {
+    const titles = cardIds
+      .map(id => cardTitleForExport(deps.getTtCardById(id), deps))
+      .filter(Boolean);
+    const uniq = unique(titles);
+    if (uniq.length === 1) return uniq[0];
+    if (uniq.length > 1) return uniq.join(" / ");
+  }
+  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])]);
+  const titles = unique(templateIds.map(id => templateTitleForExport(templateById(id, deps))).filter(Boolean));
+  if (titles.length === 1) return titles[0];
+  if (titles.length > 1) return titles.join(" / ");
+  const fallback = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
+  return stripGeneratedSectionSuffix(fallback);
 }
 
 function classKeyForSection(gradeKey, sectionIdx = 0) {
@@ -312,7 +376,7 @@ function buildScopedCardLessonLines(entry = {}, rooms = [], deps = {}, scope = {
   scopedIds.forEach(cardId => {
     const card = deps.getTtCardById(cardId);
     if (!card) return;
-    const title = cardTitleForExport(card, deps) || deps.entryTitle?.({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }) || entry.subject || entry.title || "-";
+    const title = cardTitleForExport(card, deps) || entryTitleForExport({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }, deps) || "-";
     const teachers = teacherNamesForCard(card, deps).join(" / ");
     const roomId = clean(assignments?.[cardId] || card.fixedRoomId || card.roomId || "");
     const room = roomNameForId(roomId, rooms, deps);
@@ -332,7 +396,7 @@ function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
   const scopedCardLines = buildScopedCardLessonLines(entry, rooms, deps, scope);
   if (scopedCardLines) return scopedCardLines;
 
-  const title = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
+  const title = entryTitleForExport(entry, deps) || "-";
   const cardIds = entryCardIds(entry);
   const assignments = getRoomAssignments(entry, deps);
   const teacherColumns = [];
@@ -423,7 +487,7 @@ function buildExportContext(deps = {}) {
   };
 
   const entrySummary = (entry, mode = "normal", scope = {}) => {
-    const title = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
+    const title = entryTitleForExport(entry, deps) || "-";
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
     const room = roomNamesForEntry(entry, rooms, deps);
     const classes = entryClassLabels(entry).join(", ");
@@ -459,7 +523,7 @@ function buildExportContext(deps = {}) {
 
   const getGridEntries = (day, period, filterFn) => entries
     .filter(e => e.day === day && e.period === period && filterFn(e))
-    .sort((a, b) => String(deps.entryTitle?.(a) || "").localeCompare(String(deps.entryTitle?.(b) || ""), "ko"));
+    .sort((a, b) => String(entryTitleForExport(a, deps) || "").localeCompare(String(entryTitleForExport(b, deps) || ""), "ko"));
 
   return { rooms, periods, entries, appState, entrySummary, teacherMatches, classMatches, roomMatches, studentMatches, getGridEntries, entryAllowedByBands };
 }
