@@ -627,7 +627,7 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
 
   const bulkTitle = document.createElement("div");
   bulkTitle.style.cssText = "font-size:11px;font-weight:900;color:#334155;margin-bottom:6px";
-  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 교사 교실 고정 적용" : "교실 규칙 지정";
+  bulkTitle.textContent = targets.length > 1 ? "전체 구성 과목에 일괄 적용" : "교실 규칙 지정";
   bulk.appendChild(bulkTitle);
 
   const commonBulkRule = sameRule ? normalizeRoomRule(first?.roomRule || "teacher") : "teacher";
@@ -663,13 +663,13 @@ function appendCardRoomRuleEditor(box, detailItems, ctx, modal, groupId = "") {
   const apply = document.createElement("button");
   apply.type = "button";
   apply.style.cssText = "width:100%;padding:6px;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:white;font-size:12px;font-weight:800;cursor:pointer";
-  apply.textContent = targets.length > 1 ? "교사 교실 고정 전체 적용" : "교실 규칙 저장";
+  apply.textContent = targets.length > 1 ? "전체 적용" : "교실 규칙 저장";
   apply.onclick = () => {
     if (normalizeRoomRule(ruleSel.value) === "fixed" && !roomSel.value) {
       alert("지정 교실 고정은 교실을 선택해야 합니다.");
       return;
     }
-    const ok = ctx.setTtCardRoomPreference?.(cardIds, ruleSel.value, roomSel.value, { preserveFixedRooms: targets.length > 1 });
+    const ok = ctx.setTtCardRoomPreference?.(cardIds, ruleSel.value, roomSel.value);
     if (ok) {
       ctx.renderAll?.();
       modal.remove();
