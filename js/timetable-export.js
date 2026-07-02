@@ -1,12 +1,12 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r194: 셀 여백 축소 + 영어 과목명 병기 + 출력 셀 자동 글씨 축소
+// r195: 출력 가독성 개선 + 내부 경계선 + 영문 요일/제목
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
 // ================================================================
 
-const DAYS = ["월", "화", "수", "목", "금"];
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const EXPORT_STYLE_ID = "ttExportDialogR190Style";
 
 function clean(value) {
@@ -96,10 +96,17 @@ function unique(list = []) {
   return [...new Set((list || []).map(clean).filter(Boolean))];
 }
 
+function periodDisplayLabel(label, index) {
+  const raw = clean(label);
+  const m = raw.match(/\d{1,2}/);
+  if (m) return String(Number(m[0]));
+  return raw || String(index + 1);
+}
+
 function getPeriodLabels(ttConfig) {
   const labels = ttConfig?.()?.periodLabels || [];
   const count = Math.max(1, labels.length || ttConfig?.()?.periodCount || 7);
-  return Array.from({ length: count }, (_, i) => labels[i] || `${i + 1}교시`);
+  return Array.from({ length: count }, (_, i) => periodDisplayLabel(labels[i] || `${i + 1}`, i));
 }
 
 function ensureStyle() {
@@ -621,7 +628,7 @@ function buildEntities(type, bands, deps, ctx) {
 }
 
 function buildGridData(entity, ctx) {
-  const data = [["교시", ...DAYS]];
+  const data = [["", ...DAYS]];
   ctx.periods.forEach((label, period) => {
     const row = [label];
     DAYS.forEach((_, day) => {
@@ -636,7 +643,7 @@ function buildGridData(entity, ctx) {
 }
 
 function buildCombinedGridData(entities, ctx) {
-  const data = [["대상", "교시", ...DAYS]];
+  const data = [["대상", "", ...DAYS]];
   entities.forEach(entity => {
     ctx.periods.forEach((label, period) => {
       const row = [entity.label, label];
@@ -712,7 +719,7 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
       const data = [];
       students.forEach((student, idx) => {
         if (idx) data.push([]);
-        data.push([`${student.label} 시간표`]);
+        data.push([`${student.label} Timetable`]);
         data.push(...buildGridData(student, ctx));
       });
       const ws = XLSX.utils.aoa_to_sheet(data);
@@ -745,33 +752,35 @@ function looksLikeEnglishSubjectLine(line = "") {
 function lessonDensityClass(lines = []) {
   const totalLength = lines.join(" ").replace(/\s+/g, " ").length;
   const lineCount = lines.length;
-  if (lineCount >= 9 || totalLength >= 170) return " lesson-micro";
-  if (lineCount >= 7 || totalLength >= 125) return " lesson-compact";
-  if (lineCount >= 5 || totalLength >= 85) return " lesson-dense";
+  if (lineCount >= 10 || totalLength >= 210) return " lesson-micro";
+  if (lineCount >= 8 || totalLength >= 165) return " lesson-compact";
+  if (lineCount >= 6 || totalLength >= 115) return " lesson-dense";
   return "";
 }
 
 function lessonHtml(text) {
   if (!text) return "";
-  const lines = String(text).split(/\n/).map(line => line.trim()).filter(Boolean);
+  const lines = String(text).replace(/\r/g, "").split(/\n/).filter(line => clean(line));
+  const hasParallel = lines.some(line => line.includes("\t"));
   const body = lines.map((line, idx) => {
-    const parts = line.split("\t").map(clean).filter(Boolean);
+    const rawParts = line.split("\t").map(clean);
+    const isParallel = rawParts.length > 1;
     const englishLine = idx > 0 && looksLikeEnglishSubjectLine(line);
-    if (parts.length > 1) {
+    if (isParallel) {
       const extra = idx === 0 ? " lesson-parallel-title" : englishLine ? " lesson-parallel-en" : "";
-      return `<div class="lesson-parallel${extra}">${parts.map(part => `<span>${escapeHtml(part)}</span>`).join("")}</div>`;
+      return `<div class="lesson-parallel${extra}">${rawParts.map(part => `<span>${escapeHtml(part || " ")}</span>`).join("")}</div>`;
     }
     const cls = idx === 0 ? "lesson-title" : englishLine ? "lesson-subtitle" : "lesson-line";
-    return `<div class="${cls}">${escapeHtml(line)}</div>`;
+    return `<div class="${cls}">${escapeHtml(clean(line))}</div>`;
   }).join("");
-  return `<div class="lesson${lessonDensityClass(lines)}" data-fit="1">${body}</div>`;
+  return `<div class="lesson${hasParallel ? " lesson-has-parallel" : ""}${lessonDensityClass(lines)}" data-fit="1">${body}</div>`;
 }
 
 function buildIndividualSections(entities, ctx, type) {
   let lastGroup = "";
   return entities.map(entity => {
     const groupHeader = type === "student" && entity.groupLabel !== lastGroup
-      ? `<h2 class="class-break">${escapeHtml(entity.groupLabel)} 학생 개별 시간표</h2>`
+      ? `<h2 class="class-break">${escapeHtml(entity.groupLabel)} Student Timetable</h2>`
       : "";
     lastGroup = entity.groupLabel;
     const rows = ctx.periods.map((label, period) => {
@@ -783,7 +792,7 @@ function buildIndividualSections(entities, ctx, type) {
       return `<tr><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
     }).join("");
     const colgroup = `<colgroup><col class="period-col">${DAYS.map(() => `<col>`).join("")}</colgroup>`;
-    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} 시간표</h1><table>${colgroup}<thead><tr><th class="corner-head">교시</th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
+    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} Timetable</h1><table>${colgroup}<thead><tr><th class="corner-head"></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join("\n");
 }
 
@@ -799,24 +808,24 @@ function buildCombinedSection(entities, ctx, title) {
     }).join("");
   }).join("\n");
   const colgroup = `<colgroup><col class="entity-col"><col class="period-col">${DAYS.map(() => `<col>`).join("")}</colgroup>`;
-  return `<section class="print-section combined"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th>대상</th><th>교시</th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
+  return `<section class="print-section combined"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th>대상</th><th></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
 function buildPrintHtml(entities, ctx, { layout, type, bands }) {
   const now = new Date();
   const titleType = type === "teacher" ? "교사" : type === "class" ? "학급" : type === "room" ? "교실" : "학생";
-  const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} 시간표`;
+  const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} Timetable`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 8px;padding:6px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 8px;font-size:20px;text-align:center;line-height:1.2}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:42px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:76px;font-size:9.2px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:1px;padding-top:1px;border-top:1px dotted #d1d5db}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.78em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.9em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:1px;margin-top:0;align-items:center}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.78em;line-height:1.05}.lesson-dense{font-size:.9em}.lesson-compact{font-size:.8em}.lesson-micro{font-size:.7em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:4px}th,td{padding:1px 2px}td{height:24mm;font-size:7.8px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.76em}.lesson-line,.lesson-parallel span{font-size:.84em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.76em}.combined th,.combined td{font-size:7.4px}.combined td{height:17mm}col.period-col{width:34px}col.entity-col{width:72px}}
+    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 5px;font-size:20px;text-align:center;line-height:1.12}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:2.5mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined td{height:18.5mm}col.period-col{width:25px}col.entity-col{width:72px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="fitAllTimetableCells();window.print()">PDF 저장/인쇄</button></div>${sections}<script>
 function fitAllTimetableCells(){
   document.querySelectorAll("td:not(.empty)").forEach(td=>{
-    let size=parseFloat(getComputedStyle(td).fontSize)||8;
-    const min=5.4;
-    for(let i=0;i<18 && size>min;i+=1){
+    let size=parseFloat(getComputedStyle(td).fontSize)||9;
+    const min=6.7;
+    for(let i=0;i<14 && size>min;i+=1){
       if(td.scrollHeight<=td.clientHeight+1 && td.scrollWidth<=td.clientWidth+1) break;
-      size-=0.35;
+      size-=0.25;
       td.style.fontSize=size+"px";
     }
   });
