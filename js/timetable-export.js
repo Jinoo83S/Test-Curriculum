@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r195: 출력 가독성 개선 + 내부 경계선 + 영문 요일/제목
+// r196: 교사 개별 출력에서 본인 과목/교실/학반만 표시
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -389,6 +389,17 @@ function classKeysForCard(card = {}) {
   return unique(keys);
 }
 
+function classLabelFromKey(key = "") {
+  const normalized = normalizeClassKey(key);
+  if (!normalized) return "";
+  const [grade, section] = normalized.split(":");
+  return grade && section ? `${grade}${section}` : normalized.replace(":", "");
+}
+
+function classLabelsForCard(card = {}) {
+  return unique(classKeysForCard(card).map(classLabelFromKey).filter(Boolean));
+}
+
 function scopeClassKey(scope = {}) {
   if (!scope) return "";
   return normalizeClassKey(scope.classKey || scope.key || "", scope.gradeKey || scope.grade || "");
@@ -505,6 +516,72 @@ function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {})
   return [...titleLines, teachers[0] || "", roomsUnique[0] || ""].filter(line => clean(line)).join("\n");
 }
 
+function cardMatchesTeacher(card = {}, teacher = "", deps = {}) {
+  const target = clean(teacher);
+  if (!target || !card) return false;
+  return teacherNamesForCard(card, deps).map(clean).includes(target);
+}
+
+function teacherRoomForCard(cardId = "", card = {}, entry = {}, rooms = [], deps = {}) {
+  const assignments = getRoomAssignments(entry, deps);
+  const directRoomId = clean(assignments?.[cardId] || card?.fixedRoomId || card?.roomId || "");
+  if (directRoomId) return roomNameForId(directRoomId, rooms, deps);
+  const ids = roomIdsForEntry(entry, rooms, deps);
+  if (ids.length === 1) return roomNameForId(ids[0], rooms, deps);
+  return "";
+}
+
+function teacherScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
+  const teacher = clean(scope.key || scope.label || scope.teacher || "");
+  if (!teacher) return "";
+  const cardIds = entryCardIds(entry);
+  const matching = [];
+
+  if (cardIds.length && typeof deps.getTtCardById === "function") {
+    cardIds.forEach(cardId => {
+      const card = deps.getTtCardById(cardId);
+      if (!cardMatchesTeacher(card, teacher, deps)) return;
+      const titleParts = cardTitlePartsForExport(card, deps);
+      const room = teacherRoomForCard(cardId, card, entry, rooms, deps);
+      const classes = classLabelsForCard(card);
+      matching.push({ titleParts, room, classes });
+    });
+  }
+
+  if (!matching.length) {
+    const entryTeachers = splitTeacherField(entry.teacherName || entry.teacherNames || "", deps).map(clean);
+    if (!entryTeachers.includes(teacher)) return "";
+    matching.push({
+      titleParts: entryTitlePartsForExport(entry, deps),
+      room: roomNamesForEntry(entry, rooms, deps),
+      classes: [],
+    });
+  }
+
+  const classColumns = matching.map(item => {
+    if (item.classes?.length) return item.classes.join("/");
+    const labels = [];
+    try {
+      const audience = deps.audienceForPlacement?.(entry);
+      labels.push(...toArrayFromSet(audience?.classLabels).filter(Boolean));
+    } catch (_) {}
+    if (!labels.length && Array.isArray(entry?.audienceClassKeys)) {
+      labels.push(...entry.audienceClassKeys.map(classLabelFromKey).filter(Boolean));
+    }
+    return unique(labels).join("/");
+  });
+  const roomColumns = matching.map(item => item.room || "교실 없음");
+  const primaryColumns = matching.map((item, idx) => unique([roomColumns[idx], classColumns[idx]]).join(" · "));
+  const koColumns = matching.map(item => item.titleParts?.ko || item.titleParts?.en || "-");
+  const enColumns = matching.map(item => item.titleParts?.en || "");
+
+  const lines = [];
+  if (primaryColumns.some(clean)) lines.push(primaryColumns.join("	"));
+  if (koColumns.some(clean)) lines.push(koColumns.join("	"));
+  if (enColumns.some(clean)) lines.push(enColumns.join("	"));
+  return lines.filter(line => clean(line)).join("\n");
+}
+
 function buildExportContext(deps = {}) {
   const rooms = deps.getRooms?.() || [];
   const periods = getPeriodLabels(deps.ttConfig);
@@ -552,15 +629,24 @@ function buildExportContext(deps = {}) {
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
     const room = roomNamesForEntry(entry, rooms, deps);
     const classes = entryClassLabels(entry).join(", ");
-    if (mode === "teacher") return [...titleLines, classes, room].filter(Boolean).join("\n");
+    if (mode === "teacher") return teacherScopedLessonLines(entry, rooms, deps, scope) || [room, classes, ...titleLines].filter(Boolean).join("\n");
     if (mode === "class") return buildParallelLessonLines(entry, rooms, deps, scope);
     if (mode === "room") return [...titleLines, teacher, classes].filter(Boolean).join("\n");
     if (mode === "student") return buildParallelLessonLines(entry, rooms, deps, scope);
     return [...titleLines, teacher, classes, room].filter(Boolean).join("\n");
   };
 
-  const teacherMatches = (entry, teacher) => (deps.splitTeacherNames?.(entry.teacherName || "") || [])
-    .map(clean).includes(clean(teacher));
+  const teacherMatches = (entry, teacher) => {
+    const target = clean(teacher);
+    if (!target) return false;
+    const directTeachers = splitTeacherField(entry.teacherName || entry.teacherNames || "", deps).map(clean);
+    if (directTeachers.includes(target)) return true;
+    const cardIds = entryCardIds(entry);
+    if (cardIds.length && typeof deps.getTtCardById === "function") {
+      return cardIds.some(id => cardMatchesTeacher(deps.getTtCardById(id), target, deps));
+    }
+    return false;
+  };
 
   const classMatches = (entry, cls) => {
     if (typeof deps.entryMatchesClass === "function" && deps.entryMatchesClass(entry, cls)) return true;
@@ -746,7 +832,18 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
 function looksLikeEnglishSubjectLine(line = "") {
   const raw = clean(line);
   if (!raw) return false;
-  return /[A-Za-z]/.test(raw) && !/[가-힣]/.test(raw);
+  if (!/[A-Za-z]/.test(raw) || /[가-힣]/.test(raw)) return false;
+  const cells = raw.split("	").map(clean).filter(Boolean);
+  const codeLike = value => {
+    const v = clean(value);
+    return /^\d{1,2}[A-Z]$/i.test(v) ||
+      /^[A-Z]{1,4}\d{2,4}(?:[-_][A-Za-z0-9]+)?$/i.test(v) ||
+      /^M?H\d{2,4}$/i.test(v) || /^V?H\d{2,4}$/i.test(v) || /^T?H\d{2,4}$/i.test(v) ||
+      /^HR\d*$/i.test(v);
+  };
+  // 교실 코드(MH501, VH304), 학반 코드(8A), HR 등은 영어 과목명이 아니므로 작게 처리하지 않습니다.
+  if (cells.length && cells.every(codeLike)) return false;
+  return true;
 }
 
 function lessonDensityClass(lines = []) {
