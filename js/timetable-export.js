@@ -1,14 +1,15 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r203: 간략 출력 과목 직접 선택 의미 정리
-//  - 체크한 과목으로 출력 대상을 필터링하지 않고, 해당 과목만 간략 표시
-//  - CA/SA는 기본 간략 표시로 유지하고 다른 과목을 추가 선택 가능
-//  - 대표 출력 교과라는 오해 소지가 있는 UI 문구 정리
+// r204: 출력 화면 배치 정리 및 교실 개별 그룹 범위 보정
+//  - 대상/출력 방식/형식은 기존 위치 유지, 출력 범위는 우측 유지
+//  - 7A~12C와 간략 출력 과목 선택의 과한 볼드 제거
+//  - 간략 출력 과목 선택은 하단 영역으로 분리
+//  - 교실 개별 출력에서 해당 교실에 배정된 카드만 표시
 // ================================================================
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DEFAULT_REPRESENTATIVE_SUBJECTS = ["CA", "SA"];
-const EXPORT_STYLE_ID = "ttExportDialogR203Style";
+const EXPORT_STYLE_ID = "ttExportDialogR204Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -171,10 +172,10 @@ function ensureStyle() {
     .tt-export-modal-backdrop{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px}
     .tt-export-modal{width:min(880px,96vw);max-height:92vh;background:#fff;border:1px solid #cbd5e1;border-radius:14px;box-shadow:0 22px 70px rgba(15,23,42,.34);display:flex;flex-direction:column;overflow:hidden;color:#0f172a}
     .tt-export-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc}.tt-export-head strong{display:block;font-size:17px}.tt-export-head span{display:block;margin-top:3px;font-size:12px;color:#64748b}.tt-export-close{width:32px;height:32px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;font-size:18px;font-weight:900;cursor:pointer}
-    .tt-export-body{display:grid;grid-template-columns:minmax(360px,1fr) 230px;gap:14px;padding:14px 16px;overflow:auto}@media(max-width:760px){.tt-export-body{grid-template-columns:1fr}}
+    .tt-export-body{display:grid;grid-template-columns:minmax(360px,1fr) 230px;gap:14px;padding:14px 16px 8px;overflow:auto}@media(max-width:760px){.tt-export-body{grid-template-columns:1fr}}
     .tt-export-options{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.tt-export-options label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:900;color:#475569}.tt-export-options select{height:34px;border:1px solid #cbd5e1;border-radius:8px;padding:4px 8px;font-size:13px;background:#fff}
     .tt-export-info{margin-top:12px;padding:12px;border:1px dashed #bfdbfe;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:12px;line-height:1.55}.tt-export-preview{margin-top:10px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;font-size:12px;color:#334155;line-height:1.55;max-height:180px;overflow:auto}
-    .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-class-scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-class-scopes label{justify-content:center;margin:0;padding:7px 5px;font-size:12px}.tt-export-class-scopes.is-disabled{opacity:.42;pointer-events:none}.tt-export-special-scopes{margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-special-scopes strong{display:block;margin-bottom:6px;font-size:12px;color:#334155}.tt-export-special-list{display:grid;grid-template-columns:1fr;gap:6px;max-height:210px;overflow:auto;padding-right:2px}.tt-export-special-scopes label{justify-content:flex-start;margin:0;padding:7px 8px;font-size:12px}.tt-export-special-scopes label.is-default{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}
+    .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-class-scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-class-scopes label{justify-content:center;margin:0;padding:7px 5px;font-size:12px;font-weight:400}.tt-export-class-scopes.is-disabled{opacity:.42;pointer-events:none}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}.tt-export-special-scopes{padding:0 16px 12px}.tt-export-special-panel{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:11px}.tt-export-special-panel .tt-export-special-title{display:block;margin-bottom:7px;font-size:12px;font-weight:400;color:#334155}.tt-export-special-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;max-height:138px;overflow:auto;padding-right:2px}.tt-export-special-scopes label{display:flex;align-items:center;gap:7px;margin:0;padding:7px 8px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:12px;font-weight:400;color:#1e293b;cursor:pointer}.tt-export-special-scopes input{width:16px;height:16px}.tt-export-special-scopes label.is-default{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}.tt-export-special-scopes p{margin:8px 0 0;font-size:11px;color:#64748b;line-height:1.45}@media(max-width:760px){.tt-export-special-list{grid-template-columns:1fr 1fr}}
     .tt-export-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e2e8f0;background:#f8fafc}.tt-export-foot button{height:34px;padding:0 14px;border:1px solid #94a3b8;border-radius:8px;background:#fff;font-weight:900;cursor:pointer}.tt-export-foot .tt-export-run{background:#2563eb;border-color:#2563eb;color:#fff}
   `;
   document.head.appendChild(style);
@@ -423,8 +424,9 @@ function cardRoomMatchesExport(cardId = "", card = {}, entry = {}, room = {}, ro
   const cardRoomId = roomIdForCardExport(cardId, card, entry, rooms, deps);
   if (cardRoomId && cardRoomId === target) return true;
   if (homeRoomIdsForCardExport(card, entry, rooms, deps).includes(target)) return true;
-  const assignments = getRoomAssignments(entry, deps);
-  if (Object.values(assignments || {}).map(clean).includes(target)) return true;
+  // 그룹 배치의 다른 카드가 이 교실을 쓰고 있다는 이유만으로
+  // 현재 카드를 이 교실에 속한 것으로 보지 않습니다.
+  // 카드별 assignment/fixed/homeroom 해석으로 매칭된 카드만 교실 개별 출력에 포함합니다.
   return false;
 }
 
@@ -617,19 +619,38 @@ function shouldUseRepresentativeOutput(entry = {}, deps = {}, selectedCodes = []
 }
 
 function representativeLessonLines(entry = {}, mode = "normal", scope = {}, rooms = [], deps = {}, selectedCodes = []) {
-  const candidate = selectedRepresentativeCandidate(entry, deps, selectedCodes);
+  let candidate = selectedRepresentativeCandidate(entry, deps, selectedCodes);
   if (!candidate) return "";
-  const label = candidate.label;
   if (mode === "room") {
     const room = (rooms || []).find(r => clean(r.id) === clean(scope.key || scope.roomId || scope.id)) || scope;
+    const matchingCards = roomScopedCardsForEntry(entry, room, rooms, deps);
+    if (!matchingCards.length) return "";
+
+    const briefCodes = effectiveBriefSubjectCodes(selectedCodes || []);
+    const scopedCandidates = [];
+    matchingCards.forEach(({ card }) => representativeSubjectCandidatesForCard(card, deps)
+      .forEach(item => pushRepresentativeCandidate(scopedCandidates, item.label, item.kind, item.priority)));
+    const scopedCandidate = scopedCandidates.find(item => briefCodes.includes(item.key));
+
+    // 카드 자체가 선택 과목과 일치하면 그 과목명으로 간략 표시합니다.
+    // CA/SA처럼 entry/group 이름만 대표값으로 존재하는 경우에는,
+    // 이 교실에 실제 매칭 카드가 있을 때만 group 대표값을 허용합니다.
+    if (scopedCandidate) {
+      candidate = scopedCandidate;
+    } else if (!String(candidate.kind || "").includes("group") && !DEFAULT_REPRESENTATIVE_SUBJECTS.map(normalizeSpecialSubjectCode).includes(candidate.key)) {
+      return "";
+    }
+
+    const label = candidate.label;
     const home = homeRoomLabelForRoom(room, deps);
     if (home) return `${label}
 ${home} Homeroom`;
-    const classes = unique(roomScopedCardsForEntry(entry, room, rooms, deps).flatMap(({ card }) => classLabelsForCard(card)));
+    const classes = unique(matchingCards.flatMap(({ card }) => classLabelsForCard(card)));
     if (classes.length) return `${label}
 ${classes.join(", ")}`;
+    return label;
   }
-  return label;
+  return candidate.label;
 }
 
 function buildSpecialSubjectOptions(deps = {}, ctx = {}) {
@@ -1029,6 +1050,10 @@ function roomScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
   }
 
   if (!matching.length) {
+    // 여러 카드가 묶인 그룹 수업에서 카드별 교실 매칭이 실패했을 때
+    // entry 전체 제목을 교실 개별 시간표에 뿌리면 다른 교실 과목까지 섞입니다.
+    // 그래서 그룹 entry는 정확히 매칭된 카드가 없으면 표시하지 않습니다.
+    if (entryCardIds(entry).length > 1) return "";
     const ids = roomIdsForEntry(entry, rooms, deps);
     if (!ids.includes(targetRoomId)) return "";
     matching.push({
@@ -1580,12 +1605,14 @@ export function openTimetableExportDialog(deps = {}) {
           <label><input type="checkbox" data-scope="middle"> 중등 7–9학년</label>
           <label><input type="checkbox" data-scope="high"> 고등 10–12학년</label>
           <div class="tt-export-class-scopes" data-role="class-scopes"></div>
-          <div class="tt-export-special-scopes" data-role="special-scopes">
-            <strong>간략 출력 과목 선택</strong>
-            <div class="tt-export-special-list" data-role="special-list"></div>
-          </div>
-          <p>전체 시간표는 그대로 출력하고, 여기서 체크한 과목/그룹만 셀 안에서 세부 과목·교사·교실 나열 없이 간략 표시합니다. CA/SA는 기본 간략 표시됩니다.</p>
         </aside>
+      </div>
+      <div class="tt-export-special-scopes" data-role="special-scopes">
+        <div class="tt-export-special-panel">
+          <span class="tt-export-special-title">간략 출력 과목 선택</span>
+          <div class="tt-export-special-list" data-role="special-list"></div>
+          <p>전체 시간표는 그대로 출력하고, 여기서 체크한 과목/그룹만 셀 안에서 세부 과목·교사·교실 나열 없이 간략 표시합니다. CA/SA는 기본 간략 표시됩니다.</p>
+        </div>
       </div>
       <div class="tt-export-foot"><button type="button" class="tt-export-cancel">닫기</button><button type="button" class="tt-export-run">출력</button></div>
     </div>`;
