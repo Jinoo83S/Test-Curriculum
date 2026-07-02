@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r191: 출력 시간표 레이아웃 정리 + 카드형 제거
+// r192: 묶음수업 학급별 출력 보정 + 과목명 우선 표시
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
@@ -241,7 +241,97 @@ function teacherNamesForCard(card = {}, deps = {}) {
   return splitTeacherField(card.teacherName || card.teacher || "", deps);
 }
 
-function buildParallelLessonLines(entry = {}, rooms = [], deps = {}) {
+function cardTitleForExport(card = {}, deps = {}) {
+  if (!card) return "";
+  const raw = clean(card.subject || card.label || card.subjectKo || card.nameKo || card.title || card.subjectEn || card.nameEn);
+  if (raw) return raw;
+  if (typeof deps.getTtCardTitle === "function") {
+    try { return clean(deps.getTtCardTitle(card)); } catch (_) {}
+  }
+  return "";
+}
+
+function classKeyForSection(gradeKey, sectionIdx = 0) {
+  const grade = normalizeGradeNumber(gradeKey);
+  const section = sectionLabel(sectionIdx).toUpperCase();
+  return grade && section ? `${grade}:${section}` : "";
+}
+
+function classKeysForCard(card = {}) {
+  if (!card) return [];
+  const keys = [];
+  if (Array.isArray(card.classKeys) && card.classKeys.length) {
+    card.classKeys.forEach(key => keys.push(normalizeClassKey(key, card.gradeKey)));
+  }
+  if (Array.isArray(card.classLabels) && card.classLabels.length) {
+    card.classLabels.forEach(label => keys.push(normalizeClassKey(label, card.gradeKey)));
+  }
+  if (!keys.length) keys.push(classKeyForSection(card.gradeKey, card.sectionIdx ?? 0));
+  return unique(keys);
+}
+
+function scopeClassKey(scope = {}) {
+  if (!scope) return "";
+  return normalizeClassKey(scope.classKey || scope.key || "", scope.gradeKey || scope.grade || "");
+}
+
+function cardMatchesScopeClass(card = {}, targetClassKey = "") {
+  const target = clean(targetClassKey);
+  if (!card || !target) return false;
+  return classKeysForCard(card).includes(target);
+}
+
+function scopedCardIdsForEntry(entry = {}, scope = {}, deps = {}) {
+  const ids = entryCardIds(entry);
+  const targetClassKey = scopeClassKey(scope);
+  if (!ids.length || !targetClassKey || typeof deps.getTtCardById !== "function") return ids;
+
+  const matched = ids.filter(id => cardMatchesScopeClass(deps.getTtCardById(id), targetClassKey));
+  if (matched.length) return matched;
+
+  const narrowed = Array.isArray(entry?.audienceClassKeys)
+    ? entry.audienceClassKeys.map(key => normalizeClassKey(key)).filter(Boolean)
+    : [];
+  if (narrowed.length && narrowed.includes(targetClassKey) && ids.length === 1) return ids;
+  return ids;
+}
+
+function buildScopedCardLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
+  const allIds = entryCardIds(entry);
+  const targetClassKey = scopeClassKey(scope);
+  if (!targetClassKey || allIds.length <= 1 || typeof deps.getTtCardById !== "function") return "";
+
+  const scopedIds = scopedCardIdsForEntry(entry, scope, deps);
+  if (!scopedIds.length || scopedIds.length === allIds.length) return "";
+
+  const assignments = getRoomAssignments(entry, deps);
+  const titleColumns = [];
+  const teacherColumns = [];
+  const roomColumns = [];
+
+  scopedIds.forEach(cardId => {
+    const card = deps.getTtCardById(cardId);
+    if (!card) return;
+    const title = cardTitleForExport(card, deps) || deps.entryTitle?.({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }) || entry.subject || entry.title || "-";
+    const teachers = teacherNamesForCard(card, deps).join(" / ");
+    const roomId = clean(assignments?.[cardId] || card.fixedRoomId || card.roomId || "");
+    const room = roomNameForId(roomId, rooms, deps);
+    titleColumns.push(title);
+    teacherColumns.push(teachers);
+    roomColumns.push(room || "");
+  });
+
+  if (!titleColumns.length) return "";
+  const lines = [titleColumns.join("\t")];
+  if (teacherColumns.some(clean)) lines.push(teacherColumns.join("\t"));
+  if (roomColumns.some(clean)) lines.push(roomColumns.join("\t"));
+  return lines.filter(line => clean(line)).join("\n");
+}
+
+function buildParallelLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
+  const scopedCardLines = buildScopedCardLessonLines(entry, rooms, deps, scope);
+  if (scopedCardLines) return scopedCardLines;
+
   const title = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
   const cardIds = entryCardIds(entry);
   const assignments = getRoomAssignments(entry, deps);
@@ -332,15 +422,15 @@ function buildExportContext(deps = {}) {
     return unique(ids);
   };
 
-  const entrySummary = (entry, mode = "normal") => {
+  const entrySummary = (entry, mode = "normal", scope = {}) => {
     const title = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
     const room = roomNamesForEntry(entry, rooms, deps);
     const classes = entryClassLabels(entry).join(", ");
     if (mode === "teacher") return [title, classes, room].filter(Boolean).join(" / ");
-    if (mode === "class") return buildParallelLessonLines(entry, rooms, deps);
+    if (mode === "class") return buildParallelLessonLines(entry, rooms, deps, scope);
     if (mode === "room") return [title, teacher, classes].filter(Boolean).join(" / ");
-    if (mode === "student") return buildParallelLessonLines(entry, rooms, deps);
+    if (mode === "student") return buildParallelLessonLines(entry, rooms, deps, scope);
     return [title, teacher, classes, room].filter(Boolean).join(" / ");
   };
 
@@ -418,7 +508,7 @@ function buildGridData(entity, ctx) {
     const row = [label];
     DAYS.forEach((_, day) => {
       const text = ctx.getGridEntries(day, period, entity.filterFn)
-        .map(e => ctx.entrySummary(e, entity.mode))
+        .map(e => ctx.entrySummary(e, entity.mode, entity))
         .join("\n\n");
       row.push(text);
     });
@@ -433,7 +523,7 @@ function buildCombinedGridData(entities, ctx) {
     ctx.periods.forEach((label, period) => {
       const row = [entity.label, label];
       DAYS.forEach((_, day) => {
-        row.push(ctx.getGridEntries(day, period, entity.filterFn).map(e => ctx.entrySummary(e, entity.mode)).join("\n\n"));
+        row.push(ctx.getGridEntries(day, period, entity.filterFn).map(e => ctx.entrySummary(e, entity.mode, entity)).join("\n\n"));
       });
       data.push(row);
     });
@@ -534,7 +624,8 @@ function lessonHtml(text) {
   const body = lines.map((line, idx) => {
     const parts = line.split("\t").map(clean).filter(Boolean);
     if (parts.length > 1) {
-      return `<div class="lesson-parallel">${parts.map(part => `<span>${escapeHtml(part)}</span>`).join("")}</div>`;
+      const extra = idx === 0 ? " lesson-parallel-title" : "";
+      return `<div class="lesson-parallel${extra}">${parts.map(part => `<span>${escapeHtml(part)}</span>`).join("")}</div>`;
     }
     const cls = idx === 0 ? "lesson-title" : "lesson-line";
     return `<div class="${cls}">${escapeHtml(line)}</div>`;
@@ -552,7 +643,7 @@ function buildIndividualSections(entities, ctx, type) {
     const rows = ctx.periods.map((label, period) => {
       const tds = DAYS.map((_, day) => {
         const html = ctx.getGridEntries(day, period, entity.filterFn)
-          .map(e => lessonHtml(ctx.entrySummary(e, entity.mode))).join("");
+          .map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
         return `<td${html ? "" : " class='empty'"}>${html}</td>`;
       }).join("");
       return `<tr><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
@@ -567,7 +658,7 @@ function buildCombinedSection(entities, ctx, title) {
     return ctx.periods.map((label, period) => {
       const tds = DAYS.map((_, day) => {
         const html = ctx.getGridEntries(day, period, entity.filterFn)
-          .map(e => lessonHtml(ctx.entrySummary(e, entity.mode))).join("");
+          .map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
         return `<td${html ? "" : " class='empty'"}>${html}</td>`;
       }).join("");
       return `<tr><th class="entity">${escapeHtml(entity.label)}</th><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
@@ -583,7 +674,7 @@ function buildPrintHtml(entities, ctx, { layout, type, bands }) {
   const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} 시간표`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 8px;padding:6px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 8px;font-size:20px;text-align:center;line-height:1.2}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:46px}col.entity-col{width:86px}th,td{border:1px solid #9ca3af;padding:4px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:78px;font-size:10px;line-height:1.28}.empty{background:#fff}.lesson{margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.28;text-align:center}.lesson+.lesson{margin-top:3px;padding-top:3px;border-top:1px dotted #d1d5db}.lesson-title{font-weight:900;font-size:1.12em;margin:0 0 2px;text-align:center}.lesson-line{margin:1px 0 0;text-align:center;color:#374151}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;margin-top:1px;align-items:center}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:5px}th,td{padding:3px}td{height:25mm;font-size:8.5px}.lesson-title{font-size:1.12em}.lesson-line,.lesson-parallel span{font-size:.86em}.combined th,.combined td{font-size:8px}.combined td{height:18mm}col.period-col{width:38px}col.entity-col{width:76px}}
+    @page{size:A4 landscape;margin:7mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 8px;padding:6px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 8px;font-size:20px;text-align:center;line-height:1.2}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:46px}col.entity-col{width:86px}th,td{border:1px solid #9ca3af;padding:4px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:78px;font-size:10px;line-height:1.28}.empty{background:#fff}.lesson{margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.28;text-align:center}.lesson+.lesson{margin-top:3px;padding-top:3px;border-top:1px dotted #d1d5db}.lesson-title{font-weight:900;font-size:1.12em;margin:0 0 2px;text-align:center}.lesson-line{margin:1px 0 0;text-align:center;color:#374151}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:2px;margin-top:1px;align-items:center}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.12em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:5px}th,td{padding:3px}td{height:25mm;font-size:8.5px}.lesson-title{font-size:1.12em}.lesson-line,.lesson-parallel span{font-size:.86em}.lesson-parallel-title span{font-size:1.12em}.combined th,.combined td{font-size:8px}.combined td{height:18mm}col.period-col{width:38px}col.entity-col{width:76px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="window.print()">PDF 저장/인쇄</button></div>${sections}<script>setTimeout(()=>window.focus(),100);</script></body></html>`;
 }
 
