@@ -1,13 +1,14 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r199: 교실 제목 홈룸 병기 및 학생 선택과목 정밀 추적
-//  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
-//  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
-//  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
+// r201: 특수교과(CA/SA) 선택 출력, 균일 행높이, 개별 제목 형식 보정
+//  - CA/SA는 출력 셀에서 교사/교실/학반 상세 없이 CA/SA만 표시
+//  - 특수교과 선택 시 해당 과목만 필터링하여 출력
+//  - 교실 제목: 교실 (홈룸) Timetable, 학생 제목: 홈룸 학생 Timetable
 // ================================================================
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const EXPORT_STYLE_ID = "ttExportDialogR190Style";
+const SPECIAL_SUBJECT_CODES = ["CA", "SA"];
+const EXPORT_STYLE_ID = "ttExportDialogR201Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -59,6 +60,30 @@ function gradeAllowed(gradeLike, bands = ["middle", "high"]) {
   return bands.includes(b);
 }
 
+function normalizeScopeSelection(scope = ["middle", "high"]) {
+  if (Array.isArray(scope)) return { bands: scope.length ? scope : ["middle", "high"], classKeys: [] };
+  const bands = Array.isArray(scope?.bands) && scope.bands.length ? scope.bands : ["middle", "high"];
+  const classKeys = unique((scope?.classKeys || []).map(key => normalizeClassKey(key)).filter(Boolean));
+  return { bands, classKeys };
+}
+
+function scopeLabel(scope = ["middle", "high"]) {
+  const normalized = normalizeScopeSelection(scope);
+  if (normalized.classKeys.length) {
+    const labels = normalized.classKeys.map(classLabelFromKey).filter(Boolean);
+    if (labels.length <= 4) return labels.join(", ");
+    return `${labels.slice(0, 4).join(", ")} 외 ${labels.length - 4}개 학반`;
+  }
+  return bandLabel(normalized.bands);
+}
+
+function classAllowedByScope(cls = {}, scope = ["middle", "high"]) {
+  const normalized = normalizeScopeSelection(scope);
+  const key = makeClassKey(cls);
+  if (normalized.classKeys.length) return !!key && normalized.classKeys.includes(key);
+  return gradeAllowed(cls.gradeNo ?? cls.gradeKey ?? cls.grade, normalized.bands);
+}
+
 function classLabel(cls = {}) {
   const grade = normalizeGradeNumber(cls.gradeKey || cls.grade || "");
   const section = clean(cls.section || cls.name || sectionLabel(cls.sectionIdx ?? 0)).toUpperCase();
@@ -96,6 +121,24 @@ function unique(list = []) {
   return [...new Set((list || []).map(clean).filter(Boolean))];
 }
 
+function normalizeSpecialSubjectCode(value = "") {
+  const raw = clean(value).replace(/\s+/g, "").toUpperCase();
+  return SPECIAL_SUBJECT_CODES.includes(raw) ? raw : "";
+}
+
+function normalizeSpecialSubjectSelection(values = []) {
+  return unique((values || []).map(normalizeSpecialSubjectCode).filter(Boolean));
+}
+
+function specialSubjectLabel(values = []) {
+  const codes = normalizeSpecialSubjectSelection(values);
+  return codes.length ? codes.join("/") : "전체수업";
+}
+
+function getSpecialSubjectsFromDialog(backdrop) {
+  return normalizeSpecialSubjectSelection([...backdrop.querySelectorAll("[data-special-subject]:checked")].map(el => el.dataset.specialSubject || ""));
+}
+
 function periodDisplayLabel(label, index) {
   const raw = clean(label);
   const m = raw.match(/\d{1,2}/);
@@ -120,7 +163,7 @@ function ensureStyle() {
     .tt-export-body{display:grid;grid-template-columns:minmax(360px,1fr) 230px;gap:14px;padding:14px 16px;overflow:auto}@media(max-width:760px){.tt-export-body{grid-template-columns:1fr}}
     .tt-export-options{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.tt-export-options label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:900;color:#475569}.tt-export-options select{height:34px;border:1px solid #cbd5e1;border-radius:8px;padding:4px 8px;font-size:13px;background:#fff}
     .tt-export-info{margin-top:12px;padding:12px;border:1px dashed #bfdbfe;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:12px;line-height:1.55}.tt-export-preview{margin-top:10px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;font-size:12px;color:#334155;line-height:1.55;max-height:180px;overflow:auto}
-    .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}
+    .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-class-scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-class-scopes label{justify-content:center;margin:0;padding:7px 5px;font-size:12px}.tt-export-class-scopes.is-disabled{opacity:.42;pointer-events:none}.tt-export-special-scopes{margin-top:12px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-special-scopes strong{display:block;margin-bottom:6px;font-size:12px;color:#334155}.tt-export-special-scopes label{justify-content:center;margin:6px 0;padding:7px 8px;font-size:12px}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}
     .tt-export-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e2e8f0;background:#f8fafc}.tt-export-foot button{height:34px;padding:0 14px;border:1px solid #94a3b8;border-radius:8px;background:#fff;font-weight:900;cursor:pointer}.tt-export-foot .tt-export-run{background:#2563eb;border-color:#2563eb;color:#fff}
   `;
   document.head.appendChild(style);
@@ -495,6 +538,33 @@ function entryTitlePartsForExport(entry = {}, deps = {}) {
 function entryTitleForExport(entry = {}, deps = {}) {
   const parts = entryTitlePartsForExport(entry, deps);
   return parts.ko || parts.en || "-";
+}
+
+function specialSubjectCodeForCard(card = {}, deps = {}) {
+  if (!card) return "";
+  const candidates = [];
+  const parts = cardTitlePartsForExport(card, deps);
+  candidates.push(parts.ko, parts.en);
+  candidates.push(card.subject, card.label, card.subjectKo, card.subjectEn, card.nameKo, card.nameEn, card.title, card.short);
+  return candidates.map(normalizeSpecialSubjectCode).find(Boolean) || "";
+}
+
+function specialSubjectCodeForEntry(entry = {}, deps = {}) {
+  const cardIds = entryCardIds(entry);
+  if (cardIds.length && typeof deps.getTtCardById === "function") {
+    const codes = unique(cardIds.map(id => specialSubjectCodeForCard(deps.getTtCardById(id), deps)).filter(Boolean));
+    if (codes.length === 1) return codes[0];
+  }
+  const parts = entryTitlePartsForExport(entry, deps);
+  const candidates = [parts.ko, parts.en, entry.subject, entry.subjectKo, entry.subjectEn, entry.title, entry.label, entry.name, entry.short];
+  const code = candidates.map(normalizeSpecialSubjectCode).find(Boolean);
+  if (code) return code;
+  const templateIds = unique([entry?.templateId, ...(Array.isArray(entry?.templateIds) ? entry.templateIds : [])]);
+  const templateCodes = unique(templateIds.map(id => {
+    const tplParts = templateTitlePartsForExport(templateById(id, deps));
+    return normalizeSpecialSubjectCode(tplParts.ko) || normalizeSpecialSubjectCode(tplParts.en);
+  }).filter(Boolean));
+  return templateCodes.length === 1 ? templateCodes[0] : "";
 }
 
 function titleLinesForParts(partsList = []) {
@@ -935,6 +1005,15 @@ function buildExportContext(deps = {}) {
     return grades.map(g => `${normalizeGradeNumber(g)}${sec}`).filter(Boolean);
   };
 
+  const entryClassKeys = entry => {
+    const keys = [];
+    const audience = deps.audienceForPlacement?.(entry);
+    keys.push(...toArrayFromSet(audience?.classKeys).map(key => normalizeClassKey(key)));
+    if (Array.isArray(entry?.audienceClassKeys)) keys.push(...entry.audienceClassKeys.map(key => normalizeClassKey(key)));
+    entryClassLabels(entry).forEach(label => keys.push(normalizeClassKey(label)));
+    return unique(keys.filter(Boolean));
+  };
+
   const entryGradeNumbers = entry => unique(entryClassLabels(entry).map(label => {
     const m = clean(label).match(/\d{1,2}/);
     return m ? m[0] : "";
@@ -944,6 +1023,15 @@ function buildExportContext(deps = {}) {
     const nums = entryGradeNumbers(entry);
     if (!nums.length) return bands.includes("middle") && bands.includes("high");
     return nums.some(n => gradeAllowed(n, bands));
+  };
+
+  const entryAllowedByScope = (entry, scope) => {
+    const normalized = normalizeScopeSelection(scope);
+    if (normalized.classKeys.length) {
+      const keys = entryClassKeys(entry);
+      return keys.length ? keys.some(key => normalized.classKeys.includes(key)) : false;
+    }
+    return entryAllowedByBands(entry, normalized.bands);
   };
 
   const entryTemplateIds = entry => {
@@ -957,7 +1045,16 @@ function buildExportContext(deps = {}) {
     return unique(ids);
   };
 
+  const entryAllowedBySpecial = (entry, specialSubjects = []) => {
+    const codes = normalizeSpecialSubjectSelection(specialSubjects);
+    if (!codes.length) return true;
+    const code = specialSubjectCodeForEntry(entry, deps);
+    return !!code && codes.includes(code);
+  };
+
   const entrySummary = (entry, mode = "normal", scope = {}) => {
+    const specialCode = specialSubjectCodeForEntry(entry, deps);
+    if (specialCode && mode !== "teacher") return specialCode;
     const titleLines = singleTitleLinesForEntry(entry, deps);
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
     const room = roomNamesForEntry(entry, rooms, deps);
@@ -1022,42 +1119,65 @@ function buildExportContext(deps = {}) {
     .filter(e => e.day === day && e.period === period && filterFn(e))
     .sort((a, b) => String(entryTitleForExport(a, deps) || "").localeCompare(String(entryTitleForExport(b, deps) || ""), "ko"));
 
-  return { rooms, periods, entries, appState, entrySummary, teacherMatches, classMatches, roomMatches, studentMatches, getGridEntries, entryAllowedByBands };
+  return { rooms, periods, entries, appState, entrySummary, teacherMatches, classMatches, roomMatches, studentMatches, getGridEntries, entryAllowedByBands, entryAllowedByScope, entryAllowedBySpecial };
 }
 
-function getBandsFromDialog(backdrop) {
+function getScopeFromDialog(backdrop) {
+  const classKeys = [...backdrop.querySelectorAll('[data-scope-class]:checked')]
+    .map(el => normalizeClassKey(el.dataset.scopeClass || ""))
+    .filter(Boolean);
+  if (classKeys.length) return { bands: ["middle", "high"], classKeys: unique(classKeys) };
+
   const all = backdrop.querySelector('[data-scope="all"]')?.checked;
   const middle = backdrop.querySelector('[data-scope="middle"]')?.checked;
   const high = backdrop.querySelector('[data-scope="high"]')?.checked;
-  if (all || (!middle && !high) || (middle && high)) return ["middle", "high"];
-  return [middle ? "middle" : "", high ? "high" : ""].filter(Boolean);
+  const bands = (all || (!middle && !high) || (middle && high))
+    ? ["middle", "high"]
+    : [middle ? "middle" : "", high ? "high" : ""].filter(Boolean);
+  return { bands, classKeys: [] };
 }
 
-function buildEntities(type, bands, deps, ctx) {
+function getBandsFromDialog(backdrop) {
+  return normalizeScopeSelection(getScopeFromDialog(backdrop)).bands;
+}
+
+function buildClassScopeOptions(deps = {}) {
+  return (deps.getAllClasses?.() || deps.appState?.classes?.classes || [])
+    .map(cls => ({ ...cls, key: makeClassKey(cls), label: classLabel(cls), gradeNo: normalizeGradeNumber(cls.gradeKey || cls.grade) }))
+    .filter(cls => cls.key && cls.gradeNo >= 7 && cls.gradeNo <= 12)
+    .sort((a, b) => a.label.localeCompare(b.label, "ko", { numeric: true }));
+}
+
+function buildEntities(type, scope, deps, ctx, filters = {}) {
+  const normalizedScope = normalizeScopeSelection(scope);
+  const specialSubjects = normalizeSpecialSubjectSelection(filters.specialSubjects || []);
   if (type === "teacher") {
     const teachers = (deps.getAllTimetableTeachers?.() || [])
       .map(clean).filter(Boolean)
       .sort((a, b) => a.localeCompare(b, "ko"));
     return teachers
-      .filter(t => ctx.entries.some(e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, bands)))
-      .map(t => ({ type, key: t, label: t, mode: "teacher", groupLabel: "교사", filterFn: e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, bands) }));
+      .filter(t => ctx.entries.some(e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects)))
+      .map(t => ({ type, key: t, label: t, mode: "teacher", groupLabel: "교사", filterFn: e => ctx.teacherMatches(e, t) && ctx.entryAllowedByBands(e, normalizedScope.bands) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
   }
   if (type === "class") {
     const classes = (deps.getAllClasses?.() || [])
       .map(cls => ({ ...cls, label: classLabel(cls), key: makeClassKey(cls), gradeNo: normalizeGradeNumber(cls.gradeKey || cls.grade) }))
-      .filter(cls => cls.key && gradeAllowed(cls.gradeNo, bands))
+      .filter(cls => cls.key && classAllowedByScope(cls, normalizedScope))
       .sort((a, b) => a.label.localeCompare(b.label, "ko", { numeric: true }));
-    return classes.map(cls => ({ type, key: cls.key, label: cls.label, mode: "class", groupLabel: gradeBandOf(cls.gradeNo) === "middle" ? "중등" : "고등", filterFn: e => ctx.classMatches(e, cls) }));
+    return classes
+      .filter(cls => ctx.entries.some(e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects)))
+      .map(cls => ({ type, key: cls.key, label: cls.label, mode: "class", groupLabel: gradeBandOf(cls.gradeNo) === "middle" ? "중등" : "고등", filterFn: e => ctx.classMatches(e, cls) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
   }
   if (type === "room") {
     return (ctx.rooms || [])
       .filter(room => clean(room.id || room.name))
       .filter(room => {
-        const scheduled = ctx.entries.some(e => ctx.roomMatches(e, room) && ctx.entryAllowedByBands(e, bands));
+        const scheduled = ctx.entries.some(e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects));
         if (scheduled) return true;
+        if (specialSubjects.length) return false;
         const home = homeRoomLabelForRoom(room, deps);
         const grade = normalizeGradeNumber(home);
-        return !!home && gradeAllowed(grade, bands);
+        return !!home && classAllowedByScope({ gradeKey: grade, section: clean(home).replace(/\d{1,2}/, "") }, normalizedScope);
       })
       .sort((a, b) => String(a.name || a.id).localeCompare(String(b.name || b.id), "ko", { numeric: true }))
       .map(room => {
@@ -1070,14 +1190,15 @@ function buildEntities(type, bands, deps, ctx) {
           subtitle: "",
           mode: "room",
           groupLabel: room.type || "교실",
-          filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByBands(e, bands)
+          filterFn: e => ctx.roomMatches(e, room) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects)
         };
       });
   }
   if (type === "student") {
     return buildStudentList(deps.appState)
-      .filter(s => gradeAllowed(s.gradeKey, bands))
-      .map(s => ({ ...s, type, mode: "student", groupLabel: s.classLabel, filterFn: e => ctx.studentMatches(e, s) && ctx.entryAllowedByBands(e, bands) }));
+      .filter(s => classAllowedByScope({ gradeKey: s.gradeKey, section: s.section, sectionIdx: s.sectionIdx }, normalizedScope))
+      .filter(s => ctx.entries.some(e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects)))
+      .map(s => ({ ...s, type, mode: "student", groupLabel: s.classLabel, filterFn: e => ctx.studentMatches(e, s) && ctx.entryAllowedByScope(e, normalizedScope) && ctx.entryAllowedBySpecial(e, specialSubjects) }));
   }
   return [];
 }
@@ -1143,7 +1264,9 @@ function applyWorksheetWrap(ws, XLSX) {
   }
 }
 
-function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
+function exportXlsx(entities, deps, ctx, { layout, type, scope, bands, specialSubjects }) {
+  const activeScope = scope || bands || ["middle", "high"];
+  specialSubjects = normalizeSpecialSubjectSelection(specialSubjects || []);
   if (!window.XLSX?.utils) {
     alert("엑셀 내보내기 라이브러리를 불러오지 못했습니다.");
     return;
@@ -1161,8 +1284,8 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
     const ws = XLSX.utils.aoa_to_sheet(data);
     applyWorksheetWrap(ws, XLSX);
     ws["!cols"] = [{ wch: 16 }, { wch: 6 }, ...DAYS.map(() => ({ wch: 38 }))];
-    ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : estimateRowHeight(row, 54) }));
-    XLSX.utils.book_append_sheet(wb, ws, makeSheetName(`${bandLabel(bands)}_전체표`, used));
+    ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : 54 }));
+    XLSX.utils.book_append_sheet(wb, ws, makeSheetName(`${scopeLabel(activeScope)}_${specialSubjectLabel(specialSubjects)}_전체표`, used));
   } else if (type === "student") {
     const byClass = new Map();
     entities.forEach(e => {
@@ -1174,13 +1297,13 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
       const data = [];
       students.forEach((student, idx) => {
         if (idx) data.push([]);
-        data.push([`${student.label} Timetable`]);
+        data.push([entityTimetableTitle(student, "student")]);
         data.push(...buildGridData(student, ctx));
       });
       const ws = XLSX.utils.aoa_to_sheet(data);
       applyWorksheetWrap(ws, XLSX);
       ws["!cols"] = [{ wch: 6 }, ...DAYS.map(() => ({ wch: 38 }))];
-      ws["!rows"] = data.map((row, idx) => ({ hpt: row.length === 1 ? 22 : estimateRowHeight(row, 54) }));
+      ws["!rows"] = data.map((row) => ({ hpt: row.length === 1 ? 22 : 54 }));
       XLSX.utils.book_append_sheet(wb, ws, makeSheetName(className, used));
     });
   } else {
@@ -1189,12 +1312,12 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
       const ws = XLSX.utils.aoa_to_sheet(data);
       applyWorksheetWrap(ws, XLSX);
       ws["!cols"] = [{ wch: 6 }, ...DAYS.map(() => ({ wch: 38 }))];
-      ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : estimateRowHeight(row, 54) }));
+      ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : 54 }));
       XLSX.utils.book_append_sheet(wb, ws, makeSheetName(entity.label, used));
     });
   }
 
-  const filename = `${type === "teacher" ? "교사" : type === "class" ? "학급" : type === "room" ? "교실" : "학생"}_${bandLabel(bands)}_${layout === "combined" ? "전체표" : "개별"}_시간표.xlsx`;
+  const filename = `${type === "teacher" ? "교사" : type === "class" ? "학급" : type === "room" ? "교실" : "학생"}_${scopeLabel(activeScope)}_${specialSubjectLabel(specialSubjects)}_${layout === "combined" ? "전체표" : "개별"}_시간표.xlsx`;
   XLSX.writeFile(wb, safeFileName(filename));
 }
 
@@ -1222,6 +1345,14 @@ function lessonDensityClass(lines = []) {
   if (lineCount >= 8 || totalLength >= 165) return " lesson-compact";
   if (lineCount >= 6 || totalLength >= 115) return " lesson-dense";
   return "";
+}
+
+function entityTimetableTitle(entity = {}, type = "") {
+  if (type === "student") {
+    const name = clean(entity.name || entity.studentName || entity.label).replace(/\s*\([^)]*\)\s*$/u, "");
+    return `${[entity.classLabel, name].map(clean).filter(Boolean).join(" ")} Timetable`;
+  }
+  return `${clean(entity.label) || "Timetable"} Timetable`;
 }
 
 function lessonHtml(text) {
@@ -1259,7 +1390,7 @@ function buildIndividualSections(entities, ctx, type) {
     }).join("");
     const colgroup = `<colgroup><col class="period-col">${DAYS.map(() => `<col>`).join("")}</colgroup>`;
     const subtitle = entity.subtitle ? `<div class="section-meta">${escapeHtml(entity.subtitle)}</div>` : "";
-    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entity.label)} Timetable</h1>${subtitle}<table>${colgroup}<thead><tr><th class="corner-head"></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
+    return `${groupHeader}<section class="print-section"><h1>${escapeHtml(entityTimetableTitle(entity, type))}</h1>${subtitle}<table>${colgroup}<thead><tr><th class="corner-head"></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
   }).join("\n");
 }
 
@@ -1278,13 +1409,16 @@ function buildCombinedSection(entities, ctx, title) {
   return `<section class="print-section combined"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th>대상</th><th></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
-function buildPrintHtml(entities, ctx, { layout, type, bands }) {
+function buildPrintHtml(entities, ctx, { layout, type, scope, bands, specialSubjects }) {
+  const activeScope = scope || bands || ["middle", "high"];
+  specialSubjects = normalizeSpecialSubjectSelection(specialSubjects || []);
   const now = new Date();
   const titleType = type === "teacher" ? "교사" : type === "class" ? "학급" : type === "room" ? "교실" : "학생";
-  const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} Timetable`;
+  const specialLabelText = specialSubjects?.length ? ` ${specialSubjectLabel(specialSubjects)}` : "";
+  const title = `${titleType} ${scopeLabel(activeScope)}${specialLabelText} ${layout === "combined" ? "전체표" : "개별"} Timetable`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined td{height:18.5mm}col.period-col{width:25px}col.entity-col{width:72px}}
+    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody tr{height:80px}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}tbody tr{height:25.2mm}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined tbody tr,.combined td{height:18.5mm}col.period-col{width:25px}col.entity-col{width:72px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="fitAllTimetableCells();window.print()">PDF 저장/인쇄</button></div>${sections}<script>
 function fitAllTimetableCells(){
   document.querySelectorAll("td:not(.empty)").forEach(td=>{
@@ -1352,7 +1486,13 @@ export function openTimetableExportDialog(deps = {}) {
           <label><input type="checkbox" data-scope="all" checked> 전체</label>
           <label><input type="checkbox" data-scope="middle"> 중등 7–9학년</label>
           <label><input type="checkbox" data-scope="high"> 고등 10–12학년</label>
-          <p>개별은 선택 범위의 대상별 시간표를 한 번에 만듭니다. 전체표는 선택 범위의 모든 대상을 하나의 시간표 테이블 안에 모읍니다.</p>
+          <div class="tt-export-class-scopes" data-role="class-scopes"></div>
+          <div class="tt-export-special-scopes" data-role="special-scopes">
+            <strong>특수 교과만 출력</strong>
+            <label><input type="checkbox" data-special-subject="CA"> CA</label>
+            <label><input type="checkbox" data-special-subject="SA"> SA</label>
+          </div>
+          <p>CA/SA를 선택하면 해당 특수교과 시간만 출력합니다. 선택하지 않으면 전체 수업을 출력합니다. CA/SA는 셀 안에서 과목명만 간단히 표시됩니다.</p>
         </aside>
       </div>
       <div class="tt-export-foot"><button type="button" class="tt-export-cancel">닫기</button><button type="button" class="tt-export-run">출력</button></div>
@@ -1371,34 +1511,76 @@ export function openTimetableExportDialog(deps = {}) {
   const allEl = backdrop.querySelector('[data-scope="all"]');
   const middleEl = backdrop.querySelector('[data-scope="middle"]');
   const highEl = backdrop.querySelector('[data-scope="high"]');
+  const classScopeBox = backdrop.querySelector('[data-role="class-scopes"]');
+  const classScopeItems = buildClassScopeOptions(deps);
+  if (classScopeBox) {
+    classScopeBox.innerHTML = classScopeItems.map(cls => `
+      <label title="${escapeHtml(cls.label)}"><input type="checkbox" data-scope-class="${escapeHtml(cls.key)}"> ${escapeHtml(cls.label)}</label>
+    `).join("");
+  }
+  const classScopeInputs = () => [...backdrop.querySelectorAll('[data-scope-class]')];
+  const specialInputs = () => [...backdrop.querySelectorAll('[data-special-subject]')];
+  const specialSubjectSelection = () => getSpecialSubjectsFromDialog(backdrop);
 
   function syncScope(changed) {
-    if (changed === allEl && allEl.checked) { middleEl.checked = false; highEl.checked = false; }
-    if ((changed === middleEl || changed === highEl) && (middleEl.checked || highEl.checked)) allEl.checked = false;
-    if (!allEl.checked && !middleEl.checked && !highEl.checked) allEl.checked = true;
+    const isClassScope = changed?.hasAttribute?.("data-scope-class");
+    if (changed === allEl && allEl.checked) {
+      middleEl.checked = false;
+      highEl.checked = false;
+      classScopeInputs().forEach(el => { el.checked = false; });
+    }
+    if ((changed === middleEl || changed === highEl) && (middleEl.checked || highEl.checked)) {
+      allEl.checked = false;
+      classScopeInputs().forEach(el => { el.checked = false; });
+    }
+    if (isClassScope && changed.checked) {
+      allEl.checked = false;
+      middleEl.checked = false;
+      highEl.checked = false;
+    }
+    const hasClassScope = classScopeInputs().some(el => el.checked);
+    if (!allEl.checked && !middleEl.checked && !highEl.checked && !hasClassScope) allEl.checked = true;
+  }
+
+  function visibleScopeForType() {
+    const scope = getScopeFromDialog(backdrop);
+    if (typeEl.value === "teacher") return { bands: normalizeScopeSelection(scope).bands, classKeys: [] };
+    return scope;
+  }
+
+  function updateScopeAvailability() {
+    if (!classScopeBox) return;
+    const disabled = typeEl.value === "teacher";
+    classScopeBox.classList.toggle("is-disabled", disabled);
+    classScopeInputs().forEach(el => { el.disabled = disabled; });
   }
 
   function currentEntities() {
-    return buildEntities(typeEl.value, getBandsFromDialog(backdrop), deps, ctx);
+    return buildEntities(typeEl.value, visibleScopeForType(), deps, ctx, { specialSubjects: specialSubjectSelection() });
   }
 
   function refresh() {
-    const bands = getBandsFromDialog(backdrop);
+    updateScopeAvailability();
+    const scope = visibleScopeForType();
     const entities = currentEntities();
+    const specialSubjects = specialSubjectSelection();
     const typeName = typeEl.value === "teacher" ? "교사" : typeEl.value === "class" ? "학급" : typeEl.value === "room" ? "교실" : "학생";
     const layoutName = layoutEl.value === "combined" ? "전체표" : "개별";
     const studentNote = typeEl.value === "student" && layoutEl.value === "individual" ? " 학생은 이름을 하나씩 고르지 않고 학급별로 묶어 한 번에 출력합니다." : "";
-    infoEl.textContent = `${typeName} · ${bandLabel(bands)} · ${layoutName} 출력입니다.${studentNote}`;
+    const teacherNote = typeEl.value === "teacher" ? " 교사 출력에는 학반별 체크 범위를 적용하지 않습니다." : "";
+    infoEl.textContent = `${typeName} · ${scopeLabel(scope)} · ${specialSubjectLabel(specialSubjects)} · ${layoutName} 출력입니다.${studentNote}${teacherNote}`;
     const previewItems = entities.slice(0, 18).map(e => e.label).join(" · ");
     previewEl.innerHTML = `<b>출력 대상 ${entities.length}개</b><br>${escapeHtml(previewItems || "대상 없음")}${entities.length > 18 ? ` · 외 ${entities.length - 18}개` : ""}`;
   }
 
   [typeEl, layoutEl, formatEl].forEach(el => el.addEventListener("change", refresh));
-  [allEl, middleEl, highEl].forEach(el => el.addEventListener("change", () => { syncScope(el); refresh(); }));
+  [allEl, middleEl, highEl, ...classScopeInputs()].forEach(el => el.addEventListener("change", () => { syncScope(el); refresh(); }));
+  specialInputs().forEach(el => el.addEventListener("change", refresh));
   backdrop.querySelector(".tt-export-run")?.addEventListener("click", () => {
-    const bands = getBandsFromDialog(backdrop);
-    const entities = buildEntities(typeEl.value, bands, deps, ctx);
-    const options = { layout: layoutEl.value, type: typeEl.value, bands };
+    const scope = visibleScopeForType();
+    const specialSubjects = specialSubjectSelection();
+    const entities = buildEntities(typeEl.value, scope, deps, ctx, { specialSubjects });
+    const options = { layout: layoutEl.value, type: typeEl.value, scope, specialSubjects };
     if (!entities.length) {
       alert("출력 대상이 없습니다. 전체/중등/고등 범위를 확인하세요.");
       return;
