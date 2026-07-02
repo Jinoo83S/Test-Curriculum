@@ -1,15 +1,15 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r204: 출력 화면 배치 정리 및 교실 개별 그룹 범위 보정
-//  - 대상/출력 방식/형식은 기존 위치 유지, 출력 범위는 우측 유지
-//  - 7A~12C와 간략 출력 과목 선택의 과한 볼드 제거
-//  - 간략 출력 과목 선택은 하단 영역으로 분리
-//  - 교실 개별 출력에서 해당 교실에 배정된 카드만 표시
+// r205: 교실 홈룸 제목 보강 및 학급 전체 한눈표 개선
+//  - 교실 개별 제목을 방번호 (홈룸) Timetable 형식으로 보정
+//  - room.homeRoomClassId가 없어도 학급의 홈룸 교실 매핑을 역추적
+//  - 학급 전체표는 aSc식 1행 1학급 구조로 한 페이지 가독성 개선
+//  - 교실 개별 출력에서 교실 매칭 실패 시 그룹 전체 fallback 표시 방지
 // ================================================================
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DEFAULT_REPRESENTATIVE_SUBJECTS = ["CA", "SA"];
-const EXPORT_STYLE_ID = "ttExportDialogR204Style";
+const EXPORT_STYLE_ID = "ttExportDialogR205Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -368,9 +368,61 @@ function classLabelFromIdOrKey(value = "", deps = {}) {
   return classLabelFromKey(value) || clean(value);
 }
 
+function roomIdentityValues(room = {}) {
+  return unique([
+    room?.id,
+    room?.name,
+    room?.short,
+    room?.label,
+    room?.roomId,
+  ].map(clean).filter(Boolean));
+}
+
+function roomRefMatchesRoom(value = "", room = {}) {
+  const raw = clean(value);
+  if (!raw) return false;
+  const ids = roomIdentityValues(room);
+  if (ids.includes(raw)) return true;
+  const compact = raw.replace(/\s+/g, "").toUpperCase();
+  return ids.some(id => id.replace(/\s+/g, "").toUpperCase() === compact);
+}
+
+function classHomeRoomRefs(cls = {}) {
+  const refs = [];
+  [
+    cls.homeRoomId,
+    cls.homeRoomRoomId,
+    cls.homeroomRoomId,
+    cls.homeroomId,
+    cls.homeRoom,
+    cls.homeroom,
+    cls.classroomId,
+    cls.classRoomId,
+    cls.roomId,
+    cls.defaultRoomId,
+    cls.mainRoomId,
+  ].forEach(value => refs.push(value));
+  if (Array.isArray(cls.classroomIds)) refs.push(...cls.classroomIds);
+  if (Array.isArray(cls.roomIds)) refs.push(...cls.roomIds);
+  if (typeof cls.classroomIds === "string") refs.push(...cls.classroomIds.split(/[;,\s]+/));
+  if (typeof cls.roomIds === "string") refs.push(...cls.roomIds.split(/[;,\s]+/));
+  return unique(refs.map(clean).filter(Boolean));
+}
+
 function homeRoomLabelForRoom(room = {}, deps = {}) {
-  const label = classLabelFromIdOrKey(room?.homeRoomClassId || room?.homeRoomId || "", deps);
-  return /^\d{1,2}[A-Z]$/.test(label) ? label : "";
+  const direct = classLabelFromIdOrKey(room?.homeRoomClassId || room?.homeRoomId || room?.homeroomClassId || "", deps);
+  if (/^\d{1,2}[A-Z]$/.test(direct)) return direct;
+
+  const textLabel = clean(room?.homeRoomLabel || room?.homeroomLabel || room?.homeClassLabel || room?.classLabel);
+  if (/^\d{1,2}[A-Z]$/.test(textLabel)) return textLabel;
+
+  const classes = getClassList(deps);
+  const matched = classes.find(cls => classHomeRoomRefs(cls).some(ref => roomRefMatchesRoom(ref, room)));
+  if (matched) {
+    const label = classLabel(matched);
+    if (/^\d{1,2}[A-Z]$/.test(label)) return label;
+  }
+  return "";
 }
 
 function roomLabelForExport(room = {}, deps = {}) {
@@ -1179,7 +1231,7 @@ function buildExportContext(deps = {}) {
     const classes = entryClassLabels(entry).join(", ");
     if (mode === "teacher") return teacherScopedLessonLines(entry, rooms, deps, scope) || [room, classes, ...titleLines].filter(Boolean).join("\n");
     if (mode === "class") return buildParallelLessonLines(entry, rooms, deps, scope);
-    if (mode === "room") return roomScopedLessonLines(entry, rooms, deps, scope) || [classes, teacher, ...titleLines].filter(Boolean).join("\n");
+    if (mode === "room") return roomScopedLessonLines(entry, rooms, deps, scope);
     if (mode === "student") return studentScopedLessonLines(entry, rooms, deps, scope, rosterCtx) || buildParallelLessonLines(entry, rooms, deps, scope);
     return [...titleLines, teacher, classes, room].filter(Boolean).join("\n");
   };
@@ -1527,6 +1579,22 @@ function buildCombinedSection(entities, ctx, title) {
   return `<section class="print-section combined"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th>대상</th><th></th>${DAYS.map(d => `<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
+
+function buildClassOverviewCombinedSection(entities, ctx, title) {
+  const dayHeader = DAYS.map(day => `<th class="day-head" colspan="${ctx.periods.length}">${escapeHtml(day)}</th>`).join("");
+  const periodHeader = DAYS.map(() => ctx.periods.map(label => `<th class="period-head">${escapeHtml(label)}</th>`).join("")).join("");
+  const colgroup = `<colgroup><col class="class-col">${DAYS.map(() => ctx.periods.map(() => `<col class="lesson-col">`).join("")).join("")}</colgroup>`;
+  const rows = entities.map(entity => {
+    const cells = DAYS.map((_, day) => ctx.periods.map((label, period) => {
+      const html = ctx.getGridEntries(day, period, entity.filterFn)
+        .map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
+      return `<td${html ? "" : " class='empty'"}>${html}</td>`;
+    }).join("")).join("");
+    return `<tr><th class="class-name">${escapeHtml(entity.label)}</th>${cells}</tr>`;
+  }).join("\n");
+  return `<section class="print-section class-overview"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th class="corner" rowspan="2">Class</th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`;
+}
+
 function buildPrintHtml(entities, ctx, { layout, type, scope, bands, specialSubjects }) {
   const activeScope = scope || bands || ["middle", "high"];
   specialSubjects = normalizeSpecialSubjectSelection(specialSubjects || []);
@@ -1534,9 +1602,11 @@ function buildPrintHtml(entities, ctx, { layout, type, scope, bands, specialSubj
   const titleType = type === "teacher" ? "교사" : type === "class" ? "학급" : type === "room" ? "교실" : "학생";
   const specialLabelText = specialSubjects?.length ? ` ${specialSubjectLabel(specialSubjects)}` : "";
   const title = `${titleType} ${scopeLabel(activeScope)}${specialLabelText} ${layout === "combined" ? "전체표" : "개별"} Timetable`;
-  const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
+  const sections = layout === "combined"
+    ? (type === "class" ? buildClassOverviewCombinedSection(entities, ctx, title) : buildCombinedSection(entities, ctx, title))
+    : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody tr{height:80px}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}tbody tr{height:25.2mm}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined tbody tr,.combined td{height:18.5mm}col.period-col{width:25px}col.entity-col{width:72px}}
+    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody tr{height:80px}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}.class-overview table{border:2px solid #111827}.class-overview .class-col{width:48px}.class-overview .lesson-col{width:auto}.class-overview th.day-head{font-size:12px;background:#fff;border-left:2px solid #374151;border-right:2px solid #374151}.class-overview thead tr:nth-child(2) th{font-size:9px;padding:1px;background:#f9fafb}.class-overview th.class-name{font-size:13px;background:#fff;border-right:2px solid #374151}.class-overview td{height:62px;padding:1px;font-size:6.5px;line-height:1.02}.class-overview td:nth-child(8n+2){border-left:2px solid #374151}.class-overview .lesson+.lesson{margin-top:1px;padding-top:1px}.class-overview .lesson-title,.class-overview .lesson-parallel-title span{font-size:1.05em;font-weight:900}.class-overview .lesson-subtitle,.class-overview .lesson-parallel-en{display:none}.class-overview .lesson-line,.class-overview .lesson-parallel span{font-size:.9em}.class-overview .lesson-micro,.class-overview .lesson-compact,.class-overview .lesson-dense{font-size:1em}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}tbody tr{height:25.2mm}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined tbody tr,.combined td{height:18.5mm}.class-overview h1{font-size:15px;margin-bottom:1.5mm}.class-overview th.day-head{font-size:10px;padding:.8px}.class-overview thead tr:nth-child(2) th{font-size:7.2px;padding:.5px}.class-overview th.class-name{font-size:11px}.class-overview td{height:15.2mm;font-size:5.4px;padding:.7px;line-height:1.0}.class-overview .lesson-line,.class-overview .lesson-parallel span{font-size:.88em}col.period-col{width:25px}col.entity-col{width:72px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="fitAllTimetableCells();window.print()">PDF 저장/인쇄</button></div>${sections}<script>
 function fitAllTimetableCells(){
   document.querySelectorAll("td:not(.empty)").forEach(td=>{
