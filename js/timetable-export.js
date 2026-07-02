@@ -1,13 +1,13 @@
 // ================================================================
 // timetable-export.js · Timetable print/export tools
-// r186: 출력 구조 정리
+// r190: 출력 구조 정리 + 학급 개별 출력 교사/교실 행 분리
 //  - 개별: 이름 검색 없이 전체/중등/고등 범위의 대상별 개별 시간표 출력
 //  - 전체표: 선택 범위 전체를 한 시간표 테이블로 출력
 //  - 학생 개별: 학생을 하나씩 고르지 않고 학급별로 한 번에 출력
 // ================================================================
 
 const DAYS = ["월", "화", "수", "목", "금"];
-const EXPORT_STYLE_ID = "ttExportDialogR186Style";
+const EXPORT_STYLE_ID = "ttExportDialogR190Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -176,16 +176,118 @@ function buildRosterStudentTemplateIndex(appState = {}) {
   return out;
 }
 
-function roomNamesForEntry(entry, rooms = []) {
-  const ids = [];
-  if (entry?.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object") {
-    ids.push(...Object.values(entry.roomAssignmentsByTtCardId));
+function splitTeacherField(value, deps = {}) {
+  if (Array.isArray(value)) return unique(value);
+  const raw = clean(value);
+  if (!raw) return [];
+  if (typeof deps.splitTeacherNames === "function") {
+    try {
+      const list = deps.splitTeacherNames(raw);
+      if (Array.isArray(list) && list.length) return unique(list);
+    } catch (_) {}
   }
+  return unique(raw.split(/[,，·/\n]+/));
+}
+
+function roomNameForId(roomId, rooms = [], deps = {}) {
+  const id = clean(roomId);
+  if (!id) return "";
+  if (typeof deps.getRoomDisplayName === "function") {
+    const label = clean(deps.getRoomDisplayName(id));
+    if (label && label !== "교실 없음") return label;
+  }
+  return rooms.find(r => r.id === id)?.name || id;
+}
+
+function entryCardIds(entry = {}) {
+  return unique([entry?.ttcardId, ...(Array.isArray(entry?.ttcardIds) ? entry.ttcardIds : [])]);
+}
+
+function getRoomAssignments(entry = {}, deps = {}) {
+  if (typeof deps.getRoomAssignmentsForEntry === "function") {
+    try {
+      const resolved = deps.getRoomAssignmentsForEntry(entry);
+      if (resolved && typeof resolved === "object") return resolved;
+    } catch (_) {}
+  }
+  if (entry?.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object") return entry.roomAssignmentsByTtCardId;
+  return {};
+}
+
+function roomIdsForEntry(entry, rooms = [], deps = {}) {
+  if (typeof deps.getRoomIdsForEntry === "function") {
+    try {
+      const ids = deps.getRoomIdsForEntry(entry);
+      if (Array.isArray(ids) && ids.length) return unique(ids);
+    } catch (_) {}
+  }
+  const ids = [];
+  const assignments = getRoomAssignments(entry, deps);
+  if (assignments && typeof assignments === "object") ids.push(...Object.values(assignments));
   if (Array.isArray(entry?.roomIds)) ids.push(...entry.roomIds);
   if (entry?.roomId) ids.push(entry.roomId);
-  const uniqueIds = unique(ids);
-  if (!uniqueIds.length) return "교실 없음";
-  return uniqueIds.map(id => rooms.find(r => r.id === id)?.name || id).join(", ");
+  return unique(ids);
+}
+
+function roomNamesForEntry(entry, rooms = [], deps = {}) {
+  const ids = roomIdsForEntry(entry, rooms, deps);
+  if (!ids.length) return "교실 없음";
+  return ids.map(id => roomNameForId(id, rooms, deps)).join(", ");
+}
+
+function teacherNamesForCard(card = {}, deps = {}) {
+  if (!card) return [];
+  if (Array.isArray(card.teachers) && card.teachers.length) return unique(card.teachers);
+  return splitTeacherField(card.teacherName || card.teacher || "", deps);
+}
+
+function buildParallelLessonLines(entry = {}, rooms = [], deps = {}) {
+  const title = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
+  const cardIds = entryCardIds(entry);
+  const assignments = getRoomAssignments(entry, deps);
+  const teacherColumns = [];
+  const roomColumns = [];
+
+  if (cardIds.length > 1 && typeof deps.getTtCardById === "function") {
+    cardIds.forEach(cardId => {
+      const card = deps.getTtCardById(cardId);
+      const teachers = teacherNamesForCard(card || {}, deps);
+      const roomId = clean(assignments?.[cardId]);
+      const room = roomNameForId(roomId, rooms, deps);
+      if (teachers.length) {
+        teachers.forEach(name => {
+          teacherColumns.push(name);
+          roomColumns.push(room || "교실 없음");
+        });
+      } else if (room) {
+        roomColumns.push(room);
+      }
+    });
+  }
+
+  if (!teacherColumns.length) {
+    teacherColumns.push(...splitTeacherField(entry.teacherName || entry.teacherNames || "", deps));
+  }
+  if (!roomColumns.length) {
+    const roomIds = roomIdsForEntry(entry, rooms, deps);
+    roomColumns.push(...roomIds.map(id => roomNameForId(id, rooms, deps)));
+  }
+
+  const teachers = unique(teacherColumns);
+  const roomSource = roomColumns.map(clean).filter(Boolean);
+  const roomsByColumn = [];
+  const targetLen = Math.max(teachers.length, roomSource.length);
+  for (let i = 0; i < targetLen; i += 1) {
+    roomsByColumn.push(roomSource[i] || (roomSource.length === 1 ? roomSource[0] : ""));
+  }
+  const roomsUnique = unique(roomSource);
+
+  if (teachers.length > 1 || roomSource.length > 1) {
+    const teacherLine = teachers.join("\t");
+    const roomLine = roomsByColumn.slice(0, Math.max(teachers.length, roomsByColumn.length)).join("\t");
+    return [title, teacherLine, roomLine].filter(line => clean(line)).join("\n");
+  }
+  return [title, teachers[0] || "", roomsUnique[0] || ""].filter(line => clean(line)).join("\n");
 }
 
 function buildExportContext(deps = {}) {
@@ -233,12 +335,12 @@ function buildExportContext(deps = {}) {
   const entrySummary = (entry, mode = "normal") => {
     const title = deps.entryTitle?.(entry) || entry.subject || entry.title || "-";
     const teacher = clean(entry.teacherName || (entry.teacherNames || []).join(", "));
-    const room = roomNamesForEntry(entry, rooms);
+    const room = roomNamesForEntry(entry, rooms, deps);
     const classes = entryClassLabels(entry).join(", ");
     if (mode === "teacher") return [title, classes, room].filter(Boolean).join(" / ");
-    if (mode === "class") return [title, teacher, room].filter(Boolean).join(" / ");
+    if (mode === "class") return buildParallelLessonLines(entry, rooms, deps);
     if (mode === "room") return [title, teacher, classes].filter(Boolean).join(" / ");
-    if (mode === "student") return [title, teacher, room].filter(Boolean).join(" / ");
+    if (mode === "student") return buildParallelLessonLines(entry, rooms, deps);
     return [title, teacher, classes, room].filter(Boolean).join(" / ");
   };
 
@@ -253,13 +355,7 @@ function buildExportContext(deps = {}) {
     return toArrayFromSet(audience?.classKeys).includes(key) || (entry.audienceClassKeys || []).includes(key);
   };
 
-  const roomMatches = (entry, room) => {
-    const ids = [];
-    if (entry?.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object") ids.push(...Object.values(entry.roomAssignmentsByTtCardId));
-    if (Array.isArray(entry?.roomIds)) ids.push(...entry.roomIds);
-    if (entry?.roomId) ids.push(entry.roomId);
-    return unique(ids).includes(room.id);
-  };
+  const roomMatches = (entry, room) => roomIdsForEntry(entry, rooms, deps).includes(room.id);
 
   const studentMatches = (entry, student) => {
     const tids = entryTemplateIds(entry);
@@ -323,7 +419,7 @@ function buildGridData(entity, ctx) {
     DAYS.forEach((_, day) => {
       const text = ctx.getGridEntries(day, period, entity.filterFn)
         .map(e => ctx.entrySummary(e, entity.mode))
-        .join("\n");
+        .join("\n\n");
       row.push(text);
     });
     data.push(row);
@@ -337,7 +433,7 @@ function buildCombinedGridData(entities, ctx) {
     ctx.periods.forEach((label, period) => {
       const row = [entity.label, label];
       DAYS.forEach((_, day) => {
-        row.push(ctx.getGridEntries(day, period, entity.filterFn).map(e => ctx.entrySummary(e, entity.mode)).join("\n"));
+        row.push(ctx.getGridEntries(day, period, entity.filterFn).map(e => ctx.entrySummary(e, entity.mode)).join("\n\n"));
       });
       data.push(row);
     });
@@ -357,6 +453,26 @@ function makeSheetName(raw, used) {
   return name;
 }
 
+function estimateRowHeight(row = [], fallback = 54) {
+  const maxLines = Math.max(1, ...row.map(cell => String(cell ?? "").split(/\n/).length));
+  if (maxLines <= 1) return fallback;
+  return Math.max(fallback, Math.min(150, 17 * maxLines + 12));
+}
+
+function applyWorksheetWrap(ws, XLSX) {
+  if (!ws || !ws["!ref"] || !XLSX?.utils?.decode_range || !XLSX?.utils?.encode_cell) return;
+  const range = XLSX.utils.decode_range(ws["!ref"]);
+  for (let r = range.s.r; r <= range.e.r; r += 1) {
+    for (let c = range.s.c; c <= range.e.c; c += 1) {
+      const addr = XLSX.utils.encode_cell({ r, c });
+      const cell = ws[addr];
+      if (!cell || typeof cell.v !== "string") continue;
+      if (!cell.v.includes("\n") && !cell.v.includes("\t")) continue;
+      cell.s = { ...(cell.s || {}), alignment: { ...(cell.s?.alignment || {}), wrapText: true, vertical: "top" } };
+    }
+  }
+}
+
 function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
   if (!window.XLSX?.utils) {
     alert("엑셀 내보내기 라이브러리를 불러오지 못했습니다.");
@@ -373,8 +489,9 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
   if (layout === "combined") {
     const data = buildCombinedGridData(entities, ctx);
     const ws = XLSX.utils.aoa_to_sheet(data);
-    ws["!cols"] = [{ wch: 16 }, { wch: 10 }, ...DAYS.map(() => ({ wch: 34 }))];
-    ws["!rows"] = data.map((_, idx) => ({ hpt: idx === 0 ? 22 : 48 }));
+    applyWorksheetWrap(ws, XLSX);
+    ws["!cols"] = [{ wch: 16 }, { wch: 10 }, ...DAYS.map(() => ({ wch: 38 }))];
+    ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : estimateRowHeight(row, 54) }));
     XLSX.utils.book_append_sheet(wb, ws, makeSheetName(`${bandLabel(bands)}_전체표`, used));
   } else if (type === "student") {
     const byClass = new Map();
@@ -391,15 +508,18 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
         data.push(...buildGridData(student, ctx));
       });
       const ws = XLSX.utils.aoa_to_sheet(data);
-      ws["!cols"] = [{ wch: 12 }, ...DAYS.map(() => ({ wch: 32 }))];
+      applyWorksheetWrap(ws, XLSX);
+      ws["!cols"] = [{ wch: 12 }, ...DAYS.map(() => ({ wch: 38 }))];
+      ws["!rows"] = data.map((row, idx) => ({ hpt: row.length === 1 ? 22 : estimateRowHeight(row, 54) }));
       XLSX.utils.book_append_sheet(wb, ws, makeSheetName(className, used));
     });
   } else {
     entities.forEach(entity => {
       const data = buildGridData(entity, ctx);
       const ws = XLSX.utils.aoa_to_sheet(data);
-      ws["!cols"] = [{ wch: 10 }, ...DAYS.map(() => ({ wch: 32 }))];
-      ws["!rows"] = data.map((_, idx) => ({ hpt: idx === 0 ? 22 : 54 }));
+      applyWorksheetWrap(ws, XLSX);
+      ws["!cols"] = [{ wch: 10 }, ...DAYS.map(() => ({ wch: 38 }))];
+      ws["!rows"] = data.map((row, idx) => ({ hpt: idx === 0 ? 22 : estimateRowHeight(row, 54) }));
       XLSX.utils.book_append_sheet(wb, ws, makeSheetName(entity.label, used));
     });
   }
@@ -409,7 +529,17 @@ function exportXlsx(entities, deps, ctx, { layout, type, bands }) {
 }
 
 function lessonHtml(text) {
-  return text ? `<div class="lesson">${escapeHtml(text).replace(/\n/g, "<br>")}</div>` : "";
+  if (!text) return "";
+  const lines = String(text).split(/\n/);
+  const body = lines.map((line, idx) => {
+    const parts = line.split("\t").map(clean).filter(Boolean);
+    if (parts.length > 1) {
+      return `<div class="lesson-parallel">${parts.map(part => `<span>${escapeHtml(part)}</span>`).join("")}</div>`;
+    }
+    const cls = idx === 0 ? "lesson-title" : "lesson-line";
+    return `<div class="${cls}">${escapeHtml(line)}</div>`;
+  }).join("");
+  return `<div class="lesson">${body}</div>`;
 }
 
 function buildIndividualSections(entities, ctx, type) {
@@ -451,7 +581,7 @@ function buildPrintHtml(entities, ctx, { layout, type, bands }) {
   const title = `${titleType} ${bandLabel(bands)} ${layout === "combined" ? "전체표" : "개별"} 시간표`;
   const sections = layout === "combined" ? buildCombinedSection(entities, ctx, title) : buildIndividualSections(entities, ctx, type);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    *{box-sizing:border-box}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#0f172a}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#64748b}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:16px}h1{margin:0 0 10px;font-size:20px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #cbd5e1;padding:7px;vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}th{background:#173b68;color:white;font-size:12px}tbody th{width:72px;background:#eef4ff;color:#173b68}.combined tbody th.entity{width:96px;background:#dbeafe;color:#1e3a8a}td{height:78px;font-size:10.5px}.lesson{margin:0 0 5px;padding:5px 6px;border-left:3px solid #2563eb;border-radius:6px;background:#eff6ff;line-height:1.35}@media print{body{margin:7mm}.print-toolbar{display:none}h1{font-size:15px}th,td{padding:4px}td{height:58px;font-size:9px}.lesson{padding:3px 4px;margin-bottom:3px}.combined th,.combined td{font-size:8.5px}.combined td{height:44px}}
+    *{box-sizing:border-box}body{margin:18px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#0f172a}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px;padding:10px 12px;border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#64748b}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:28px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 10px;padding:8px 10px;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:16px}h1{margin:0 0 10px;font-size:20px}table{width:100%;border-collapse:collapse;table-layout:fixed}th,td{border:1px solid #cbd5e1;padding:7px;vertical-align:top;word-break:keep-all;overflow-wrap:anywhere}th{background:#173b68;color:white;font-size:12px}tbody th{width:72px;background:#eef4ff;color:#173b68}.combined tbody th.entity{width:96px;background:#dbeafe;color:#1e3a8a}td{height:78px;font-size:10.5px}.lesson{margin:0 0 5px;padding:5px 6px;border-left:3px solid #2563eb;border-radius:6px;background:#eff6ff;line-height:1.35}.lesson-title{font-weight:900;margin-bottom:3px}.lesson-line{margin-top:2px}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;margin-top:2px}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere}@media print{body{margin:7mm}.print-toolbar{display:none}h1{font-size:15px}th,td{padding:4px}td{height:58px;font-size:9px}.lesson{padding:3px 4px;margin-bottom:3px}.lesson-parallel{gap:2px}.combined th,.combined td{font-size:8.5px}.combined td{height:44px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="window.print()">PDF 저장/인쇄</button></div>${sections}<script>setTimeout(()=>window.focus(),100);</script></body></html>`;
 }
 
