@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-manual-card-popup-r216";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-cpsat-fixed-room-preflight-r217";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r216";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r216 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r217";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r217 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -166,7 +166,7 @@ function applyManualCardExclusionToPayloadTimetable(tt = {}) {
   });
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.manualCardExcludedIds = [...excludedIds];
-  tt.autoAssignMeta.manualCardExclusionMode = "r216-manual-card-vault";
+  tt.autoAssignMeta.manualCardExclusionMode = "r217-manual-card-vault";
   return tt;
 }
 function cardIdsFromEntryForPayload(entry = {}) {
@@ -283,12 +283,18 @@ function normalizeTeacherReferencesForPayload(data = {}) {
   });
   return data;
 }
+function validRoomIdForPayload(roomId = "", rooms = []) {
+  const id = cleanLocal(roomId);
+  return !!id && asArray(rooms).some(r => cleanLocal(r?.id) === id);
+}
 function teacherRoomIdForPayload(teacherName = "", teacherConstraints = {}, rooms = []) {
   const name = cleanLocal(teacherName);
   if (!name) return "";
   const cfg = teacherConstraints && typeof teacherConstraints === "object" ? teacherConstraints[name] : null;
-  const configured = cleanLocal(cfg?.assignedRoomId || cfg?.homeRoomId || "");
-  if (configured && rooms.some(r => cleanLocal(r?.id) === configured)) return configured;
+  // r217: 교사-홈룸(homeRoomId)은 CP-SAT 교사 본인교실로 사용하지 않습니다.
+  // 본인교실은 assignedRoomId 또는 rooms[].teacherName만 기준으로 확정합니다.
+  const configured = cleanLocal(cfg?.assignedRoomId || "");
+  if (validRoomIdForPayload(configured, rooms)) return configured;
   const matches = rooms.filter(r => cleanLocal(r?.teacherName) === name && cleanLocal(r?.id)).map(r => cleanLocal(r.id));
   const uniqueRooms = unique(matches);
   return uniqueRooms.length === 1 ? uniqueRooms[0] : "";
@@ -296,6 +302,107 @@ function teacherRoomIdForPayload(teacherName = "", teacherConstraints = {}, room
 function teacherRoomIdForCardPayload(card = {}, entry = {}, teacherConstraints = {}, rooms = [], roster = new Set()) {
   const roomIds = unique(teacherNamesForCardPayload(card, entry, roster).map(name => teacherRoomIdForPayload(name, teacherConstraints, rooms)).filter(Boolean));
   return roomIds.length === 1 ? roomIds[0] : "";
+}
+function cardFixedRoomPreflightPayload(card = {}, entry = {}, ctx = {}) {
+  const rule = normalizeRoomRuleForPayload(card?.roomRule || entry?.roomRule || "teacher");
+  if (rule === "none" || rule === "autoRoom") return { roomId: "", source: "unfixed" };
+  const rooms = ctx.rooms || [];
+  const explicit = cleanLocal(card?.fixedRoomId || (rule === "fixed" ? (card?.roomId || entry?.roomId) : ""));
+  if (explicit) {
+    return validRoomIdForPayload(explicit, rooms)
+      ? { roomId: explicit, source: "specified" }
+      : { roomId: "", source: "invalidSpecified", requestedRoomId: explicit };
+  }
+  if (rule === "homeroom") {
+    const rid = homeRoomIdForCardPayload(card, entry, ctx.classes || [], rooms);
+    return rid ? { roomId: rid, source: "classHomeroom" } : { roomId: "", source: "unresolvedClassHomeroom" };
+  }
+  if (rule === "teacher") {
+    const teachers = teacherNamesForCardPayload(card, entry, ctx.roster || new Set());
+    const rid = teacherRoomIdForCardPayload(card, entry, ctx.teacherConstraints || {}, rooms, ctx.roster || new Set());
+    if (rid) return { roomId: rid, source: "teacherOwnRoom" };
+    return { roomId: "", source: teachers.length > 1 ? "unresolvedMultiTeacherRoom" : "unresolvedTeacherOwnRoom" };
+  }
+  return { roomId: "", source: "unfixed" };
+}
+function stripTeacherHomeRoomFromSolverPayload(tt = {}) {
+  const tc = tt.teacherConstraints;
+  if (!tc || typeof tc !== "object") return 0;
+  let changed = 0;
+  Object.entries(tc).forEach(([key, cfg]) => {
+    if (!cfg || typeof cfg !== "object") return;
+    if (String(key).startsWith("__room_unavailable__:") || String(key).startsWith("__class_unavailable__:")) return;
+    if ("homeRoomId" in cfg) { delete cfg.homeRoomId; changed += 1; }
+    if ("useHomeRoom" in cfg) { delete cfg.useHomeRoom; changed += 1; }
+  });
+  return changed;
+}
+function applyFixedRoomPreflightForSolverPayload(data = {}) {
+  const tt = data?.timetable || {};
+  const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+  const rooms = asArray(data?.rooms?.rooms);
+  const classes = asArray(data?.classes?.classes);
+  const roster = teacherRosterSetForPayload(data);
+  const teacherConstraints = tt.teacherConstraints && typeof tt.teacherConstraints === "object" ? tt.teacherConstraints : {};
+  const meta = {
+    version: "r217",
+    generatedAt: nowIso(),
+    rule: "specified/classHomeroom/teacherOwnRoom fixed before CP-SAT; teacher homeRoomId ignored",
+    totalCards: cards.length,
+    fixedCards: 0,
+    bySource: {},
+    unresolvedCards: [],
+    strippedTeacherHomeRoomFields: stripTeacherHomeRoomFromSolverPayload(tt),
+  };
+  const ctx = { rooms, classes, roster, teacherConstraints };
+  cards.forEach(card => {
+    if (!card || typeof card !== "object") return;
+    const resolved = cardFixedRoomPreflightPayload(card, {}, ctx);
+    meta.bySource[resolved.source || "unknown"] = (meta.bySource[resolved.source || "unknown"] || 0) + 1;
+    if (resolved.roomId) {
+      card.fixedRoomId = resolved.roomId;
+      card.solverFixedRoomId = resolved.roomId;
+      card.solverFixedRoomSource = resolved.source;
+      card.solverFixedRoomGenerated = resolved.source !== "specified";
+      meta.fixedCards += 1;
+    } else if (String(resolved.source || "").startsWith("unresolved") || resolved.source === "invalidSpecified") {
+      meta.unresolvedCards.push({
+        id: cleanLocal(card.id),
+        subject: cleanLocal(card.subject || card.label || card.nameKo || card.name),
+        teacherName: cleanLocal(card.teacherName),
+        roomRule: normalizeRoomRuleForPayload(card.roomRule || "teacher"),
+        reason: resolved.source,
+        requestedRoomId: resolved.requestedRoomId || ""
+      });
+    }
+  });
+  if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
+  tt.autoAssignMeta.cpSatFixedRoomPreflight = {
+    ...meta,
+    unresolvedCards: meta.unresolvedCards.slice(0, 50),
+    unresolvedCount: meta.unresolvedCards.length,
+  };
+  return data;
+}
+function isSolverSeedEntryForPayload(entry = {}, totalEntries = 0) {
+  if (!entry || typeof entry !== "object") return false;
+  if (entry.pinned || entry.isPinned || entry.fixed || entry.locked) return true;
+  // 시간표 초기화 직후 사용자가 수동으로 몇 개만 둔 경우는 기존 서버 정책과 맞춰 seed로 보존합니다.
+  if (totalEntries > 0 && totalEntries <= 10) return true;
+  return false;
+}
+function filterSolverSeedEntriesForPayload(entries = [], tt = {}) {
+  const list = asArray(entries);
+  const kept = list.filter(e => isSolverSeedEntryForPayload(e, list.length));
+  if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
+  tt.autoAssignMeta.cpSatEntrySeedPreflight = {
+    version: "r217",
+    originalEntryCount: list.length,
+    keptSeedEntryCount: kept.length,
+    droppedGeneratedEntryCount: Math.max(0, list.length - kept.length),
+    rule: "Only explicit pinned/fixed/locked entries are sent as CP-SAT time seeds; ordinary previous auto-placement entries are dropped."
+  };
+  return kept;
 }
 function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
   const roomId = cleanLocal(explicitRoomId);
@@ -309,6 +416,7 @@ function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
 }
 function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
   normalizeTeacherReferencesForPayload(data);
+  applyFixedRoomPreflightForSolverPayload(data);
   const tt = data?.timetable || {};
   const roster = teacherRosterSetForPayload(data);
   const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
@@ -369,7 +477,9 @@ function makeSolverState(appState, live = {}) {
   // ttDomain() + entries()를 우선 사용해 visible timetable과 solver payload를 일치시킵니다.
   const liveTimetable = applyManualCardExclusionToPayloadTimetable(deepClone(live.timetable || appState?.timetable || {}));
   if (Array.isArray(live.entries)) {
-    liveTimetable.entries = deepClone(live.entries);
+    // r217: 이전 자동배치 결과 entry는 CP-SAT 입력(seed)으로 보내지 않습니다.
+    // 명시적으로 고정/잠금된 시간표 seed만 보내고, 일반 배치는 cards/groups에서 새로 생성합니다.
+    liveTimetable.entries = filterSolverSeedEntriesForPayload(deepClone(live.entries), liveTimetable);
   }
   const data = normalizeEntryRoomsFromCardRulesForPayload({
     curriculum: appState?.curriculum || {},
@@ -994,7 +1104,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r216\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r217\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
