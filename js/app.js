@@ -1,4 +1,4 @@
- // ================================================================
+// ================================================================
 // app.js · Main Entry / Bootstrap
 // ================================================================
 // 이 파일은 앱 전체 초기화만 담당합니다.
@@ -11,7 +11,7 @@ import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
 import { appState, setOnUpdate, migrateFromLegacy } from "./state.js";
-import { versioned } from "./version.js?v=2026-07-03-room-sync-after-roomload-r211";
+import { versioned } from "./version.js?v=2026-07-03-room-sync-persist-r212";
 import { createAppModuleLoader } from "./app-module-loader.js";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js";
 import { setupStudentManagementUi } from "./app-students-ui.js";

@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-room-sync-after-roomload-r211";
+import { versioned } from "./version.js?v=2026-07-03-room-sync-persist-r212";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-sync-after-roomload-r211";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-sync-persist-r212";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-sync-after-roomload-r211";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-sync-persist-r212";
 
 
 const [
@@ -432,6 +432,7 @@ function setupTtSaveQuotaControls() {
       diagBtn.disabled = true;
       diagBtn.textContent = "진단 중…";
       try {
+        await ensureRoomAssignmentsSyncedForServerRead("firestore-diagnostic");
         const snapshot = await exportFirestoreDiagnosticSnapshot();
         downloadJsonFile(`his-firestore-diagnostic-${new Date().toISOString().slice(0,10)}.json`, snapshot);
       } catch (e) {
@@ -1556,14 +1557,12 @@ function refreshEntryRoomAssignmentsFromCards(cardIds = []) {
   });
 }
 
-let didAutoReconcileCardRoomAssignments = false;
-
 function canResolveRoomSyncDependencies() {
   return entries().length > 0 && getTtCards().length > 0 && getRooms().length > 0;
 }
 
 function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}) {
-  // r211: 교사교실 보정은 rooms 데이터가 로드된 뒤에만 실행해야 합니다.
+  // r212: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
   // r210에서는 entries/ttcards만 먼저 로드된 순간 1회 플래그가 소모되어,
   // 박래희=VH106 같은 교사교실 계산을 못 하고 stale roomId(MH104 등)가 남았습니다.
   if (!getRooms().length) return 0;
@@ -1633,6 +1632,27 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
     try { recomputeConflicts(); } catch (_) {}
     try { console.info(`[room-sync] 카드 교실 조건 기준으로 기존 배치 ${changed}개를 보정했습니다.`); } catch (_) {}
   }
+  return changed;
+}
+
+async function ensureRoomAssignmentsSyncedForServerRead(reason = "") {
+  // r212: Firestore 진단은 서버 원본을 직접 읽으므로, 런타임 보정만으로는 JSON에 stale 교실값이 남습니다.
+  // 진단/외부 읽기 전에 먼저 현재 앱 상태를 교사교실/지정교실/홈룸 규칙으로 보정하고 즉시 저장합니다.
+  if (!canResolveRoomSyncDependencies()) return 0;
+  const changed = reconcileExistingEntryRoomAssignmentsFromCards({ persist: false });
+  if (!changed) return 0;
+  try { recomputeConflicts(); } catch (_) {}
+  if (canEdit()) {
+    try {
+      scheduleSave("timetable");
+      await saveNow("timetable", { force: true });
+      if (typeof savePendingNow === "function") await savePendingNow();
+    } catch (e) {
+      console.warn(`[room-sync:r212] ${reason || "server-read"} 저장 전 교실 보정 저장 실패`, e);
+      throw e;
+    }
+  }
+  try { console.info(`[room-sync:r212] ${reason || "server-read"} 전에 stale 교실값 ${changed}개를 저장 보정했습니다.`); } catch (_) {}
   return changed;
 }
 
@@ -3964,13 +3984,13 @@ function renderScheduleControls() {
 
 function renderAll() {
   ensureTeacherCardsBottomTab();
-  if (!didAutoReconcileCardRoomAssignments && canResolveRoomSyncDependencies()) {
-    // r211: entries/ttcards/rooms가 모두 로드된 뒤에만 1회 보정 플래그를 소비합니다.
-    // rooms 없이 먼저 실행되면 교사교실을 찾지 못해 화면에는 VH106 계산값과 MH104 stale 값이 같이 보였습니다.
-    const changed = reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
-    didAutoReconcileCardRoomAssignments = true;
+  if (canResolveRoomSyncDependencies()) {
+    // r212: r211의 1회 플래그 방식은 Firestore 진단/빠른 로드 타이밍에서 stale 교실값이 남을 수 있었습니다.
+    // 교사교실/지정교실/홈룸 규칙은 비용이 작으므로 렌더마다 확인하고, 변경이 있을 때만 저장 예약합니다.
+    const changed = reconcileExistingEntryRoomAssignmentsFromCards({ persist: false });
     if (changed) {
-      try { console.info(`[room-sync:r211] rooms 로드 후 기존 배치 ${changed}개를 카드/교사교실 기준으로 보정했습니다.`); } catch (_) {}
+      if (canEdit()) scheduleSave("timetable");
+      try { console.info(`[room-sync:r212] 기존 배치 ${changed}개를 카드/교사교실 기준으로 보정했습니다.`); } catch (_) {}
     }
   }
   stripLegacyAutoAssignValidationMeta({ persist: canEdit() });
