@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-room-sync-persist-r212";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-data-preflight-r213";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r212";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r212 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r213";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r213 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -174,12 +174,85 @@ function homeRoomIdForCardPayload(card = {}, entry = {}, classes = [], rooms = [
 function splitTeacherNamesForPayload(value = "") {
   return unique(String(value || "").split(/[,，·/]+/).map(cleanLocal).filter(Boolean));
 }
-function teacherNamesForCardPayload(card = {}, entry = {}) {
-  return unique([
+function teacherRosterSetForPayload(dataOrState = {}) {
+  const payload = payloadFromWrappedState(dataOrState);
+  return new Set(asArray(payload?.teachers?.teachers || dataOrState?.teachers?.teachers)
+    .map(t => cleanLocal(t?.name || t))
+    .filter(Boolean));
+}
+function normalizeTeacherNameForPayload(name = "", roster = new Set()) {
+  const raw = cleanLocal(name);
+  if (!raw) return "";
+  if (/^(without\s*teacher|no\s*teacher|none|교사\s*없음|미지정)$/i.test(raw)) return "";
+  if (roster.has(raw)) return raw;
+  if (raw === "진로" && roster.has("진로교사")) return "진로교사";
+  const suffixed = `${raw}교사`;
+  if (roster.has(suffixed)) return suffixed;
+  return raw;
+}
+function normalizeTeacherListForPayload(values = [], roster = new Set()) {
+  return unique((values || [])
+    .flatMap(v => splitTeacherNamesForPayload(v || ""))
+    .map(v => normalizeTeacherNameForPayload(v, roster))
+    .filter(Boolean));
+}
+function teacherNamesForCardPayload(card = {}, entry = {}, roster = new Set()) {
+  return normalizeTeacherListForPayload([
     ...(Array.isArray(card.teachers) ? card.teachers : []),
     card.teacherName,
     entry.teacherName
-  ].flatMap(splitTeacherNamesForPayload));
+  ], roster);
+}
+function canonicalTeacherNamesForEntryPayload(entry = {}, cardById = new Map(), roster = new Set()) {
+  const ids = cardIdsFromEntryForPayload(entry);
+  const fromCards = ids.flatMap(id => {
+    const card = cardById.get(id);
+    return card ? teacherNamesForCardPayload(card, {}, roster) : [];
+  });
+  if (fromCards.length) return normalizeTeacherListForPayload(fromCards, roster);
+  return normalizeTeacherListForPayload([entry.teacherName], roster);
+}
+function normalizeTeacherConstraintKeysForPayload(tt = {}, roster = new Set()) {
+  const tc = tt.teacherConstraints;
+  if (!tc || typeof tc !== "object" || !roster.size) return;
+  Object.keys(tc).forEach(key => {
+    if (String(key).startsWith("__room_unavailable__:") || String(key).startsWith("__class_unavailable__:")) return;
+    const names = normalizeTeacherListForPayload([key], roster);
+    if (names.length === 1 && roster.has(names[0])) {
+      const nextKey = names[0];
+      if (nextKey !== key) {
+        tc[nextKey] = { ...(tc[key] || {}), ...(tc[nextKey] || {}) };
+        delete tc[key];
+      }
+      return;
+    }
+    if (!roster.has(key)) delete tc[key];
+  });
+}
+function normalizeTeacherReferencesForPayload(data = {}) {
+  const tt = data?.timetable || {};
+  const roster = teacherRosterSetForPayload(data);
+  if (!roster.size) return data;
+  normalizeTeacherConstraintKeysForPayload(tt, roster);
+  const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+  const cardById = new Map(cards.map(c => [cleanLocal(c?.id), c]).filter(([id]) => id));
+  cards.forEach(card => {
+    const names = normalizeTeacherListForPayload([
+      ...(Array.isArray(card?.teachers) ? card.teachers : []),
+      card?.teacherName
+    ], roster);
+    if (names.length) {
+      card.teachers = names;
+      card.teacherName = names.join(",");
+    }
+  });
+  asArray(tt.entries).forEach(entry => {
+    const names = canonicalTeacherNamesForEntryPayload(entry, cardById, roster);
+    entry.teacherName = names.join(", ");
+    if (names.length) entry.teacherNames = names;
+    else delete entry.teacherNames;
+  });
+  return data;
 }
 function teacherRoomIdForPayload(teacherName = "", teacherConstraints = {}, rooms = []) {
   const name = cleanLocal(teacherName);
@@ -191,8 +264,8 @@ function teacherRoomIdForPayload(teacherName = "", teacherConstraints = {}, room
   const uniqueRooms = unique(matches);
   return uniqueRooms.length === 1 ? uniqueRooms[0] : "";
 }
-function teacherRoomIdForCardPayload(card = {}, entry = {}, teacherConstraints = {}, rooms = []) {
-  const roomIds = unique(teacherNamesForCardPayload(card, entry).map(name => teacherRoomIdForPayload(name, teacherConstraints, rooms)).filter(Boolean));
+function teacherRoomIdForCardPayload(card = {}, entry = {}, teacherConstraints = {}, rooms = [], roster = new Set()) {
+  const roomIds = unique(teacherNamesForCardPayload(card, entry, roster).map(name => teacherRoomIdForPayload(name, teacherConstraints, rooms)).filter(Boolean));
   return roomIds.length === 1 ? roomIds[0] : "";
 }
 function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
@@ -206,7 +279,9 @@ function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
   return false;
 }
 function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
+  normalizeTeacherReferencesForPayload(data);
   const tt = data?.timetable || {};
+  const roster = teacherRosterSetForPayload(data);
   const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
   const entries = asArray(tt.entries);
   const classes = asArray(data?.classes?.classes);
@@ -230,7 +305,7 @@ function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
       let expected = "";
       if (rule === "fixed") expected = cleanLocal(card.fixedRoomId);
       else if (rule === "homeroom") expected = homeRoomIdForCardPayload(card, entry, classes, rooms);
-      else if (rule === "teacher") expected = teacherRoomIdForCardPayload(card, entry, teacherConstraints, rooms);
+      else if (rule === "teacher") expected = teacherRoomIdForCardPayload(card, entry, teacherConstraints, rooms, roster);
 
       const current = cleanLocal(assignments[id]);
       if (expected && !isManualEntryRoomOverrideForPayload(entry, current) && current !== expected) {
@@ -614,6 +689,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     uid,
     clean = cleanLocal,
     escapeHtml = escapeDefault,
+    prepareSolverState = null,
   } = ctx;
 
   ensureStyle();
@@ -658,6 +734,14 @@ export function setupCpSatWebappImport(ctx = {}) {
     });
   }
 
+  function canonicalTeacherNameForSolvedEntry(entry = {}) {
+    const tt = ttDomain?.() || appState?.timetable || {};
+    const roster = teacherRosterSetForPayload(appState || {});
+    const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+    const cardById = new Map(cards.map(c => [cleanLocal(c?.id), c]).filter(([id]) => id));
+    return canonicalTeacherNamesForEntryPayload(entry, cardById, roster).join(", ");
+  }
+
   function normalizeSolvedEntry(rawEntry) {
     const raw = deepClone(rawEntry || {});
     const normalized = normalizeTimetableEntry ? normalizeTimetableEntry(raw) : raw;
@@ -673,6 +757,12 @@ export function setupCpSatWebappImport(ctx = {}) {
     }
     for (const key of ["ttcardIds", "templateIds", "gradeKeys", "audienceClassKeys"]) {
       if (Array.isArray(raw[key]) && raw[key].length) normalized[key] = unique(raw[key]);
+    }
+
+    const canonicalTeacherName = canonicalTeacherNameForSolvedEntry(normalized);
+    if (canonicalTeacherName) {
+      normalized.teacherName = canonicalTeacherName;
+      normalized.teacherNames = splitTeacherNamesForPayload(canonicalTeacherName);
     }
 
     const assignmentRooms = unique(Object.values(preservedAssignments));
@@ -875,7 +965,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r212\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r213\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -944,7 +1034,8 @@ export function setupCpSatWebappImport(ctx = {}) {
         returnFullState: false,
       };
     }
-    function solverState() {
+    async function solverState() {
+      if (typeof prepareSolverState === "function") await prepareSolverState();
       latestState = makeSolverState(appState, {
         timetable: ttDomain?.() || appState?.timetable || {},
         entries: asArray(entries?.()),
@@ -1034,7 +1125,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     $('[data-action="analyze"]')?.addEventListener("click", async () => {
       try {
         setBusy(true); setStatus("warn", "현재 웹앱 데이터를 API로 점검 중...", 20);
-        const state = solverState();
+        const state = await solverState();
         if (isSolverStateEmpty(state)) {
           setStatus("bad", `<b>데이터가 비어 있습니다.</b><br>${escapeHtml(emptyStateMessage(state))}`, 0);
           renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
@@ -1104,7 +1195,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         latestResult = null;
         setBusy(true);
         const opt = options();
-        const state = solverState();
+        const state = await solverState();
         if (isSolverStateEmpty(state)) {
           setStatus("bad", `<b>CP-SAT를 실행할 데이터가 없습니다.</b><br>${escapeHtml(emptyStateMessage(state))}`, 0);
           renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
@@ -1171,7 +1262,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       try { if (await applySolvedEntries(latestResult.entries, latestResult, apiBase())) overlay.remove(); }
       catch (err) { alert(`적용 실패: ${err?.message || err}`); }
     });
-    $('[data-action="download-payload"]')?.addEventListener("click", () => downloadJson(`his_solver_payload_${Date.now()}.json`, solverState()));
+    $('[data-action="download-payload"]')?.addEventListener("click", async () => downloadJson(`his_solver_payload_${Date.now()}.json`, await solverState()));
     resultBtn?.addEventListener("click", () => {
       if (!latestResult) { alert("저장할 결과가 없습니다."); return; }
       downloadJson(`his_cp_sat_api_result_${Date.now()}.json`, latestResult);

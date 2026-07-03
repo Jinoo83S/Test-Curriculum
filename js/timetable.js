@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-room-sync-persist-r212";
+import { versioned } from "./version.js?v=2026-07-03-data-preflight-r213";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-sync-persist-r212";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-data-preflight-r213";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-sync-persist-r212";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-data-preflight-r213";
 
 
 const [
@@ -677,19 +677,208 @@ function setSelectedTeacherNames(names = []) {
   currentTeacher = [...new Set((names || []).map(clean).filter(Boolean))].join(",");
 }
 
+function teacherRosterNameSet() {
+  return new Set((appState.teachers?.teachers || [])
+    .map(t => clean(t?.name || t))
+    .filter(Boolean));
+}
+
+function normalizeTeacherAliasName(name = "") {
+  const raw = clean(name);
+  if (!raw) return "";
+  if (/^(without\s*teacher|no\s*teacher|none|교사\s*없음|미지정)$/i.test(raw)) return "";
+  const roster = teacherRosterNameSet();
+  if (roster.has(raw)) return raw;
+
+  // ASC/이전 배치 잔존값: "진로"는 교과군명으로도 쓰이지만 교사명 위치에서는 "진로교사"가 정식 교사입니다.
+  if (raw === "진로" && roster.has("진로교사")) return "진로교사";
+
+  const suffixed = `${raw}교사`;
+  if (roster.has(suffixed)) return suffixed;
+  return raw;
+}
+
+function normalizeTeacherNameList(names = []) {
+  return [...new Set((names || [])
+    .flatMap(v => splitTeacherNames(v || ""))
+    .map(normalizeTeacherAliasName)
+    .filter(Boolean))];
+}
+
+function normalizedTeacherNameString(value = "") {
+  return normalizeTeacherNameList([value]).join(", ");
+}
+
+function getCanonicalTeachersForTtCard(card = {}) {
+  if (!card) return [];
+  const explicit = [
+    ...(Array.isArray(card.teachers) ? card.teachers : []),
+    card.teacherName || ""
+  ].flatMap(v => splitTeacherNames(v || ""));
+  const fromTemplate = explicit.length ? [] : getTeachersForTemplate(card.templateId || "");
+  const fromHelper = explicit.length ? [] : getTeachersForTtCard(card);
+  return normalizeTeacherNameList([...explicit, ...fromHelper, ...fromTemplate]);
+}
+
+function canonicalTeacherNamesForEntry(entry = {}) {
+  const ids = ttCardIdsFromPlacement(entry);
+  const fromCards = ids
+    .map(id => getTtCardById(id))
+    .filter(Boolean)
+    .flatMap(card => getCanonicalTeachersForTtCard(card));
+  if (fromCards.length) return normalizeTeacherNameList(fromCards);
+
+  const templateIds = entryTemplateIds(entry);
+  const fromTemplates = templateIds.flatMap(tplId => getTeachersForTemplate(tplId));
+  if (fromTemplates.length) return normalizeTeacherNameList(fromTemplates);
+
+  return normalizeTeacherNameList([entry.teacherName || ""]);
+}
+
+function canonicalTeacherNameForEntry(entry = {}) {
+  return canonicalTeacherNamesForEntry(entry).join(", ");
+}
+
+function sameStringArray(a = [], b = []) {
+  const aa = (a || []).map(clean).filter(Boolean);
+  const bb = (b || []).map(clean).filter(Boolean);
+  return aa.length === bb.length && aa.every((v, i) => v === bb[i]);
+}
+
+function slotIdentity(slot = {}) {
+  return `${Number(slot?.day)}:${Number(slot?.period)}`;
+}
+
+function mergeConstraintConfig(base = {}, incoming = {}) {
+  const out = { ...(base || {}) };
+  const src = incoming || {};
+  const mergedSlots = new Map();
+  [...(out.unavailableSlots || []), ...(src.unavailableSlots || [])].forEach(slot => {
+    const day = Number(slot?.day);
+    const period = Number(slot?.period);
+    if (Number.isInteger(day) && Number.isInteger(period)) mergedSlots.set(`${day}:${period}`, { day, period });
+  });
+  out.unavailableSlots = [...mergedSlots.values()].sort((a, b) => (a.day - b.day) || (a.period - b.period));
+
+  ["assignedRoomId", "homeRoomId", "workType", "constraintNote"].forEach(key => {
+    if (!clean(out[key]) && clean(src[key])) out[key] = src[key];
+  });
+  ["useHomeRoom", "isRestrictedWork"].forEach(key => {
+    if (out[key] == null && src[key] != null) out[key] = src[key];
+  });
+  ["maxPerDay", "maxConsecutive", "maxPerWeek"].forEach(key => {
+    const a = Number(out[key]);
+    const b = Number(src[key]);
+    if (!Number.isFinite(a) || a <= 0) {
+      if (Number.isFinite(b) && b > 0) out[key] = b;
+    } else if (Number.isFinite(b) && b > 0) {
+      // 제한은 더 엄격한 쪽을 보존합니다.
+      out[key] = Math.min(a, b);
+    }
+  });
+  return out;
+}
+
+function normalizeTimetableTeacherReferences({ persist = false } = {}) {
+  const roster = teacherRosterNameSet();
+  if (!roster.size) return 0;
+
+  let changed = 0;
+  getTtCards().forEach(card => {
+    const nextTeachers = getCanonicalTeachersForTtCard(card);
+    const currentTeachers = normalizeTeacherNameList([
+      ...(Array.isArray(card.teachers) ? card.teachers : []),
+      card.teacherName || ""
+    ]);
+    if (!sameStringArray(currentTeachers, nextTeachers)) {
+      card.teachers = nextTeachers;
+      card.teacherName = nextTeachers.join(",");
+      changed += 1;
+    }
+  });
+
+  entries().forEach(entry => {
+    const nextTeacherName = canonicalTeacherNameForEntry(entry);
+    const currentTeacherName = normalizedTeacherNameString(entry.teacherName || "");
+    if (nextTeacherName !== currentTeacherName) {
+      entry.teacherName = nextTeacherName;
+      if (nextTeacherName) entry.teacherNames = splitTeacherNames(nextTeacherName);
+      else delete entry.teacherNames;
+      changed += 1;
+    }
+  });
+
+  const tc = constraints() || {};
+  Object.keys(tc).forEach(key => {
+    if (key.startsWith(ROOM_UNAVAILABLE_PREFIX) || key.startsWith(CLASS_UNAVAILABLE_PREFIX)) return;
+    const names = normalizeTeacherNameList([key]);
+
+    if (names.length === 1 && roster.has(names[0])) {
+      const targetKey = names[0];
+      if (targetKey !== key) {
+        tc[targetKey] = mergeConstraintConfig(tc[targetKey] || {}, tc[key] || {});
+        delete tc[key];
+        changed += 1;
+      }
+      return;
+    }
+
+    // "서지훈 · 박래희" 같은 다중교사 문자열은 실제 교사가 아니라 템플릿 표시 문자열입니다.
+    // 교사 조건 키로 남으면 CP-SAT/자동배치가 가짜 교사로 오해합니다.
+    if (!roster.has(key)) {
+      delete tc[key];
+      changed += 1;
+    }
+  });
+
+  if (changed && persist) scheduleSave("timetable");
+  return changed;
+}
+
+function normalizeTimetableDataBeforeOperation({ persist = false } = {}) {
+  const teacherChanged = normalizeTimetableTeacherReferences({ persist: false });
+  const roomChanged = canResolveRoomSyncDependencies()
+    ? reconcileExistingEntryRoomAssignmentsFromCards({ persist: false })
+    : 0;
+  const metaChanged = stripLegacyAutoAssignValidationMeta({ persist: false }) ? 1 : 0;
+  const changed = teacherChanged + roomChanged + metaChanged;
+  if (changed && persist && canEdit()) scheduleSave("timetable");
+  return { changed, teacherChanged, roomChanged, metaChanged };
+}
+
+async function ensureTimetableDataSyncedForOperation(reason = "") {
+  const result = normalizeTimetableDataBeforeOperation({ persist: false });
+  if (!result.changed) return result;
+  try { recomputeConflicts(); } catch (_) {}
+  if (canEdit()) {
+    try {
+      scheduleSave("timetable");
+      await saveNow("timetable", { force: true });
+      if (typeof savePendingNow === "function") await savePendingNow();
+    } catch (e) {
+      console.warn(`[data-sync:r213] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      throw e;
+    }
+  }
+  try {
+    console.info(`[data-sync:r213] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, room=${result.roomChanged}, meta=${result.metaChanged}`);
+  } catch (_) {}
+  return result;
+}
+
 function entryHasAnySelectedTeacher(entry, selectedTeachers = getSelectedTeacherNames()) {
   if (!selectedTeachers.length) return false;
-  const names = Array.isArray(entry?.teacherNames) && entry.teacherNames.length
-    ? entry.teacherNames
-    : splitTeacherNames(entry?.teacherName || "");
-  return names.some(t => selectedTeachers.includes(t));
+  const normalizedSelected = normalizeTeacherNameList(selectedTeachers);
+  const names = canonicalTeacherNamesForEntry(entry);
+  return names.some(t => normalizedSelected.includes(t));
 }
 
 function getTeacherSelectorOptions() {
   return [...new Set([
     ...getAllTimetableTeachers(),
-    ...entries().flatMap(e => splitTeacherNames(e.teacherName)).filter(Boolean),
-  ].map(clean).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
+    ...getTtCards().flatMap(card => getCanonicalTeachersForTtCard(card)),
+    ...entries().flatMap(e => canonicalTeacherNamesForEntry(e)),
+  ].map(normalizeTeacherAliasName).map(clean).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
 }
 
 function getRoomSelectorOptions() {
@@ -1562,7 +1751,7 @@ function canResolveRoomSyncDependencies() {
 }
 
 function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}) {
-  // r212: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
+  // r213: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
   // r210에서는 entries/ttcards만 먼저 로드된 순간 1회 플래그가 소모되어,
   // 박래희=VH106 같은 교사교실 계산을 못 하고 stale roomId(MH104 등)가 남았습니다.
   if (!getRooms().length) return 0;
@@ -1636,24 +1825,10 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
 }
 
 async function ensureRoomAssignmentsSyncedForServerRead(reason = "") {
-  // r212: Firestore 진단은 서버 원본을 직접 읽으므로, 런타임 보정만으로는 JSON에 stale 교실값이 남습니다.
-  // 진단/외부 읽기 전에 먼저 현재 앱 상태를 교사교실/지정교실/홈룸 규칙으로 보정하고 즉시 저장합니다.
-  if (!canResolveRoomSyncDependencies()) return 0;
-  const changed = reconcileExistingEntryRoomAssignmentsFromCards({ persist: false });
-  if (!changed) return 0;
-  try { recomputeConflicts(); } catch (_) {}
-  if (canEdit()) {
-    try {
-      scheduleSave("timetable");
-      await saveNow("timetable", { force: true });
-      if (typeof savePendingNow === "function") await savePendingNow();
-    } catch (e) {
-      console.warn(`[room-sync:r212] ${reason || "server-read"} 저장 전 교실 보정 저장 실패`, e);
-      throw e;
-    }
-  }
-  try { console.info(`[room-sync:r212] ${reason || "server-read"} 전에 stale 교실값 ${changed}개를 저장 보정했습니다.`); } catch (_) {}
-  return changed;
+  // r213: 진단/CP-SAT/자동배치 직전에는 교실뿐 아니라 teacherName/teacherConstraints도
+  // 카드/교사명단 기준으로 정규화해야 합니다. Firestore 진단은 서버 원본을 직접 읽기 때문입니다.
+  const result = await ensureTimetableDataSyncedForOperation(reason || "server-read");
+  return result.changed || 0;
 }
 
 
@@ -3859,7 +4034,8 @@ export const autoAssignAll = createAutoAssignAll({
   buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
   audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
   shuffle, captureTimetableUndo, addTimetableLog, setLastAutoAssignReport,
-  getConflictCounts, recomputeConflicts, renderAll, $
+  getConflictCounts, recomputeConflicts, renderAll, $,
+  preflightTimetableData: () => ensureTimetableDataSyncedForOperation("auto-assign")
 });
 
 // ── Room unavailable slots manager ───────────────────────────────
@@ -3984,16 +4160,15 @@ function renderScheduleControls() {
 
 function renderAll() {
   ensureTeacherCardsBottomTab();
-  if (canResolveRoomSyncDependencies()) {
-    // r212: r211의 1회 플래그 방식은 Firestore 진단/빠른 로드 타이밍에서 stale 교실값이 남을 수 있었습니다.
-    // 교사교실/지정교실/홈룸 규칙은 비용이 작으므로 렌더마다 확인하고, 변경이 있을 때만 저장 예약합니다.
-    const changed = reconcileExistingEntryRoomAssignmentsFromCards({ persist: false });
-    if (changed) {
+  {
+    // r213: 렌더 시점마다 가볍게 데이터 정규화를 수행합니다.
+    // entry.teacherName/teacherConstraints/교실 배정이 카드·교사명단 기준과 어긋나면 자동배치가 가짜 교사/가짜 교실을 보게 됩니다.
+    const sync = normalizeTimetableDataBeforeOperation({ persist: false });
+    if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      try { console.info(`[room-sync:r212] 기존 배치 ${changed}개를 카드/교사교실 기준으로 보정했습니다.`); } catch (_) {}
+      try { console.info(`[data-sync:r213] 렌더 전 정규화 teacher=${sync.teacherChanged}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
     }
   }
-  stripLegacyAutoAssignValidationMeta({ persist: canEdit() });
   recomputeConflicts();
   refreshStrictRuntimeSummaryMeta({ persist: false });
   renderViewSelectors();
@@ -4523,8 +4698,14 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
-$("ttAutoPrecheckBtn")?.addEventListener("click", () => autoAssignAll.openPrecheck?.());
-$("ttAutoAssignBtn")?.addEventListener("click", () => autoAssignAll());
+$("ttAutoPrecheckBtn")?.addEventListener("click", async () => {
+  try { await ensureTimetableDataSyncedForOperation("auto-precheck"); } catch (e) { alert("자동배치 사전점검 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
+  autoAssignAll.openPrecheck?.();
+});
+$("ttAutoAssignBtn")?.addEventListener("click", async () => {
+  try { await ensureTimetableDataSyncedForOperation("auto-assign-button"); } catch (e) { alert("자동배치 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
+  autoAssignAll();
+});
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
 
 setupCpSatWebappImport?.({
@@ -4541,6 +4722,7 @@ setupCpSatWebappImport?.({
   uid,
   clean,
   escapeHtml,
+  prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat")
 });
 
 // Expose schedule control callbacks to inline HTML script
