@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-room-fallback-stale-entry-r210";
+import { versioned } from "./version.js?v=2026-07-03-room-sync-after-roomload-r211";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-fallback-stale-entry-r210";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-sync-after-roomload-r211";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-fallback-stale-entry-r210";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-sync-after-roomload-r211";
 
 
 const [
@@ -1558,7 +1558,15 @@ function refreshEntryRoomAssignmentsFromCards(cardIds = []) {
 
 let didAutoReconcileCardRoomAssignments = false;
 
+function canResolveRoomSyncDependencies() {
+  return entries().length > 0 && getTtCards().length > 0 && getRooms().length > 0;
+}
+
 function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}) {
+  // r211: 교사교실 보정은 rooms 데이터가 로드된 뒤에만 실행해야 합니다.
+  // r210에서는 entries/ttcards만 먼저 로드된 순간 1회 플래그가 소모되어,
+  // 박래희=VH106 같은 교사교실 계산을 못 하고 stale roomId(MH104 등)가 남았습니다.
+  if (!getRooms().length) return 0;
   let changed = 0;
   entries().forEach(entry => {
     const ids = ttCardIdsFromPlacement(entry);
@@ -3336,6 +3344,10 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   resolveRoomForPlacementData,
   getHomeRoomIdForPlacementData,
   getDefaultRoomForTeacherNames,
+  getEffectiveRoomIdsForEntry: effectiveRoomIdsForEntry,
+  roomAssignmentsForEntry,
+  resolveRoomForTtCard,
+  normalizedEntryForRoomDisplay,
   setTtCardRoomPreference,
   applyRoomRuleToEntry,
   getRoomDisplayName,
@@ -3407,8 +3419,28 @@ const {
   showEntryDetail: showEntryDetailBase,
 } = ttDetailHandlers;
 
+function normalizedEntryForRoomDisplay(entry = {}) {
+  const out = { ...entry };
+  const assignments = roomAssignmentsForEntry(out);
+  out.roomAssignmentsByTtCardId = assignments;
+  const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
+  if (isGroupedRoomEntry(out)) {
+    out.roomId = null;
+    out.roomPinned = false;
+  } else if (rooms.length === 1) {
+    out.roomId = rooms[0];
+    if (normalizeRoomRuleValue(out.roomRule || "teacher") !== "fixed") out.roomPinned = false;
+  } else if (rooms.length > 1) {
+    out.roomId = null;
+    out.roomPinned = false;
+  } else if (normalizeRoomRuleValue(out.roomRule || "teacher") !== "fixed") {
+    out.roomId = null;
+  }
+  return out;
+}
+
 function showEntryDetail(entry) {
-  return showEntryDetailBase(enrichEntryForCompoundGroupDetail(entry));
+  return showEntryDetailBase(normalizedEntryForRoomDisplay(enrichEntryForCompoundGroupDetail(entry)));
 }
 
 function buildEntryCard(entry, opts = {}) {
@@ -3932,11 +3964,14 @@ function renderScheduleControls() {
 
 function renderAll() {
   ensureTeacherCardsBottomTab();
-  if (!didAutoReconcileCardRoomAssignments && entries().length && getTtCards().length) {
+  if (!didAutoReconcileCardRoomAssignments && canResolveRoomSyncDependencies()) {
+    // r211: entries/ttcards/rooms가 모두 로드된 뒤에만 1회 보정 플래그를 소비합니다.
+    // rooms 없이 먼저 실행되면 교사교실을 찾지 못해 화면에는 VH106 계산값과 MH104 stale 값이 같이 보였습니다.
+    const changed = reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
     didAutoReconcileCardRoomAssignments = true;
-    // r187: 과목카드의 fixed/homeroom/none 교실 규칙과 과거 entry 교실 배정이 다르면 1회 자동 보정합니다.
-    // 로그인 전/읽기 권한 상태에서는 화면 계산만 우선 적용되고, 편집 가능 상태에서만 Firestore 저장까지 진행합니다.
-    reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
+    if (changed) {
+      try { console.info(`[room-sync:r211] rooms 로드 후 기존 배치 ${changed}개를 카드/교사교실 기준으로 보정했습니다.`); } catch (_) {}
+    }
   }
   stripLegacyAutoAssignValidationMeta({ persist: canEdit() });
   recomputeConflicts();

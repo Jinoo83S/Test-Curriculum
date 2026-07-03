@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-02-card-room-time-conflict-r205";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-room-sync-after-roomload-r211";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r208";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r208 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r211";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r211 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -199,7 +199,9 @@ function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
   const roomId = cleanLocal(explicitRoomId);
   if (!roomId) return false;
   const rule = normalizeRoomRuleForPayload(entry.roomRule || "teacher");
-  if (entry.roomPinned === true) return true;
+  // r211: roomPinned=true는 과거 자동보정/CP-SAT 적용 과정에서도 남을 수 있으므로
+  // fixed 규칙일 때만 수동 지정교실로 인정합니다. teacher 규칙의 stale room은 보정 대상입니다.
+  if (entry.roomPinned === true && rule === "fixed") return true;
   if (rule === "fixed" && cleanLocal(entry.roomId || entry.fixedRoomId) === roomId) return true;
   return false;
 }
@@ -239,12 +241,16 @@ function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
     if (!touched) return;
     entry.roomAssignmentsByTtCardId = Object.fromEntries(Object.entries(assignments).filter(([, v]) => cleanLocal(v)));
     const roomIds = unique(Object.values(entry.roomAssignmentsByTtCardId));
+    const rules = ids.map(id => normalizeRoomRuleForPayload(cardById.get(id)?.roomRule));
+    const allFixedRules = rules.length > 0 && rules.every(r => r === "fixed");
+    const entryRule = normalizeRoomRuleForPayload(entry.roomRule || "teacher");
     if (entry.groupId || ids.length > 1) {
       entry.roomId = null;
       entry.roomPinned = false;
     } else if (roomIds.length === 1) {
       entry.roomId = roomIds[0];
-      entry.roomPinned = true;
+      // r211: 교사교실/홈룸 보정값을 수동 고정(roomPinned)으로 승격하지 않습니다.
+      entry.roomPinned = allFixedRules || entryRule === "fixed";
     } else if (roomIds.length > 1) {
       entry.roomId = null;
       entry.roomPinned = false;
@@ -869,7 +875,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r208\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r211\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 

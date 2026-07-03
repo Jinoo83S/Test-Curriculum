@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-07-03-room-rule-manual-priority-r208";
+import { versioned } from "./version.js?v=2026-07-03-room-sync-after-roomload-r211";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",
