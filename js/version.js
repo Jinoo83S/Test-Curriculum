@@ -2,7 +2,7 @@
 // version.js · Central cache-busting version for runtime imports
 // ================================================================
 // r97: HTML과 JS 양쪽에서 같은 빌드 번호를 사용하도록 window.HIS_APP_VERSION을 우선합니다.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-07-03-manual-card-vault-r214");
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-07-03-manual-card-vault-syntaxfix-r215");
 
 export function versioned(path) {
   const raw = String(path || "");

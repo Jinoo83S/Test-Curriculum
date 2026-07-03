@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-manual-card-vault-r214";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-manual-card-vault-syntaxfix-r215";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -519,7 +519,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-07-03-manual-card-vault-r214"),
+      validatorVersion: String(meta.validatorVersion || "2026-07-03-manual-card-vault-syntaxfix-r215"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -859,7 +859,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-manual-card-vault-r214",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-manual-card-vault-syntaxfix-r215",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -5944,10 +5944,10 @@ export function createAutoAssignAll(deps) {
     });
     addPrecheckItem(report, "그룹 점검", siblingIssues.length ? "warn" : "ok", "그룹 대표카드와 중복 카드 불일치", siblingIssues.length ? `${siblingIssues.length}건 · ${siblingIssues.slice(0, 6).join(" / ")}${siblingIssues.length > 6 ? " …" : ""}` : "없음");
 
-    const manualCards = activeCards.filter(c => c.isManual || String(c.id || "").startsWith("ttc_manual"));
-    const placedManualCards = manualCards.filter(c => placedCardIds.has(c.id));
-    addPrecheckItem(report, "수동 카드", manualCards.length ? "info" : "ok", "수동 카드 보존", manualCards.length ? `수동 카드 ${manualCards.length}개 · 현재 배치 ${placedManualCards.length}개 · 보호 ${options.keepManual !== false ? "ON" : "OFF"}` : "수동 카드 없음");
-    if (manualCards.length && options.keepManual === false) {
+    const activeManualCards = activeCards.filter(c => c.isManual || String(c.id || "").startsWith("ttc_manual"));
+    const placedManualCards = activeManualCards.filter(c => placedCardIds.has(c.id));
+    addPrecheckItem(report, "수동 카드", activeManualCards.length ? "info" : "ok", "수동 카드 보존", activeManualCards.length ? `수동 카드 ${activeManualCards.length}개 · 현재 배치 ${placedManualCards.length}개 · 보호 ${options.keepManual !== false ? "ON" : "OFF"}` : "수동 카드 없음");
+    if (activeManualCards.length && options.keepManual === false) {
       addPrecheckItem(report, "수동 카드", "warn", "수동 카드 보호 꺼짐", "자동배치 초기화 범위에 배치된 수동 카드가 포함될 수 있습니다.");
     }
 
@@ -7159,7 +7159,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-07-03-manual-card-vault-r214"
+        validatorVersion: "2026-07-03-manual-card-vault-syntaxfix-r215"
       };
 
       let afterAutoSnapshot = null;
