@@ -133,7 +133,7 @@ export function createTimetableLogHandlers({
     const failureDiagnostics = Array.isArray(auto?.failedDiagnostics) ? auto.failedDiagnostics : [];
     const failureDiagHtml = failureDiagnostics.length
       ? `<div class="tt-log-failure-diag">
-          <div class="tt-log-subtitle">미배치 원인 후보 및 완화 제안</div>
+          <div class="tt-log-subtitle">미배치/배치 후보 충돌 원인 및 완화 제안</div><div class="tt-log-muted" style="margin-bottom:6px">아래 내용은 아직 배치하지 못한 카드가 어느 슬롯에서 막혔는지 보여주는 후보 충돌입니다. 현재 시간표의 실제 충돌은 오른쪽 표에서 따로 확인합니다.</div>
           ${failureDiagnostics.slice(0, 12).map((d, idx) => {
             const reasons = Array.isArray(d.topReasons) ? d.topReasons.slice(0, 3) : [];
             const reasonHtml = reasons.length
@@ -241,11 +241,11 @@ export function createTimetableLogHandlers({
               <td>${escapeHtml(row.detail)}</td>
             </tr>`).join("")}</tbody>
         </table></div>`
-      : `<div class="tt-log-empty">현재 충돌 내역이 없습니다.</div>`;
+      : `<div class="tt-log-empty">현재 시간표의 실제 충돌 내역이 없습니다.</div>`;
 
     el.innerHTML = `
       <div class="tt-log-toolbar">
-        <div class="tt-log-title">시간표 로그 · 자동배치 결과 · 충돌 내역</div>
+        <div class="tt-log-title">시간표 로그 · 자동배치 결과 · 실제 충돌/후보 충돌 분리</div>
         <div class="tt-log-actions">
           <button type="button" onclick="window._ttRefreshLogs?.()">새로고침</button>
           <button type="button" onclick="window._ttClearLogs?.()">로그 지우기</button>
@@ -286,7 +286,7 @@ export function createTimetableLogHandlers({
         </div>
         <section class="tt-log-card">
           <div class="tt-log-card-hdr">
-            <span>현재 충돌 내역</span>
+            <span>현재 시간표 실제 충돌</span>
             <span style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">${totalAffected ? `<span class="tt-conflict-summary-label">충돌 ${totalAffected}건</span>${conflictBadges}` : `<span class="tt-log-badge ok">충돌 없음</span>`}</span>
           </div>
           <div class="tt-log-card-body">${conflictTable}</div>

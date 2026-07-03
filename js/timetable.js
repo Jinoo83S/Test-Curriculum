@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-06-30-operational-constraints-r191";
+import { versioned } from "./version.js?v=2026-07-03-room-rule-manual-priority-r208";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-06-30-operational-constraints-r191";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-rule-manual-priority-r208";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-02-brief-checkbox-only-r206";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-rule-manual-priority-r208";
 
 
 const [
@@ -1201,13 +1201,8 @@ function getDefaultRoomForTeacherNames(teacherNames = []) {
   return fromRooms.length === 1 ? fromRooms[0] : null;
 }
 
-function normalizeAudienceClassKeyForRoom(value = "", fallbackGradeKey = "") {
-  return occNormalizeClassKey(value, fallbackGradeKey || "");
-}
-
 function classIdForAudienceClassKey(classKey = "") {
-  const normalized = normalizeAudienceClassKeyForRoom(classKey);
-  const [gradeNo, section] = normalized.split(":");
+  const [gradeNo, section] = String(classKey || "").split(":");
   if (!gradeNo || !section) return "";
   const grade = `${Number(gradeNo)}학년`;
   const sec = clean(section).toUpperCase();
@@ -1218,25 +1213,24 @@ function classIdForAudienceClassKey(classKey = "") {
 }
 
 function getAudienceClassKeysForPlacementData(data = {}) {
-  const fallbackGradeKey = data.gradeKey || (Array.isArray(data.gradeKeys) ? data.gradeKeys[0] : "");
   const direct = (Array.isArray(data.audienceClassKeys) ? data.audienceClassKeys : [])
-    .map(key => normalizeAudienceClassKeyForRoom(key, fallbackGradeKey))
+    .map(clean)
     .filter(Boolean);
   if (direct.length) return [...new Set(direct)];
 
   const cardKeys = ttCardIdsFromPlacement(data)
     .map(id => getTtCardById(id))
     .filter(Boolean)
-    .flatMap(card => getTtCardClassInfos(card).map(info => normalizeAudienceClassKeyForRoom(classKey(info), card.gradeKey || fallbackGradeKey)).filter(Boolean));
+    .flatMap(card => getTtCardClassInfos(card).map(info => classKey(info)).filter(Boolean));
   if (cardKeys.length) return [...new Set(cardKeys)];
 
-  if (!fallbackGradeKey) return [];
-  return [normalizeAudienceClassKeyForRoom(classKey({ gradeKey: fallbackGradeKey, sectionIdx: data.sectionIdx ?? 0, section: sectionLabel(data.sectionIdx ?? 0) }), fallbackGradeKey)].filter(Boolean);
+  const gradeKey = data.gradeKey || (Array.isArray(data.gradeKeys) ? data.gradeKeys[0] : "");
+  if (!gradeKey) return [];
+  return [classKey({ gradeKey, sectionIdx: data.sectionIdx ?? 0, section: sectionLabel(data.sectionIdx ?? 0) })].filter(Boolean);
 }
 
 function classInfoFromAudienceClassKey(key = "") {
-  const normalized = normalizeAudienceClassKeyForRoom(key);
-  const [gradeNo, rawSection] = normalized.split(":");
+  const [gradeNo, rawSection] = String(key || "").split(":");
   const gradeNum = Number(gradeNo);
   const section = clean(rawSection).toUpperCase();
   const gradeKey = Number.isFinite(gradeNum) && gradeNum > 0 ? `${gradeNum}학년` : "";
@@ -1404,23 +1398,24 @@ function resolveRoomForTtCard(card = {}, fallbackEntry = {}) {
     sectionIdx: card.sectionIdx ?? fallbackEntry.sectionIdx ?? 0,
     classKeys: Array.isArray(card.classKeys) ? card.classKeys : [],
     classLabels: Array.isArray(card.classLabels) ? card.classLabels : [],
-    // 그룹 entry는 audienceClassKeys에 여러 반을 함께 갖습니다.
-    // 홈룸 고정은 카드별 반 기준으로 풀어야 하므로 카드의 classKeys/classLabels를 우선합니다.
-    audienceClassKeys: (() => {
-      const cardKeys = [
-        ...(Array.isArray(card.classKeys) ? card.classKeys : []),
-        ...(Array.isArray(card.classLabels) ? card.classLabels : []),
-      ].map(v => normalizeAudienceClassKeyForRoom(v, card.gradeKey || fallbackEntry.gradeKey)).filter(Boolean);
-      if (cardKeys.length) return [...new Set(cardKeys)];
-      return Array.isArray(fallbackEntry.audienceClassKeys)
-        ? fallbackEntry.audienceClassKeys.map(v => normalizeAudienceClassKeyForRoom(v, fallbackEntry.gradeKey)).filter(Boolean)
-        : [];
-    })(),
+    audienceClassKeys: Array.isArray(fallbackEntry.audienceClassKeys) ? fallbackEntry.audienceClassKeys : [],
     teacherName,
     roomRule: rule,
     fixedRoomId: clean(card.fixedRoomId || "")
   };
   return resolveRoomForPlacementData(data, rule);
+}
+
+function isManualRoomOverrideForCard(entry = {}, cardId = "", explicitRoomId = "") {
+  const roomId = clean(explicitRoomId);
+  if (!roomId) return false;
+  const entryRule = normalizeRoomRuleValue(entry.roomRule || "teacher");
+  if (entry.roomPinned === true) return true;
+  if (entryRule === "fixed" && clean(entry.roomId || entry.fixedRoomId) === roomId) return true;
+  const card = getTtCardById(cardId);
+  const cardRule = roomRuleForCard(card || {});
+  if (cardRule === "fixed" && clean(card?.fixedRoomId) === roomId) return true;
+  return false;
 }
 
 function roomAssignmentsForEntry(entry = {}) {
@@ -1439,27 +1434,25 @@ function roomAssignmentsForEntry(entry = {}) {
     const cardRule = roomRuleForCard(card || {});
     const cardRoom = resolveRoomForTtCard(card, entry);
 
-    // r187: 과목카드의 명시 규칙이 최우선입니다.
-    // 기존 entry.roomAssignmentsByTtCardId는 과거 배치 결과일 수 있으므로,
-    // fixed / homeroom / none 같은 사용자 확정 규칙은 stale entry 값을 덮어씁니다.
+    // r208: 과목카드의 지정교실/홈룸/교실없음은 최상위 사용자 규칙입니다.
+    // 단, roomRule=teacher 카드의 과거 roomAssignmentsByTtCardId 값은 CP-SAT/자동배치가
+    // 남긴 stale 교실일 수 있으므로, 수동 고정으로 확인되지 않으면 교사 지정교실을 우선합니다.
     if (cardRule === "none") return;
     if ((cardRule === "fixed" || cardRule === "homeroom") && cardRoom) {
       out[id] = cardRoom;
       return;
     }
 
-    // r207: 교사 교실 고정도 fixed/homeroom과 같은 "확정 교실"입니다.
-    // CP-SAT/이전 배치 결과의 explicit roomAssignments가 남아 있어도
-    // 과목카드 규칙이 teacher이고 교사 고정교실이 있으면 교사 교실을 우선합니다.
-    if (cardRule === "teacher" && cardRoom) {
-      out[id] = cardRoom;
+    const explicitRoom = clean(explicit[id]);
+    if (isManualRoomOverrideForCard(entry, id, explicitRoom)) {
+      out[id] = explicitRoom;
       return;
     }
 
-    const explicitRoom = clean(explicit[id]);
-    if (explicitRoom) { out[id] = explicitRoom; return; }
-
     let roomId = cardRoom;
+    // r208: 교사 교실 고정은 수동 지정교실 다음 우선순위입니다.
+    // 교사에게 지정교실이 없을 때만 기존 explicit 값을 보조 교실/수동 잔존값으로 인정합니다.
+    if (!roomId && explicitRoom) roomId = explicitRoom;
     // r118: 단일 수동카드에서 카드 규칙/entry 규칙이 서로 어긋나 있어도
     // entry 자체의 홈룸/지정교실 계산값을 마지막으로 확인합니다.
     if (!roomId && ids.length === 1) roomId = resolveRoomForPlacementData({ ...entry, ttcardId: id, ttcardIds: [id] });
@@ -1563,7 +1556,6 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
       const card = getTtCardById(id);
       if (!card) return;
       const rule = roomRuleForCard(card);
-      if (!["fixed", "homeroom", "teacher", "none"].includes(rule)) return;
 
       if (rule === "none") {
         if (clean(nextAssignments[id])) {
@@ -1574,7 +1566,13 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
       }
 
       const expectedRoomId = resolveRoomForTtCard(card, entry);
-      if (expectedRoomId && clean(nextAssignments[id]) !== expectedRoomId) {
+      if (!expectedRoomId) return;
+
+      const currentRoomId = clean(nextAssignments[id]);
+      const manualOverride = isManualRoomOverrideForCard(entry, id, currentRoomId);
+      // r208: fixed/homeroom은 항상 카드 기준으로 보정합니다. teacher는 수동 고정이 아닌 경우에만
+      // 교사 지정교실로 되돌립니다. 사용자가 지정교실 고정으로 바꾼 카드는 위에서 manualOverride가 됩니다.
+      if ((rule === "fixed" || rule === "homeroom" || rule === "teacher") && !manualOverride && currentRoomId !== expectedRoomId) {
         nextAssignments[id] = expectedRoomId;
         touched = true;
       }
@@ -1586,13 +1584,12 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
 
     entry.roomAssignmentsByTtCardId = nextAssignments;
     const rooms = [...new Set(Object.values(nextAssignments).map(clean).filter(Boolean))];
-    const shouldPinSingleRoom = ids.length === 1 && ["fixed", "homeroom"].includes(roomRuleForCard(getTtCardById(ids[0]) || {}));
     if (isGroupedRoomEntry(entry)) {
       entry.roomId = null;
       entry.roomPinned = false;
     } else if (rooms.length === 1) {
       entry.roomId = rooms[0];
-      entry.roomPinned = shouldPinSingleRoom;
+      entry.roomPinned = true;
     } else if (rooms.length > 1) {
       entry.roomId = null;
       entry.roomPinned = false;
@@ -1721,38 +1718,6 @@ function setTtCardRoomPreference(cardIds = [], rule = "auto", roomId = null, opt
     card.editedAt = new Date().toISOString();
   });
   refreshEntryRoomAssignmentsFromCards(ids);
-  scheduleSave("timetable");
-  try { recomputeConflicts(); } catch (_) {}
-  return true;
-}
-
-function setTtCardTeacherNone(cardIds = []) {
-  if (!canEdit()) return false;
-  const ids = [...new Set((cardIds || []).map(clean).filter(Boolean))];
-  if (!ids.length) return false;
-  captureTimetableUndo("과목카드 교사 없음 허용");
-
-  (appState.timetable.ttcards || []).forEach(card => {
-    if (!ids.includes(card.id)) return;
-    card.teacherMode = "none";
-    card.teacherName = "";
-    card.teachers = [];
-    card.manualEdited = true;
-    card.editedAt = new Date().toISOString();
-  });
-
-  entries().forEach(entry => {
-    const entryCardIds = ttCardIdsFromPlacement(entry);
-    if (!entryCardIds.some(id => ids.includes(id))) return;
-    const teachers = [...new Set(entryCardIds
-      .map(id => getTtCardById(id))
-      .filter(Boolean)
-      .flatMap(card => getTeachersForTtCard(card))
-      .map(clean)
-      .filter(Boolean))];
-    entry.teacherName = teachers.join(", ");
-  });
-
   scheduleSave("timetable");
   try { recomputeConflicts(); } catch (_) {}
   return true;
@@ -3349,7 +3314,6 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   getHomeRoomIdForPlacementData,
   getDefaultRoomForTeacherNames,
   setTtCardRoomPreference,
-  setTtCardTeacherNone,
   applyRoomRuleToEntry,
   getRoomDisplayName,
   getEntryPinBlockEntries,
@@ -3947,7 +3911,7 @@ function renderAll() {
   ensureTeacherCardsBottomTab();
   if (!didAutoReconcileCardRoomAssignments && entries().length && getTtCards().length) {
     didAutoReconcileCardRoomAssignments = true;
-    // r207: 과목카드의 fixed/homeroom/teacher/none 교실 규칙과 과거 entry 교실 배정이 다르면 1회 자동 보정합니다.
+    // r187: 과목카드의 fixed/homeroom/none 교실 규칙과 과거 entry 교실 배정이 다르면 1회 자동 보정합니다.
     // 로그인 전/읽기 권한 상태에서는 화면 계산만 우선 적용되고, 편집 가능 상태에서만 Firestore 저장까지 진행합니다.
     reconcileExistingEntryRoomAssignmentsFromCards({ persist: canEdit() });
   }
@@ -4380,9 +4344,6 @@ function exportXlsx() {
     entryGradeKeys,
     gradeDisplay,
     getRooms,
-    getRoomDisplayName,
-    getRoomIdsForEntry: effectiveRoomIdsForEntry,
-    getRoomAssignmentsForEntry: roomAssignmentsForEntry,
     appState,
     getAllClasses,
     getAllTimetableTeachers,
