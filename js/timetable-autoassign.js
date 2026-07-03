@@ -130,8 +130,9 @@ export function createAutoAssignAll(deps) {
     // 교사 교실 고정이 있어도 지정교실을 절대 덮어쓰지 않습니다.
     const explicit = cleanStr(card?.fixedRoomId || fallback.fixedRoomId || "");
     if (explicit) return explicit;
-    if (fallback.roomPinned && fallback.roomId) return cleanStr(fallback.roomId);
-    if (cleanStr(fallback.roomRule) === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
+    const fallbackRule = normalizeRoomRuleForAuto(fallback.roomRule || "teacher");
+    if (fallback.roomPinned && fallbackRule === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
+    if (fallbackRule === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
 
     if (rule === "homeroom") return homeroomRoomIdForAutoSource(card || {}, fallback || {});
     if (rule === "autoRoom") return "";
@@ -154,7 +155,8 @@ export function createAutoAssignAll(deps) {
     const roomId = cleanStr(explicitRoomId);
     if (!roomId) return false;
     const entryRule = normalizeRoomRuleForAuto(entry.roomRule || "teacher");
-    if (entry.roomPinned === true) return true;
+    // r210: teacher 규칙 entry의 roomPinned 잔존값을 수동 지정으로 오판하지 않습니다.
+    if (entry.roomPinned === true && entryRule === "fixed") return true;
     if (entryRule === "fixed" && cleanStr(entry.roomId || entry.fixedRoomId) === roomId) return true;
     const cardRule = normalizeRoomRuleForAuto(card?.roomRule || "teacher");
     if (cardRule === "fixed" && cleanStr(card?.fixedRoomId) === roomId) return true;
@@ -1475,7 +1477,7 @@ export function createAutoAssignAll(deps) {
         return;
       }
 
-      // r209: roomRule=teacher 카드의 과거 자동배치 roomAssignments는
+      // r210: roomRule=teacher 카드의 과거 자동배치 roomAssignments는
       // 교사 고정교실을 덮어쓰면 안 됩니다. 단, 사용자가 지정교실 고정으로
       // 바꾼 카드/entry는 위의 manual override에서 먼저 보존합니다.
       const fixedRoom = fixedRoomForCardDuringAuto(card || {}, entry);
@@ -1487,13 +1489,22 @@ export function createAutoAssignAll(deps) {
     return out;
   }
 
-  function roomIdsForPlacement(entry = {}) {
-    const assigned = Object.values(roomAssignmentsForPlacementAuto(entry));
+  function shouldUseEntryRoomIdFallbackAuto(entry = {}, assigned = []) {
+    const roomId = cleanStr(entry.roomId || "");
+    if (!roomId) return false;
     const cardIds = ttCardIdsFromPlacement(entry);
+    if (entry.groupId || cardIds.length > 1) return false;
+    if (!cardIds.length) return true;
+    if (!assigned.length) return true;
+    const entryRule = normalizeRoomRuleForAuto(entry.roomRule || "teacher");
+    return entryRule === "fixed" && cleanStr(entry.roomId || entry.fixedRoomId) === roomId;
+  }
+
+  function roomIdsForPlacement(entry = {}) {
+    const assigned = Object.values(roomAssignmentsForPlacementAuto(entry)).map(cleanStr).filter(Boolean);
     const ids = [...assigned];
-    // 그룹/다중 카드에서는 entry.roomId 하나를 대표 교실로 보지 않습니다.
-    // 단일 카드 또는 일반 수업에서만 roomId를 사용합니다.
-    if ((!entry.groupId && cardIds.length <= 1) && entry.roomId) ids.push(entry.roomId);
+    // r210: 카드별 교실 계산값이 있으면 stale entry.roomId를 후보/충돌 계산에 섞지 않습니다.
+    if (shouldUseEntryRoomIdFallbackAuto(entry, assigned)) ids.push(entry.roomId);
     return uniqueRoomIds(ids);
   }
 

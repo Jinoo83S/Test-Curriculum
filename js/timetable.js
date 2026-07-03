@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-regular-room-share-special-room-guard-r209";
+import { versioned } from "./version.js?v=2026-07-03-room-fallback-stale-entry-r210";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-regular-room-share-special-room-guard-r209";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-room-fallback-stale-entry-r210";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-regular-room-share-special-room-guard-r209";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-room-fallback-stale-entry-r210";
 
 
 const [
@@ -1410,7 +1410,10 @@ function isManualRoomOverrideForCard(entry = {}, cardId = "", explicitRoomId = "
   const roomId = clean(explicitRoomId);
   if (!roomId) return false;
   const entryRule = normalizeRoomRuleValue(entry.roomRule || "teacher");
-  if (entry.roomPinned === true) return true;
+  // r210: roomPinned=true만으로 수동 지정교실이라고 보면 안 됩니다.
+  // r208 이전/이후 보정 과정에서 teacher 규칙 entry도 roomPinned=true가 될 수 있었고,
+  // 그 경우 오래된 자동배치 교실이 교사 지정교실을 계속 덮어쓰는 문제가 생겼습니다.
+  if (entry.roomPinned === true && entryRule === "fixed") return true;
   if (entryRule === "fixed" && clean(entry.roomId || entry.fixedRoomId) === roomId) return true;
   const card = getTtCardById(cardId);
   const cardRule = roomRuleForCard(card || {});
@@ -1466,11 +1469,25 @@ function isGroupedRoomEntry(entry = {}) {
   return !!entry.groupId || cardIds.length > 1;
 }
 
+function shouldUseEntryRoomIdFallback(entry = {}, assignedIds = []) {
+  const roomId = clean(entry.roomId || "");
+  if (!roomId) return false;
+  if (isGroupedRoomEntry(entry)) return false;
+  const cardIds = ttCardIdsFromPlacement(entry);
+  if (!cardIds.length) return true;
+  if (!assignedIds.length) return true;
+  const entryRule = normalizeRoomRuleValue(entry.roomRule || "teacher");
+  // r210: 카드별 교실 계산값이 이미 있으면 entry.roomId는 오래된 자동배치 잔존값일 수 있습니다.
+  // 따라서 수동 지정교실(fixed)일 때만 보조로 합칩니다. teacher/homeroom에서는 합치지 않습니다.
+  return entryRule === "fixed" && clean(entry.roomId || entry.fixedRoomId) === roomId;
+}
+
 function effectiveRoomIdsForEntry(entry = {}) {
-  const ids = Object.values(roomAssignmentsForEntry(entry)).map(clean).filter(Boolean);
+  const assignmentIds = Object.values(roomAssignmentsForEntry(entry)).map(clean).filter(Boolean);
+  const ids = [...assignmentIds];
   // 그룹카드는 entry.roomId 하나로 교실을 대표하면 안 됩니다.
-  // 시간표에서는 카드 1개로 움직이지만, 실제 교실은 구성 과목별 roomAssignmentsByTtCardId만 신뢰합니다.
-  if (!isGroupedRoomEntry(entry) && entry.roomId) ids.push(clean(entry.roomId));
+  // 단일 카드도 카드별 계산값이 있으면 stale entry.roomId를 함께 표시/검증하지 않습니다.
+  if (shouldUseEntryRoomIdFallback(entry, assignmentIds)) ids.push(clean(entry.roomId));
   return [...new Set(ids.filter(Boolean))];
 }
 
@@ -1580,16 +1597,21 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
 
     if (!touched) return;
     changed += 1;
-    if (!persist) return;
 
+    // r210: persist=false여도 화면/검증용 런타임 데이터는 즉시 보정합니다.
+    // 저장 권한이 없거나 로그인 전에 1회 보정이 지나가면 stale roomId가 계속 화면에 남는 문제가 있었습니다.
     entry.roomAssignmentsByTtCardId = nextAssignments;
     const rooms = [...new Set(Object.values(nextAssignments).map(clean).filter(Boolean))];
+    const rules = ids.map(id => roomRuleForCard(getTtCardById(id) || {}));
+    const allFixedRules = rules.length > 0 && rules.every(r => r === "fixed");
+    const entryRule = normalizeRoomRuleValue(entry.roomRule || "teacher");
     if (isGroupedRoomEntry(entry)) {
       entry.roomId = null;
       entry.roomPinned = false;
     } else if (rooms.length === 1) {
       entry.roomId = rooms[0];
-      entry.roomPinned = true;
+      // teacher/homeroom 보정값은 수동 고정이 아니므로 roomPinned로 만들지 않습니다.
+      entry.roomPinned = allFixedRules || entryRule === "fixed";
     } else if (rooms.length > 1) {
       entry.roomId = null;
       entry.roomPinned = false;
@@ -1684,7 +1706,8 @@ function entryRoomSummary(entry = {}) {
 }
 
 function applyDefaultRoomToEntryData(data = {}) {
-  if (data.roomPinned && data.roomId && !isGroupedRoomEntry(data)) return data;
+  const entryRule = normalizeRoomRuleValue(data.roomRule || "teacher");
+  if (data.roomPinned && entryRule === "fixed" && data.roomId && !isGroupedRoomEntry(data)) return data;
   const preference = getCardPreferenceForPlacementData(data);
   data.roomRule = effectiveRuleForPlacementData(data);
   if (isGroupedRoomEntry(data)) {
