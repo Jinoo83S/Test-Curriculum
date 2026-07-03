@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-room-rule-manual-priority-r208";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-regular-room-share-special-room-guard-r209";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -148,6 +148,17 @@ export function createAutoAssignAll(deps) {
     const ids = ttCardIdsFromPlacement(data);
     if (ids.length === 1) return fixedRoomForCardDuringAuto(getTtCardById(ids[0]), data);
     return fixedRoomForCardDuringAuto({}, data);
+  }
+
+  function isManualRoomOverrideForCardAuto(entry = {}, card = {}, explicitRoomId = "") {
+    const roomId = cleanStr(explicitRoomId);
+    if (!roomId) return false;
+    const entryRule = normalizeRoomRuleForAuto(entry.roomRule || "teacher");
+    if (entry.roomPinned === true) return true;
+    if (entryRule === "fixed" && cleanStr(entry.roomId || entry.fixedRoomId) === roomId) return true;
+    const cardRule = normalizeRoomRuleForAuto(card?.roomRule || "teacher");
+    if (cardRule === "fixed" && cleanStr(card?.fixedRoomId) === roomId) return true;
+    return false;
   }
 
   function autoItemHasFixedRoomForAuto(item = {}) {
@@ -1455,10 +1466,23 @@ export function createAutoAssignAll(deps) {
       : {};
     const out = {};
     ttCardIdsFromPlacement(entry).forEach(id => {
+      const card = getTtCardById(id);
+      if (!cardNeedsRoomForAuto(card || {}, entry)) return;
+
       const explicitRoom = cleanStr(explicit[id]);
-      if (explicitRoom) { out[id] = explicitRoom; return; }
-      const fixedRoom = fixedRoomForCardDuringAuto(getTtCardById(id), entry);
-      if (fixedRoom) out[id] = fixedRoom;
+      if (isManualRoomOverrideForCardAuto(entry, card || {}, explicitRoom)) {
+        out[id] = explicitRoom;
+        return;
+      }
+
+      // r209: roomRule=teacher 카드의 과거 자동배치 roomAssignments는
+      // 교사 고정교실을 덮어쓰면 안 됩니다. 단, 사용자가 지정교실 고정으로
+      // 바꾼 카드/entry는 위의 manual override에서 먼저 보존합니다.
+      const fixedRoom = fixedRoomForCardDuringAuto(card || {}, entry);
+      if (fixedRoom) { out[id] = fixedRoom; return; }
+
+      // 교사 지정교실이 없는 카드만 기존 explicit 값을 보조 교실로 인정합니다.
+      if (explicitRoom) out[id] = explicitRoom;
     });
     return out;
   }
@@ -2466,9 +2490,22 @@ export function createAutoAssignAll(deps) {
     return 0;
   }
 
+  function isSpecialPurposeRoomForAuto(room = {}) {
+    const type = cleanStr(room?.type || "일반");
+    return !!type && type !== "일반";
+  }
+
+  function isAutoAssignableGeneralRoom(room = {}) {
+    // r209: 교사 이름이 붙은 일반 교실도 그 시간에 비어 있으면 다른 교사가 사용할 수 있습니다.
+    // 다만 음악실/과학실/체육관 등 특수 교실은 자동 보조 교실 후보에서 제외하고,
+    // 지정교실/홈룸/교사 고정교실로 명시된 경우에만 사용합니다.
+    return !!room?.id && !isSpecialPurposeRoomForAuto(room);
+  }
+
   function sortRoomCandidatesFor(data = {}) {
     const size = getAudienceSizeForRoom(data);
     return [...(appState.rooms?.rooms || [])]
+      .filter(isAutoAssignableGeneralRoom)
       .filter(room => room?.id)
       .map((room, idx) => ({ room, idx }))
       .sort((a, b) => {
@@ -2719,17 +2756,10 @@ export function createAutoAssignAll(deps) {
       addReason(reasons, "roomConflict", "교실 시간 충돌", `${formatSlotLabel(slot)} · ${roomName}`);
     }
 
-    for (const teacher of teachers) {
-      const roomId = getEffectiveAssignedRoomId(teacher);
-      if (respectAssignedRoom && roomId) {
-        const candidateRooms = roomIdsForPlacement(candidateRoomData);
-        const roomBusy = existing.some(e => e.day === slot.day && e.period === slot.period && roomIdsForPlacement(e).includes(roomId) && !sameUnitPlacement(item, e));
-        if (roomBusy && candidateRooms.includes(roomId)) {
-          const roomName = (appState.rooms?.rooms || []).find(r => r.id === roomId)?.name || roomId;
-          addReason(reasons, "teacherRoomBusy", "교사 교실 사용 중", `${formatSlotLabel(slot)} · ${teacher} / ${roomName}`);
-        }
-      }
-    }
+    // r209: 교사 고정교실은 해당 교사의 기본 수업 교실일 뿐,
+    // 교사가 수업이 없는 시간까지 예약된 전용실로 보지 않습니다.
+    // 따라서 별도 teacherRoomBusy 가상 충돌은 만들지 않고,
+    // 같은 시간 같은 교실을 실제로 쓰는 경우만 roomConflict로 처리합니다.
 
     return { valid: reasons.size === 0, reasons: [...reasons.values()] };
   }
@@ -2787,9 +2817,9 @@ export function createAutoAssignAll(deps) {
         priority: 1
       },
       {
-        codes: ['roomConflict', 'teacherRoomBusy'],
+        codes: ['roomConflict'],
         title: '교실 조건 완화',
-        detail: '지정교실 고정을 해제하거나 대체 교실을 추가하면 배치 가능한 시간이 늘어날 수 있습니다.',
+        detail: '같은 시간에 실제로 같은 교실을 쓰는 수업을 이동하거나, 대체 일반교실을 지정하면 배치 가능한 시간이 늘어날 수 있습니다.',
         priority: 2
       },
       {
@@ -3258,17 +3288,8 @@ export function createAutoAssignAll(deps) {
     if (respectAssignedRoom && roomUnavailableInSlot(candidateRoomData, slot)) return false;
     if (respectAssignedRoom && roomConflictsInSlot(candidateRoomData, slot, placed)) return false;
 
-    // 7. 교사 교실 기준 추가 방어 검사입니다.
-    for (const teacher of teachers) {
-      const roomId = getEffectiveAssignedRoomId(teacher);
-      if (respectAssignedRoom && roomId) {
-        const roomBusy = existing.some(e => {
-          if (!(e.day===slot.day && e.period===slot.period && roomIdsForPlacement(e).includes(roomId))) return false;
-          return !sameUnitPlacement(item, e);
-        });
-        if (roomBusy && roomIdsForPlacement(candidateRoomData).includes(roomId)) return false;
-      }
-    }
+    // r209: 교사 고정교실을 별도 예약 리소스로 보지 않습니다.
+    // 실제 같은 시간 같은 교실 점유는 위 roomConflictsInSlot에서만 판정합니다.
     return true;
   }
   function autoItemKey(item) {
@@ -3592,14 +3613,6 @@ export function createAutoAssignAll(deps) {
         score += 120 + (limit.nextConsecutive - limit.maxConsecutive) * 30;
       }
 
-      const roomId = getEffectiveAssignedRoomId(teacher);
-      if (roomId) {
-        const roomBusy = slotEnts.some(e => {
-          if (!roomIdsForPlacement(e).includes(roomId)) return false;
-          return !sameUnitPlacement(item, e);
-        });
-        if (roomBusy && roomIdsForPlacement(candidateRoomData).includes(roomId)) return Infinity;
-      }
     }
 
     const classFillWeights = normalizeScoreWeights(options.scoringWeights);
