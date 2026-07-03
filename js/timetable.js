@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-manual-card-vault-syntaxfix-r215";
+import { versioned } from "./version.js?v=2026-07-03-manual-card-popup-r216";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-manual-card-vault-syntaxfix-r215";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-manual-card-popup-r216";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-manual-card-vault-syntaxfix-r215";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-manual-card-popup-r216";
 
 
 const [
@@ -857,12 +857,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r215] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r216] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r215] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, meta=${result.metaChanged}`);
+    console.info(`[data-sync:r216] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, meta=${result.metaChanged}`);
   } catch (_) {}
   return result;
 }
@@ -1165,7 +1165,7 @@ function getTeacherNamesForCard(card) {
 }
 
 
-// ── r215 Manual card vault / auto-assign include state ─────────────
+// ── r216 Manual card vault / auto-assign include state ─────────────
 function isManualTtCard(card = {}) {
   return card?.isManual === true || String(card?.id || "").startsWith("ttc_manual") || String(card?.templateId || "").startsWith("manual_");
 }
@@ -1240,6 +1240,7 @@ function setManualTtCardAutoAssign(cardIds = [], include = true) {
     scheduleSave("timetable");
     try { recomputeConflicts(); } catch (_) {}
     renderAll();
+    try { renderManualCardVaultPopupContent(); } catch (_) {}
   }
   return !!changed;
 }
@@ -1260,58 +1261,128 @@ function deleteStoredManualTtCards() {
   });
   scheduleSave("timetable");
   renderAll();
+  try { renderManualCardVaultPopupContent(); } catch (_) {}
   return true;
+}
+
+function manualCardVaultStats() {
+  const manualCards = getManualTtCards();
+  const active = manualCards.filter(isTtCardIncludedInAutoAssign);
+  const stored = manualCards.filter(isManualCardStored);
+  return { manualCards, active, stored };
+}
+
+function renderManualCardVaultPopupContent() {
+  const overlay = $("ttManualCardVaultOverlay");
+  const body = $("ttManualCardVaultBody");
+  const statsEl = $("ttManualCardVaultStats");
+  if (!overlay || !body) return;
+  const { manualCards, active, stored } = manualCardVaultStats();
+  if (statsEl) statsEl.textContent = `전체 ${manualCards.length} · 자동배치 포함 ${active.length} · 보관 ${stored.length}`;
+  body.innerHTML = "";
+
+  if (!manualCards.length) {
+    const empty = document.createElement("div");
+    empty.style.cssText = "padding:28px;text-align:center;color:#64748b;font-size:13px;font-weight:700;";
+    empty.textContent = "관리할 수동카드가 없습니다.";
+    body.appendChild(empty);
+    return;
+  }
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "position:sticky;top:0;z-index:1;display:flex;flex-wrap:wrap;gap:8px;padding:10px 12px;border-bottom:1px solid #e2e8f0;background:#fff;";
+  const allIds = manualCards.map(card => card.id).filter(Boolean);
+  const includeAll = makeBtn("전체 포함", "tt-mini-btn", () => setManualTtCardAutoAssign(allIds, true));
+  const storeAll = makeBtn("전체 보관", "tt-mini-btn", () => setManualTtCardAutoAssign(allIds, false));
+  const deleteStored = makeBtn("보관카드 삭제", "tt-mini-btn danger", () => deleteStoredManualTtCards());
+  [includeAll, storeAll, deleteStored].forEach(btn => {
+    btn.style.cssText = "height:30px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 11px;font-size:12px;font-weight:900;color:#334155;";
+  });
+  deleteStored.style.color = "#b91c1c";
+  deleteStored.style.borderColor = "#fecaca";
+  actions.append(includeAll, storeAll, deleteStored);
+  body.appendChild(actions);
+
+  const note = document.createElement("div");
+  note.style.cssText = "margin:10px 12px 0;padding:9px 11px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569;font-size:12px;line-height:1.45;";
+  note.innerHTML = "HR1/HR2처럼 커리큘럼 재생성 대상이 아닌 카드는 삭제하지 않고 보관할 수 있습니다. <b>보관</b> 상태의 수동카드는 자동배치·드래그 배치·CP-SAT 전송에서 제외됩니다.";
+  body.appendChild(note);
+
+  const list = document.createElement("div");
+  list.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;padding:12px;";
+  manualCards.forEach(card => {
+    const include = isTtCardIncludedInAutoAssign(card);
+    const desc = describeTtCard(card);
+    const row = document.createElement("div");
+    row.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid ${include ? "#bfdbfe" : "#e5e7eb"};border-radius:12px;padding:10px 11px;background:${include ? "#eff6ff" : "#f9fafb"};`;
+    const classes = (card.classLabels || getTtCardClassLabels(card) || []).join(", ") || gradeDisplay(card.gradeKey || "") || "학반 없음";
+    const teachers = getTeacherNamesForCard(card).join(", ") || "교사 없음";
+    row.innerHTML = `<div style="min-width:0"><strong style="display:block;font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(desc.title || card.subject || card.label || "수동카드")}</strong><span style="display:block;margin-top:3px;font-size:12px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(classes)} · ${escapeHtml(teachers)}</span><em style="display:block;margin-top:4px;font-size:11px;color:${include ? "#2563eb" : "#6b7280"};font-style:normal;font-weight:900">${include ? "자동배치 포함" : "보관함 / 자동배치 제외"}</em></div>`;
+    const toggle = makeBtn(include ? "보관" : "포함", "tt-mini-btn", () => setManualTtCardAutoAssign([card.id], !include));
+    toggle.style.cssText = `flex:0 0 auto;height:30px;border:1px solid ${include ? "#93c5fd" : "#cbd5e1"};border-radius:9px;background:#fff;padding:0 12px;font-size:12px;font-weight:900;color:${include ? "#1d4ed8" : "#334155"};`;
+    row.appendChild(toggle);
+    list.appendChild(row);
+  });
+  body.appendChild(list);
+}
+
+function closeManualCardVaultPopup() {
+  const overlay = $("ttManualCardVaultOverlay");
+  if (!overlay) return;
+  overlay.classList.add("hidden");
+}
+
+function openManualCardVaultPopup() {
+  let overlay = $("ttManualCardVaultOverlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "ttManualCardVaultOverlay";
+    overlay.className = "hidden";
+    overlay.style.cssText = "position:fixed;inset:0;z-index:10020;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.45);padding:24px;";
+    overlay.innerHTML = `
+      <div id="ttManualCardVaultDialog" role="dialog" aria-modal="true" aria-labelledby="ttManualCardVaultTitle" style="width:min(920px,96vw);max-height:min(760px,88vh);display:flex;flex-direction:column;border-radius:16px;background:#fff;box-shadow:0 24px 80px rgba(15,23,42,.32);overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #e2e8f0;background:#f8fafc;">
+          <div style="min-width:0">
+            <strong id="ttManualCardVaultTitle" style="display:block;font-size:16px;color:#0f172a">수동카드 보관함</strong>
+            <span id="ttManualCardVaultStats" style="display:block;margin-top:3px;font-size:12px;color:#64748b;font-weight:800"></span>
+          </div>
+          <button id="ttManualCardVaultCloseBtn" type="button" style="width:32px;height:32px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;color:#334155;font-size:18px;font-weight:900;line-height:1;">×</button>
+        </div>
+        <div id="ttManualCardVaultBody" style="overflow:auto;min-height:160px;"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", event => { if (event.target === overlay) closeManualCardVaultPopup(); });
+    $("ttManualCardVaultDialog")?.addEventListener("click", event => event.stopPropagation());
+    $("ttManualCardVaultCloseBtn")?.addEventListener("click", closeManualCardVaultPopup);
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !$("ttManualCardVaultOverlay")?.classList.contains("hidden")) closeManualCardVaultPopup();
+    });
+  }
+  overlay.classList.remove("hidden");
+  renderManualCardVaultPopupContent();
 }
 
 function renderManualCardVaultPanel() {
   const panel = $("ttSubjectsContent");
   if (!panel) return;
   panel.querySelector("#ttManualCardVaultPanel")?.remove();
-  const manualCards = getManualTtCards();
-  if (!manualCards.length) return;
+  panel.querySelector("#ttManualCardVaultLauncher")?.remove();
+  const { manualCards, active, stored } = manualCardVaultStats();
+  if (!manualCards.length) {
+    renderManualCardVaultPopupContent();
+    return;
+  }
 
-  const active = manualCards.filter(isTtCardIncludedInAutoAssign);
-  const stored = manualCards.filter(isManualCardStored);
   const section = document.createElement("section");
-  section.id = "ttManualCardVaultPanel";
-  section.className = "tt-manual-card-vault";
-  section.style.cssText = "margin:8px 8px 10px;border:1px solid #dbe4f0;border-radius:12px;background:#fff;box-shadow:0 4px 12px rgba(15,23,42,.05);overflow:hidden;";
-
-  const head = document.createElement("div");
-  head.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:#f8fafc;border-bottom:1px solid #e6edf7;";
-  head.innerHTML = `<div><strong style="font-size:13px;color:#102a43">수동카드 보관함</strong><span style="display:block;margin-top:2px;font-size:11px;color:#64748b">HR1/HR2처럼 커리큘럼 재생성 대상이 아닌 카드는 여기서 자동배치 포함 여부를 관리합니다.</span></div><div style="font-size:11px;font-weight:800;color:#475569;white-space:nowrap">포함 ${active.length} · 보관 ${stored.length}</div>`;
-
-  const actions = document.createElement("div");
-  actions.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;padding:8px 12px;border-bottom:1px solid #edf2f7;background:#fff;";
-  const allIds = manualCards.map(card => card.id).filter(Boolean);
-  const includeAll = makeBtn("전체 포함", "tt-mini-btn", () => setManualTtCardAutoAssign(allIds, true));
-  const storeAll = makeBtn("전체 보관", "tt-mini-btn", () => setManualTtCardAutoAssign(allIds, false));
-  const deleteStored = makeBtn("보관카드 삭제", "tt-mini-btn danger", () => deleteStoredManualTtCards());
-  [includeAll, storeAll, deleteStored].forEach(btn => {
-    btn.style.cssText = "height:26px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 9px;font-size:11px;font-weight:800;color:#334155;";
-  });
-  deleteStored.style.color = "#b91c1c";
-  deleteStored.style.borderColor = "#fecaca";
-  actions.append(includeAll, storeAll, deleteStored);
-
-  const list = document.createElement("div");
-  list.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px;padding:10px 12px;";
-  manualCards.forEach(card => {
-    const include = isTtCardIncludedInAutoAssign(card);
-    const desc = describeTtCard(card);
-    const row = document.createElement("div");
-    row.style.cssText = `display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid ${include ? "#bfdbfe" : "#e5e7eb"};border-radius:10px;padding:8px 9px;background:${include ? "#eff6ff" : "#f9fafb"};`;
-    const classes = (card.classLabels || getTtCardClassLabels(card) || []).join(", ") || gradeDisplay(card.gradeKey || "") || "학반 없음";
-    const teachers = getTeacherNamesForCard(card).join(", ") || "교사 없음";
-    row.innerHTML = `<div style="min-width:0"><strong style="display:block;font-size:12px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(desc.title || card.subject || card.label || "수동카드")}</strong><span style="display:block;margin-top:2px;font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(classes)} · ${escapeHtml(teachers)}</span><em style="display:block;margin-top:2px;font-size:10px;color:${include ? "#2563eb" : "#6b7280"};font-style:normal;font-weight:800">${include ? "자동배치 포함" : "보관함 / 자동배치 제외"}</em></div>`;
-    const toggle = makeBtn(include ? "보관" : "포함", "tt-mini-btn", () => setManualTtCardAutoAssign([card.id], !include));
-    toggle.style.cssText = `flex:0 0 auto;height:28px;border:1px solid ${include ? "#93c5fd" : "#cbd5e1"};border-radius:8px;background:#fff;padding:0 10px;font-size:11px;font-weight:900;color:${include ? "#1d4ed8" : "#334155"};`;
-    row.appendChild(toggle);
-    list.appendChild(row);
-  });
-
-  section.append(head, actions, list);
+  section.id = "ttManualCardVaultLauncher";
+  section.className = "tt-manual-card-vault-launcher";
+  section.style.cssText = "margin:6px 8px 8px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border:1px solid #dbe4f0;border-radius:11px;background:#f8fafc;";
+  section.innerHTML = `<div style="min-width:0"><strong style="font-size:12px;color:#102a43">수동카드</strong><span style="margin-left:7px;font-size:11px;font-weight:900;color:#475569">포함 ${active.length} · 보관 ${stored.length}</span><span style="display:block;margin-top:2px;font-size:11px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">HR1/HR2 등 수동카드 자동배치 포함 여부 관리</span></div>`;
+  const openBtn = makeBtn("보관함 열기", "tt-mini-btn", () => openManualCardVaultPopup());
+  openBtn.style.cssText = "flex:0 0 auto;height:28px;border:1px solid #93c5fd;border-radius:9px;background:#fff;padding:0 11px;font-size:12px;font-weight:900;color:#1d4ed8;";
+  section.appendChild(openBtn);
   panel.prepend(section);
+  renderManualCardVaultPopupContent();
 }
 
 function getGroupInfoForTeacherCard(cardId) {
@@ -1902,7 +1973,7 @@ function canResolveRoomSyncDependencies() {
 }
 
 function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}) {
-  // r215: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
+  // r216: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
   // r210에서는 entries/ttcards만 먼저 로드된 순간 1회 플래그가 소모되어,
   // 박래희=VH106 같은 교사교실 계산을 못 하고 stale roomId(MH104 등)가 남았습니다.
   if (!getRooms().length) return 0;
@@ -1976,7 +2047,7 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
 }
 
 async function ensureRoomAssignmentsSyncedForServerRead(reason = "") {
-  // r215: 진단/CP-SAT/자동배치 직전에는 교실뿐 아니라 teacherName/teacherConstraints도
+  // r216: 진단/CP-SAT/자동배치 직전에는 교실뿐 아니라 teacherName/teacherConstraints도
   // 카드/교사명단 기준으로 정규화해야 합니다. Firestore 진단은 서버 원본을 직접 읽기 때문입니다.
   const result = await ensureTimetableDataSyncedForOperation(reason || "server-read");
   return result.changed || 0;
@@ -4315,12 +4386,12 @@ function renderScheduleControls() {
 function renderAll() {
   ensureTeacherCardsBottomTab();
   {
-    // r215: 렌더 시점마다 가볍게 데이터 정규화를 수행합니다.
+    // r216: 렌더 시점마다 가볍게 데이터 정규화를 수행합니다.
     // entry.teacherName/teacherConstraints/교실 배정이 카드·교사명단 기준과 어긋나면 자동배치가 가짜 교사/가짜 교실을 보게 됩니다.
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      try { console.info(`[data-sync:r215] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
+      try { console.info(`[data-sync:r216] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
     }
   }
   recomputeConflicts();
