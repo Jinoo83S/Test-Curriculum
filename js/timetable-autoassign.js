@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-cpsat-fixed-room-preflight-r217";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-manual-vault-mini-current-audit-r218";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -519,7 +519,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-07-03-cpsat-fixed-room-preflight-r217"),
+      validatorVersion: String(meta.validatorVersion || "2026-07-03-manual-vault-mini-current-audit-r218"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -859,7 +859,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-cpsat-fixed-room-preflight-r217",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-manual-vault-mini-current-audit-r218",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -7159,7 +7159,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-07-03-cpsat-fixed-room-preflight-r217"
+        validatorVersion: "2026-07-03-manual-vault-mini-current-audit-r218"
       };
 
       let afterAutoSnapshot = null;

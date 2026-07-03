@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-cpsat-fixed-room-preflight-r217";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-manual-vault-mini-current-audit-r218";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r217";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r217 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r218";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r218 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -166,7 +166,7 @@ function applyManualCardExclusionToPayloadTimetable(tt = {}) {
   });
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.manualCardExcludedIds = [...excludedIds];
-  tt.autoAssignMeta.manualCardExclusionMode = "r217-manual-card-vault";
+  tt.autoAssignMeta.manualCardExclusionMode = "r218-manual-card-vault";
   return tt;
 }
 function cardIdsFromEntryForPayload(entry = {}) {
@@ -291,7 +291,7 @@ function teacherRoomIdForPayload(teacherName = "", teacherConstraints = {}, room
   const name = cleanLocal(teacherName);
   if (!name) return "";
   const cfg = teacherConstraints && typeof teacherConstraints === "object" ? teacherConstraints[name] : null;
-  // r217: 교사-홈룸(homeRoomId)은 CP-SAT 교사 본인교실로 사용하지 않습니다.
+  // r218: 교사-홈룸(homeRoomId)은 CP-SAT 교사 본인교실로 사용하지 않습니다.
   // 본인교실은 assignedRoomId 또는 rooms[].teacherName만 기준으로 확정합니다.
   const configured = cleanLocal(cfg?.assignedRoomId || "");
   if (validRoomIdForPayload(configured, rooms)) return configured;
@@ -345,7 +345,7 @@ function applyFixedRoomPreflightForSolverPayload(data = {}) {
   const roster = teacherRosterSetForPayload(data);
   const teacherConstraints = tt.teacherConstraints && typeof tt.teacherConstraints === "object" ? tt.teacherConstraints : {};
   const meta = {
-    version: "r217",
+    version: "r218",
     generatedAt: nowIso(),
     rule: "specified/classHomeroom/teacherOwnRoom fixed before CP-SAT; teacher homeRoomId ignored",
     totalCards: cards.length,
@@ -396,7 +396,7 @@ function filterSolverSeedEntriesForPayload(entries = [], tt = {}) {
   const kept = list.filter(e => isSolverSeedEntryForPayload(e, list.length));
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.cpSatEntrySeedPreflight = {
-    version: "r217",
+    version: "r218",
     originalEntryCount: list.length,
     keptSeedEntryCount: kept.length,
     droppedGeneratedEntryCount: Math.max(0, list.length - kept.length),
@@ -477,7 +477,7 @@ function makeSolverState(appState, live = {}) {
   // ttDomain() + entries()를 우선 사용해 visible timetable과 solver payload를 일치시킵니다.
   const liveTimetable = applyManualCardExclusionToPayloadTimetable(deepClone(live.timetable || appState?.timetable || {}));
   if (Array.isArray(live.entries)) {
-    // r217: 이전 자동배치 결과 entry는 CP-SAT 입력(seed)으로 보내지 않습니다.
+    // r218: 이전 자동배치 결과 entry는 CP-SAT 입력(seed)으로 보내지 않습니다.
     // 명시적으로 고정/잠금된 시간표 seed만 보내고, 일반 배치는 cards/groups에서 새로 생성합니다.
     liveTimetable.entries = filterSolverSeedEntriesForPayload(deepClone(live.entries), liveTimetable);
   }
@@ -1104,7 +1104,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r217\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r218\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
