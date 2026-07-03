@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-data-preflight-r213";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-manual-card-vault-r214";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -519,7 +519,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-07-03-data-preflight-r213"),
+      validatorVersion: String(meta.validatorVersion || "2026-07-03-manual-card-vault-r214"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -672,6 +672,14 @@ export function createAutoAssignAll(deps) {
     return `sig:${text.length}:${autoSourceTinyHash(text)}`;
   }
 
+  function isManualAutoAssignExcludedCard(card = {}) {
+    const id = String(card?.id || "");
+    const tpl = String(card?.templateId || "");
+    const isManual = card?.isManual === true || id.startsWith("ttc_manual") || tpl.startsWith("manual_");
+    if (!isManual) return false;
+    return card.autoAssignExcluded === true || card.manualAutoAssign === false || String(card.manualCardStatus || "").trim() === "stored";
+  }
+
   function buildCurrentAutoSourceSignature() {
     const cardIdsInGroups = new Set();
     const groups = (ttGroups() || []).map(group => {
@@ -711,6 +719,9 @@ export function createAutoAssignAll(deps) {
       teachers: getTeachersForTtCard(card).map(x => String(x || "")).filter(Boolean).sort(),
       isWholeGrade: card.isWholeGrade === true,
       isManual: card.isManual === true || String(card.id || "").startsWith("ttc_manual"),
+      manualCardStatus: String(card.manualCardStatus || ""),
+      manualAutoAssign: card.manualAutoAssign !== false,
+      autoAssignExcluded: card.autoAssignExcluded === true || isManualAutoAssignExcludedCard(card),
       groupIds: [...new Set((ttGroups() || [])
         .filter(group => {
           const ids = [
@@ -735,10 +746,13 @@ export function createAutoAssignAll(deps) {
   }
 
   function currentAutoSourceSummary() {
-    const cardCount = (ttDomain()?.ttcards || []).length;
+    const cards = ttDomain()?.ttcards || [];
+    const cardCount = cards.length;
     const groupCount = (ttGroups() || []).length;
-    const manualCount = (ttDomain()?.ttcards || []).filter(card => card?.isManual === true || String(card?.id || "").startsWith("ttc_manual")).length;
-    return `카드 ${cardCount}개 · 그룹 ${groupCount}개${manualCount ? ` · 수동카드 ${manualCount}개` : ""}`;
+    const manualCards = cards.filter(card => card?.isManual === true || String(card?.id || "").startsWith("ttc_manual"));
+    const manualCount = manualCards.length;
+    const manualExcluded = manualCards.filter(isManualAutoAssignExcludedCard).length;
+    return `카드 ${cardCount}개 · 그룹 ${groupCount}개${manualCount ? ` · 수동카드 ${manualCount}개(제외 ${manualExcluded}개)` : ""}`;
   }
 
   function autoSourceSignatureForSnapshot(version = {}) {
@@ -845,7 +859,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-data-preflight-r213",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-manual-card-vault-r214",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1782,6 +1796,7 @@ export function createAutoAssignAll(deps) {
     const scope = new Set(normalizeAutoActiveGrades(scopeGrades));
     return (ttDomain().ttcards || [])
       .filter(card => card && card.id)
+      .filter(card => !isManualAutoAssignExcludedCard(card))
       .filter(card => !scope.size || scope.has(card.gradeKey) || (card.gradeKeys || []).some(g => scope.has(g)))
       .filter(card => Math.max(0, Number(card.credits ?? getCreditsForTtCard?.(card) ?? 0)) > 0);
   }
@@ -5849,13 +5864,16 @@ export function createAutoAssignAll(deps) {
     const cards = ttDomain().ttcards || [];
     const groups = ttGroups();
     const existingEntries = entries();
-    const activeCards = getActiveCardsForGrades(cards, activeGrades.length ? activeGrades : availableGrades);
+    const manualCards = cards.filter(card => card?.isManual === true || String(card?.id || "").startsWith("ttc_manual"));
+    const manualExcluded = manualCards.filter(isManualAutoAssignExcludedCard).length;
+    const targetCards = cards.filter(card => !isManualAutoAssignExcludedCard(card));
+    const activeCards = getActiveCardsForGrades(targetCards, activeGrades.length ? activeGrades : availableGrades);
     const cardIds = new Set(cards.map(c => c.id).filter(Boolean));
     const placedCardIds = getPlacedCardIdsForPrecheck(existingEntries);
     const targetSummary = summarizeAutoTargetsForPrecheck(standalone, groupBlocks);
     const protectedSummary = protectedSlotSummary(protectedEntries);
 
-    addPrecheckItem(report, "대상 요약", cards.length ? "ok" : "error", "시간표 카드", `${cards.length}개 · 선택 학년: ${(activeGrades.length ? activeGrades : availableGrades).map(gradeDisplay).join(", ") || "없음"}`);
+    addPrecheckItem(report, "대상 요약", targetCards.length ? "ok" : "error", "시간표 카드", `${targetCards.length}개 대상 / 전체 ${cards.length}개${manualCards.length ? ` · 수동카드 ${manualCards.length}개(제외 ${manualExcluded}개)` : ""} · 선택 학년: ${(activeGrades.length ? activeGrades : availableGrades).map(gradeDisplay).join(", ") || "없음"}`);
     addPrecheckItem(report, "대상 요약", targetSummary.totalSlots ? "ok" : "error", "자동배치 대상", `개별 ${targetSummary.standaloneSlots}시수 · 그룹 ${targetSummary.groupSlots}시수 · 합계 ${targetSummary.totalSlots}시수`);
     addPrecheckItem(report, "보호 슬롯", protectedSummary.total ? "info" : "ok", "기존 보호 배치", `엔트리 ${protectedSummary.total}개 · 슬롯 ${protectedSummary.slots}칸 · 고정 ${protectedSummary.pinned}개 · 수동 ${protectedSummary.manual}개`);
 
@@ -7141,7 +7159,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-07-03-data-preflight-r213"
+        validatorVersion: "2026-07-03-manual-card-vault-r214"
       };
 
       let afterAutoSnapshot = null;

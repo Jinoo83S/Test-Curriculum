@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-data-preflight-r213";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-manual-card-vault-r214";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r213";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r213 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r214";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r214 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -139,6 +139,35 @@ function normalizeRoomRuleForPayload(rule = "teacher") {
   const r = cleanLocal(rule);
   if (!r || r === "auto") return "teacher";
   return ["teacher", "fixed", "homeroom", "autoRoom", "none"].includes(r) ? r : "teacher";
+}
+
+function isManualCardForPayload(card = {}) {
+  return card?.isManual === true || String(card?.id || "").startsWith("ttc_manual") || String(card?.templateId || "").startsWith("manual_");
+}
+function isManualCardExcludedForPayload(card = {}) {
+  if (!isManualCardForPayload(card)) return false;
+  return card.autoAssignExcluded === true || card.manualAutoAssign === false || cleanLocal(card.manualCardStatus) === "stored";
+}
+function applyManualCardExclusionToPayloadTimetable(tt = {}) {
+  const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+  const excludedIds = new Set(cards.filter(isManualCardExcludedForPayload).map(card => cleanLocal(card.id)).filter(Boolean));
+  if (!excludedIds.size) return tt;
+  const keepCard = card => !excludedIds.has(cleanLocal(card?.id));
+  if (Array.isArray(tt.ttcards)) tt.ttcards = tt.ttcards.filter(keepCard);
+  if (Array.isArray(tt.ttCards)) tt.ttCards = tt.ttCards.filter(keepCard);
+  if (Array.isArray(tt.cards)) tt.cards = tt.cards.filter(keepCard);
+  asArray(tt.ttcardGroups || tt.ttCardGroups).forEach(group => {
+    if (!group || typeof group !== "object") return;
+    if (Array.isArray(group.poolCardIds)) group.poolCardIds = group.poolCardIds.filter(id => !excludedIds.has(cleanLocal(id)));
+    if (Array.isArray(group.excludedCardIds)) group.excludedCardIds = group.excludedCardIds.filter(id => !excludedIds.has(cleanLocal(id)));
+    asArray(group.units).forEach(unit => {
+      if (unit && Array.isArray(unit.ttcardIds)) unit.ttcardIds = unit.ttcardIds.filter(id => !excludedIds.has(cleanLocal(id)));
+    });
+  });
+  if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
+  tt.autoAssignMeta.manualCardExcludedIds = [...excludedIds];
+  tt.autoAssignMeta.manualCardExclusionMode = "r214-manual-card-vault";
+  return tt;
 }
 function cardIdsFromEntryForPayload(entry = {}) {
   return unique([...(entry.ttcardIds || []), entry.ttcardId]);
@@ -338,7 +367,7 @@ function makeSolverState(appState, live = {}) {
   // r182: CP-SAT에는 화면에 실제로 렌더링 중인 현재 entries()를 전송해야 합니다.
   // appState.timetable.entries가 저장/동기화 지연으로 4개처럼 오래된 값을 가질 수 있어서,
   // ttDomain() + entries()를 우선 사용해 visible timetable과 solver payload를 일치시킵니다.
-  const liveTimetable = deepClone(live.timetable || appState?.timetable || {});
+  const liveTimetable = applyManualCardExclusionToPayloadTimetable(deepClone(live.timetable || appState?.timetable || {}));
   if (Array.isArray(live.entries)) {
     liveTimetable.entries = deepClone(live.entries);
   }
@@ -965,7 +994,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r213\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r214\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
