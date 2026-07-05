@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-07-03-schedule-conditions-r219";
+import { versioned } from "./version.js?v=2026-07-06-condition-buttons-visible-r220";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",

@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-schedule-conditions-r219";
+import { versioned } from "./version.js?v=2026-07-06-condition-buttons-visible-r220";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-schedule-conditions-r219";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-condition-buttons-visible-r220";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-schedule-conditions-r219";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-condition-buttons-visible-r220";
 
 
 const [
@@ -925,7 +925,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r219-current-entries-audit",
+    version: "r220-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -1017,12 +1017,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r219] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r220] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r219] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, meta=${result.metaChanged}`);
+    console.info(`[data-sync:r220] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, meta=${result.metaChanged}`);
   } catch (_) {}
   return result;
 }
@@ -1533,15 +1533,29 @@ function renderManualCardVaultPanel() {
 
   const header = panel.querySelector(".tt-sc-header");
   const miniStyle = "height:24px;padding:2px 8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;font-size:11px;font-weight:900;white-space:nowrap;";
-  const conditionBtn = makeBtn("조건", "tt-mini-btn", () => openScheduleConditionPopup());
-  conditionBtn.id = "ttScheduleConditionMiniBtn";
-  conditionBtn.title = "연속교시 / 필요교실수 조건 관리";
-  conditionBtn.style.cssText = miniStyle;
-  if (header) header.appendChild(conditionBtn);
-  else { conditionBtn.style.margin = "0 0 6px 0"; panel.prepend(conditionBtn); }
+
+  const globalConditionBtn = $("ttScheduleConditionGlobalBtn");
+  if (globalConditionBtn) {
+    globalConditionBtn.textContent = "조건";
+    globalConditionBtn.title = "연속교시 / 필요교실수 조건 관리";
+    globalConditionBtn.onclick = () => openScheduleConditionPopup();
+  } else {
+    const conditionBtn = makeBtn("조건", "tt-mini-btn", () => openScheduleConditionPopup());
+    conditionBtn.id = "ttScheduleConditionMiniBtn";
+    conditionBtn.title = "연속교시 / 필요교실수 조건 관리";
+    conditionBtn.style.cssText = miniStyle;
+    if (header) header.appendChild(conditionBtn);
+    else { conditionBtn.style.margin = "0 0 6px 0"; panel.prepend(conditionBtn); }
+  }
 
   const { manualCards, active, stored } = manualCardVaultStats();
-  if (manualCards.length) {
+  const globalManualBtn = $("ttManualCardVaultGlobalBtn");
+  if (globalManualBtn) {
+    globalManualBtn.classList.toggle("hidden", !manualCards.length);
+    globalManualBtn.textContent = manualCards.length ? `수동 ${active.length}/${manualCards.length}` : "수동";
+    globalManualBtn.title = manualCards.length ? `수동카드 보관함 열기: 자동배치 포함 ${active.length}개, 보관 ${stored.length}개` : "수동카드 보관함";
+    globalManualBtn.onclick = () => openManualCardVaultPopup();
+  } else if (manualCards.length) {
     const openBtn = makeBtn(`수동 ${active.length}/${manualCards.length}`, "tt-mini-btn", () => openManualCardVaultPopup());
     openBtn.id = "ttManualCardVaultMiniBtn";
     openBtn.title = `수동카드 보관함 열기: 자동배치 포함 ${active.length}개, 보관 ${stored.length}개`;
@@ -2393,7 +2407,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   if (!domain || typeof domain !== "object") return false;
   const meta = domain.autoAssignMeta;
   if (!meta || typeof meta !== "object") return false;
-  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR218" && meta.currentEntriesAudit?.version === "r219-current-entries-audit";
+  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR218" && meta.currentEntriesAudit?.version === "r220-current-entries-audit";
   const legacyKeys = [
     ...(keepCurrentAudit ? [] : ["validationSummary", "ok"]),
     "validatorOk",
@@ -2488,7 +2502,7 @@ function buildScheduleConditionRuntimeSummary() {
     }
   });
   return {
-    mode: "schedule-condition-runtime-r219",
+    mode: "schedule-condition-runtime-r220",
     checkedCardCount: checkedCards.size,
     violationCount: violations.length,
     violations: violations.slice(0, 50),
@@ -4815,7 +4829,7 @@ function renderAll() {
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      try { console.info(`[data-sync:r219] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
+      try { console.info(`[data-sync:r220] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
     }
   }
   recomputeConflicts();
@@ -5356,6 +5370,8 @@ $("ttAutoAssignBtn")?.addEventListener("click", async () => {
   autoAssignAll();
 });
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
+$("ttScheduleConditionGlobalBtn")?.addEventListener("click", () => openScheduleConditionPopup());
+$("ttManualCardVaultGlobalBtn")?.addEventListener("click", () => openManualCardVaultPopup());
 
 setupCpSatWebappImport?.({
   appState,

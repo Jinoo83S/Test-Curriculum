@@ -1000,7 +1000,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-07-03-schedule-conditions-r219"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-07-06-condition-buttons-visible-r220"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1879,7 +1879,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r219</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r220</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1933,6 +1933,8 @@ body.tt-bottom-is-open #ttGrid{
   <div class="tt-bottom-scroll">
     <div class="tt-bottom-tab">
       <button class="tt-bottom-tab-btn active" data-tab="subjects">📚 과목 카드</button>
+      <button id="ttScheduleConditionGlobalBtn" type="button" style="height:24px;padding:2px 9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:11px;font-weight:900;white-space:nowrap;cursor:pointer" title="연속교시 / 필요교실 조건 관리">조건</button>
+      <button id="ttManualCardVaultGlobalBtn" type="button" style="height:24px;padding:2px 9px;border:1px solid #93c5fd;border-radius:8px;background:#fff;color:#1d4ed8;font-size:11px;font-weight:900;white-space:nowrap;cursor:pointer" title="수동카드 보관함">수동</button>
       <button class="tt-bottom-tab-btn"         data-tab="constraints">👩‍🏫 교사 조건</button>
       <button class="tt-bottom-tab-btn"         data-tab="teacherCards">👨‍🏫 교사별 카드</button>
       <button class="tt-bottom-tab-btn"         data-tab="rooms">🏫 교실 관리</button>
@@ -1948,9 +1950,9 @@ body.tt-bottom-is-open #ttGrid{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-07-03-schedule-conditions-r219";</script>
+<script>window.HIS_APP_VERSION = "2026-07-06-condition-buttons-visible-r220";</script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-07-03-schedule-conditions-r219";
+  import { versioned } from "./js/version.js?v=2026-07-06-condition-buttons-visible-r220";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -2330,7 +2332,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-03-schedule-conditions-r219");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-06-condition-buttons-visible-r220");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
