@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-manual-vault-mini-current-audit-r218";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-03-schedule-conditions-r219";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -171,6 +171,49 @@ export function createAutoAssignAll(deps) {
 
   function blockHasFixedRoomForAuto(block = {}) {
     return (block.items || []).some(item => autoItemHasFixedRoomForAuto(item));
+  }
+
+  function normalizeSchedulePositiveIntAuto(value, fallback = 1, { min = 1, max = 7 } = {}) {
+    const n = Math.round(Number(value));
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(min, Math.min(max, n));
+  }
+  function durationForAutoObject(obj = {}) {
+    return normalizeSchedulePositiveIntAuto(
+      obj.durationPeriods ?? obj.continuousPeriods ?? obj.consecutivePeriods ?? obj.solverDurationPeriods ?? 1,
+      1,
+      { min: 1, max: 7 }
+    );
+  }
+  function requiredRoomCountForAutoObject(obj = {}) {
+    return normalizeSchedulePositiveIntAuto(
+      obj.requiredRoomCount ?? obj.multiRoomCount ?? obj.solverRequiredRoomCount ?? 1,
+      1,
+      { min: 1, max: 12 }
+    );
+  }
+  function blockDurationPeriods(block = {}) {
+    return Math.max(1, durationForAutoObject(block), ...(block.items || []).map(durationForAutoObject), ...(block.activeItems || []).map(durationForAutoObject));
+  }
+  function itemRequiredRoomCount(item = {}) {
+    const cardCounts = ttCardIdsFromPlacement(item)
+      .map(id => getTtCardById(id))
+      .filter(Boolean)
+      .map(requiredRoomCountForAutoObject);
+    return Math.max(1, requiredRoomCountForAutoObject(item), ...cardCounts);
+  }
+  function blockRequiredRoomCount(block = {}) {
+    const groupCount = requiredRoomCountForAutoObject(block.group || {});
+    return Math.max(1, groupCount, ...(block.items || []).map(itemRequiredRoomCount), ...(block.activeItems || []).map(itemRequiredRoomCount));
+  }
+  function blockSlotSequence(block = {}, slot = {}) {
+    const periodCount = Math.max(1, parseInt(ttConfig()?.periodCount, 10) || 7);
+    const duration = blockDurationPeriods(block);
+    const startPeriod = Number(slot.period);
+    const day = Number(slot.day);
+    if (!Number.isInteger(day) || !Number.isInteger(startPeriod)) return [];
+    if (startPeriod < 0 || startPeriod + duration > periodCount) return [];
+    return Array.from({ length: duration }, (_, offset) => ({ day, period: startPeriod + offset, spanIndex: offset }));
   }
 
   function blockClassCardSize(block = {}) {
@@ -519,7 +562,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-07-03-manual-vault-mini-current-audit-r218"),
+      validatorVersion: String(meta.validatorVersion || "2026-07-03-schedule-conditions-r219"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -859,7 +902,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-manual-vault-mini-current-audit-r218",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-07-03-schedule-conditions-r219",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1517,7 +1560,8 @@ export function createAutoAssignAll(deps) {
 
   function roomIdsForPlacement(entry = {}) {
     const assigned = Object.values(roomAssignmentsForPlacementAuto(entry)).map(cleanStr).filter(Boolean);
-    const ids = [...assigned];
+    const explicitRoomIds = Array.isArray(entry.roomIds) ? entry.roomIds.map(cleanStr).filter(Boolean) : [];
+    const ids = [...assigned, ...explicitRoomIds];
     // r210: 카드별 교실 계산값이 있으면 stale entry.roomId를 후보/충돌 계산에 섞지 않습니다.
     if (shouldUseEntryRoomIdFallbackAuto(entry, assigned)) ids.push(entry.roomId);
     return uniqueRoomIds(ids);
@@ -1541,14 +1585,17 @@ export function createAutoAssignAll(deps) {
   function entryHasMissingRoomForAuto(entry = {}) {
     const cardIds = ttCardIdsFromPlacement(entry);
     const assignments = roomAssignmentsForPlacementAuto(entry);
+    const requiredRooms = itemRequiredRoomCount(entry);
     if (cardIds.length && (entry.groupId || cardIds.length > 1)) {
-      return cardIds.some(id => {
+      const missingCardRoom = cardIds.some(id => {
         const card = getTtCardById(id);
         if (!cardNeedsRoomForAuto(card || {}, entry)) return false;
         return !cleanStr(assignments[id]);
       });
+      if (missingCardRoom) return true;
+      return roomIdsForPlacement(entry).length < requiredRooms;
     }
-    return !roomIdsForPlacement(entry).length && normalizeRoomRuleForAuto(entry.roomRule || "teacher") !== "none";
+    return normalizeRoomRuleForAuto(entry.roomRule || "teacher") !== "none" && roomIdsForPlacement(entry).length < requiredRooms;
   }
 
   function getRoomByIdLocal(roomId) {
@@ -2011,7 +2058,7 @@ export function createAutoAssignAll(deps) {
       });
     };
 
-    (standalone || []).forEach(item => addAuto(classKeysForCapacity(item), 1, getAutoItemName(item), item));
+    (standalone || []).forEach(item => addAuto(classKeysForCapacity(item), durationForAutoObject(item), getAutoItemName(item), item));
 
     (groupBlocks || []).forEach(block => {
       const group = block?.group || {};
@@ -2615,12 +2662,23 @@ export function createAutoAssignAll(deps) {
       delete assignments[id];
     });
 
+    const requiredRooms = Math.max(1, itemRequiredRoomCount(entryData));
+    const taken = new Set(Object.values(assignments).map(cleanStr).filter(Boolean));
+    const extraRooms = [];
+    while (taken.size < requiredRooms) {
+      const autoRoomId = chooseAutoRoomIdForPlacement(entryData, slot, placed, taken);
+      if (!autoRoomId) break;
+      taken.add(autoRoomId);
+      extraRooms.push(autoRoomId);
+    }
+
     entryData.roomAssignmentsByTtCardId = assignments;
+    entryData.roomIds = uniqueRoomIds([...Object.values(assignments), ...extraRooms]);
+    entryData.requiredRoomCount = requiredRooms;
     entryData.roomRule = entryData.roomRule || "teacher";
     entryData.roomId = null;
     entryData.roomPinned = false;
-    // r138: 기본은 교사 교실/지정교실만 사용합니다.
-    // 옵션을 켠 경우에만 빈 교실 자동 배정을 수행합니다.
+    // r219: 필요교실수가 설정된 그룹수업은 카드별 교실 외에도 같은 시간에 빈 교실을 추가 확보합니다.
     return entryData;
   }
 
@@ -2639,10 +2697,11 @@ export function createAutoAssignAll(deps) {
       return entryData;
     }
 
-    if (rule === "autoRoom" || allowAutoRoomAssignment(options)) {
+    if (rule === "autoRoom" || allowAutoRoomAssignment(options) || itemRequiredRoomCount(entryData) > 1) {
       const autoRoomId = chooseAutoRoomIdForPlacement(entryData, slot, placed);
       if (autoRoomId) {
         entryData.roomId = autoRoomId;
+        entryData.roomIds = uniqueRoomIds([autoRoomId]);
         entryData.roomRule = entryData.roomRule || "teacher";
         entryData.roomPinned = false;
         entryData.autoRoomAssigned = true;
@@ -5754,12 +5813,13 @@ export function createAutoAssignAll(deps) {
   }
 
   function summarizeAutoTargetsForPrecheck(standalone = [], groupBlocks = []) {
+    const standaloneSlots = (standalone || []).reduce((sum, item) => sum + durationForAutoObject(item), 0);
     const groupSlots = groupBlocks.reduce((sum, { group, unitItems }) => {
       const credits = (unitItems || []).map(u => Math.max(0, Number(u?.credits) || 0));
       const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
       return sum + (isConcurrent ? Math.max(0, ...credits) : credits.reduce((a, b) => a + b, 0));
     }, 0);
-    return { standaloneSlots: standalone.length, groupSlots, totalSlots: standalone.length + groupSlots };
+    return { standaloneSlots, groupSlots, totalSlots: standaloneSlots + groupSlots };
   }
 
   function buildRestrictedTeacherTargetsForPrecheck(standalone = [], groupBlocks = []) {
@@ -6144,12 +6204,16 @@ export function createAutoAssignAll(deps) {
     if (!group || !unitItems.length) return [];
     const isConcurrent = group?.isConcurrent || group?.groupType === "concurrent";
     const credits = unitItems.map(u => Math.max(0, Number(u?.credits) || 0));
+    const duration = Math.max(1, durationForAutoObject(group), ...(unitItems || []).map(durationForAutoObject));
+    const requiredRoomCount = Math.max(1, requiredRoomCountForAutoObject(group), ...(unitItems || []).map(requiredRoomCountForAutoObject));
     const blocks = [];
     if (isConcurrent) {
       const maxCredits = Math.max(0, ...credits);
-      for (let occ = 0; occ < maxCredits; occ++) {
+      const occurrenceCount = Math.max(0, Math.ceil(maxCredits / duration));
+      for (let occ = 0; occ < occurrenceCount; occ++) {
+        const sourceOccurrence = occ * duration;
         const activeItems = unitItems
-          .map(u => getGroupItemForOccurrence(u, occ))
+          .map(u => getGroupItemForOccurrence(u, sourceOccurrence))
           .filter(u => (u.ttcards || []).length);
         const items = freshBuildGroupPlacementItems(group, activeItems);
         if (!items.length) continue;
@@ -6163,9 +6227,13 @@ export function createAutoAssignAll(deps) {
           groupId: group.id || null,
           occurrence: occ + 1,
           primaryItem: items[0],
-          items,
+          items: items.map(item => ({ ...item, durationPeriods: duration, continuousPeriods: duration, requiredRoomCount, multiRoomCount: requiredRoomCount })),
           activeItems,
-          cardIds
+          cardIds,
+          durationPeriods: duration,
+          continuousPeriods: duration,
+          requiredRoomCount,
+          multiRoomCount: requiredRoomCount
         });
       }
       return blocks;
@@ -6174,8 +6242,11 @@ export function createAutoAssignAll(deps) {
     // 비동시 그룹은 unit별·회차별로 독립 block으로 처리합니다.
     unitItems.forEach((unitItem, unitIdx) => {
       const count = Math.max(0, Number(unitItem?.credits) || 0);
-      for (let occ = 0; occ < count; occ++) {
-        const active = getGroupItemForOccurrence(unitItem, occ);
+      const unitDuration = Math.max(1, durationForAutoObject(group), durationForAutoObject(unitItem));
+      const unitRoomCount = Math.max(1, requiredRoomCountForAutoObject(group), requiredRoomCountForAutoObject(unitItem));
+      const occurrenceCount = Math.max(0, Math.ceil(count / unitDuration));
+      for (let occ = 0; occ < occurrenceCount; occ++) {
+        const active = getGroupItemForOccurrence(unitItem, occ * unitDuration);
         const items = freshBuildGroupPlacementItems(group, [active]);
         if (!items.length) continue;
         blocks.push({
@@ -6186,9 +6257,13 @@ export function createAutoAssignAll(deps) {
           groupId: group.id || null,
           occurrence: occ + 1,
           primaryItem: items[0],
-          items,
+          items: items.map(item => ({ ...item, durationPeriods: unitDuration, continuousPeriods: unitDuration, requiredRoomCount: unitRoomCount, multiRoomCount: unitRoomCount })),
           activeItems: [active],
-          cardIds: [...new Set(items.flatMap(item => ttCardIdsFromPlacement(item)).filter(Boolean))]
+          cardIds: [...new Set(items.flatMap(item => ttCardIdsFromPlacement(item)).filter(Boolean))],
+          durationPeriods: unitDuration,
+          continuousPeriods: unitDuration,
+          requiredRoomCount: unitRoomCount,
+          multiRoomCount: unitRoomCount
         });
       }
     });
@@ -6236,18 +6311,36 @@ export function createAutoAssignAll(deps) {
 
   function freshMakeBlockEntries(block = {}, slot = {}, placed = [], checkOptions = {}) {
     const pending = [];
-    for (const rawItem of block.items || []) {
-      const item = annotateRestrictedAutoItem(rawItem);
-      if (!checkPlacementValid(item, slot, [...placed, ...pending], checkOptions)) return null;
-      const entry = makeAutoEntry(item, slot, [...placed, ...pending]);
-      if (!entry) return null;
-      pending.push(normalizeTimetableEntry({
-        ...entry,
-        autoBlockKey: block.key,
-        autoEngine: "fresh-csp-r123",
-        autoGroupBlock: block.kind !== "standalone",
-        autoOccurrence: block.occurrence || 1
-      }));
+    const slots = blockSlotSequence(block, slot);
+    if (!slots.length) return null;
+    const duration = blockDurationPeriods(block);
+    const requiredRoomCount = blockRequiredRoomCount(block);
+    for (const blockSlot of slots) {
+      for (const rawItem of block.items || []) {
+        const item = annotateRestrictedAutoItem({
+          ...rawItem,
+          durationPeriods: duration,
+          continuousPeriods: duration,
+          requiredRoomCount,
+          multiRoomCount: requiredRoomCount
+        });
+        if (!checkPlacementValid(item, blockSlot, [...placed, ...pending], checkOptions)) return null;
+        const entry = makeAutoEntry(item, blockSlot, [...placed, ...pending]);
+        if (!entry) return null;
+        pending.push(normalizeTimetableEntry({
+          ...entry,
+          autoBlockKey: block.key,
+          autoEngine: "fresh-csp-r219",
+          autoGroupBlock: block.kind !== "standalone",
+          autoOccurrence: block.occurrence || 1,
+          durationPeriods: duration,
+          continuousPeriods: duration,
+          requiredRoomCount,
+          multiRoomCount: requiredRoomCount,
+          autoBlockSpanIndex: blockSlot.spanIndex || 0,
+          autoBlockSpanTotal: duration
+        }));
+      }
     }
     return pending.length ? pending : null;
   }
@@ -6376,11 +6469,15 @@ export function createAutoAssignAll(deps) {
   }
 
   function freshInferBlockers(block = {}, slot = {}, placed = [], lockKeys = new Set(), checkOptions = {}) {
-    const sameSlot = (placed || []).filter(e => e.day === slot.day && e.period === slot.period && e.autoBlockKey && !lockKeys.has(e.autoBlockKey));
+    const slots = blockSlotSequence(block, slot);
+    if (!slots.length) return [];
+    const slotKeySet = new Set(slots.map(s => `${s.day}:${s.period}`));
+    const sameSlot = (placed || []).filter(e => slotKeySet.has(`${e.day}:${e.period}`) && e.autoBlockKey && !lockKeys.has(e.autoBlockKey));
     const blockers = new Set();
     for (const item of block.items || []) {
       for (const entry of sameSlot) {
-        if (freshItemConflictsWithEntry(item, entry, slot, placed)) blockers.add(entry.autoBlockKey);
+        const entrySlot = { day: entry.day, period: entry.period };
+        if (freshItemConflictsWithEntry(item, entry, entrySlot, placed)) blockers.add(entry.autoBlockKey);
       }
     }
 
@@ -7159,7 +7256,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-07-03-manual-vault-mini-current-audit-r218"
+        validatorVersion: "2026-07-03-schedule-conditions-r219"
       };
 
       let afterAutoSnapshot = null;

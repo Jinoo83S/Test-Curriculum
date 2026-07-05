@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-03-manual-vault-mini-current-audit-r218";
+import { versioned } from "./version.js?v=2026-07-03-schedule-conditions-r219";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-manual-vault-mini-current-audit-r218";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-03-schedule-conditions-r219";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-manual-vault-mini-current-audit-r218";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-03-schedule-conditions-r219";
 
 
 const [
@@ -662,7 +662,7 @@ function getClassTimeInfo(classKey = "") {
 }
 
 function getEffectiveAssignedRoomId(teacher) {
-  // r218: CP-SAT/자동배치에서 교사-홈룸(homeRoomId)은 사용하지 않습니다.
+  // r219: CP-SAT/자동배치에서 교사-홈룸(homeRoomId)은 사용하지 않습니다.
   // 교사 본인교실은 teacherConstraints.assignedRoomId 또는 rooms[].teacherName만 기준으로 봅니다.
   const name = clean(teacher);
   if (!name) return null;
@@ -925,7 +925,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r218-current-entries-audit",
+    version: "r219-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -1017,12 +1017,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r218] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r219] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r218] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, meta=${result.metaChanged}`);
+    console.info(`[data-sync:r219] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, meta=${result.metaChanged}`);
   } catch (_) {}
   return result;
 }
@@ -1325,7 +1325,7 @@ function getTeacherNamesForCard(card) {
 }
 
 
-// ── r218 Manual card vault / auto-assign include state ─────────────
+// ── r219 Manual card vault / auto-assign include state ─────────────
 function isManualTtCard(card = {}) {
   return card?.isManual === true || String(card?.id || "").startsWith("ttc_manual") || String(card?.templateId || "").startsWith("manual_");
 }
@@ -1522,33 +1522,200 @@ function openManualCardVaultPopup() {
   renderManualCardVaultPopupContent();
 }
 
+
 function renderManualCardVaultPanel() {
   const panel = $("ttSubjectsContent");
   if (!panel) return;
-  // r218: 하단 과목카드 영역을 차지하지 않도록 기존 큰 안내 박스는 제거하고,
-  // 불러오기/갱신 버튼이 있는 과목카드 헤더 안에 작은 버튼만 붙입니다.
   panel.querySelector("#ttManualCardVaultPanel")?.remove();
   panel.querySelector("#ttManualCardVaultLauncher")?.remove();
   panel.querySelector("#ttManualCardVaultMiniBtn")?.remove();
-  const { manualCards, active, stored } = manualCardVaultStats();
-  if (!manualCards.length) {
-    renderManualCardVaultPopupContent();
-    return;
-  }
-
-  const openBtn = makeBtn(`수동 ${active.length}/${manualCards.length}`, "tt-mini-btn", () => openManualCardVaultPopup());
-  openBtn.id = "ttManualCardVaultMiniBtn";
-  openBtn.title = `수동카드 보관함 열기: 자동배치 포함 ${active.length}개, 보관 ${stored.length}개`;
-  openBtn.style.cssText = "height:24px;padding:2px 8px;border:1px solid #93c5fd;border-radius:7px;background:#fff;color:#1d4ed8;font-size:11px;font-weight:900;white-space:nowrap;";
+  panel.querySelector("#ttScheduleConditionMiniBtn")?.remove();
 
   const header = panel.querySelector(".tt-sc-header");
-  if (header) {
-    header.appendChild(openBtn);
-  } else {
-    openBtn.style.margin = "0 0 6px 0";
-    panel.prepend(openBtn);
+  const miniStyle = "height:24px;padding:2px 8px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#334155;font-size:11px;font-weight:900;white-space:nowrap;";
+  const conditionBtn = makeBtn("조건", "tt-mini-btn", () => openScheduleConditionPopup());
+  conditionBtn.id = "ttScheduleConditionMiniBtn";
+  conditionBtn.title = "연속교시 / 필요교실수 조건 관리";
+  conditionBtn.style.cssText = miniStyle;
+  if (header) header.appendChild(conditionBtn);
+  else { conditionBtn.style.margin = "0 0 6px 0"; panel.prepend(conditionBtn); }
+
+  const { manualCards, active, stored } = manualCardVaultStats();
+  if (manualCards.length) {
+    const openBtn = makeBtn(`수동 ${active.length}/${manualCards.length}`, "tt-mini-btn", () => openManualCardVaultPopup());
+    openBtn.id = "ttManualCardVaultMiniBtn";
+    openBtn.title = `수동카드 보관함 열기: 자동배치 포함 ${active.length}개, 보관 ${stored.length}개`;
+    openBtn.style.cssText = "height:24px;padding:2px 8px;border:1px solid #93c5fd;border-radius:7px;background:#fff;color:#1d4ed8;font-size:11px;font-weight:900;white-space:nowrap;";
+    if (header) header.appendChild(openBtn);
+    else { openBtn.style.margin = "0 0 6px 0"; panel.prepend(openBtn); }
   }
   renderManualCardVaultPopupContent();
+}
+
+function normalizeSchedulePositiveInt(value, fallback = 1, { min = 1, max = 7 } = {}) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+function getScheduleDurationFromObject(obj = {}) {
+  return normalizeSchedulePositiveInt(
+    obj.durationPeriods ?? obj.continuousPeriods ?? obj.consecutivePeriods ?? obj.solverDurationPeriods ?? 1,
+    1,
+    { min: 1, max: 7 }
+  );
+}
+function getRequiredRoomCountFromObject(obj = {}) {
+  return normalizeSchedulePositiveInt(
+    obj.requiredRoomCount ?? obj.multiRoomCount ?? obj.solverRequiredRoomCount ?? 1,
+    1,
+    { min: 1, max: 12 }
+  );
+}
+function getScheduleDurationForTtCard(card = {}) { return getScheduleDurationFromObject(card); }
+function getRequiredRoomCountForTtCard(card = {}) { return getRequiredRoomCountFromObject(card); }
+function getScheduleDurationForGroup(group = {}, cards = []) {
+  const own = getScheduleDurationFromObject(group);
+  const cardMax = Math.max(1, ...(cards || []).map(getScheduleDurationForTtCard));
+  return Math.max(own, cardMax);
+}
+function getRequiredRoomCountForGroup(group = {}, cards = []) {
+  const own = getRequiredRoomCountFromObject(group);
+  const cardMax = Math.max(1, ...(cards || []).map(getRequiredRoomCountForTtCard));
+  return Math.max(own, cardMax);
+}
+function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoomCount = 1 } = {}) {
+  const d = normalizeSchedulePositiveInt(durationPeriods, 1, { min: 1, max: 7 });
+  const r = normalizeSchedulePositiveInt(requiredRoomCount, 1, { min: 1, max: 12 });
+  if (d > 1) {
+    target.durationPeriods = d;
+    target.continuousPeriods = d;
+  } else {
+    delete target.durationPeriods;
+    delete target.continuousPeriods;
+    delete target.consecutivePeriods;
+    delete target.solverDurationPeriods;
+  }
+  if (r > 1) {
+    target.requiredRoomCount = r;
+    target.multiRoomCount = r;
+  } else {
+    delete target.requiredRoomCount;
+    delete target.multiRoomCount;
+    delete target.solverRequiredRoomCount;
+  }
+  target.scheduleConditionEditedAt = new Date().toISOString();
+}
+function applyScheduleConditionsToPlacementData(data = {}, cards = [], group = null) {
+  const sourceCards = (cards || []).filter(Boolean);
+  const duration = group ? getScheduleDurationForGroup(group, sourceCards) : Math.max(1, ...sourceCards.map(getScheduleDurationForTtCard));
+  const rooms = group ? getRequiredRoomCountForGroup(group, sourceCards) : Math.max(1, ...sourceCards.map(getRequiredRoomCountForTtCard));
+  if (duration > 1) {
+    data.durationPeriods = duration;
+    data.continuousPeriods = duration;
+  }
+  if (rooms > 1) {
+    data.requiredRoomCount = rooms;
+    data.multiRoomCount = rooms;
+  }
+  return data;
+}
+function scheduleConditionBadgeForObject(obj = {}, cards = null) {
+  const d = cards ? getScheduleDurationForGroup(obj, cards) : getScheduleDurationFromObject(obj);
+  const r = cards ? getRequiredRoomCountForGroup(obj, cards) : getRequiredRoomCountFromObject(obj);
+  const bits = [];
+  if (d > 1) bits.push(`${d}연속`);
+  if (r > 1) bits.push(`${r}교실`);
+  return bits.join(" · ");
+}
+function getScheduleConditionSummary() {
+  const cards = getTtCards();
+  const groups = appState.timetable?.ttcardGroups || [];
+  const cardConditions = cards.filter(card => getScheduleDurationForTtCard(card) > 1 || getRequiredRoomCountForTtCard(card) > 1).length;
+  const groupConditions = groups.filter(group => getScheduleDurationForGroup(group, getGroupCards(group)) > 1 || getRequiredRoomCountForGroup(group, getGroupCards(group)) > 1).length;
+  return { cardConditions, groupConditions };
+}
+function renderScheduleConditionPopupContent() {
+  const body = $("ttScheduleConditionPopupBody");
+  if (!body) return;
+  const groups = appState.timetable?.ttcardGroups || [];
+  const cards = getTtCards().filter(isTtCardIncludedInAutoAssign);
+  const inputStyle = "width:58px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;font-weight:800;text-align:center";
+  const groupRows = groups.map(group => {
+    const groupCards = getGroupCards(group).filter(isTtCardIncludedInAutoAssign);
+    const d = getScheduleDurationForGroup(group, groupCards);
+    const r = getRequiredRoomCountForGroup(group, groupCards);
+    return `<tr data-kind="group" data-id="${escapeHtml(group.id || "")}"><td style="padding:7px;border:1px solid #e2e8f0"><strong style="display:block;color:#0f172a">${escapeHtml(group.name || "그룹")}</strong><em style="display:block;margin-top:3px;color:#64748b;font-style:normal">${escapeHtml(group.groupType === "concurrent" || group.isConcurrent ? "그룹수업" : "묶음/일반그룹")} · 카드 ${groupCards.length}개</em></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="7" value="${d}" data-field="duration" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="12" value="${r}" data-field="rooms" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0;color:#334155;font-weight:800">${escapeHtml(scheduleConditionBadgeForObject(group, groupCards) || "기본")}</td></tr>`;
+  }).join("");
+  const conditionedCards = cards
+    .filter(card => getScheduleDurationForTtCard(card) > 1 || getRequiredRoomCountForTtCard(card) > 1)
+    .sort((a, b) => describeTtCard(a).title.localeCompare(describeTtCard(b).title, "ko", { numeric:true, sensitivity:"base" }));
+  const cardRows = conditionedCards.map(card => {
+    const desc = describeTtCard(card);
+    const cls = (getTtCardClassLabels(card) || []).join(", ") || gradeDisplay(card.gradeKey || "") || "학반 없음";
+    const teachers = getTeacherNamesForCard(card).join(", ") || "교사 없음";
+    return `<tr data-kind="card" data-id="${escapeHtml(card.id || "")}"><td style="padding:7px;border:1px solid #e2e8f0"><strong style="display:block;color:#0f172a">${escapeHtml(desc.title || card.subject || "과목")}</strong><em style="display:block;margin-top:3px;color:#64748b;font-style:normal">${escapeHtml(cls)} · ${escapeHtml(teachers)}</em></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="7" value="${getScheduleDurationForTtCard(card)}" data-field="duration" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="12" value="${getRequiredRoomCountForTtCard(card)}" data-field="rooms" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0;color:#334155;font-weight:800">${escapeHtml(scheduleConditionBadgeForObject(card) || "기본")}</td></tr>`;
+  }).join("");
+  const summary = getScheduleConditionSummary();
+  body.innerHTML = `
+    <div style="padding:12px 14px;border-bottom:1px solid #e2e8f0;background:#f8fafc;color:#475569;font-size:12px;line-height:1.5">
+      <b style="color:#0f172a">연속교시</b>는 같은 날 붙은 교시에 배치합니다. <b style="color:#0f172a">필요교실수</b>는 그룹수업에서 같은 시간에 확보해야 할 교실 수입니다.<br>
+      현재 조건: 그룹 ${summary.groupConditions}개 · 개별카드 ${summary.cardConditions}개
+    </div>
+    <div style="padding:12px 14px;overflow:auto">
+      <h3 style="margin:0 0 8px;font-size:14px;color:#0f172a">그룹 조건</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:7px;border:1px solid #e2e8f0">그룹</th><th style="padding:7px;border:1px solid #e2e8f0">연속교시</th><th style="padding:7px;border:1px solid #e2e8f0">필요교실</th><th style="padding:7px;border:1px solid #e2e8f0">상태</th></tr></thead>
+        <tbody>${groupRows || `<tr><td colspan="4" style="padding:14px;text-align:center;color:#64748b;border:1px solid #e2e8f0">그룹이 없습니다.</td></tr>`}</tbody>
+      </table>
+      <h3 style="margin:16px 0 8px;font-size:14px;color:#0f172a">개별 카드 조건</h3>
+      <p style="margin:0 0 8px;color:#64748b;font-size:12px">개별 카드는 조건이 있는 카드만 표시합니다. 새 조건은 우선 그룹에서 설정하는 것을 권장합니다.</p>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:7px;border:1px solid #e2e8f0">카드</th><th style="padding:7px;border:1px solid #e2e8f0">연속교시</th><th style="padding:7px;border:1px solid #e2e8f0">필요교실</th><th style="padding:7px;border:1px solid #e2e8f0">상태</th></tr></thead>
+        <tbody>${cardRows || `<tr><td colspan="4" style="padding:14px;text-align:center;color:#64748b;border:1px solid #e2e8f0">조건이 설정된 개별 카드가 없습니다.</td></tr>`}</tbody>
+      </table>
+    </div>`;
+}
+function saveScheduleConditionPopupChanges() {
+  if (!canEdit()) return false;
+  const body = $("ttScheduleConditionPopupBody");
+  if (!body) return false;
+  captureTimetableUndo("연속교시/필요교실 조건 변경");
+  body.querySelectorAll("tr[data-kind][data-id]").forEach(row => {
+    const kind = row.getAttribute("data-kind");
+    const id = row.getAttribute("data-id");
+    const duration = normalizeSchedulePositiveInt(row.querySelector('[data-field="duration"]')?.value, 1, { min: 1, max: 7 });
+    const rooms = normalizeSchedulePositiveInt(row.querySelector('[data-field="rooms"]')?.value, 1, { min: 1, max: 12 });
+    if (kind === "group") {
+      const group = (appState.timetable?.ttcardGroups || []).find(g => g.id === id);
+      if (group) setScheduleObjectFields(group, { durationPeriods: duration, requiredRoomCount: rooms });
+    } else if (kind === "card") {
+      const card = (appState.timetable?.ttcards || []).find(c => c.id === id);
+      if (card) setScheduleObjectFields(card, { durationPeriods: duration, requiredRoomCount: rooms });
+    }
+  });
+  scheduleSave("timetable");
+  renderAll();
+  return true;
+}
+function openScheduleConditionPopup() {
+  const old = $("ttScheduleConditionPopup");
+  if (old) old.remove();
+  const overlay = document.createElement("div");
+  overlay.id = "ttScheduleConditionPopup";
+  overlay.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:rgba(15,23,42,.42);display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;";
+  overlay.innerHTML = `
+    <div style="width:min(920px,calc(100vw - 36px));max-height:calc(100vh - 48px);background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(15,23,42,.32);overflow:hidden;display:flex;flex-direction:column;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+      <div style="padding:15px 18px;border-bottom:1px solid #e2e8f0;background:linear-gradient(135deg,#f8fafc,#eef6ff);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div><strong style="display:block;font-size:17px;color:#0f172a">연속교시 / 필요교실 조건</strong><span style="display:block;margin-top:4px;color:#64748b;font-size:12px">조건이 없는 수업은 기본값 1교시·1교실로 처리합니다.</span></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" data-schedule-condition-save style="border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:9px;padding:7px 12px;font-weight:900;cursor:pointer">저장</button><button type="button" data-schedule-condition-close style="border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:9px;padding:7px 12px;font-weight:900;cursor:pointer">닫기</button></div>
+      </div>
+      <div id="ttScheduleConditionPopupBody" style="overflow:auto"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  renderScheduleConditionPopupContent();
+  overlay.querySelector("[data-schedule-condition-close]")?.addEventListener("click", () => overlay.remove());
+  overlay.querySelector("[data-schedule-condition-save]")?.addEventListener("click", () => { saveScheduleConditionPopupChanges(); overlay.remove(); });
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) overlay.remove(); });
 }
 
 function getGroupInfoForTeacherCard(cardId) {
@@ -2062,7 +2229,8 @@ function shouldUseEntryRoomIdFallback(entry = {}, assignedIds = []) {
 
 function effectiveRoomIdsForEntry(entry = {}) {
   const assignmentIds = Object.values(roomAssignmentsForEntry(entry)).map(clean).filter(Boolean);
-  const ids = [...assignmentIds];
+  const explicitRoomIds = Array.isArray(entry.roomIds) ? entry.roomIds.map(clean).filter(Boolean) : [];
+  const ids = [...assignmentIds, ...explicitRoomIds];
   // 그룹카드는 entry.roomId 하나로 교실을 대표하면 안 됩니다.
   // 단일 카드도 카드별 계산값이 있으면 stale entry.roomId를 함께 표시/검증하지 않습니다.
   if (shouldUseEntryRoomIdFallback(entry, assignmentIds)) ids.push(clean(entry.roomId));
@@ -2139,7 +2307,7 @@ function canResolveRoomSyncDependencies() {
 }
 
 function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}) {
-  // r218: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
+  // r219: 교사교실 보정은 화면 보정뿐 아니라 Firestore 진단/저장 전에도 실행해야 합니다.
   // r210에서는 entries/ttcards만 먼저 로드된 순간 1회 플래그가 소모되어,
   // 박래희=VH106 같은 교사교실 계산을 못 하고 stale roomId(MH104 등)가 남았습니다.
   if (!getRooms().length) return 0;
@@ -2213,7 +2381,7 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
 }
 
 async function ensureRoomAssignmentsSyncedForServerRead(reason = "") {
-  // r218: 진단/CP-SAT/자동배치 직전에는 교실뿐 아니라 teacherName/teacherConstraints도
+  // r219: 진단/CP-SAT/자동배치 직전에는 교실뿐 아니라 teacherName/teacherConstraints도
   // 카드/교사명단 기준으로 정규화해야 합니다. Firestore 진단은 서버 원본을 직접 읽기 때문입니다.
   const result = await ensureTimetableDataSyncedForOperation(reason || "server-read");
   return result.changed || 0;
@@ -2225,7 +2393,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   if (!domain || typeof domain !== "object") return false;
   const meta = domain.autoAssignMeta;
   if (!meta || typeof meta !== "object") return false;
-  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR218" && meta.currentEntriesAudit?.version === "r218-current-entries-audit";
+  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR218" && meta.currentEntriesAudit?.version === "r219-current-entries-audit";
   const legacyKeys = [
     ...(keepCurrentAudit ? [] : ["validationSummary", "ok"]),
     "validatorOk",
@@ -2255,8 +2423,81 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   return changed;
 }
 
+function slotKeyForScheduleCondition(entry = {}) {
+  return `${Number(entry.day)}:${Number(entry.period)}`;
+}
+function cardSlotsForScheduleCondition(cardId = "") {
+  const out = [];
+  entries().forEach(entry => {
+    if (!ttCardIdsFromPlacement(entry).includes(cardId)) return;
+    if (!Number.isInteger(Number(entry.day)) || !Number.isInteger(Number(entry.period))) return;
+    out.push({ day: Number(entry.day), period: Number(entry.period), entry });
+  });
+  return out.sort((a, b) => a.day - b.day || a.period - b.period);
+}
+function hasConsecutiveRunForSlots(slots = [], duration = 1) {
+  const d = Math.max(1, Number(duration) || 1);
+  if (d <= 1) return true;
+  const byDay = new Map();
+  slots.forEach(slot => {
+    if (!byDay.has(slot.day)) byDay.set(slot.day, new Set());
+    byDay.get(slot.day).add(slot.period);
+  });
+  for (const set of byDay.values()) {
+    for (const p of set) {
+      let ok = true;
+      for (let offset = 1; offset < d; offset += 1) {
+        if (!set.has(p + offset)) { ok = false; break; }
+      }
+      if (ok) return true;
+    }
+  }
+  return false;
+}
+function buildScheduleConditionRuntimeSummary() {
+  const violations = [];
+  const checkedCards = new Set();
+  getTtCards().forEach(card => {
+    const duration = getScheduleDurationForTtCard(card);
+    const requiredRooms = getRequiredRoomCountForTtCard(card);
+    if (duration <= 1 && requiredRooms <= 1) return;
+    checkedCards.add(card.id);
+    const slots = cardSlotsForScheduleCondition(card.id);
+    if (duration > 1 && slots.length && !hasConsecutiveRunForSlots(slots, duration)) {
+      violations.push({ type: "duration", cardId: card.id, subject: describeTtCard(card).title, durationPeriods: duration, slots: slots.map(s => slotKeyForScheduleCondition(s.entry)).slice(0, 10) });
+    }
+  });
+  (appState.timetable?.ttcardGroups || []).forEach(group => {
+    const groupCards = getGroupCards(group).filter(Boolean);
+    const duration = getScheduleDurationForGroup(group, groupCards);
+    const requiredRooms = getRequiredRoomCountForGroup(group, groupCards);
+    if (duration > 1) {
+      groupCards.forEach(card => {
+        if (checkedCards.has(card.id)) return;
+        const slots = cardSlotsForScheduleCondition(card.id);
+        if (slots.length && !hasConsecutiveRunForSlots(slots, duration)) {
+          violations.push({ type: "groupDuration", groupId: group.id, groupName: group.name || "그룹", cardId: card.id, subject: describeTtCard(card).title, durationPeriods: duration, slots: slots.map(s => slotKeyForScheduleCondition(s.entry)).slice(0, 10) });
+        }
+      });
+    }
+    if (requiredRooms > 1) {
+      entries().filter(entry => entry.groupId === group.id).forEach(entry => {
+        const rooms = effectiveRoomIdsForEntry(entry);
+        if (rooms.length < requiredRooms) violations.push({ type: "requiredRooms", groupId: group.id, groupName: group.name || "그룹", requiredRoomCount: requiredRooms, actualRoomCount: rooms.length, slot: slotKeyForScheduleCondition(entry) });
+      });
+    }
+  });
+  return {
+    mode: "schedule-condition-runtime-r219",
+    checkedCardCount: checkedCards.size,
+    violationCount: violations.length,
+    violations: violations.slice(0, 50),
+    checkedAt: new Date().toISOString(),
+  };
+}
+
 function buildStrictConflictRuntimeSummary() {
-  const counts = { teacher: 0, room: 0, student: 0, roomMissing: 0, roomUnavailable: 0, syncRequired: 0, maxPerDay: 0, maxConsecutive: 0, unavailable: 0, cardUnavailable: 0, classUnavailable: 0 };
+  const counts = { teacher: 0, room: 0, student: 0, roomMissing: 0, roomUnavailable: 0, syncRequired: 0, maxPerDay: 0, maxConsecutive: 0, unavailable: 0, cardUnavailable: 0, classUnavailable: 0, scheduleCondition: 0 };
   let affected = 0;
   conflictMap.forEach(set => {
     if (!set || !set.size) return;
@@ -2267,11 +2508,14 @@ function buildStrictConflictRuntimeSummary() {
     if (!set || !set.size) return;
     set.forEach(type => { counts[type] = (counts[type] || 0) + 1; });
   });
+  const scheduleConditionSummary = buildScheduleConditionRuntimeSummary();
+  counts.scheduleCondition = scheduleConditionSummary.violationCount || 0;
   return {
     mode: "strict-runtime",
     affectedEntryCount: affected,
     counts,
-    hardOk: !counts.teacher && !counts.room && !counts.student && !counts.roomMissing && !counts.roomUnavailable && !counts.cardUnavailable && !counts.classUnavailable,
+    hardOk: !counts.teacher && !counts.room && !counts.student && !counts.roomMissing && !counts.roomUnavailable && !counts.cardUnavailable && !counts.classUnavailable && !counts.scheduleCondition,
+    scheduleConditionSummary,
     checkedAt: new Date().toISOString(),
   };
 }
@@ -2751,6 +2995,7 @@ function placeGroupAt(groupId, day, period) {
   const cards = selectGroupCardsForOccurrence(allCards, occurrenceIndex);
   const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id, groupName: grp.name || "" });
   if (!data) return false;
+  applyScheduleConditionsToPlacementData(data, cards, grp);
   return !!addEntry(data);
 }
 
@@ -2772,15 +3017,23 @@ function buildSchedulableItems() {
 
     const credits = groupCreditForCards(groupCards);
     const teachers = [...new Set(groupCards.flatMap(getTeachersForTtCard).filter(Boolean))].join(",");
+    const durationPeriods = getScheduleDurationForGroup(group, groupCards);
+    const requiredRoomCount = getRequiredRoomCountForGroup(group, groupCards);
     groupBlocks.push({
       group,
+      durationPeriods,
+      requiredRoomCount,
       unitItems: [{
         kind: "group",
         unit: null,
         ttcards: groupCards,
         credits,
         teachers,
-        name: group.name || "그룹 카드"
+        name: group.name || "그룹 카드",
+        durationPeriods,
+        continuousPeriods: durationPeriods,
+        requiredRoomCount,
+        multiRoomCount: requiredRoomCount
       }]
     });
   });
@@ -2793,14 +3046,17 @@ function buildSchedulableItems() {
   // ── Standalone ttcards (not in any group pool/unit) ──────────────
   ttcards.forEach(card => {
     if (groupedCardIds.has(card.id)) return;
-    const credits = getCreditsForTtCard(card);
+    const credits = Number(getCreditsForTtCard(card)) || 0;
     if (!credits) return;
     const teacher = getTeachersForTtCard(card).filter(Boolean).join(",");
-    for (let i = 0; i < credits; i++) {
+    const durationPeriods = getScheduleDurationForTtCard(card);
+    const requiredRoomCount = getRequiredRoomCountForTtCard(card);
+    const occurrenceCount = Math.max(1, Math.ceil(credits / Math.max(1, durationPeriods)));
+    for (let i = 0; i < occurrenceCount; i++) {
       standalone.push({ kind: "standalone", ttcardId: card.id, ttcardIds: [card.id],
         templateId: card.templateId, templateIds: [card.templateId], sectionIdx: card.sectionIdx,
         gradeKey: card.gradeKey, gradeKeys: [card.gradeKey], teacherName: teacher,
-        groupId: null
+        groupId: null, durationPeriods, continuousPeriods: durationPeriods, requiredRoomCount, multiRoomCount: requiredRoomCount
       });
     }
   });
@@ -4221,6 +4477,8 @@ function handleDrop(data, day, period) {
       if (!isTtCardIncludedInAutoAssign(card)) { alert("보관함에 있는 수동카드는 자동배치/드래그 배치 대상이 아닙니다. 수동카드 보관함에서 먼저 포함으로 바꿔 주세요."); return; }
       const entryData = buildEntryDataFromTtCards([card], { day, period, groupId: data.groupId || null, groupName: data.groupName || "" });
       if (entryData) {
+        const grp = data.groupId ? (appState.timetable?.ttcardGroups || []).find(g => g.id === data.groupId) : null;
+        applyScheduleConditionsToPlacementData(entryData, [card], grp);
         addEntry(entryData);
         recomputeConflicts(); renderAll(); return;
       }
@@ -4552,12 +4810,12 @@ function renderScheduleControls() {
 function renderAll() {
   ensureTeacherCardsBottomTab();
   {
-    // r218: 렌더 시점마다 가볍게 데이터 정규화를 수행합니다.
+    // r219: 렌더 시점마다 가볍게 데이터 정규화를 수행합니다.
     // entry.teacherName/teacherConstraints/교실 배정이 카드·교사명단 기준과 어긋나면 자동배치가 가짜 교사/가짜 교실을 보게 됩니다.
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      try { console.info(`[data-sync:r218] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
+      try { console.info(`[data-sync:r219] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, meta=${sync.metaChanged}`); } catch (_) {}
     }
   }
   recomputeConflicts();

@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-manual-vault-mini-current-audit-r218";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-03-schedule-conditions-r219";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -10,8 +10,8 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r218";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r218 CP-SAT API bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r219";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r219 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -166,7 +166,7 @@ function applyManualCardExclusionToPayloadTimetable(tt = {}) {
   });
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.manualCardExcludedIds = [...excludedIds];
-  tt.autoAssignMeta.manualCardExclusionMode = "r218-manual-card-vault";
+  tt.autoAssignMeta.manualCardExclusionMode = "r219-manual-card-vault";
   return tt;
 }
 function cardIdsFromEntryForPayload(entry = {}) {
@@ -291,7 +291,7 @@ function teacherRoomIdForPayload(teacherName = "", teacherConstraints = {}, room
   const name = cleanLocal(teacherName);
   if (!name) return "";
   const cfg = teacherConstraints && typeof teacherConstraints === "object" ? teacherConstraints[name] : null;
-  // r218: 교사-홈룸(homeRoomId)은 CP-SAT 교사 본인교실로 사용하지 않습니다.
+  // r219: 교사-홈룸(homeRoomId)은 CP-SAT 교사 본인교실로 사용하지 않습니다.
   // 본인교실은 assignedRoomId 또는 rooms[].teacherName만 기준으로 확정합니다.
   const configured = cleanLocal(cfg?.assignedRoomId || "");
   if (validRoomIdForPayload(configured, rooms)) return configured;
@@ -345,7 +345,7 @@ function applyFixedRoomPreflightForSolverPayload(data = {}) {
   const roster = teacherRosterSetForPayload(data);
   const teacherConstraints = tt.teacherConstraints && typeof tt.teacherConstraints === "object" ? tt.teacherConstraints : {};
   const meta = {
-    version: "r218",
+    version: "r219",
     generatedAt: nowIso(),
     rule: "specified/classHomeroom/teacherOwnRoom fixed before CP-SAT; teacher homeRoomId ignored",
     totalCards: cards.length,
@@ -384,6 +384,81 @@ function applyFixedRoomPreflightForSolverPayload(data = {}) {
   };
   return data;
 }
+
+function normalizeSchedulePositiveIntForPayload(value, fallback = 1, { min = 1, max = 7 } = {}) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+function durationPeriodsForPayload(obj = {}) {
+  return normalizeSchedulePositiveIntForPayload(
+    obj.durationPeriods ?? obj.continuousPeriods ?? obj.consecutivePeriods ?? obj.solverDurationPeriods ?? 1,
+    1,
+    { min: 1, max: 7 }
+  );
+}
+function requiredRoomCountForPayload(obj = {}) {
+  return normalizeSchedulePositiveIntForPayload(
+    obj.requiredRoomCount ?? obj.multiRoomCount ?? obj.solverRequiredRoomCount ?? 1,
+    1,
+    { min: 1, max: 12 }
+  );
+}
+function applyScheduleConditionPreflightForSolverPayload(data = {}) {
+  const tt = data?.timetable || {};
+  const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+  const groups = asArray(tt.ttcardGroups || tt.ttCardGroups);
+  const cardById = new Map(cards.map(card => [cleanLocal(card?.id), card]).filter(([id]) => id));
+  const meta = {
+    version: "r219",
+    generatedAt: nowIso(),
+    rule: "durationPeriods/requiredRoomCount are normalized before CP-SAT payload.",
+    cardDurationCount: 0,
+    cardRoomCount: 0,
+    groupDurationCount: 0,
+    groupRoomCount: 0,
+    groupSamples: [],
+    cardSamples: []
+  };
+  const applyObj = (obj = {}, kind = "card", sampleTitle = "") => {
+    const duration = durationPeriodsForPayload(obj);
+    const rooms = requiredRoomCountForPayload(obj);
+    obj.durationPeriods = duration;
+    obj.continuousPeriods = duration;
+    obj.solverDurationPeriods = duration;
+    obj.requiredRoomCount = rooms;
+    obj.multiRoomCount = rooms;
+    obj.solverRequiredRoomCount = rooms;
+    if (duration > 1) meta[kind === "group" ? "groupDurationCount" : "cardDurationCount"] += 1;
+    if (rooms > 1) meta[kind === "group" ? "groupRoomCount" : "cardRoomCount"] += 1;
+    if ((duration > 1 || rooms > 1) && sampleTitle) {
+      const bucket = kind === "group" ? meta.groupSamples : meta.cardSamples;
+      if (bucket.length < 20) bucket.push({ title: sampleTitle, durationPeriods: duration, requiredRoomCount: rooms });
+    }
+    return { duration, rooms };
+  };
+  cards.forEach(card => applyObj(card, "card", cleanLocal(card?.subject || card?.label || card?.nameKo || card?.name || card?.id)));
+  groups.forEach(group => {
+    const groupCardIds = unique([...(group?.poolCardIds || []), ...(group?.excludedCardIds || []), ...(group?.units || []).flatMap(unit => unit?.ttcardIds || [])]);
+    const groupCards = groupCardIds.map(id => cardById.get(cleanLocal(id))).filter(Boolean);
+    const ownDuration = durationPeriodsForPayload(group);
+    const ownRooms = requiredRoomCountForPayload(group);
+    const duration = Math.max(ownDuration, 1, ...groupCards.map(durationPeriodsForPayload));
+    const rooms = Math.max(ownRooms, 1, ...groupCards.map(requiredRoomCountForPayload));
+    group.durationPeriods = duration;
+    group.continuousPeriods = duration;
+    group.solverDurationPeriods = duration;
+    group.requiredRoomCount = rooms;
+    group.multiRoomCount = rooms;
+    group.solverRequiredRoomCount = rooms;
+    if (duration > 1) meta.groupDurationCount += 1;
+    if (rooms > 1) meta.groupRoomCount += 1;
+    if ((duration > 1 || rooms > 1) && meta.groupSamples.length < 20) meta.groupSamples.push({ title: cleanLocal(group?.name || group?.id || "group"), durationPeriods: duration, requiredRoomCount: rooms });
+  });
+  if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
+  tt.autoAssignMeta.cpSatScheduleConditionPreflight = meta;
+  return data;
+}
 function isSolverSeedEntryForPayload(entry = {}, totalEntries = 0) {
   if (!entry || typeof entry !== "object") return false;
   if (entry.pinned || entry.isPinned || entry.fixed || entry.locked) return true;
@@ -396,7 +471,7 @@ function filterSolverSeedEntriesForPayload(entries = [], tt = {}) {
   const kept = list.filter(e => isSolverSeedEntryForPayload(e, list.length));
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.cpSatEntrySeedPreflight = {
-    version: "r218",
+    version: "r219",
     originalEntryCount: list.length,
     keptSeedEntryCount: kept.length,
     droppedGeneratedEntryCount: Math.max(0, list.length - kept.length),
@@ -416,6 +491,7 @@ function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
 }
 function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
   normalizeTeacherReferencesForPayload(data);
+  applyScheduleConditionPreflightForSolverPayload(data);
   applyFixedRoomPreflightForSolverPayload(data);
   const tt = data?.timetable || {};
   const roster = teacherRosterSetForPayload(data);
@@ -477,7 +553,7 @@ function makeSolverState(appState, live = {}) {
   // ttDomain() + entries()를 우선 사용해 visible timetable과 solver payload를 일치시킵니다.
   const liveTimetable = applyManualCardExclusionToPayloadTimetable(deepClone(live.timetable || appState?.timetable || {}));
   if (Array.isArray(live.entries)) {
-    // r218: 이전 자동배치 결과 entry는 CP-SAT 입력(seed)으로 보내지 않습니다.
+    // r219: 이전 자동배치 결과 entry는 CP-SAT 입력(seed)으로 보내지 않습니다.
     // 명시적으로 고정/잠금된 시간표 seed만 보내고, 일반 배치는 cards/groups에서 새로 생성합니다.
     liveTimetable.entries = filterSolverSeedEntriesForPayload(deepClone(live.entries), liveTimetable);
   }
@@ -1104,7 +1180,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r218\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r219\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 

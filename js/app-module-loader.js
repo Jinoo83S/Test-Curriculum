@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-07-03-manual-vault-mini-current-audit-r218";
+import { versioned } from "./version.js?v=2026-07-03-schedule-conditions-r219";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",
