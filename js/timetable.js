@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-condition-save-graded-cardlist-r222";
+import { versioned } from "./version.js?v=2026-07-06-manual-multiroom-server-r223";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-condition-save-graded-cardlist-r222";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-manual-multiroom-server-r223";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-condition-save-graded-cardlist-r222";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-manual-multiroom-server-r223";
 
 
 const [
@@ -1586,7 +1586,7 @@ function getRequiredRoomCountFromObject(obj = {}) {
     { min: 1, max: 12 }
   );
 }
-const SCHEDULE_CONDITION_STORE_VERSION = "r222";
+const SCHEDULE_CONDITION_STORE_VERSION = "r223";
 const SCHEDULE_CONDITION_LOCAL_STORAGE_KEY = "his.timetable.scheduleConditions.v1";
 
 function cloneScheduleConditionStore(store = {}) {
@@ -1597,16 +1597,66 @@ function cloneScheduleConditionStore(store = {}) {
     cards: { ...(store.cards || {}) },
   };
 }
+function normalizeRoomIdListForScheduleCondition(value = []) {
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[,，;；
+]+/);
+  const rooms = getRooms();
+  const byId = new Map(rooms.map(r => [clean(r.id), clean(r.id)]).filter(([id]) => id));
+  const byName = new Map(rooms.map(r => [clean(r.name).toLocaleLowerCase("ko"), clean(r.id)]).filter(([name, id]) => name && id));
+  const ids = [];
+  const invalid = [];
+  raw.map(clean).filter(Boolean).forEach(token => {
+    const key = token.toLocaleLowerCase("ko");
+    const id = byId.get(token) || byName.get(key) || "";
+    if (id) {
+      if (!ids.includes(id)) ids.push(id);
+    } else {
+      invalid.push(token);
+    }
+  });
+  return { ids, invalid };
+}
+function scheduleConditionRoomIdsFromObject(row = {}) {
+  const candidates = [
+    row.manualRoomIds,
+    row.fixedRoomIds,
+    row.solverFixedRoomIds,
+    row.requiredRoomIds,
+    row.roomIds,
+    row.manualRooms,
+    row.fixedRooms,
+    row.roomNames,
+  ];
+  for (const value of candidates) {
+    const { ids } = normalizeRoomIdListForScheduleCondition(value || []);
+    if (ids.length) return ids;
+  }
+  return [];
+}
+function roomNamesForScheduleConditionIds(ids = []) {
+  return (ids || []).map(id => getRoomDisplayName(id) || clean(id)).filter(Boolean).join(", ");
+}
 function normalizeScheduleConditionRow(row = {}) {
   if (!row || typeof row !== "object") return null;
+  const roomIds = scheduleConditionRoomIdsFromObject(row);
   const d = normalizeSchedulePositiveInt(row.durationPeriods ?? row.continuousPeriods ?? row.consecutivePeriods ?? row.solverDurationPeriods ?? 1, 1, { min: 1, max: 7 });
-  const r = normalizeSchedulePositiveInt(row.requiredRoomCount ?? row.multiRoomCount ?? row.solverRequiredRoomCount ?? 1, 1, { min: 1, max: 12 });
-  if (d <= 1 && r <= 1) return null;
+  const r = Math.max(
+    normalizeSchedulePositiveInt(row.requiredRoomCount ?? row.multiRoomCount ?? row.solverRequiredRoomCount ?? 1, 1, { min: 1, max: 12 }),
+    roomIds.length || 1
+  );
+  if (d <= 1 && r <= 1 && !roomIds.length) return null;
   return {
     durationPeriods: d,
     continuousPeriods: d,
     requiredRoomCount: r,
     multiRoomCount: r,
+    manualRoomIds: roomIds,
+    fixedRoomIds: roomIds,
+    solverFixedRoomIds: roomIds,
+    requiredRoomIds: roomIds,
+    roomIds: roomIds,
     updatedAt: clean(row.updatedAt || row.scheduleConditionEditedAt || "") || new Date().toISOString(),
   };
 }
@@ -1616,14 +1666,11 @@ function mergeScheduleConditionBucket(target = {}, source = {}) {
     if (!key) return;
     const normalized = normalizeScheduleConditionRow(row);
     if (!normalized) return;
-    const prev = normalizeScheduleConditionRow(target[key]) || { durationPeriods: 1, requiredRoomCount: 1, updatedAt: "" };
-    target[key] = {
-      durationPeriods: Math.max(prev.durationPeriods || 1, normalized.durationPeriods || 1),
-      continuousPeriods: Math.max(prev.durationPeriods || 1, normalized.durationPeriods || 1),
-      requiredRoomCount: Math.max(prev.requiredRoomCount || 1, normalized.requiredRoomCount || 1),
-      multiRoomCount: Math.max(prev.requiredRoomCount || 1, normalized.requiredRoomCount || 1),
-      updatedAt: normalized.updatedAt || prev.updatedAt || new Date().toISOString(),
-    };
+    const prev = normalizeScheduleConditionRow(target[key]);
+    // r223: 이전 r222는 Math.max 병합이라 사용자가 5→1처럼 줄여도 localStorage/autoAssignMeta의
+    // 오래된 큰 값이 되살아났습니다. 이제는 updatedAt이 더 최신인 행을 우선하고, 시간이 같으면
+    // 뒤쪽 source가 이기게 해서 사용자의 마지막 저장값이 그대로 남습니다.
+    if (!prev || clean(normalized.updatedAt) >= clean(prev.updatedAt)) target[key] = normalized;
   });
 }
 function readScheduleConditionLocalBackup() {
@@ -1694,17 +1741,29 @@ function getRequiredRoomCountForGroup(group = {}, cards = []) {
   const cardMax = Math.max(1, ...(cards || []).map(getRequiredRoomCountForTtCard));
   return Math.max(own, cardMax);
 }
-function writeScheduleConditionStore(kind = "card", id = "", { durationPeriods = 1, requiredRoomCount = 1 } = {}) {
+function writeScheduleConditionStore(kind = "card", id = "", { durationPeriods = 1, requiredRoomCount = 1, manualRoomIds = [] } = {}) {
   const key = String(id || "").trim();
   if (!key) return;
+  const roomIds = normalizeRoomIdListForScheduleCondition(manualRoomIds).ids;
   const d = normalizeSchedulePositiveInt(durationPeriods, 1, { min: 1, max: 7 });
-  const r = normalizeSchedulePositiveInt(requiredRoomCount, 1, { min: 1, max: 12 });
+  const r = Math.max(normalizeSchedulePositiveInt(requiredRoomCount, 1, { min: 1, max: 12 }), roomIds.length || 1);
   const store = ensureScheduleConditionStore();
   const bucket = kind === "group" ? store.groups : store.cards;
-  if (d <= 1 && r <= 1) {
+  if (d <= 1 && r <= 1 && !roomIds.length) {
     delete bucket[key];
   } else {
-    bucket[key] = { durationPeriods: d, continuousPeriods: d, requiredRoomCount: r, multiRoomCount: r, updatedAt: new Date().toISOString() };
+    bucket[key] = {
+      durationPeriods: d,
+      continuousPeriods: d,
+      requiredRoomCount: r,
+      multiRoomCount: r,
+      manualRoomIds: roomIds,
+      fixedRoomIds: roomIds,
+      solverFixedRoomIds: roomIds,
+      requiredRoomIds: roomIds,
+      roomIds,
+      updatedAt: new Date().toISOString()
+    };
   }
   store.version = SCHEDULE_CONDITION_STORE_VERSION;
   store.updatedAt = new Date().toISOString();
@@ -1714,12 +1773,14 @@ function writeScheduleConditionStore(kind = "card", id = "", { durationPeriods =
   domain.autoAssignMeta.scheduleConditions = cloneScheduleConditionStore(store);
   writeScheduleConditionLocalBackup(store);
 }
-function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoomCount = 1 } = {}, kind = "card") {
+function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoomCount = 1, manualRoomIds = [] } = {}, kind = "card", options = {}) {
+  const roomIds = normalizeRoomIdListForScheduleCondition(manualRoomIds).ids;
   const d = normalizeSchedulePositiveInt(durationPeriods, 1, { min: 1, max: 7 });
-  const r = normalizeSchedulePositiveInt(requiredRoomCount, 1, { min: 1, max: 12 });
+  const r = Math.max(normalizeSchedulePositiveInt(requiredRoomCount, 1, { min: 1, max: 12 }), roomIds.length || 1);
   if (d > 1) {
     target.durationPeriods = d;
     target.continuousPeriods = d;
+    target.solverDurationPeriods = d;
   } else {
     delete target.durationPeriods;
     delete target.continuousPeriods;
@@ -1729,13 +1790,44 @@ function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoo
   if (r > 1) {
     target.requiredRoomCount = r;
     target.multiRoomCount = r;
+    target.solverRequiredRoomCount = r;
   } else {
     delete target.requiredRoomCount;
     delete target.multiRoomCount;
     delete target.solverRequiredRoomCount;
   }
+  if (roomIds.length) {
+    target.manualRoomIds = roomIds;
+    target.fixedRoomIds = roomIds;
+    target.solverFixedRoomIds = roomIds;
+    target.requiredRoomIds = roomIds;
+    target.roomIds = roomIds;
+    target.manualRoomNames = roomNamesForScheduleConditionIds(roomIds);
+    if (kind === "card") {
+      target.roomRule = "fixed";
+      target.fixedRoomId = roomIds[0];
+    }
+  } else if (options.clearManualRooms) {
+    delete target.manualRoomIds;
+    delete target.fixedRoomIds;
+    delete target.solverFixedRoomIds;
+    delete target.requiredRoomIds;
+    delete target.roomIds;
+    delete target.manualRoomNames;
+  }
   target.scheduleConditionEditedAt = new Date().toISOString();
-  writeScheduleConditionStore(kind, target.id, { durationPeriods: d, requiredRoomCount: r });
+  if (!options.skipStore) writeScheduleConditionStore(kind, target.id, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: roomIds });
+}
+function assignFreshScheduleConditionStore(store = {}) {
+  const fresh = cloneScheduleConditionStore(store);
+  fresh.version = SCHEDULE_CONDITION_STORE_VERSION;
+  fresh.updatedAt = fresh.updatedAt || new Date().toISOString();
+  const domain = appState.timetable || (appState.timetable = {});
+  domain.scheduleConditions = cloneScheduleConditionStore(fresh);
+  if (!domain.autoAssignMeta || typeof domain.autoAssignMeta !== "object") domain.autoAssignMeta = {};
+  domain.autoAssignMeta.scheduleConditions = cloneScheduleConditionStore(fresh);
+  writeScheduleConditionLocalBackup(fresh);
+  return fresh;
 }
 function applyStoredScheduleConditionsToTimetable({ persist = false } = {}) {
   const store = getScheduleConditionStore();
@@ -1746,7 +1838,7 @@ function applyStoredScheduleConditionsToTimetable({ persist = false } = {}) {
     const d = getScheduleDurationFromObject(row);
     const r = getRequiredRoomCountFromObject(row);
     const before = JSON.stringify([group.durationPeriods, group.continuousPeriods, group.requiredRoomCount, group.multiRoomCount]);
-    setScheduleObjectFields(group, { durationPeriods: d, requiredRoomCount: r }, "group");
+    setScheduleObjectFields(group, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: scheduleConditionRoomIdsFromObject(row) }, "group");
     const after = JSON.stringify([group.durationPeriods, group.continuousPeriods, group.requiredRoomCount, group.multiRoomCount]);
     if (before !== after) changed += 1;
   });
@@ -1756,7 +1848,7 @@ function applyStoredScheduleConditionsToTimetable({ persist = false } = {}) {
     const d = getScheduleDurationFromObject(row);
     const r = getRequiredRoomCountFromObject(row);
     const before = JSON.stringify([card.durationPeriods, card.continuousPeriods, card.requiredRoomCount, card.multiRoomCount]);
-    setScheduleObjectFields(card, { durationPeriods: d, requiredRoomCount: r }, "card");
+    setScheduleObjectFields(card, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: scheduleConditionRoomIdsFromObject(row) }, "card");
     const after = JSON.stringify([card.durationPeriods, card.continuousPeriods, card.requiredRoomCount, card.multiRoomCount]);
     if (before !== after) changed += 1;
   });
@@ -1849,13 +1941,16 @@ function scheduleConditionRowsByGrade(items = [], gradeOf) {
   });
   return [...byGrade.entries()].sort((a, b) => scheduleConditionGradeIndex(a[0]) - scheduleConditionGradeIndex(b[0]) || a[0].localeCompare(b[0], "ko", { numeric: true, sensitivity: "base" }));
 }
-function renderScheduleConditionRow({ kind, id, line, duration, rooms, badge, inputStyle }) {
-  const status = badge || "기본";
-  return `<div class="tt-schedule-condition-row" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(id || "")}" data-filter-text="${escapeHtml(line.toLocaleLowerCase("ko"))}" style="display:grid;grid-template-columns:minmax(260px,1fr) 82px 82px 82px;gap:8px;align-items:center;border-bottom:1px solid #e2e8f0;padding:8px 10px;font-size:12px">
+function renderScheduleConditionRow({ kind, id, line, duration, rooms, manualRoomIds = [], badge, inputStyle }) {
+  const manualRoomsText = roomNamesForScheduleConditionIds(manualRoomIds);
+  const status = badge || (manualRoomIds.length ? `${manualRoomIds.length}지정` : "기본");
+  const roomInputStyle = "width:100%;padding:5px 8px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;box-sizing:border-box";
+  return `<div class="tt-schedule-condition-row" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(id || "")}" data-filter-text="${escapeHtml(line.toLocaleLowerCase("ko"))}" style="display:grid;grid-template-columns:minmax(260px,1fr) 82px 82px minmax(160px,240px) 82px;gap:8px;align-items:center;border-bottom:1px solid #e2e8f0;padding:8px 10px;font-size:12px">
     <div title="${escapeHtml(line)}" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0f172a;font-weight:800">${escapeHtml(line)}</div>
     <input type="number" min="1" max="7" value="${duration}" data-field="duration" style="${inputStyle}">
     <input type="number" min="1" max="12" value="${rooms}" data-field="rooms" style="${inputStyle}">
-    <div style="text-align:center;color:${badge ? "#1d4ed8" : "#64748b"};font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(status)}">${escapeHtml(status)}</div>
+    <input type="text" value="${escapeHtml(manualRoomsText)}" data-field="manualRooms" placeholder="예: TH201, MH304" title="여러 교실은 쉼표로 입력합니다. 교실명 또는 room id 모두 가능합니다." style="${roomInputStyle}">
+    <div style="text-align:center;color:${badge || manualRoomIds.length ? "#1d4ed8" : "#64748b"};font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(status)}">${escapeHtml(status)}</div>
   </div>`;
 }
 function renderScheduleConditionPopupContent() {
@@ -1872,7 +1967,7 @@ function renderScheduleConditionPopupContent() {
     title: scheduleConditionTitleForCard(card),
   }));
   const inputStyle = "width:64px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:900;text-align:center;box-sizing:border-box";
-  const headerRow = `<div style="display:grid;grid-template-columns:minmax(260px,1fr) 82px 82px 82px;gap:8px;align-items:center;background:#f1f5f9;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:7px 10px;color:#334155;font-size:12px;font-weight:900"><div>과목 - 학년, 반, 교사</div><div style="text-align:center">연속</div><div style="text-align:center">교실</div><div style="text-align:center">상태</div></div>`;
+  const headerRow = `<div style="display:grid;grid-template-columns:minmax(260px,1fr) 82px 82px minmax(160px,240px) 82px;gap:8px;align-items:center;background:#f1f5f9;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:7px 10px;color:#334155;font-size:12px;font-weight:900"><div>과목 - 학년, 반, 교사</div><div style="text-align:center">연속</div><div style="text-align:center">교실수</div><div style="text-align:center">지정교실</div><div style="text-align:center">상태</div></div>`;
   const renderGradeBlocks = (items, type) => {
     const blocks = scheduleConditionRowsByGrade(items, item => item.grade).map(([grade, rows]) => {
       rows.sort((a, b) => scheduleConditionSortKey(a.title || a.line).localeCompare(scheduleConditionSortKey(b.title || b.line), "ko", { numeric: true, sensitivity: "base" }) || a.line.localeCompare(b.line, "ko", { numeric: true, sensitivity: "base" }));
@@ -1880,11 +1975,11 @@ function renderScheduleConditionPopupContent() {
         if (type === "group") {
           const d = getScheduleDurationForGroup(item.group, item.cards);
           const r = getRequiredRoomCountForGroup(item.group, item.cards);
-          return renderScheduleConditionRow({ kind: "group", id: item.group.id, line: item.line, duration: d, rooms: r, badge: scheduleConditionBadgeForObject(item.group, item.cards), inputStyle });
+          return renderScheduleConditionRow({ kind: "group", id: item.group.id, line: item.line, duration: d, rooms: r, manualRoomIds: scheduleConditionRoomIdsFromObject(getStoredScheduleCondition("group", item.group.id)).length ? scheduleConditionRoomIdsFromObject(getStoredScheduleCondition("group", item.group.id)) : scheduleConditionRoomIdsFromObject(item.group), badge: scheduleConditionBadgeForObject(item.group, item.cards), inputStyle });
         }
         const d = getScheduleDurationForTtCard(item.card);
         const r = getRequiredRoomCountForTtCard(item.card);
-        return renderScheduleConditionRow({ kind: "card", id: item.card.id, line: item.line, duration: d, rooms: r, badge: scheduleConditionBadgeForObject(item.card), inputStyle });
+        return renderScheduleConditionRow({ kind: "card", id: item.card.id, line: item.line, duration: d, rooms: r, manualRoomIds: scheduleConditionRoomIdsFromObject(getStoredScheduleCondition("card", item.card.id)).length ? scheduleConditionRoomIdsFromObject(getStoredScheduleCondition("card", item.card.id)) : scheduleConditionRoomIdsFromObject(item.card), badge: scheduleConditionBadgeForObject(item.card), inputStyle });
       }).join("");
       return `<section class="tt-schedule-condition-grade-block" data-grade="${escapeHtml(grade)}" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;margin-bottom:10px"><h4 style="margin:0;padding:8px 10px;background:#f8fafc;color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0">${escapeHtml(grade)} <span style="color:#64748b;font-size:12px;font-weight:800">${rows.length}개</span></h4>${headerRow}${rowHtml}</section>`;
     }).join("");
@@ -1897,7 +1992,7 @@ function renderScheduleConditionPopupContent() {
         <b style="color:#0f172a">현재 조건</b><span>그룹 ${summary.groupConditions}개 · 개별카드 ${summary.cardConditions}개</span>
         <input id="ttScheduleConditionSearch" type="search" placeholder="과목/학년/반/교사 검색" style="margin-left:auto;min-width:220px;max-width:360px;flex:1 1 220px;height:30px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px">
       </div>
-      <div style="margin-top:5px">조건이 없는 수업은 기본값 1교시·1교실입니다. 그룹 수업은 가능하면 <b>그룹 조건</b>에 먼저 설정하세요.</div>
+      <div style="margin-top:5px">조건이 없는 수업은 기본값 1교시·1교실입니다. 여러 교실을 수동 지정할 때는 지정교실 칸에 교실명을 쉼표로 입력하세요. 그룹 수업은 가능하면 <b>그룹 조건</b>에 먼저 설정하세요.</div>
     </div>
     <div style="padding:12px 14px;overflow:auto">
       <h3 style="margin:0 0 8px;font-size:14px;color:#0f172a">그룹 조건</h3>
@@ -1928,27 +2023,71 @@ async function saveScheduleConditionPopupChanges() {
   const body = $("ttScheduleConditionPopupBody");
   if (!body) return false;
   captureTimetableUndo("연속교시/필요교실 조건 변경");
-  let changedCount = 0;
+
+  const now = new Date().toISOString();
+  const freshStore = { version: SCHEDULE_CONDITION_STORE_VERSION, updatedAt: now, groups: {}, cards: {} };
+  const pending = [];
+  const invalidRows = [];
+
   body.querySelectorAll(".tt-schedule-condition-row[data-kind][data-id]").forEach(row => {
     const kind = row.getAttribute("data-kind");
     const id = row.getAttribute("data-id");
     const duration = normalizeSchedulePositiveInt(row.querySelector('[data-field="duration"]')?.value, 1, { min: 1, max: 7 });
-    const rooms = normalizeSchedulePositiveInt(row.querySelector('[data-field="rooms"]')?.value, 1, { min: 1, max: 12 });
+    const rawRooms = normalizeSchedulePositiveInt(row.querySelector('[data-field="rooms"]')?.value, 1, { min: 1, max: 12 });
+    const manualInput = row.querySelector('[data-field="manualRooms"]')?.value || "";
+    const parsed = normalizeRoomIdListForScheduleCondition(manualInput);
+    if (parsed.invalid.length) {
+      invalidRows.push({ line: row.querySelector("div")?.textContent || id, invalid: parsed.invalid });
+      row.style.outline = "2px solid #ef4444";
+    } else {
+      row.style.outline = "";
+    }
+    const manualRoomIds = parsed.ids;
+    const rooms = Math.max(rawRooms, manualRoomIds.length || 1);
+    pending.push({ kind, id, duration, rooms, manualRoomIds });
+  });
+
+  if (invalidRows.length) {
+    alert(`지정교실 입력 중 존재하지 않는 교실명이 있습니다.\n\n${invalidRows.slice(0, 5).map(r => `${r.line}: ${r.invalid.join(", ")}`).join("\n")}`);
+    return false;
+  }
+
+  let changedCount = 0;
+  pending.forEach(({ kind, id, duration, rooms, manualRoomIds }) => {
+    const rowData = {
+      durationPeriods: duration,
+      continuousPeriods: duration,
+      requiredRoomCount: rooms,
+      multiRoomCount: rooms,
+      manualRoomIds,
+      fixedRoomIds: manualRoomIds,
+      solverFixedRoomIds: manualRoomIds,
+      requiredRoomIds: manualRoomIds,
+      roomIds: manualRoomIds,
+      updatedAt: now,
+    };
+    if (duration > 1 || rooms > 1 || manualRoomIds.length) {
+      const bucket = kind === "group" ? freshStore.groups : freshStore.cards;
+      bucket[id] = rowData;
+    }
     if (kind === "group") {
       const group = (appState.timetable?.ttcardGroups || []).find(g => g.id === id);
-      if (group) { setScheduleObjectFields(group, { durationPeriods: duration, requiredRoomCount: rooms }, "group"); changedCount += 1; }
+      if (group) { setScheduleObjectFields(group, { durationPeriods: duration, requiredRoomCount: rooms, manualRoomIds }, "group", { skipStore: true, clearManualRooms: !manualRoomIds.length }); changedCount += 1; }
     } else if (kind === "card") {
       const card = (appState.timetable?.ttcards || []).find(c => c.id === id);
-      if (card) { setScheduleObjectFields(card, { durationPeriods: duration, requiredRoomCount: rooms }, "card"); changedCount += 1; }
+      if (card) { setScheduleObjectFields(card, { durationPeriods: duration, requiredRoomCount: rooms, manualRoomIds }, "card", { skipStore: true, clearManualRooms: !manualRoomIds.length }); changedCount += 1; }
     }
   });
-  const store = mirrorScheduleConditionStoreToPersistentPlaces();
+
+  const store = assignFreshScheduleConditionStore(freshStore);
   const domain = appState.timetable || (appState.timetable = {});
   if (!domain.autoAssignMeta || typeof domain.autoAssignMeta !== "object") domain.autoAssignMeta = {};
-  domain.autoAssignMeta.scheduleConditionLastSavedAt = new Date().toISOString();
+  domain.autoAssignMeta.scheduleConditionLastSavedAt = now;
   domain.autoAssignMeta.scheduleConditionSavedRowCount = changedCount;
   domain.autoAssignMeta.scheduleConditionStoredGroupCount = Object.keys(store.groups || {}).length;
   domain.autoAssignMeta.scheduleConditionStoredCardCount = Object.keys(store.cards || {}).length;
+  domain.autoAssignMeta.scheduleConditionManualRoomRowCount = [...Object.values(store.groups || {}), ...Object.values(store.cards || {})].filter(row => scheduleConditionRoomIdsFromObject(row).length).length;
+
   applyStoredScheduleConditionsToTimetable({ persist: false });
   scheduleSave("timetable");
   try {
@@ -1956,15 +2095,14 @@ async function saveScheduleConditionPopupChanges() {
     if (typeof savePendingNow === "function") await savePendingNow();
   } catch (e) {
     console.warn("연속교시/필요교실 조건 즉시저장 실패", e);
-    alert(`조건을 화면에는 반영했지만 즉시 저장에 실패했습니다. 저장 상태를 확인한 뒤 CP-SAT을 실행하세요.
-
-${e?.message || e}`);
+    alert(`조건을 화면에는 반영했지만 즉시 저장에 실패했습니다. 저장 상태를 확인한 뒤 CP-SAT을 실행하세요.\n\n${e?.message || e}`);
     return false;
   }
   renderScheduleConditionPopupContent();
   renderManualCardVaultPanel();
   return true;
 }
+
 function openScheduleConditionPopup() {
   const old = $("ttScheduleConditionPopup");
   if (old) old.remove();

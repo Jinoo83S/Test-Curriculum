@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-06-condition-save-graded-cardlist-r222";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-06-manual-multiroom-server-r223";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -9,9 +9,9 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r187/HIS_CP_SAT_Local_Server_r187.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r222";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r222 CP-SAT API bridge";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r188/HIS_CP_SAT_Local_Server_r188.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r223";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r223 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -345,9 +345,9 @@ function applyFixedRoomPreflightForSolverPayload(data = {}) {
   const roster = teacherRosterSetForPayload(data);
   const teacherConstraints = tt.teacherConstraints && typeof tt.teacherConstraints === "object" ? tt.teacherConstraints : {};
   const meta = {
-    version: "r222",
+    version: "r223",
     generatedAt: nowIso(),
-    rule: "specified/classHomeroom/teacherOwnRoom fixed before CP-SAT; teacher homeRoomId ignored",
+    rule: "specified/manualMultiRooms/classHomeroom/teacherOwnRoom fixed before CP-SAT; teacher homeRoomId ignored",
     totalCards: cards.length,
     fixedCards: 0,
     bySource: {},
@@ -404,30 +404,82 @@ function requiredRoomCountForPayload(obj = {}) {
     { min: 1, max: 12 }
   );
 }
-function storedScheduleConditionForPayload(tt = {}, kind = "card", id = "") {
+function normalizeRoomIdListForPayload(value = [], rooms = []) {
+  const raw = Array.isArray(value) ? value : String(value || "").split(/[,，;；
+]+/);
+  const roomList = asArray(rooms);
+  const byId = new Map(roomList.map(r => [cleanLocal(r?.id), cleanLocal(r?.id)]).filter(([id]) => id));
+  const byName = new Map(roomList.map(r => [cleanLocal(r?.name).toLocaleLowerCase("ko"), cleanLocal(r?.id)]).filter(([name, id]) => name && id));
+  const ids = [];
+  raw.map(cleanLocal).filter(Boolean).forEach(token => {
+    const id = byId.get(token) || byName.get(token.toLocaleLowerCase("ko")) || "";
+    if (id && !ids.includes(id)) ids.push(id);
+  });
+  return ids;
+}
+function scheduleConditionRoomIdsForPayload(row = {}, rooms = []) {
+  const candidates = [row.manualRoomIds, row.fixedRoomIds, row.solverFixedRoomIds, row.requiredRoomIds, row.roomIds, row.manualRooms, row.fixedRooms, row.roomNames];
+  for (const value of candidates) {
+    const ids = normalizeRoomIdListForPayload(value || [], rooms);
+    if (ids.length) return ids;
+  }
+  return [];
+}
+function normalizeScheduleConditionRowForPayload(row = {}, rooms = []) {
+  if (!row || typeof row !== "object") return {};
+  const roomIds = scheduleConditionRoomIdsForPayload(row, rooms);
+  const duration = durationPeriodsForPayload(row);
+  const roomCount = Math.max(requiredRoomCountForPayload(row), roomIds.length || 1);
+  if (duration <= 1 && roomCount <= 1 && !roomIds.length) return {};
+  return {
+    durationPeriods: duration,
+    continuousPeriods: duration,
+    solverDurationPeriods: duration,
+    requiredRoomCount: roomCount,
+    multiRoomCount: roomCount,
+    solverRequiredRoomCount: roomCount,
+    manualRoomIds: roomIds,
+    fixedRoomIds: roomIds,
+    solverFixedRoomIds: roomIds,
+    requiredRoomIds: roomIds,
+    roomIds,
+    updatedAt: cleanLocal(row.updatedAt || row.scheduleConditionEditedAt || "")
+  };
+}
+function storedScheduleConditionForPayload(tt = {}, kind = "card", id = "", rooms = []) {
   const key = cleanLocal(id);
   if (!key) return {};
   const sources = [tt.scheduleConditions, tt.autoAssignMeta?.scheduleConditions].filter(src => src && typeof src === "object");
   let out = {};
   sources.forEach(store => {
     const bucket = kind === "group" ? store.groups : store.cards;
-    const row = bucket?.[key];
-    if (!row || typeof row !== "object") return;
-    const d = Math.max(durationPeriodsForPayload(out), durationPeriodsForPayload(row));
-    const r = Math.max(requiredRoomCountForPayload(out), requiredRoomCountForPayload(row));
-    if (d > 1 || r > 1) out = { durationPeriods: d, continuousPeriods: d, requiredRoomCount: r, multiRoomCount: r };
+    const row = normalizeScheduleConditionRowForPayload(bucket?.[key], rooms);
+    if (!row || !Object.keys(row).length) return;
+    if (!out.updatedAt || cleanLocal(row.updatedAt) >= cleanLocal(out.updatedAt)) out = row;
   });
   return out;
 }
-function mergeScheduleConditionForPayload(tt = {}, obj = {}, kind = "card") {
-  const row = storedScheduleConditionForPayload(tt, kind, obj?.id);
+function mergeScheduleConditionForPayload(tt = {}, obj = {}, kind = "card", rooms = []) {
+  const row = storedScheduleConditionForPayload(tt, kind, obj?.id, rooms);
   if (!row || !Object.keys(row).length) return obj;
-  obj.durationPeriods = Math.max(durationPeriodsForPayload(obj), durationPeriodsForPayload(row));
+  obj.durationPeriods = durationPeriodsForPayload(row);
   obj.continuousPeriods = obj.durationPeriods;
   obj.solverDurationPeriods = obj.durationPeriods;
-  obj.requiredRoomCount = Math.max(requiredRoomCountForPayload(obj), requiredRoomCountForPayload(row));
+  obj.requiredRoomCount = Math.max(requiredRoomCountForPayload(row), scheduleConditionRoomIdsForPayload(row, rooms).length || 1);
   obj.multiRoomCount = obj.requiredRoomCount;
   obj.solverRequiredRoomCount = obj.requiredRoomCount;
+  const manualRoomIds = scheduleConditionRoomIdsForPayload(row, rooms);
+  if (manualRoomIds.length) {
+    obj.manualRoomIds = manualRoomIds;
+    obj.fixedRoomIds = manualRoomIds;
+    obj.solverFixedRoomIds = manualRoomIds;
+    obj.requiredRoomIds = manualRoomIds;
+    obj.roomIds = unique([...(obj.roomIds || []), ...manualRoomIds]);
+    if (kind === "card") {
+      obj.roomRule = "fixed";
+      obj.fixedRoomId = manualRoomIds[0];
+    }
+  }
   return obj;
 }
 function applyScheduleConditionPreflightForSolverPayload(data = {}) {
@@ -435,10 +487,11 @@ function applyScheduleConditionPreflightForSolverPayload(data = {}) {
   const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
   const groups = asArray(tt.ttcardGroups || tt.ttCardGroups);
   const cardById = new Map(cards.map(card => [cleanLocal(card?.id), card]).filter(([id]) => id));
+  const roomsList = asArray(data?.rooms?.rooms);
   const meta = {
-    version: "r222",
+    version: "r223",
     generatedAt: nowIso(),
-    rule: "durationPeriods/requiredRoomCount are normalized before CP-SAT payload.",
+    rule: "durationPeriods/requiredRoomCount/manualRoomIds are normalized before CP-SAT payload.",
     cardDurationCount: 0,
     cardRoomCount: 0,
     groupDurationCount: 0,
@@ -464,11 +517,11 @@ function applyScheduleConditionPreflightForSolverPayload(data = {}) {
     return { duration, rooms };
   };
   cards.forEach(card => {
-    mergeScheduleConditionForPayload(tt, card, "card");
+    mergeScheduleConditionForPayload(tt, card, "card", roomsList);
     applyObj(card, "card", cleanLocal(card?.subject || card?.label || card?.nameKo || card?.name || card?.id));
   });
   groups.forEach(group => {
-    mergeScheduleConditionForPayload(tt, group, "group");
+    mergeScheduleConditionForPayload(tt, group, "group", roomsList);
     const groupCardIds = unique([...(group?.poolCardIds || []), ...(group?.excludedCardIds || []), ...(group?.units || []).flatMap(unit => unit?.ttcardIds || [])]);
     const groupCards = groupCardIds.map(id => cardById.get(cleanLocal(id))).filter(Boolean);
     const ownDuration = durationPeriodsForPayload(group);
@@ -501,7 +554,7 @@ function filterSolverSeedEntriesForPayload(entries = [], tt = {}) {
   const kept = list.filter(e => isSolverSeedEntryForPayload(e, list.length));
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.cpSatEntrySeedPreflight = {
-    version: "r222",
+    version: "r223",
     originalEntryCount: list.length,
     keptSeedEntryCount: kept.length,
     droppedGeneratedEntryCount: Math.max(0, list.length - kept.length),
@@ -1210,7 +1263,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r222\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r223\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1337,11 +1390,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r187.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r188.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r187에 <code>HIS_CP_SAT_Local_Server_r187.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r188에 <code>HIS_CP_SAT_Local_Server_r188.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
 
@@ -1353,7 +1406,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>현재검증 메타 갱신 완료</b><br>${escapeHtml(body?.validation?.summary || "현재검증 완료")}<br><span style="font-size:11px;color:#64748b">현재 entries ${asArray(entries?.()).length}개 기준으로 autoAssignMeta를 저장했습니다.</span>`, 100);
         renderApiSummary(body, "refresh-current-meta");
       } catch (err) {
-        setStatus("bad", `<b>현재검증 메타 갱신 실패</b><br>${escapeHtml(err?.message || err)}<br><br>로컬 서버 r187 이상이 실행 중인지 확인하세요.`, 0);
+        setStatus("bad", `<b>현재검증 메타 갱신 실패</b><br>${escapeHtml(err?.message || err)}<br><br>로컬 서버 r188 이상이 실행 중인지 확인하세요.`, 0);
       } finally { setBusy(false); }
     });
 

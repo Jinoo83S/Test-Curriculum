@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-07-06-condition-save-graded-cardlist-r222";
+import { versioned } from "./version.js?v=2026-07-06-manual-multiroom-server-r223";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",
