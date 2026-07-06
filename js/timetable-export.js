@@ -8,7 +8,7 @@
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const COMMON_BRIEF_SUBJECTS = ["CA", "SA"];
-const EXPORT_STYLE_ID = "ttExportDialogR206Style";
+const EXPORT_STYLE_ID = "ttExportDialogR233Style";
 
 function clean(value) {
   return String(value ?? "").trim();
@@ -165,6 +165,126 @@ function getPeriodLabels(ttConfig) {
   return Array.from({ length: count }, (_, i) => periodDisplayLabel(labels[i] || `${i + 1}`, i));
 }
 
+
+const PRINT_FIELD_DEFS = [
+  { key: "subject", label: "과목", defaultPos: "mc", defaultBold: true },
+  { key: "english", label: "영문명", defaultPos: "bc", defaultBold: false },
+  { key: "teacher", label: "교사", defaultPos: "bl", defaultBold: false },
+  { key: "room", label: "교실", defaultPos: "br", defaultBold: true },
+  { key: "class", label: "반", defaultPos: "tl", defaultBold: false },
+  { key: "period", label: "수업시간대", defaultPos: "tr", defaultBold: false },
+];
+const PRINT_POSITIONS = [
+  ["tl", "↖ 위 왼쪽"], ["tc", "↑ 위 중앙"], ["tr", "↗ 위 오른쪽"],
+  ["ml", "← 가운데 왼쪽"], ["mc", "● 가운데"], ["mr", "→ 가운데 오른쪽"],
+  ["bl", "↙ 아래 왼쪽"], ["bc", "↓ 아래 중앙"], ["br", "↘ 아래 오른쪽"],
+];
+
+function defaultPrintFieldSettings() {
+  return Object.fromEntries(PRINT_FIELD_DEFS.map(def => [def.key, {
+    enabled: def.key !== "period",
+    bold: !!def.defaultBold,
+    pos: def.defaultPos,
+  }]));
+}
+
+function normalizePrintSettings(raw = {}) {
+  const defaults = {
+    renderMode: "cards",
+    cellLayout: "auto",
+    applyMode: "card",
+    fontScale: "normal",
+    fields: defaultPrintFieldSettings(),
+  };
+  const fields = defaultPrintFieldSettings();
+  Object.entries(raw?.fields || {}).forEach(([key, value]) => {
+    if (!fields[key]) return;
+    fields[key] = {
+      ...fields[key],
+      enabled: value?.enabled !== false,
+      bold: !!value?.bold,
+      pos: PRINT_POSITIONS.some(([pos]) => pos === value?.pos) ? value.pos : fields[key].pos,
+    };
+  });
+  return {
+    ...defaults,
+    ...raw,
+    renderMode: ["cards", "legacy"].includes(raw?.renderMode) ? raw.renderMode : defaults.renderMode,
+    cellLayout: ["auto", "vertical", "columns", "grid"].includes(raw?.cellLayout) ? raw.cellLayout : defaults.cellLayout,
+    applyMode: ["card", "cell"].includes(raw?.applyMode) ? raw.applyMode : defaults.applyMode,
+    fontScale: ["small", "normal", "large"].includes(raw?.fontScale) ? raw.fontScale : defaults.fontScale,
+    fields,
+  };
+}
+
+function printSettingsSummary(settings = {}) {
+  const s = normalizePrintSettings(settings);
+  if (s.renderMode === "legacy") return "기존 줄 출력";
+  const visible = PRINT_FIELD_DEFS.filter(def => s.fields[def.key]?.enabled).map(def => def.label).join("/") || "표시 항목 없음";
+  const layout = s.cellLayout === "auto" ? "자동분할" : s.cellLayout === "grid" ? "2×2" : s.cellLayout === "columns" ? "가로" : "세로";
+  return `${layout} · ${visible}`;
+}
+
+function applyPrintPreset(backdrop, preset = "basic") {
+  const settings = normalizePrintSettings();
+  if (preset === "simple") {
+    Object.values(settings.fields).forEach(field => { field.enabled = false; field.bold = false; });
+    settings.fields.subject.enabled = true;
+    settings.fields.subject.bold = true;
+    settings.fields.subject.pos = "mc";
+    settings.fields.room.enabled = true;
+    settings.fields.room.bold = false;
+    settings.fields.room.pos = "bc";
+    settings.fields.english.enabled = false;
+  } else if (preset === "detail") {
+    Object.values(settings.fields).forEach(field => { field.enabled = true; });
+    settings.fields.subject.bold = true;
+    settings.fields.room.bold = true;
+    settings.fields.class.pos = "tl";
+    settings.fields.period.pos = "tr";
+    settings.fields.teacher.pos = "bl";
+    settings.fields.room.pos = "br";
+    settings.fields.english.pos = "bc";
+  } else {
+    settings.fields.subject.enabled = true;
+    settings.fields.english.enabled = true;
+    settings.fields.teacher.enabled = true;
+    settings.fields.room.enabled = true;
+    settings.fields.class.enabled = false;
+    settings.fields.period.enabled = false;
+  }
+  backdrop.querySelector('[data-print-render-mode]').value = settings.renderMode;
+  backdrop.querySelector('[data-print-cell-layout]').value = settings.cellLayout;
+  backdrop.querySelector('[data-print-apply-mode]').value = settings.applyMode;
+  backdrop.querySelector('[data-print-font-scale]').value = settings.fontScale;
+  PRINT_FIELD_DEFS.forEach(def => {
+    const enabled = backdrop.querySelector(`[data-print-field-enabled="${def.key}"]`);
+    const bold = backdrop.querySelector(`[data-print-field-bold="${def.key}"]`);
+    const pos = backdrop.querySelector(`[data-print-field-pos="${def.key}"]`);
+    if (enabled) enabled.checked = !!settings.fields[def.key].enabled;
+    if (bold) bold.checked = !!settings.fields[def.key].bold;
+    if (pos) pos.value = settings.fields[def.key].pos;
+  });
+}
+
+function getPrintSettingsFromDialog(backdrop) {
+  const fields = {};
+  PRINT_FIELD_DEFS.forEach(def => {
+    fields[def.key] = {
+      enabled: !!backdrop.querySelector(`[data-print-field-enabled="${def.key}"]`)?.checked,
+      bold: !!backdrop.querySelector(`[data-print-field-bold="${def.key}"]`)?.checked,
+      pos: clean(backdrop.querySelector(`[data-print-field-pos="${def.key}"]`)?.value) || def.defaultPos,
+    };
+  });
+  return normalizePrintSettings({
+    renderMode: clean(backdrop.querySelector('[data-print-render-mode]')?.value) || "cards",
+    cellLayout: clean(backdrop.querySelector('[data-print-cell-layout]')?.value) || "auto",
+    applyMode: clean(backdrop.querySelector('[data-print-apply-mode]')?.value) || "card",
+    fontScale: clean(backdrop.querySelector('[data-print-font-scale]')?.value) || "normal",
+    fields,
+  });
+}
+
 function ensureStyle() {
   if (document.getElementById(EXPORT_STYLE_ID)) return;
   const style = document.createElement("style");
@@ -178,6 +298,7 @@ function ensureStyle() {
     .tt-export-info{margin-top:12px;padding:12px;border:1px dashed #bfdbfe;border-radius:10px;background:#eff6ff;color:#1e3a8a;font-size:12px;line-height:1.55}.tt-export-preview{margin-top:10px;padding:10px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;font-size:12px;color:#334155;line-height:1.55;max-height:180px;overflow:auto}
     .tt-export-scope{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:12px}.tt-export-scope h4{margin:0 0 10px;font-size:13px}.tt-export-scope label{display:flex;align-items:center;gap:8px;margin:8px 0;padding:8px 9px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:13px;font-weight:900;color:#1e293b;cursor:pointer}.tt-export-scope input{width:16px;height:16px}.tt-export-class-scopes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed #cbd5e1}.tt-export-class-scopes label{justify-content:center;margin:0;padding:7px 5px;font-size:12px;font-weight:400}.tt-export-class-scopes.is-disabled{opacity:.42;pointer-events:none}.tt-export-scope p{margin:10px 0 0;font-size:11px;color:#64748b;line-height:1.45}.tt-export-special-scopes{padding:0 16px 12px}.tt-export-special-panel{border:1px solid #dbe4f0;border-radius:12px;background:#f8fafc;padding:11px}.tt-export-special-panel .tt-export-special-title{display:block;margin-bottom:7px;font-size:12px;font-weight:400;color:#334155}.tt-export-special-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;max-height:138px;overflow:auto;padding-right:2px}.tt-export-special-scopes label{display:flex;align-items:center;gap:7px;margin:0;padding:7px 8px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;font-size:12px;font-weight:400;color:#1e293b;cursor:pointer}.tt-export-special-scopes input{width:16px;height:16px}.tt-export-special-scopes p{margin:8px 0 0;font-size:11px;color:#64748b;line-height:1.45}@media(max-width:760px){.tt-export-special-list{grid-template-columns:1fr 1fr}}
     .tt-export-foot{display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e2e8f0;background:#f8fafc}.tt-export-foot button{height:34px;padding:0 14px;border:1px solid #94a3b8;border-radius:8px;background:#fff;font-weight:900;cursor:pointer}.tt-export-foot .tt-export-run{background:#2563eb;border-color:#2563eb;color:#fff}
+    .tt-print-settings{margin-top:12px;border:1px solid #dbe4f0;border-radius:12px;background:#fff;overflow:hidden}.tt-print-settings-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;background:#f8fafc;border-bottom:1px solid #e2e8f0}.tt-print-settings-head strong{font-size:13px}.tt-print-presets{display:flex;gap:5px;flex-wrap:wrap}.tt-print-presets button{height:26px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;padding:0 9px;font-size:11px;font-weight:800;cursor:pointer}.tt-print-settings-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px 12px;border-bottom:1px dashed #e2e8f0}.tt-print-settings-grid label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:900;color:#475569}.tt-print-settings-grid select{height:30px;border:1px solid #cbd5e1;border-radius:8px;padding:3px 7px;background:#fff;font-size:12px}.tt-print-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;padding:10px 12px}.tt-print-field{display:grid;grid-template-columns:auto 1fr auto 118px;align-items:center;gap:7px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc;padding:6px 7px;font-size:12px}.tt-print-field input{width:15px;height:15px}.tt-print-field b{font-size:12px;color:#0f172a}.tt-print-field .bold-label{display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b;font-weight:700}.tt-print-field select{height:28px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;font-size:11px;padding:2px 5px}.tt-print-hint{padding:0 12px 10px;font-size:11px;color:#64748b;line-height:1.45}.tt-print-settings.is-hidden{display:none}@media(max-width:900px){.tt-print-settings-grid{grid-template-columns:1fr 1fr}.tt-print-fields{grid-template-columns:1fr}.tt-print-field{grid-template-columns:auto 1fr auto 112px}}
   `;
   document.head.appendChild(style);
 }
@@ -1142,6 +1263,111 @@ function roomScopedLessonLines(entry = {}, rooms = [], deps = {}, scope = {}) {
   return lines.filter(line => clean(line)).join("\n");
 }
 
+
+function lessonItemFromCard(cardId = "", card = {}, entry = {}, rooms = [], deps = {}, overrides = {}) {
+  const parts = cardTitlePartsForExport(card || {}, deps);
+  const fallback = entryTitlePartsForExport({ ...entry, ttcardId: cardId, ttcardIds: [cardId] }, deps);
+  const titleParts = (parts.ko || parts.en) ? parts : fallback;
+  const roomId = clean(overrides.roomId || roomIdForCardExport(cardId, card, entry, rooms, deps));
+  const room = roomId ? roomNameForId(roomId, rooms, deps) : "";
+  const classes = unique([...(overrides.classes || []), ...classLabelsForCard(card || {})]).filter(Boolean);
+  return {
+    subject: titleParts.ko || titleParts.en || "-",
+    english: titleParts.en || "",
+    teacher: clean(overrides.teacher || teacherNamesForCard(card || {}, deps).join(" / ")),
+    room,
+    class: classes.join(", "),
+    period: clean(overrides.period || ""),
+  };
+}
+
+function lessonItemFromEntry(entry = {}, rooms = [], deps = {}, overrides = {}) {
+  const parts = entryTitlePartsForExport(entry, deps);
+  let classes = [];
+  try {
+    const audience = deps.audienceForPlacement?.(entry);
+    classes = toArrayFromSet(audience?.classLabels).filter(Boolean);
+  } catch (_) {}
+  if (!classes.length && Array.isArray(entry?.audienceClassKeys)) {
+    classes = entry.audienceClassKeys.map(classLabelFromKey).filter(Boolean);
+  }
+  return {
+    subject: parts.ko || parts.en || clean(entry.subject || entry.title || "-"),
+    english: parts.en || "",
+    teacher: clean(overrides.teacher || entry.teacherName || (entry.teacherNames || []).join(" / ")),
+    room: clean(overrides.room || roomNamesForEntry(entry, rooms, deps)),
+    class: clean(overrides.class || unique(classes).join(", ")),
+    period: clean(overrides.period || ""),
+  };
+}
+
+function entryLessonItemsForExport(entry = {}, mode = "normal", scope = {}, rooms = [], deps = {}, rosterCtx = {}, selectedSpecialSubjects = [], periodLabel = "") {
+  const period = clean(periodLabel);
+  if (mode !== "teacher" && shouldUseRepresentativeOutput(entry, deps, selectedSpecialSubjects)) {
+    const represented = representativeLessonLines(entry, mode, scope, rooms, deps, selectedSpecialSubjects);
+    if (represented) {
+      const lines = String(represented).split(/\n/).map(clean).filter(Boolean);
+      return [{ subject: lines[0] || represented, english: "", teacher: "", room: lines.slice(1).join(" · "), class: "", period }];
+    }
+  }
+
+  if (mode === "class") {
+    const ids = scopedCardIdsForEntry(entry, scope, deps);
+    if (ids.length && typeof deps.getTtCardById === "function") {
+      const items = ids.map(cardId => lessonItemFromCard(cardId, deps.getTtCardById(cardId), entry, rooms, deps, { period }))
+        .filter(item => clean(item.subject));
+      if (items.length) return items;
+    }
+    return [lessonItemFromEntry(entry, rooms, deps, { period })];
+  }
+
+  if (mode === "teacher") {
+    const teacher = clean(scope.key || scope.label || scope.teacher || "");
+    const cardIds = entryCardIds(entry);
+    const items = [];
+    if (teacher && cardIds.length && typeof deps.getTtCardById === "function") {
+      cardIds.forEach(cardId => {
+        const card = deps.getTtCardById(cardId);
+        if (!cardMatchesTeacher(card, teacher, deps)) return;
+        const item = lessonItemFromCard(cardId, card, entry, rooms, deps, { period });
+        const room = teacherRoomForCard(cardId, card, entry, rooms, deps);
+        if (room) item.room = room;
+        if (!item.class) item.class = classLabelsForCard(card).join(", ");
+        items.push(item);
+      });
+    }
+    if (items.length) return items;
+    const directTeachers = splitTeacherField(entry.teacherName || entry.teacherNames || "", deps).map(clean);
+    if (!teacher || directTeachers.includes(teacher)) return [lessonItemFromEntry(entry, rooms, deps, { period })];
+    return [];
+  }
+
+  if (mode === "room") {
+    const room = (rooms || []).find(r => clean(r.id) === clean(scope.key || scope.roomId || scope.id)) || scope;
+    const matching = roomScopedCardsForEntry(entry, room, rooms, deps);
+    if (matching.length) {
+      return matching.map(({ cardId, card }) => lessonItemFromCard(cardId, card, entry, rooms, deps, { period }))
+        .filter(item => clean(item.subject));
+    }
+    if (entryCardIds(entry).length > 1) return [];
+    const targetRoomId = clean(room?.id || scope.key || "");
+    if (targetRoomId && !roomIdsForEntry(entry, rooms, deps).includes(targetRoomId)) return [];
+    return [lessonItemFromEntry(entry, rooms, deps, { period })];
+  }
+
+  if (mode === "student") {
+    const ids = studentScopedCardIdsForEntry(entry, scope, deps, rosterCtx);
+    if (!ids.length) return [];
+    if (ids.length === 1 && ids[0] === "__entry__") return [lessonItemFromEntry(entry, rooms, deps, { period })];
+    const items = ids.map(cardId => lessonItemFromCard(cardId, deps.getTtCardById?.(cardId), entry, rooms, deps, { period }))
+      .filter(item => clean(item.subject));
+    if (items.length) return items;
+    return [lessonItemFromEntry(entry, rooms, deps, { period })];
+  }
+
+  return [lessonItemFromEntry(entry, rooms, deps, { period })];
+}
+
 function buildExportContext(deps = {}) {
   const rooms = (() => {
     try {
@@ -1236,6 +1462,11 @@ function buildExportContext(deps = {}) {
     return [...titleLines, teacher, classes, room].filter(Boolean).join("\n");
   };
 
+  const entryItems = (entry, mode = "normal", scope = {}, periodLabel = "") => {
+    const selectedSpecialSubjects = normalizeSpecialSubjectSelection(scope?.specialSubjects || []);
+    return entryLessonItemsForExport(entry, mode, scope, rooms, deps, rosterCtx, selectedSpecialSubjects, periodLabel);
+  };
+
   const teacherMatches = (entry, teacher) => {
     const target = clean(teacher);
     if (!target) return false;
@@ -1289,7 +1520,7 @@ function buildExportContext(deps = {}) {
     .filter(e => e.day === day && e.period === period && filterFn(e))
     .sort((a, b) => String(entryTitleForExport(a, deps) || "").localeCompare(String(entryTitleForExport(b, deps) || ""), "ko"));
 
-  return { rooms, periods, entries, appState, entrySummary, teacherMatches, classMatches, roomMatches, studentMatches, getGridEntries, entryAllowedByBands, entryAllowedByScope, entryAllowedBySpecial };
+  return { rooms, periods, entries, appState, entrySummary, entryItems, teacherMatches, classMatches, roomMatches, studentMatches, getGridEntries, entryAllowedByBands, entryAllowedByScope, entryAllowedBySpecial };
 }
 
 function getScopeFromDialog(backdrop) {
@@ -1543,7 +1774,64 @@ function lessonHtml(text) {
   return `<div class="lesson${hasParallel ? " lesson-has-parallel" : ""}${lessonDensityClass(lines)}" data-fit="1">${body}</div>`;
 }
 
-function buildIndividualSections(entities, ctx, type) {
+function printFieldValue(item = {}, key = "") {
+  if (key === "subject") return clean(item.subject);
+  if (key === "english") return clean(item.english);
+  if (key === "teacher") return clean(item.teacher);
+  if (key === "room") return clean(item.room);
+  if (key === "class") return clean(item.class);
+  if (key === "period") return clean(item.period);
+  return "";
+}
+
+function lessonCardHtml(item = {}, settings = {}) {
+  const normalized = normalizePrintSettings(settings);
+  const buckets = Object.fromEntries(PRINT_POSITIONS.map(([pos]) => [pos, []]));
+  PRINT_FIELD_DEFS.forEach(def => {
+    const field = normalized.fields[def.key];
+    if (!field?.enabled) return;
+    const value = printFieldValue(item, def.key);
+    if (!value) return;
+    const cls = ["lesson-card-field", `field-${def.key}`, field.bold ? "is-bold" : ""].filter(Boolean).join(" ");
+    const label = def.key === "period" ? `<span class="field-caption">${escapeHtml(def.label)}</span>` : "";
+    buckets[field.pos || def.defaultPos]?.push(`<span class="${cls}">${label}${escapeHtml(value)}</span>`);
+  });
+  const positions = PRINT_POSITIONS.map(([pos]) => {
+    const html = buckets[pos]?.join("") || "";
+    return html ? `<div class="lesson-pos lesson-pos-${pos}">${html}</div>` : "";
+  }).join("");
+  const fallback = escapeHtml(clean(item.subject || item.english || item.teacher || item.room || "-"));
+  return `<div class="lesson-card-mini">${positions || `<div class="lesson-pos lesson-pos-mc"><span class="lesson-card-field is-bold">${fallback}</span></div>`}</div>`;
+}
+
+function lessonCardsHtml(items = [], settings = {}) {
+  const normalized = normalizePrintSettings(settings);
+  const realItems = (items || []).filter(item => item && Object.values(item).some(clean));
+  if (!realItems.length) return "";
+  const countClass = `count-${Math.min(4, realItems.length)}`;
+  const layoutClass = normalized.cellLayout === "auto"
+    ? (realItems.length >= 3 ? "layout-grid" : realItems.length === 2 ? "layout-columns" : "layout-single")
+    : `layout-${normalized.cellLayout}`;
+  return `<div class="lesson-card-grid ${countClass} ${layoutClass} font-${normalized.fontScale}" data-fit="1">${realItems.map(item => lessonCardHtml(item, normalized)).join("")}</div>`;
+}
+
+function cellHtmlForPrint(entries = [], ctx = {}, entity = {}, periodLabel = "", printSettings = {}) {
+  const settings = normalizePrintSettings(printSettings);
+  if (settings.renderMode === "legacy") {
+    return entries.map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
+  }
+  const itemGroups = entries.map(e => {
+    const items = ctx.entryItems?.(e, entity.mode, entity, periodLabel) || [];
+    return items.length ? items : [lessonItemFromEntry(e, ctx.rooms, {}, { period: periodLabel })];
+  }).filter(group => group.length);
+  if (!itemGroups.length) return "";
+  if (settings.applyMode === "cell") {
+    return lessonCardsHtml(itemGroups.flat(), settings);
+  }
+  return itemGroups.map(group => lessonCardsHtml(group, settings)).join("");
+}
+
+function buildIndividualSections(entities, ctx, type, printSettings = {}) {
   let lastGroup = "";
   return entities.map(entity => {
     const groupHeader = type === "student" && entity.groupLabel !== lastGroup
@@ -1552,8 +1840,8 @@ function buildIndividualSections(entities, ctx, type) {
     lastGroup = entity.groupLabel;
     const rows = ctx.periods.map((label, period) => {
       const tds = DAYS.map((_, day) => {
-        const html = ctx.getGridEntries(day, period, entity.filterFn)
-          .map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
+        const cellEntries = ctx.getGridEntries(day, period, entity.filterFn);
+        const html = cellHtmlForPrint(cellEntries, ctx, entity, label, printSettings);
         return `<td${html ? "" : " class='empty'"}>${html}</td>`;
       }).join("");
       return `<tr><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
@@ -1564,12 +1852,12 @@ function buildIndividualSections(entities, ctx, type) {
   }).join("\n");
 }
 
-function buildCombinedSection(entities, ctx, title) {
+function buildCombinedSection(entities, ctx, title, printSettings = {}) {
   const rows = entities.map(entity => {
     return ctx.periods.map((label, period) => {
       const tds = DAYS.map((_, day) => {
-        const html = ctx.getGridEntries(day, period, entity.filterFn)
-          .map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
+        const cellEntries = ctx.getGridEntries(day, period, entity.filterFn);
+        const html = cellHtmlForPrint(cellEntries, ctx, entity, label, printSettings);
         return `<td${html ? "" : " class='empty'"}>${html}</td>`;
       }).join("");
       return `<tr><th class="entity">${escapeHtml(entity.label)}</th><th class="period-head">${escapeHtml(label)}</th>${tds}</tr>`;
@@ -1580,14 +1868,14 @@ function buildCombinedSection(entities, ctx, title) {
 }
 
 
-function buildClassOverviewCombinedSection(entities, ctx, title) {
+function buildClassOverviewCombinedSection(entities, ctx, title, printSettings = {}) {
   const dayHeader = DAYS.map(day => `<th class="day-head" colspan="${ctx.periods.length}">${escapeHtml(day)}</th>`).join("");
   const periodHeader = DAYS.map(() => ctx.periods.map(label => `<th class="period-head">${escapeHtml(label)}</th>`).join("")).join("");
   const colgroup = `<colgroup><col class="class-col">${DAYS.map(() => ctx.periods.map(() => `<col class="lesson-col">`).join("")).join("")}</colgroup>`;
   const rows = entities.map(entity => {
     const cells = DAYS.map((_, day) => ctx.periods.map((label, period) => {
-      const html = ctx.getGridEntries(day, period, entity.filterFn)
-        .map(e => lessonHtml(ctx.entrySummary(e, entity.mode, entity))).join("");
+      const cellEntries = ctx.getGridEntries(day, period, entity.filterFn);
+      const html = cellHtmlForPrint(cellEntries, ctx, entity, label, printSettings);
       return `<td${html ? "" : " class='empty'"}>${html}</td>`;
     }).join("")).join("");
     return `<tr><th class="class-name">${escapeHtml(entity.label)}</th>${cells}</tr>`;
@@ -1595,18 +1883,19 @@ function buildClassOverviewCombinedSection(entities, ctx, title) {
   return `<section class="print-section class-overview"><h1>${escapeHtml(title)}</h1><table>${colgroup}<thead><tr><th class="corner" rowspan="2">Class</th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`;
 }
 
-function buildPrintHtml(entities, ctx, { layout, type, scope, bands, specialSubjects }) {
+function buildPrintHtml(entities, ctx, { layout, type, scope, bands, specialSubjects, printSettings }) {
   const activeScope = scope || bands || ["middle", "high"];
   specialSubjects = normalizeSpecialSubjectSelection(specialSubjects || []);
+  printSettings = normalizePrintSettings(printSettings || {});
   const now = new Date();
   const titleType = type === "teacher" ? "교사" : type === "class" ? "학급" : type === "room" ? "교실" : "학생";
   const specialLabelText = specialSubjects?.length ? ` ${specialSubjectLabel(specialSubjects)}` : "";
   const title = `${titleType} ${scopeLabel(activeScope)}${specialLabelText} ${layout === "combined" ? "전체표" : "개별"} Timetable`;
   const sections = layout === "combined"
-    ? (type === "class" ? buildClassOverviewCombinedSection(entities, ctx, title) : buildCombinedSection(entities, ctx, title))
-    : buildIndividualSections(entities, ctx, type);
+    ? (type === "class" ? buildClassOverviewCombinedSection(entities, ctx, title, printSettings) : buildCombinedSection(entities, ctx, title, printSettings))
+    : buildIndividualSections(entities, ctx, type, printSettings);
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>
-    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody tr{height:80px}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}.class-overview table{border:2px solid #111827}.class-overview .class-col{width:48px}.class-overview .lesson-col{width:auto}.class-overview th.day-head{font-size:12px;background:#fff;border-left:2px solid #374151;border-right:2px solid #374151}.class-overview thead tr:nth-child(2) th{font-size:9px;padding:1px;background:#f9fafb}.class-overview th.class-name{font-size:13px;background:#fff;border-right:2px solid #374151}.class-overview td{height:62px;padding:1px;font-size:6.5px;line-height:1.02}.class-overview td:nth-child(8n+2){border-left:2px solid #374151}.class-overview .lesson+.lesson{margin-top:1px;padding-top:1px}.class-overview .lesson-title,.class-overview .lesson-parallel-title span{font-size:1.05em;font-weight:900}.class-overview .lesson-subtitle,.class-overview .lesson-parallel-en{display:none}.class-overview .lesson-line,.class-overview .lesson-parallel span{font-size:.9em}.class-overview .lesson-micro,.class-overview .lesson-compact,.class-overview .lesson-dense{font-size:1em}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}tbody tr{height:25.2mm}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined tbody tr,.combined td{height:18.5mm}.class-overview h1{font-size:15px;margin-bottom:1.5mm}.class-overview th.day-head{font-size:10px;padding:.8px}.class-overview thead tr:nth-child(2) th{font-size:7.2px;padding:.5px}.class-overview th.class-name{font-size:11px}.class-overview td{height:15.2mm;font-size:5.4px;padding:.7px;line-height:1.0}.class-overview .lesson-line,.class-overview .lesson-parallel span{font-size:.88em}col.period-col{width:25px}col.entity-col{width:72px}}
+    @page{size:A4 landscape;margin:5mm}*{box-sizing:border-box}html,body{background:#fff}body{margin:12px;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}.print-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;padding:8px 10px;border:1px solid #d1d5db;border-radius:10px;background:#f9fafb}.print-toolbar strong{font-size:14px}.print-toolbar span{font-size:12px;color:#6b7280}.print-toolbar button{height:32px;padding:0 14px;border:1px solid #1d4ed8;border-radius:8px;background:#2563eb;color:#fff;font-weight:800;cursor:pointer}.print-section{page-break-after:always;margin-bottom:20px}.print-section:last-child{page-break-after:auto}.class-break{page-break-before:always;margin:0 0 6px;padding:5px 8px;border:1px solid #d1d5db;background:#fff;color:#111827;font-size:15px;text-align:center}h1{margin:0 0 3px;font-size:20px;text-align:center;line-height:1.12}.section-meta{margin:-1px 0 5px;text-align:center;font-size:11px;font-weight:800;color:#374151}table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #374151}col.period-col{width:30px}col.entity-col{width:82px}th,td{border:1px solid #9ca3af;padding:2px;text-align:center;vertical-align:middle;word-break:keep-all;overflow-wrap:anywhere}th{background:#f3f4f6;color:#111827;font-size:12px;font-weight:800}tbody tr{height:80px}tbody th.period-head{background:#f9fafb;color:#111827;font-size:12px;font-weight:900}.combined tbody th.entity{background:#f3f4f6;color:#111827;font-size:11px;font-weight:900}.class-overview table{border:2px solid #111827}.class-overview .class-col{width:48px}.class-overview .lesson-col{width:auto}.class-overview th.day-head{font-size:12px;background:#fff;border-left:2px solid #374151;border-right:2px solid #374151}.class-overview thead tr:nth-child(2) th{font-size:9px;padding:1px;background:#f9fafb}.class-overview th.class-name{font-size:13px;background:#fff;border-right:2px solid #374151}.class-overview td{height:62px;padding:1px;font-size:6.5px;line-height:1.02}.class-overview td:nth-child(8n+2){border-left:2px solid #374151}.class-overview .lesson+.lesson{margin-top:1px;padding-top:1px}.class-overview .lesson-title,.class-overview .lesson-parallel-title span{font-size:1.05em;font-weight:900}.class-overview .lesson-subtitle,.class-overview .lesson-parallel-en{display:none}.class-overview .lesson-line,.class-overview .lesson-parallel span{font-size:.9em}.class-overview .lesson-micro,.class-overview .lesson-compact,.class-overview .lesson-dense{font-size:1em}td{height:80px;font-size:10px;line-height:1.12;overflow:hidden}.empty{background:#fff}.lesson{width:100%;margin:0;padding:0;background:transparent;border:0;border-radius:0;line-height:1.12;text-align:center}.lesson+.lesson{margin-top:2px;padding-top:2px;border-top:1px dotted #cbd5e1}.lesson-title{font-weight:900;font-size:1.08em;margin:0;text-align:center}.lesson-subtitle{margin:0;text-align:center;color:#4b5563;font-size:.82em;line-height:1.05}.lesson-line{margin:0;text-align:center;color:#374151;font-size:.92em}.lesson-parallel{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;margin-top:0;align-items:stretch}.lesson-parallel span{display:block;text-align:center;min-width:0;overflow-wrap:anywhere;color:#374151;padding:0 2px}.lesson-parallel span+span{border-left:1px dashed #cbd5e1}.lesson-parallel-title span{font-weight:900;color:#111827;font-size:1.08em}.lesson-parallel-en span{color:#4b5563;font-size:.82em;line-height:1.05}.lesson-dense{font-size:.96em}.lesson-compact{font-size:.9em}.lesson-micro{font-size:.84em}.lesson-card-grid{width:100%;height:100%;display:grid;gap:1.5px}.lesson-card-grid+.lesson-card-grid{margin-top:2px}.lesson-card-grid.layout-single{grid-template-columns:1fr}.lesson-card-grid.layout-columns{grid-template-columns:repeat(2,minmax(0,1fr))}.lesson-card-grid.layout-vertical{grid-template-columns:1fr}.lesson-card-grid.layout-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.lesson-card-mini{position:relative;min-height:0;height:100%;border:1px solid #cbd5e1;border-radius:3px;background:#fff;overflow:hidden;padding:1px}.lesson-pos{position:absolute;display:flex;flex-direction:column;gap:0;max-width:100%;line-height:1.05}.lesson-pos-tl{top:1px;left:2px;text-align:left;align-items:flex-start}.lesson-pos-tc{top:1px;left:50%;transform:translateX(-50%);text-align:center;align-items:center}.lesson-pos-tr{top:1px;right:2px;text-align:right;align-items:flex-end}.lesson-pos-ml{top:50%;left:2px;transform:translateY(-50%);text-align:left;align-items:flex-start}.lesson-pos-mc{top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;align-items:center;width:96%}.lesson-pos-mr{top:50%;right:2px;transform:translateY(-50%);text-align:right;align-items:flex-end}.lesson-pos-bl{bottom:1px;left:2px;text-align:left;align-items:flex-start}.lesson-pos-bc{bottom:1px;left:50%;transform:translateX(-50%);text-align:center;align-items:center;width:96%}.lesson-pos-br{bottom:1px;right:2px;text-align:right;align-items:flex-end}.lesson-card-field{display:block;white-space:normal;overflow-wrap:anywhere;color:#334155;font-size:.82em}.lesson-card-field.is-bold{font-weight:900;color:#111827}.field-subject{font-size:1.08em}.field-english{font-size:.72em;color:#64748b}.field-room{font-size:.78em}.field-class,.field-period{font-size:.72em;color:#475569}.field-caption{display:none}.font-small .lesson-card-field{font-size:.74em}.font-small .field-subject{font-size:.98em}.font-large .lesson-card-field{font-size:.9em}.font-large .field-subject{font-size:1.16em}.class-overview .lesson-card-grid{gap:.5px}.class-overview .lesson-card-mini{border-width:.6px;border-radius:1px}.class-overview .lesson-card-field{font-size:.65em}.class-overview .field-subject{font-size:.82em}.class-overview .field-english{display:none}@media print{body{margin:0}.print-toolbar{display:none}.print-section{margin:0;page-break-after:always}.print-section:last-child{page-break-after:auto}h1{font-size:16px;margin-bottom:1mm}.section-meta{font-size:9.5px;margin:-.5mm 0 1mm}table{border-width:1.6px}th,td{padding:1.2px 2px}th{font-size:11px}tbody tr{height:25.2mm}td{height:25.2mm;font-size:9.3px}.lesson-title{font-size:1.08em}.lesson-subtitle{font-size:.8em}.lesson-line,.lesson-parallel span{font-size:.92em}.lesson-parallel-title span{font-size:1.08em}.lesson-parallel-en span{font-size:.8em}.combined th,.combined td{font-size:8.2px}.combined tbody tr,.combined td{height:18.5mm}.class-overview h1{font-size:15px;margin-bottom:1.5mm}.class-overview th.day-head{font-size:10px;padding:.8px}.class-overview thead tr:nth-child(2) th{font-size:7.2px;padding:.5px}.class-overview th.class-name{font-size:11px}.class-overview td{height:15.2mm;font-size:5.4px;padding:.7px;line-height:1.0}.class-overview .lesson-line,.class-overview .lesson-parallel span{font-size:.88em}.lesson-card-grid{gap:1px}.lesson-card-mini{border-width:.7px}.combined .lesson-card-field{font-size:.72em}.combined .field-subject{font-size:.9em}.class-overview .lesson-card-field{font-size:.54em}.class-overview .field-subject{font-size:.72em}col.period-col{width:25px}col.entity-col{width:72px}}
   </style></head><body><div class="print-toolbar"><div><strong>${escapeHtml(title)}</strong><br><span>${escapeHtml(now.toLocaleString("ko-KR"))} · 인쇄 창에서 “PDF로 저장”을 선택하세요.</span></div><button onclick="fitAllTimetableCells();window.print()">PDF 저장/인쇄</button></div>${sections}<script>
 function fitAllTimetableCells(){
   document.querySelectorAll("td:not(.empty)").forEach(td=>{
@@ -1668,6 +1957,31 @@ export function openTimetableExportDialog(deps = {}) {
           </div>
           <div class="tt-export-info" data-role="info"></div>
           <div class="tt-export-preview" data-role="preview"></div>
+          <section class="tt-print-settings" data-role="print-settings">
+            <div class="tt-print-settings-head">
+              <strong>PDF 출력 카드 설정</strong>
+              <div class="tt-print-presets">
+                <button type="button" data-print-preset="simple">간단</button>
+                <button type="button" data-print-preset="basic">기본</button>
+                <button type="button" data-print-preset="detail">상세</button>
+              </div>
+            </div>
+            <div class="tt-print-settings-grid">
+              <label><span>출력 스타일</span><select data-print-render-mode><option value="cards">카드 위치 설정</option><option value="legacy">기존 줄 출력</option></select></label>
+              <label><span>한 셀 다중과목</span><select data-print-cell-layout><option value="auto">자동: 1/2/4분할</option><option value="grid">2×2 고정</option><option value="columns">가로 분할</option><option value="vertical">세로 분할</option></select></label>
+              <label><span>적용 범위</span><select data-print-apply-mode><option value="card">카드별 적용</option><option value="cell">셀 전체 적용</option></select></label>
+              <label><span>글자 크기</span><select data-print-font-scale><option value="small">작게</option><option value="normal">기본</option><option value="large">크게</option></select></label>
+            </div>
+            <div class="tt-print-fields">
+              ${PRINT_FIELD_DEFS.map(def => `<div class="tt-print-field">
+                <input type="checkbox" data-print-field-enabled="${escapeHtml(def.key)}" ${def.key === "period" ? "" : "checked"}>
+                <b>${escapeHtml(def.label)}</b>
+                <label class="bold-label"><input type="checkbox" data-print-field-bold="${escapeHtml(def.key)}" ${def.defaultBold ? "checked" : ""}>굵게</label>
+                <select data-print-field-pos="${escapeHtml(def.key)}">${PRINT_POSITIONS.map(([pos,label]) => `<option value="${escapeHtml(pos)}" ${pos === def.defaultPos ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
+              </div>`).join("")}
+            </div>
+            <div class="tt-print-hint">적용 범위가 <b>카드별 적용</b>이면 한 셀에 1~4개 과목이 있어도 각 과목 카드마다 과목·교사·교실 위치 설정을 따로 적용합니다. <b>셀 전체 적용</b>은 한 셀 안의 모든 과목을 한 묶음으로 나누어 표시합니다.</div>
+          </section>
         </div>
         <aside class="tt-export-scope">
           <h4>출력 범위</h4>
@@ -1697,6 +2011,8 @@ export function openTimetableExportDialog(deps = {}) {
   const formatEl = backdrop.querySelector('[data-role="format"]');
   const infoEl = backdrop.querySelector('[data-role="info"]');
   const previewEl = backdrop.querySelector('[data-role="preview"]');
+  const printSettingsPanel = backdrop.querySelector('[data-role="print-settings"]');
+  const printSettingInputs = () => [...backdrop.querySelectorAll('[data-print-render-mode],[data-print-cell-layout],[data-print-apply-mode],[data-print-font-scale],[data-print-field-enabled],[data-print-field-bold],[data-print-field-pos]')];
   const allEl = backdrop.querySelector('[data-scope="all"]');
   const middleEl = backdrop.querySelector('[data-scope="middle"]');
   const highEl = backdrop.querySelector('[data-scope="high"]');
@@ -1753,20 +2069,27 @@ export function openTimetableExportDialog(deps = {}) {
     classScopeInputs().forEach(el => { el.disabled = disabled; });
   }
 
+  function updatePrintSettingsVisibility() {
+    printSettingsPanel?.classList.toggle("is-hidden", formatEl.value !== "pdf");
+  }
+
   function currentEntities() {
     return buildEntities(typeEl.value, visibleScopeForType(), deps, ctx, { specialSubjects: specialSubjectSelection() });
   }
 
   function refresh() {
     updateScopeAvailability();
+    updatePrintSettingsVisibility();
     const scope = visibleScopeForType();
     const entities = currentEntities();
     const specialSubjects = specialSubjectSelection();
+    const printSettings = getPrintSettingsFromDialog(backdrop);
     const typeName = typeEl.value === "teacher" ? "교사" : typeEl.value === "class" ? "학급" : typeEl.value === "room" ? "교실" : "학생";
     const layoutName = layoutEl.value === "combined" ? "전체표" : "개별";
     const studentNote = typeEl.value === "student" && layoutEl.value === "individual" ? " 학생은 이름을 하나씩 고르지 않고 학급별로 묶어 한 번에 출력합니다." : "";
     const teacherNote = typeEl.value === "teacher" ? " 교사 출력에는 학반별 체크 범위를 적용하지 않습니다." : "";
-    infoEl.textContent = `${typeName} · ${scopeLabel(scope)} · ${layoutName} · ${specialSubjectLabel(specialSubjects)} 표시입니다.${studentNote}${teacherNote}`;
+    const formatNote = formatEl.value === "pdf" ? ` · PDF ${printSettingsSummary(printSettings)}` : "";
+    infoEl.textContent = `${typeName} · ${scopeLabel(scope)} · ${layoutName} · ${specialSubjectLabel(specialSubjects)}${formatNote} 표시입니다.${studentNote}${teacherNote}`;
     const previewItems = entities.slice(0, 18).map(e => e.label).join(" · ");
     previewEl.innerHTML = `<b>출력 대상 ${entities.length}개</b><br>${escapeHtml(previewItems || "대상 없음")}${entities.length > 18 ? ` · 외 ${entities.length - 18}개` : ""}`;
   }
@@ -1774,11 +2097,14 @@ export function openTimetableExportDialog(deps = {}) {
   [typeEl, layoutEl, formatEl].forEach(el => el.addEventListener("change", refresh));
   [allEl, middleEl, highEl, ...classScopeInputs()].forEach(el => el.addEventListener("change", () => { syncScope(el); refresh(); }));
   specialInputs().forEach(el => el.addEventListener("change", refresh));
+  printSettingInputs().forEach(el => el.addEventListener("change", refresh));
+  backdrop.querySelectorAll('[data-print-preset]').forEach(btn => btn.addEventListener("click", () => { applyPrintPreset(backdrop, btn.dataset.printPreset || "basic"); refresh(); }));
   backdrop.querySelector(".tt-export-run")?.addEventListener("click", () => {
     const scope = visibleScopeForType();
     const specialSubjects = specialSubjectSelection();
     const entities = buildEntities(typeEl.value, scope, deps, ctx, { specialSubjects });
-    const options = { layout: layoutEl.value, type: typeEl.value, scope, specialSubjects };
+    const printSettings = getPrintSettingsFromDialog(backdrop);
+    const options = { layout: layoutEl.value, type: typeEl.value, scope, specialSubjects, printSettings };
     if (!entities.length) {
       alert("출력 대상이 없습니다. 전체/중등/고등 범위를 확인하세요.");
       return;
