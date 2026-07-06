@@ -612,6 +612,8 @@ function normalizeScheduleConditionFields(item = {}, { keepEmpty = false } = {})
   return out;
 }
 function normalizeScheduleConditionStore(raw = {}) {
+  // r227: meta.scheduleConditions가 null인 기존 저장본도 정상 로딩되도록 방어합니다.
+  if (!raw || typeof raw !== "object") return null;
   const normalizeBucket = bucket => {
     const out = {};
     if (!bucket || typeof bucket !== "object") return out;
@@ -632,7 +634,7 @@ function normalizeScheduleConditionStore(raw = {}) {
   const cards = normalizeBucket(raw.cards || {});
   if (!Object.keys(groups).length && !Object.keys(cards).length) return null;
   return {
-    version: clean(raw.version) || "r226",
+    version: clean(raw.version) || "r227",
     updatedAt: clean(raw.updatedAt),
     groups,
     cards
@@ -1582,7 +1584,7 @@ function normalizeTimetableDomain(raw = {}) {
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: normalizeCardGenerationMeta(raw),
     autoAssignMeta: syncedAutoMetaRefs.meta,
-    // r226: top-level scheduleConditions를 appState에 유지해 localStorage가 아닌 Firestore 기준으로도 조건을 복구합니다.
+    // r227: top-level scheduleConditions를 appState에 유지해 localStorage가 아닌 Firestore 기준으로도 조건을 복구합니다.
     scheduleConditions: normalizeScheduleConditionStore(raw.scheduleConditions) || normalizeScheduleConditionStore(syncedAutoMetaRefs.meta?.scheduleConditions),
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
