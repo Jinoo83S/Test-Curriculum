@@ -3,7 +3,7 @@
 // ================================================================
 import { uid, clean, makeBtn } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-06-state-cache-unified-r232";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
 import { GRADE_KEYS } from "./config.js";
 
 const rDomain = () => appState.rooms;

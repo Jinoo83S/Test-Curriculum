@@ -5,7 +5,7 @@ import {
   getFirestoreUsageStats,
   resetFirestoreUsageStats,
   exportFirestoreUsageSnapshot
-} from "./state.js?v=2026-07-06-state-cache-unified-r232";
+} from "./state.js?v=2026-07-06-stable-state-pdf-r234";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 
 function pct(value, limit) {

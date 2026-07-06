@@ -7,14 +7,14 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-06-print-settings-r233";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-06-print-settings-r233";
-import { versioned } from "./version.js?v=2026-07-06-print-settings-r233";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-06-print-settings-r233";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-print-settings-r233";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-06-print-settings-r233";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-06-stable-state-pdf-r234";
+import { versioned } from "./version.js?v=2026-07-06-stable-state-pdf-r234";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-06-stable-state-pdf-r234";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-stable-state-pdf-r234";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-06-stable-state-pdf-r234";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
-import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-06-print-settings-r233";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-06-stable-state-pdf-r234";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -28,7 +28,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-print-settings-r233";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-stable-state-pdf-r234";
 
 
 const [
@@ -936,7 +936,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r233-print-settings",
+    version: "r234-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -1050,12 +1050,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r233] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r234] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    const msg = `[data-sync:r233] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}, audit=${result.auditChanged || 0}, saved=${persistentChanged ? "yes" : "no"}`;
+    const msg = `[data-sync:r234] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}, audit=${result.auditChanged || 0}, saved=${persistentChanged ? "yes" : "no"}`;
     if (persistentChanged) console.info(msg); else console.debug(msg);
   } catch (_) {}
   return result;
@@ -3011,7 +3011,7 @@ function buildScheduleConditionRuntimeSummary() {
     }
   });
   return {
-    mode: "schedule-condition-runtime-r233",
+    mode: "schedule-condition-runtime-r234",
     checkedCardCount: checkedCards.size,
     violationCount: violations.length,
     violations: violations.slice(0, 50),
@@ -5340,7 +5340,7 @@ function renderAll() {
     if (sync.changed) {
       const persistentChanged = (sync.teacherChanged || 0) + (sync.roomChanged || 0) + (sync.conditionChanged || 0) + (sync.metaChanged || 0);
       if (persistentChanged) {
-        try { console.debug(`[data-sync:r233] 렌더 전 정규화(저장대기 없음) teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
+        try { console.debug(`[data-sync:r234] 렌더 전 정규화(저장대기 없음) teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
       }
     }
   }

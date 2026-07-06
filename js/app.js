@@ -10,7 +10,7 @@ import { setupSaveStatusUi } from "./save-status-ui.js";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
-import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-06-state-cache-unified-r232";
+import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
 import { versioned } from "./version.js?v=2026-07-06-condition-popup-multiroom-persist-r225";
 import { createAppModuleLoader } from "./app-module-loader.js";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js";

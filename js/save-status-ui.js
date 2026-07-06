@@ -13,7 +13,7 @@ import {
   importLocalSnapshot,
   resetLocalSnapshot,
   exportFirestoreDiagnosticSnapshot,
-} from "./state.js?v=2026-07-06-state-cache-unified-r232";
+} from "./state.js?v=2026-07-06-stable-state-pdf-r234";
 import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";

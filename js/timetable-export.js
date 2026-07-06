@@ -8,7 +8,7 @@
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const COMMON_BRIEF_SUBJECTS = ["CA", "SA"];
-const EXPORT_STYLE_ID = "ttExportDialogR233Style";
+const EXPORT_STYLE_ID = "ttExportDialogR234Style";
 
 function clean(value) {
   return String(value ?? "").trim();
