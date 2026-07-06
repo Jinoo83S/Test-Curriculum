@@ -143,7 +143,7 @@ async function seedLocalStateFromCurrentRuntime() {
   // 온라인 화면에서 이미 불러온 Firestore 데이터를 로컬 저장소로 복사합니다.
   // Firestore quota가 막힌 뒤에도, 현재 화면에 로드된 데이터만큼은 local=1에서 계속 테스트할 수 있습니다.
   try {
-    const mod = await import("./state.js");
+    const mod = await import("./state.js?v=2026-07-06-state-cache-unified-r232");
     if (typeof mod.seedLocalSnapshotFromRuntime === "function") {
       return mod.seedLocalSnapshotFromRuntime();
     }

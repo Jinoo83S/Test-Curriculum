@@ -3,7 +3,7 @@
 // ================================================================
 import { uid, clean, makeBtn, escapeHtml } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, normalizeTeacher } from "./state.js";
+import { appState, scheduleSave, normalizeTeacher } from "./state.js?v=2026-07-06-state-cache-unified-r232";
 import { getSubjectsForTeacher } from "./templates.js";
 
 const tDomain   = () => appState.teachers;
