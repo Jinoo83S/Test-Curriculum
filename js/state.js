@@ -2021,10 +2021,57 @@ function shouldDeferRemoteApply(domain, normalized) {
   return true;
 }
 
+
+// r229 emergency guard: r228에서 main timetable.js만 query-string이 붙은 state.js를
+// 따로 import하면서 state 인스턴스가 2개로 갈라졌고, 그 상태에서 빈/부분 시간표가
+// 저장 대기 상태가 될 수 있었습니다. 운영 데이터가 많은 상태에서 entries=0, cards<=1
+// 같은 비정상 축소 스냅샷은 원격 반영/저장을 차단합니다.
+function timetableCountsForGuard(domain = {}) {
+  return {
+    entries: Array.isArray(domain?.entries) ? domain.entries.length : 0,
+    cards: Array.isArray(domain?.ttcards) ? domain.ttcards.length : 0,
+    groups: Array.isArray(domain?.ttcardGroups) ? domain.ttcardGroups.length : 0,
+    saved: Array.isArray(domain?.savedSchedules) ? domain.savedSchedules.length : 0,
+    constraints: domain?.teacherConstraints && typeof domain.teacherConstraints === "object" ? Object.keys(domain.teacherConstraints).length : 0
+  };
+}
+function isDangerouslySmallTimetableForGuard(next = {}, prev = appState.timetable || {}) {
+  const n = timetableCountsForGuard(next);
+  const p = timetableCountsForGuard(prev);
+  const hadOperationalData = p.entries >= 50 || p.cards >= 50 || p.groups >= 10;
+  const nextLooksTruncated = n.entries === 0 && n.cards <= 1 && (n.groups > 0 || n.saved > 0 || n.constraints > 0 || hadOperationalData);
+  return hadOperationalData && nextLooksTruncated;
+}
+function isDangerousTimetableSaveForGuard(normalized = {}, options = {}) {
+  if (options?.allowEmptyTimetable === true) return false;
+  const n = timetableCountsForGuard(normalized);
+  const entryBaseline = splitDocFingerprints.timetable?.timetableEntries?.size || 0;
+  const cardBaseline = splitDocFingerprints.timetable?.ttcards?.size || 0;
+  const hadOperationalBaseline = entryBaseline >= 50 || cardBaseline >= 50;
+  return hadOperationalBaseline && n.entries === 0 && n.cards <= 1;
+}
+function splitTimetableLooksTruncatedForGuard() {
+  if (!timetableSplitCache.metaExists) return false;
+  const entries = Array.isArray(timetableSplitCache.entries) ? timetableSplitCache.entries.length : 0;
+  const cards = Array.isArray(timetableSplitCache.ttcards) ? timetableSplitCache.ttcards.length : 0;
+  const meta = timetableSplitCache.meta || {};
+  const metaHasOperationalHints =
+    (Array.isArray(meta.ttcardGroups || meta.templateGroups) && (meta.ttcardGroups || meta.templateGroups).length >= 10) ||
+    (Array.isArray(meta.savedSchedules) && meta.savedSchedules.length > 0) ||
+    (meta.teacherConstraints && typeof meta.teacherConstraints === "object" && Object.keys(meta.teacherConstraints).length > 0) ||
+    !!meta.autoAssignMeta || !!meta.bestAutoAssignSnapshot;
+  return entries === 0 && cards <= 1 && metaHasOperationalHints;
+}
+
 function applyNormalizedDomain(domain, normalized) {
   if (domain === "classes") {
     const prev = appState.classes.classes || [];
     if (normalized.classes.length === 0 && prev.length > 0) normalized.classes = prev;
+  }
+  if (domain === "timetable" && isDangerouslySmallTimetableForGuard(normalized, appState.timetable)) {
+    console.warn("[Firestore guard:r229] 비정상적으로 작은 시간표 스냅샷 반영을 차단했습니다.", { next: timetableCountsForGuard(normalized), prev: timetableCountsForGuard(appState.timetable) });
+    initialLoad[domain] = true;
+    return;
   }
 
   // 온라인 모드에서 드래그/편집 직후 자동저장 대기 중일 때,
@@ -2219,6 +2266,10 @@ async function saveSplitDomain(domain, options = {}) {
 
   if (domain === "timetable") {
     const normalized = normalizeTimetableDomain(options.normalized || appState.timetable);
+    if (isDangerousTimetableSaveForGuard(normalized, options)) {
+      console.error("[Firestore guard:r229] 비정상적으로 작은 시간표 저장을 차단했습니다.", { next: timetableCountsForGuard(normalized) });
+      throw new Error("비정상적으로 작은 시간표 저장 차단: entries=0/cards<=1 상태입니다. 화면을 새로고침한 뒤 다시 확인해 주세요.");
+    }
     const entryWrites = await commitChangedCollection(
       { domain: "timetable", name: "timetableEntries" },
       splitRefs.timetableEntries,
@@ -2432,6 +2483,19 @@ async function applyTimetableSplitIfReady() {
     timetableSplitCache.metaExists;
 
   if (hasSplitData) markSplitConfirmed("timetable");
+
+  if (splitTimetableLooksTruncatedForGuard() && !splitFallbackAttempted.timetable) {
+    splitFallbackAttempted.timetable = true;
+    console.warn("[Firestore guard:r229] split 시간표가 비정상적으로 작아 legacy boards/timetable 복구를 시도합니다.", {
+      entries: timetableSplitCache.entries.length,
+      cards: timetableSplitCache.ttcards.length,
+      metaExists: timetableSplitCache.metaExists
+    });
+    const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
+      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
+    });
+    if (migrated) return;
+  }
 
   if (!hasSplitData && !splitConfirmed.has("timetable") && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;

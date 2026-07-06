@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
-import { appState, scheduleSave } from "./state.js?v=2026-07-06-state-cache-nullguard-r228";
+import { appState, scheduleSave } from "./state.js";
 import { canEdit } from "./auth.js";
 import { getRooms } from "./rooms.js";
 import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js";
