@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-condition-persist-cardlist-r221";
+import { versioned } from "./version.js?v=2026-07-06-condition-save-graded-cardlist-r222";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-condition-persist-cardlist-r221";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-condition-save-graded-cardlist-r222";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-condition-persist-cardlist-r221";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-condition-save-graded-cardlist-r222";
 
 
 const [
@@ -925,7 +925,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r221-current-entries-audit",
+    version: "r222-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -961,7 +961,7 @@ function refreshCurrentEntriesAuditMeta({ persist = false } = {}) {
   meta.currentValidationSummary = audit.summary;
   meta.validationSummary = audit.summary;
   meta.ok = audit.ok;
-  meta.metricSource = "currentEntriesAuditR218";
+  meta.metricSource = "currentEntriesAuditR222";
   meta.finalMetrics = {
     ...(meta.finalMetrics || {}),
     validationOk: audit.ok,
@@ -1018,12 +1018,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r221] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r222] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r221] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}`);
+    console.info(`[data-sync:r222] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}`);
   } catch (_) {}
   return result;
 }
@@ -1586,19 +1586,89 @@ function getRequiredRoomCountFromObject(obj = {}) {
     { min: 1, max: 12 }
   );
 }
-function ensureScheduleConditionStore() {
-  const domain = appState.timetable || (appState.timetable = {});
-  if (!domain.scheduleConditions || typeof domain.scheduleConditions !== "object") domain.scheduleConditions = {};
-  const store = domain.scheduleConditions;
-  if (!store.groups || typeof store.groups !== "object") store.groups = {};
-  if (!store.cards || typeof store.cards !== "object") store.cards = {};
-  store.version = store.version || "r221";
-  return store;
+const SCHEDULE_CONDITION_STORE_VERSION = "r222";
+const SCHEDULE_CONDITION_LOCAL_STORAGE_KEY = "his.timetable.scheduleConditions.v1";
+
+function cloneScheduleConditionStore(store = {}) {
+  return {
+    version: clean(store.version || SCHEDULE_CONDITION_STORE_VERSION) || SCHEDULE_CONDITION_STORE_VERSION,
+    updatedAt: clean(store.updatedAt || ""),
+    groups: { ...(store.groups || {}) },
+    cards: { ...(store.cards || {}) },
+  };
+}
+function normalizeScheduleConditionRow(row = {}) {
+  if (!row || typeof row !== "object") return null;
+  const d = normalizeSchedulePositiveInt(row.durationPeriods ?? row.continuousPeriods ?? row.consecutivePeriods ?? row.solverDurationPeriods ?? 1, 1, { min: 1, max: 7 });
+  const r = normalizeSchedulePositiveInt(row.requiredRoomCount ?? row.multiRoomCount ?? row.solverRequiredRoomCount ?? 1, 1, { min: 1, max: 12 });
+  if (d <= 1 && r <= 1) return null;
+  return {
+    durationPeriods: d,
+    continuousPeriods: d,
+    requiredRoomCount: r,
+    multiRoomCount: r,
+    updatedAt: clean(row.updatedAt || row.scheduleConditionEditedAt || "") || new Date().toISOString(),
+  };
+}
+function mergeScheduleConditionBucket(target = {}, source = {}) {
+  Object.entries(source || {}).forEach(([rawKey, row]) => {
+    const key = clean(rawKey);
+    if (!key) return;
+    const normalized = normalizeScheduleConditionRow(row);
+    if (!normalized) return;
+    const prev = normalizeScheduleConditionRow(target[key]) || { durationPeriods: 1, requiredRoomCount: 1, updatedAt: "" };
+    target[key] = {
+      durationPeriods: Math.max(prev.durationPeriods || 1, normalized.durationPeriods || 1),
+      continuousPeriods: Math.max(prev.durationPeriods || 1, normalized.durationPeriods || 1),
+      requiredRoomCount: Math.max(prev.requiredRoomCount || 1, normalized.requiredRoomCount || 1),
+      multiRoomCount: Math.max(prev.requiredRoomCount || 1, normalized.requiredRoomCount || 1),
+      updatedAt: normalized.updatedAt || prev.updatedAt || new Date().toISOString(),
+    };
+  });
+}
+function readScheduleConditionLocalBackup() {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(SCHEDULE_CONDITION_LOCAL_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) { return null; }
+}
+function writeScheduleConditionLocalBackup(store = {}) {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(SCHEDULE_CONDITION_LOCAL_STORAGE_KEY, JSON.stringify(cloneScheduleConditionStore(store)));
+  } catch (_) {}
 }
 function getScheduleConditionStore() {
-  const store = appState.timetable?.scheduleConditions;
-  if (!store || typeof store !== "object") return { groups: {}, cards: {} };
-  return { groups: store.groups || {}, cards: store.cards || {} };
+  const domain = appState.timetable || {};
+  const merged = { version: SCHEDULE_CONDITION_STORE_VERSION, updatedAt: "", groups: {}, cards: {} };
+  const sources = [
+    domain.scheduleConditions,
+    domain.autoAssignMeta?.scheduleConditions,
+    readScheduleConditionLocalBackup(),
+  ].filter(src => src && typeof src === "object");
+  sources.forEach(src => {
+    mergeScheduleConditionBucket(merged.groups, src.groups || {});
+    mergeScheduleConditionBucket(merged.cards, src.cards || {});
+    if (clean(src.updatedAt) > clean(merged.updatedAt)) merged.updatedAt = clean(src.updatedAt);
+  });
+  return merged;
+}
+function ensureScheduleConditionStore() {
+  const domain = appState.timetable || (appState.timetable = {});
+  const merged = getScheduleConditionStore();
+  merged.version = SCHEDULE_CONDITION_STORE_VERSION;
+  merged.updatedAt = merged.updatedAt || new Date().toISOString();
+  domain.scheduleConditions = cloneScheduleConditionStore(merged);
+  if (!domain.autoAssignMeta || typeof domain.autoAssignMeta !== "object") domain.autoAssignMeta = {};
+  domain.autoAssignMeta.scheduleConditions = cloneScheduleConditionStore(merged);
+  writeScheduleConditionLocalBackup(merged);
+  return domain.scheduleConditions;
+}
+function mirrorScheduleConditionStoreToPersistentPlaces() {
+  return ensureScheduleConditionStore();
 }
 function getStoredScheduleCondition(kind = "card", id = "") {
   const key = String(id || "").trim();
@@ -1636,7 +1706,13 @@ function writeScheduleConditionStore(kind = "card", id = "", { durationPeriods =
   } else {
     bucket[key] = { durationPeriods: d, continuousPeriods: d, requiredRoomCount: r, multiRoomCount: r, updatedAt: new Date().toISOString() };
   }
+  store.version = SCHEDULE_CONDITION_STORE_VERSION;
   store.updatedAt = new Date().toISOString();
+  const domain = appState.timetable || (appState.timetable = {});
+  domain.scheduleConditions = cloneScheduleConditionStore(store);
+  if (!domain.autoAssignMeta || typeof domain.autoAssignMeta !== "object") domain.autoAssignMeta = {};
+  domain.autoAssignMeta.scheduleConditions = cloneScheduleConditionStore(store);
+  writeScheduleConditionLocalBackup(store);
 }
 function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoomCount = 1 } = {}, kind = "card") {
   const d = normalizeSchedulePositiveInt(durationPeriods, 1, { min: 1, max: 7 });
@@ -1716,75 +1792,177 @@ function getScheduleConditionSummary() {
   const groupConditions = groups.filter(group => getScheduleDurationForGroup(group, getGroupCards(group)) > 1 || getRequiredRoomCountForGroup(group, getGroupCards(group)) > 1).length;
   return { cardConditions, groupConditions };
 }
+function scheduleConditionGradeIndex(label = "") {
+  const text = clean(label);
+  const direct = GRADE_KEYS.indexOf(text);
+  if (direct >= 0) return direct;
+  const m = text.match(/(\d{1,2})/);
+  if (!m) return 999;
+  const found = GRADE_KEYS.findIndex(g => String(g).includes(m[1]));
+  return found >= 0 ? found : 999;
+}
+function scheduleConditionGradeLabelForCard(card = {}) {
+  return gradeDisplay(card.gradeKey || card.grade || "") || clean(card.gradeKey || card.grade || "학년 없음");
+}
+function scheduleConditionClassLabelsForCard(card = {}) {
+  return [...new Set((getTtCardClassLabels(card) || []).map(clean).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" }));
+}
+function scheduleConditionTeachersForCard(card = {}) {
+  return [...new Set(getTeacherNamesForCard(card).map(clean).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" }));
+}
+function scheduleConditionTitleForCard(card = {}) {
+  const desc = describeTtCard(card);
+  return clean(desc.title || card.subject || card.label || card.nameKo || card.name || "과목");
+}
+function scheduleConditionLineForCard(card = {}) {
+  const title = scheduleConditionTitleForCard(card);
+  const grade = scheduleConditionGradeLabelForCard(card);
+  const classes = scheduleConditionClassLabelsForCard(card).join(", ") || "반 없음";
+  const teachers = scheduleConditionTeachersForCard(card).join(", ") || "교사 없음";
+  return `${title} - ${grade}, ${classes}, ${teachers}`;
+}
+function scheduleConditionGradeLabelForGroup(group = {}, cards = []) {
+  const labels = [...new Set((cards || []).map(scheduleConditionGradeLabelForCard).map(clean).filter(Boolean))]
+    .sort((a, b) => scheduleConditionGradeIndex(a) - scheduleConditionGradeIndex(b) || a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" }));
+  return labels.join("/ ") || "학년 없음";
+}
+function scheduleConditionLineForGroup(group = {}, cards = []) {
+  const title = clean(group.name || "그룹");
+  const grade = scheduleConditionGradeLabelForGroup(group, cards);
+  const classes = [...new Set((cards || []).flatMap(scheduleConditionClassLabelsForCard).map(clean).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" })).join(", ") || "반 없음";
+  const teachers = [...new Set((cards || []).flatMap(scheduleConditionTeachersForCard).map(clean).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" })).join(", ") || "교사 없음";
+  return `${title} - ${grade}, ${classes}, ${teachers}`;
+}
+function scheduleConditionSortKey(label = "") {
+  return clean(label).replace(/^\s*\[/, "").replace(/^\s*/, "");
+}
+function scheduleConditionRowsByGrade(items = [], gradeOf) {
+  const byGrade = new Map();
+  items.forEach(item => {
+    const grade = clean(gradeOf(item) || "학년 없음");
+    if (!byGrade.has(grade)) byGrade.set(grade, []);
+    byGrade.get(grade).push(item);
+  });
+  return [...byGrade.entries()].sort((a, b) => scheduleConditionGradeIndex(a[0]) - scheduleConditionGradeIndex(b[0]) || a[0].localeCompare(b[0], "ko", { numeric: true, sensitivity: "base" }));
+}
+function renderScheduleConditionRow({ kind, id, line, duration, rooms, badge, inputStyle }) {
+  const status = badge || "기본";
+  return `<div class="tt-schedule-condition-row" data-kind="${escapeHtml(kind)}" data-id="${escapeHtml(id || "")}" data-filter-text="${escapeHtml(line.toLocaleLowerCase("ko"))}" style="display:grid;grid-template-columns:minmax(260px,1fr) 82px 82px 82px;gap:8px;align-items:center;border-bottom:1px solid #e2e8f0;padding:8px 10px;font-size:12px">
+    <div title="${escapeHtml(line)}" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#0f172a;font-weight:800">${escapeHtml(line)}</div>
+    <input type="number" min="1" max="7" value="${duration}" data-field="duration" style="${inputStyle}">
+    <input type="number" min="1" max="12" value="${rooms}" data-field="rooms" style="${inputStyle}">
+    <div style="text-align:center;color:${badge ? "#1d4ed8" : "#64748b"};font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(status)}">${escapeHtml(status)}</div>
+  </div>`;
+}
 function renderScheduleConditionPopupContent() {
   const body = $("ttScheduleConditionPopupBody");
   if (!body) return;
-  const groups = appState.timetable?.ttcardGroups || [];
-  const cards = getTtCards().filter(isTtCardIncludedInAutoAssign);
-  const inputStyle = "width:58px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:7px;font-size:12px;font-weight:800;text-align:center";
-  const groupRows = groups.map(group => {
-    const groupCards = getGroupCards(group).filter(isTtCardIncludedInAutoAssign);
-    const d = getScheduleDurationForGroup(group, groupCards);
-    const r = getRequiredRoomCountForGroup(group, groupCards);
-    return `<tr data-kind="group" data-id="${escapeHtml(group.id || "")}"><td style="padding:7px;border:1px solid #e2e8f0"><strong style="display:block;color:#0f172a">${escapeHtml(group.name || "그룹")}</strong><em style="display:block;margin-top:3px;color:#64748b;font-style:normal">${escapeHtml(group.groupType === "concurrent" || group.isConcurrent ? "그룹수업" : "묶음/일반그룹")} · 카드 ${groupCards.length}개</em></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="7" value="${d}" data-field="duration" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="12" value="${r}" data-field="rooms" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0;color:#334155;font-weight:800">${escapeHtml(scheduleConditionBadgeForObject(group, groupCards) || "기본")}</td></tr>`;
-  }).join("");
-  const conditionedCards = cards
-    .sort((a, b) => {
-      const ga = (a.gradeKey || "") + " " + ((getTtCardClassLabels(a) || [])[0] || "");
-      const gb = (b.gradeKey || "") + " " + ((getTtCardClassLabels(b) || [])[0] || "");
-      return String(ga).localeCompare(String(gb), "ko", { numeric:true, sensitivity:"base" })
-        || describeTtCard(a).title.localeCompare(describeTtCard(b).title, "ko", { numeric:true, sensitivity:"base" });
-    });
-  const cardRows = conditionedCards.map(card => {
-    const desc = describeTtCard(card);
-    const cls = (getTtCardClassLabels(card) || []).join(", ") || gradeDisplay(card.gradeKey || "") || "학반 없음";
-    const teachers = getTeacherNamesForCard(card).join(", ") || "교사 없음";
-    return `<tr data-kind="card" data-id="${escapeHtml(card.id || "")}"><td style="padding:7px;border:1px solid #e2e8f0"><strong style="display:block;color:#0f172a">${escapeHtml(desc.title || card.subject || "과목")}</strong><em style="display:block;margin-top:3px;color:#64748b;font-style:normal">${escapeHtml(cls)} · ${escapeHtml(teachers)}</em></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="7" value="${getScheduleDurationForTtCard(card)}" data-field="duration" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0"><input type="number" min="1" max="12" value="${getRequiredRoomCountForTtCard(card)}" data-field="rooms" style="${inputStyle}"></td><td style="text-align:center;border:1px solid #e2e8f0;color:#334155;font-weight:800">${escapeHtml(scheduleConditionBadgeForObject(card) || "기본")}</td></tr>`;
-  }).join("");
+  const groups = (appState.timetable?.ttcardGroups || []).map(group => {
+    const cards = getGroupCards(group).filter(isTtCardIncludedInAutoAssign);
+    return { group, cards, line: scheduleConditionLineForGroup(group, cards), grade: scheduleConditionGradeLabelForGroup(group, cards) };
+  }).filter(row => row.cards.length);
+  const cards = getTtCards().filter(isTtCardIncludedInAutoAssign).map(card => ({
+    card,
+    line: scheduleConditionLineForCard(card),
+    grade: scheduleConditionGradeLabelForCard(card),
+    title: scheduleConditionTitleForCard(card),
+  }));
+  const inputStyle = "width:64px;padding:5px 6px;border:1px solid #cbd5e1;border-radius:8px;font-size:12px;font-weight:900;text-align:center;box-sizing:border-box";
+  const headerRow = `<div style="display:grid;grid-template-columns:minmax(260px,1fr) 82px 82px 82px;gap:8px;align-items:center;background:#f1f5f9;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;padding:7px 10px;color:#334155;font-size:12px;font-weight:900"><div>과목 - 학년, 반, 교사</div><div style="text-align:center">연속</div><div style="text-align:center">교실</div><div style="text-align:center">상태</div></div>`;
+  const renderGradeBlocks = (items, type) => {
+    const blocks = scheduleConditionRowsByGrade(items, item => item.grade).map(([grade, rows]) => {
+      rows.sort((a, b) => scheduleConditionSortKey(a.title || a.line).localeCompare(scheduleConditionSortKey(b.title || b.line), "ko", { numeric: true, sensitivity: "base" }) || a.line.localeCompare(b.line, "ko", { numeric: true, sensitivity: "base" }));
+      const rowHtml = rows.map(item => {
+        if (type === "group") {
+          const d = getScheduleDurationForGroup(item.group, item.cards);
+          const r = getRequiredRoomCountForGroup(item.group, item.cards);
+          return renderScheduleConditionRow({ kind: "group", id: item.group.id, line: item.line, duration: d, rooms: r, badge: scheduleConditionBadgeForObject(item.group, item.cards), inputStyle });
+        }
+        const d = getScheduleDurationForTtCard(item.card);
+        const r = getRequiredRoomCountForTtCard(item.card);
+        return renderScheduleConditionRow({ kind: "card", id: item.card.id, line: item.line, duration: d, rooms: r, badge: scheduleConditionBadgeForObject(item.card), inputStyle });
+      }).join("");
+      return `<section class="tt-schedule-condition-grade-block" data-grade="${escapeHtml(grade)}" style="border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;background:#fff;margin-bottom:10px"><h4 style="margin:0;padding:8px 10px;background:#f8fafc;color:#0f172a;font-size:13px;border-bottom:1px solid #e2e8f0">${escapeHtml(grade)} <span style="color:#64748b;font-size:12px;font-weight:800">${rows.length}개</span></h4>${headerRow}${rowHtml}</section>`;
+    }).join("");
+    return blocks || `<div style="padding:18px;text-align:center;color:#64748b;border:1px solid #e2e8f0;border-radius:12px;background:#fff">표시할 항목이 없습니다.</div>`;
+  };
   const summary = getScheduleConditionSummary();
   body.innerHTML = `
-    <div style="padding:12px 14px;border-bottom:1px solid #e2e8f0;background:#f8fafc;color:#475569;font-size:12px;line-height:1.5">
-      <b style="color:#0f172a">연속교시</b>는 같은 날 붙은 교시에 배치합니다. <b style="color:#0f172a">필요교실수</b>는 그룹수업에서 같은 시간에 확보해야 할 교실 수입니다.<br>
-      현재 조건: 그룹 ${summary.groupConditions}개 · 개별카드 ${summary.cardConditions}개
+    <div style="position:sticky;top:0;z-index:2;padding:10px 14px;border-bottom:1px solid #e2e8f0;background:#f8fafc;color:#475569;font-size:12px;line-height:1.5">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <b style="color:#0f172a">현재 조건</b><span>그룹 ${summary.groupConditions}개 · 개별카드 ${summary.cardConditions}개</span>
+        <input id="ttScheduleConditionSearch" type="search" placeholder="과목/학년/반/교사 검색" style="margin-left:auto;min-width:220px;max-width:360px;flex:1 1 220px;height:30px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px;font-size:12px">
+      </div>
+      <div style="margin-top:5px">조건이 없는 수업은 기본값 1교시·1교실입니다. 그룹 수업은 가능하면 <b>그룹 조건</b>에 먼저 설정하세요.</div>
     </div>
     <div style="padding:12px 14px;overflow:auto">
       <h3 style="margin:0 0 8px;font-size:14px;color:#0f172a">그룹 조건</h3>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:7px;border:1px solid #e2e8f0">그룹</th><th style="padding:7px;border:1px solid #e2e8f0">연속교시</th><th style="padding:7px;border:1px solid #e2e8f0">필요교실</th><th style="padding:7px;border:1px solid #e2e8f0">상태</th></tr></thead>
-        <tbody>${groupRows || `<tr><td colspan="4" style="padding:14px;text-align:center;color:#64748b;border:1px solid #e2e8f0">그룹이 없습니다.</td></tr>`}</tbody>
-      </table>
+      ${renderGradeBlocks(groups, "group")}
       <h3 style="margin:16px 0 8px;font-size:14px;color:#0f172a">개별 카드 조건</h3>
-      <p style="margin:0 0 8px;color:#64748b;font-size:12px">개별 카드 조건은 전체 과목카드를 표시합니다. 그룹에 속한 카드는 가능하면 위의 그룹 조건을 우선 사용하세요.</p>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:7px;border:1px solid #e2e8f0">카드</th><th style="padding:7px;border:1px solid #e2e8f0">연속교시</th><th style="padding:7px;border:1px solid #e2e8f0">필요교실</th><th style="padding:7px;border:1px solid #e2e8f0">상태</th></tr></thead>
-        <tbody>${cardRows || `<tr><td colspan="4" style="padding:14px;text-align:center;color:#64748b;border:1px solid #e2e8f0">개별 카드가 없습니다.</td></tr>`}</tbody>
-      </table>
+      ${renderGradeBlocks(cards, "card")}
     </div>`;
+  const search = $("ttScheduleConditionSearch");
+  if (search) {
+    search.addEventListener("input", () => {
+      const q = clean(search.value).toLocaleLowerCase("ko");
+      body.querySelectorAll(".tt-schedule-condition-row").forEach(row => {
+        const ok = !q || clean(row.getAttribute("data-filter-text") || "").includes(q);
+        row.style.display = ok ? "grid" : "none";
+      });
+      body.querySelectorAll(".tt-schedule-condition-grade-block").forEach(block => {
+        const visible = [...block.querySelectorAll(".tt-schedule-condition-row")].some(row => row.style.display !== "none");
+        block.style.display = visible ? "block" : "none";
+      });
+    });
+  }
 }
 async function saveScheduleConditionPopupChanges() {
-  if (!canEdit()) return false;
+  if (!canEdit()) {
+    alert("조건 저장 권한이 없습니다. 관리자 계정으로 로그인한 뒤 다시 시도하세요.");
+    return false;
+  }
   const body = $("ttScheduleConditionPopupBody");
   if (!body) return false;
   captureTimetableUndo("연속교시/필요교실 조건 변경");
-  body.querySelectorAll("tr[data-kind][data-id]").forEach(row => {
+  let changedCount = 0;
+  body.querySelectorAll(".tt-schedule-condition-row[data-kind][data-id]").forEach(row => {
     const kind = row.getAttribute("data-kind");
     const id = row.getAttribute("data-id");
     const duration = normalizeSchedulePositiveInt(row.querySelector('[data-field="duration"]')?.value, 1, { min: 1, max: 7 });
     const rooms = normalizeSchedulePositiveInt(row.querySelector('[data-field="rooms"]')?.value, 1, { min: 1, max: 12 });
     if (kind === "group") {
       const group = (appState.timetable?.ttcardGroups || []).find(g => g.id === id);
-      if (group) setScheduleObjectFields(group, { durationPeriods: duration, requiredRoomCount: rooms }, "group");
+      if (group) { setScheduleObjectFields(group, { durationPeriods: duration, requiredRoomCount: rooms }, "group"); changedCount += 1; }
     } else if (kind === "card") {
       const card = (appState.timetable?.ttcards || []).find(c => c.id === id);
-      if (card) setScheduleObjectFields(card, { durationPeriods: duration, requiredRoomCount: rooms }, "card");
+      if (card) { setScheduleObjectFields(card, { durationPeriods: duration, requiredRoomCount: rooms }, "card"); changedCount += 1; }
     }
   });
+  const store = mirrorScheduleConditionStoreToPersistentPlaces();
+  const domain = appState.timetable || (appState.timetable = {});
+  if (!domain.autoAssignMeta || typeof domain.autoAssignMeta !== "object") domain.autoAssignMeta = {};
+  domain.autoAssignMeta.scheduleConditionLastSavedAt = new Date().toISOString();
+  domain.autoAssignMeta.scheduleConditionSavedRowCount = changedCount;
+  domain.autoAssignMeta.scheduleConditionStoredGroupCount = Object.keys(store.groups || {}).length;
+  domain.autoAssignMeta.scheduleConditionStoredCardCount = Object.keys(store.cards || {}).length;
+  applyStoredScheduleConditionsToTimetable({ persist: false });
   scheduleSave("timetable");
-  try { if (typeof saveNow === "function") await saveNow("timetable", { force: true }); } catch (e) {
+  try {
+    if (typeof saveNow === "function") await saveNow("timetable", { force: true });
+    if (typeof savePendingNow === "function") await savePendingNow();
+  } catch (e) {
     console.warn("연속교시/필요교실 조건 즉시저장 실패", e);
-    alert(`조건을 화면에는 반영했지만 즉시 저장에 실패했습니다. 저장 상태를 확인한 뒤 CP-SAT을 실행하세요.\n\n${e?.message || e}`);
+    alert(`조건을 화면에는 반영했지만 즉시 저장에 실패했습니다. 저장 상태를 확인한 뒤 CP-SAT을 실행하세요.
+
+${e?.message || e}`);
+    return false;
   }
-  renderAll();
+  renderScheduleConditionPopupContent();
+  renderManualCardVaultPanel();
   return true;
 }
 function openScheduleConditionPopup() {
@@ -1796,8 +1974,8 @@ function openScheduleConditionPopup() {
   overlay.innerHTML = `
     <div style="width:min(920px,calc(100vw - 36px));max-height:calc(100vh - 48px);background:#fff;border-radius:16px;box-shadow:0 24px 80px rgba(15,23,42,.32);overflow:hidden;display:flex;flex-direction:column;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
       <div style="padding:15px 18px;border-bottom:1px solid #e2e8f0;background:linear-gradient(135deg,#f8fafc,#eef6ff);display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
-        <div><strong style="display:block;font-size:17px;color:#0f172a">연속교시 / 필요교실 조건</strong><span style="display:block;margin-top:4px;color:#64748b;font-size:12px">조건이 없는 수업은 기본값 1교시·1교실로 처리합니다.</span></div>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button type="button" data-schedule-condition-save style="border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:9px;padding:7px 12px;font-weight:900;cursor:pointer">저장</button><button type="button" data-schedule-condition-close style="border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:9px;padding:7px 12px;font-weight:900;cursor:pointer">닫기</button></div>
+        <div><strong style="display:block;font-size:17px;color:#0f172a">연속교시 / 필요교실 조건</strong><span style="display:block;margin-top:4px;color:#64748b;font-size:12px">학년별 가나다순으로 정렬합니다. 한 줄 형식: 과목 - 학년, 반, 교사</span></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span data-schedule-condition-status style="min-width:58px;color:#16a34a;font-size:12px;font-weight:900"></span><button type="button" data-schedule-condition-save style="border:1px solid #2563eb;background:#2563eb;color:#fff;border-radius:9px;padding:7px 12px;font-weight:900;cursor:pointer">저장</button><button type="button" data-schedule-condition-close style="border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:9px;padding:7px 12px;font-weight:900;cursor:pointer">닫기</button></div>
       </div>
       <div id="ttScheduleConditionPopupBody" style="overflow:auto"></div>
     </div>`;
@@ -1806,11 +1984,17 @@ function openScheduleConditionPopup() {
   overlay.querySelector("[data-schedule-condition-close]")?.addEventListener("click", () => overlay.remove());
   overlay.querySelector("[data-schedule-condition-save]")?.addEventListener("click", async ev => {
     const btn = ev.currentTarget;
+    const status = overlay.querySelector("[data-schedule-condition-status]");
     btn.disabled = true;
     btn.textContent = "저장 중...";
+    if (status) status.textContent = "";
     const ok = await saveScheduleConditionPopupChanges();
-    if (ok) overlay.remove();
-    else { btn.disabled = false; btn.textContent = "저장"; }
+    btn.disabled = false;
+    btn.textContent = "저장";
+    if (ok && status) {
+      status.textContent = "저장됨";
+      setTimeout(() => { if (status) status.textContent = ""; }, 2500);
+    }
   });
   overlay.addEventListener("click", ev => { if (ev.target === overlay) overlay.remove(); });
 }
@@ -2490,7 +2674,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   if (!domain || typeof domain !== "object") return false;
   const meta = domain.autoAssignMeta;
   if (!meta || typeof meta !== "object") return false;
-  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR218" && meta.currentEntriesAudit?.version === "r221-current-entries-audit";
+  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR222" && meta.currentEntriesAudit?.version === "r222-current-entries-audit";
   const legacyKeys = [
     ...(keepCurrentAudit ? [] : ["validationSummary", "ok"]),
     "validatorOk",
@@ -2585,7 +2769,7 @@ function buildScheduleConditionRuntimeSummary() {
     }
   });
   return {
-    mode: "schedule-condition-runtime-r221",
+    mode: "schedule-condition-runtime-r222",
     checkedCardCount: checkedCards.size,
     violationCount: violations.length,
     violations: violations.slice(0, 50),
@@ -4912,7 +5096,7 @@ function renderAll() {
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      try { console.info(`[data-sync:r221] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}`); } catch (_) {}
+      try { console.info(`[data-sync:r222] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}`); } catch (_) {}
     }
   }
   recomputeConflicts();
