@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-manual-multiroom-regexfix-r224";
+import { versioned } from "./version.js?v=2026-07-06-condition-popup-multiroom-persist-r225";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-manual-multiroom-regexfix-r224";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-condition-popup-multiroom-persist-r225";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-manual-multiroom-regexfix-r224";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-condition-popup-multiroom-persist-r225";
 
 
 const [
@@ -925,7 +925,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r222-current-entries-audit",
+    version: "r225-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -961,7 +961,7 @@ function refreshCurrentEntriesAuditMeta({ persist = false } = {}) {
   meta.currentValidationSummary = audit.summary;
   meta.validationSummary = audit.summary;
   meta.ok = audit.ok;
-  meta.metricSource = "currentEntriesAuditR222";
+  meta.metricSource = "currentEntriesAuditR225";
   meta.finalMetrics = {
     ...(meta.finalMetrics || {}),
     validationOk: audit.ok,
@@ -1018,12 +1018,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r222] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r225] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r222] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}`);
+    console.info(`[data-sync:r225] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}`);
   } catch (_) {}
   return result;
 }
@@ -1586,7 +1586,7 @@ function getRequiredRoomCountFromObject(obj = {}) {
     { min: 1, max: 12 }
   );
 }
-const SCHEDULE_CONDITION_STORE_VERSION = "r224";
+const SCHEDULE_CONDITION_STORE_VERSION = "r225";
 const SCHEDULE_CONDITION_LOCAL_STORAGE_KEY = "his.timetable.scheduleConditions.v1";
 
 function cloneScheduleConditionStore(store = {}) {
@@ -1666,7 +1666,7 @@ function mergeScheduleConditionBucket(target = {}, source = {}) {
     const normalized = normalizeScheduleConditionRow(row);
     if (!normalized) return;
     const prev = normalizeScheduleConditionRow(target[key]);
-    // r224: 이전 r222는 Math.max 병합이라 사용자가 5→1처럼 줄여도 localStorage/autoAssignMeta의
+    // r225: 이전 r222는 Math.max 병합이라 사용자가 5→1처럼 줄여도 localStorage/autoAssignMeta의
     // 오래된 큰 값이 되살아났습니다. 이제는 updatedAt이 더 최신인 행을 우선하고, 시간이 같으면
     // 뒤쪽 source가 이기게 해서 사용자의 마지막 저장값이 그대로 남습니다.
     if (!prev || clean(normalized.updatedAt) >= clean(prev.updatedAt)) target[key] = normalized;
@@ -1865,6 +1865,19 @@ function applyScheduleConditionsToPlacementData(data = {}, cards = [], group = n
   if (rooms > 1) {
     data.requiredRoomCount = rooms;
     data.multiRoomCount = rooms;
+  }
+  const manualRoomIds = group
+    ? scheduleConditionRoomIdsFromObject(getStoredScheduleCondition("group", group?.id)).concat(scheduleConditionRoomIdsFromObject(group || {}))
+    : sourceCards.flatMap(card => scheduleConditionRoomIdsFromObject(getStoredScheduleCondition("card", card?.id)).concat(scheduleConditionRoomIdsFromObject(card || {})));
+  const roomIds = [...new Set(manualRoomIds.map(clean).filter(Boolean))];
+  if (roomIds.length) {
+    data.manualRoomIds = roomIds;
+    data.fixedRoomIds = roomIds;
+    data.solverFixedRoomIds = roomIds;
+    data.requiredRoomIds = roomIds;
+    data.roomIds = roomIds;
+    data.requiredRoomCount = Math.max(data.requiredRoomCount || 1, roomIds.length);
+    data.multiRoomCount = data.requiredRoomCount;
   }
   return data;
 }
@@ -2117,7 +2130,13 @@ function openScheduleConditionPopup() {
       <div id="ttScheduleConditionPopupBody" style="overflow:auto"></div>
     </div>`;
   document.body.appendChild(overlay);
-  renderScheduleConditionPopupContent();
+  try {
+    renderScheduleConditionPopupContent();
+  } catch (e) {
+    console.error("[schedule-condition-popup:r225] render failed", e);
+    const body = $("ttScheduleConditionPopupBody");
+    if (body) body.innerHTML = `<div style="padding:18px;color:#b91c1c;font-weight:900">조건창을 여는 중 오류가 발생했습니다.<br><span style="font-weight:700;color:#475569">${escapeHtml(e?.message || String(e))}</span></div>`;
+  }
   overlay.querySelector("[data-schedule-condition-close]")?.addEventListener("click", () => overlay.remove());
   overlay.querySelector("[data-schedule-condition-save]")?.addEventListener("click", async ev => {
     const btn = ev.currentTarget;
@@ -2569,6 +2588,16 @@ function resolveRoomForTtCard(card = {}, fallbackEntry = {}) {
   return resolveRoomForPlacementData(data, rule);
 }
 
+function roomIdsForTtCard(card = {}, fallbackEntry = {}) {
+  if (!card?.id) return [];
+  const rule = roomRuleForCard(card);
+  if (rule === "none") return [];
+  const manualIds = scheduleConditionRoomIdsFromObject(card);
+  if (manualIds.length) return manualIds;
+  const one = resolveRoomForTtCard(card, fallbackEntry);
+  return one ? [one] : [];
+}
+
 function isManualRoomOverrideForCard(entry = {}, cardId = "", explicitRoomId = "") {
   const roomId = clean(explicitRoomId);
   if (!roomId) return false;
@@ -2598,7 +2627,8 @@ function roomAssignmentsForEntry(entry = {}) {
   ids.forEach(id => {
     const card = getTtCardById(id);
     const cardRule = roomRuleForCard(card || {});
-    const cardRoom = resolveRoomForTtCard(card, entry);
+    const cardRoomIds = roomIdsForTtCard(card, entry);
+    const cardRoom = cardRoomIds[0] || "";
 
     // r208: 과목카드의 지정교실/홈룸/교실없음은 최상위 사용자 규칙입니다.
     // 단, roomRule=teacher 카드의 과거 roomAssignmentsByTtCardId 값은 CP-SAT/자동배치가
@@ -2648,7 +2678,11 @@ function shouldUseEntryRoomIdFallback(entry = {}, assignedIds = []) {
 function effectiveRoomIdsForEntry(entry = {}) {
   const assignmentIds = Object.values(roomAssignmentsForEntry(entry)).map(clean).filter(Boolean);
   const explicitRoomIds = Array.isArray(entry.roomIds) ? entry.roomIds.map(clean).filter(Boolean) : [];
-  const ids = [...assignmentIds, ...explicitRoomIds];
+  const cardRoomIds = ttCardIdsFromPlacement(entry)
+    .flatMap(id => roomIdsForTtCard(getTtCardById(id), entry))
+    .map(clean)
+    .filter(Boolean);
+  const ids = [...assignmentIds, ...explicitRoomIds, ...cardRoomIds];
   // 그룹카드는 entry.roomId 하나로 교실을 대표하면 안 됩니다.
   // 단일 카드도 카드별 계산값이 있으면 stale entry.roomId를 함께 표시/검증하지 않습니다.
   if (shouldUseEntryRoomIdFallback(entry, assignmentIds)) ids.push(clean(entry.roomId));
@@ -2684,17 +2718,26 @@ function applyCardRoomAssignmentsToEntryData(data = {}) {
   const ids = ttCardIdsFromPlacement(data);
   if (!ids.length) return data;
   const assignments = {};
+  const allRooms = [];
   ids.forEach(id => {
-    const roomId = resolveRoomForTtCard(getTtCardById(id), data);
-    if (roomId) assignments[id] = roomId;
+    const roomIds = roomIdsForTtCard(getTtCardById(id), data);
+    if (roomIds.length) {
+      assignments[id] = roomIds[0];
+      roomIds.forEach(roomId => allRooms.push(roomId));
+    }
   });
   data.roomAssignmentsByTtCardId = assignments;
-  const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
+  const rooms = [...new Set(allRooms.map(clean).filter(Boolean))];
+  if (rooms.length > 1) data.roomIds = rooms;
+  else delete data.roomIds;
   if (isGroupedRoomEntry(data)) {
     data.roomId = null;
     data.roomPinned = false;
   } else if (rooms.length === 1) data.roomId = rooms[0];
-  else if (rooms.length > 1) data.roomId = null;
+  else if (rooms.length > 1) {
+    data.roomId = null;
+    data.roomPinned = false;
+  }
   return data;
 }
 
@@ -2705,12 +2748,18 @@ function refreshEntryRoomAssignmentsFromCards(cardIds = []) {
     const ids = ttCardIdsFromPlacement(entry);
     if (!ids.some(id => target.has(id))) return;
     const assignments = {};
+    const allRooms = [];
     ids.forEach(id => {
-      const roomId = resolveRoomForTtCard(getTtCardById(id), entry);
-      if (roomId) assignments[id] = roomId;
+      const roomIds = roomIdsForTtCard(getTtCardById(id), entry);
+      if (roomIds.length) {
+        assignments[id] = roomIds[0];
+        roomIds.forEach(roomId => allRooms.push(roomId));
+      }
     });
     entry.roomAssignmentsByTtCardId = assignments;
-    const rooms = [...new Set(Object.values(assignments).map(clean).filter(Boolean))];
+    const rooms = [...new Set(allRooms.map(clean).filter(Boolean))];
+    if (rooms.length > 1) entry.roomIds = rooms;
+    else delete entry.roomIds;
     if (isGroupedRoomEntry(entry)) {
       entry.roomId = null;
       entry.roomPinned = false;
@@ -2752,11 +2801,22 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
         return;
       }
 
-      const expectedRoomId = resolveRoomForTtCard(card, entry);
+      const expectedRoomIds = roomIdsForTtCard(card, entry);
+      const expectedRoomId = expectedRoomIds[0] || "";
       if (!expectedRoomId) return;
 
       const currentRoomId = clean(nextAssignments[id]);
       const manualOverride = isManualRoomOverrideForCard(entry, id, currentRoomId);
+      // r225: 수동 다중교실은 card.roomIds/manualRoomIds 전체를 entry.roomIds에 보존하고,
+      // roomAssignmentsByTtCardId에는 대표 교실만 둡니다.
+      if (expectedRoomIds.length > 1) {
+        const prevRoomIds = Array.isArray(entry.roomIds) ? entry.roomIds.map(clean).filter(Boolean) : [];
+        const nextRoomIds = [...new Set([...(prevRoomIds || []).filter(x => !expectedRoomIds.includes(x)), ...expectedRoomIds])];
+        if (JSON.stringify(prevRoomIds) !== JSON.stringify(nextRoomIds)) {
+          entry.roomIds = nextRoomIds;
+          touched = true;
+        }
+      }
       // r208: fixed/homeroom은 항상 카드 기준으로 보정합니다. teacher는 수동 고정이 아닌 경우에만
       // 교사 지정교실로 되돌립니다. 사용자가 지정교실 고정으로 바꾼 카드는 위에서 manualOverride가 됩니다.
       if ((rule === "fixed" || rule === "homeroom" || rule === "teacher") && !manualOverride && currentRoomId !== expectedRoomId) {
@@ -2771,7 +2831,9 @@ function reconcileExistingEntryRoomAssignmentsFromCards({ persist = false } = {}
     // r210: persist=false여도 화면/검증용 런타임 데이터는 즉시 보정합니다.
     // 저장 권한이 없거나 로그인 전에 1회 보정이 지나가면 stale roomId가 계속 화면에 남는 문제가 있었습니다.
     entry.roomAssignmentsByTtCardId = nextAssignments;
-    const rooms = [...new Set(Object.values(nextAssignments).map(clean).filter(Boolean))];
+    const rooms = effectiveRoomIdsForEntry(entry);
+    if (rooms.length > 1) entry.roomIds = rooms;
+    else if (!rooms.length) delete entry.roomIds;
     const rules = ids.map(id => roomRuleForCard(getTtCardById(id) || {}));
     const allFixedRules = rules.length > 0 && rules.every(r => r === "fixed");
     const entryRule = normalizeRoomRuleValue(entry.roomRule || "teacher");
@@ -2811,7 +2873,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   if (!domain || typeof domain !== "object") return false;
   const meta = domain.autoAssignMeta;
   if (!meta || typeof meta !== "object") return false;
-  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR222" && meta.currentEntriesAudit?.version === "r222-current-entries-audit";
+  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR225" && meta.currentEntriesAudit?.version === "r225-current-entries-audit";
   const legacyKeys = [
     ...(keepCurrentAudit ? [] : ["validationSummary", "ok"]),
     "validatorOk",
@@ -2906,7 +2968,7 @@ function buildScheduleConditionRuntimeSummary() {
     }
   });
   return {
-    mode: "schedule-condition-runtime-r222",
+    mode: "schedule-condition-runtime-r225",
     checkedCardCount: checkedCards.size,
     violationCount: violations.length,
     violations: violations.slice(0, 50),
@@ -5233,7 +5295,7 @@ function renderAll() {
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      try { console.info(`[data-sync:r222] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}`); } catch (_) {}
+      try { console.info(`[data-sync:r225] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}`); } catch (_) {}
     }
   }
   recomputeConflicts();
@@ -5773,6 +5835,18 @@ $("ttAutoAssignBtn")?.addEventListener("click", async () => {
   try { await ensureTimetableDataSyncedForOperation("auto-assign-button"); } catch (e) { alert("자동배치 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
   autoAssignAll();
 });
+
+try {
+  globalThis.openScheduleConditionPopup = openScheduleConditionPopup;
+  document.addEventListener("click", ev => {
+    const target = ev.target?.closest?.("#ttScheduleConditionGlobalBtn,#ttScheduleConditionMiniBtn,[data-open-schedule-condition]");
+    if (!target) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    openScheduleConditionPopup();
+  }, true);
+} catch (_) {}
+
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
 $("ttScheduleConditionGlobalBtn")?.addEventListener("click", () => openScheduleConditionPopup());
 $("ttManualCardVaultGlobalBtn")?.addEventListener("click", () => openManualCardVaultPopup());
