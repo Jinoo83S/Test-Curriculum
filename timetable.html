@@ -1879,7 +1879,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r234</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r235</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1888,7 +1888,7 @@ body.tt-bottom-is-open #ttGrid{
     <span class="tt-auth-status" id="ttAuthStatus">로그인 확인 중…</span>
     <button id="ttLoginBtn" class="hidden">Google 로그인</button>
     <button id="ttLogoutBtn" class="hidden">로그아웃</button>
-    <button id="ttExportBtn">🖨 출력</button>
+    <button type="button" onclick="location.href='timetable-print.html'">🖨 출력</button>
     <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
     <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
     <button id="ttAutoPrecheckBtn" class="tt-precheck-btn" type="button">🩺 사전 점검</button>

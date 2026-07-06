@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HIS 시간표 PDF 출력 디자이너</title>
+<style>
+:root{--nav:#183d69;--line:#dbe4f0;--soft:#f6f8fc;--text:#102033;--muted:#64748b;--blue:#2563eb;--page-w:1123px;--page-h:794px}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:#eef3f9;overflow:hidden}.topbar{height:54px;background:var(--nav);color:#fff;display:flex;align-items:center;gap:12px;padding:0 16px;box-shadow:0 1px 6px #0002;white-space:nowrap}.topbar a{color:#dbeafe;text-decoration:none;font-weight:800}.topbar h1{font-size:18px;margin:0;font-weight:900}.badge{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:#dff3ff;color:#075985;font-size:12px;font-weight:900}.spacer{flex:1}.status{font-size:12px;color:#dbeafe;max-width:320px;overflow:hidden;text-overflow:ellipsis}.topbar button,.panel button{border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#0f172a;height:34px;padding:0 12px;font-weight:900;cursor:pointer}.topbar .primary,.panel .primary{background:#2563eb;color:#fff;border-color:#1d4ed8}.topbar .danger{background:#fff1f2;color:#be123c;border-color:#fecdd3}.hidden{display:none!important}.app{height:calc(100% - 54px);display:grid;grid-template-columns:320px minmax(420px,1fr) 320px;gap:0}.sidebar{height:100%;overflow:auto;background:#fff;border-right:1px solid var(--line);padding:14px}.sidebar.right{border-right:0;border-left:1px solid var(--line)}.panel{border:1px solid var(--line);border-radius:14px;background:#fff;margin-bottom:12px;overflow:hidden}.panel h2{margin:0;padding:11px 12px;background:#f8fafc;border-bottom:1px solid var(--line);font-size:13px}.panel .body{padding:12px}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}.field span,.checkrow span{font-size:12px;color:#475569;font-weight:900}.field input,.field select{height:34px;border:1px solid #cbd5e1;border-radius:9px;padding:5px 8px;background:#fff;font-size:13px}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.btnrow{display:flex;gap:6px;flex-wrap:wrap}.btnrow button{height:30px;font-size:12px}.hint{font-size:12px;color:#64748b;line-height:1.45;margin-top:6px}.divider{height:1px;background:#e2e8f0;margin:10px 0}.check{display:flex;align-items:center;gap:8px;min-height:32px;border:1px solid #e2e8f0;border-radius:10px;padding:5px 8px;background:#f8fafc;font-size:13px}.check input{width:16px;height:16px}.checkrow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:7px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;margin-bottom:7px}.checkrow input[type="checkbox"]{width:16px;height:16px}.checkrow select{height:30px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:12px;padding:2px 6px}.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.chip{display:flex;align-items:center;gap:7px;border:1px solid #dbe4f0;border-radius:10px;padding:8px;background:#fff;font-size:13px;font-weight:800}.chip input{width:16px;height:16px}.entity-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;padding-right:4px}.entity-item{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px}.entity-item input{width:16px;height:16px}.entity-item b{font-size:13px}.entity-item small{font-size:11px;color:#64748b}.preview-wrap{height:100%;display:flex;flex-direction:column;overflow:hidden}.preview-toolbar{height:44px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 12px}.preview-toolbar .meta{font-size:12px;color:#64748b;font-weight:800}.zoom{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:#475569}.zoom input{width:130px}.preview-scroll{flex:1;overflow:auto;padding:20px}.preview-inner{transform-origin:top center;margin:0 auto;width:max-content}.preview-page{width:var(--page-w);min-height:var(--page-h);background:#fff;border:1px solid #cbd5e1;box-shadow:0 10px 28px #0f172a2a;margin:0 auto 18px;padding:18px;page-break-after:always}.preview-page:last-child{page-break-after:auto}.preview-page h3{margin:0 0 8px;text-align:center;font-size:22px}.preview-sub{margin:-4px 0 10px;text-align:center;font-size:12px;color:#64748b;font-weight:800}.tt-table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #1f2937}.tt-table th,.tt-table td{border:1px solid #94a3b8;text-align:center;vertical-align:middle;padding:2px;overflow:hidden}.tt-table thead th{background:#f1f5f9;font-size:13px;height:28px}.tt-table tbody th{background:#f8fafc;width:42px;font-size:13px}.tt-table td{height:92px}.overview .tt-table td{height:58px}.overview .tt-table thead th{font-size:9px;padding:1px}.overview .tt-table tbody th{font-size:12px;width:52px}.lesson-cell{width:100%;height:100%;display:grid;gap:2px}.lesson-cell.count-1{grid-template-columns:1fr}.lesson-cell.count-2{grid-template-columns:1fr 1fr}.lesson-cell.count-3,.lesson-cell.count-4,.lesson-cell.count-many{grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr)}.lesson-cell.layout-vertical{grid-template-columns:1fr}.lesson-cell.layout-columns{grid-template-columns:repeat(2,minmax(0,1fr))}.lesson-cell.layout-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.mini-card{position:relative;min-height:0;height:100%;border:1px solid #cbd5e1;border-radius:4px;background:#fff;overflow:hidden;padding:2px}.mini-card.cell-mode{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;position:relative}.field-item{position:absolute;display:flex;flex-direction:column;line-height:1.05;max-width:98%;overflow-wrap:anywhere;color:#334155;font-size:10px}.font-small .field-item{font-size:9px}.font-large .field-item{font-size:11px}.field-item.bold{font-weight:900;color:#111827}.field-subject{font-size:1.25em}.field-english{font-size:.82em;color:#64748b}.field-teacher,.field-room{font-size:.95em}.field-class,.field-period{font-size:.82em;color:#475569}.pos-tl{top:2px;left:3px;text-align:left;align-items:flex-start}.pos-tc{top:2px;left:50%;transform:translateX(-50%);text-align:center;align-items:center;width:94%}.pos-tr{top:2px;right:3px;text-align:right;align-items:flex-end}.pos-ml{top:50%;left:3px;transform:translateY(-50%);text-align:left;align-items:flex-start}.pos-mc{top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;align-items:center;width:96%}.pos-mr{top:50%;right:3px;transform:translateY(-50%);text-align:right;align-items:flex-end}.pos-bl{bottom:2px;left:3px;text-align:left;align-items:flex-start}.pos-bc{bottom:2px;left:50%;transform:translateX(-50%);text-align:center;align-items:center;width:94%}.pos-br{bottom:2px;right:3px;text-align:right;align-items:flex-end}.cell-line{font-size:10px;line-height:1.12}.cell-line b{font-weight:900}.empty{background:#fff}.saved-pill{display:inline-flex;align-items:center;height:22px;border-radius:999px;padding:0 8px;font-size:11px;font-weight:900;background:#ecfdf5;color:#047857}.warn{color:#b45309}.disabled-note{padding:40px;text-align:center;color:#64748b}.scope-options{display:grid;grid-template-columns:1fr 1fr;gap:7px}.scope-options .check:first-child{grid-column:span 2}.subject-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;max-height:160px;overflow:auto}.subject-list label{font-size:12px}.right-actions{display:flex;gap:6px;margin-bottom:8px}.right-actions button{height:28px;font-size:12px;padding:0 8px}.print-only{display:none}@page{size:A4 landscape;margin:5mm}@media print{html,body{height:auto;overflow:visible;background:#fff}.topbar,.sidebar,.preview-toolbar{display:none!important}.app{display:block;height:auto}.preview-wrap,.preview-scroll{display:block;height:auto;overflow:visible;padding:0;background:#fff}.preview-inner{transform:none!important;width:auto;margin:0}.preview-page{width:auto;min-height:auto;margin:0;padding:0;border:0;box-shadow:none;page-break-after:always}.preview-page:last-child{page-break-after:auto}.preview-page h3{font-size:16px;margin:0 0 2mm}.preview-sub{font-size:9px;margin:-1mm 0 2mm}.tt-table{border-width:1.5px}.tt-table thead th{font-size:10px;height:7mm}.tt-table tbody th{font-size:10px;width:9mm}.tt-table td{height:23mm}.overview .tt-table td{height:12mm}.overview .tt-table thead th{font-size:6.5px}.overview .tt-table tbody th{font-size:8.5px}.field-item{font-size:7.4px}.font-small .field-item{font-size:6.5px}.font-large .field-item{font-size:8.4px}.mini-card{border-width:.6px;border-radius:2px}.lesson-cell{gap:1px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a href="timetable.html">← 시간표로 돌아가기</a>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r235</span></h1>
+  <div class="spacer"></div>
+  <span id="authStatus" class="status">로그인 확인 중…</span>
+  <button id="loginBtn" class="hidden">Google 로그인</button>
+  <button id="logoutBtn" class="hidden">로그아웃</button>
+  <button id="refreshBtn">미리보기 새로고침</button>
+  <button id="printBtn" class="primary">PDF 저장/인쇄</button>
+</header>
+<main class="app">
+  <aside class="sidebar left">
+    <section class="panel"><h2>출력 종류</h2><div class="body">
+      <div class="field"><span>대상</span><select id="targetType"><option value="class">학급</option><option value="teacher">교사</option><option value="room">교실</option></select></div>
+      <div class="field"><span>출력 방식</span><select id="layoutMode"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select></div>
+      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
+      <div class="hint">출력 종류별 설정은 자동 저장됩니다. 예: 학급·개별·PDF 설정과 교사·개별·PDF 설정을 따로 기억합니다.</div>
+    </div></section>
+
+    <section class="panel"><h2>카드 표시</h2><div class="body">
+      <div class="btnrow"><button data-preset="simple">간단</button><button data-preset="basic">기본</button><button data-preset="detail">상세</button><span id="saveIndicator" class="saved-pill">설정 저장됨</span></div>
+      <div class="divider"></div>
+      <div class="two"><div class="field"><span>한 셀 다중과목</span><select id="cellLayout"><option value="auto">자동 1/2/4분할</option><option value="grid">2×2 고정</option><option value="columns">가로 분할</option><option value="vertical">세로 분할</option></select></div><div class="field"><span>적용 범위</span><select id="applyMode"><option value="card">카드별 적용</option><option value="cell">셀 전체 적용</option></select></div></div>
+      <div class="field"><span>글자 크기</span><select id="fontScale"><option value="small">작게</option><option value="normal">기본</option><option value="large">크게</option></select></div>
+      <div id="fieldRows"></div>
+    </div></section>
+  </aside>
+
+  <section class="preview-wrap">
+    <div class="preview-toolbar"><strong>미리보기</strong><span id="previewMeta" class="meta">데이터 로딩 중…</span><div class="zoom"><span>확대</span><input id="zoom" type="range" min="45" max="110" value="75"><b id="zoomText">75%</b></div></div>
+    <div class="preview-scroll"><div id="previewInner" class="preview-inner"><div class="preview-page"><div class="disabled-note">데이터를 불러오는 중입니다.</div></div></div></div>
+  </section>
+
+  <aside class="sidebar right">
+    <section class="panel"><h2>출력 범위</h2><div class="body">
+      <div class="scope-options">
+        <label class="check"><input type="radio" name="scope" value="all" checked><span>전체</span></label>
+        <label class="check"><input type="radio" name="scope" value="middle"><span>중등 7–9</span></label>
+        <label class="check"><input type="radio" name="scope" value="high"><span>고등 10–12</span></label>
+        <label class="check"><input type="radio" name="scope" value="custom"><span>반 직접 선택</span></label>
+      </div>
+      <div class="divider"></div>
+      <div id="classChips" class="chips"></div>
+    </div></section>
+
+    <section class="panel"><h2>출력 대상 선택</h2><div class="body">
+      <div class="right-actions"><button id="selectEntitiesAll">전체 선택</button><button id="selectEntitiesNone">전체 해제</button></div>
+      <div id="entityList" class="entity-list"></div>
+      <div class="hint" id="entityHint">선택된 대상만 가운데 미리보기에 표시됩니다.</div>
+    </div></section>
+
+    <section class="panel"><h2>간략 출력 과목</h2><div class="body">
+      <div id="specialSubjects" class="subject-list"></div>
+      <div class="hint">체크한 과목/그룹은 세부 교사·교실 나열을 줄이고 간략 카드로 표시할 때 사용할 수 있습니다.</div>
+    </div></section>
+  </aside>
+</main>
+<script type="module">
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-06-print-designer-r235";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-06-print-designer-r235";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-06-print-designer-r235";
+
+const VERSION = "2026-07-06-print-designer-r235";
+const DAYS = ["월", "화", "수", "목", "금"];
+const FIELD_DEFS = [
+  { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
+  { key:"english", label:"영문명", pos:"bc", bold:false, enabled:true },
+  { key:"teacher", label:"교사", pos:"bl", bold:false, enabled:true },
+  { key:"room", label:"교실", pos:"br", bold:true, enabled:true },
+  { key:"class", label:"반", pos:"tl", bold:false, enabled:false },
+  { key:"period", label:"수업시간대", pos:"tr", bold:false, enabled:false },
+];
+const POSITIONS = [["tl","↖ 위 왼쪽"],["tc","↑ 위 중앙"],["tr","↗ 위 오른쪽"],["ml","← 가운데 왼쪽"],["mc","● 가운데"],["mr","→ 가운데 오른쪽"],["bl","↙ 아래 왼쪽"],["bc","↓ 아래 중앙"],["br","↘ 아래 오른쪽"]];
+const STORE_KEY = "his_print_designer_profiles_r235";
+const LAST_KEY = "his_print_designer_last_profile_r235";
+const $ = id => document.getElementById(id);
+const clean = v => String(v ?? "").trim();
+const esc = v => clean(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+const unique = list => [...new Set((list||[]).map(clean).filter(Boolean))];
+let subscribed = false;
+let applying = false;
+let renderTimer = 0;
+let entitiesCache = [];
+let dataReady = false;
+
+function gradeNo(value="") { const m = clean(value).match(/\d{1,2}/); return m ? Number(m[0]) : 0; }
+function sectionName(value="") { return clean(value).replace(/^\d+\s*/, "").replace(/^학년\s*/, "") || clean(value); }
+function classLabel(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}${n}` : clean(cls.label || cls.name || cls.id); }
+function classKey(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}:${n}` : clean(cls.key || cls.id); }
+function normalizeClassKey(v="") { const raw = clean(v).replace(/학년/g,"").replace(/\s+/g,""); const m = raw.match(/^(\d{1,2})[:\-]?([A-Z가-힣])$/i); return m ? `${Number(m[1])}:${m[2].toUpperCase()}` : raw; }
+function splitTeachers(v="") { return unique(Array.isArray(v) ? v : clean(v).split(/[,，、\/]+/)); }
+function classes() { return (appState.classes?.classes || []).map(c => ({...c, key:classKey(c), label:classLabel(c), gradeNo:gradeNo(c.gradeKey || c.grade)})).filter(c => c.gradeNo>=7 && c.gradeNo<=12).sort((a,b)=>a.gradeNo-b.gradeNo || a.label.localeCompare(b.label,"ko",{numeric:true})); }
+function rooms() { return (appState.rooms?.rooms || []).map(r => ({...r, label:clean(r.name || r.short || r.id)})).filter(r=>r.id && r.label).sort((a,b)=>a.label.localeCompare(b.label,"ko",{numeric:true})); }
+function entries() { return appState.timetable?.entries || []; }
+function cards() { return appState.timetable?.ttcards || []; }
+function cardMap() { return new Map(cards().map(c => [c.id,c])); }
+function roomMap() { return new Map(rooms().map(r => [r.id,r])); }
+function periodLabels() { const cfg = appState.timetable?.config || {}; const raw = Array.isArray(cfg.periodLabels) ? cfg.periodLabels : []; const count = Math.max(1, raw.length || Number(cfg.periodCount) || 7); return Array.from({length:count},(_,i)=>clean(raw[i] || String(i+1)).replace(/교시/g,"") || String(i+1)); }
+function entryCardIds(e) { return unique([...(e?.ttcardIds||[]), e?.ttcardId]); }
+function cardClassKeys(c) { return unique([...(c?.classKeys||[]), ...(c?.classLabels||[]).map(normalizeClassKey)]).map(normalizeClassKey); }
+function entryClassKeys(e) { const cm = cardMap(); const keys = unique([...(e?.audienceClassKeys||[]).map(normalizeClassKey), ...entryCardIds(e).flatMap(id => cardClassKeys(cm.get(id)))]); return keys; }
+function classKeysForItem(item) { return unique([...(item.card?.classKeys||[]).map(normalizeClassKey), ...(item.card?.classLabels||[]).map(normalizeClassKey), ...(item.entry?.audienceClassKeys||[]).map(normalizeClassKey)]); }
+function entryMatchesClass(e, cls) { return entryClassKeys(e).includes(cls.key); }
+function cardTeachers(c) { return unique([...(c?.teachers||[]), ...splitTeachers(c?.teacherName)]); }
+function entryTeachers(e) { const cm=cardMap(); return unique([...splitTeachers(e?.teacherName), ...entryCardIds(e).flatMap(id => cardTeachers(cm.get(id)))]); }
+function entryMatchesTeacher(e, teacher) { return entryTeachers(e).includes(clean(teacher.key)); }
+function entryRoomIds(e) { const cm=cardMap(); const ids = unique([e?.roomId, ...(e?.roomIds||[]), ...Object.values(e?.roomAssignmentsByTtCardId||{}), ...entryCardIds(e).map(id=>cm.get(id)?.fixedRoomId)]); return ids; }
+function entryMatchesRoom(e, room) { return entryRoomIds(e).includes(room.id); }
+function roomName(id) { return roomMap().get(id)?.label || clean(id); }
+function itemRoomForCard(e, c) { const rid = e?.roomAssignmentsByTtCardId?.[c?.id] || c?.fixedRoomId || e?.roomId || (e?.roomIds||[])[0] || ""; return roomName(rid); }
+function entryRoomNames(e) { return entryRoomIds(e).map(roomName).filter(Boolean).join(", "); }
+function cardTitle(c,e) { return clean(c?.subject || c?.label || e?.groupName || e?.subject || "수업"); }
+function cardEnglish(c,e) { return clean(c?.subjectEn || e?.subjectEn || ""); }
+function cardClasses(c,e) { const labels = unique([...(c?.classLabels||[]), ...(e?.audienceClassKeys||[]).map(k=>k.replace(":", ""))]); return labels.join(", "); }
+function currentScopeMode() { return document.querySelector('input[name="scope"]:checked')?.value || "all"; }
+function selectedClassKeys() { return [...document.querySelectorAll('[data-class-key]:checked')].map(el=>el.dataset.classKey).filter(Boolean); }
+function classAllowedByScope(cls) { const mode = currentScopeMode(); if (mode === "middle") return cls.gradeNo >= 7 && cls.gradeNo <= 9; if (mode === "high") return cls.gradeNo >= 10 && cls.gradeNo <= 12; if (mode === "custom") return selectedClassKeys().includes(cls.key); return true; }
+function entryAllowedByScope(e) { const allowed = classes().filter(classAllowedByScope).map(c=>c.key); if (!allowed.length) return false; const keys = entryClassKeys(e); return !keys.length || keys.some(k => allowed.includes(k)); }
+function targetType() { return $("targetType").value; }
+function layoutMode() { return $("layoutMode").value; }
+function format() { return $("format").value; }
+function profileKey() { return `${targetType()}:${layoutMode()}:${format()}`; }
+function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", cellLayout:"auto", applyMode:"card", fontScale:"normal", scope:"all", selectedClasses:[], selectedEntities:[], specialSubjects:[], fields:Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos}])) }; }
+function readStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); } catch { return {}; } }
+function writeStore(store) { try { localStorage.setItem(STORE_KEY, JSON.stringify(store||{})); } catch {} }
+function getSettings() { const store = readStore(); return {...defaultSettings(), ...(store[profileKey()]||{})}; }
+function collectSettings() { const fields={}; FIELD_DEFS.forEach(f=>{ fields[f.key]={ enabled: !!document.querySelector(`[data-field-enabled="${f.key}"]`)?.checked, bold: !!document.querySelector(`[data-field-bold="${f.key}"]`)?.checked, pos: document.querySelector(`[data-field-pos="${f.key}"]`)?.value || f.pos }; }); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:$("paper").value, cellLayout:$("cellLayout").value, applyMode:$("applyMode").value, fontScale:$("fontScale").value, scope:currentScopeMode(), selectedClasses:selectedClassKeys(), selectedEntities:[...document.querySelectorAll('[data-entity-key]:checked')].map(el=>el.dataset.entityKey), specialSubjects:[...document.querySelectorAll('[data-special-subject]:checked')].map(el=>el.dataset.specialSubject), fields }; }
+function saveSettings() { if (applying) return; const store=readStore(); const key=profileKey(); store[key]=collectSettings(); writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); }
+function showSaved() { const el=$("saveIndicator"); el.textContent="설정 저장됨"; el.classList.remove("warn"); clearTimeout(showSaved.t); showSaved.t=setTimeout(()=>{ el.textContent="자동 저장"; },1200); }
+function showChanged() { const el=$("saveIndicator"); el.textContent="저장 중…"; el.classList.add("warn"); }
+function applySettings(settings, keepMain=false) { applying=true; const s={...defaultSettings(),...settings}; if (!keepMain) { $("targetType").value=s.targetType; $("layoutMode").value=s.layoutMode; $("format").value=s.format; } $("paper").value=s.paper; $("cellLayout").value=s.cellLayout; $("applyMode").value=s.applyMode; $("fontScale").value=s.fontScale; document.querySelectorAll('input[name="scope"]').forEach(el=>{ el.checked = el.value === (s.scope || "all"); }); document.querySelectorAll('[data-class-key]').forEach(el=>{ el.checked = (s.selectedClasses||[]).includes(el.dataset.classKey); }); FIELD_DEFS.forEach(f=>{ const v=s.fields?.[f.key] || f; const en=document.querySelector(`[data-field-enabled="${f.key}"]`); const bo=document.querySelector(`[data-field-bold="${f.key}"]`); const po=document.querySelector(`[data-field-pos="${f.key}"]`); if(en) en.checked = v.enabled !== false; if(bo) bo.checked = !!v.bold; if(po) po.value = v.pos || f.pos; }); applying=false; }
+function switchProfile() { const s = getSettings(); applySettings(s, true); renderEntityList(s.selectedEntities || []); applySpecialSubjects(s.specialSubjects || []); saveSettings(); scheduleRender(); }
+function buildFieldRows() { $("fieldRows").innerHTML = FIELD_DEFS.map(f => `<div class="checkrow"><input type="checkbox" data-field-enabled="${f.key}"><span>${esc(f.label)}</span><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b;font-weight:800"><input type="checkbox" data-field-bold="${f.key}">굵게</label><select data-field-pos="${f.key}">${POSITIONS.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select></div>`).join(""); }
+function buildClassChips() { const cls=classes(); $("classChips").innerHTML = cls.map(c=>`<label class="chip"><input type="checkbox" data-class-key="${esc(c.key)}"><span>${esc(c.label)}</span></label>`).join(""); }
+function buildSpecialSubjects() { const names = unique([...(appState.timetable?.ttcardGroups||[]).map(g=>g.name), ...cards().map(c=>c.group), "CA", "SA" ]).filter(Boolean).slice(0,60); $("specialSubjects").innerHTML = names.map(n=>`<label class="check"><input type="checkbox" data-special-subject="${esc(n)}"><span>${esc(n)}</span></label>`).join(""); }
+function applySpecialSubjects(selected=[]) { document.querySelectorAll('[data-special-subject]').forEach(el=>{ el.checked = selected.includes(el.dataset.specialSubject); }); }
+function visibleEntriesForScope() { return entries().filter(entryAllowedByScope); }
+function buildEntities() { const type=targetType(); const visibleEntries=visibleEntriesForScope(); if (type === "class") return classes().filter(classAllowedByScope).map(c=>({type,key:c.key,label:c.label,sub:`${c.gradeNo}학년`, match:e=>entryMatchesClass(e,c)})).filter(ent=>visibleEntries.some(ent.match)); if (type === "teacher") { const names=unique(visibleEntries.flatMap(entryTeachers)).sort((a,b)=>a.localeCompare(b,"ko")); return names.map(n=>({type,key:n,label:n,sub:"교사",match:e=>entryMatchesTeacher(e,{key:n})})).filter(ent=>visibleEntries.some(ent.match)); } const rm=rooms(); return rm.map(r=>({type,key:r.id,label:r.label,sub:r.type||"교실",room:r,match:e=>entryMatchesRoom(e,r)})).filter(ent=>visibleEntries.some(ent.match)); }
+function renderEntityList(selected=[]) { entitiesCache = buildEntities(); const selectedSet = new Set(selected.length ? selected : entitiesCache.map(e=>e.key)); $("entityList").innerHTML = entitiesCache.map(e=>`<label class="entity-item"><input type="checkbox" data-entity-key="${esc(e.key)}" ${selectedSet.has(e.key)?"checked":""}><b>${esc(e.label)}</b><small>${esc(e.sub||"")}</small></label>`).join("") || `<div class="hint">현재 범위에 출력할 대상이 없습니다.</div>`; $("entityHint").textContent = `${entitiesCache.length}개 대상 중 선택한 대상만 출력합니다.`; }
+function selectedEntities() { const checked = new Set([...document.querySelectorAll('[data-entity-key]:checked')].map(el=>el.dataset.entityKey)); return entitiesCache.filter(e=>checked.has(e.key)); }
+function fieldSettings() { return collectSettings().fields; }
+function itemFromCard(e,c,periodLabel) { return { entry:e, card:c, subject:cardTitle(c,e), english:cardEnglish(c,e), teacher:clean(c?.teacherName || (c?.teachers||[]).join(", ") || e?.teacherName), room:itemRoomForCard(e,c), class:cardClasses(c,e), period:periodLabel }; }
+function itemFromEntry(e,periodLabel) { return { entry:e, card:null, subject:clean(e.groupName || e.subject || "수업"), english:"", teacher:clean(e.teacherName), room:entryRoomNames(e), class:(e.audienceClassKeys||[]).map(k=>k.replace(":","")).join(", "), period:periodLabel }; }
+function entryItems(e, ent, periodLabel) { const cm=cardMap(); const type=targetType(); let ids=entryCardIds(e); let out=[]; if (ids.length) { for (const id of ids) { const c=cm.get(id); if (!c) continue; if (type === "class") { const keys = cardClassKeys(c); if (!keys.length || keys.includes(ent.key) || entryClassKeys(e).includes(ent.key)) out.push(itemFromCard(e,c,periodLabel)); }
+      else if (type === "teacher") { if (cardTeachers(c).includes(ent.key) || splitTeachers(e.teacherName).includes(ent.key)) out.push(itemFromCard(e,c,periodLabel)); }
+      else if (type === "room") { const rid = e?.roomAssignmentsByTtCardId?.[c.id] || c.fixedRoomId || e.roomId; if (rid === ent.key || (!rid && entryRoomIds(e).includes(ent.key))) out.push(itemFromCard(e,c,periodLabel)); }
+    }
+  }
+  if (!out.length && ent.match(e)) out=[itemFromEntry(e,periodLabel)];
+  return out;
+}
+function fieldHtml(item, f, settings) { const v = clean(item[f.key]); if (!v || settings.enabled === false) return ""; return `<span class="field-item field-${f.key} pos-${esc(settings.pos||f.pos)} ${settings.bold?"bold":""}">${esc(v)}</span>`; }
+function miniCardHtml(item, fields, applyMode) { if (applyMode === "cell") { return `<div class="mini-card cell-mode"><div class="cell-line"><b>${esc(item.subject)}</b></div>${item.english?`<div class="cell-line">${esc(item.english)}</div>`:""}<div class="cell-line">${esc([item.teacher,item.room].filter(Boolean).join(" · "))}</div></div>`; } return `<div class="mini-card">${FIELD_DEFS.map(f=>fieldHtml(item,f,fields[f.key]||{})).join("")}</div>`; }
+function cellHtml(cellItems) { if (!cellItems.length) return `<div class="empty"></div>`; const settings=collectSettings(); const layout = settings.cellLayout === "auto" ? "" : `layout-${settings.cellLayout}`; const count = cellItems.length >=5 ? "many" : String(cellItems.length); const visibleItems = cellItems.slice(0,6); return `<div class="lesson-cell count-${count} ${layout}">${visibleItems.map(it=>miniCardHtml(it, settings.fields, settings.applyMode)).join("")}</div>`; }
+function tableForEntity(ent) { const labels=periodLabels(); const rows = labels.map((plabel,pidx)=>`<tr><th>${esc(plabel)}</th>${DAYS.map((d,day)=>{ const items=visibleEntriesForScope().filter(e=>e.day===day && e.period===pidx && ent.match(e)).flatMap(e=>entryItems(e,ent,plabel)); return `<td>${cellHtml(items)}</td>`; }).join("")}</tr>`).join(""); return `<table class="tt-table"><thead><tr><th></th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`; }
+function pageForEntity(ent) { return `<section class="preview-page ${collectSettings().fontScale}"><h3>${esc(ent.label)} 시간표</h3><div class="preview-sub">${esc(ent.sub||"")} · ${new Date().toLocaleDateString("ko-KR")}</div>${tableForEntity(ent)}</section>`; }
+function overviewPage(ents) { const labels=periodLabels(); const header = DAYS.map(d=>labels.map(p=>`<th>${esc(d)} ${esc(p)}</th>`).join("")).join(""); const rows = ents.map(ent=>`<tr><th>${esc(ent.label)}</th>${DAYS.map((d,day)=>labels.map((plabel,pidx)=>{ const items=visibleEntriesForScope().filter(e=>e.day===day && e.period===pidx && ent.match(e)).flatMap(e=>entryItems(e,ent,plabel)); return `<td>${cellHtml(items)}</td>`; }).join("")).join("")}</tr>`).join(""); return `<section class="preview-page overview ${collectSettings().fontScale}"><h3>${targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":"교실 전체표"}</h3><div class="preview-sub">선택 대상 ${ents.length}개</div><table class="tt-table"><thead><tr><th>대상</th>${header}</tr></thead><tbody>${rows}</tbody></table></section>`; }
+function renderPreview() { if (!dataReady) return; renderEntityList(collectSettings().selectedEntities || []); const ents = selectedEntities(); const pages = layoutMode()==="overview" ? [overviewPage(ents)] : ents.map(pageForEntity); $("previewInner").innerHTML = pages.length ? pages.join("") : `<section class="preview-page"><div class="disabled-note">출력할 대상이 없습니다. 오른쪽 범위를 확인해 주세요.</div></section>`; $("previewMeta").textContent = `${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`; applyZoom(); }
+function scheduleRender() { clearTimeout(renderTimer); renderTimer=setTimeout(renderPreview, 120); }
+function applyZoom() { const z=Number($("zoom").value)||75; $("zoomText").textContent=`${z}%`; $("previewInner").style.transform=`scale(${z/100})`; }
+function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach(k=>{ s.fields[k].enabled=false; s.fields[k].bold=false; }); if (name==="simple") { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.room={enabled:true,bold:false,pos:"bc"}; s.cellLayout="auto"; s.applyMode="card"; s.fontScale="normal"; }
+  else if (name==="detail") { FIELD_DEFS.forEach(f=>{ s.fields[f.key]={enabled:true,bold:f.key==="subject"||f.key==="room",pos:f.pos}; }); s.fields.class.pos="tl"; s.fields.period.pos="tr"; s.fields.teacher.pos="bl"; s.fields.room.pos="br"; s.fields.english.pos="bc"; s.fontScale="small"; }
+  else { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.english={enabled:true,bold:false,pos:"bc"}; s.fields.teacher={enabled:true,bold:false,pos:"bl"}; s.fields.room={enabled:true,bold:true,pos:"br"}; s.fields.class={enabled:false,bold:false,pos:"tl"}; s.fields.period={enabled:false,bold:false,pos:"tr"}; s.fontScale="normal"; }
+  applySettings(s,true); saveSettings(); scheduleRender(); }
+function initialUi() { buildFieldRows(); buildClassChips(); buildSpecialSubjects(); const last=localStorage.getItem(LAST_KEY); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false); renderEntityList(base.selectedEntities||[]); applySpecialSubjects(base.specialSubjects||[]); }
+function wireEvents() { ["targetType","layoutMode","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (e.target.matches('input,select')) { showChanged(); saveSettings(); scheduleRender(); } }); document.body.addEventListener("click", e=>{ const p=e.target.closest('[data-preset]'); if(p) preset(p.dataset.preset); }); $("selectEntitiesAll").addEventListener("click",()=>{ document.querySelectorAll('[data-entity-key]').forEach(el=>el.checked=true); saveSettings(); scheduleRender(); }); $("selectEntitiesNone").addEventListener("click",()=>{ document.querySelectorAll('[data-entity-key]').forEach(el=>el.checked=false); saveSettings(); scheduleRender(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>window.print()); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms"]); } }
+function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; buildClassChips(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true); renderPreview(); }); onAuth(updateAuth); }
+boot();
+</script>
+</body>
+</html>
