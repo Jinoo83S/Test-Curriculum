@@ -6,11 +6,11 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-06-state-cache-nullguard-r228";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-multiroom-detail-nullguard-r227";
+import { versioned } from "./version.js?v=2026-07-06-state-cache-nullguard-r228";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-multiroom-detail-nullguard-r227";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-state-cache-nullguard-r228";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-multiroom-detail-nullguard-r227";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-state-cache-nullguard-r228";
 
 
 const [
@@ -925,7 +925,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r227-current-entries-audit",
+    version: "r228-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -961,7 +961,7 @@ function refreshCurrentEntriesAuditMeta({ persist = false } = {}) {
   meta.currentValidationSummary = audit.summary;
   meta.validationSummary = audit.summary;
   meta.ok = audit.ok;
-  meta.metricSource = "currentEntriesAuditR227";
+  meta.metricSource = "currentEntriesAuditR228";
   meta.finalMetrics = {
     ...(meta.finalMetrics || {}),
     validationOk: audit.ok,
@@ -1018,12 +1018,12 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r227] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r228] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r227] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}, audit=${result.auditChanged || 0}`);
+    console.info(`[data-sync:r228] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}, audit=${result.auditChanged || 0}`);
   } catch (_) {}
   return result;
 }
@@ -1586,7 +1586,7 @@ function getRequiredRoomCountFromObject(obj = {}) {
     { min: 1, max: 12 }
   );
 }
-const SCHEDULE_CONDITION_STORE_VERSION = "r227";
+const SCHEDULE_CONDITION_STORE_VERSION = "r228";
 const SCHEDULE_CONDITION_LOCAL_STORAGE_KEY = "his.timetable.scheduleConditions.v1";
 
 function cloneScheduleConditionStore(store = {}) {
@@ -2133,7 +2133,7 @@ function openScheduleConditionPopup() {
   try {
     renderScheduleConditionPopupContent();
   } catch (e) {
-    console.error("[schedule-condition-popup:r227] render failed", e);
+    console.error("[schedule-condition-popup:r228] render failed", e);
     const body = $("ttScheduleConditionPopupBody");
     if (body) body.innerHTML = `<div style="padding:18px;color:#b91c1c;font-weight:900">조건창을 여는 중 오류가 발생했습니다.<br><span style="font-weight:700;color:#475569">${escapeHtml(e?.message || String(e))}</span></div>`;
   }
@@ -2873,7 +2873,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   if (!domain || typeof domain !== "object") return false;
   const meta = domain.autoAssignMeta;
   if (!meta || typeof meta !== "object") return false;
-  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR227" && meta.currentEntriesAudit?.version === "r227-current-entries-audit";
+  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR228" && meta.currentEntriesAudit?.version === "r228-current-entries-audit";
   const legacyKeys = [
     ...(keepCurrentAudit ? [] : ["validationSummary", "ok"]),
     "validatorOk",
@@ -2968,7 +2968,7 @@ function buildScheduleConditionRuntimeSummary() {
     }
   });
   return {
-    mode: "schedule-condition-runtime-r227",
+    mode: "schedule-condition-runtime-r228",
     checkedCardCount: checkedCards.size,
     violationCount: violations.length,
     violations: violations.slice(0, 50),
@@ -5295,10 +5295,10 @@ function renderAll() {
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
       if (canEdit()) scheduleSave("timetable");
-      // r227: audit 메타만 갱신된 경우에는 정상 내부 보정이므로 콘솔에 반복 출력하지 않습니다.
+      // r228: audit 메타만 갱신된 경우에는 정상 내부 보정이므로 콘솔에 반복 출력하지 않습니다.
       const visibleChanged = (sync.teacherChanged || 0) + (sync.manualChanged || 0) + (sync.roomChanged || 0) + (sync.conditionChanged || 0) + (sync.metaChanged || 0);
       if (visibleChanged) {
-        try { console.info(`[data-sync:r227] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
+        try { console.info(`[data-sync:r228] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
       }
     }
   }
