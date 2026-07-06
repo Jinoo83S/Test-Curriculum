@@ -208,6 +208,135 @@ const ROOM_RULE_LABELS = {
   none: "교실 사용 안 함",
 };
 
+
+const SCHEDULE_CONDITION_LOCAL_STORAGE_KEY = "his.timetable.scheduleConditions.v1";
+
+function normalizeSchedulePositiveIntLocal(value, fallback = 1, { min = 1, max = 12 } = {}) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+function scheduleRoomIdsFromObjectLocal(row = {}) {
+  const candidates = [
+    row.manualRoomIds,
+    row.fixedRoomIds,
+    row.solverFixedRoomIds,
+    row.requiredRoomIds,
+    row.roomIds,
+    row.manualRooms,
+    row.fixedRooms,
+    row.roomNames,
+  ];
+  const rooms = getRooms();
+  const byId = new Map(rooms.map(r => [clean(r.id), clean(r.id)]).filter(([id]) => id));
+  const byName = new Map(rooms.map(r => [clean(r.name).toLocaleLowerCase("ko"), clean(r.id)]).filter(([name, id]) => name && id));
+  for (const value of candidates) {
+    const raw = Array.isArray(value) ? value : (typeof value === "string" ? value.split(/[\s,，;；]+/) : []);
+    const ids = uniqueIds(raw.map(token => {
+      const text = clean(token);
+      if (!text) return "";
+      return byId.get(text) || byName.get(text.toLocaleLowerCase("ko")) || text;
+    }).filter(Boolean));
+    if (ids.length) return ids;
+  }
+  return [];
+}
+function requiredRoomCountFromObjectLocal(row = {}) {
+  return Math.max(
+    normalizeSchedulePositiveIntLocal(row.requiredRoomCount ?? row.multiRoomCount ?? row.solverRequiredRoomCount ?? 1, 1, { min: 1, max: 12 }),
+    scheduleRoomIdsFromObjectLocal(row).length || 1
+  );
+}
+function normalizeScheduleConditionRowLocal(row = {}) {
+  if (!row || typeof row !== "object") return null;
+  const roomIds = scheduleRoomIdsFromObjectLocal(row);
+  const requiredRoomCount = requiredRoomCountFromObjectLocal(row);
+  const durationPeriods = normalizeSchedulePositiveIntLocal(
+    row.durationPeriods ?? row.continuousPeriods ?? row.consecutivePeriods ?? row.solverDurationPeriods ?? 1,
+    1,
+    { min: 1, max: 7 }
+  );
+  if (durationPeriods <= 1 && requiredRoomCount <= 1 && !roomIds.length) return null;
+  return {
+    durationPeriods,
+    requiredRoomCount,
+    roomIds,
+    updatedAt: clean(row.updatedAt || row.scheduleConditionEditedAt || "")
+  };
+}
+function readScheduleConditionLocalBackup() {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(SCHEDULE_CONDITION_LOCAL_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_) { return null; }
+}
+function storedScheduleConditionRowLocal(kind = "card", id = "") {
+  const key = clean(id);
+  if (!key) return null;
+  const bucketName = kind === "group" ? "groups" : "cards";
+  const sources = [
+    appState.timetable?.scheduleConditions,
+    appState.timetable?.autoAssignMeta?.scheduleConditions,
+    readScheduleConditionLocalBackup(),
+  ].filter(src => src && typeof src === "object");
+  let best = null;
+  sources.forEach(src => {
+    const row = normalizeScheduleConditionRowLocal(src[bucketName]?.[key]);
+    if (!row) return;
+    if (!best || clean(row.updatedAt) >= clean(best.updatedAt)) best = row;
+  });
+  return best;
+}
+function mergedScheduleConditionForCardLocal(card = {}) {
+  const own = normalizeScheduleConditionRowLocal(card) || null;
+  const stored = storedScheduleConditionRowLocal("card", card?.id) || null;
+  const rows = [own, stored].filter(Boolean);
+  if (!rows.length) return null;
+  return {
+    durationPeriods: Math.max(1, ...rows.map(r => r.durationPeriods || 1)),
+    requiredRoomCount: Math.max(1, ...rows.map(r => r.requiredRoomCount || 1)),
+    roomIds: uniqueIds(rows.flatMap(r => r.roomIds || [])),
+    updatedAt: rows.map(r => clean(r.updatedAt)).sort().pop() || ""
+  };
+}
+function appendMultiRoomConditionInfo(section, entry = {}, cards = [], ctx = {}) {
+  const conditionRows = (cards || []).map(mergedScheduleConditionForCardLocal).filter(Boolean);
+  const entryCondition = normalizeScheduleConditionRowLocal(entry);
+  if (entryCondition) conditionRows.push(entryCondition);
+  const required = Math.max(1, ...conditionRows.map(r => r.requiredRoomCount || 1));
+  const conditionRoomIds = uniqueIds(conditionRows.flatMap(r => r.roomIds || []));
+  let effectiveRoomIds = [];
+  try {
+    effectiveRoomIds = typeof ctx.getRoomIdsForEntry === "function" ? uniqueIds((ctx.getRoomIdsForEntry(entry) || []).map(clean).filter(Boolean)) : [];
+  } catch (_) { effectiveRoomIds = []; }
+  const shouldShow = required > 1 || conditionRoomIds.length > 1 || effectiveRoomIds.length > 1;
+  if (!shouldShow) return;
+
+  const panel = document.createElement("div");
+  panel.style.cssText = "margin:0 0 8px;padding:8px 9px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff;color:#1e3a8a;font-size:10.5px;line-height:1.45";
+  const title = document.createElement("div");
+  title.style.cssText = "font-weight:900;margin-bottom:3px";
+  title.textContent = "다중 교실 조건";
+  const lines = document.createElement("div");
+  const conditionNames = conditionRoomIds.map(roomNameForId).filter(Boolean);
+  const effectiveNames = effectiveRoomIds.map(roomNameForId).filter(Boolean);
+  const rows = [`필요 교실: ${required}개`];
+  if (conditionNames.length) rows.push(`조건 교실: ${conditionNames.join(", ")}`);
+  if (effectiveNames.length) rows.push(`현재 반영: ${effectiveRoomIds.length}개 (${effectiveNames.join(", ")})`);
+  else rows.push("현재 반영: 교실 없음");
+  lines.textContent = rows.join(" · ");
+  panel.append(title, lines);
+  if (effectiveRoomIds.length && effectiveRoomIds.length < required) {
+    const warn = document.createElement("div");
+    warn.style.cssText = "margin-top:4px;color:#b45309;font-weight:800";
+    warn.textContent = "현재 entry에 저장된/계산된 교실 수가 필요 교실 수보다 적습니다. 저장 후 새로고침 또는 자동배치를 다시 확인해 주세요.";
+    panel.appendChild(warn);
+  }
+  section.appendChild(panel);
+}
+
 function normalizeRoomRule(rule) {
   const r = clean(rule);
   // 기존 데이터의 auto는 이전 기본값(교사 교실/없으면 미배치)이므로 teacher로 해석합니다.
@@ -1648,6 +1777,9 @@ export function createTimetableDetailHandlers(ctx) {
     roomTitle.style.cssText = "font-size:12px;font-weight:800;color:#334155;margin-bottom:6px";
     roomTitle.textContent = "교실 배정";
     roomSection.appendChild(roomTitle);
+    // r226: 시간표 카드에는 "5개 교실"이 보이는데 배치 상세에는 단일 교실 select만 보여
+    // 조건이 사라진 것처럼 보이는 문제를 줄이기 위해 현재 다중교실 조건/반영 상태를 표시합니다.
+    appendMultiRoomConditionInfo(roomSection, entry, getEntryCardsLocal(entry), ctx);
 
     const initialRule = effectiveEntryRoomRuleLocal(entry);
     const initialRoomValue = initialRule === "homeroom"

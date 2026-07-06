@@ -499,6 +499,8 @@ export function normalizeTemplateGroup(item = {}) {
     defaultFixedRoomId: clean(item.defaultFixedRoomId || item.fixedRoomId || item.groupFixedRoomId || "") || null,
     allowedSlots: normalizeSlotList(item.allowedSlots || item.groupAllowedSlots || item.defaultAllowedSlots || []),
     unavailableSlots: normalizeSlotList(item.unavailableSlots || item.groupUnavailableSlots || item.defaultUnavailableSlots || []),
+    // r226: 그룹 조건창의 연속시수/다중교실 조건을 그룹 스냅샷에도 보존합니다.
+    ...normalizeScheduleConditionFields(item),
     groupType: isConcurrent ? "concurrent" : (isCrossGrade ? "cross-grade" : "off"),
     linkedGroupId: clean(item.linkedGroupId) || null
   };
@@ -556,6 +558,85 @@ function normalizeClassesDomain(raw = {}) {
 // ── Teachers ──────────────────────────────────────────────────────
 export function normalizeTeacher(t = {}) {
   return { id: t.id || uid("tch"), name: clean(t.name), subjects: Array.isArray(t.subjects) ? t.subjects.map(clean).filter(Boolean) : [], email: clean(t.email), note: clean(t.note) };
+}
+
+
+// r226: 배치조건(연속시수/다중교실)은 카드·그룹·entry·meta를 오가며
+// 저장되어야 합니다. normalize 단계에서 필드가 탈락하면 Firestore 진단/다른 PC 로드 시
+// "5교실" 조건이 localStorage에만 남는 문제가 생깁니다.
+function normalizePositiveIntForSchedule(value, fallback = 1, { min = 1, max = 12 } = {}) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+function normalizeScheduleRoomIdList(value = []) {
+  if (Array.isArray(value)) return uniqueOrdered(value.map(clean).filter(Boolean));
+  if (typeof value === "string") return uniqueOrdered(value.split(/[\s,，;；]+/).map(clean).filter(Boolean));
+  return [];
+}
+function normalizeScheduleConditionFields(item = {}, { keepEmpty = false } = {}) {
+  const duration = normalizePositiveIntForSchedule(
+    item.durationPeriods ?? item.continuousPeriods ?? item.consecutivePeriods ?? item.solverDurationPeriods ?? 1,
+    1,
+    { min: 1, max: 7 }
+  );
+  const roomIds = normalizeScheduleRoomIdList(
+    item.manualRoomIds || item.fixedRoomIds || item.solverFixedRoomIds || item.requiredRoomIds || item.roomIds || item.manualRooms || item.fixedRooms || item.roomNames || []
+  );
+  const roomCount = Math.max(
+    normalizePositiveIntForSchedule(item.requiredRoomCount ?? item.multiRoomCount ?? item.solverRequiredRoomCount ?? 1, 1, { min: 1, max: 12 }),
+    roomIds.length || 1
+  );
+  const out = {};
+  if (duration > 1 || keepEmpty) {
+    out.durationPeriods = duration;
+    out.continuousPeriods = duration;
+    out.solverDurationPeriods = duration;
+  }
+  if (roomCount > 1 || keepEmpty) {
+    out.requiredRoomCount = roomCount;
+    out.multiRoomCount = roomCount;
+    out.solverRequiredRoomCount = roomCount;
+  }
+  if (roomIds.length) {
+    out.manualRoomIds = roomIds;
+    out.fixedRoomIds = roomIds;
+    out.solverFixedRoomIds = roomIds;
+    out.requiredRoomIds = roomIds;
+    out.roomIds = roomIds;
+  }
+  const editedAt = clean(item.scheduleConditionEditedAt || item.updatedAt);
+  if (editedAt) out.scheduleConditionEditedAt = editedAt;
+  const manualRoomNames = clean(item.manualRoomNames);
+  if (manualRoomNames) out.manualRoomNames = manualRoomNames;
+  return out;
+}
+function normalizeScheduleConditionStore(raw = {}) {
+  const normalizeBucket = bucket => {
+    const out = {};
+    if (!bucket || typeof bucket !== "object") return out;
+    Object.entries(bucket).forEach(([rawKey, row]) => {
+      const key = clean(rawKey);
+      if (!key || !row || typeof row !== "object") return;
+      const fields = normalizeScheduleConditionFields(row);
+      if (Object.keys(fields).length) {
+        out[key] = {
+          ...fields,
+          updatedAt: clean(row.updatedAt || row.scheduleConditionEditedAt)
+        };
+      }
+    });
+    return out;
+  };
+  const groups = normalizeBucket(raw.groups || {});
+  const cards = normalizeBucket(raw.cards || {});
+  if (!Object.keys(groups).length && !Object.keys(cards).length) return null;
+  return {
+    version: clean(raw.version) || "r226",
+    updatedAt: clean(raw.updatedAt),
+    groups,
+    cards
+  };
 }
 
 function normalizeTeachersDomain(raw = {}) {
@@ -672,6 +753,8 @@ export function normalizeTimetableEntry(e = {}) {
     roomRule:    (clean(e.roomRule) === "auto" ? "teacher" : (clean(e.roomRule) || "teacher")),
     roomPinned:  !!e.roomPinned,
     roomAssignmentsByTtCardId,
+    // r226: CP-SAT 결과/수동 다중교실의 실제 예약 교실을 entry에도 보존합니다.
+    ...normalizeScheduleConditionFields(e),
     pinned:      !!e.pinned,
   };
 }
@@ -721,6 +804,9 @@ export function normalizeTtCard(item = {}) {
     compoundPartIndex: Number.isInteger(item.compoundPartIndex) ? item.compoundPartIndex : null,
     compoundPartCount: Number.isInteger(item.compoundPartCount) ? item.compoundPartCount : 0,
     compoundTotalCredits: num(item.compoundTotalCredits),
+
+    // r226: 조건창에서 입력한 연속시수/다중교실 조건을 Firestore ttcard 문서에도 보존합니다.
+    ...normalizeScheduleConditionFields(item),
   };
 }
 const TEACHER_WORK_TYPES = new Set(["fulltime", "parttime", "childcare", "restricted", "other"]);
@@ -934,6 +1020,9 @@ function compactAutoAssignMetaForStorage(meta = null) {
     qualityBaselineSource: clean(meta.qualityBaselineSource),
     qualityBaselineSnapshotName: clean(meta.qualityBaselineSnapshotName),
     qualityBaselineValidationSummary: clean(meta.qualityBaselineValidationSummary),
+    // r226: r225의 scheduleConditions가 autoAssignMeta에는 들어갔지만 state 정규화에서 빠지면
+    // Firestore 저장/진단에서는 사라집니다. 메타 압축 중에도 작게 정규화해 보존합니다.
+    scheduleConditions: normalizeScheduleConditionStore(meta.scheduleConditions),
     currentBeforeMetrics: cloneMetric(meta.currentBeforeMetrics),
     baselineMetrics: cloneMetric(meta.baselineMetrics),
     acceptedMetrics: cloneMetric(meta.acceptedMetrics),
@@ -1129,6 +1218,7 @@ function compactAutoAssignMetaForMetaDoc(meta = null) {
     qualityBaselineSource: clean(compact.qualityBaselineSource),
     qualityBaselineSnapshotName: clean(compact.qualityBaselineSnapshotName),
     qualityBaselineValidationSummary: clean(compact.qualityBaselineValidationSummary),
+    scheduleConditions: normalizeScheduleConditionStore(compact.scheduleConditions),
     rejectedByQualityGate: compact.rejectedByQualityGate === true,
     rejectReason: clean(compact.rejectReason),
     failedDiagnostics: Array.isArray(compact.failedDiagnostics) ? compact.failedDiagnostics.slice(0, 4) : [],
@@ -1219,6 +1309,8 @@ function buildTimetableMetaStorageDoc(normalized = {}) {
     ttcardGroups: n.ttcardGroups || [],
     savedSchedules: [],
     cardGenerationMeta: n.cardGenerationMeta || null,
+    // r226: 조건창의 다중교실/연속시수 조건을 timetableMeta에도 직접 보존합니다.
+    scheduleConditions: normalizeScheduleConditionStore(n.scheduleConditions) || normalizeScheduleConditionStore(n.autoAssignMeta?.scheduleConditions),
     autoAssignMeta: compactAutoAssignMetaForMetaDoc(n.autoAssignMeta),
     bestAutoAssignSnapshot: null
   };
@@ -1490,6 +1582,8 @@ function normalizeTimetableDomain(raw = {}) {
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: normalizeCardGenerationMeta(raw),
     autoAssignMeta: syncedAutoMetaRefs.meta,
+    // r226: top-level scheduleConditions를 appState에 유지해 localStorage가 아닌 Firestore 기준으로도 조건을 복구합니다.
+    scheduleConditions: normalizeScheduleConditionStore(raw.scheduleConditions) || normalizeScheduleConditionStore(syncedAutoMetaRefs.meta?.scheduleConditions),
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
     ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})
@@ -1702,6 +1796,7 @@ function buildNormalizedDiagnostic(raw) {
     ttcardGroups: splitMetaDoc?.data?.ttcardGroups || splitMetaDoc?.data?.templateGroups || [],
     savedSchedules: splitMetaDoc?.data?.savedSchedules || [],
     cardGenerationMeta: splitMetaDoc?.data?.cardGenerationMeta || null,
+    scheduleConditions: splitMetaDoc?.data?.scheduleConditions || splitMetaDoc?.data?.autoAssignMeta?.scheduleConditions || null,
     autoAssignMeta: splitMetaDoc?.data?.autoAssignMeta || null,
     bestAutoAssignSnapshot: splitMetaDoc?.data?.bestAutoAssignSnapshot || null,
     entries: splitEntryDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
@@ -2352,6 +2447,7 @@ async function applyTimetableSplitIfReady() {
     ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
     savedSchedules: timetableSplitCache.meta?.savedSchedules || [],
     cardGenerationMeta: timetableSplitCache.meta?.cardGenerationMeta || null,
+    scheduleConditions: timetableSplitCache.meta?.scheduleConditions || timetableSplitCache.meta?.autoAssignMeta?.scheduleConditions || null,
     autoAssignMeta: timetableSplitCache.meta?.autoAssignMeta || null,
     bestAutoAssignSnapshot: timetableSplitCache.meta?.bestAutoAssignSnapshot || null,
     entries: timetableSplitCache.entries,
