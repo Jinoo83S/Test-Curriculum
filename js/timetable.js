@@ -8,9 +8,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-manual-multiroom-server-r223";
+import { versioned } from "./version.js?v=2026-07-06-manual-multiroom-regexfix-r224";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-manual-multiroom-server-r223";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-manual-multiroom-regexfix-r224";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +27,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-manual-multiroom-server-r223";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-manual-multiroom-regexfix-r224";
 
 
 const [
@@ -1586,7 +1586,7 @@ function getRequiredRoomCountFromObject(obj = {}) {
     { min: 1, max: 12 }
   );
 }
-const SCHEDULE_CONDITION_STORE_VERSION = "r223";
+const SCHEDULE_CONDITION_STORE_VERSION = "r224";
 const SCHEDULE_CONDITION_LOCAL_STORAGE_KEY = "his.timetable.scheduleConditions.v1";
 
 function cloneScheduleConditionStore(store = {}) {
@@ -1600,8 +1600,7 @@ function cloneScheduleConditionStore(store = {}) {
 function normalizeRoomIdListForScheduleCondition(value = []) {
   const raw = Array.isArray(value)
     ? value
-    : String(value || "").split(/[,，;；
-]+/);
+    : String(value || "").split(/[\s,，;；]+/);
   const rooms = getRooms();
   const byId = new Map(rooms.map(r => [clean(r.id), clean(r.id)]).filter(([id]) => id));
   const byName = new Map(rooms.map(r => [clean(r.name).toLocaleLowerCase("ko"), clean(r.id)]).filter(([name, id]) => name && id));
@@ -1667,7 +1666,7 @@ function mergeScheduleConditionBucket(target = {}, source = {}) {
     const normalized = normalizeScheduleConditionRow(row);
     if (!normalized) return;
     const prev = normalizeScheduleConditionRow(target[key]);
-    // r223: 이전 r222는 Math.max 병합이라 사용자가 5→1처럼 줄여도 localStorage/autoAssignMeta의
+    // r224: 이전 r222는 Math.max 병합이라 사용자가 5→1처럼 줄여도 localStorage/autoAssignMeta의
     // 오래된 큰 값이 되살아났습니다. 이제는 updatedAt이 더 최신인 행을 우선하고, 시간이 같으면
     // 뒤쪽 source가 이기게 해서 사용자의 마지막 저장값이 그대로 남습니다.
     if (!prev || clean(normalized.updatedAt) >= clean(prev.updatedAt)) target[key] = normalized;
