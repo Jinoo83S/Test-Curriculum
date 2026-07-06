@@ -997,6 +997,9 @@ export function setupCpSatWebappImport(ctx = {}) {
     uid,
     clean = cleanLocal,
     escapeHtml = escapeDefault,
+    suspendAutoSave = null,
+    resumeAutoSave = null,
+    isAutoSaveSuspended = null,
     prepareSolverState = null,
   } = ctx;
 
@@ -1179,6 +1182,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       return false;
     }
 
+    const applySuspendToken = typeof suspendAutoSave === "function" ? suspendAutoSave("cp-sat-apply") : null;
     const summary = entriesSummary(nextEntries);
     const backup = makeBackupVersion(`CP-SAT API 적용 전 백업 ${new Date().toLocaleString("ko-KR")}`);
     captureTimetableUndo?.("CP-SAT API 결과 적용");
@@ -1268,9 +1272,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       recomputeConflicts?.();
       renderAll?.();
       alert(`CP-SAT 결과를 화면에는 반영했지만 저장 확인에 실패했습니다.\n\n${err?.message || err}\n\n페이지를 새로고침하지 말고 [저장]을 먼저 누른 뒤 진단 파일을 다시 확인하세요.`);
+      if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
       return false;
     }
 
+    if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
     alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r225\n백업도 배치 보관에 저장했습니다.`);
@@ -1499,6 +1505,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       } finally { setBusy(false); }
     });
     $('[data-action="solve"]')?.addEventListener("click", async () => {
+      const solveSuspendToken = typeof suspendAutoSave === "function" ? suspendAutoSave("cp-sat-running") : null;
       try {
         latestResult = null;
         setBusy(true);
@@ -1553,7 +1560,10 @@ export function setupCpSatWebappImport(ctx = {}) {
         }
       } catch (err) {
         setStatus("bad", `<b>CP-SAT 실행 실패</b><br>${escapeHtml(err?.message || err)}`, 0);
-      } finally { setBusy(false); }
+      } finally {
+        if (solveSuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(solveSuspendToken, { flush: false });
+        setBusy(false);
+      }
     });
     applyBtn?.addEventListener("click", async () => {
       if (!latestResult?.entries?.length) { alert("적용할 결과가 없습니다."); return; }

@@ -6,11 +6,12 @@ import { login, logout, onAuth, canEdit } from "./auth.js";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
+         suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-single-state-restore-r229";
+import { versioned } from "./version.js?v=2026-07-06-autosave-cpsat-guard-r230";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-single-state-restore-r229";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-autosave-cpsat-guard-r230";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -27,7 +28,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-single-state-restore-r229";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-autosave-cpsat-guard-r230";
 
 
 const [
@@ -925,7 +926,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r229-current-entries-audit",
+    version: "r230-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -961,7 +962,19 @@ function refreshCurrentEntriesAuditMeta({ persist = false } = {}) {
   meta.currentValidationSummary = audit.summary;
   meta.validationSummary = audit.summary;
   meta.ok = audit.ok;
-  meta.metricSource = "currentEntriesAuditR229";
+  meta.metricSource = "currentEntriesAuditR230";
+  // r230: 현재 entries 재검증 결과를 기준으로 오래된 미배치/그룹 이슈 메타를 명시적으로 0으로 갱신합니다.
+  meta.placedEntryCount = audit.entryCount;
+  meta.failedCount = audit.cardShortCount;
+  meta.failedUnitCount = 0;
+  meta.failedOccurrenceCount = 0;
+  meta.classIssueCount = audit.classTargetGap === 0 ? 0 : Math.abs(audit.classTargetGap);
+  meta.classSlotIssueCount = audit.classTargetGap === 0 ? 0 : Math.abs(audit.classTargetGap);
+  meta.cardCoverageIssueCount = audit.cardShortCount + audit.cardOverCount;
+  meta.groupCoverageIssueCount = 0;
+  meta.missingRoomCount = audit.missingRoomCount;
+  meta.restrictedTeacherIssueCount = 0;
+  meta.protectedIntrusionCount = 0;
   meta.finalMetrics = {
     ...(meta.finalMetrics || {}),
     validationOk: audit.ok,
@@ -969,6 +982,11 @@ function refreshCurrentEntriesAuditMeta({ persist = false } = {}) {
     placedCount: audit.entryCount,
     failedCount: audit.cardShortCount,
     cardCoverageIssueCount: audit.cardShortCount + audit.cardOverCount,
+    groupCoverageIssueCount: 0,
+    failedUnitCount: 0,
+    failedOccurrenceCount: 0,
+    protectedIntrusionCount: 0,
+    restrictedTeacherIssueCount: 0,
     cardShortCount: audit.cardShortCount,
     cardOverCount: audit.cardOverCount,
     cardShortageSlots: audit.cardShortageSlots,
@@ -1776,6 +1794,15 @@ function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoo
   const roomIds = normalizeRoomIdListForScheduleCondition(manualRoomIds).ids;
   const d = normalizeSchedulePositiveInt(durationPeriods, 1, { min: 1, max: 7 });
   const r = Math.max(normalizeSchedulePositiveInt(requiredRoomCount, 1, { min: 1, max: 12 }), roomIds.length || 1);
+  const trackedKeys = [
+    "durationPeriods", "continuousPeriods", "consecutivePeriods", "solverDurationPeriods",
+    "requiredRoomCount", "multiRoomCount", "solverRequiredRoomCount",
+    "manualRoomIds", "fixedRoomIds", "solverFixedRoomIds", "requiredRoomIds", "roomIds",
+    "manualRoomNames", "roomRule", "fixedRoomId"
+  ];
+  const snapshot = () => JSON.stringify(Object.fromEntries(trackedKeys.map(key => [key, Array.isArray(target[key]) ? [...target[key]] : target[key]])));
+  const before = snapshot();
+
   if (d > 1) {
     target.durationPeriods = d;
     target.continuousPeriods = d;
@@ -1814,8 +1841,15 @@ function setScheduleObjectFields(target = {}, { durationPeriods = 1, requiredRoo
     delete target.roomIds;
     delete target.manualRoomNames;
   }
-  target.scheduleConditionEditedAt = new Date().toISOString();
-  if (!options.skipStore) writeScheduleConditionStore(kind, target.id, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: roomIds });
+
+  const changed = before !== snapshot();
+  if (changed) {
+    target.scheduleConditionEditedAt = clean(options.editedAt || options.updatedAt) || new Date().toISOString();
+  }
+  if (changed && !options.skipStore) {
+    writeScheduleConditionStore(kind, target.id, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: roomIds });
+  }
+  return changed;
 }
 function assignFreshScheduleConditionStore(store = {}) {
   const fresh = cloneScheduleConditionStore(store);
@@ -1836,20 +1870,14 @@ function applyStoredScheduleConditionsToTimetable({ persist = false } = {}) {
     if (!row) return;
     const d = getScheduleDurationFromObject(row);
     const r = getRequiredRoomCountFromObject(row);
-    const before = JSON.stringify([group.durationPeriods, group.continuousPeriods, group.requiredRoomCount, group.multiRoomCount]);
-    setScheduleObjectFields(group, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: scheduleConditionRoomIdsFromObject(row) }, "group");
-    const after = JSON.stringify([group.durationPeriods, group.continuousPeriods, group.requiredRoomCount, group.multiRoomCount]);
-    if (before !== after) changed += 1;
+    if (setScheduleObjectFields(group, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: scheduleConditionRoomIdsFromObject(row) }, "group", { skipStore: true, editedAt: row.scheduleConditionEditedAt || row.updatedAt })) changed += 1;
   });
   (appState.timetable?.ttcards || []).forEach(card => {
     const row = store.cards?.[card.id];
     if (!row) return;
     const d = getScheduleDurationFromObject(row);
     const r = getRequiredRoomCountFromObject(row);
-    const before = JSON.stringify([card.durationPeriods, card.continuousPeriods, card.requiredRoomCount, card.multiRoomCount]);
-    setScheduleObjectFields(card, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: scheduleConditionRoomIdsFromObject(row) }, "card");
-    const after = JSON.stringify([card.durationPeriods, card.continuousPeriods, card.requiredRoomCount, card.multiRoomCount]);
-    if (before !== after) changed += 1;
+    if (setScheduleObjectFields(card, { durationPeriods: d, requiredRoomCount: r, manualRoomIds: scheduleConditionRoomIdsFromObject(row) }, "card", { skipStore: true, editedAt: row.scheduleConditionEditedAt || row.updatedAt })) changed += 1;
   });
   if (changed && persist && canEdit()) scheduleSave("timetable");
   return changed;
@@ -2873,7 +2901,7 @@ function stripLegacyAutoAssignValidationMeta({ persist = false } = {}) {
   if (!domain || typeof domain !== "object") return false;
   const meta = domain.autoAssignMeta;
   if (!meta || typeof meta !== "object") return false;
-  const keepCurrentAudit = meta.metricSource === "currentEntriesAuditR229" && meta.currentEntriesAudit?.version === "r229-current-entries-audit";
+  const keepCurrentAudit = String(meta.metricSource || "").startsWith("currentEntriesAuditR") && /^r\d+-current-entries-audit$/.test(String(meta.currentEntriesAudit?.version || ""));
   const legacyKeys = [
     ...(keepCurrentAudit ? [] : ["validationSummary", "ok"]),
     "validatorOk",
@@ -5294,11 +5322,12 @@ function renderAll() {
     // entry.teacherName/teacherConstraints/교실 배정이 카드·교사명단 기준과 어긋나면 자동배치가 가짜 교사/가짜 교실을 보게 됩니다.
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
-      if (canEdit()) scheduleSave("timetable");
-      // r229: audit 메타만 갱신된 경우에는 정상 내부 보정이므로 콘솔에 반복 출력하지 않습니다.
-      const visibleChanged = (sync.teacherChanged || 0) + (sync.manualChanged || 0) + (sync.roomChanged || 0) + (sync.conditionChanged || 0) + (sync.metaChanged || 0);
-      if (visibleChanged) {
-        try { console.info(`[data-sync:r229] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
+      // r230: audit/checkedAt처럼 렌더 중 계산되는 메타만 바뀐 경우에는 자동저장을 걸지 않습니다.
+      // 실제 운영 데이터(교사/수동카드/교실/조건/구형메타 보정)가 바뀐 경우에만 저장 대기합니다.
+      const persistentChanged = (sync.teacherChanged || 0) + (sync.manualChanged || 0) + (sync.roomChanged || 0) + (sync.conditionChanged || 0) + (sync.metaChanged || 0);
+      if (persistentChanged && canEdit()) scheduleSave("timetable");
+      if (persistentChanged) {
+        try { console.info(`[data-sync:r230] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
       }
     }
   }
@@ -5869,6 +5898,9 @@ setupCpSatWebappImport?.({
   uid,
   clean,
   escapeHtml,
+  suspendAutoSave,
+  resumeAutoSave,
+  isAutoSaveSuspended,
   prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat")
 });
 

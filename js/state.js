@@ -41,12 +41,16 @@ const dirtyDomains = new Set();
 const queuedSaveOptions = {};
 const activeSavePromises = {};
 const domainEditRevisions = {};
+const autoSaveSuspendTokens = new Map();
+let autoSaveSuspendSeq = 0;
 // 자동저장 지연 시간은 운영/로컬 개발 환경을 분리합니다.
 // r64: Firestore 저장 중 사용자가 계속 편집하면 이전 저장 응답/원격 스냅샷이
 //      최신 로컬 편집을 덮어쓸 수 있습니다. 운영 자동저장은 충분히 기다리고,
 //      저장 중 새 편집은 큐에 넣어 저장 완료 후 한 번 더 저장합니다.
-export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 12000 : 6000;
-export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 3000 : 1800;
+// r230: 운영 중 잦은 자동저장이 편집/CP-SAT 작업을 방해하지 않도록 지연 시간을 늘립니다.
+// 즉시 저장이 필요한 곳은 saveNow(...force)만 사용합니다.
+export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 30000 : 20000;
+export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 8000 : 5000;
 const AUTO_SAVE_KEY = "his_auto_save_v1";
 
 
@@ -236,6 +240,53 @@ function domainChanged(domain, normalized = normalizedForDomain(domain)) {
   return savedDomainFingerprints[domain] !== fp(normalized);
 }
 
+export function isAutoSaveSuspended() {
+  return autoSaveSuspendTokens.size > 0;
+}
+
+export function suspendAutoSave(reason = "operation") {
+  const token = `autosave-suspend-${Date.now()}-${++autoSaveSuspendSeq}`;
+  autoSaveSuspendTokens.set(token, clean(reason) || "operation");
+  Object.keys(saveTimers).forEach(domain => {
+    clearTimeout(saveTimers[domain]);
+    delete saveTimers[domain];
+  });
+  _onSaveStatus?.("dirty", {
+    autoSave: isAutoSaveEnabled(),
+    autoSaveSuspended: true,
+    suspendReasons: [...autoSaveSuspendTokens.values()],
+    dirtyDomains: getDirtyDomains()
+  });
+  return token;
+}
+
+export function resumeAutoSave(token, options = {}) {
+  if (token && autoSaveSuspendTokens.has(token)) autoSaveSuspendTokens.delete(token);
+  if (isAutoSaveSuspended()) {
+    _onSaveStatus?.("dirty", {
+      autoSave: isAutoSaveEnabled(),
+      autoSaveSuspended: true,
+      suspendReasons: [...autoSaveSuspendTokens.values()],
+      dirtyDomains: getDirtyDomains()
+    });
+    return false;
+  }
+  const delayMs = Number.isFinite(Number(options.delayMs)) ? Math.max(0, Number(options.delayMs)) : SAVE_DELAY_MS;
+  if (isAutoSaveEnabled()) {
+    dirtyDomains.forEach(domain => {
+      clearTimeout(saveTimers[domain]);
+      if (options.flush === true) saveTimers[domain] = setTimeout(() => saveNow(domain), 0);
+      else saveTimers[domain] = setTimeout(() => saveNow(domain), delayMs);
+    });
+  }
+  _onSaveStatus?.("dirty", {
+    autoSave: isAutoSaveEnabled(),
+    autoSaveSuspended: false,
+    dirtyDomains: getDirtyDomains()
+  });
+  return true;
+}
+
 export function isAutoSaveEnabled() {
   try { return localStorage.getItem(AUTO_SAVE_KEY) !== "off"; }
   catch (_) { return true; }
@@ -247,12 +298,12 @@ export function setAutoSaveEnabled(enabled) {
     clearTimeout(saveTimers[domain]);
     delete saveTimers[domain];
   });
-  if (enabled) {
+  if (enabled && !isAutoSaveSuspended()) {
     dirtyDomains.forEach(domain => {
       saveTimers[domain] = setTimeout(() => saveNow(domain), SAVE_DELAY_MS);
     });
   }
-  _onSaveStatus?.("mode", { autoSave: isAutoSaveEnabled(), dirtyDomains: getDirtyDomains() });
+  _onSaveStatus?.("mode", { autoSave: isAutoSaveEnabled(), autoSaveSuspended: isAutoSaveSuspended(), dirtyDomains: getDirtyDomains() });
 }
 
 export function getDirtyDomains() {
@@ -282,6 +333,20 @@ export function scheduleSave(domain, options = {}) {
     clearTimeout(saveTimers[domain]);
     delete saveTimers[domain];
     _onSaveStatus?.("dirty", { autoSave: false, dirtyDomains: getDirtyDomains() });
+    return;
+  }
+
+  if (isAutoSaveSuspended()) {
+    clearTimeout(saveTimers[domain]);
+    delete saveTimers[domain];
+    queuedSaveOptions[domain] = mergeSaveOptions(queuedSaveOptions[domain], options?.saveOptions || {});
+    _onSaveStatus?.("dirty", {
+      autoSave: true,
+      autoSaveSuspended: true,
+      suspendReasons: [...autoSaveSuspendTokens.values()],
+      dirtyDomains: getDirtyDomains(),
+      queuedDomain: domain
+    });
     return;
   }
 
@@ -763,8 +828,13 @@ export function normalizeTimetableEntry(e = {}) {
 export function normalizeTtCard(item = {}) {
   const arr = v => Array.isArray(v) ? v.map(clean).filter(Boolean) : [];
   const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
-  return {
-    id:         item.id || uid("ttc"),
+  const id = item.id || uid("ttc");
+  const isManual = item?.isManual === true || String(id || "").startsWith("ttc_manual") || String(item?.templateId || "").startsWith("manual_");
+  const manualStatus = isManual
+    ? (clean(item.manualCardStatus) || ((item.autoAssignExcluded === true || item.manualAutoAssign === false) ? "stored" : "active"))
+    : clean(item.manualCardStatus);
+  const out = {
+    id,
     templateId: clean(item.templateId),
     gradeKey:   clean(item.gradeKey),
     sectionIdx: parseInt(item.sectionIdx, 10) || 0,
@@ -796,7 +866,7 @@ export function normalizeTtCard(item = {}) {
     manualEdited: !!item.manualEdited,
     // 커리큘럼 원본 없이 시간표 편집 화면에서 직접 만든 보정 카드입니다.
     // 카드 새로고침/재생성 시 삭제되지 않도록 별도 표시합니다.
-    isManual: !!item.isManual,
+    isManual,
     manualCreatedAt: clean(item.manualCreatedAt),
     manualNote: clean(item.manualNote),
 
@@ -810,6 +880,19 @@ export function normalizeTtCard(item = {}) {
     // r226: 조건창에서 입력한 연속시수/다중교실 조건을 Firestore ttcard 문서에도 보존합니다.
     ...normalizeScheduleConditionFields(item),
   };
+
+  // r230: 수동카드 보관/자동배치 포함 상태를 normalizer에서 안정화합니다.
+  // renderAll()이 매번 수동카드 기본값을 채우면서 자동저장을 유발하지 않도록 합니다.
+  if (isManual) {
+    out.manualCardStatus = manualStatus;
+    out.manualAutoAssign = item.manualAutoAssign == null ? manualStatus !== "stored" : item.manualAutoAssign !== false;
+    out.autoAssignExcluded = item.autoAssignExcluded == null ? manualStatus === "stored" : item.autoAssignExcluded === true;
+  } else {
+    if (clean(item.manualCardStatus)) out.manualCardStatus = clean(item.manualCardStatus);
+    if (item.manualAutoAssign != null) out.manualAutoAssign = item.manualAutoAssign !== false;
+    if (item.autoAssignExcluded != null) out.autoAssignExcluded = item.autoAssignExcluded === true;
+  }
+  return out;
 }
 const TEACHER_WORK_TYPES = new Set(["fulltime", "parttime", "childcare", "restricted", "other"]);
 const RESTRICTED_WORK_TYPES = new Set(["parttime", "childcare", "restricted", "other"]);
