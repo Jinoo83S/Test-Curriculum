@@ -9,9 +9,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
-import { versioned } from "./version.js?v=2026-07-06-autosave-cpsat-guard-r230";
+import { versioned } from "./version.js?v=2026-07-06-idle-save-block-r231";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-autosave-cpsat-guard-r230";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-06-idle-save-block-r231";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js";
@@ -28,7 +28,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
 import { createTimetableUndoHandlers } from "./timetable-undo.js";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js";
-import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-autosave-cpsat-guard-r230";
+import { openTimetableExportDialog } from "./timetable-export.js?v=2026-07-06-idle-save-block-r231";
 
 
 const [
@@ -275,7 +275,7 @@ function ttSaveButtonTitle(autoSave, dirty, status) {
   if (count) {
     return autoSave
       ? "변경사항이 저장 대기 중입니다. 클릭하면 즉시 저장합니다."
-      : "자동저장이 꺼져 있습니다. 클릭하면 변경사항을 수동 저장합니다.";
+      : "자동저장이 꺼져 있습니다. 클릭하면 자동저장을 다시 켜고 대기 중 변경사항을 저장 대기 상태로 전환합니다.";
   }
   return autoSave
     ? "현재 자동저장 중입니다. 클릭하면 자동저장을 끕니다."
@@ -300,6 +300,17 @@ function updateTtSaveControls() {
 
 async function handleTtUnifiedSaveClick() {
   const dirty = getDirtyDomains();
+  const autoSave = isAutoSaveEnabled();
+
+  // r231: 자동저장 OFF 상태에서 dirty가 있으면 기존에는 버튼 클릭이 항상 "수동 저장"으로 처리되어
+  // 자동저장 ON으로 전환할 방법이 없었습니다. 이 경우 먼저 자동저장을 켭니다.
+  if (!autoSave) {
+    setAutoSaveEnabled(true);
+    lastTtSaveStatus = "mode";
+    updateTtSaveControls();
+    return;
+  }
+
   if (dirty.length || lastTtSaveStatus === "error") {
     lastTtSaveStatus = "saving";
     updateTtSaveControls();
@@ -311,8 +322,7 @@ async function handleTtUnifiedSaveClick() {
     }
     return;
   }
-  const next = !isAutoSaveEnabled();
-  setAutoSaveEnabled(next);
+  setAutoSaveEnabled(false);
   lastTtSaveStatus = "mode";
   updateTtSaveControls();
 }
@@ -926,7 +936,7 @@ function buildCurrentEntriesAuditSummary() {
   const summary = `현재 entries 기준: 충돌 ${collisionCount}개 · 학급 ${classTotal}/${classTargetTotal} · 카드 부족 ${cardShortCount}개 · 카드 초과 ${cardOverCount}개 · 교실미배정 ${missingRoomCount}개`;
 
   return {
-    version: "r230-current-entries-audit",
+    version: "r231-current-entries-audit",
     ok,
     summary,
     entryCount: entryList.length,
@@ -962,8 +972,8 @@ function refreshCurrentEntriesAuditMeta({ persist = false } = {}) {
   meta.currentValidationSummary = audit.summary;
   meta.validationSummary = audit.summary;
   meta.ok = audit.ok;
-  meta.metricSource = "currentEntriesAuditR230";
-  // r230: 현재 entries 재검증 결과를 기준으로 오래된 미배치/그룹 이슈 메타를 명시적으로 0으로 갱신합니다.
+  meta.metricSource = "currentEntriesAuditR231";
+  // r231: 현재 entries 재검증 결과를 기준으로 오래된 미배치/그룹 이슈 메타를 명시적으로 0으로 갱신합니다.
   meta.placedEntryCount = audit.entryCount;
   meta.failedCount = audit.cardShortCount;
   meta.failedUnitCount = 0;
@@ -1030,18 +1040,23 @@ async function ensureTimetableDataSyncedForOperation(reason = "") {
   const result = normalizeTimetableDataBeforeOperation({ persist: false });
   if (!result.changed) return result;
   try { recomputeConflicts(); } catch (_) {}
-  if (canEdit()) {
+
+  // r231: 수동카드 기본값 보정(manual)과 화면 검증 audit는 실제 사용자 편집이 아닙니다.
+  // 이 값만 바뀐 경우에는 Firestore 쓰기/저장대기 상태를 만들지 않습니다.
+  const persistentChanged = (result.teacherChanged || 0) + (result.roomChanged || 0) + (result.conditionChanged || 0) + (result.metaChanged || 0);
+  if (persistentChanged && canEdit()) {
     try {
       scheduleSave("timetable");
       await saveNow("timetable", { force: true });
       if (typeof savePendingNow === "function") await savePendingNow();
     } catch (e) {
-      console.warn(`[data-sync:r229] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
+      console.warn(`[data-sync:r231] ${reason || "operation"} 전 데이터 정규화 저장 실패`, e);
       throw e;
     }
   }
   try {
-    console.info(`[data-sync:r229] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}, audit=${result.auditChanged || 0}`);
+    const msg = `[data-sync:r231] ${reason || "operation"} 전 정규화: teacher=${result.teacherChanged}, manual=${result.manualChanged || 0}, room=${result.roomChanged}, condition=${result.conditionChanged || 0}, meta=${result.metaChanged}, audit=${result.auditChanged || 0}, saved=${persistentChanged ? "yes" : "no"}`;
+    if (persistentChanged) console.info(msg); else console.debug(msg);
   } catch (_) {}
   return result;
 }
@@ -2996,7 +3011,7 @@ function buildScheduleConditionRuntimeSummary() {
     }
   });
   return {
-    mode: "schedule-condition-runtime-r229",
+    mode: "schedule-condition-runtime-r231",
     checkedCardCount: checkedCards.size,
     violationCount: violations.length,
     violations: violations.slice(0, 50),
@@ -5318,16 +5333,14 @@ function renderScheduleControls() {
 function renderAll() {
   ensureTeacherCardsBottomTab();
   {
-    // r219: 렌더 시점마다 가볍게 데이터 정규화를 수행합니다.
-    // entry.teacherName/teacherConstraints/교실 배정이 카드·교사명단 기준과 어긋나면 자동배치가 가짜 교사/가짜 교실을 보게 됩니다.
+    // r231: 렌더링은 화면 계산만 수행하고 Firestore 저장대기 상태를 만들지 않습니다.
+    // 이전 버전에서는 수동카드 기본값(manual=18)이나 audit 메타 보정이 렌더 때마다 dirty를 만들어
+    // 작업하지 않아도 "수동 저장(1)" / 원격 업데이트 보류 / 반복 저장이 발생했습니다.
     const sync = normalizeTimetableDataBeforeOperation({ persist: false });
     if (sync.changed) {
-      // r230: audit/checkedAt처럼 렌더 중 계산되는 메타만 바뀐 경우에는 자동저장을 걸지 않습니다.
-      // 실제 운영 데이터(교사/수동카드/교실/조건/구형메타 보정)가 바뀐 경우에만 저장 대기합니다.
-      const persistentChanged = (sync.teacherChanged || 0) + (sync.manualChanged || 0) + (sync.roomChanged || 0) + (sync.conditionChanged || 0) + (sync.metaChanged || 0);
-      if (persistentChanged && canEdit()) scheduleSave("timetable");
+      const persistentChanged = (sync.teacherChanged || 0) + (sync.roomChanged || 0) + (sync.conditionChanged || 0) + (sync.metaChanged || 0);
       if (persistentChanged) {
-        try { console.info(`[data-sync:r230] 렌더 전 정규화 teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
+        try { console.debug(`[data-sync:r231] 렌더 전 정규화(저장대기 없음) teacher=${sync.teacherChanged}, manual=${sync.manualChanged || 0}, room=${sync.roomChanged}, condition=${sync.conditionChanged || 0}, meta=${sync.metaChanged}, audit=${sync.auditChanged || 0}`); } catch (_) {}
       }
     }
   }

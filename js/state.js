@@ -47,7 +47,7 @@ let autoSaveSuspendSeq = 0;
 // r64: Firestore 저장 중 사용자가 계속 편집하면 이전 저장 응답/원격 스냅샷이
 //      최신 로컬 편집을 덮어쓸 수 있습니다. 운영 자동저장은 충분히 기다리고,
 //      저장 중 새 편집은 큐에 넣어 저장 완료 후 한 번 더 저장합니다.
-// r230: 운영 중 잦은 자동저장이 편집/CP-SAT 작업을 방해하지 않도록 지연 시간을 늘립니다.
+// r231: 렌더링/검증 메타만으로 저장대기 상태가 생기지 않도록 하고, 자동저장 OFF 상태에서도 다시 ON으로 전환할 수 있게 합니다.
 // 즉시 저장이 필요한 곳은 saveNow(...force)만 사용합니다.
 export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 30000 : 20000;
 export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 8000 : 5000;
@@ -881,7 +881,7 @@ export function normalizeTtCard(item = {}) {
     ...normalizeScheduleConditionFields(item),
   };
 
-  // r230: 수동카드 보관/자동배치 포함 상태를 normalizer에서 안정화합니다.
+  // r231: 수동카드 보관/자동배치 포함 상태를 normalizer에서 안정화합니다.
   // renderAll()이 매번 수동카드 기본값을 채우면서 자동저장을 유발하지 않도록 합니다.
   if (isManual) {
     out.manualCardStatus = manualStatus;
@@ -2152,7 +2152,7 @@ function applyNormalizedDomain(domain, normalized) {
     if (normalized.classes.length === 0 && prev.length > 0) normalized.classes = prev;
   }
   if (domain === "timetable" && isDangerouslySmallTimetableForGuard(normalized, appState.timetable)) {
-    console.warn("[Firestore guard:r229] 비정상적으로 작은 시간표 스냅샷 반영을 차단했습니다.", { next: timetableCountsForGuard(normalized), prev: timetableCountsForGuard(appState.timetable) });
+    console.warn("[Firestore guard:r231] 비정상적으로 작은 시간표 스냅샷 반영을 차단했습니다.", { next: timetableCountsForGuard(normalized), prev: timetableCountsForGuard(appState.timetable) });
     initialLoad[domain] = true;
     return;
   }
@@ -2350,7 +2350,7 @@ async function saveSplitDomain(domain, options = {}) {
   if (domain === "timetable") {
     const normalized = normalizeTimetableDomain(options.normalized || appState.timetable);
     if (isDangerousTimetableSaveForGuard(normalized, options)) {
-      console.error("[Firestore guard:r229] 비정상적으로 작은 시간표 저장을 차단했습니다.", { next: timetableCountsForGuard(normalized) });
+      console.error("[Firestore guard:r231] 비정상적으로 작은 시간표 저장을 차단했습니다.", { next: timetableCountsForGuard(normalized) });
       throw new Error("비정상적으로 작은 시간표 저장 차단: entries=0/cards<=1 상태입니다. 화면을 새로고침한 뒤 다시 확인해 주세요.");
     }
     const entryWrites = await commitChangedCollection(
@@ -2569,7 +2569,7 @@ async function applyTimetableSplitIfReady() {
 
   if (splitTimetableLooksTruncatedForGuard() && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;
-    console.warn("[Firestore guard:r229] split 시간표가 비정상적으로 작아 legacy boards/timetable 복구를 시도합니다.", {
+    console.warn("[Firestore guard:r231] split 시간표가 비정상적으로 작아 legacy boards/timetable 복구를 시도합니다.", {
       entries: timetableSplitCache.entries.length,
       cards: timetableSplitCache.ttcards.length,
       metaExists: timetableSplitCache.metaExists
