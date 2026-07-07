@@ -486,7 +486,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .field-subject-group{max-width:99%!important;width:99%!important}
 .card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
 
-/* r266: Excel/Word office export helpers */
+/* r267: Excel/Word office export helpers */
 .office-export-root .preview-page{box-shadow:none!important;border:0!important;margin:0 0 18px!important;padding:10px!important;page-break-after:always;break-after:page;width:auto!important;min-height:auto!important}
 .office-export-root .preview-page:last-child{page-break-after:auto;break-after:auto}
 .office-export-root .preview-page h3{font-size:18px;margin:0 0 6px;text-align:center}
@@ -496,7 +496,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .office-export-root .mini-card{position:relative;border:0!important;background:#fff;min-height:18px;padding:1px!important;overflow:hidden}
 
 
-/* r266: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
+/* r267: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
 @media print{
   @page{size:297mm 210mm;margin:5mm}
   html,body{height:auto!important;min-height:0!important;overflow:visible!important}
@@ -512,7 +512,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r266</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r267</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -578,11 +578,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r266";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r266";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r266";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r267";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r267";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r267";
 
-const VERSION = "2026-07-07-print-designer-r266";
+const VERSION = "2026-07-07-print-designer-r267";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1379,62 +1379,96 @@ function buildXlsxBlob(models) {
   files.push({name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`});
   files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${models.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${models.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
   files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
-  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="10"/><name val="Malgun Gothic"/></font><font><b/><sz val="11"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
+  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="8"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="6"/><name val="Malgun Gothic"/></font><font><b/><sz val="6"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
   models.forEach((m,idx)=>{
     const colCount=Math.max(1,m.cols||1);
+    const overview = layoutMode()==="overview" || /전체표/.test(m.title||"");
     const merges=[]; const rows=[];
-    rows.push({height:24,cells:[{c:1,text:m.title,style:2}]});
-    rows.push({height:18,cells:[{c:1,text:m.sub,style:3}]});
-    rows.push({height:8,cells:[]});
+    rows.push({height:20,cells:[{c:1,text:m.title,style:2}]});
+    rows.push({height:14,cells:[{c:1,text:m.sub,style:3}]});
+    rows.push({height:4,cells:[]});
     if (colCount>1) { merges.push({r1:1,c1:1,r2:1,c2:colCount}); merges.push({r1:2,c1:1,r2:2,c2:colCount}); }
     m.grid.forEach((row,r)=>{
       const cells=[];
-      row.forEach((cell,c)=>{ if(cell){ cells.push({c:c+1,text:cell.text,style:cell.header?1:0}); } });
-      rows.push({height:r<2?18:44,cells});
+      row.forEach((cell,c)=>{ if(cell){ const dense = (cell.text||"").length>120 || (cell.text||"").split(/\n/).length>8; cells.push({c:c+1,text:cell.text,style:cell.header?(overview?5:1):(dense?4:0)}); } });
+      rows.push({height:r<2?(overview?13:16):(overview?28:56),cells});
     });
     m.merges.forEach(x=>merges.push({r1:x.r1+3,c1:x.c1,r2:x.r2+3,c2:x.c2}));
-    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?8:(layoutMode()==="overview"?5.2:18)}" customWidth="1"/>`).join("");
+    const colWidth = overview ? 4.2 : 16.5;
+    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?(overview?4.5:5.5):colWidth}" customWidth="1"/>`).join("");
     const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
     const mergeXml=merges.length?`<mergeCells count="${merges.length}">${merges.map(x=>`<mergeCell ref="${colName(x.c1)}${x.r1}:${colName(x.c2)}${x.r2}"/>`).join("")}</mergeCells>`:"";
     const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
-    files.push({name:`xl/worksheets/sheet${idx+1}.xml`,data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>${colsXml?`<cols>${colsXml}</cols>`:""}<sheetData>${rowsXml}</sheetData>${mergeXml}<printOptions horizontalCentered="1" verticalCentered="1"/><pageMargins left="0.2" right="0.2" top="0.25" bottom="0.25" header="0" footer="0"/><pageSetup paperSize="9" orientation="${portrait?"portrait":"landscape"}" fitToWidth="1" fitToHeight="1"/></worksheet>`});
+    files.push({name:`xl/worksheets/sheet${idx+1}.xml`,data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>${colsXml?`<cols>${colsXml}</cols>`:""}<sheetData>${rowsXml}</sheetData>${mergeXml}<printOptions horizontalCentered="1" verticalCentered="1"/><pageMargins left="0.15" right="0.15" top="0.2" bottom="0.2" header="0" footer="0"/><pageSetup paperSize="9" orientation="${portrait?"portrait":"landscape"}" fitToWidth="1" fitToHeight="1"/></worksheet>`});
   });
   return zipStore(files);
 }
 function wText(text="") {
-  const lines=String(text||"").split(/\n/);
+  const lines=String(text||"").replace(/\r/g,"").split(/\n/);
   return lines.map((line,i)=>`${i?"<w:br/>":""}<w:t xml:space="preserve">${xmlEsc(line)}</w:t>`).join("");
 }
 function wPara(text="", opts={}) {
   const bold=opts.bold?"<w:b/>":"";
-  const sz=opts.size?`<w:sz w:val="${opts.size}"/>`:"";
+  const sz=opts.size?`<w:sz w:val="${opts.size}"/><w:szCs w:val="${opts.size}"/>`:"";
   const jc=opts.align?`<w:jc w:val="${opts.align}"/>`:"";
-  return `<w:p><w:pPr>${jc}</w:pPr><w:r><w:rPr>${bold}${sz}<w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/></w:rPr>${wText(text)}</w:r></w:p>`;
+  const spacing=`<w:spacing w:before="0" w:after="0" w:line="${opts.line||160}" w:lineRule="exact"/>`;
+  return `<w:p><w:pPr>${jc}${spacing}</w:pPr><w:r><w:rPr>${bold}${sz}<w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/></w:rPr>${wText(text)}</w:r></w:p>`;
+}
+function docxCellSize(text="", header=false, overview=false) {
+  if (header) return overview ? 10 : 14;
+  const t=String(text||"");
+  const lines=t.split(/\n/).length;
+  const len=t.length;
+  if (overview) {
+    if (lines>10 || len>130) return 8;
+    if (lines>7 || len>90) return 9;
+    return 10;
+  }
+  if (lines>14 || len>190) return 8;
+  if (lines>10 || len>140) return 9;
+  if (lines>7 || len>95) return 11;
+  return 13;
 }
 function wCell(text="", opts={}) {
   const span=opts.colspan>1?`<w:gridSpan w:val="${opts.colspan}"/>`:"";
   const fill=opts.header?`<w:shd w:fill="F1F5F9"/>`:"";
-  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="center"/>${fill}</w:tcPr>${wPara(text,{bold:opts.header,align:"center",size:opts.header?20:16})}</w:tc>`;
+  const sz=opts.size || docxCellSize(text, !!opts.header, !!opts.overview);
+  const line=Math.max(105, Math.min(160, sz*13));
+  const mar=`<w:tcMar><w:top w:w="10" w:type="dxa"/><w:left w:w="10" w:type="dxa"/><w:bottom w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tcMar>`;
+  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="center"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wPara(text,{bold:opts.header,align:"center",size:sz,line})}</w:tc>`;
+}
+function wordRowHeight(idx, total, overview=false) {
+  if (idx === 0) return overview ? 220 : 300;
+  const bodyRows=Math.max(1,total-1);
+  const usable=overview ? 9000 : 9850;
+  return Math.max(520, Math.floor(usable/bodyRows));
 }
 function wordTableXml(model) {
   const colCount=Math.max(1,model.cols||1);
-  const width=Math.max(650, Math.floor(9500/colCount));
-  const rows=model.grid.map(row=>{
+  const overview = layoutMode()==="overview" || /전체표/.test(model.title||"");
+  const tblW = overview ? 15880 : 15400;
+  const width=Math.max(420, Math.floor(tblW/colCount));
+  const rows=model.grid.map((row,ridx)=>{
     let tcs="";
-    row.forEach(cell=>{ if(cell) tcs += wCell(cell.text,{header:cell.header,colspan:cell.colspan,width}); });
-    return `<w:tr>${tcs}</w:tr>`;
+    row.forEach(cell=>{ if(cell) tcs += wCell(cell.text,{header:cell.header,colspan:cell.colspan,width,overview}); });
+    return `<w:tr><w:trPr><w:trHeight w:val="${wordRowHeight(ridx, model.grid.length, overview)}" w:hRule="exact"/><w:cantSplit/></w:trPr>${tcs}</w:tr>`;
   }).join("");
-  return `<w:tbl><w:tblPr><w:tblW w:w="10000" w:type="pct"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${Array.from({length:colCount},()=>`<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${Array.from({length:colCount},()=>`<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
 }
 function buildDocxBlob(models) {
   const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
   const pgW = portrait ? 11906 : 16838, pgH = portrait ? 16838 : 11906;
-  const body = models.map((m,i)=>`${i?'<w:p><w:r><w:br w:type="page"/></w:r></w:p>':""}${wPara(m.title,{bold:true,align:"center",size:28})}${wPara(m.sub,{align:"center",size:18})}${wordTableXml(m)}`).join("");
-  const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="${pgW}" w:h="${pgH}"${portrait?"":" w:orient=\"landscape\""}/><w:pgMar w:top="360" w:right="360" w:bottom="360" w:left="360" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const body = models.map((m,i)=>`${i?'<w:p><w:r><w:br w:type="page"/></w:r></w:p>':""}${wPara(m.title,{bold:true,align:"center",size:22,line:240})}${wPara(m.sub,{align:"center",size:14,line:170})}${wordTableXml(m)}`).join("");
+  const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="${pgW}" w:h="${pgH}"${portrait?"":" w:orient=\"landscape\""}/><w:pgMar w:top="260" w:right="260" w:bottom="260" w:left="260" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/><w:sz w:val="12"/><w:szCs w:val="12"/></w:rPr><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:style></w:styles>`;
+  const settings=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:defaultTabStop w:val="720"/></w:settings>`;
   return zipStore([
-    {name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`},
+    {name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>`},
     {name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`},
-    {name:"word/document.xml",data:doc}
+    {name:"word/_rels/document.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>`},
+    {name:"word/document.xml",data:doc},
+    {name:"word/styles.xml",data:styles},
+    {name:"word/settings.xml",data:settings}
   ]);
 }
 function exportOfficeReal(kind) {
