@@ -205,13 +205,94 @@
 .subject-grade-grid .check span{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
 .special-options{grid-template-columns:1fr 1fr!important}
 
+
+
+/* r255: 카드 표시 한줄 고정, 긴 과목/영문명 말줄임, 다중분할 점선 처리 */
+.checkrow select[data-field-pos],
+.checkrow .pos-fixed{
+  grid-column:auto!important;
+  grid-row:auto!important;
+  width:42px!important;
+  min-width:42px!important;
+  max-width:42px!important;
+  height:24px!important;
+  padding:1px 2px!important;
+  text-align:center!important;
+  justify-self:end!important;
+}
+.checkrow{
+  grid-template-columns:16px minmax(38px,1fr) 18px 44px 44px!important;
+  column-gap:4px!important;
+  row-gap:0!important;
+  min-height:34px!important;
+}
+.checkrow > span{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;line-height:1!important}
+.checkrow input[data-field-font]{width:42px!important;height:24px!important;font-size:11px!important}
+.field-subject-group,
+.field-item{min-width:0!important;overflow:hidden!important}
+.field-subject,
+.field-english-inline,
+.field-teacher,
+.field-room,
+.field-class,
+.compact-subject,
+.compact-sub,
+.compact-meta,
+.cell-line b,
+.cell-line span{
+  display:block!important;
+  max-width:100%!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+  overflow-wrap:normal!important;
+  word-break:normal!important;
+}
+.field-subject-group{width:96%!important;max-width:96%!important}
+.field-english-inline{margin-top:1px;color:#64748b}
+.lesson-cell.count-2 .mini-card,
+.lesson-cell.count-3 .mini-card,
+.lesson-cell.count-4 .mini-card,
+.lesson-cell.count-many .mini-card{
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.lesson-cell.count-2.layout-cols .mini-card:nth-child(1),
+.lesson-cell.count-2:not(.layout-rows):not(.layout-vertical) .mini-card:nth-child(1){border-right:1px dashed #94a3b8!important}
+.lesson-cell.count-2.layout-rows .mini-card:nth-child(1),
+.lesson-cell.count-2.layout-vertical .mini-card:nth-child(1){border-bottom:1px dashed #94a3b8!important;border-right:0!important}
+.lesson-cell.count-3 .mini-card,
+.lesson-cell.count-4 .mini-card,
+.lesson-cell.count-many .mini-card{border-right:1px dashed #94a3b8!important;border-bottom:1px dashed #94a3b8!important}
+.lesson-cell.count-3 .mini-card:nth-child(2n),
+.lesson-cell.count-4 .mini-card:nth-child(2n),
+.lesson-cell.count-many .mini-card:nth-child(2n){border-right:0!important}
+.lesson-cell.count-3 .mini-card:nth-last-child(-n+2),
+.lesson-cell.count-4 .mini-card:nth-last-child(-n+2),
+.lesson-cell.count-many .mini-card:nth-last-child(-n+2){border-bottom:0!important}
+.lesson-cell.count-3.layout-rows .mini-card,
+.lesson-cell.count-4.layout-rows .mini-card,
+.lesson-cell.count-many.layout-rows .mini-card{border-right:0!important;border-bottom:1px dashed #94a3b8!important}
+.lesson-cell.count-3.layout-rows .mini-card:last-child,
+.lesson-cell.count-4.layout-rows .mini-card:last-child,
+.lesson-cell.count-many.layout-rows .mini-card:last-child{border-bottom:0!important}
+.lesson-cell.count-3.layout-cols .mini-card,
+.lesson-cell.count-4.layout-cols .mini-card,
+.lesson-cell.count-many.layout-cols .mini-card{border-bottom:0!important;border-right:1px dashed #94a3b8!important}
+.lesson-cell.count-3.layout-cols .mini-card:last-child,
+.lesson-cell.count-4.layout-cols .mini-card:last-child,
+.lesson-cell.count-many.layout-cols .mini-card:last-child{border-right:0!important}
+.overview-wide .overview-cell.lesson-cell .mini-card{border-color:#94a3b8!important;border-style:dashed!important}
+
 </style>
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r254</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r255</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -275,11 +356,11 @@
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r254";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r254";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r254";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r255";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r255";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r255";
 
-const VERSION = "2026-07-07-print-designer-r254";
+const VERSION = "2026-07-07-print-designer-r255";
 const DAYS = ["월", "화", "수", "목", "금"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
