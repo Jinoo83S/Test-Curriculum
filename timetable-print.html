@@ -25,6 +25,14 @@
 /* r243: 사이드바 압축 + 상단바 축소 + 작업 스크롤 최소화 */
 .topbar{height:34px;padding:0 8px;gap:7px}.topbar h1{font-size:14px}.badge{height:20px;padding:0 7px;font-size:11px}.status{font-size:11px}.topbar button{height:26px;padding:0 9px;border-radius:8px;font-size:12px}.app{height:calc(100% - 34px);grid-template-columns:280px minmax(420px,1fr) 285px}.sidebar{padding:8px}.panel{border-radius:11px;margin-bottom:8px}.panel h2{padding:7px 9px;font-size:12px}.panel .body{padding:8px}.field{gap:3px;margin-bottom:7px}.field span,.checkrow span{font-size:11px}.field input,.field select{height:29px;border-radius:8px;padding:3px 7px;font-size:12px}.two{gap:6px}.btnrow{gap:5px}.btnrow button,.panel button{height:27px;padding:0 8px;border-radius:8px;font-size:11px}.hint{font-size:11px;line-height:1.3;margin-top:4px}.hint.compact-hide{display:none}.divider{margin:7px 0}.check{min-height:28px;border-radius:9px;padding:4px 7px;font-size:12px}.check input{width:15px;height:15px}.chips{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.chip{padding:6px;border-radius:8px;font-size:12px}.chip input{width:15px;height:15px}.entity-list{max-height:235px;gap:5px}.entity-item{padding:6px;border-radius:8px}.entity-item b{font-size:12px}.entity-item small{font-size:10px}.scope-options{gap:5px}.subject-list{gap:5px;max-height:118px}.subject-list label{font-size:11px}.right-actions{gap:5px;margin-bottom:6px}.right-actions button{height:25px;font-size:11px}.preview-toolbar{height:38px;padding:0 10px}.preview-scroll{padding:16px}.split-config-grid{grid-template-columns:38px 1fr 1fr;gap:4px}.split-config-grid b{font-size:11px}.split-config-grid select{height:26px;border-radius:7px;font-size:11px;padding:1px 4px}.checkrow{grid-template-columns:auto 54px auto 1fr;gap:5px;padding:5px;border-radius:8px;margin-bottom:5px}.checkrow select{height:26px;font-size:11px;padding:1px 4px}.card-apply-row{gap:5px;margin-top:6px}.card-apply-row .primary{height:28px}.saved-pill{height:20px;font-size:10px;padding:0 7px}
 
+
+/* r244: 분할 방향 명확화 + 전체표는 요일별 A4 페이지로 맞춤 */
+.lesson-cell.layout-rows{grid-template-columns:1fr!important;grid-template-rows:repeat(var(--split-count,1),minmax(0,1fr))!important;grid-auto-rows:minmax(0,1fr)!important}
+.lesson-cell.layout-cols{grid-template-columns:repeat(var(--split-count,1),minmax(0,1fr))!important;grid-template-rows:1fr!important;grid-auto-rows:minmax(0,1fr)!important}
+.lesson-cell.layout-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;grid-auto-rows:minmax(0,1fr)!important}
+.overview.day-view .tt-table td{height:38px!important;padding:1px}.overview.day-view .tt-table thead th{font-size:10px!important;height:22px}.overview.day-view .tt-table tbody th{font-size:10px!important;width:54px}.overview.day-view .mini-card{border-radius:2px;padding:1px}.overview.day-view .field-item{font-size:6.8px}.overview.day-view .compact-subject{font-size:7.6px}.overview.day-view .compact-sub,.overview.day-view .compact-meta{font-size:5.8px}
+@media print{.overview.day-view .tt-table td{height:9.2mm!important}.overview.day-view .tt-table thead th{font-size:7.5px!important;height:5.4mm!important}.overview.day-view .tt-table tbody th{font-size:7.5px!important;width:12mm!important}.overview.day-view .field-item{font-size:5.6px!important}.overview.day-view .compact-subject{font-size:6px!important}.overview.day-view .compact-sub,.overview.day-view .compact-meta{font-size:4.8px!important}}
+
 @page{size:A4 landscape;margin:5mm}@media print{html,body{height:auto;overflow:visible;background:#fff}.topbar,.sidebar,.preview-toolbar{display:none!important}.app{display:block;height:auto}.preview-wrap,.preview-scroll{display:block;height:auto;overflow:visible;padding:0;background:#fff}.preview-inner{transform:none!important;width:auto;margin:0}.preview-page{width:auto;min-height:auto;margin:0;padding:0;border:0;box-shadow:none;page-break-after:always}.preview-page:last-child{page-break-after:auto}.preview-page h3{font-size:16px;margin:0 0 2mm}.preview-sub{font-size:9px;margin:-1mm 0 2mm}.tt-table{border-width:1.5px}.tt-table thead th{font-size:10px;height:7mm}.tt-table tbody th{font-size:10px;width:9mm}.tt-table td{height:23mm}.overview .tt-table td{height:12mm}.overview .tt-table thead th{font-size:6.5px}.overview .tt-table tbody th{font-size:8.5px}.field-item{font-size:7.4px}.font-small .field-item{font-size:6.5px}.font-large .field-item{font-size:8.4px}.mini-card{border-width:.6px;border-radius:2px}.lesson-cell{gap:1px}}
 
 /* r243: 범위 중심 UI / 사이드바 추가 압축 */
@@ -55,7 +63,7 @@
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r243</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r244</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -84,15 +92,15 @@
         <div class="two"><div class="field"><span>1과목 글자 크기</span><select id="splitFont1"><option value="normal">기본</option><option value="small">작게</option><option value="xsmall">아주 작게</option><option value="large">크게</option></select></div><div class="field"><span>1과목 배치</span><select id="splitLayout1"><option value="standard">위치 설정 사용</option><option value="compact">중앙 압축</option><option value="simple">과목+교실</option><option value="subject">과목만</option></select></div></div>
       </div>
       <div class="split-editor hidden" data-split-panel="2">
-        <div class="field"><span>2분할 방향</span><select id="splitDir2"><option value="columns">가로 분할</option><option value="vertical">세로 분할</option><option value="auto">기존 자동</option></select></div>
+        <div class="field"><span>2분할 방향</span><select id="splitDir2"><option value="cols">세로 분할(좌우)</option><option value="rows">가로 분할(위아래)</option><option value="auto">기존 자동</option></select></div>
         <div class="two"><div class="field"><span>2분할 글자 크기</span><select id="splitFont2"><option value="normal">기본</option><option value="small">작게</option><option value="xsmall">아주 작게</option><option value="large">크게</option></select></div><div class="field"><span>2분할 배치</span><select id="splitLayout2"><option value="standard">위치 설정 사용</option><option value="compact">중앙 압축</option><option value="simple">과목+교실</option><option value="subject">과목만</option></select></div></div>
       </div>
       <div class="split-editor hidden" data-split-panel="3">
-        <div class="field"><span>3분할 방향</span><select id="splitDir3"><option value="grid">2×2 분할</option><option value="columns">가로 분할</option><option value="vertical">세로 분할</option><option value="auto">기존 자동</option></select></div>
+        <div class="field"><span>3분할 방향</span><select id="splitDir3"><option value="grid">2×2 분할</option><option value="cols">세로 분할(좌우)</option><option value="rows">가로 분할(위아래)</option><option value="auto">기존 자동</option></select></div>
         <div class="two"><div class="field"><span>3분할 글자 크기</span><select id="splitFont3"><option value="normal">기본</option><option value="small">작게</option><option value="xsmall">아주 작게</option><option value="large">크게</option></select></div><div class="field"><span>3분할 배치</span><select id="splitLayout3"><option value="standard">위치 설정 사용</option><option value="compact">중앙 압축</option><option value="simple">과목+교실</option><option value="subject">과목만</option></select></div></div>
       </div>
       <div class="split-editor hidden" data-split-panel="4">
-        <div class="field"><span>4분할 방향</span><select id="splitDir4"><option value="grid">2×2 분할</option><option value="columns">가로 분할</option><option value="vertical">세로 분할</option><option value="auto">기존 자동</option></select></div>
+        <div class="field"><span>4분할 방향</span><select id="splitDir4"><option value="grid">2×2 분할</option><option value="cols">세로 분할(좌우)</option><option value="rows">가로 분할(위아래)</option><option value="auto">기존 자동</option></select></div>
         <div class="two"><div class="field"><span>4분할 글자 크기</span><select id="splitFont4"><option value="normal">기본</option><option value="small">작게</option><option value="xsmall">아주 작게</option><option value="large">크게</option></select></div><div class="field"><span>4분할 배치</span><select id="splitLayout4"><option value="standard">위치 설정 사용</option><option value="compact">중앙 압축</option><option value="simple">과목+교실</option><option value="subject">과목만</option></select></div></div>
       </div>
       <div id="fieldRows"></div>
@@ -119,11 +127,11 @@
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r243";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r243";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r243";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r244";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r244";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r244";
 
-const VERSION = "2026-07-07-print-designer-r243";
+const VERSION = "2026-07-07-print-designer-r244";
 const DAYS = ["월", "화", "수", "목", "금"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -147,8 +155,8 @@ const SPLIT_FONT = {
   normal: { px: 10.0, print: 7.4 },
   large: { px: 11.4, print: 8.4 }
 };
-const STORE_KEY = "his_print_designer_profiles_r241";
-const LAST_KEY = "his_print_designer_last_profile_r241";
+const STORE_KEY = "his_print_designer_profiles_r244";
+const LAST_KEY = "his_print_designer_last_profile_r244";
 const $ = id => document.getElementById(id);
 const clean = v => String(v ?? "").trim();
 const esc = v => clean(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
@@ -198,20 +206,30 @@ function teacherAllowedByScope(name) { const mode=currentScopeMode(); return mod
 function roomAllowedByScope(id) { const mode=currentScopeMode(); return mode !== "custom" || selectedScopeKeys().includes(clean(id)); }
 function entryAllowedByScope(e) { const type=targetType(); if (type === "teacher" || type === "room") return true; const allowed = classes().filter(classAllowedByScope).map(c=>c.key); if (!allowed.length) return false; const keys = entryClassKeys(e); return !keys.length || keys.some(k => allowed.includes(k)); }
 function targetType() { return $("targetType").value; }
-function layoutMode() { return $("layoutMode").value; }
+function layoutMode() { return targetType() === "student" ? "individual" : ($("layoutMode")?.value || "individual"); }
 function format() { return $("format").value; }
+function syncLayoutModeOptions() {
+  const lm=$("layoutMode");
+  if (!lm) return;
+  const student = targetType() === "student";
+  [...lm.options].forEach(opt=>{ if (opt.value === "overview") opt.disabled = student; });
+  if (student && lm.value === "overview") lm.value = "individual";
+}
 function applyPaper(paper) { const portrait = paper === "a4-portrait"; document.documentElement.style.setProperty("--page-w", portrait ? "794px" : "1123px"); document.documentElement.style.setProperty("--page-h", portrait ? "1123px" : "794px"); const el=$("printPageStyle"); if (el) el.textContent = `@page{size:A4 ${portrait ? "portrait" : "landscape"};margin:5mm}`; }
-function profileKey() { return `${targetType()}:${layoutMode()}:${format()}`; }
+function profileKey() { return `${targetType()}:${layoutMode()}:pdf`; }
 function defaultFieldSettings() { return Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos}])); }
 function normalizeFields(raw) { const base=defaultFieldSettings(); if (raw && typeof raw === "object") FIELD_DEFS.forEach(f=>{ base[f.key]={...base[f.key], ...(raw[f.key]||{})}; }); return base; }
 function normalizeSplitFields(raw, fallbackFields=null) { const fallback=normalizeFields(fallbackFields); const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]=normalizeFields(raw?.[k] || fallback); }); return out; }
-function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", previewMode:"sample", cellLayout:"auto", applyMode:"card", fontScale:"normal", scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"columns","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
+function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", previewMode:"sample", cellLayout:"auto", applyMode:"card", fontScale:"normal", scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
 function readStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); } catch { return {}; } }
 function writeStore(store) { try { localStorage.setItem(STORE_KEY, JSON.stringify(store||{})); } catch {} }
 function getSettings() { const store = readStore(); return {...defaultSettings(), ...(store[profileKey()]||{})}; }
 function splitStylesFromDom() { const out={}; [1,2,3,4].forEach(n=>{ out[String(n)]={ font: $("splitFont"+n)?.value || SPLIT_DEFAULTS[String(n)].font, layout: $("splitLayout"+n)?.value || SPLIT_DEFAULTS[String(n)].layout }; }); return out; }
-function splitDirectionsFromDom() { return {"2":$("splitDir2")?.value || "columns", "3":$("splitDir3")?.value || "grid", "4":$("splitDir4")?.value || "grid"}; }
-function normalizeSplitDirections(raw) { return {"2":raw?.["2"] || "columns", "3":raw?.["3"] || "grid", "4":raw?.["4"] || "grid"}; }
+function splitDirectionsFromDom() { return {"2":$("splitDir2")?.value || "cols", "3":$("splitDir3")?.value || "grid", "4":$("splitDir4")?.value || "grid"}; }
+function normalizeSplitDirections(raw) {
+  const map = v => v === "columns" ? "cols" : (v === "vertical" ? "rows" : (v || "auto"));
+  return {"2":map(raw?.["2"] || "cols"), "3":map(raw?.["3"] || "grid"), "4":map(raw?.["4"] || "grid")};
+}
 function applySplitDirections(raw) { const dirs=normalizeSplitDirections(raw); [2,3,4].forEach(n=>{ const el=$("splitDir"+n); if(el) el.value=dirs[String(n)]; }); }
 function normalizeSplitStyles(raw) { const out=structuredClone(SPLIT_DEFAULTS); if (raw && typeof raw === "object") [1,2,3,4].forEach(n=>{ const k=String(n); out[k]={...out[k], ...(raw[k]||{})}; }); return out; }
 function applySplitStyles(raw) { const styles=normalizeSplitStyles(raw); [1,2,3,4].forEach(n=>{ const k=String(n); const font=$("splitFont"+n); const layout=$("splitLayout"+n); if(font) font.value=styles[k].font; if(layout) layout.value=styles[k].layout; }); }
@@ -227,8 +245,8 @@ function collectSettings() { if (!applying) syncActiveFieldDraft(); const splitF
 function saveSettings() { if (applying) return; const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
-function applySettings(settings, keepMain=false) { applying=true; const s={...defaultSettings(),...settings}; if (!keepMain) { $("targetType").value=s.targetType; $("layoutMode").value=s.layoutMode; $("format").value=s.format; } $("paper").value=s.paper; applyPaper(s.paper); if($("previewMode")) $("previewMode").value=s.previewMode || "sample"; if($("cellLayout")) $("cellLayout").value="auto"; if($("applyMode")) $("applyMode").value=s.applyMode || "card"; if($("fontScale")) $("fontScale").value=s.fontScale || "normal"; const scopeVal=s.scope || "all"; document.querySelectorAll("input[name=\"scope\"]").forEach(el=>{ el.checked = el.value === scopeVal; }); const selected=new Set(s.selectedScopeKeys || []); document.querySelectorAll("[data-scope-key]").forEach(el=>{ el.checked = selected.has(el.dataset.scopeKey); }); FIELD_DEFS.forEach(f=>{ const v=s.fields?.[f.key] || f; const en=document.querySelector(`[data-field-enabled="${f.key}"]`); const bo=document.querySelector(`[data-field-bold="${f.key}"]`); const po=document.querySelector(`[data-field-pos="${f.key}"]`); if(en) en.checked = v.enabled !== false; if(bo) bo.checked = !!v.bold; if(po) po.value = v.pos || f.pos; }); applySplitStyles(s.splitStyles); applySplitDirections(s.splitDirections); applying=false; }
-function switchProfile() { buildScopeUi(); const s = getSettings(); applySettings(s, true); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); scheduleRender(); }
+function applySettings(settings, keepMain=false) { applying=true; const s={...defaultSettings(),...settings}; if (!keepMain) { $("targetType").value=s.targetType; $("layoutMode").value=s.targetType === "student" ? "individual" : s.layoutMode; $("format").value=s.format; } if (targetType() === "student") $("layoutMode").value = "individual"; syncLayoutModeOptions(); $("paper").value=s.paper; applyPaper(s.paper); if($("previewMode")) $("previewMode").value=s.previewMode || "sample"; if($("cellLayout")) $("cellLayout").value="auto"; if($("applyMode")) $("applyMode").value=s.applyMode || "card"; if($("fontScale")) $("fontScale").value=s.fontScale || "normal"; const scopeVal=s.scope || "all"; document.querySelectorAll("input[name=\"scope\"]").forEach(el=>{ el.checked = el.value === scopeVal; }); const selected=new Set(s.selectedScopeKeys || []); document.querySelectorAll("[data-scope-key]").forEach(el=>{ el.checked = selected.has(el.dataset.scopeKey); }); FIELD_DEFS.forEach(f=>{ const v=s.fields?.[f.key] || f; const en=document.querySelector(`[data-field-enabled="${f.key}"]`); const bo=document.querySelector(`[data-field-bold="${f.key}"]`); const po=document.querySelector(`[data-field-pos="${f.key}"]`); if(en) en.checked = v.enabled !== false; if(bo) bo.checked = !!v.bold; if(po) po.value = v.pos || f.pos; }); applySplitStyles(s.splitStyles); applySplitDirections(s.splitDirections); splitFieldDraft=normalizeSplitFields(s.splitFields, s.fields); applying=false; }
+function switchProfile() { syncLayoutModeOptions(); buildScopeUi(); const s = getSettings(); applySettings(s, true); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); scheduleRender(); }
 function buildFieldRows() { $("fieldRows").innerHTML = FIELD_DEFS.map(f => { const pos = f.key === "english" ? `<span class="inline-note">과목 아래</span>` : `<select data-field-pos="${f.key}">${POSITIONS.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select>`; return `<div class="checkrow"><input type="checkbox" data-field-enabled="${f.key}"><span>${esc(f.label)}</span><label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b;font-weight:800"><input type="checkbox" data-field-bold="${f.key}">굵게</label>${pos}</div>`; }).join(""); }
 function buildScopeUi() { const type=targetType(); const scopeBox=$("scopeOptions"); const listBox=$("classChips"); if(!scopeBox || !listBox) return; if (type === "teacher") { scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="all" checked><span>전체 교사</span></label><label class="check"><input type="radio" name="scope" value="custom"><span>교사 선택</span></label>`; const names=unique(entries().flatMap(entryTeachers)).sort((a,b)=>a.localeCompare(b,"ko")); listBox.innerHTML = names.map(n=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(n)}"><span>${esc(n)}</span></label>`).join(""); $("scopeHint").textContent = "교사별 출력은 선택한 교사의 본인 과목만 표시합니다."; return; } if (type === "room") { scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="all" checked><span>전체 교실</span></label><label class="check"><input type="radio" name="scope" value="custom"><span>교실 선택</span></label>`; listBox.innerHTML = rooms().map(r=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(r.id)}"><span>${esc(r.label)}</span></label>`).join(""); $("scopeHint").textContent = "교실별 출력은 선택한 교실에 배정된 수업만 표시합니다."; return; } scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="all" checked><span>전체</span></label><label class="check"><input type="radio" name="scope" value="middle"><span>중등 7–9</span></label><label class="check"><input type="radio" name="scope" value="high"><span>고등 10–12</span></label><label class="check"><input type="radio" name="scope" value="custom"><span>학급 선택</span></label>`; listBox.innerHTML = classes().map(c=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(c.key)}"><span>${esc(c.label)}</span></label>`).join(""); $("scopeHint").textContent = type === "student" ? "개인 출력은 선택 범위 안의 학생을 출력합니다." : "학급 출력은 선택 범위 안의 학급만 출력합니다."; }
 function buildClassChips() { buildScopeUi(); }
@@ -282,12 +300,43 @@ function specialLabelForItem(item, selected=[]) {
 
 function miniCardHtml(item, fields, splitCount, settings) { const st=splitStyleFor(splitCount, settings); const splitFields=normalizeFields(fields); const style=`--card-font:${st.font.px}px;--print-card-font:${st.font.print}px`; const layoutClass = `split-${st.key} card-layout-${st.cfg.layout}`; const specialLabel = specialLabelForItem(item, settings.specialSubjects||[]); if (specialLabel) return `<div class="mini-card ${layoutClass} card-layout-subject special-card" style="${style}"><div class="compact-subject">${esc(specialLabel)}</div></div>`; const layout = st.cfg.layout; if (layout !== "standard") return `<div class="mini-card ${layoutClass}" style="${style}">${compactCardHtml(item,{...st.cfg,layout})}</div>`; return `<div class="mini-card ${layoutClass}" style="${style}">${standardCardHtml(item, splitFields)}</div>`; }
 function collapseSpecialItems(cellItems, settings) { const out=[]; const seen=new Set(); for (const item of cellItems) { const label=specialLabelForItem(item, settings.specialSubjects||[]); if (!label) { out.push(item); continue; } if (seen.has(label)) continue; seen.add(label); out.push({...item, subject:label, english:"", teacher:"", room:"", __specialLabel:label}); } return out; }
-function cellHtml(cellItems) { if (!cellItems.length) return `<div class="empty"></div>`; const settings=collectSettings(); const collapsed=collapseSpecialItems(cellItems, settings); const count = collapsed.length >=5 ? "many" : String(collapsed.length); const splitCount = Math.max(1, Math.min(4, collapsed.length)); const dirs = normalizeSplitDirections(settings.splitDirections); const dir = splitCount >= 2 ? (dirs[String(splitCount)] || "auto") : "auto"; const layout = dir === "auto" ? "" : `layout-${dir}`; const visibleItems = collapsed.slice(0,6); const fieldsForSplit = normalizeSplitFields(settings.splitFields, settings.fields)[String(splitCount)] || settings.fields; return `<div class="lesson-cell count-${count} ${layout}">${visibleItems.map(it=>miniCardHtml(it, fieldsForSplit, splitCount, settings)).join("")}</div>`; }
+function cellHtml(cellItems) {
+  if (!cellItems.length) return `<div class="empty"></div>`;
+  const settings=collectSettings();
+  const collapsed=collapseSpecialItems(cellItems, settings);
+  const count = collapsed.length >=5 ? "many" : String(collapsed.length);
+  const splitCount = Math.max(1, Math.min(4, collapsed.length));
+  const dirs = normalizeSplitDirections(settings.splitDirections);
+  const dir = splitCount >= 2 ? (dirs[String(splitCount)] || "auto") : "auto";
+  const layout = dir === "auto" ? "" : `layout-${dir}`;
+  const visibleItems = collapsed.slice(0,6);
+  const fieldsForSplit = normalizeSplitFields(settings.splitFields, settings.fields)[String(splitCount)] || settings.fields;
+  return `<div class="lesson-cell count-${count} ${layout}" style="--split-count:${splitCount}">${visibleItems.map(it=>miniCardHtml(it, fieldsForSplit, splitCount, settings)).join("")}</div>`;
+}
 function tableForEntity(ent) { const labels=periodLabels(); const rows = labels.map((plabel,pidx)=>`<tr><th>${esc(plabel)}</th>${DAYS.map((d,day)=>{ const items=visibleEntriesForScope().filter(e=>e.day===day && e.period===pidx && ent.match(e)).flatMap(e=>entryItems(e,ent,plabel)); return `<td>${cellHtml(items)}</td>`; }).join("")}</tr>`).join(""); return `<table class="tt-table"><thead><tr><th></th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`; }
 function paperClass() { return ($("paper")?.value || "a4-landscape") === "a4-portrait" ? "paper-portrait" : "paper-landscape"; }
 function pageForEntity(ent) { return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}"><h3>${esc(ent.label)} 시간표</h3><div class="preview-sub">${esc(ent.sub||"")} · ${new Date().toLocaleDateString("ko-KR")}</div>${tableForEntity(ent)}</section>`; }
-function overviewPage(ents) { const labels=periodLabels(); const header = DAYS.map(d=>labels.map(p=>`<th>${esc(d)} ${esc(p)}</th>`).join("")).join(""); const rows = ents.map(ent=>`<tr><th>${esc(ent.label)}</th>${DAYS.map((d,day)=>labels.map((plabel,pidx)=>{ const items=visibleEntriesForScope().filter(e=>e.day===day && e.period===pidx && ent.match(e)).flatMap(e=>entryItems(e,ent,plabel)); return `<td>${cellHtml(items)}</td>`; }).join("")).join("")}</tr>`).join(""); return `<section class="preview-page overview ${paperClass()} ${collectSettings().fontScale}"><h3>${targetType()==="class"?"학급 전체표":targetType()==="student"?"개인 전체표":targetType()==="teacher"?"교사 전체표":"교실 전체표"}</h3><div class="preview-sub">선택 대상 ${ents.length}개</div><table class="tt-table"><thead><tr><th>대상</th>${header}</tr></thead><tbody>${rows}</tbody></table></section>`; }
-function renderPagesFor(ents, metaPrefix="") { const pages = layoutMode()==="overview" ? [overviewPage(ents)] : ents.map(pageForEntity); $("previewInner").innerHTML = pages.length ? pages.join("") : `<section class="preview-page"><div class="disabled-note">출력할 대상이 없습니다. 오른쪽 범위를 확인해 주세요.</div></section>`; $("previewMeta").textContent = `${metaPrefix}${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`; applyZoom(); }
+function overviewTitle() { return targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; }
+function chunkList(list, size) { const out=[]; for(let i=0;i<list.length;i+=size) out.push(list.slice(i,i+size)); return out; }
+function overviewPages(ents) {
+  const labels=periodLabels();
+  const perPage = ($("paper")?.value || "a4-landscape") === "a4-portrait" ? 16 : 14;
+  const groups = chunkList(ents, perPage);
+  const pages=[];
+  DAYS.forEach((d,day)=>{
+    groups.forEach((group,gi)=>{
+      const header = labels.map(p=>`<th>${esc(p)}</th>`).join("");
+      const rows = group.map(ent=>`<tr><th>${esc(ent.label)}</th>${labels.map((plabel,pidx)=>{
+        const items=visibleEntriesForScope().filter(e=>e.day===day && e.period===pidx && ent.match(e)).flatMap(e=>entryItems(e,ent,plabel));
+        return `<td>${cellHtml(items)}</td>`;
+      }).join("")}</tr>`).join("");
+      const part = groups.length > 1 ? ` · ${gi+1}/${groups.length}` : "";
+      pages.push(`<section class="preview-page overview day-view ${paperClass()} ${collectSettings().fontScale}"><h3>${overviewTitle()} - ${esc(d)}요일${part}</h3><div class="preview-sub">선택 대상 ${ents.length}개 · ${esc(d)}요일</div><table class="tt-table"><thead><tr><th>대상</th>${header}</tr></thead><tbody>${rows}</tbody></table></section>`);
+    });
+  });
+  return pages;
+}
+function renderPagesFor(ents, metaPrefix="") { const pages = layoutMode()==="overview" ? overviewPages(ents) : ents.map(pageForEntity); $("previewInner").innerHTML = pages.length ? pages.join("") : `<section class="preview-page"><div class="disabled-note">출력할 대상이 없습니다. 오른쪽 범위를 확인해 주세요.</div></section>`; $("previewMeta").textContent = `${metaPrefix}${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`; applyZoom(); }
 function renderPreview() { if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); const mode = $("previewMode")?.value || "sample"; const previewEnts = mode === "sample" ? allEnts.slice(0,1) : allEnts; const prefix = mode === "sample" && allEnts.length > 1 ? `샘플 ${previewEnts.length}/${allEnts.length} · ` : ""; renderPagesFor(previewEnts, prefix); }
 function scheduleRender() { clearTimeout(renderTimer); renderTimer=setTimeout(renderPreview, 120); }
 function applyZoom() { const z=Number($("zoom").value)||75; $("zoomText").textContent=`${z}%`; $("previewInner").style.transform=`scale(${z/100})`; }
@@ -295,7 +344,7 @@ function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach
   else if (name==="detail") { FIELD_DEFS.forEach(f=>{ s.fields[f.key]={enabled:true,bold:f.key==="subject"||f.key==="room",pos:f.pos}; }); s.fields.class.pos="tl"; s.fields.period.pos="tr"; s.fields.teacher.pos="bl"; s.fields.room.pos="br"; s.fields.english.pos="bc"; s.fontScale="small"; s.splitStyles={"1":{font:"small",layout:"standard"},"2":{font:"small",layout:"compact"},"3":{font:"xsmall",layout:"simple"},"4":{font:"xsmall",layout:"simple"}}; }
   else { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.english={enabled:true,bold:false,pos:"bc"}; s.fields.teacher={enabled:true,bold:false,pos:"bl"}; s.fields.room={enabled:true,bold:true,pos:"br"}; s.fields.class={enabled:false,bold:false,pos:"tl"}; s.fields.period={enabled:false,bold:false,pos:"tr"}; s.fontScale="normal"; s.splitStyles=structuredClone(SPLIT_DEFAULTS); }
   applySettings(s,true); markCardApplyNeeded(); }
-function initialUi() { buildFieldRows(); buildScopeUi(); buildSpecialSubjects(); const last=localStorage.getItem(LAST_KEY); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false); setSplitTab(1); renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); }
+function initialUi() { buildFieldRows(); buildScopeUi(); buildSpecialSubjects(); const last=localStorage.getItem(LAST_KEY); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); syncLayoutModeOptions(); applySettings(base,false); setSplitTab(1); renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); }
 function setSplitTab(n) { const next=String(n); if (!applying) { if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); } activeSplitTab=next; document.querySelectorAll("[data-split-tab]").forEach(btn=>btn.classList.toggle("active", btn.dataset.splitTab===next)); document.querySelectorAll("[data-split-panel]").forEach(panel=>panel.classList.toggle("hidden", panel.dataset.splitPanel!==next)); if (splitFieldDraft) writeFieldControls(splitFieldDraft[next]); }
 function wireEvents() { ["targetType","layoutMode","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (e.target.matches('input,select')) { if (e.target.id === "paper") applyPaper(e.target.value); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>{ if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); renderPagesFor(allEnts, "출력 전체 · "); const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); }; window.addEventListener("afterprint", restore); setTimeout(()=>window.print(), 60); }); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
