@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HIS 시간표 PDF 출력 디자이너</title>
+<title>HIS 시간표 출력 디자이너</title>
 <style>
 :root{--nav:#183d69;--line:#dbe4f0;--soft:#f6f8fc;--text:#102033;--muted:#64748b;--blue:#2563eb;--page-w:1123px;--page-h:794px}
 *{box-sizing:border-box}html,body{height:100%;margin:0}body{font-family:var(--print-font, system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);color:var(--text);background:#eef3f9;overflow:hidden}.topbar{height:42px;background:var(--nav);color:#fff;display:flex;align-items:center;gap:9px;padding:0 10px;box-shadow:0 1px 6px #0002;white-space:nowrap}.topbar a{color:#dbeafe;text-decoration:none;font-weight:800}.topbar h1{font-size:16px;margin:0;font-weight:900}.badge{display:inline-flex;align-items:center;height:22px;padding:0 9px;border-radius:999px;background:#dff3ff;color:#075985;font-size:12px;font-weight:900}.spacer{flex:1}.status{font-size:12px;color:#dbeafe;max-width:320px;overflow:hidden;text-overflow:ellipsis}.topbar button,.panel button{border:1px solid #cbd5e1;border-radius:9px;background:#fff;color:#0f172a;height:30px;padding:0 12px;font-weight:900;cursor:pointer}.topbar .primary,.panel .primary{background:#2563eb;color:#fff;border-color:#1d4ed8}.topbar .danger{background:#fff1f2;color:#be123c;border-color:#fecdd3}.hidden{display:none!important}.app{height:calc(100% - 42px);display:grid;grid-template-columns:330px minmax(420px,1fr) 430px;gap:0}.sidebar{height:100%;overflow:auto;background:#fff;border-right:1px solid var(--line);padding:14px}.sidebar.right{border-right:0;border-left:1px solid var(--line)}.panel{border:1px solid var(--line);border-radius:14px;background:#fff;margin-bottom:12px;overflow:hidden}.panel h2{margin:0;padding:11px 12px;background:#f8fafc;border-bottom:1px solid var(--line);font-size:13px}.panel .body{padding:12px}.field{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}.field span,.checkrow span{font-size:12px;color:#475569;font-weight:900}.field input,.field select{height:34px;border:1px solid #cbd5e1;border-radius:9px;padding:5px 8px;background:#fff;font-size:13px}.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.btnrow{display:flex;gap:6px;flex-wrap:wrap}.btnrow button{height:30px;font-size:12px}.hint{font-size:12px;color:#64748b;line-height:1.45;margin-top:6px}.divider{height:1px;background:#e2e8f0;margin:10px 0}.check{display:flex;align-items:center;gap:8px;min-height:32px;border:1px solid #e2e8f0;border-radius:10px;padding:5px 8px;background:#f8fafc;font-size:13px}.check input{width:16px;height:16px}.checkrow{display:grid;grid-template-columns:auto 1fr auto 88px auto;gap:6px;align-items:center;padding:7px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;margin-bottom:7px}.checkrow input[type="checkbox"]{width:16px;height:16px}.checkrow select{height:30px;min-width:0;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:12px;padding:2px 6px}.chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.chip{display:flex;align-items:center;gap:7px;border:1px solid #dbe4f0;border-radius:10px;padding:8px;background:#fff;font-size:13px;font-weight:800}.chip input{width:16px;height:16px}.entity-list{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow:auto;padding-right:4px}.entity-item{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:8px;border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:8px}.entity-item input{width:16px;height:16px}.entity-item b{font-size:13px}.entity-item small{font-size:11px;color:#64748b}.preview-wrap{height:100%;display:flex;flex-direction:column;overflow:hidden}.preview-toolbar{height:44px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 12px}.preview-toolbar .meta{font-size:12px;color:#64748b;font-weight:800}.zoom{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:12px;color:#475569}.zoom input{width:130px}.preview-scroll{flex:1;overflow:auto;padding:20px}.preview-inner{transform-origin:top center;margin:0 auto;width:max-content}.preview-page{width:var(--page-w);min-height:var(--page-h);background:#fff;border:1px solid #cbd5e1;box-shadow:0 10px 28px #0f172a2a;margin:0 auto 18px;padding:18px;page-break-after:always}.preview-page:last-child{page-break-after:auto}.preview-page h3{margin:0 0 8px;text-align:center;font-size:22px}.preview-sub{margin:-4px 0 10px;text-align:center;font-size:12px;color:#64748b;font-weight:800}.tt-table{width:100%;border-collapse:collapse;table-layout:fixed;border:2px solid #1f2937}.tt-table th,.tt-table td{border:1px solid #94a3b8;text-align:center;vertical-align:middle;padding:2px;overflow:hidden}.tt-table thead th{background:#f1f5f9;font-size:13px;height:28px}.tt-table tbody th{background:#f8fafc;width:42px;font-size:13px}.tt-table td{height:92px}.overview .tt-table td{height:58px}.overview .tt-table thead th{font-size:9px;padding:1px}.overview .tt-table tbody th{font-size:12px;width:52px}.lesson-cell{width:100%;height:100%;display:grid;gap:2px}.lesson-cell.count-1{grid-template-columns:1fr}.lesson-cell.count-2{grid-template-columns:1fr 1fr}.lesson-cell.count-3,.lesson-cell.count-4,.lesson-cell.count-many{grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr)}.lesson-cell.layout-vertical{grid-template-columns:1fr}.lesson-cell.layout-columns{grid-template-columns:repeat(2,minmax(0,1fr))}.lesson-cell.layout-grid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.lesson-cell.layout-cols{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.lesson-cell.layout-rows{grid-template-columns:1fr;grid-auto-rows:minmax(0,1fr)}.mini-card{position:relative;min-height:0;height:100%;border:1px solid #cbd5e1;border-radius:4px;background:#fff;overflow:hidden;padding:2px}.mini-card.cell-mode{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1px;position:relative}.field-item{position:absolute;display:flex;flex-direction:column;line-height:1.05;max-width:98%;overflow-wrap:anywhere;color:#334155;font-size:10px}.font-small .field-item{font-size:9px}.font-large .field-item{font-size:11px}.field-item.bold{font-weight:900;color:#111827}.field-subject{font-size:1.25em}.field-english{font-size:.82em;color:#64748b}.field-teacher,.field-room{font-size:.95em}.field-class,.field-period{font-size:.82em;color:#475569}.pos-tl{top:2px;left:3px;text-align:left;align-items:flex-start}.pos-tc{top:2px;left:50%;transform:translateX(-50%);text-align:center;align-items:center;width:94%}.pos-tr{top:2px;right:3px;text-align:right;align-items:flex-end}.pos-ml{top:50%;left:3px;transform:translateY(-50%);text-align:left;align-items:flex-start}.pos-mc{top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;align-items:center;width:96%}.pos-mr{top:50%;right:3px;transform:translateY(-50%);text-align:right;align-items:flex-end}.pos-bl{bottom:2px;left:3px;text-align:left;align-items:flex-start}.pos-bc{bottom:2px;left:50%;transform:translateX(-50%);text-align:center;align-items:center;width:94%}.pos-br{bottom:2px;right:3px;text-align:right;align-items:flex-end}.cell-line{font-size:10px;line-height:1.12}.cell-line b{font-weight:900}.empty{background:#fff}.saved-pill{display:inline-flex;align-items:center;height:22px;border-radius:999px;padding:0 8px;font-size:11px;font-weight:900;background:#ecfdf5;color:#047857}.warn{color:#b45309}.disabled-note{padding:40px;text-align:center;color:#64748b}.scope-options{display:grid;grid-template-columns:1fr 1fr;gap:7px}.scope-options .check:first-child{grid-column:span 2}.subject-list{display:block;max-height:520px;overflow:auto}.subject-grade{margin:8px 0 5px;font-size:12px;font-weight:900;color:#1e3a8a;border-top:1px solid #e2e8f0;padding-top:8px}.subject-grade:first-child{border-top:0;margin-top:0;padding-top:0}.subject-grade-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.special-options{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 8px}.special-options .check{font-size:12px;padding:6px 8px}.subject-list label{font-size:12px}.right-actions{display:flex;gap:6px;margin-bottom:8px}.right-actions button{height:28px;font-size:12px;padding:0 8px}.print-only{display:none}
@@ -486,13 +486,22 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .field-subject-group{max-width:99%!important;width:99%!important}
 .card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
 
+/* r263: Excel/Word office export helpers */
+.office-export-root .preview-page{box-shadow:none!important;border:0!important;margin:0 0 18px!important;padding:10px!important;page-break-after:always;break-after:page;width:auto!important;min-height:auto!important}
+.office-export-root .preview-page:last-child{page-break-after:auto;break-after:auto}
+.office-export-root .preview-page h3{font-size:18px;margin:0 0 6px;text-align:center}
+.office-export-root .preview-sub{font-size:10px;margin:0 0 6px;color:#334155}
+.office-export-root .tt-table{width:100%;border-collapse:collapse;table-layout:fixed;border:1.5px solid #111827}
+.office-export-root .tt-table th,.office-export-root .tt-table td{border:1px solid #111827;text-align:center;vertical-align:middle;padding:2px;white-space:normal;mso-number-format:"\@"}
+.office-export-root .mini-card{position:relative;border:0!important;background:#fff;min-height:18px;padding:1px!important;overflow:hidden}
+
 </style>
 <style id="printPageStyle">@page{size:A4 landscape;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r262</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r263</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -506,7 +515,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
     <section class="panel"><h2>출력 종류</h2><div class="body">
       <div class="field"><span>출력 대상</span><select id="outputKind"><option value="class:individual">학급 - 개별</option><option value="class:overview">학급 - 전체</option><option value="teacher:individual">교사 - 개별</option><option value="teacher:overview">교사 - 전체</option><option value="room:individual">교실 - 개별</option><option value="room:overview">교실 - 전체</option><option value="student:individual">학생 - 개별</option></select></div>
       <select id="targetType" class="hidden"><option value="class">학급</option><option value="student">학생</option><option value="teacher">교사</option><option value="room">교실</option></select><select id="layoutMode" class="hidden"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select>
-      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
+      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="excel">Excel(.xls)</option><option value="word">Word(.doc)</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
       <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div><div class="font-help">현재 기본은 Windows/브라우저 시스템 글꼴입니다. 글꼴 파일을 넣지는 않고, PC에 설치된 글꼴을 우선 사용합니다.</div>
       <div class="field"><span>미리보기 범위</span><select id="previewMode"><option value="sample">샘플 1개만 빠르게 보기</option><option value="selected">선택 대상 전체 미리보기</option></select></div>
       <div class="hint">기본은 샘플 1개만 표시합니다. 인쇄는 선택 대상 전체로 진행됩니다.</div>
@@ -558,11 +567,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r262";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r262";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r262";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r263";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r263";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r263";
 
-const VERSION = "2026-07-07-print-designer-r262";
+const VERSION = "2026-07-07-print-designer-r263";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1209,7 +1218,7 @@ function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach
   else if (name==="detail") { FIELD_DEFS.forEach(f=>{ s.fields[f.key]={enabled:true,bold:f.key==="subject"||f.key==="room",pos:f.pos}; }); s.fields.class.pos="tl"; s.fields.period.pos="tr"; s.fields.teacher.pos="bl"; s.fields.room.pos="br"; s.fields.english.pos="bc"; s.fontScale="small"; s.splitStyles={"1":{font:"small",layout:"standard"},"2":{font:"small",layout:"compact"},"3":{font:"xsmall",layout:"simple"},"4":{font:"xsmall",layout:"simple"}}; }
   else { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.english={enabled:true,bold:false,pos:"bc"}; s.fields.teacher={enabled:true,bold:false,pos:"bl"}; s.fields.room={enabled:true,bold:true,pos:"br"}; s.fields.class={enabled:false,bold:false,pos:"tl"}; s.fields.period={enabled:false,bold:false,pos:"tr"}; s.fontScale="normal"; s.splitStyles=structuredClone(SPLIT_DEFAULTS); }
   applySettings(s,true); markCardApplyNeeded(); }
-function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); }
+function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); updateExportButtonLabel(); }
 function setSplitTab(n) { const next=String(n); if (!applying) { if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } activeSplitTab=next; document.querySelectorAll("[data-split-tab]").forEach(btn=>btn.classList.toggle("active", btn.dataset.splitTab===next)); document.querySelectorAll("[data-split-panel]").forEach(panel=>panel.classList.toggle("hidden", panel.dataset.splitPanel!==next)); if (splitFieldDraft) writeFieldControls(splitFieldDraft[next]); if ($("ellipsisMode")) $("ellipsisMode").checked = !!(normalizeSplitStyles(splitFieldStyleDraft)[next]?.clip); updateFieldFontInputState(); }
 
 function setupPreviewPan() {
@@ -1241,8 +1250,102 @@ function setupPreviewPan() {
     applyZoom(e);
   }, {passive:false});
 }
-function wireEvents() { setupPreviewPan(); ["outputKind","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (targetType() === "student" && e.target.matches('[data-scope-key]')) { document.querySelectorAll('[data-scope-key]').forEach(el=>{ if (el !== e.target) el.checked = false; }); e.target.checked = true; const radio=document.querySelector('input[name="scope"][value="custom"]'); if (radio) radio.checked=true; }
- if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>{ if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); renderPagesFor(allEnts, "출력 전체 · "); const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); }; window.addEventListener("afterprint", restore); applyPaper($("paper")?.value || "a4-landscape"); setTimeout(()=>window.print(), 80); }); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+
+function updateExportButtonLabel() {
+  const btn = $("printBtn");
+  if (!btn) return;
+  const f = format();
+  btn.textContent = f === "excel" ? "전체 Excel 저장" : (f === "word" ? "전체 Word 저장" : "전체 PDF 저장/인쇄");
+}
+function safeFilePart(value="") {
+  return clean(value).replace(/[\\/:*?"<>|]+/g,"_").replace(/\s+/g,"_").slice(0,80) || "시간표";
+}
+function exportFileName(ext) {
+  const kindText = $("outputKind")?.selectedOptions?.[0]?.textContent || "시간표";
+  const scope = currentScopeMode();
+  const stamp = new Date().toISOString().slice(0,10);
+  return `${safeFilePart(kindText)}_${safeFilePart(scope)}_${stamp}.${ext}`;
+}
+function downloadTextFile(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
+}
+function officeExportCss(kind="word") {
+  const page = ($("paper")?.value || "a4-landscape") === "a4-portrait" ? "A4 portrait" : "A4 landscape";
+  const font = getComputedStyle(document.body).getPropertyValue("--print-font") || '"Malgun Gothic","맑은 고딕",Arial,sans-serif';
+  const isExcel = kind === "excel";
+  return `<style>
+@page{size:${page};margin:8mm}
+body{font-family:${font};font-size:${isExcel ? "10px" : "11px"};color:#111827;background:#fff}
+h1,h2,h3{font-family:${font};text-align:center;margin:0 0 6px}
+.preview-page{page-break-after:always;break-after:page;margin:0 0 20px;padding:8px;background:#fff}
+.preview-page:last-child{page-break-after:auto;break-after:auto}
+.preview-sub{font-size:10px;color:#475569;margin:0 0 6px}
+table{border-collapse:collapse;table-layout:fixed;width:100%}
+th,td{border:1px solid #111827;text-align:center;vertical-align:middle;padding:2px;white-space:normal;mso-number-format:"\\@"}
+th{font-weight:700;background:#f8fafc}
+.tt-table{border:2px solid #111827}
+.mini-card{border:0!important;background:#fff;min-height:16px;padding:1px!important;overflow:hidden}
+.lesson-cell,.overview-cell{display:block;width:100%;height:100%}
+.field-item,.compact-subject,.compact-sub,.compact-meta,.field-subject-group{position:static!important;transform:none!important;display:block!important;max-width:100%!important;white-space:normal;overflow:hidden;text-overflow:clip;line-height:1.15;text-align:center}
+.field-subject,.compact-subject{font-weight:700}
+.field-english,.compact-sub{font-size:.82em;color:#475569}
+.field-room,.compact-meta{font-size:.88em;font-weight:700}
+.office-note{font-size:10px;color:#64748b;margin:6px 0 12px}
+</style>`;
+}
+function buildOfficeHtml(kind="word") {
+  const clone = $("previewInner").cloneNode(true);
+  clone.querySelectorAll("script,style,button,input,select").forEach(el=>el.remove());
+  clone.querySelectorAll(".preview-page").forEach(p=>{
+    p.removeAttribute("style");
+    p.classList.add("office-export-root");
+  });
+  clone.querySelectorAll("[style]").forEach(el=>{
+    // Office/Excel에서 transform/zoom 때문에 작게 깨지는 문제 방지
+    const style = el.getAttribute("style") || "";
+    const filtered = style.split(";").filter(x=>!/\b(transform|zoom|position)\b/i.test(x)).join(";");
+    if (filtered.trim()) el.setAttribute("style", filtered); else el.removeAttribute("style");
+  });
+  const title = safeFilePart($("outputKind")?.selectedOptions?.[0]?.textContent || "시간표");
+  const meta = `${title} · ${new Date().toLocaleString("ko-KR")}`;
+  const excelMeta = kind === "excel" ? '<meta name="ProgId" content="Excel.Sheet"><meta name="Generator" content="HIS Timetable Export">' : '<meta name="ProgId" content="Word.Document"><meta name="Generator" content="HIS Timetable Export">';
+  return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</body></html>`;
+}
+function exportOffice(kind) {
+  if (!dataReady) return;
+  renderEntityList();
+  const allEnts = selectedEntities();
+  renderPagesFor(allEnts, "출력 전체 · ");
+  const html = buildOfficeHtml(kind);
+  if (kind === "excel") {
+    downloadTextFile(exportFileName("xls"), html, "application/vnd.ms-excel;charset=utf-8");
+  } else {
+    downloadTextFile(exportFileName("doc"), html, "application/msword;charset=utf-8");
+  }
+  setTimeout(renderPreview, 250);
+}
+function runMainExport() {
+  const f = format();
+  if (f === "excel") return exportOffice("excel");
+  if (f === "word") return exportOffice("word");
+  if (!dataReady) return;
+  renderEntityList();
+  const allEnts = selectedEntities();
+  renderPagesFor(allEnts, "출력 전체 · ");
+  const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); };
+  window.addEventListener("afterprint", restore);
+  applyPaper($("paper")?.value || "a4-landscape");
+  setTimeout(()=>window.print(), 80);
+}
+function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addEventListener("change", switchProfile)); $("format")?.addEventListener("change",()=>{ updateExportButtonLabel(); markDirty("출력 형식 변경됨"); }); document.body.addEventListener("change", e=>{ if (applying) return; if (targetType() === "student" && e.target.matches('[data-scope-key]')) { document.querySelectorAll('[data-scope-key]').forEach(el=>{ if (el !== e.target) el.checked = false; }); e.target.checked = true; const radio=document.querySelector('input[name="scope"][value="custom"]'); if (radio) radio.checked=true; }
+ if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
 function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); renderPreview(); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
