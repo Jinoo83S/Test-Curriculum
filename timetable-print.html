@@ -445,7 +445,7 @@ body.font-pretty{--print-font:"Pretendard","Noto Sans KR","Malgun Gothic","맑�
 body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑은 고딕",sans-serif;--font-letter:-.02em}
 .preview-page,.mini-card,.tt-table{font-family:var(--print-font, inherit);letter-spacing:var(--font-letter,0)}
 .font-help{font-size:11px;color:#64748b;line-height:1.35;margin-top:-4px;margin-bottom:8px}
-.preview-scroll{cursor:grab;user-select:none}
+.preview-scroll{cursor:grab;user-select:none;touch-action:none}
 .preview-scroll.dragging{cursor:grabbing}
 .mini-card.clip-text .field-subject,
 .mini-card.clip-text .field-english-inline,
@@ -472,6 +472,9 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:break-word!important;
 }
 
+/* r260: CSS zoom 기반 미리보기 확대는 인쇄 시 원래 크기로 복구 */
+@media print{.preview-inner{zoom:1!important}}
+
 </style>
 <style id="printPageStyle">@page{size:A4 landscape;margin:5mm}
 </style>
@@ -479,7 +482,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r259</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r260</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -527,7 +530,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 
   <section class="preview-wrap">
     <div class="preview-toolbar"><strong>미리보기</strong><span id="previewMeta" class="meta">데이터 로딩 중…</span><div class="zoom"><span>확대</span><input id="zoom" type="range" min="35" max="250" value="75"><b id="zoomText">75%</b></div></div>
-    <div class="preview-scroll"><div id="previewInner" class="preview-inner"><div class="preview-page"><div class="disabled-note">데이터를 불러오는 중입니다.</div></div></div></div>
+    <div id="previewScroll" class="preview-scroll"><div id="previewInner" class="preview-inner"><div class="preview-page"><div class="disabled-note">데이터를 불러오는 중입니다.</div></div></div></div>
   </section>
 
   <aside class="sidebar right">
@@ -545,11 +548,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r259";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r259";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r259";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r260";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r260";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r260";
 
-const VERSION = "2026-07-07-print-designer-r259";
+const VERSION = "2026-07-07-print-designer-r260";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -614,6 +617,20 @@ function sectionName(value="") { return clean(value).replace(/^\d+\s*/, "").repl
 function classLabel(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}${n}` : clean(cls.label || cls.name || cls.id); }
 function classKey(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}:${n}` : clean(cls.key || cls.id); }
 function normalizeClassKey(v="") { const raw = clean(v).replace(/학년/g,"").replace(/\s+/g,""); const m = raw.match(/^(\d{1,2})[:\-]?([A-Z가-힣])$/i); return m ? `${Number(m[1])}:${m[2].toUpperCase()}` : raw; }
+function classSortTuple(label="") {
+  const raw = clean(label).replace(/학년/g,"").replace(/\s+/g,"");
+  const m = raw.match(/(7|8|9|10|11|12)[:\-]?([A-Z가-힣])?/i);
+  const grade = m ? Number(m[1]) : 99;
+  const section = m && m[2] ? m[2].toUpperCase() : raw;
+  return [grade, section];
+}
+function sortClassLabels(labels=[]) {
+  return unique(labels).sort((a,b)=>{
+    const A=classSortTuple(a), B=classSortTuple(b);
+    return A[0]-B[0] || String(A[1]).localeCompare(String(B[1]),"ko",{numeric:true}) || clean(a).localeCompare(clean(b),"ko",{numeric:true});
+  });
+}
+function classLabelFromKey(k="") { const n=normalizeClassKey(k); const m=n.match(/^(\d{1,2})[:\-]?(.+)$/); return m ? `${Number(m[1])}${m[2].toUpperCase()}` : clean(k).replace(":",""); }
 function splitTeachers(v="") { return unique(Array.isArray(v) ? v : clean(v).split(/[,，、\/]+/)); }
 function classes() { return (appState.classes?.classes || []).map(c => ({...c, key:classKey(c), label:classLabel(c), gradeNo:gradeNo(c.gradeKey || c.grade)})).filter(c => c.gradeNo>=7 && c.gradeNo<=12).sort((a,b)=>a.gradeNo-b.gradeNo || a.label.localeCompare(b.label,"ko",{numeric:true})); }
 function rooms() { return (appState.rooms?.rooms || []).map(r => ({...r, label:clean(r.name || r.short || r.id)})).filter(r=>r.id && r.label).sort((a,b)=>a.label.localeCompare(b.label,"ko",{numeric:true})); }
@@ -637,7 +654,7 @@ function itemRoomForCard(e, c) { const rid = e?.roomAssignmentsByTtCardId?.[c?.i
 function entryRoomNames(e) { return entryRoomIds(e).map(roomName).filter(Boolean).join(", "); }
 function cardTitle(c,e) { return clean(c?.subject || c?.label || e?.groupName || e?.subject || "수업"); }
 function cardEnglish(c,e) { return clean(c?.subjectEn || e?.subjectEn || ""); }
-function cardClasses(c,e) { const labels = unique([...(c?.classLabels||[]), ...(e?.audienceClassKeys||[]).map(k=>k.replace(":", ""))]); return labels.join(", "); }
+function cardClasses(c,e) { const labels = sortClassLabels([...(c?.classLabels||[]), ...(c?.classKeys||[]).map(classLabelFromKey), ...(e?.audienceClassKeys||[]).map(classLabelFromKey)]); return labels.join(", "); }
 function currentScopeMode() { return document.querySelector('input[name="scope"]:checked')?.value || "all"; }
 function selectedScopeKeys() { return [...document.querySelectorAll('[data-scope-key]:checked')].map(el=>el.dataset.scopeKey).filter(Boolean); }
 function captureScopeState() { return { scope: currentScopeMode(), selectedScopeKeys: selectedScopeKeys() }; }
@@ -878,11 +895,63 @@ function renderEntityList() { entitiesCache = buildEntities(); if ($("scopeHint"
 function selectedEntities() { entitiesCache = buildEntities(); return entitiesCache; }
 function fieldSettings() { return collectSettings().fields; }
 function itemFromCard(e,c,periodLabel) { return { entry:e, card:c, subject:cardTitle(c,e), english:cardEnglish(c,e), teacher:clean(c?.teacherName || (c?.teachers||[]).join(", ") || e?.teacherName), room:itemRoomForCard(e,c), class:cardClasses(c,e), period:periodLabel, group:clean(c?.group), track:clean(c?.track), rawSubject:clean(c?.subject), rawLabel:clean(c?.label) }; }
-function itemFromEntry(e,periodLabel) { return { entry:e, card:null, subject:clean(e.groupName || e.subject || "수업"), english:"", teacher:clean(e.teacherName), room:entryRoomNames(e), class:(e.audienceClassKeys||[]).map(k=>k.replace(":","")).join(", "), period:periodLabel }; }
-function entryItems(e, ent, periodLabel) { const cm=cardMap(); const type=targetType(); let ids=entryCardIds(e); let out=[]; if (ids.length) { for (const id of ids) { const c=cm.get(id); if (!c) continue; if (type === "class") { const keys = cardClassKeys(c); if (keys.length ? keys.includes(ent.key) : entryMatchesClass(e, ent)) out.push(itemFromCard(e,c,periodLabel)); }
-      else if (type === "teacher") { const ts=cardTeachers(c); if (ts.length ? ts.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key)) out.push(itemFromCard(e,c,periodLabel)); }
-      else if (type === "room") { const rid = e?.roomAssignmentsByTtCardId?.[c.id] || c.fixedRoomId || e.roomId; if (rid === ent.key || (!rid && entryRoomIds(e).includes(ent.key))) out.push(itemFromCard(e,c,periodLabel)); }
-      else if (type === "student") { if (cardMatchesStudent(c, e, {id:ent.key, name:ent.label}, {id:ent.classId, key:ent.classKey, label:ent.classLabel})) out.push(itemFromCard(e,c,periodLabel)); }
+function inferEntrySubject(e, cardsForEntry=[]) {
+  const direct = clean(e?.groupName || e?.subject || e?.title || e?.name || e?.label || e?.displayName || e?.templateName || e?.subjectName || e?.courseName || e?.lessonName);
+  if (direct) return direct;
+  const titles = unique(cardsForEntry.map(c=>cardTitle(c,e)));
+  if (titles.length === 1) return titles[0];
+  if (titles.length > 1) {
+    const first = titles[0];
+    if (titles.every(t=>normSpecial(t)===normSpecial(first))) return first;
+    return first;
+  }
+  const teacherText = clean(e?.teacherName);
+  if (entryRoomIds(e).length >= 4 && ["윤미자","김장미","박정미","Joshua"].every(t=>teacherText.includes(t))) return "선교적 생활";
+  return "수업";
+}
+function representativeItemFromCards(e, cardsForEntry, periodLabel) {
+  const cs = (cardsForEntry||[]).filter(Boolean);
+  const first = cs[0] || null;
+  const classes = sortClassLabels([...(e?.audienceClassKeys||[]).map(classLabelFromKey), ...cs.flatMap(c=>[...(c?.classLabels||[]), ...(c?.classKeys||[]).map(classLabelFromKey)])]);
+  const teachers = unique([...splitTeachers(e?.teacherName), ...cs.flatMap(c=>cardTeachers(c))]);
+  const rooms = unique([entryRoomNames(e), ...cs.map(c=>itemRoomForCard(e,c))].flatMap(v=>clean(v).split(/,\s*/))).join(", ");
+  const englishes = unique(cs.map(c=>cardEnglish(c,e)));
+  return { entry:e, card:first, subject:inferEntrySubject(e, cs), english:englishes.length===1?englishes[0]:"", teacher:teachers.join(", "), room:rooms || entryRoomNames(e), class:classes.join(", "), period:periodLabel, rawSubject:clean(first?.subject || e?.subject), rawLabel:clean(first?.label || e?.label) };
+}
+function itemFromEntry(e,periodLabel) { const cs=entryCardIds(e).map(id=>cardMap().get(id)).filter(Boolean); return { entry:e, card:cs[0]||null, subject:inferEntrySubject(e, cs), english:unique(cs.map(c=>cardEnglish(c,e))).length===1?unique(cs.map(c=>cardEnglish(c,e)))[0]:clean(e.subjectEn||""), teacher:clean(e.teacherName), room:entryRoomNames(e), class:sortClassLabels((e.audienceClassKeys||[]).map(classLabelFromKey)).join(", "), period:periodLabel }; }
+function entryItems(e, ent, periodLabel) {
+  const cm=cardMap();
+  const type=targetType();
+  const ids=entryCardIds(e);
+  let out=[];
+  if (ids.length) {
+    const entryCards = ids.map(id=>cm.get(id)).filter(Boolean);
+    if (type === "teacher" && layoutMode() === "individual") {
+      const matched = entryCards.filter(c => {
+        const teachers = cardTeachers(c);
+        return teachers.length ? teachers.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key);
+      });
+      if (matched.length > 1) return [representativeItemFromCards(e, matched, periodLabel)];
+      if (matched.length === 1) return [itemFromCard(e, matched[0], periodLabel)];
+    }
+    for (const id of ids) {
+      const c=cm.get(id);
+      if (!c) continue;
+      if (type === "class") {
+        const keys = cardClassKeys(c);
+        if (keys.length ? keys.includes(ent.key) : entryMatchesClass(e, ent)) out.push(itemFromCard(e,c,periodLabel));
+      }
+      else if (type === "teacher") {
+        const teachers = cardTeachers(c);
+        if (teachers.length ? teachers.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key)) out.push(itemFromCard(e,c,periodLabel));
+      }
+      else if (type === "room") {
+        const rid = e?.roomAssignmentsByTtCardId?.[c.id] || c.fixedRoomId || e.roomId;
+        if (rid === ent.key || (!rid && entryRoomIds(e).includes(ent.key))) out.push(itemFromCard(e,c,periodLabel));
+      }
+      else if (type === "student") {
+        if (cardMatchesStudent(c, e, {id:ent.key, name:ent.label}, {id:ent.classId, key:ent.classKey, label:ent.classLabel})) out.push(itemFromCard(e,c,periodLabel));
+      }
     }
   }
   if (!out.length && type !== "student" && ent.match(e)) out=[itemFromEntry(e,periodLabel)];
@@ -1026,15 +1095,26 @@ function renderPreview() {
   renderPagesFor(previewEnts, prefix);
 }
 function scheduleRender() { clearTimeout(renderTimer); renderTimer=setTimeout(renderPreview, 220); }
-function applyZoom() {
+function applyZoom(anchorEvent=null) {
   const el=$("zoom");
+  const sc=$("previewScroll");
+  const inner=$("previewInner");
+  const oldZoom = Number(inner?.dataset.zoom || 75);
   const z=Math.max(Number(el?.min)||35, Math.min(Number(el?.max)||250, Number(el?.value)||75));
   if (el) el.value = z;
   $("zoomText").textContent=`${z}%`;
-  const inner=$("previewInner");
   inner.classList.add("is-zooming");
   cancelAnimationFrame(zoomFrame);
-  zoomFrame=requestAnimationFrame(()=>{ inner.style.transform=`scale(${z/100})`; });
+  const before = anchorEvent && sc ? { x: anchorEvent.clientX + sc.scrollLeft, y: anchorEvent.clientY + sc.scrollTop, scale: oldZoom ? z/oldZoom : 1 } : null;
+  zoomFrame=requestAnimationFrame(()=>{
+    inner.style.transform="none";
+    inner.style.zoom=`${z}%`;
+    inner.dataset.zoom=String(z);
+    if (before && Number.isFinite(before.scale)) {
+      sc.scrollLeft = before.x * before.scale - anchorEvent.clientX;
+      sc.scrollTop = before.y * before.scale - anchorEvent.clientY;
+    }
+  });
   clearTimeout(zoomClearTimer);
   zoomClearTimer=setTimeout(()=>inner.classList.remove("is-zooming"),180);
 }
@@ -1063,6 +1143,16 @@ function setupPreviewPan() {
   });
   const end=e=>{ if(!active) return; active=false; sc.classList.remove("dragging"); try{sc.releasePointerCapture?.(e.pointerId)}catch{} };
   sc.addEventListener("pointerup", end); sc.addEventListener("pointercancel", end); sc.addEventListener("mouseleave", ()=>{ if(active){ active=false; sc.classList.remove("dragging"); } });
+  sc.addEventListener("wheel", e=>{
+    if (e.target && e.target.closest && e.target.closest(".sidebar,.topbar,select,input,button")) return;
+    e.preventDefault();
+    const zEl=$("zoom");
+    const current=Number(zEl?.value)||75;
+    const step=e.deltaY < 0 ? 10 : -10;
+    const next=Math.max(Number(zEl?.min)||35, Math.min(Number(zEl?.max)||250, current+step));
+    if (zEl) zEl.value=next;
+    applyZoom(e);
+  }, {passive:false});
 }
 function wireEvents() { setupPreviewPan(); ["outputKind","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>{ if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); renderPagesFor(allEnts, "출력 전체 · "); const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); }; window.addEventListener("afterprint", restore); applyPaper($("paper")?.value || "a4-landscape"); setTimeout(()=>window.print(), 80); }); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
