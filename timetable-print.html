@@ -404,13 +404,32 @@ body.ellipsis-enabled .cell-line span{
   body.print-landscape{width:297mm!important;height:210mm!important}
 }
 
+
+
+/* r257: 카드 설정 저장 복구 + 간략과목 균등폭/말줄임 */
+.checkrow{grid-template-columns:18px minmax(52px,1fr) 18px 58px 44px!important;gap:5px!important;align-items:center!important;padding:6px!important;min-width:0!important}
+.checkrow span{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;min-width:0!important}
+.checkrow input[type="number"]{width:52px!important;height:28px!important;text-align:center!important;border:1px solid #cbd5e1!important;border-radius:8px!important;font-size:12px!important;padding:2px 4px!important}
+.checkrow select[data-field-pos]{width:44px!important;height:28px!important;padding:2px 4px!important;text-align:center!important}
+.checkrow .pos-fixed{width:44px!important;height:28px!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;border:1px solid #cbd5e1!important;border-radius:8px!important;background:#fff!important;color:#64748b!important;font-weight:900!important}
+.bold-only{display:flex!important;justify-content:center!important;align-items:center!important;margin:0!important}
+.bold-only input{margin:0!important}
+.subject-list{max-height:calc(100vh - 170px)!important;overflow:auto!important;padding-right:6px!important}
+.subject-grade-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px!important;align-items:stretch!important}
+.subject-grade-grid .check,.scope-options .check,.chips .chip{min-width:0!important;height:36px!important;overflow:hidden!important}
+.subject-grade-grid .check span,.scope-options .check span,.chips .chip span{display:block!important;min-width:0!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important}
+.special-options{display:grid!important;grid-template-columns:1fr 1fr!important;gap:6px!important}
+.special-options .check{min-width:0!important;height:38px!important;overflow:hidden!important}
+.special-options .check span{display:block!important;min-width:0!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important}
+
 </style>
-<style id="printPageStyle">@page{size:A4 landscape;margin:5mm}</style>
+<style id="printPageStyle">@page{size:A4 landscape;margin:5mm}
+</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r256</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r257</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -475,11 +494,11 @@ body.ellipsis-enabled .cell-line span{
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r256";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r256";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r256";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r257";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r257";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r257";
 
-const VERSION = "2026-07-07-print-designer-r256";
+const VERSION = "2026-07-07-print-designer-r257";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -649,7 +668,38 @@ function collectSettings() { if (!applying) syncActiveFieldDraft(); const splitF
 function saveSettings() { if (applying) return; const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
-function applySettings(settings, keepMain=false, preserveScope=false) { applying=true; const s={...defaultSettings(),...settings}; if (!keepMain) { setOutputKind(s.targetType, s.layoutMode); $("format").value=s.format; } else { syncOutputKindToHidden(); } syncLayoutModeOptions(); $("paper").value=s.paper; applyPaper(s.paper); if($("previewMode")) $("previewMode").value=s.previewMode || "sample"; if($("cellLayout")) $("cellLayout").value="auto"; if($("applyMode")) $("applyMode").value=s.applyMode || "card"; if($("fontScale")) $("fontScale").value=s.fontScale || "normal"; if($("ellipsisMode")) $("ellipsisMode").checked=!!s.ellipsisMode; document.body.classList.toggle("ellipsis-enabled", !!s.ellipsisMode); if (!preserveScope) { const scopeVal=s.scope || "all"; document.querySelectorAll("input[name=\"scope\"]").forEach(el=>{ el.checked = el.value === scopeVal; }); const selected=new Set(s.selectedScopeKeys || []); document.querySelectorAll("[data-scope-key]").forEach(el=>{ el.checked = selected.has(el.dataset.scopeKey); }); } FIELD_DEFS.forEach(f=>{ const v=s.fields?.[f.key] || f; const en=document.querySelector(`[data-field-enabled="${f.key}"]`); const bo=document.querySelector(`[data-field-bold="${f.key}"]`); const po=document.querySelector(`[data-field-pos="${f.key}"]`); const fo=document.querySelector(`[data-field-font="${f.key}"]`); if(en) en.checked = v.enabled !== false; if(bo) bo.checked = !!v.bold; if(fo) fo.value = fontValueToPx(v.fontPx || v.font, f.key) || ""; if(po) po.value = v.pos || f.pos; }); applySplitStyles(s.splitStyles); applySplitDirections(s.splitDirections); splitFieldDraft=normalizeSplitFields(s.splitFields, s.fields); applying=false; }
+function applySettings(settings, keepMain=false, preserveScope=false) {
+  applying=true;
+  const s={...defaultSettings(),...settings};
+  if (!keepMain) {
+    setOutputKind(s.targetType, s.layoutMode);
+    $("format").value=s.format;
+  } else {
+    syncOutputKindToHidden();
+  }
+  syncLayoutModeOptions();
+  $("paper").value=s.paper;
+  applyPaper(s.paper);
+  if($("previewMode")) $("previewMode").value=s.previewMode || "sample";
+  if($("cellLayout")) $("cellLayout").value="auto";
+  if($("applyMode")) $("applyMode").value=s.applyMode || "card";
+  if($("fontScale")) $("fontScale").value=s.fontScale || "normal";
+  if($("ellipsisMode")) $("ellipsisMode").checked=!!s.ellipsisMode;
+  document.body.classList.toggle("ellipsis-enabled", !!s.ellipsisMode);
+  if (!preserveScope) {
+    const scopeVal=s.scope || "all";
+    document.querySelectorAll("input[name=\"scope\"]").forEach(el=>{ el.checked = el.value === scopeVal; });
+    const selected=new Set(s.selectedScopeKeys || []);
+    document.querySelectorAll("[data-scope-key]").forEach(el=>{ el.checked = selected.has(el.dataset.scopeKey); });
+  }
+  applySplitStyles(s.splitStyles);
+  applySplitDirections(s.splitDirections);
+  splitFieldDraft=normalizeSplitFields(s.splitFields, s.fields);
+  const tabKey=String(activeSplitTab || "1");
+  writeFieldControls(splitFieldDraft[tabKey] || s.fields || normalizeFields(null));
+  updateFieldFontInputState();
+  applying=false;
+}
 function switchProfile() { scopeMemory[currentScopeType] = captureScopeState(); syncLayoutModeOptions(); const nextType = targetType(); currentScopeType = nextType; buildScopeUi(); const s = getSettings(); applySettings(s, true, true); restoreScopeState(scopeMemory[nextType]); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); scheduleRender(); }
 function buildFieldRows() {
   $("fieldRows").innerHTML = FIELD_DEFS.map(f => {
@@ -913,7 +963,7 @@ function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach
   else if (name==="detail") { FIELD_DEFS.forEach(f=>{ s.fields[f.key]={enabled:true,bold:f.key==="subject"||f.key==="room",pos:f.pos}; }); s.fields.class.pos="tl"; s.fields.period.pos="tr"; s.fields.teacher.pos="bl"; s.fields.room.pos="br"; s.fields.english.pos="bc"; s.fontScale="small"; s.splitStyles={"1":{font:"small",layout:"standard"},"2":{font:"small",layout:"compact"},"3":{font:"xsmall",layout:"simple"},"4":{font:"xsmall",layout:"simple"}}; }
   else { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.english={enabled:true,bold:false,pos:"bc"}; s.fields.teacher={enabled:true,bold:false,pos:"bl"}; s.fields.room={enabled:true,bold:true,pos:"br"}; s.fields.class={enabled:false,bold:false,pos:"tl"}; s.fields.period={enabled:false,bold:false,pos:"tr"}; s.fontScale="normal"; s.splitStyles=structuredClone(SPLIT_DEFAULTS); }
   applySettings(s,true); markCardApplyNeeded(); }
-function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); setSplitTab(1); renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); }
+function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); }
 function setSplitTab(n) { const next=String(n); if (!applying) { if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); } activeSplitTab=next; document.querySelectorAll("[data-split-tab]").forEach(btn=>btn.classList.toggle("active", btn.dataset.splitTab===next)); document.querySelectorAll("[data-split-panel]").forEach(panel=>panel.classList.toggle("hidden", panel.dataset.splitPanel!==next)); if (splitFieldDraft) writeFieldControls(splitFieldDraft[next]); updateFieldFontInputState(); }
 function wireEvents() { ["outputKind","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>{ if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); renderPagesFor(allEnts, "출력 전체 · "); const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); }; window.addEventListener("afterprint", restore); applyPaper($("paper")?.value || "a4-landscape"); setTimeout(()=>window.print(), 80); }); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
