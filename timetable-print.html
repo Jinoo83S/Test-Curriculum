@@ -486,7 +486,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .field-subject-group{max-width:99%!important;width:99%!important}
 .card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
 
-/* r263: Excel/Word office export helpers */
+/* r264: Excel/Word office export helpers */
 .office-export-root .preview-page{box-shadow:none!important;border:0!important;margin:0 0 18px!important;padding:10px!important;page-break-after:always;break-after:page;width:auto!important;min-height:auto!important}
 .office-export-root .preview-page:last-child{page-break-after:auto;break-after:auto}
 .office-export-root .preview-page h3{font-size:18px;margin:0 0 6px;text-align:center}
@@ -496,12 +496,22 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .office-export-root .mini-card{position:relative;border:0!important;background:#fff;min-height:18px;padding:1px!important;overflow:hidden}
 
 </style>
-<style id="printPageStyle">@page{size:A4 landscape;margin:5mm}</style>
+
+/* r264: PDF/Office export 안정화 - A4 방향 mm 고정, 빈 페이지 방지 */
+@media print{
+  @page{size:297mm 210mm;margin:5mm}
+  html,body{height:auto!important;min-height:0!important;overflow:visible!important}
+  .app,.preview-wrap,.preview-scroll,.preview-inner{height:auto!important;min-height:0!important;overflow:visible!important}
+  .preview-page{break-after:page;page-break-after:always}
+  .preview-page:last-child{break-after:auto!important;page-break-after:auto!important}
+  .preview-page:empty{display:none!important}
+}
+<style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r263</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r264</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -567,11 +577,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r263";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r263";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r263";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r264";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r264";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r264";
 
-const VERSION = "2026-07-07-print-designer-r263";
+const VERSION = "2026-07-07-print-designer-r264";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -715,7 +725,7 @@ function targetType() { return parseOutputKind().type; }
 function layoutMode() { return parseOutputKind().mode; }
 function format() { return $("format").value; }
 function syncLayoutModeOptions() { syncOutputKindToHidden(); }
-function applyPaper(paper) { const portrait = paper === "a4-portrait"; document.documentElement.style.setProperty("--page-w", portrait ? "794px" : "1123px"); document.documentElement.style.setProperty("--page-h", portrait ? "1123px" : "794px"); document.body.classList.toggle("print-portrait", portrait); document.body.classList.toggle("print-landscape", !portrait); const el=$("printPageStyle"); if (el) el.textContent = `@page{size:${portrait ? "A4 portrait" : "A4 landscape"};margin:5mm}`; }
+function applyPaper(paper) { const portrait = paper === "a4-portrait"; document.documentElement.style.setProperty("--page-w", portrait ? "794px" : "1123px"); document.documentElement.style.setProperty("--page-h", portrait ? "1123px" : "794px"); document.body.classList.toggle("print-portrait", portrait); document.body.classList.toggle("print-landscape", !portrait); const el=$("printPageStyle"); if (el) el.textContent = `@page{size:${portrait ? "210mm 297mm" : "297mm 210mm"};margin:5mm}`; }
 function applyFontMode(mode="system") { const modes=["system","malgun","malgun-tight","pretty","nanum"]; document.body.classList.remove(...modes.map(m=>"font-"+m)); document.body.classList.add("font-"+(modes.includes(mode)?mode:"system")); }
 function profileKey() { const t=targetType(); const m=t === "student" ? "individual" : layoutMode(); return `${t}:${m}:pdf`; }
 function lastProfileKey() {
@@ -1277,25 +1287,30 @@ function downloadTextFile(filename, content, mime) {
   setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
 }
 function officeExportCss(kind="word") {
-  const page = ($("paper")?.value || "a4-landscape") === "a4-portrait" ? "A4 portrait" : "A4 landscape";
+  const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
+  const pageSize = portrait ? "210mm 297mm" : "297mm 210mm";
+  const orient = portrait ? "portrait" : "landscape";
   const font = getComputedStyle(document.body).getPropertyValue("--print-font") || '"Malgun Gothic","맑은 고딕",Arial,sans-serif';
   const isExcel = kind === "excel";
   return `<style>
-@page{size:${page};margin:8mm}
+@page Section1{size:${pageSize};mso-page-orientation:${orient};margin:8mm}
+@page{size:${pageSize};mso-page-orientation:${orient};margin:8mm}
+html,body{margin:0;padding:0;background:#fff}
 body{font-family:${font};font-size:${isExcel ? "10px" : "11px"};color:#111827;background:#fff}
+.Section1{page:Section1}
 h1,h2,h3{font-family:${font};text-align:center;margin:0 0 6px}
-.preview-page{page-break-after:always;break-after:page;margin:0 0 20px;padding:8px;background:#fff}
-.preview-page:last-child{page-break-after:auto;break-after:auto}
+.preview-page{page-break-after:always;break-after:page;margin:0;padding:8px;background:#fff;width:100%!important;min-height:auto!important;box-shadow:none!important;border:0!important}
+.preview-page:last-child{page-break-after:auto!important;break-after:auto!important}
 .preview-sub{font-size:10px;color:#475569;margin:0 0 6px}
 table{border-collapse:collapse;table-layout:fixed;width:100%}
-th,td{border:1px solid #111827;text-align:center;vertical-align:middle;padding:2px;white-space:normal;mso-number-format:"\\@"}
+th,td{border:1px solid #111827;text-align:center;vertical-align:middle;padding:2px;white-space:normal;mso-number-format:"\@"}
 th{font-weight:700;background:#f8fafc}
-.tt-table{border:2px solid #111827}
+.tt-table{border:2px solid #111827;width:100%!important}
 .mini-card{border:0!important;background:#fff;min-height:16px;padding:1px!important;overflow:hidden}
 .lesson-cell,.overview-cell{display:block;width:100%;height:100%}
 .field-item,.compact-subject,.compact-sub,.compact-meta,.field-subject-group{position:static!important;transform:none!important;display:block!important;max-width:100%!important;white-space:normal;overflow:hidden;text-overflow:clip;line-height:1.15;text-align:center}
 .field-subject,.compact-subject{font-weight:700}
-.field-english,.compact-sub{font-size:.82em;color:#475569}
+.field-english,.field-english-inline,.compact-sub{font-size:.82em;color:#475569}
 .field-room,.compact-meta{font-size:.88em;font-weight:700}
 .office-note{font-size:10px;color:#64748b;margin:6px 0 12px}
 </style>`;
@@ -1316,7 +1331,7 @@ function buildOfficeHtml(kind="word") {
   const title = safeFilePart($("outputKind")?.selectedOptions?.[0]?.textContent || "시간표");
   const meta = `${title} · ${new Date().toLocaleString("ko-KR")}`;
   const excelMeta = kind === "excel" ? '<meta name="ProgId" content="Excel.Sheet"><meta name="Generator" content="HIS Timetable Export">' : '<meta name="ProgId" content="Word.Document"><meta name="Generator" content="HIS Timetable Export">';
-  return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="Section1 office-export-root"><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</div></body></html>`;
 }
 function exportOffice(kind) {
   if (!dataReady) return;
