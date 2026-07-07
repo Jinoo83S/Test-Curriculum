@@ -22,6 +22,23 @@
 .overview-cell.count-1{grid-template-columns:1fr}
 .overview-cell.count-2{grid-template-columns:1fr 1fr}
 .overview-cell.count-3,.overview-cell.count-4,.overview-cell.count-many{grid-template-columns:1fr 1fr;grid-auto-rows:minmax(0,1fr)}
+/* r250: 전체표에도 카드 표시/분할/위치 옵션을 그대로 적용 */
+.overview-wide .overview-cell.lesson-cell{display:grid;gap:0;width:100%;height:100%;overflow:hidden}
+.overview-wide .overview-cell.lesson-cell .mini-card{border:0;border-radius:0;border-right:1px solid #e5e7eb;border-bottom:1px solid #e5e7eb;padding:1px;min-width:0;background:#fff}
+.overview-wide .overview-cell.lesson-cell .mini-card:last-child{border-right:0}
+.overview-wide .overview-cell.lesson-cell .field-item{font-size:calc(var(--card-font,10px) * .66);line-height:1.02}
+.overview-wide .overview-cell.lesson-cell .field-subject{font-size:1.08em;line-height:1.02}
+.overview-wide .overview-cell.lesson-cell .field-english-inline{font-size:.64em;line-height:1.02;margin-top:0}
+.overview-wide .overview-cell.lesson-cell .compact-subject{font-size:calc(var(--card-font,10px) * .78);line-height:1.02}
+.overview-wide .overview-cell.lesson-cell .compact-sub,.overview-wide .overview-cell.lesson-cell .compact-meta{font-size:calc(var(--card-font,10px) * .58);line-height:1.02}
+@media print{
+  .overview-wide .overview-cell.lesson-cell .field-item{font-size:calc(var(--print-card-font,7.4px) * .68)!important}
+  .overview-wide .overview-cell.lesson-cell .field-subject{font-size:1.08em!important}
+  .overview-wide .overview-cell.lesson-cell .field-english-inline{font-size:.62em!important}
+  .overview-wide .overview-cell.lesson-cell .compact-subject{font-size:calc(var(--print-card-font,7.4px) * .78)!important}
+  .overview-wide .overview-cell.lesson-cell .compact-sub,.overview-wide .overview-cell.lesson-cell .compact-meta{font-size:calc(var(--print-card-font,7.4px) * .58)!important}
+}
+
 .overview-mini{min-height:0;height:100%;overflow:hidden;padding:1px 1px 0;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;line-height:1.02;color:#111827;border-right:1px solid #e5e7eb}
 .overview-mini:last-child{border-right:0}
 .overview-mini b{font-size:7px;font-weight:800;overflow-wrap:anywhere}
@@ -94,7 +111,7 @@
 @media print{.overview-mini .ov-teacher{font-size:4.8px}}
 
 
-/* r249: 출력 범위 유지, 전체표 페이지 분할/헤더 반복, 전체표 카드 세로정렬 보정 */
+/* r250: 출력 범위 유지, 전체표 페이지 분할/헤더 반복, 전체표 카드 세로정렬 보정 */
 .overview-wide .tt-table{width:100%;max-width:100%;table-layout:fixed}
 .overview-wide .tt-table thead{display:table-header-group}
 .overview-wide .tt-table th,.overview-wide .tt-table td{white-space:normal;word-break:break-all;overflow-wrap:anywhere}
@@ -121,7 +138,7 @@
 
 
 
-/* r249: 통합 출력대상 선택, 전체표 월~금 한 헤더 고정, 카드 표시 옵션 반영 */
+/* r250: 통합 출력대상 선택, 전체표 월~금 한 헤더 고정, 카드 표시 옵션 반영 */
 .overview-wide .tt-table.overview-full-days thead th{font-size:9px}
 .overview-wide .tt-table.overview-full-days thead tr:nth-child(2) th{font-size:8px}
 .overview-wide .tt-table.overview-full-days td{height:70px;vertical-align:middle}
@@ -145,7 +162,7 @@
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r249</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r250</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -209,11 +226,11 @@
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r249";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r249";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r249";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r250";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r250";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r250";
 
-const VERSION = "2026-07-07-print-designer-r249";
+const VERSION = "2026-07-07-print-designer-r250";
 const DAYS = ["월", "화", "수", "목", "금"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -357,8 +374,50 @@ function buildClassChips() { buildScopeUi(); }
 function buildSpecialSubjects() { const raw = ["CA", "SA", ...(appState.timetable?.ttcardGroups||[]).map(g=>g.name), ...cards().flatMap(c=>[c.group,c.track,c.subject,c.subjectEn,c.nameKo,c.title])]; const names = unique(raw.map(clean).filter(Boolean)); const pinned = ["CA","SA"]; const rest = names.filter(n=>!pinned.includes(n)).slice(0,80); const finalNames = [...pinned, ...rest]; $("specialSubjects").innerHTML = finalNames.map(n=>`<label class="check"><input type="checkbox" data-special-subject="${esc(n)}"><span>${esc(n)}</span></label>`).join(""); }
 function applySpecialSubjects(selected=[]) { document.querySelectorAll('[data-special-subject]').forEach(el=>{ el.checked = selected.includes(el.dataset.specialSubject); }); }
 function visibleEntriesForScope() { return entries().filter(entryAllowedByScope); }
-function students() { return classes().filter(classAllowedByScope).flatMap(c => (c.students||[]).map(st => ({type:"student", key:clean(st.id || `${c.key}:${st.name}`), label:clean(st.name || st.label || st.id), sub:c.label, classKey:c.key, classLabel:c.label, match:e=>entryMatchesStudent(e, st, c)}))).filter(st=>st.key && st.label).sort((a,b)=>a.sub.localeCompare(b.sub,"ko",{numeric:true}) || a.label.localeCompare(b.label,"ko")); }
-function entryMatchesStudent(e, st, cls) { const sid=clean(st.id); const sname=clean(st.name); if ((e.audienceStudentKeys||[]).some(x=>clean(x)===sid || clean(x)===sname)) return true; const cm=cardMap(); const ids=entryCardIds(e); let hasStudentCard=false; for (const id of ids) { const c=cm.get(id); const sk=(c?.studentKeys||[]).map(clean); if (sk.length) { hasStudentCard=true; if (sk.includes(sid) || sk.includes(sname)) return true; } } return !hasStudentCard && entryMatchesClass(e, cls); }
+function students() { return classes().filter(classAllowedByScope).flatMap(c => (c.students||[]).map(st => ({type:"student", key:clean(st.id || `${c.key}:${st.name}`), label:clean(st.name || st.label || st.id), sub:c.label, classId:c.id, classKey:c.key, classLabel:c.label, match:e=>entryMatchesStudent(e, st, c)}))).filter(st=>st.key && st.label).sort((a,b)=>a.sub.localeCompare(b.sub,"ko",{numeric:true}) || a.label.localeCompare(b.label,"ko")); }
+function rosterStore() { return appState.rosters?.rosters || appState.rosters || {}; }
+function rosterRowsForCard(c) {
+  const store = rosterStore();
+  const keys = unique([c?.templateId, c?.compoundParentTemplateId, c?.parentTemplateId, c?.subjectTemplateId]);
+  return keys.flatMap(k => Array.isArray(store?.[k]) ? store[k] : []);
+}
+function rosterMatchForStudent(c, st, cls) {
+  const rows = rosterRowsForCard(c);
+  if (!rows.length) return null;
+  const sid = clean(st.id || st.key);
+  const sname = clean(st.name || st.label);
+  const cid = clean(cls?.id || cls?.classId);
+  const ckey = clean(cls?.key || cls?.classKey);
+  return rows.some(r => {
+    const rs = clean(r.studentId || r.studentKey || r.id || r.name);
+    const rn = clean(r.studentName || r.name);
+    const rcid = clean(r.classId || r.classKey);
+    const classOk = !rcid || rcid === cid || normalizeClassKey(rcid) === ckey;
+    const studentOk = rs === sid || rs === sname || rn === sname || rn === sid;
+    return classOk && studentOk;
+  });
+}
+function cardMatchesStudent(c, e, st, cls) {
+  if (!c) return false;
+  const sid = clean(st.id || st.key);
+  const sname = clean(st.name || st.label);
+  const sk = (c?.studentKeys || []).map(clean).filter(Boolean);
+  if (sk.length) return sk.includes(sid) || sk.includes(sname);
+  const rosterMatch = rosterMatchForStudent(c, st, cls);
+  if (rosterMatch !== null) return rosterMatch;
+  // 수동 HR/보정 카드처럼 roster가 없는 카드만 학급 기준으로 포함한다.
+  return !!c.isManual && entryMatchesClass(e, cls);
+}
+function entryMatchesStudent(e, st, cls) {
+  const sid=clean(st.id || st.key);
+  const sname=clean(st.name || st.label);
+  if ((e.audienceStudentKeys||[]).some(x=>clean(x)===sid || clean(x)===sname)) return true;
+  const cm=cardMap();
+  for (const id of entryCardIds(e)) {
+    if (cardMatchesStudent(cm.get(id), e, st, cls)) return true;
+  }
+  return false;
+}
 function buildEntities() { const type=targetType(); const visibleEntries=visibleEntriesForScope(); if (type === "class") return classes().filter(classAllowedByScope).map(c=>({type,key:c.key,label:c.label,sub:`${c.gradeNo}학년`, match:e=>entryMatchesClass(e,c)})).filter(ent=>visibleEntries.some(ent.match)); if (type === "student") return students().filter(ent=>visibleEntries.some(ent.match)); if (type === "teacher") { const names=unique(entries().flatMap(entryTeachers)).filter(teacherAllowedByScope).sort((a,b)=>a.localeCompare(b,"ko")); return names.map(n=>({type,key:n,label:n,sub:"교사",match:e=>entryMatchesTeacher(e,{key:n})})).filter(ent=>entries().some(ent.match)); } const rm=rooms().filter(r=>roomAllowedByScope(r.id)); return rm.map(r=>({type,key:r.id,label:r.label,sub:r.type||"교실",room:r,match:e=>entryMatchesRoom(e,r)})).filter(ent=>entries().some(ent.match)); }
 function renderEntityList() { entitiesCache = buildEntities(); if ($("scopeHint")) $("scopeHint").textContent = `${entitiesCache.length}개 대상이 출력됩니다.`; }
 function selectedEntities() { entitiesCache = buildEntities(); return entitiesCache; }
@@ -368,10 +427,10 @@ function itemFromEntry(e,periodLabel) { return { entry:e, card:null, subject:cle
 function entryItems(e, ent, periodLabel) { const cm=cardMap(); const type=targetType(); let ids=entryCardIds(e); let out=[]; if (ids.length) { for (const id of ids) { const c=cm.get(id); if (!c) continue; if (type === "class") { const keys = cardClassKeys(c); if (keys.length ? keys.includes(ent.key) : entryMatchesClass(e, ent)) out.push(itemFromCard(e,c,periodLabel)); }
       else if (type === "teacher") { const ts=cardTeachers(c); if (ts.length ? ts.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key)) out.push(itemFromCard(e,c,periodLabel)); }
       else if (type === "room") { const rid = e?.roomAssignmentsByTtCardId?.[c.id] || c.fixedRoomId || e.roomId; if (rid === ent.key || (!rid && entryRoomIds(e).includes(ent.key))) out.push(itemFromCard(e,c,periodLabel)); }
-      else if (type === "student") { if (entryMatchesStudent(e, {id:ent.key, name:ent.label}, {key:ent.classKey,label:ent.classLabel})) { const keys = cardClassKeys(c); if (keys.length ? keys.includes(ent.classKey) : true) out.push(itemFromCard(e,c,periodLabel)); } }
+      else if (type === "student") { if (cardMatchesStudent(c, e, {id:ent.key, name:ent.label}, {id:ent.classId, key:ent.classKey, label:ent.classLabel})) out.push(itemFromCard(e,c,periodLabel)); }
     }
   }
-  if (!out.length && ent.match(e)) out=[itemFromEntry(e,periodLabel)];
+  if (!out.length && type !== "student" && ent.match(e)) out=[itemFromEntry(e,periodLabel)];
   return out;
 }
 function fieldHtml(item, f, settings) { const v = clean(item[f.key]); if (!v || settings.enabled === false) return ""; return `<span class="field-item field-${f.key} pos-${esc(settings.pos||f.pos)} ${settings.bold?"bold":""}">${esc(v)}</span>`; }
@@ -436,26 +495,12 @@ function overviewCellHtml(cellItems) {
   const collapsed=collapseSpecialItems(cellItems, settings);
   const visible=collapsed.slice(0,4);
   const splitCount=Math.max(1, Math.min(4, visible.length || 1));
+  const count = visible.length >= 5 ? "many" : String(visible.length || 1);
+  const dirs = normalizeSplitDirections(settings.splitDirections);
+  const dir = splitCount >= 2 ? (dirs[String(splitCount)] || "auto") : "auto";
+  const layout = dir === "auto" ? "" : `layout-${dir}`;
   const fields=normalizeSplitFields(settings.splitFields, settings.fields)[String(splitCount)] || settings.fields || normalizeFields(null);
-  const st=splitStyleFor(splitCount, settings);
-  const fontClass=`font-${esc(st.cfg.font||"normal")}`;
-  const itemHtml = it => {
-    const subject = overviewSubject(it, settings);
-    const english = overviewEnglish(it);
-    const teacher = overviewTeacher(it);
-    const room = overviewRoom(it);
-    const subjCfg=fields.subject||{};
-    const engCfg=fields.english||{};
-    const teacherCfg=fields.teacher||{};
-    const roomCfg=fields.room||{};
-    const showSubject = !!subject && subjCfg.enabled !== false;
-    const showEnglish = !!english && engCfg.enabled !== false && st.cfg.layout !== "subject";
-    const showTeacher = !!teacher && teacherCfg.enabled !== false && st.cfg.layout !== "subject" && st.cfg.layout !== "simple";
-    const showRoom = !!room && roomCfg.enabled !== false && st.cfg.layout !== "subject";
-    const roomClass = showRoom ? "" : " omit-room";
-    return `<div class="overview-mini ${fontClass}${roomClass}"><div class="ov-main">${showSubject?`<b class="${subjCfg.bold?"bold":""}">${esc(subject)}</b>`:""}${showEnglish?`<em class="${engCfg.bold?"bold":""}">${esc(english)}</em>`:""}${showTeacher?`<span class="ov-teacher ${teacherCfg.bold?"bold":""}">${esc(teacher)}</span>`:""}</div>${showRoom?`<strong class="${roomCfg.bold?"bold":""}">${esc(room)}</strong>`:""}</div>`;
-  };
-  return `<div class="overview-cell count-${visible.length || 1}">${visible.map(itemHtml).join("")}</div>`;
+  return `<div class="lesson-cell overview-cell count-${count} ${layout}" style="--split-count:${splitCount}">${visible.map(it=>miniCardHtml(it, fields, splitCount, settings)).join("")}</div>`;
 }
 function overviewRowsPerPage() {
   const paper = $("paper")?.value || "a4-landscape";
