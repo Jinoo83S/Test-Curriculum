@@ -472,17 +472,27 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:break-word!important;
 }
 
-/* r260: CSS zoom 기반 미리보기 확대는 인쇄 시 원래 크기로 복구 */
+/* r261: CSS zoom 기반 미리보기 확대는 인쇄 시 원래 크기로 복구 */
 @media print{.preview-inner{zoom:1!important}}
 
+
+
+/* r261: 교사/교실 그룹 대표표시, 학생 개인 수강필터, 셀 여백 보정 */
+.tt-table td{padding:1px!important}
+.mini-card{padding:1px!important}
+.overview-wide .tt-table td{padding:0!important}
+.overview-wide .overview-cell.lesson-cell .mini-card{padding:0!important}
+.field-item{max-width:99%!important}
+.field-subject-group{max-width:99%!important;width:99%!important}
+.card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
+
 </style>
-<style id="printPageStyle">@page{size:A4 landscape;margin:5mm}
-</style>
+<style id="printPageStyle">@page{size:A4 landscape;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r260</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r261</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -548,11 +558,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r260";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r260";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r260";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r261";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r261";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r261";
 
-const VERSION = "2026-07-07-print-designer-r260";
+const VERSION = "2026-07-07-print-designer-r261";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -847,11 +857,30 @@ function buildSpecialSubjects() {
 function applySpecialSubjects(selected=[]) { const arr = Array.isArray(selected) ? selected : []; document.querySelectorAll('[data-special-subject]').forEach(el=>{ el.checked = arr.includes(el.dataset.specialSubject); }); if($("specialShowRoom")) $("specialShowRoom").checked = arr.includes("__showRoom"); if($("specialShowClass")) $("specialShowClass").checked = arr.includes("__showClass"); }
 function visibleEntriesForScope() { return entries().filter(entryAllowedByScope); }
 function students() { return classes().filter(classAllowedByScope).flatMap(c => (c.students||[]).map(st => ({type:"student", key:clean(st.id || `${c.key}:${st.name}`), label:clean(st.name || st.label || st.id), sub:c.label, classId:c.id, classKey:c.key, classLabel:c.label, match:e=>entryMatchesStudent(e, st, c)}))).filter(st=>st.key && st.label).sort((a,b)=>a.sub.localeCompare(b.sub,"ko",{numeric:true}) || a.label.localeCompare(b.label,"ko")); }
-function rosterStore() { return appState.rosters?.rosters || appState.rosters || {}; }
+function rosterStore() {
+  const r = appState.rosters || {};
+  return r.rosters || r.data?.rosters || r;
+}
 function rosterRowsForCard(c) {
   const store = rosterStore();
-  const keys = unique([c?.templateId, c?.compoundParentTemplateId, c?.parentTemplateId, c?.subjectTemplateId]);
-  return keys.flatMap(k => Array.isArray(store?.[k]) ? store[k] : []);
+  const keys = unique([c?.templateId, c?.compoundParentTemplateId, c?.parentTemplateId, c?.subjectTemplateId, c?.templateKey]);
+  const rows = [];
+  for (const k of keys) {
+    const value = store?.[k];
+    if (Array.isArray(value)) rows.push(...value);
+    else if (Array.isArray(value?.rows)) rows.push(...value.rows);
+    else if (Array.isArray(value?.students)) rows.push(...value.students);
+  }
+  return rows;
+}
+function isLikelyWholeClassCard(c, cls) {
+  const keys = cardClassKeys(c);
+  const subject = clean(c?.subject || c?.label);
+  const track = clean(c?.track);
+  if (!keys.includes(cls?.key)) return false;
+  if (subject.includes("[남]") || subject.includes("[여]")) return false;
+  if (track === "공통" && keys.length === 1) return true;
+  return !!(c?.isWholeClass || c?.entireClass || c?.audienceMode === "whole");
 }
 function rosterMatchForStudent(c, st, cls) {
   const rows = rosterRowsForCard(c);
@@ -860,25 +889,29 @@ function rosterMatchForStudent(c, st, cls) {
   const sname = clean(st.name || st.label);
   const cid = clean(cls?.id || cls?.classId);
   const ckey = clean(cls?.key || cls?.classKey);
+  const cardSection = c?.sectionIdx ?? c?.sectionIndex ?? null;
   return rows.some(r => {
     const rs = clean(r.studentId || r.studentKey || r.id || r.name);
     const rn = clean(r.studentName || r.name);
-    const rcid = clean(r.classId || r.classKey);
+    const rcid = clean(r.classId || r.classKey || r.className);
+    const rowSection = r.sectionIdx ?? r.sectionIndex ?? null;
     const classOk = !rcid || rcid === cid || normalizeClassKey(rcid) === ckey;
+    const sectionOk = rowSection == null || cardSection == null || String(rowSection) === String(cardSection);
     const studentOk = rs === sid || rs === sname || rn === sname || rn === sid;
-    return classOk && studentOk;
+    return classOk && sectionOk && studentOk;
   });
 }
 function cardMatchesStudent(c, e, st, cls) {
   if (!c) return false;
   const sid = clean(st.id || st.key);
   const sname = clean(st.name || st.label);
-  const sk = (c?.studentKeys || []).map(clean).filter(Boolean);
+  const sk = (c?.studentKeys || c?.studentIds || []).map(clean).filter(Boolean);
   if (sk.length) return sk.includes(sid) || sk.includes(sname);
   const rosterMatch = rosterMatchForStudent(c, st, cls);
   if (rosterMatch !== null) return rosterMatch;
-  // 수동 HR/보정 카드처럼 roster가 없는 카드만 학급 기준으로 포함한다.
-  return !!c.isManual && entryMatchesClass(e, cls);
+  // roster가 없는 경우는 수동 HR/전체반 공통카드만 포함한다. 선택/그룹카드는 학생 개인표에 fallback으로 넣지 않는다.
+  if (!!c.isManual && entryMatchesClass(e, cls)) return true;
+  return isLikelyWholeClassCard(c, cls);
 }
 function entryMatchesStudent(e, st, cls) {
   const sid=clean(st.id || st.key);
@@ -909,47 +942,57 @@ function inferEntrySubject(e, cardsForEntry=[]) {
   if (entryRoomIds(e).length >= 4 && ["윤미자","김장미","박정미","Joshua"].every(t=>teacherText.includes(t))) return "선교적 생활";
   return "수업";
 }
-function representativeItemFromCards(e, cardsForEntry, periodLabel) {
+function joinedSubjectFromCards(e, cardsForEntry=[]) {
+  const titles = unique((cardsForEntry||[]).map(c=>cardTitle(c,e)).filter(Boolean));
+  if (!titles.length) return inferEntrySubject(e, cardsForEntry);
+  if (titles.length === 1) return titles[0];
+  return titles.join(" / ");
+}
+function representativeItemFromCards(e, cardsForEntry, periodLabel, overrides={}) {
   const cs = (cardsForEntry||[]).filter(Boolean);
   const first = cs[0] || null;
   const classes = sortClassLabels([...(e?.audienceClassKeys||[]).map(classLabelFromKey), ...cs.flatMap(c=>[...(c?.classLabels||[]), ...(c?.classKeys||[]).map(classLabelFromKey)])]);
-  const teachers = unique([...splitTeachers(e?.teacherName), ...cs.flatMap(c=>cardTeachers(c))]);
-  const rooms = unique([entryRoomNames(e), ...cs.map(c=>itemRoomForCard(e,c))].flatMap(v=>clean(v).split(/,\s*/))).join(", ");
+  const teachers = unique([...cs.flatMap(c=>cardTeachers(c)), ...splitTeachers(overrides.teacher || "")]);
+  const rooms = unique([overrides.room || "", ...cs.map(c=>itemRoomForCard(e,c)), entryRoomNames(e)].flatMap(v=>clean(v).split(/,\s*/))).filter(Boolean).join(", ");
   const englishes = unique(cs.map(c=>cardEnglish(c,e)));
-  return { entry:e, card:first, subject:inferEntrySubject(e, cs), english:englishes.length===1?englishes[0]:"", teacher:teachers.join(", "), room:rooms || entryRoomNames(e), class:classes.join(", "), period:periodLabel, rawSubject:clean(first?.subject || e?.subject), rawLabel:clean(first?.label || e?.label) };
+  return { entry:e, card:first, subject:joinedSubjectFromCards(e, cs), english:englishes.length===1?englishes[0]:"", teacher:clean(overrides.teacher) || teachers.join(", ") || clean(e.teacherName), room:clean(overrides.room) || rooms || entryRoomNames(e), class:classes.join(", "), period:periodLabel, rawSubject:clean(first?.subject || e?.subject), rawLabel:clean(first?.label || e?.label) };
 }
 function itemFromEntry(e,periodLabel) { const cs=entryCardIds(e).map(id=>cardMap().get(id)).filter(Boolean); return { entry:e, card:cs[0]||null, subject:inferEntrySubject(e, cs), english:unique(cs.map(c=>cardEnglish(c,e))).length===1?unique(cs.map(c=>cardEnglish(c,e)))[0]:clean(e.subjectEn||""), teacher:clean(e.teacherName), room:entryRoomNames(e), class:sortClassLabels((e.audienceClassKeys||[]).map(classLabelFromKey)).join(", "), period:periodLabel }; }
 function entryItems(e, ent, periodLabel) {
   const cm=cardMap();
   const type=targetType();
   const ids=entryCardIds(e);
-  let out=[];
-  if (ids.length) {
-    const entryCards = ids.map(id=>cm.get(id)).filter(Boolean);
-    if (type === "teacher" && layoutMode() === "individual") {
+  const entryCards = ids.map(id=>cm.get(id)).filter(Boolean);
+
+  if (type === "teacher") {
+    if (entryCards.length) {
       const matched = entryCards.filter(c => {
         const teachers = cardTeachers(c);
         return teachers.length ? teachers.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key);
       });
-      if (matched.length > 1) return [representativeItemFromCards(e, matched, periodLabel)];
-      if (matched.length === 1) return [itemFromCard(e, matched[0], periodLabel)];
+      return matched.length ? [representativeItemFromCards(e, matched, periodLabel, { teacher: ent.key })] : [];
     }
-    for (const id of ids) {
-      const c=cm.get(id);
-      if (!c) continue;
+    return splitTeachers(e.teacherName).includes(ent.key) ? [itemFromEntry(e, periodLabel)] : [];
+  }
+
+  if (type === "room") {
+    if (entryCards.length) {
+      const matched = entryCards.filter(c => {
+        const rid = e?.roomAssignmentsByTtCardId?.[c.id] || c.fixedRoomId || e.roomId;
+        return rid ? rid === ent.key : entryRoomIds(e).includes(ent.key);
+      });
+      return matched.length ? [representativeItemFromCards(e, matched, periodLabel, { room: roomName(ent.key) })] : [];
+    }
+    return entryRoomIds(e).includes(ent.key) ? [itemFromEntry(e, periodLabel)] : [];
+  }
+
+  let out=[];
+  if (entryCards.length) {
+    for (const c of entryCards) {
       if (type === "class") {
         const keys = cardClassKeys(c);
         if (keys.length ? keys.includes(ent.key) : entryMatchesClass(e, ent)) out.push(itemFromCard(e,c,periodLabel));
-      }
-      else if (type === "teacher") {
-        const teachers = cardTeachers(c);
-        if (teachers.length ? teachers.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key)) out.push(itemFromCard(e,c,periodLabel));
-      }
-      else if (type === "room") {
-        const rid = e?.roomAssignmentsByTtCardId?.[c.id] || c.fixedRoomId || e.roomId;
-        if (rid === ent.key || (!rid && entryRoomIds(e).includes(ent.key))) out.push(itemFromCard(e,c,periodLabel));
-      }
-      else if (type === "student") {
+      } else if (type === "student") {
         if (cardMatchesStudent(c, e, {id:ent.key, name:ent.label}, {id:ent.classId, key:ent.classKey, label:ent.classLabel})) out.push(itemFromCard(e,c,periodLabel));
       }
     }
