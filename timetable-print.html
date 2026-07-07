@@ -486,7 +486,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .field-subject-group{max-width:99%!important;width:99%!important}
 .card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
 
-/* r264: Excel/Word office export helpers */
+/* r265: Excel/Word office export helpers */
 .office-export-root .preview-page{box-shadow:none!important;border:0!important;margin:0 0 18px!important;padding:10px!important;page-break-after:always;break-after:page;width:auto!important;min-height:auto!important}
 .office-export-root .preview-page:last-child{page-break-after:auto;break-after:auto}
 .office-export-root .preview-page h3{font-size:18px;margin:0 0 6px;text-align:center}
@@ -495,9 +495,8 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .office-export-root .tt-table th,.office-export-root .tt-table td{border:1px solid #111827;text-align:center;vertical-align:middle;padding:2px;white-space:normal;mso-number-format:"\@"}
 .office-export-root .mini-card{position:relative;border:0!important;background:#fff;min-height:18px;padding:1px!important;overflow:hidden}
 
-</style>
 
-/* r264: PDF/Office export 안정화 - A4 방향 mm 고정, 빈 페이지 방지 */
+/* r265: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
 @media print{
   @page{size:297mm 210mm;margin:5mm}
   html,body{height:auto!important;min-height:0!important;overflow:visible!important}
@@ -506,12 +505,14 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   .preview-page:last-child{break-after:auto!important;page-break-after:auto!important}
   .preview-page:empty{display:none!important}
 }
+
+</style>
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r264</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r265</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -577,11 +578,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r264";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r264";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r264";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r265";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r265";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r265";
 
-const VERSION = "2026-07-07-print-designer-r264";
+const VERSION = "2026-07-07-print-designer-r265";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
