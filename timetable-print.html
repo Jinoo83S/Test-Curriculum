@@ -207,7 +207,7 @@
 
 
 
-/* r255: 카드 표시 한줄 고정, 긴 과목/영문명 말줄임, 다중분할 점선 처리 */
+/* r256: 카드 표시 한줄 고정, 긴 과목/영문명 말줄임, 다중분할 점선 처리 */
 .checkrow select[data-field-pos],
 .checkrow .pos-fixed{
   grid-column:auto!important;
@@ -286,13 +286,131 @@
 .lesson-cell.count-many.layout-cols .mini-card:last-child{border-right:0!important}
 .overview-wide .overview-cell.lesson-cell .mini-card{border-color:#94a3b8!important;border-style:dashed!important}
 
+
+
+/* r256: 요일 3글자, 말줄임 선택, 다중분할 내부선 보정, 1과목 내부선 제거 */
+.ellipsis-toggle{margin:0 0 8px;min-height:28px;padding:4px 8px;font-size:12px}
+body:not(.ellipsis-enabled) .field-subject,
+body:not(.ellipsis-enabled) .field-english-inline,
+body:not(.ellipsis-enabled) .field-teacher,
+body:not(.ellipsis-enabled) .field-room,
+body:not(.ellipsis-enabled) .field-class,
+body:not(.ellipsis-enabled) .compact-subject,
+body:not(.ellipsis-enabled) .compact-sub,
+body:not(.ellipsis-enabled) .compact-meta,
+body:not(.ellipsis-enabled) .cell-line b,
+body:not(.ellipsis-enabled) .cell-line span{
+  white-space:normal!important;
+  text-overflow:clip!important;
+  overflow-wrap:anywhere!important;
+  word-break:break-word!important;
+}
+body.ellipsis-enabled .field-subject,
+body.ellipsis-enabled .field-english-inline,
+body.ellipsis-enabled .field-teacher,
+body.ellipsis-enabled .field-room,
+body.ellipsis-enabled .field-class,
+body.ellipsis-enabled .compact-subject,
+body.ellipsis-enabled .compact-sub,
+body.ellipsis-enabled .compact-meta,
+body.ellipsis-enabled .cell-line b,
+body.ellipsis-enabled .cell-line span{
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.lesson-cell .mini-card,
+.overview-wide .overview-cell.lesson-cell .mini-card{
+  border:0!important;
+  border-radius:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.lesson-cell.count-1 .mini-card,
+.overview-wide .lesson-cell.count-1 .mini-card{
+  border:0!important;
+}
+.lesson-cell.count-2.layout-cols .mini-card:first-child,
+.overview-wide .lesson-cell.count-2.layout-cols .mini-card:first-child,
+.lesson-cell.count-2:not(.layout-rows):not(.layout-vertical) .mini-card:first-child,
+.overview-wide .lesson-cell.count-2:not(.layout-rows):not(.layout-vertical) .mini-card:first-child{
+  border-right:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-2.layout-rows .mini-card:first-child,
+.lesson-cell.count-2.layout-vertical .mini-card:first-child,
+.overview-wide .lesson-cell.count-2.layout-rows .mini-card:first-child,
+.overview-wide .lesson-cell.count-2.layout-vertical .mini-card:first-child{
+  border-bottom:1px dashed #94a3b8!important;
+  border-right:0!important;
+}
+.lesson-cell.count-3.layout-rows .mini-card:not(:last-child),
+.lesson-cell.count-4.layout-rows .mini-card:not(:last-child),
+.lesson-cell.count-many.layout-rows .mini-card:not(:last-child),
+.overview-wide .lesson-cell.count-3.layout-rows .mini-card:not(:last-child),
+.overview-wide .lesson-cell.count-4.layout-rows .mini-card:not(:last-child),
+.overview-wide .lesson-cell.count-many.layout-rows .mini-card:not(:last-child){
+  border-bottom:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-3.layout-cols .mini-card:not(:last-child),
+.lesson-cell.count-4.layout-cols .mini-card:not(:last-child),
+.lesson-cell.count-many.layout-cols .mini-card:not(:last-child),
+.overview-wide .lesson-cell.count-3.layout-cols .mini-card:not(:last-child),
+.overview-wide .lesson-cell.count-4.layout-cols .mini-card:not(:last-child),
+.overview-wide .lesson-cell.count-many.layout-cols .mini-card:not(:last-child){
+  border-right:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-3.layout-grid .mini-card:nth-child(1),
+.lesson-cell.count-3:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(1),
+.overview-wide .lesson-cell.count-3.layout-grid .mini-card:nth-child(1),
+.overview-wide .lesson-cell.count-3:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(1){
+  border-right:1px dashed #94a3b8!important;
+  border-bottom:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-3.layout-grid .mini-card:nth-child(2),
+.lesson-cell.count-3:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(2),
+.overview-wide .lesson-cell.count-3.layout-grid .mini-card:nth-child(2),
+.overview-wide .lesson-cell.count-3:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(2){
+  border-bottom:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-3.layout-grid .mini-card:nth-child(3),
+.lesson-cell.count-3:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(3),
+.overview-wide .lesson-cell.count-3.layout-grid .mini-card:nth-child(3),
+.overview-wide .lesson-cell.count-3:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(3){
+  border-right:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-4.layout-grid .mini-card:nth-child(1),
+.lesson-cell.count-4:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(1),
+.overview-wide .lesson-cell.count-4.layout-grid .mini-card:nth-child(1),
+.overview-wide .lesson-cell.count-4:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(1){
+  border-right:1px dashed #94a3b8!important;
+  border-bottom:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-4.layout-grid .mini-card:nth-child(2),
+.lesson-cell.count-4:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(2),
+.overview-wide .lesson-cell.count-4.layout-grid .mini-card:nth-child(2),
+.overview-wide .lesson-cell.count-4:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(2){
+  border-bottom:1px dashed #94a3b8!important;
+}
+.lesson-cell.count-4.layout-grid .mini-card:nth-child(3),
+.lesson-cell.count-4:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(3),
+.overview-wide .lesson-cell.count-4.layout-grid .mini-card:nth-child(3),
+.overview-wide .lesson-cell.count-4:not(.layout-rows):not(.layout-cols) .mini-card:nth-child(3){
+  border-right:1px dashed #94a3b8!important;
+}
+.overview-wide .tt-table.overview-full-days thead th{font-size:8.5px!important;letter-spacing:.02em}
+@media print{
+  @page{size:A4 landscape;margin:5mm}
+  body.print-portrait{width:210mm!important;height:297mm!important}
+  body.print-landscape{width:297mm!important;height:210mm!important}
+}
+
 </style>
-<style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
+<style id="printPageStyle">@page{size:A4 landscape;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r255</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r256</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -314,6 +432,7 @@
 
     <section class="panel"><h2 class="card-title-row"><span>카드 표시</span><button id="applyCardSettingsBtn" class="primary inline-apply" type="button">카드 설정 적용</button></h2><div class="body">
       <input type="hidden" id="cellLayout" value="auto"><input type="hidden" id="applyMode" value="card"><input type="hidden" id="fontScale" value="normal">
+      <label class="check ellipsis-toggle"><input type="checkbox" id="ellipsisMode"><span>긴 과목/영문명은 ...로 생략</span></label>
       <div class="split-tabs" role="tablist" aria-label="분할별 카드 설정">
         <button type="button" class="active" data-split-tab="1">1</button><button type="button" data-split-tab="2">2</button><button type="button" data-split-tab="3">3</button><button type="button" data-split-tab="4">4</button>
       </div>
@@ -356,12 +475,12 @@
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r255";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r255";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r255";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r256";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r256";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r256";
 
-const VERSION = "2026-07-07-print-designer-r255";
-const DAYS = ["월", "화", "수", "목", "금"];
+const VERSION = "2026-07-07-print-designer-r256";
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
   { key:"english", label:"영문명", pos:"bc", bold:false, enabled:true },
@@ -472,7 +591,7 @@ function targetType() { return parseOutputKind().type; }
 function layoutMode() { return parseOutputKind().mode; }
 function format() { return $("format").value; }
 function syncLayoutModeOptions() { syncOutputKindToHidden(); }
-function applyPaper(paper) { const portrait = paper === "a4-portrait"; document.documentElement.style.setProperty("--page-w", portrait ? "794px" : "1123px"); document.documentElement.style.setProperty("--page-h", portrait ? "1123px" : "794px"); document.body.classList.toggle("print-portrait", portrait); document.body.classList.toggle("print-landscape", !portrait); const el=$("printPageStyle"); if (el) el.textContent = `@page{size:${portrait ? "210mm 297mm" : "297mm 210mm"};margin:5mm}`; }
+function applyPaper(paper) { const portrait = paper === "a4-portrait"; document.documentElement.style.setProperty("--page-w", portrait ? "794px" : "1123px"); document.documentElement.style.setProperty("--page-h", portrait ? "1123px" : "794px"); document.body.classList.toggle("print-portrait", portrait); document.body.classList.toggle("print-landscape", !portrait); const el=$("printPageStyle"); if (el) el.textContent = `@page{size:${portrait ? "A4 portrait" : "A4 landscape"};margin:5mm}`; }
 function profileKey() { const t=targetType(); const m=t === "student" ? "individual" : layoutMode(); return `${t}:${m}:pdf`; }
 function lastProfileKey() {
   try {
@@ -488,7 +607,7 @@ function lastProfileKey() {
 function defaultFieldSettings() { return Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos,font:"normal",fontPx:""}])); }
 function normalizeFields(raw) { const base=defaultFieldSettings(); if (raw && typeof raw === "object") FIELD_DEFS.forEach(f=>{ base[f.key]={...base[f.key], ...(raw[f.key]||{})}; }); return base; }
 function normalizeSplitFields(raw, fallbackFields=null) { const fallback=normalizeFields(fallbackFields); const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]=normalizeFields(raw?.[k] || fallback); }); return out; }
-function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", previewMode:"sample", cellLayout:"auto", applyMode:"card", fontScale:"normal", scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
+function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", previewMode:"sample", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
 function readStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); } catch { return {}; } }
 function writeStore(store) { try { localStorage.setItem(STORE_KEY, JSON.stringify(store||{})); } catch {} }
 function getSettings() { const store = readStore(); return {...defaultSettings(), ...(store[profileKey()]||{})}; }
@@ -501,7 +620,7 @@ function normalizeSplitDirections(raw) {
 function applySplitDirections(raw) { const dirs=normalizeSplitDirections(raw); [2,3,4].forEach(n=>{ const el=$("splitDir"+n); if(el) el.value=dirs[String(n)]; }); }
 function normalizeSplitStyles(raw) { const out=structuredClone(SPLIT_DEFAULTS); if (raw && typeof raw === "object") [1,2,3,4].forEach(n=>{ const k=String(n); out[k]={...out[k], ...(raw[k]||{})}; }); return out; }
 function applySplitStyles(raw) { const styles=normalizeSplitStyles(raw); [1,2,3,4].forEach(n=>{ const k=String(n); const font=$("splitFont"+n); const layout=$("splitLayout"+n); if(font) font.value=styles[k].font; if(layout) layout.value=styles[k].layout; }); }
-function cardControlChanged(el) { return !!el.closest('#fieldRows') || ['cellLayout','fontScale','applyMode','splitFont1','splitFont2','splitFont3','splitFont4','splitLayout1','splitLayout2','splitLayout3','splitLayout4','splitDir2','splitDir3','splitDir4'].includes(el.id); }
+function cardControlChanged(el) { return !!el.closest('#fieldRows') || ['cellLayout','fontScale','applyMode','splitFont1','splitFont2','splitFont3','splitFont4','splitLayout1','splitLayout2','splitLayout3','splitLayout4','splitDir2','splitDir3','splitDir4','ellipsisMode'].includes(el.id); }
 function markDirty(msg='설정 저장 필요') { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent=msg; btn.classList.add('dirty'); btn.classList.remove('saved'); } }
 function markSaved() { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent='설정 저장됨'; btn.classList.remove('dirty'); btn.classList.add('saved'); clearTimeout(markSaved.t); markSaved.t=setTimeout(()=>{ btn.textContent='설정 저장'; btn.classList.remove('saved'); },1400); } }
 function markCardApplyNeeded() { const btn=$("applyCardSettingsBtn"); if(btn) btn.classList.add('pending'); markDirty(); }
@@ -526,11 +645,11 @@ function applySplitFontPresetToControls(font) {
 }
 
 function syncActiveFieldDraft() { if (!splitFieldDraft) splitFieldDraft = normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); }
-function collectSettings() { if (!applying) syncActiveFieldDraft(); const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:$("paper").value, previewMode:$("previewMode")?.value || "sample", cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
-function saveSettings() { if (applying) return; const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); }
+function collectSettings() { if (!applying) syncActiveFieldDraft(); const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:$("paper").value, previewMode:$("previewMode")?.value || "sample", cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
+function saveSettings() { if (applying) return; const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
-function applySettings(settings, keepMain=false, preserveScope=false) { applying=true; const s={...defaultSettings(),...settings}; if (!keepMain) { setOutputKind(s.targetType, s.layoutMode); $("format").value=s.format; } else { syncOutputKindToHidden(); } syncLayoutModeOptions(); $("paper").value=s.paper; applyPaper(s.paper); if($("previewMode")) $("previewMode").value=s.previewMode || "sample"; if($("cellLayout")) $("cellLayout").value="auto"; if($("applyMode")) $("applyMode").value=s.applyMode || "card"; if($("fontScale")) $("fontScale").value=s.fontScale || "normal"; if (!preserveScope) { const scopeVal=s.scope || "all"; document.querySelectorAll("input[name=\"scope\"]").forEach(el=>{ el.checked = el.value === scopeVal; }); const selected=new Set(s.selectedScopeKeys || []); document.querySelectorAll("[data-scope-key]").forEach(el=>{ el.checked = selected.has(el.dataset.scopeKey); }); } FIELD_DEFS.forEach(f=>{ const v=s.fields?.[f.key] || f; const en=document.querySelector(`[data-field-enabled="${f.key}"]`); const bo=document.querySelector(`[data-field-bold="${f.key}"]`); const po=document.querySelector(`[data-field-pos="${f.key}"]`); const fo=document.querySelector(`[data-field-font="${f.key}"]`); if(en) en.checked = v.enabled !== false; if(bo) bo.checked = !!v.bold; if(fo) fo.value = fontValueToPx(v.fontPx || v.font, f.key) || ""; if(po) po.value = v.pos || f.pos; }); applySplitStyles(s.splitStyles); applySplitDirections(s.splitDirections); splitFieldDraft=normalizeSplitFields(s.splitFields, s.fields); applying=false; }
+function applySettings(settings, keepMain=false, preserveScope=false) { applying=true; const s={...defaultSettings(),...settings}; if (!keepMain) { setOutputKind(s.targetType, s.layoutMode); $("format").value=s.format; } else { syncOutputKindToHidden(); } syncLayoutModeOptions(); $("paper").value=s.paper; applyPaper(s.paper); if($("previewMode")) $("previewMode").value=s.previewMode || "sample"; if($("cellLayout")) $("cellLayout").value="auto"; if($("applyMode")) $("applyMode").value=s.applyMode || "card"; if($("fontScale")) $("fontScale").value=s.fontScale || "normal"; if($("ellipsisMode")) $("ellipsisMode").checked=!!s.ellipsisMode; document.body.classList.toggle("ellipsis-enabled", !!s.ellipsisMode); if (!preserveScope) { const scopeVal=s.scope || "all"; document.querySelectorAll("input[name=\"scope\"]").forEach(el=>{ el.checked = el.value === scopeVal; }); const selected=new Set(s.selectedScopeKeys || []); document.querySelectorAll("[data-scope-key]").forEach(el=>{ el.checked = selected.has(el.dataset.scopeKey); }); } FIELD_DEFS.forEach(f=>{ const v=s.fields?.[f.key] || f; const en=document.querySelector(`[data-field-enabled="${f.key}"]`); const bo=document.querySelector(`[data-field-bold="${f.key}"]`); const po=document.querySelector(`[data-field-pos="${f.key}"]`); const fo=document.querySelector(`[data-field-font="${f.key}"]`); if(en) en.checked = v.enabled !== false; if(bo) bo.checked = !!v.bold; if(fo) fo.value = fontValueToPx(v.fontPx || v.font, f.key) || ""; if(po) po.value = v.pos || f.pos; }); applySplitStyles(s.splitStyles); applySplitDirections(s.splitDirections); splitFieldDraft=normalizeSplitFields(s.splitFields, s.fields); applying=false; }
 function switchProfile() { scopeMemory[currentScopeType] = captureScopeState(); syncLayoutModeOptions(); const nextType = targetType(); currentScopeType = nextType; buildScopeUi(); const s = getSettings(); applySettings(s, true, true); restoreScopeState(scopeMemory[nextType]); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); scheduleRender(); }
 function buildFieldRows() {
   $("fieldRows").innerHTML = FIELD_DEFS.map(f => {
