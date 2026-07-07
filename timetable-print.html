@@ -422,6 +422,19 @@ body.ellipsis-enabled .cell-line span{
 .special-options .check{min-width:0!important;height:38px!important;overflow:hidden!important}
 .special-options .check span{display:block!important;min-width:0!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:ellipsis!important}
 
+
+/* r258: 확대 범위 확장, 카드 설정 저장/표시 복구, compact 레이아웃 표시 옵션 적용 */
+.zoom input{width:180px!important}
+.subject-list{max-height:calc(100vh - 145px)!important}
+.subject-grade-grid .check{height:34px!important;min-height:34px!important;display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;align-items:center!important}
+.subject-grade-grid .check span{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;display:block!important;min-width:0!important}
+body:not(.ellipsis-enabled) .compact-subject,
+body:not(.ellipsis-enabled) .compact-sub,
+body:not(.ellipsis-enabled) .compact-meta{white-space:normal!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:break-word!important}
+body.ellipsis-enabled .compact-subject,
+body.ellipsis-enabled .compact-sub,
+body.ellipsis-enabled .compact-meta{white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+
 </style>
 <style id="printPageStyle">@page{size:A4 landscape;margin:5mm}
 </style>
@@ -429,7 +442,7 @@ body.ellipsis-enabled .cell-line span{
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 PDF 출력 디자이너 <span class="badge">r257</span></h1>
+  <h1>시간표 PDF 출력 디자이너 <span class="badge">r258</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -475,7 +488,7 @@ body.ellipsis-enabled .cell-line span{
   </aside>
 
   <section class="preview-wrap">
-    <div class="preview-toolbar"><strong>미리보기</strong><span id="previewMeta" class="meta">데이터 로딩 중…</span><div class="zoom"><span>확대</span><input id="zoom" type="range" min="45" max="110" value="75"><b id="zoomText">75%</b></div></div>
+    <div class="preview-toolbar"><strong>미리보기</strong><span id="previewMeta" class="meta">데이터 로딩 중…</span><div class="zoom"><span>확대</span><input id="zoom" type="range" min="35" max="250" value="75"><b id="zoomText">75%</b></div></div>
     <div class="preview-scroll"><div id="previewInner" class="preview-inner"><div class="preview-page"><div class="disabled-note">데이터를 불러오는 중입니다.</div></div></div></div>
   </section>
 
@@ -494,11 +507,11 @@ body.ellipsis-enabled .cell-line span{
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r257";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r257";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r257";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r258";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r258";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r258";
 
-const VERSION = "2026-07-07-print-designer-r257";
+const VERSION = "2026-07-07-print-designer-r258";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -665,7 +678,7 @@ function applySplitFontPresetToControls(font) {
 
 function syncActiveFieldDraft() { if (!splitFieldDraft) splitFieldDraft = normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); }
 function collectSettings() { if (!applying) syncActiveFieldDraft(); const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:$("paper").value, previewMode:$("previewMode")?.value || "sample", cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
-function saveSettings() { if (applying) return; const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); }
+function saveSettings() { if (applying) return; syncActiveFieldDraft(); const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); renderPreview(); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
@@ -837,7 +850,28 @@ function fieldHtml(item, f, settings) { const v = clean(item[f.key]); if (!v || 
 function subjectEnglishHtml(item, fields) { const subjCfg=fields.subject || {}; const engCfg=fields.english || {}; const subj=clean(item.subject); const eng=clean(item.english); const showSubj = subj && subjCfg.enabled !== false; const showEng = eng && engCfg.enabled !== false; if (!showSubj && !showEng) return ""; const pos = subjCfg.pos || "mc"; const bold = subjCfg.bold ? "bold" : ""; return `<span class="field-item field-subject-group pos-${esc(pos)} ${bold}">${showSubj?`<span class="field-subject" ${fieldFontStyle(subjCfg,"subject")}>${esc(subj)}</span>`:""}${showEng?`<span class="field-english-inline ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(eng)}</span>`:""}</span>`; }
 function standardCardHtml(item, fields) { return subjectEnglishHtml(item, fields) + FIELD_DEFS.filter(f=>f.key!=="subject" && f.key!=="english").map(f=>fieldHtml(item,f,fields[f.key]||{})).join(""); }
 function splitStyleFor(count, settings) { const key=String(Math.max(1, Math.min(4, count || 1))); const cfg={...SPLIT_DEFAULTS[key], ...(settings.splitStyles?.[key]||{})}; const font=SPLIT_FONT[cfg.font] || SPLIT_FONT.normal; return { key, cfg, font }; }
-function compactCardHtml(item, cfg) { const subj = esc(item.subject); const eng = item.english ? `<div class="compact-sub">${esc(item.english)}</div>` : ""; const meta = [item.teacher,item.room].filter(Boolean).join(" · "); if (cfg.layout === "subject") return `<div class="compact-subject">${subj}</div>`; if (cfg.layout === "simple") return `<div class="compact-subject">${subj}</div>${item.room?`<div class="compact-meta">${esc(item.room)}</div>`:""}`; return `<div class="compact-subject">${subj}</div>${eng}${meta?`<div class="compact-meta">${esc(meta)}</div>`:""}`; }
+function compactCardHtml(item, cfg, fields=null) {
+  const fs = normalizeFields(fields);
+  const subjCfg = fs.subject || {};
+  const engCfg = fs.english || {};
+  const teacherCfg = fs.teacher || {};
+  const roomCfg = fs.room || {};
+  const classCfg = fs.class || {};
+  const subj = subjCfg.enabled === false ? "" : esc(item.subject);
+  const eng = engCfg.enabled === false || !item.english ? "" : `<div class="compact-sub ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(item.english)}</div>`;
+  const metaParts = [];
+  if (teacherCfg.enabled !== false && item.teacher) metaParts.push(item.teacher);
+  if (roomCfg.enabled !== false && item.room) metaParts.push(item.room);
+  if (classCfg.enabled !== false && item.class) metaParts.push(item.class);
+  const meta = metaParts.filter(Boolean).join(" · ");
+  const subjLine = subj ? `<div class="compact-subject ${subjCfg.bold?"bold":""}" ${fieldFontStyle(subjCfg,"subject")}>${subj}</div>` : "";
+  if (cfg.layout === "subject") return subjLine;
+  if (cfg.layout === "simple") {
+    const roomLine = roomCfg.enabled !== false && item.room ? `<div class="compact-meta ${roomCfg.bold?"bold":""}" ${fieldFontStyle(roomCfg,"room")}>${esc(item.room)}</div>` : "";
+    return `${subjLine}${roomLine}`;
+  }
+  return `${subjLine}${eng}${meta?`<div class="compact-meta" ${fieldFontStyle(teacherCfg,"teacher")}>${esc(meta)}</div>`:""}`;
+}
 function normSpecial(v) { return clean(v).toLowerCase().replace(/[\s·⋅・_\-\/()\[\]]+/g, ""); }
 function specialMatchValues(item) {
   return unique([
@@ -862,7 +896,7 @@ function specialLabelForItem(item, selected=[]) {
   return "";
 }
 
-function miniCardHtml(item, fields, splitCount, settings) { const st=splitStyleFor(splitCount, settings); const splitFields=normalizeFields(fields); const customBase = st.cfg.font === "custom" ? (fontValueToPx(splitFields.subject?.fontPx, "subject") || st.font.px) : st.font.px; const style=`--card-font:${customBase}px;--print-card-font:${Math.max(4, customBase*.74)}px`; const layoutClass = `split-${st.key} card-layout-${st.cfg.layout}`; const specialLabel = specialLabelForItem(item, settings.specialSubjects||[]); if (specialLabel) { const opts = settings.specialSubjects || []; const extra = `${opts.includes("__showClass") && item.class ? `<div class="compact-meta">${esc(item.class)}</div>` : ""}${opts.includes("__showRoom") && item.room ? `<div class="compact-meta">${esc(item.room)}</div>` : ""}`; return `<div class="mini-card ${layoutClass} card-layout-subject special-card" style="${style}"><div class="compact-subject">${esc(specialLabel)}</div>${extra}</div>`; } const layout = st.cfg.layout; if (layout !== "standard") return `<div class="mini-card ${layoutClass}" style="${style}">${compactCardHtml(item,{...st.cfg,layout})}</div>`; return `<div class="mini-card ${layoutClass}" style="${style}">${standardCardHtml(item, splitFields)}</div>`; }
+function miniCardHtml(item, fields, splitCount, settings) { const st=splitStyleFor(splitCount, settings); const splitFields=normalizeFields(fields); const customBase = st.cfg.font === "custom" ? (fontValueToPx(splitFields.subject?.fontPx, "subject") || st.font.px) : st.font.px; const style=`--card-font:${customBase}px;--print-card-font:${Math.max(4, customBase*.74)}px`; const layoutClass = `split-${st.key} card-layout-${st.cfg.layout}`; const specialLabel = specialLabelForItem(item, settings.specialSubjects||[]); if (specialLabel) { const opts = settings.specialSubjects || []; const extra = `${opts.includes("__showClass") && item.class ? `<div class="compact-meta">${esc(item.class)}</div>` : ""}${opts.includes("__showRoom") && item.room ? `<div class="compact-meta">${esc(item.room)}</div>` : ""}`; return `<div class="mini-card ${layoutClass} card-layout-subject special-card" style="${style}"><div class="compact-subject">${esc(specialLabel)}</div>${extra}</div>`; } const layout = st.cfg.layout; if (layout !== "standard") return `<div class="mini-card ${layoutClass}" style="${style}">${compactCardHtml(item,{...st.cfg,layout}, splitFields)}</div>`; return `<div class="mini-card ${layoutClass}" style="${style}">${standardCardHtml(item, splitFields)}</div>`; }
 function collapseSpecialItems(cellItems, settings) { const out=[]; const seen=new Set(); for (const item of cellItems) { const label=specialLabelForItem(item, settings.specialSubjects||[]); if (!label) { out.push(item); continue; } if (seen.has(label)) continue; seen.add(label); out.push({...item, subject:label, english:"", teacher:"", room:"", __specialLabel:label}); } return out; }
 function cellHtml(cellItems) {
   if (!cellItems.length) return `<div class="empty"></div>`;
@@ -950,7 +984,9 @@ function renderPreview() {
 }
 function scheduleRender() { clearTimeout(renderTimer); renderTimer=setTimeout(renderPreview, 220); }
 function applyZoom() {
-  const z=Number($("zoom").value)||75;
+  const el=$("zoom");
+  const z=Math.max(Number(el?.min)||35, Math.min(Number(el?.max)||250, Number(el?.value)||75));
+  if (el) el.value = z;
   $("zoomText").textContent=`${z}%`;
   const inner=$("previewInner");
   inner.classList.add("is-zooming");
@@ -965,7 +1001,7 @@ function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach
   applySettings(s,true); markCardApplyNeeded(); }
 function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); }
 function setSplitTab(n) { const next=String(n); if (!applying) { if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); } activeSplitTab=next; document.querySelectorAll("[data-split-tab]").forEach(btn=>btn.classList.toggle("active", btn.dataset.splitTab===next)); document.querySelectorAll("[data-split-panel]").forEach(panel=>panel.classList.toggle("hidden", panel.dataset.splitPanel!==next)); if (splitFieldDraft) writeFieldControls(splitFieldDraft[next]); updateFieldFontInputState(); }
-function wireEvents() { ["outputKind","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>{ if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); renderPagesFor(allEnts, "출력 전체 · "); const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); }; window.addEventListener("afterprint", restore); applyPaper($("paper")?.value || "a4-landscape"); setTimeout(()=>window.print(), 80); }); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+function wireEvents() { ["outputKind","format"].forEach(id=>$(id).addEventListener("change", switchProfile)); document.body.addEventListener("change", e=>{ if (applying) return; if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); document.body.classList.toggle("ellipsis-enabled", !!$("ellipsisMode")?.checked); markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",()=>{ if (!dataReady) return; renderEntityList(); const allEnts = selectedEntities(); renderPagesFor(allEnts, "출력 전체 · "); const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); }; window.addEventListener("afterprint", restore); applyPaper($("paper")?.value || "a4-landscape"); setTimeout(()=>window.print(), 80); }); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
 function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); renderPreview(); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
