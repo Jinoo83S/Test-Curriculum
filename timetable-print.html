@@ -544,12 +544,19 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 body.print-portrait #printPageStyle::after{content:""}
 
 
-/* r286: 학급 전체 가로 9행(10A~12C) 한 장 맞춤 */
-.preview-page.overview-wide.class-overview-fit9 .tt-table td{height:50px}
+/* r287: 전체표 하단 여백 보정 - 페이지별 행 수에 따라 표 높이를 채웁니다. */
+.preview-page.overview-wide.class-overview-fit9{display:flex;flex-direction:column;overflow:hidden}
+.preview-page.overview-wide.class-overview-fit9 .print-title-row{flex:0 0 auto;margin-bottom:4px}
+.preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days{flex:1 1 auto;height:calc(100% - 28px);table-layout:fixed}
+.preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days tbody tr{height:var(--overview-row-px,50px)}
+.preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days td{height:auto!important}
 @media print{
-  .preview-page.overview-wide.class-overview-fit9 .tt-table td{height:18mm!important}
-  .preview-page.overview-wide.class-overview-fit9 .print-title-row{margin-bottom:1mm!important}
+  .preview-page.overview-wide.class-overview-fit9{display:flex!important;flex-direction:column!important}
+  .preview-page.overview-wide.class-overview-fit9 .print-title-row{flex:0 0 auto!important;margin-bottom:1mm!important}
   .preview-page.overview-wide.class-overview-fit9 .print-title-row h3{font-size:13px!important}
+  .preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days{flex:1 1 auto!important;height:calc(100% - 10mm)!important}
+  .preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days tbody tr{height:var(--overview-row-mm,18mm)!important}
+  .preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days td{height:auto!important}
 }
 </style>
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
@@ -557,7 +564,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r286</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r287</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -624,11 +631,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-08-print-matrix-r286";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-08-print-matrix-r286";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-08-print-matrix-r286";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-print-overview-fill-r287";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-print-overview-fill-r287";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-print-overview-fill-r287";
 
-const VERSION = "2026-07-08-print-matrix-r286";
+const VERSION = "2026-07-09-print-overview-fill-r287";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1290,6 +1297,29 @@ function titleRowHtml(title, left="", right="") { return `<div class="print-titl
 function pageForEntity(ent) { const title=`${ent.label} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
 function overviewTitle() { return targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; }
 function chunkList(list, size) { const out=[]; for(let i=0;i<list.length;i+=size) out.push(list.slice(i,i+size)); return out; }
+function balancedChunkList(list, maxSize) {
+  const arr = Array.isArray(list) ? list : [];
+  const max = Math.max(1, Number(maxSize) || 1);
+  const pageCount = Math.max(1, Math.ceil(arr.length / max));
+  const out = [];
+  let idx = 0;
+  for (let page = 0; page < pageCount; page++) {
+    const remain = arr.length - idx;
+    const remainPages = pageCount - page;
+    const take = Math.ceil(remain / remainPages);
+    out.push(arr.slice(idx, idx + take));
+    idx += take;
+  }
+  return out;
+}
+function overviewRowMetrics(rowCount=1) {
+  const n = Math.max(1, Number(rowCount) || 1);
+  const printableHmm = paperOrientation() === "portrait" ? 262 : 182;
+  const printableHpx = paperOrientation() === "portrait" ? 980 : 650;
+  const rowMm = Math.max(10, Math.min(34, printableHmm / n));
+  const rowPx = Math.max(38, Math.min(86, printableHpx / n));
+  return { rowMm: rowMm.toFixed(2), rowPx: rowPx.toFixed(1) };
+}
 function overviewSubject(item, settings) {
   const special = specialLabelForItem(item, settings.specialSubjects || []);
   if (special) return special;
@@ -1320,7 +1350,7 @@ function overviewRowsPerPage() {
 }
 function overviewFullPages(ents) {
   const labels=periodLabels();
-  const rowGroups=chunkList(ents, overviewRowsPerPage());
+  const rowGroups=balancedChunkList(ents, overviewRowsPerPage());
   const allEntries=visibleEntriesForScope();
   const pageClass=paperClass();
   const fontClass=collectSettings().fontScale;
@@ -1338,13 +1368,15 @@ function overviewFullPages(ents) {
     const left = headerLeftText("Handong International School");
     const right = headerRightText(`선택 대상 ${ents.length}개`);
     const fitClass = targetType() === "class" ? "class-overview-fit9" : "";
-    pages.push(`<section class="preview-page overview overview-wide ${fitClass} ${pageClass} ${fontClass}">${titleRowHtml(title,left,right)}<table class="tt-table overview-full-days">${colgroup}<thead><tr><th rowspan="2" class="corner-cell"></th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`);
+    const rowMetrics = overviewRowMetrics(group.length);
+    const rowStyle = targetType() === "class" ? ` style="--overview-rows:${group.length};--overview-row-mm:${rowMetrics.rowMm}mm;--overview-row-px:${rowMetrics.rowPx}px"` : "";
+    pages.push(`<section class="preview-page overview overview-wide ${fitClass} ${pageClass} ${fontClass}"${rowStyle}>${titleRowHtml(title,left,right)}<table class="tt-table overview-full-days">${colgroup}<thead><tr><th rowspan="2" class="corner-cell"></th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`);
   });
   return pages;
 }
 function overviewDayPages(ents) {
   const labels=periodLabels();
-  const rowGroups=chunkList(ents, overviewRowsPerPage());
+  const rowGroups=balancedChunkList(ents, overviewRowsPerPage());
   const allEntries=visibleEntriesForScope();
   const pageClass=paperClass();
   const fontClass=collectSettings().fontScale;
