@@ -521,7 +521,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r271</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r272</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -588,11 +588,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r271";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r271";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r271";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r272";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r272";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r272";
 
-const VERSION = "2026-07-07-print-designer-r271";
+const VERSION = "2026-07-07-print-designer-r272";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1354,15 +1354,29 @@ function zipStore(files) {
   const end=concatU8([le32(0x06054b50),le16(0),le16(0),le16(files.length),le16(files.length),le32(centralSize),le32(offset),le16(0)]);
   return new Blob([concatU8([...locals,...centrals,end])], {type:"application/zip"});
 }
-function officeTextFrom(el) { return clean(el?.innerText || el?.textContent || ""); }
+function officeProtectText(value="") {
+  let s = clean(value).replace(/\s+/g, " ").trim();
+  // Office는 좁은 셀에서 아주 짧은 단어도 문자 단위로 끊는 경우가 있어, 자주 깨지는 패턴은 붙여 둡니다.
+  s = s.replace(/영어\s+I\b/g, "영어\u00a0I")
+       .replace(/English\s+11\b/g, "English\u00a011")
+       .replace(/기본한국어\s*([0-9]+)/g, "기본한국어$1")
+       .replace(/삶과\s+종교\s*([0-9]+)/g, "삶과\u00a0종교$1")
+       .replace(/스포츠생활\s*([0-9]+)/g, "스포츠생활$1")
+       .replace(/체육\s*([0-9]+)/g, "체육$1")
+       .replace(/\[\s*/g, "[").replace(/\s*\]/g, "]")
+       .replace(/\(\s+/g, "(").replace(/\s+\)/g, ")");
+  return s;
+}
+function officeTextFrom(el) { return officeProtectText(el?.innerText || el?.textContent || ""); }
 function officeCardFromMini(card) {
   const subject = officeTextFrom(card.querySelector(".field-subject,.compact-subject"));
   const english = officeTextFrom(card.querySelector(".field-english-inline,.field-english,.compact-sub"));
   const teacher = officeTextFrom(card.querySelector(".field-teacher"));
   const room = officeTextFrom(card.querySelector(".field-room,.compact-meta"));
   const cls = officeTextFrom(card.querySelector(".field-class"));
-  const lines = [subject, english, teacher, room, cls].filter(Boolean);
-  return { subject, english, teacher, room, className: cls, lines };
+  const meta = [teacher, room, cls].filter(Boolean).join(" · ");
+  const lines = [subject, english, meta].filter(Boolean);
+  return { subject, english, teacher, room, className: cls, meta, lines };
 }
 function officeCardsFromCell(cell) {
   const minis = [...cell.querySelectorAll(".mini-card")];
@@ -1371,14 +1385,22 @@ function officeCardsFromCell(cell) {
     if (cards.length) return cards;
   }
   const txt=(cell.innerText||"").replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").trim();
-  return txt ? [{subject:"", english:"", teacher:"", room:"", className:"", lines:txt.split(/\n+/).filter(Boolean)}] : [];
+  return txt ? [{subject:"", english:"", teacher:"", room:"", className:"", meta:"", lines:txt.split(/\n+/).map(officeProtectText).filter(Boolean)}] : [];
 }
-function officeCellText(cell) {
+function officeLinesForCard(card, count=1, kind="excel") {
+  const subject = officeProtectText(card.subject || "");
+  const english = officeProtectText(card.english || "");
+  const meta = officeProtectText(card.meta || [card.teacher, card.room, card.className].map(officeProtectText).filter(Boolean).join(" · "));
+  if (count >= 3) return [subject, meta].filter(Boolean);
+  if (count === 2) return [subject, english, meta].filter(Boolean);
+  return [subject, english, meta].filter(Boolean);
+}
+function officeCellText(cell, kind="excel") {
   if (!cell) return "";
   if (cell.header) return cell.text || "";
   const cards = Array.isArray(cell.cards) ? cell.cards : [];
   if (!cards.length) return cell.text || "";
-  return cards.map(c => c.lines.filter(Boolean).join("\n")).join("\n");
+  return cards.map(c => officeLinesForCard(c, cards.length, kind).join("\n")).join("\n");
 }
 function officeLineCount(cell) {
   return Math.max(1, officeCellText(cell).split(/\n/).filter(Boolean).length);
@@ -1434,7 +1456,7 @@ function buildXlsxBlob(models) {
   files.push({name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`});
   files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${models.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${models.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
   files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
-  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="8"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="5.5"/><name val="Malgun Gothic"/></font><font><b/><sz val="5.5"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
+  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="8"/><name val="Malgun Gothic"/></font><font><b/><sz val="8"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="6.5"/><name val="Malgun Gothic"/></font><font><b/><sz val="6.5"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
   models.forEach((m,idx)=>{
     const colCount=Math.max(1,m.cols||1);
     const overview = layoutMode()==="overview" || /전체표/.test(m.title||"");
@@ -1456,12 +1478,12 @@ function buildXlsxBlob(models) {
         }
       });
       const headerRow = r < (overview ? 2 : 1);
-      const bodyHeight = overview ? Math.min(46, Math.max(24, maxLines*5.8)) : Math.min(116, Math.max(72, maxLines*6.2));
+      const bodyHeight = overview ? Math.min(46, Math.max(24, maxLines*5.8)) : Math.min(96, Math.max(62, maxLines*6.8));
       rows.push({height:headerRow?(overview?13:16):bodyHeight,cells});
     });
     m.merges.forEach(x=>merges.push({r1:x.r1+2,c1:x.c1,r2:x.r2+2,c2:x.c2}));
-    const colWidth = overview ? 4.2 : 18.2;
-    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?(overview?4.5:5.5):colWidth}" customWidth="1"/>`).join("");
+    const colWidth = overview ? 4.2 : 19.8;
+    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?(overview?4.5:4.2):colWidth}" customWidth="1"/>`).join("");
     const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
     const mergeXml=merges.length?`<mergeCells count="${merges.length}">${merges.map(x=>`<mergeCell ref="${colName(x.c1)}${x.r1}:${colName(x.c2)}${x.r2}"/>`).join("")}</mergeCells>`:"";
     const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
@@ -1503,30 +1525,26 @@ function wordCellBody(text="", opts={}, sz=12) {
     const multi = cards.length > 1;
     const dense = cards.length >= 3;
     const veryDense = cards.length >= 4;
-    const subjectSz = veryDense ? 6 : (dense ? 7 : Math.max(8, Math.min(13, sz + (multi ? 0 : 1))));
-    const subSz = veryDense ? 5 : (dense ? 5 : Math.max(6, subjectSz - 3));
+    const subjectSz = veryDense ? 6 : (dense ? 7 : Math.max(9, Math.min(13, sz + (multi ? 0 : 1))));
+    const subSz = veryDense ? 0 : (dense ? 0 : Math.max(6, subjectSz - 3));
     const metaSz = veryDense ? 5 : (dense ? 5 : Math.max(6, subjectSz - 2));
-    const line = veryDense ? 70 : (dense ? 78 : Math.max(95, Math.min(138, subjectSz*12)));
+    const line = veryDense ? 64 : (dense ? 72 : Math.max(92, Math.min(132, subjectSz*11)));
     return cards.map((card,idx)=>{
       const parts=[];
-      const subj=clean(card.subject);
-      const eng=clean(card.english);
-      const meta=[card.teacher, card.room, card.className].map(clean).filter(Boolean).join(" · ");
-      if (dense) {
-        if (subj) parts.push(wPara(subj,{bold:true,align:"center",size:subjectSz,line,noBreak:subj.length<=12}));
-        if (eng) parts.push(wPara(eng,{align:"center",size:subSz,line:Math.max(64,line-6),color:"475569",noBreak:eng.length<=22}));
-        if (meta) parts.push(wPara(meta,{align:"center",size:metaSz,line:Math.max(64,line-6),noBreak:meta.length<=24}));
-      } else {
-        if (subj) parts.push(wPara(subj,{bold:true,align:"center",size:subjectSz,line,noBreak:subj.length<=14}));
-        if (eng) parts.push(wPara(eng,{align:"center",size:subSz,line:Math.max(84,line-10),color:"475569",noBreak:eng.length<=20}));
-        if (meta) parts.push(wPara(meta,{bold:false,align:"center",size:metaSz,line:Math.max(84,line-8),noBreak:meta.length<=22}));
-        if (multi && idx < cards.length-1) parts.push(wPara("────",{align:"center",size:3,line:45,color:"CBD5E1"}));
-      }
+      const lines = officeLinesForCard(card, cards.length, "word");
+      const subj = lines[0] || "";
+      const eng = (!dense && lines.length >= 3) ? lines[1] : "";
+      const meta = dense ? (lines[1] || "") : (lines.length >= 3 ? lines[2] : lines[1] || "");
+      if (subj) parts.push(wPara(subj,{bold:true,align:"center",size:subjectSz,line,noBreak:subj.length<=16}));
+      if (eng) parts.push(wPara(eng,{align:"center",size:subSz,line:Math.max(78,line-10),color:"475569",noBreak:eng.length<=24}));
+      if (meta) parts.push(wPara(meta,{align:"center",size:metaSz,line:Math.max(64,line-8),noBreak:meta.length<=30}));
+      if (multi && !dense && idx < cards.length-1) parts.push(wPara("─",{align:"center",size:3,line:32,color:"CBD5E1"}));
       return parts.join("");
     }).join("");
   }
-  return wPara(text,{bold:opts.header,align:"center",size:sz,line:Math.max(100, Math.min(150, sz*12))});
+  return wPara(officeProtectText(text),{bold:opts.header,align:"center",size:sz,line:Math.max(100, Math.min(150, sz*12)),noBreak:String(text||"").length<=18});
 }
+
 function wCell(text="", opts={}) {
   const span=opts.colspan>1?`<w:gridSpan w:val="${opts.colspan}"/>`:"";
   const fill=opts.header?`<w:shd w:fill="F1F5F9"/>`:"";
