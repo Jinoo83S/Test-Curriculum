@@ -486,7 +486,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .field-subject-group{max-width:99%!important;width:99%!important}
 .card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
 
-/* r269: Excel/Word office export helpers */
+/* r270: Excel/Word office export helpers */
 .office-export-root .preview-page{box-shadow:none!important;border:0!important;margin:0 0 18px!important;padding:10px!important;page-break-after:always;break-after:page;width:auto!important;min-height:auto!important}
 .office-export-root .preview-page:last-child{page-break-after:auto;break-after:auto}
 .office-export-root .preview-page h3{font-size:18px;margin:0 0 6px;text-align:center}
@@ -496,7 +496,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .office-export-root .mini-card{position:relative;border:0!important;background:#fff;min-height:18px;padding:1px!important;overflow:hidden}
 
 
-/* r269: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
+/* r270: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
 @media print{
   @page{size:297mm 210mm;margin:5mm}
   html,body{height:auto!important;min-height:0!important;overflow:visible!important}
@@ -506,13 +506,22 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   .preview-page:empty{display:none!important}
 }
 
+
+/* r270: 제목 메타 좌/우 배치 및 출력 종류 패널 정리 */
+.print-title-row{display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:8px;margin:0 0 8px}
+.print-title-row h3{grid-column:2;margin:0;text-align:center;font-size:22px;line-height:1.12}
+.title-note{font-size:12px;color:#64748b;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.title-note-left{text-align:left}.title-note-right{text-align:right}
+.note-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px}.note-fields .field{margin-bottom:0}.note-fields input{height:30px;border:1px solid #cbd5e1;border-radius:8px;padding:4px 8px;font-size:12px}
+@media print{.print-title-row{margin-bottom:2mm}.print-title-row h3{font-size:16px}.title-note{font-size:8.5px}}
+.office-export-root .print-title-row{margin-bottom:6px}.office-export-root .print-title-row h3{font-size:18px}.office-export-root .title-note{font-size:10px;color:#334155}
 </style>
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r269</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r270</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -527,9 +536,9 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
       <div class="field"><span>출력 대상</span><select id="outputKind"><option value="class:individual">학급 - 개별</option><option value="class:overview">학급 - 전체</option><option value="teacher:individual">교사 - 개별</option><option value="teacher:overview">교사 - 전체</option><option value="room:individual">교실 - 개별</option><option value="room:overview">교실 - 전체</option><option value="student:individual">학생 - 개별</option></select></div>
       <select id="targetType" class="hidden"><option value="class">학급</option><option value="student">학생</option><option value="teacher">교사</option><option value="room">교실</option></select><select id="layoutMode" class="hidden"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select>
       <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="excel">Excel</option><option value="word">Word</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
-      <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div><div class="font-help">현재 기본은 Windows/브라우저 시스템 글꼴입니다. 글꼴 파일을 넣지는 않고, PC에 설치된 글꼴을 우선 사용합니다.</div>
+      <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div>
+      <div class="note-fields"><div class="field"><span>제목 왼쪽</span><input id="headerLeft" type="text" placeholder="자동: 학년/대상"></div><div class="field"><span>제목 오른쪽</span><input id="headerRight" type="text" placeholder="자동: 날짜"></div></div>
       <div class="field"><span>미리보기 범위</span><select id="previewMode"><option value="sample">샘플 1개만 빠르게 보기</option><option value="selected">선택 대상 전체 미리보기</option></select></div>
-      <div class="hint">기본은 샘플 1개만 표시합니다. 인쇄는 선택 대상 전체로 진행됩니다.</div>
       
     </div></section>
 
@@ -578,11 +587,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r269";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r269";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r269";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r270";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r270";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r270";
 
-const VERSION = "2026-07-07-print-designer-r269";
+const VERSION = "2026-07-07-print-designer-r270";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -743,7 +752,7 @@ function lastProfileKey() {
 function defaultFieldSettings() { return Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos,font:"normal",fontPx:""}])); }
 function normalizeFields(raw) { const base=defaultFieldSettings(); if (raw && typeof raw === "object") FIELD_DEFS.forEach(f=>{ base[f.key]={...base[f.key], ...(raw[f.key]||{})}; }); return base; }
 function normalizeSplitFields(raw, fallbackFields=null) { const fallback=normalizeFields(fallbackFields); const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]=normalizeFields(raw?.[k] || fallback); }); return out; }
-function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", fontMode:"system", previewMode:"sample", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
+function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", fontMode:"system", previewMode:"sample", headerLeft:"", headerRight:"", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
 function readStore() { try { return JSON.parse(localStorage.getItem(STORE_KEY)||"{}"); } catch { return {}; } }
 function writeStore(store) { try { localStorage.setItem(STORE_KEY, JSON.stringify(store||{})); } catch {} }
 function getSettings() { const store = readStore(); return {...defaultSettings(), ...(store[profileKey()]||{})}; }
@@ -782,8 +791,8 @@ function applySplitFontPresetToControls(font) {
 
 function syncActiveFieldDraft() { if (!splitFieldDraft) splitFieldDraft = normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); }
 function syncActiveStyleDraft() { if (!splitFieldStyleDraft) splitFieldStyleDraft = normalizeSplitStyles(null); const k=String(activeSplitTab||"1"); splitFieldStyleDraft[k] = { ...(splitFieldStyleDraft[k]||SPLIT_DEFAULTS[k]), font: $("splitFont"+k)?.value || SPLIT_DEFAULTS[k].font, layout: $("splitLayout"+k)?.value || SPLIT_DEFAULTS[k].layout, clip: !!$("ellipsisMode")?.checked }; }
-function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:$("paper").value, fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
-function saveSettings() { if (applying) return; syncActiveFieldDraft(); const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, fontMode:s.fontMode, previewMode:s.previewMode, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); renderPreview(); }
+function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:$("paper").value, fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
+function saveSettings() { if (applying) return; syncActiveFieldDraft(); const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ paper:s.paper, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); renderPreview(); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
@@ -801,6 +810,8 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   if ($("fontMode")) $("fontMode").value=s.fontMode || "system";
   applyFontMode(s.fontMode || "system");
   if($("previewMode")) $("previewMode").value=s.previewMode || "sample";
+  if($("headerLeft")) $("headerLeft").value=s.headerLeft || "";
+  if($("headerRight")) $("headerRight").value=s.headerRight || "";
   if($("cellLayout")) $("cellLayout").value="auto";
   if($("applyMode")) $("applyMode").value=s.applyMode || "card";
   if($("fontScale")) $("fontScale").value=s.fontScale || "normal";
@@ -1132,7 +1143,12 @@ function cellHtml(cellItems) {
 }
 function tableForEntity(ent) { const labels=periodLabels(); const rows = labels.map((plabel,pidx)=>`<tr><th>${esc(plabel)}</th>${DAYS.map((d,day)=>{ const items=visibleEntriesForScope().filter(e=>e.day===day && e.period===pidx && ent.match(e)).flatMap(e=>entryItems(e,ent,plabel)); return `<td>${cellHtml(items)}</td>`; }).join("")}</tr>`).join(""); return `<table class="tt-table"><thead><tr><th></th>${DAYS.map(d=>`<th>${d}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table>`; }
 function paperClass() { return ($("paper")?.value || "a4-landscape") === "a4-portrait" ? "paper-portrait" : "paper-landscape"; }
-function pageForEntity(ent) { return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}"><h3>${esc(ent.label)} 시간표</h3><div class="preview-sub">${esc(ent.sub||"")} · ${new Date().toLocaleDateString("ko-KR")}</div>${tableForEntity(ent)}</section>`; }
+
+function todayLabel() { return new Date().toLocaleDateString("ko-KR"); }
+function headerLeftText(defaultText="") { const v=clean($("headerLeft")?.value || ""); return v || clean(defaultText); }
+function headerRightText(defaultText="") { const v=clean($("headerRight")?.value || ""); return v || clean(defaultText || todayLabel()); }
+function titleRowHtml(title, left="", right="") { return `<div class="print-title-row"><div class="title-note title-note-left">${esc(left)}</div><h3>${esc(title)}</h3><div class="title-note title-note-right">${esc(right)}</div></div>`; }
+function pageForEntity(ent) { const title=`${ent.label} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
 function overviewTitle() { return targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; }
 function chunkList(list, size) { const out=[]; for(let i=0;i<list.length;i+=size) out.push(list.slice(i,i+size)); return out; }
 function overviewSubject(item, settings) {
@@ -1177,7 +1193,10 @@ function overviewFullPages(ents) {
       return `<td>${overviewCellHtml(items)}</td>`;
     }).join("")).join("")}</tr>`).join("");
     const rowPart = rowGroups.length > 1 ? ` · ${gi+1}/${rowGroups.length}` : "";
-    pages.push(`<section class="preview-page overview overview-wide ${pageClass} ${fontClass}"><h3>${overviewTitle()}${rowPart}</h3><div class="preview-sub">Handong International School · 선택 대상 ${ents.length}개</div><table class="tt-table overview-full-days">${colgroup}<thead><tr><th rowspan="2" class="corner-cell"></th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`);
+    const title = `${overviewTitle()}${rowPart}`;
+    const left = headerLeftText("Handong International School");
+    const right = headerRightText(`선택 대상 ${ents.length}개`);
+    pages.push(`<section class="preview-page overview overview-wide ${pageClass} ${fontClass}">${titleRowHtml(title,left,right)}<table class="tt-table overview-full-days">${colgroup}<thead><tr><th rowspan="2" class="corner-cell"></th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`);
   });
   return pages;
 }
@@ -1368,7 +1387,7 @@ function tableToGrid(table) {
       while(occupied[r][c]) c++;
       const rs=Math.max(1, Number(cell.rowSpan)||1), cs=Math.max(1, Number(cell.colSpan)||1);
       const txt=(cell.innerText||"").replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").trim();
-      grid[r][c]={ text:txt, cards:officeCardsFromCell(cell), header: cell.tagName === "TH" || r < 2, colspan:cs, rowspan:rs };
+      grid[r][c]={ text:txt, cards:officeCardsFromCell(cell), header: cell.tagName === "TH" || !!cell.closest?.("thead"), colspan:cs, rowspan:rs };
       if (rs>1 || cs>1) merges.push({r1:r+1,c1:c+1,r2:r+rs,c2:c+cs});
       for(let rr=r; rr<r+rs; rr++){ if(!occupied[rr]) occupied[rr]=[]; if(!grid[rr]) grid[rr]=[]; for(let cc=c; cc<c+cs; cc++){ occupied[rr][cc]=true; if (rr!==r || cc!==c) grid[rr][cc]=grid[rr][cc]||null; } }
       c += cs;
@@ -1388,10 +1407,12 @@ function sheetModelsFromPreview() {
   const pages = pagesForExport();
   return pages.map((page,idx)=>{
     const title = clean(page.querySelector("h3")?.innerText || `시간표${idx+1}`);
-    const sub = clean(page.querySelector(".preview-sub")?.innerText || "");
+    const leftNote = clean(page.querySelector(".title-note-left")?.innerText || "");
+    const rightNote = clean(page.querySelector(".title-note-right")?.innerText || "");
+    const sub = [leftNote, rightNote].filter(Boolean).join(" · ");
     const table = page.querySelector("table");
     const t = table ? tableToGrid(table) : {grid:[], merges:[], cols:1};
-    return {title, sub, ...t};
+    return {title, sub, leftNote, rightNote, ...t};
   });
 }
 function sheetName(name, used=new Set()) {
@@ -1413,10 +1434,11 @@ function buildXlsxBlob(models) {
     const colCount=Math.max(1,m.cols||1);
     const overview = layoutMode()==="overview" || /전체표/.test(m.title||"");
     const merges=[]; const rows=[];
-    rows.push({height:20,cells:[{c:1,text:m.title,style:2}]});
-    rows.push({height:14,cells:[{c:1,text:m.sub,style:3}]});
+    const titleStart = colCount >= 3 ? 2 : 1;
+    const titleEnd = colCount >= 3 ? colCount-1 : colCount;
+    rows.push({height:22,cells:[{c:1,text:m.leftNote||"",style:3},{c:titleStart,text:m.title,style:2},{c:colCount,text:m.rightNote||"",style:3}]});
     rows.push({height:4,cells:[]});
-    if (colCount>1) { merges.push({r1:1,c1:1,r2:1,c2:colCount}); merges.push({r1:2,c1:1,r2:2,c2:colCount}); }
+    if (titleEnd > titleStart) merges.push({r1:1,c1:titleStart,r2:1,c2:titleEnd});
     m.grid.forEach((row,r)=>{
       const cells=[]; let maxLines=1; let maxLen=0;
       row.forEach((cell,c)=>{
@@ -1428,10 +1450,11 @@ function buildXlsxBlob(models) {
           cells.push({c:c+1,text,style:cell.header?(overview?5:1):(dense?4:0)});
         }
       });
-      const bodyHeight = overview ? Math.min(46, Math.max(24, maxLines*5.8)) : Math.min(108, Math.max(62, maxLines*6.4));
-      rows.push({height:r<2?(overview?13:16):bodyHeight,cells});
+      const headerRow = r < (overview ? 2 : 1);
+      const bodyHeight = overview ? Math.min(46, Math.max(24, maxLines*5.8)) : Math.min(116, Math.max(72, maxLines*6.2));
+      rows.push({height:headerRow?(overview?13:16):bodyHeight,cells});
     });
-    m.merges.forEach(x=>merges.push({r1:x.r1+3,c1:x.c1,r2:x.r2+3,c2:x.c2}));
+    m.merges.forEach(x=>merges.push({r1:x.r1+2,c1:x.c1,r2:x.r2+2,c2:x.c2}));
     const colWidth = overview ? 4.2 : 18.2;
     const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?(overview?4.5:5.5):colWidth}" customWidth="1"/>`).join("");
     const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
@@ -1524,10 +1547,24 @@ function wordTableXml(model) {
   }).join("");
   return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${Array.from({length:colCount},()=>`<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
 }
+
+function wordHeaderRowXml(model) {
+  const left = model.leftNote || "";
+  const right = model.rightNote || "";
+  const tblW = 16080;
+  const sideW = 3600;
+  const centerW = tblW - sideW*2;
+  const row = `<w:tr><w:trPr><w:trHeight w:val="280" w:hRule="exact"/></w:trPr>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(left,{align:"left",size:10,line:120,color:"475569",noBreak:left.length<=26})}</w:tc>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${centerW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(model.title,{bold:true,align:"center",size:20,line:220,noBreak:true})}</w:tc>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(right,{align:"right",size:10,line:120,color:"475569",noBreak:right.length<=26})}</w:tc>` +
+    `</w:tr>`;
+  return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="${sideW}"/><w:gridCol w:w="${centerW}"/><w:gridCol w:w="${sideW}"/></w:tblGrid>${row}</w:tbl>`;
+}
 function buildDocxBlob(models) {
   const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
   const pgW = portrait ? 11906 : 16838, pgH = portrait ? 16838 : 11906;
-  const body = models.map((m,i)=>`${i?'<w:p><w:r><w:br w:type="page"/></w:r></w:p>':""}${wPara(m.title,{bold:true,align:"center",size:20,line:220})}${wPara(m.sub,{align:"center",size:12,line:150})}${wordTableXml(m)}`).join("");
+  const body = models.map((m,i)=>`${i?'<w:p><w:r><w:br w:type="page"/></w:r></w:p>':""}${wordHeaderRowXml(m)}${wordTableXml(m)}`).join("");
   const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="${pgW}" w:h="${pgH}"${portrait?"":" w:orient=\"landscape\""}/><w:pgMar w:top="180" w:right="180" w:bottom="180" w:left="180" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
   const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/><w:sz w:val="12"/><w:szCs w:val="12"/></w:rPr><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:style></w:styles>`;
   const settings=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:defaultTabStop w:val="720"/></w:settings>`;
@@ -1611,7 +1648,7 @@ function runMainExport() {
   setTimeout(()=>window.print(), 80);
 }
 function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addEventListener("change", switchProfile)); $("format")?.addEventListener("change",()=>{ updateExportButtonLabel(); markDirty("출력 형식 변경됨"); }); document.body.addEventListener("change", e=>{ if (applying) return; if (targetType() === "student" && e.target.matches('[data-scope-key]')) { document.querySelectorAll('[data-scope-key]').forEach(el=>{ if (el !== e.target) el.checked = false; }); e.target.checked = true; const radio=document.querySelector('input[name="scope"][value="custom"]'); if (radio) radio.checked=true; }
- if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+ if (e.target.matches('input,select')) { if (e.target.id === "paper") { applyPaper(e.target.value); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); renderPreview(); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click", renderPreview); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
 function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); renderPreview(); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
