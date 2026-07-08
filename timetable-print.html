@@ -486,7 +486,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .field-subject-group{max-width:99%!important;width:99%!important}
 .card-layout-compact,.card-layout-simple,.card-layout-subject{padding:1px!important}
 
-/* r267: Excel/Word office export helpers */
+/* r268: Excel/Word office export helpers */
 .office-export-root .preview-page{box-shadow:none!important;border:0!important;margin:0 0 18px!important;padding:10px!important;page-break-after:always;break-after:page;width:auto!important;min-height:auto!important}
 .office-export-root .preview-page:last-child{page-break-after:auto;break-after:auto}
 .office-export-root .preview-page h3{font-size:18px;margin:0 0 6px;text-align:center}
@@ -496,7 +496,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 .office-export-root .mini-card{position:relative;border:0!important;background:#fff;min-height:18px;padding:1px!important;overflow:hidden}
 
 
-/* r267: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
+/* r268: PDF/Office export 안정화 - raw CSS 노출 방지, A4 방향 mm 고정, 빈 페이지 방지 */
 @media print{
   @page{size:297mm 210mm;margin:5mm}
   html,body{height:auto!important;min-height:0!important;overflow:visible!important}
@@ -512,7 +512,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r267</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r268</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -526,7 +526,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
     <section class="panel"><h2>출력 종류</h2><div class="body">
       <div class="field"><span>출력 대상</span><select id="outputKind"><option value="class:individual">학급 - 개별</option><option value="class:overview">학급 - 전체</option><option value="teacher:individual">교사 - 개별</option><option value="teacher:overview">교사 - 전체</option><option value="room:individual">교실 - 개별</option><option value="room:overview">교실 - 전체</option><option value="student:individual">학생 - 개별</option></select></div>
       <select id="targetType" class="hidden"><option value="class">학급</option><option value="student">학생</option><option value="teacher">교사</option><option value="room">교실</option></select><select id="layoutMode" class="hidden"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select>
-      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="excel">Excel(.xlsx)</option><option value="word">Word(.docx)</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
+      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="excel">Excel</option><option value="word">Word</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
       <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div><div class="font-help">현재 기본은 Windows/브라우저 시스템 글꼴입니다. 글꼴 파일을 넣지는 않고, PC에 설치된 글꼴을 우선 사용합니다.</div>
       <div class="field"><span>미리보기 범위</span><select id="previewMode"><option value="sample">샘플 1개만 빠르게 보기</option><option value="selected">선택 대상 전체 미리보기</option></select></div>
       <div class="hint">기본은 샘플 1개만 표시합니다. 인쇄는 선택 대상 전체로 진행됩니다.</div>
@@ -578,11 +578,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r267";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r267";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r267";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r268";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r268";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r268";
 
-const VERSION = "2026-07-07-print-designer-r267";
+const VERSION = "2026-07-07-print-designer-r268";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1266,7 +1266,7 @@ function updateExportButtonLabel() {
   const btn = $("printBtn");
   if (!btn) return;
   const f = format();
-  btn.textContent = f === "excel" ? "전체 Excel(.xlsx) 저장" : (f === "word" ? "전체 Word(.docx) 저장" : "전체 PDF 저장/인쇄");
+  btn.textContent = f === "excel" ? "Excel 저장" : (f === "word" ? "Word 저장" : "PDF 저장/인쇄");
 }
 function safeFilePart(value="") {
   return clean(value).replace(/[\\/:*?"<>|]+/g,"_").replace(/\s+/g,"_").slice(0,80) || "시간표";
@@ -1330,6 +1330,35 @@ function zipStore(files) {
   const end=concatU8([le32(0x06054b50),le16(0),le16(0),le16(files.length),le16(files.length),le32(centralSize),le32(offset),le16(0)]);
   return new Blob([concatU8([...locals,...centrals,end])], {type:"application/zip"});
 }
+function officeTextFrom(el) { return clean(el?.innerText || el?.textContent || ""); }
+function officeCardFromMini(card) {
+  const subject = officeTextFrom(card.querySelector(".field-subject,.compact-subject"));
+  const english = officeTextFrom(card.querySelector(".field-english-inline,.field-english,.compact-sub"));
+  const teacher = officeTextFrom(card.querySelector(".field-teacher"));
+  const room = officeTextFrom(card.querySelector(".field-room,.compact-meta"));
+  const cls = officeTextFrom(card.querySelector(".field-class"));
+  const lines = [subject, english, teacher, room, cls].filter(Boolean);
+  return { subject, english, teacher, room, className: cls, lines };
+}
+function officeCardsFromCell(cell) {
+  const minis = [...cell.querySelectorAll(".mini-card")];
+  if (minis.length) {
+    const cards = minis.map(officeCardFromMini).filter(c => c.lines.length);
+    if (cards.length) return cards;
+  }
+  const txt=(cell.innerText||"").replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").trim();
+  return txt ? [{subject:"", english:"", teacher:"", room:"", className:"", lines:txt.split(/\n+/).filter(Boolean)}] : [];
+}
+function officeCellText(cell) {
+  if (!cell) return "";
+  if (cell.header) return cell.text || "";
+  const cards = Array.isArray(cell.cards) ? cell.cards : [];
+  if (!cards.length) return cell.text || "";
+  return cards.map(c => c.lines.filter(Boolean).join("\n")).join("\n");
+}
+function officeLineCount(cell) {
+  return Math.max(1, officeCellText(cell).split(/\n/).filter(Boolean).length);
+}
 function tableToGrid(table) {
   const grid=[]; const merges=[]; const occupied=[];
   [...table.rows].forEach((tr,r)=>{
@@ -1339,7 +1368,7 @@ function tableToGrid(table) {
       while(occupied[r][c]) c++;
       const rs=Math.max(1, Number(cell.rowSpan)||1), cs=Math.max(1, Number(cell.colSpan)||1);
       const txt=(cell.innerText||"").replace(/\u00a0/g," ").replace(/[ \t]+\n/g,"\n").replace(/\n[ \t]+/g,"\n").trim();
-      grid[r][c]={ text:txt, header: cell.tagName === "TH" || r < 2, colspan:cs, rowspan:rs };
+      grid[r][c]={ text:txt, cards:officeCardsFromCell(cell), header: cell.tagName === "TH" || r < 2, colspan:cs, rowspan:rs };
       if (rs>1 || cs>1) merges.push({r1:r+1,c1:c+1,r2:r+rs,c2:c+cs});
       for(let rr=r; rr<r+rs; rr++){ if(!occupied[rr]) occupied[rr]=[]; if(!grid[rr]) grid[rr]=[]; for(let cc=c; cc<c+cs; cc++){ occupied[rr][cc]=true; if (rr!==r || cc!==c) grid[rr][cc]=grid[rr][cc]||null; } }
       c += cs;
@@ -1389,9 +1418,18 @@ function buildXlsxBlob(models) {
     rows.push({height:4,cells:[]});
     if (colCount>1) { merges.push({r1:1,c1:1,r2:1,c2:colCount}); merges.push({r1:2,c1:1,r2:2,c2:colCount}); }
     m.grid.forEach((row,r)=>{
-      const cells=[];
-      row.forEach((cell,c)=>{ if(cell){ const dense = (cell.text||"").length>120 || (cell.text||"").split(/\n/).length>8; cells.push({c:c+1,text:cell.text,style:cell.header?(overview?5:1):(dense?4:0)}); } });
-      rows.push({height:r<2?(overview?13:16):(overview?28:56),cells});
+      const cells=[]; let maxLines=1; let maxLen=0;
+      row.forEach((cell,c)=>{
+        if(cell){
+          const text = officeCellText(cell);
+          maxLines = Math.max(maxLines, officeLineCount(cell));
+          maxLen = Math.max(maxLen, text.length);
+          const dense = text.length>120 || maxLines>8;
+          cells.push({c:c+1,text,style:cell.header?(overview?5:1):(dense?4:0)});
+        }
+      });
+      const bodyHeight = overview ? Math.min(38, Math.max(22, maxLines*5.2)) : Math.min(74, Math.max(48, maxLines*5.8));
+      rows.push({height:r<2?(overview?13:16):bodyHeight,cells});
     });
     m.merges.forEach(x=>merges.push({r1:x.r1+3,c1:x.c1,r2:x.r2+3,c2:x.c2}));
     const colWidth = overview ? 4.2 : 16.5;
@@ -1410,9 +1448,11 @@ function wText(text="") {
 function wPara(text="", opts={}) {
   const bold=opts.bold?"<w:b/>":"";
   const sz=opts.size?`<w:sz w:val="${opts.size}"/><w:szCs w:val="${opts.size}"/>`:"";
+  const color=opts.color?`<w:color w:val="${opts.color}"/>`:"";
+  const noBreak=opts.noBreak?"<w:noBreak/>":"";
   const jc=opts.align?`<w:jc w:val="${opts.align}"/>`:"";
-  const spacing=`<w:spacing w:before="0" w:after="0" w:line="${opts.line||160}" w:lineRule="exact"/>`;
-  return `<w:p><w:pPr>${jc}${spacing}</w:pPr><w:r><w:rPr>${bold}${sz}<w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/></w:rPr>${wText(text)}</w:r></w:p>`;
+  const spacing=`<w:spacing w:before="0" w:after="0" w:line="${opts.line||150}" w:lineRule="exact"/>`;
+  return `<w:p><w:pPr>${jc}${spacing}</w:pPr><w:r><w:rPr>${bold}${sz}${color}${noBreak}<w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/></w:rPr>${wText(text)}</w:r></w:p>`;
 }
 function docxCellSize(text="", header=false, overview=false) {
   if (header) return overview ? 10 : 14;
@@ -1429,13 +1469,32 @@ function docxCellSize(text="", header=false, overview=false) {
   if (lines>7 || len>95) return 11;
   return 13;
 }
+function wordCellBody(text="", opts={}, sz=12) {
+  const cards = Array.isArray(opts.cards) ? opts.cards.filter(c=>c && c.lines && c.lines.length) : [];
+  if (!opts.header && cards.length) {
+    const multi = cards.length > 1;
+    const subjectSz = Math.max(7, Math.min(13, sz + (multi ? 0 : 1)));
+    const subSz = Math.max(6, subjectSz - 3);
+    const metaSz = Math.max(6, subjectSz - 2);
+    const line = Math.max(95, Math.min(140, subjectSz*12));
+    return cards.map((card,idx)=>{
+      const parts=[];
+      if (card.subject) parts.push(wPara(card.subject,{bold:true,align:"center",size:subjectSz,line,noBreak:clean(card.subject).length<=12}));
+      if (card.english) parts.push(wPara(card.english,{align:"center",size:subSz,line:Math.max(90,line-10),color:"475569",noBreak:clean(card.english).length<=18}));
+      const meta=[card.teacher, card.room, card.className].filter(Boolean);
+      if (meta.length) parts.push(wPara(meta.join(" · "),{bold:false,align:"center",size:metaSz,line:Math.max(90,line-8),noBreak:meta.join(" ").length<=18}));
+      if (multi && idx < cards.length-1) parts.push(wPara("────────",{align:"center",size:4,line:70,color:"CBD5E1"}));
+      return parts.join("");
+    }).join("");
+  }
+  return wPara(text,{bold:opts.header,align:"center",size:sz,line:Math.max(100, Math.min(150, sz*12))});
+}
 function wCell(text="", opts={}) {
   const span=opts.colspan>1?`<w:gridSpan w:val="${opts.colspan}"/>`:"";
   const fill=opts.header?`<w:shd w:fill="F1F5F9"/>`:"";
   const sz=opts.size || docxCellSize(text, !!opts.header, !!opts.overview);
-  const line=Math.max(105, Math.min(160, sz*13));
-  const mar=`<w:tcMar><w:top w:w="10" w:type="dxa"/><w:left w:w="10" w:type="dxa"/><w:bottom w:w="10" w:type="dxa"/><w:right w:w="10" w:type="dxa"/></w:tcMar>`;
-  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="center"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wPara(text,{bold:opts.header,align:"center",size:sz,line})}</w:tc>`;
+  const mar=`<w:tcMar><w:top w:w="8" w:type="dxa"/><w:left w:w="8" w:type="dxa"/><w:bottom w:w="8" w:type="dxa"/><w:right w:w="8" w:type="dxa"/></w:tcMar>`;
+  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="center"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wordCellBody(text,opts,sz)}</w:tc>`;
 }
 function wordRowHeight(idx, total, overview=false) {
   if (idx === 0) return overview ? 220 : 300;
@@ -1450,7 +1509,7 @@ function wordTableXml(model) {
   const width=Math.max(420, Math.floor(tblW/colCount));
   const rows=model.grid.map((row,ridx)=>{
     let tcs="";
-    row.forEach(cell=>{ if(cell) tcs += wCell(cell.text,{header:cell.header,colspan:cell.colspan,width,overview}); });
+    row.forEach(cell=>{ if(cell) tcs += wCell(officeCellText(cell),{cards:cell.cards,header:cell.header,colspan:cell.colspan,width,overview}); });
     return `<w:tr><w:trPr><w:trHeight w:val="${wordRowHeight(ridx, model.grid.length, overview)}" w:hRule="exact"/><w:cantSplit/></w:trPr>${tcs}</w:tr>`;
   }).join("");
   return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${Array.from({length:colCount},()=>`<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
