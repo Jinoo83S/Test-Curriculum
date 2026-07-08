@@ -521,7 +521,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r272</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r273</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -588,11 +588,11 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r272";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r272";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r272";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-07-print-designer-r273";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-07-print-designer-r273";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-07-print-designer-r273";
 
-const VERSION = "2026-07-07-print-designer-r272";
+const VERSION = "2026-07-07-print-designer-r273";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1456,14 +1456,14 @@ function buildXlsxBlob(models) {
   files.push({name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`});
   files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${models.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${models.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
   files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
-  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="8"/><name val="Malgun Gothic"/></font><font><b/><sz val="8"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="6.5"/><name val="Malgun Gothic"/></font><font><b/><sz val="6.5"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
+  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="7"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
   models.forEach((m,idx)=>{
     const colCount=Math.max(1,m.cols||1);
     const overview = layoutMode()==="overview" || /전체표/.test(m.title||"");
     const merges=[]; const rows=[];
     const titleStart = colCount >= 3 ? 2 : 1;
     const titleEnd = colCount >= 3 ? colCount-1 : colCount;
-    rows.push({height:22,cells:[{c:1,text:m.leftNote||"",style:3},{c:titleStart,text:m.title,style:2},{c:colCount,text:m.rightNote||"",style:3}]});
+    rows.push({height:24,cells:[{c:1,text:m.leftNote||"",style:3},{c:titleStart,text:m.title,style:2},{c:colCount,text:m.rightNote||"",style:3}]});
     rows.push({height:4,cells:[]});
     if (titleEnd > titleStart) merges.push({r1:1,c1:titleStart,r2:1,c2:titleEnd});
     m.grid.forEach((row,r)=>{
@@ -1478,12 +1478,13 @@ function buildXlsxBlob(models) {
         }
       });
       const headerRow = r < (overview ? 2 : 1);
-      const bodyHeight = overview ? Math.min(46, Math.max(24, maxLines*5.8)) : Math.min(96, Math.max(62, maxLines*6.8));
+      // r273: Excel 인쇄 렌더에서 행 내부 글자가 잘리는 문제를 줄이기 위해 학급-개별 행 높이를 충분히 확보합니다.
+      const bodyHeight = overview ? Math.min(48, Math.max(24, maxLines*6.0)) : Math.min(122, Math.max(78, maxLines*9.0));
       rows.push({height:headerRow?(overview?13:16):bodyHeight,cells});
     });
     m.merges.forEach(x=>merges.push({r1:x.r1+2,c1:x.c1,r2:x.r2+2,c2:x.c2}));
-    const colWidth = overview ? 4.2 : 19.8;
-    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?(overview?4.5:4.2):colWidth}" customWidth="1"/>`).join("");
+    const colWidth = overview ? 4.2 : 23.2;
+    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?(overview?4.5:4.0):colWidth}" customWidth="1"/>`).join("");
     const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
     const mergeXml=merges.length?`<mergeCells count="${merges.length}">${merges.map(x=>`<mergeCell ref="${colName(x.c1)}${x.r1}:${colName(x.c2)}${x.r2}"/>`).join("")}</mergeCells>`:"";
     const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
@@ -1525,19 +1526,21 @@ function wordCellBody(text="", opts={}, sz=12) {
     const multi = cards.length > 1;
     const dense = cards.length >= 3;
     const veryDense = cards.length >= 4;
-    const subjectSz = veryDense ? 6 : (dense ? 7 : Math.max(9, Math.min(13, sz + (multi ? 0 : 1))));
-    const subSz = veryDense ? 0 : (dense ? 0 : Math.max(6, subjectSz - 3));
-    const metaSz = veryDense ? 5 : (dense ? 5 : Math.max(6, subjectSz - 2));
-    const line = veryDense ? 64 : (dense ? 72 : Math.max(92, Math.min(132, subjectSz*11)));
+    // r273: Word는 w:sz가 half-point 단위입니다. r272의 3~4분할 글자(3~3.5pt)가 너무 작아
+    // 실제 출력에서 거의 읽히지 않았으므로, 고밀도 셀도 최소 5pt 내외로 보이게 조정합니다.
+    const subjectSz = veryDense ? 10 : (dense ? 11 : Math.max(10, Math.min(14, sz + (multi ? 0 : 1))));
+    const subSz = veryDense ? 0 : (dense ? 0 : Math.max(7, subjectSz - 3));
+    const metaSz = veryDense ? 8 : (dense ? 8 : Math.max(7, subjectSz - 2));
+    const line = veryDense ? 92 : (dense ? 100 : Math.max(104, Math.min(138, subjectSz*10)));
     return cards.map((card,idx)=>{
       const parts=[];
       const lines = officeLinesForCard(card, cards.length, "word");
       const subj = lines[0] || "";
       const eng = (!dense && lines.length >= 3) ? lines[1] : "";
       const meta = dense ? (lines[1] || "") : (lines.length >= 3 ? lines[2] : lines[1] || "");
-      if (subj) parts.push(wPara(subj,{bold:true,align:"center",size:subjectSz,line,noBreak:subj.length<=16}));
-      if (eng) parts.push(wPara(eng,{align:"center",size:subSz,line:Math.max(78,line-10),color:"475569",noBreak:eng.length<=24}));
-      if (meta) parts.push(wPara(meta,{align:"center",size:metaSz,line:Math.max(64,line-8),noBreak:meta.length<=30}));
+      if (subj) parts.push(wPara(subj,{bold:true,align:"center",size:subjectSz,line,noBreak:subj.length<=24}));
+      if (eng) parts.push(wPara(eng,{align:"center",size:subSz,line:Math.max(78,line-10),color:"475569",noBreak:eng.length<=32}));
+      if (meta) parts.push(wPara(meta,{align:"center",size:metaSz,line:Math.max(64,line-8),noBreak:meta.length<=34}));
       if (multi && !dense && idx < cards.length-1) parts.push(wPara("─",{align:"center",size:3,line:32,color:"CBD5E1"}));
       return parts.join("");
     }).join("");
