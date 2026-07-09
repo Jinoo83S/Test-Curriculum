@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r298</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r299</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-export-ui-clean-r298";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-export-ui-clean-r298";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-export-ui-clean-r298";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-office-matrix-r299";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-office-matrix-r299";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-office-matrix-r299";
 
-const VERSION = "2026-07-09-export-ui-clean-r298";
+const VERSION = "2026-07-09-office-matrix-r299";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1762,17 +1762,132 @@ function pagesForExport() {
   renderPagesFor(allEnts, "출력 전체 · ");
   return [...$("previewInner").querySelectorAll(".preview-page")];
 }
-function sheetModelsFromPreview() {
-  const pages = pagesForExport();
-  return pages.map((page,idx)=>{
-    const title = clean(page.querySelector("h3")?.innerText || `시간표${idx+1}`);
-    const leftNote = clean(page.querySelector(".title-note-left")?.innerText || "");
-    const rightNote = clean(page.querySelector(".title-note-right")?.innerText || "");
-    const sub = [leftNote, rightNote].filter(Boolean).join(" · ");
-    const table = page.querySelector("table");
-    const t = table ? tableToGrid(table) : {grid:[], merges:[], cols:1};
-    return {title, sub, leftNote, rightNote, profile:`${targetType()}:${layoutMode()}`, targetType:targetType(), layoutMode:layoutMode(), ...t};
+function exportMatrixHeaderCell(text="", colspan=1) {
+  return { text: officeProtectText(text), cards: [], header: true, colspan: Math.max(1, Number(colspan) || 1), rowspan: 1 };
+}
+function exportMatrixBlankCell(header=false) {
+  return { text: "", cards: [], header: !!header, colspan: 1, rowspan: 1 };
+}
+function exportMetaForItem(item={}) {
+  const t = targetType();
+  const teacher = officeProtectText(item.teacher || "");
+  const room = officeProtectText(item.room || "");
+  const cls = officeProtectText(item.class || "");
+  if (t === "teacher") return [cls, room].filter(Boolean).join(" · ");
+  if (t === "room") return [cls, teacher].filter(Boolean).join(" · ");
+  return [teacher, room].filter(Boolean).join(" · ");
+}
+function officeCardFromDataItem(item={}) {
+  const subject = officeProtectText(item.subject || "");
+  const english = officeProtectText(item.english || "");
+  const teacher = officeProtectText(item.teacher || "");
+  const room = officeProtectText(item.room || "");
+  const className = officeProtectText(item.class || "");
+  const meta = exportMetaForItem(item);
+  const lines = [subject, english, meta].filter(Boolean);
+  return { subject, english, teacher, room, className, meta, lines, subjectPx: 0, englishPx: 0, metaPx: 0, subjectBold: true, metaBold: false };
+}
+function exportCardsFromItems(items=[]) {
+  const settings = collectSettings();
+  const normalized = collapseSpecialItems(mergeEquivalentItems(items || []), settings);
+  return normalized.map(officeCardFromDataItem).filter(c => c.lines.length);
+}
+function exportMatrixCellFromItems(items=[]) {
+  return { text: "", cards: exportCardsFromItems(items), header: false, colspan: 1, rowspan: 1 };
+}
+function exportItemsForSlot(ent, allEntries, day, periodIndex, periodLabel) {
+  return allEntries.filter(e => e.day === day && e.period === periodIndex && ent.match(e)).flatMap(e => entryItems(e, ent, periodLabel));
+}
+function normalizeExportGrid(grid, cols) {
+  const colCount = Math.max(1, Number(cols) || 1);
+  return (grid || []).map(row => {
+    const out = Array.isArray(row) ? row.slice(0, colCount) : [];
+    for (let i = 0; i < colCount; i++) {
+      const cell = out[i];
+      const span = cell && Number(cell.colspan) > 1 ? Math.min(colCount - i, Number(cell.colspan)) : 1;
+      for (let k = 1; k < span; k++) out[i + k] = null;
+    }
+    for (let i = 0; i < colCount; i++) if (out[i] === undefined) out[i] = exportMatrixBlankCell(false);
+    return out;
   });
+}
+function individualExportMatrix(ent, allEntries=visibleEntriesForScope()) {
+  const labels = periodLabels();
+  const grid = [];
+  grid.push([exportMatrixHeaderCell(""), ...DAYS.map(d => exportMatrixHeaderCell(d))]);
+  labels.forEach((plabel, pidx) => {
+    const row = [exportMatrixHeaderCell(plabel)];
+    DAYS.forEach((_, day) => row.push(exportMatrixCellFromItems(exportItemsForSlot(ent, allEntries, day, pidx, plabel))));
+    grid.push(row);
+  });
+  return {
+    title: `${ent.label} 시간표`,
+    sub: ent.sub || "",
+    leftNote: headerLeftText(ent.sub || ""),
+    rightNote: headerRightText(todayLabel()),
+    profile: `${targetType()}:individual`,
+    targetType: targetType(),
+    layoutMode: "individual",
+    source: "data-matrix",
+    grid: normalizeExportGrid(grid, DAYS.length + 1),
+    merges: [],
+    cols: DAYS.length + 1
+  };
+}
+function overviewExportMatrixPages(ents, allEntries=visibleEntriesForScope()) {
+  const labels = periodLabels();
+  const cols = 1 + DAYS.length * labels.length;
+  const rowGroups = balancedChunkList(ents, overviewRowsPerPage());
+  const pages = [];
+  rowGroups.forEach((group, gi) => {
+    const grid = [];
+    const merges = [];
+    const dayRow = Array.from({ length: cols }, () => undefined);
+    dayRow[0] = exportMatrixHeaderCell("");
+    DAYS.forEach((dayName, day) => {
+      const start = 1 + day * labels.length;
+      dayRow[start] = exportMatrixHeaderCell(dayName, labels.length);
+      if (labels.length > 1) merges.push({ r1: 1, c1: start + 1, r2: 1, c2: start + labels.length });
+    });
+    const periodRow = Array.from({ length: cols }, () => undefined);
+    periodRow[0] = exportMatrixHeaderCell("");
+    DAYS.forEach((_, day) => labels.forEach((plabel, pidx) => { periodRow[1 + day * labels.length + pidx] = exportMatrixHeaderCell(plabel); }));
+    grid.push(dayRow, periodRow);
+    group.forEach(ent => {
+      const row = Array.from({ length: cols }, () => exportMatrixBlankCell(false));
+      row[0] = exportMatrixHeaderCell(ent.label);
+      DAYS.forEach((_, day) => labels.forEach((plabel, pidx) => {
+        row[1 + day * labels.length + pidx] = exportMatrixCellFromItems(exportItemsForSlot(ent, allEntries, day, pidx, plabel));
+      }));
+      grid.push(row);
+    });
+    const part = rowGroups.length > 1 ? ` ${gi + 1}/${rowGroups.length}` : "";
+    pages.push({
+      title: `${overviewTitle()}${part}`,
+      sub: headerLeftText("Handong International School"),
+      leftNote: headerLeftText("Handong International School"),
+      rightNote: headerRightText(""),
+      profile: `${targetType()}:overview`,
+      targetType: targetType(),
+      layoutMode: "overview",
+      source: "data-matrix",
+      grid: normalizeExportGrid(grid, cols),
+      merges,
+      cols
+    });
+  });
+  return pages;
+}
+function sheetModelsFromData() {
+  renderEntityList();
+  const ents = selectedEntities();
+  const allEntries = visibleEntriesForScope();
+  return layoutMode() === "overview" ? overviewExportMatrixPages(ents, allEntries) : ents.map(ent => individualExportMatrix(ent, allEntries));
+}
+function sheetModelsFromPreview() {
+  // r299: Word/Excel은 더 이상 화면 DOM을 해석하지 않고, 시간표 데이터에서 표준 ExportMatrix를 직접 작성합니다.
+  // PDF/미리보기 렌더러와 Office 출력 모델을 분리해야 7개 출력종류 × 가로/세로 × Word/Excel을 안정적으로 확장할 수 있습니다.
+  return sheetModelsFromData();
 }
 function sheetName(name, used=new Set()) {
   let base = clean(name).replace(/[\\/?*\[\]:]/g," ").trim().slice(0,31) || "Sheet";
