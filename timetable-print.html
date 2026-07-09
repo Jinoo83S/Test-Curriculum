@@ -66,6 +66,23 @@
 .card-apply-row .primary{height:32px}.split-config-grid{display:grid;grid-template-columns:44px 1fr 1fr;gap:6px;align-items:center}.split-config-grid b{font-size:12px;color:#334155}.split-config-grid select{height:30px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:12px;padding:2px 5px}.mini-card{--card-font:10px;--print-card-font:7.4px}.mini-card .field-item{font-size:var(--card-font,10px)}.mini-card.card-layout-compact,.mini-card.card-layout-simple,.mini-card.card-layout-subject{display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:1px}.compact-subject{font-weight:900;color:#111827;line-height:1.05;max-width:98%;overflow-wrap:anywhere}.compact-sub{color:#64748b;line-height:1.05;max-width:98%;overflow-wrap:anywhere}.compact-meta{color:#334155;font-weight:800;line-height:1.05;max-width:98%;overflow-wrap:anywhere}.mini-card.card-layout-compact .compact-subject{font-size:calc(var(--card-font,10px) * 1.15)}.mini-card.card-layout-compact .compact-sub,.mini-card.card-layout-compact .compact-meta{font-size:calc(var(--card-font,10px) * .78)}.mini-card.card-layout-simple .compact-subject{font-size:calc(var(--card-font,10px) * 1.2)}.mini-card.card-layout-simple .compact-meta{font-size:calc(var(--card-font,10px) * .82)}.mini-card.card-layout-subject .compact-subject{font-size:calc(var(--card-font,10px) * 1.35)}.special-card .compact-subject{font-size:calc(var(--card-font,10px) * 1.45);letter-spacing:.02em}.apply-needed{background:#fff7ed!important;color:#c2410c!important}
 @media print{.mini-card .field-item{font-size:var(--print-card-font,7.4px)}.mini-card.card-layout-compact .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.15)}.mini-card.card-layout-compact .compact-sub,.mini-card.card-layout-compact .compact-meta{font-size:calc(var(--print-card-font,7.4px) * .78)}.mini-card.card-layout-simple .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.2)}.mini-card.card-layout-simple .compact-meta{font-size:calc(var(--print-card-font,7.4px) * .82)}.mini-card.card-layout-subject .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.35)}}
 
+/* r292: 공식 출력에서는 긴 영문명이 과목명 옆으로 붙거나 잘리는 문제를 방지합니다. */
+.mini-card .field-subject-group{display:flex!important;flex-direction:column!important;align-items:center;justify-content:center;gap:1px;white-space:normal}
+.mini-card .field-subject,.mini-card .field-english-inline,.mini-card .compact-subject,.mini-card .compact-sub,.mini-card .compact-meta{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:keep-all}
+.mini-card .compact-subject,.mini-card .compact-sub,.mini-card .compact-meta,.mini-card .field-subject,.mini-card .field-english-inline{overflow:hidden;text-overflow:clip}
+.mini-card.card-layout-compact .compact-subject,.mini-card.card-layout-simple .compact-subject,.mini-card.card-layout-subject .compact-subject{line-height:1.12}
+.mini-card.card-layout-compact .compact-sub,.mini-card.card-layout-compact .compact-meta{line-height:1.08}
+.lesson-cell.count-1 .mini-card .compact-subject,.lesson-cell.count-1 .mini-card .field-subject{max-width:96%}
+.lesson-cell.count-1 .mini-card .compact-sub,.lesson-cell.count-1 .mini-card .field-english-inline{max-width:94%}
+.lesson-cell.count-2 .mini-card,.lesson-cell.count-3 .mini-card,.lesson-cell.count-4 .mini-card{padding-left:1px!important;padding-right:1px!important}
+.lesson-cell.count-2 .mini-card .compact-subject,.lesson-cell.count-3 .mini-card .compact-subject,.lesson-cell.count-4 .mini-card .compact-subject{font-size:calc(var(--card-font,10px) * 1.03)!important;line-height:1.08}
+.lesson-cell.count-3 .mini-card .compact-meta,.lesson-cell.count-4 .mini-card .compact-meta{font-size:calc(var(--card-font,10px) * .70)!important}
+@media print{
+  .mini-card .field-subject-group{gap:.3mm}
+  .lesson-cell.count-2 .mini-card .compact-subject,.lesson-cell.count-3 .mini-card .compact-subject,.lesson-cell.count-4 .mini-card .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.03)!important}
+  .lesson-cell.count-3 .mini-card .compact-meta,.lesson-cell.count-4 .mini-card .compact-meta{font-size:calc(var(--print-card-font,7.4px) * .70)!important}
+}
+
 
 /* r243: 사이드바 압축 + 상단바 축소 + 작업 스크롤 최소화 */
 .topbar{height:34px;padding:0 8px;gap:7px}.topbar h1{font-size:14px}.badge{height:20px;padding:0 7px;font-size:11px}.status{font-size:11px}.topbar button{height:26px;padding:0 9px;border-radius:8px;font-size:12px}.app{height:calc(100% - 34px);grid-template-columns:280px minmax(420px,1fr) 285px}.sidebar{padding:8px}.panel{border-radius:11px;margin-bottom:8px}.panel h2{padding:7px 9px;font-size:12px}.panel .body{padding:8px}.field{gap:3px;margin-bottom:7px}.field span,.checkrow span{font-size:11px}.field input,.field select{height:29px;border-radius:8px;padding:3px 7px;font-size:12px}.two{gap:6px}.btnrow{gap:5px}.btnrow button,.panel button{height:27px;padding:0 8px;border-radius:8px;font-size:11px}.hint{font-size:11px;line-height:1.3;margin-top:4px}.hint.compact-hide{display:none}.divider{margin:7px 0}.check{min-height:28px;border-radius:9px;padding:4px 7px;font-size:12px}.check input{width:15px;height:15px}.chips{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.chip{padding:6px;border-radius:8px;font-size:12px}.chip input{width:15px;height:15px}.entity-list{max-height:235px;gap:5px}.entity-item{padding:6px;border-radius:8px}.entity-item b{font-size:12px}.entity-item small{font-size:10px}.scope-options{gap:5px}.subject-list{gap:5px;max-height:118px}.subject-list label{font-size:11px}.right-actions{gap:5px;margin-bottom:6px}.right-actions button{height:25px;font-size:11px}.preview-toolbar{height:38px;padding:0 10px}.preview-scroll{padding:16px}.split-config-grid{grid-template-columns:38px 1fr 1fr;gap:4px}.split-config-grid b{font-size:11px}.split-config-grid select{height:26px;border-radius:7px;font-size:11px;padding:1px 4px}.checkrow{grid-template-columns:auto 54px auto 1fr;gap:5px;padding:5px;border-radius:8px;margin-bottom:5px}.checkrow select{height:26px;font-size:11px;padding:1px 4px}.card-apply-row{gap:5px;margin-top:6px}.card-apply-row .primary{height:28px}.saved-pill{height:20px;font-size:10px;padding:0 7px}
@@ -576,7 +593,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r291</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r292</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -643,11 +660,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-print-official-clean-r291";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-print-official-clean-r291";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-print-official-clean-r291";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-print-official-textfit-r292";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-print-official-textfit-r292";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-print-official-textfit-r292";
 
-const VERSION = "2026-07-09-print-official-clean-r291";
+const VERSION = "2026-07-09-print-official-textfit-r292";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1211,9 +1228,35 @@ function entryItems(e, ent, periodLabel) {
   return out;
 }
 function fieldFontStyle(settings={}, key="subject") { const px = fontValueToPx(settings.fontPx || settings.font, key); if (px) return `style="font-size:${px}px"`; const scale = FIELD_FONT_SCALE[settings.font || "normal"] || 1; return `style="font-size:calc(var(--card-font,10px) * ${scale})"`; }
+function isClassOfficialPrint() { return targetType() === "class"; }
+function conciseEnglishLabel(eng="") {
+  const v = clean(eng);
+  if (!v) return "";
+  if (/^(English\s?(10|11|12)|Algebra|Pre-Calculus|Calculus\s?II|Chemistry|Physics|Biology|Music|Art|Chapel|Korean|HR\d?|CA|SA)$/i.test(v)) return v;
+  if (/^[A-Z]{1,4}\d?$/i.test(v)) return v;
+  return "";
+}
+function shouldShowEnglishLabel(item={}, splitCount=1) {
+  const eng = clean(item.english);
+  if (!eng) return false;
+  const subj = clean(item.subject);
+  if (!subj) return true;
+  if (isClassOfficialPrint()) {
+    if (layoutMode() === "overview") return false;
+    if (Number(splitCount || 1) >= 2) return false;
+    return !!conciseEnglishLabel(eng);
+  }
+  return true;
+}
+function englishForCard(item={}, splitCount=1) {
+  const eng = clean(item.english);
+  if (!eng) return "";
+  if (isClassOfficialPrint()) return shouldShowEnglishLabel(item, splitCount) ? (conciseEnglishLabel(eng) || eng) : "";
+  return eng;
+}
 function fieldHtml(item, f, settings) { const v = clean(item[f.key]); if (!v || settings.enabled === false) return ""; return `<span class="field-item field-${f.key} pos-${esc(settings.pos||f.pos)} ${settings.bold?"bold":""}" ${fieldFontStyle(settings, f.key)}>${esc(v)}</span>`; }
-function subjectEnglishHtml(item, fields) { const subjCfg=fields.subject || {}; const engCfg=fields.english || {}; const subj=clean(item.subject); const eng=clean(item.english); const showSubj = subj && subjCfg.enabled !== false; const showEng = eng && engCfg.enabled !== false; if (!showSubj && !showEng) return ""; const pos = subjCfg.pos || "mc"; const bold = subjCfg.bold ? "bold" : ""; return `<span class="field-item field-subject-group pos-${esc(pos)} ${bold}">${showSubj?`<span class="field-subject" ${fieldFontStyle(subjCfg,"subject")}>${esc(subj)}</span>`:""}${showEng?`<span class="field-english-inline ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(eng)}</span>`:""}</span>`; }
-function standardCardHtml(item, fields) { return subjectEnglishHtml(item, fields) + FIELD_DEFS.filter(f=>f.key!=="subject" && f.key!=="english").map(f=>fieldHtml(item,f,fields[f.key]||{})).join(""); }
+function subjectEnglishHtml(item, fields, splitCount=1) { const subjCfg=fields.subject || {}; const engCfg=fields.english || {}; const subj=clean(item.subject); const eng=englishForCard(item, splitCount); const showSubj = subj && subjCfg.enabled !== false; const showEng = eng && engCfg.enabled !== false; if (!showSubj && !showEng) return ""; const pos = subjCfg.pos || "mc"; const bold = subjCfg.bold ? "bold" : ""; return `<span class="field-item field-subject-group pos-${esc(pos)} ${bold}">${showSubj?`<span class="field-subject" ${fieldFontStyle(subjCfg,"subject")}>${esc(subj)}</span>`:""}${showEng?`<span class="field-english-inline ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(eng)}</span>`:""}</span>`; }
+function standardCardHtml(item, fields, splitCount=1) { return subjectEnglishHtml(item, fields, splitCount) + FIELD_DEFS.filter(f=>f.key!=="subject" && f.key!=="english").map(f=>fieldHtml(item,f,fields[f.key]||{})).join(""); }
 function splitStyleFor(count, settings) { const key=String(Math.max(1, Math.min(4, count || 1))); const cfg={...SPLIT_DEFAULTS[key], ...(settings.splitStyles?.[key]||{})}; const font=SPLIT_FONT[cfg.font] || SPLIT_FONT.normal; return { key, cfg, font }; }
 function compactCardHtml(item, cfg, fields=null) {
   const fs = normalizeFields(fields);
@@ -1223,7 +1266,8 @@ function compactCardHtml(item, cfg, fields=null) {
   const roomCfg = fs.room || {};
   const classCfg = fs.class || {};
   const subj = subjCfg.enabled === false ? "" : esc(item.subject);
-  const eng = engCfg.enabled === false || !item.english ? "" : `<div class="compact-sub ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(item.english)}</div>`;
+  const safeEng = englishForCard(item, cfg?.splitCount || 1);
+  const eng = engCfg.enabled === false || !safeEng ? "" : `<div class="compact-sub ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(safeEng)}</div>`;
   const metaParts = [];
   if (teacherCfg.enabled !== false && item.teacher) metaParts.push(item.teacher);
   if (roomCfg.enabled !== false && item.room) metaParts.push(item.room);
@@ -1238,7 +1282,8 @@ function compactCardHtml(item, cfg, fields=null) {
   return `${subjLine}${eng}${meta?`<div class="compact-meta" ${fieldFontStyle(teacherCfg,"teacher")}>${esc(meta)}</div>`:""}`;
 }
 function miniCardDataAttrs(item) {
-  return ` data-subject="${esc(item.subject)}" data-english="${esc(item.english)}" data-teacher="${esc(item.teacher)}" data-room="${esc(item.room)}" data-class="${esc(item.class)}"`;
+  const title = [item.subject, item.english, item.teacher, item.room].map(clean).filter(Boolean).join(" / ");
+  return ` title="${esc(title)}" data-subject="${esc(item.subject)}" data-english="${esc(item.english)}" data-teacher="${esc(item.teacher)}" data-room="${esc(item.room)}" data-class="${esc(item.class)}"`;
 }
 function normSpecial(v) { return clean(v).toLowerCase().replace(/[\s·⋅・_\-\/()\[\]]+/g, ""); }
 function specialMatchValues(item) {
@@ -1277,8 +1322,8 @@ function miniCardHtml(item, fields, splitCount, settings) {
   const layoutClass = `split-${st.key} card-layout-${st.cfg.layout} ${st.cfg.clip ? "clip-text" : "wrap-text"}`;
   const renderItem = specialLabel ? {...item, subject:specialLabel, english:"", teacher:""} : item;
   const layout = st.cfg.layout;
-  if (layout !== "standard") return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}"${miniCardDataAttrs(renderItem)}>${compactCardHtml(renderItem,{...st.cfg,layout}, splitFields)}</div>`;
-  return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}"${miniCardDataAttrs(renderItem)}>${standardCardHtml(renderItem, splitFields)}</div>`;
+  if (layout !== "standard") return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}"${miniCardDataAttrs(renderItem)}>${compactCardHtml(renderItem,{...st.cfg,layout,splitCount:effectiveCount}, splitFields)}</div>`;
+  return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}"${miniCardDataAttrs(renderItem)}>${standardCardHtml(renderItem, splitFields, effectiveCount)}</div>`;
 }
 function collapseSpecialItems(cellItems, settings) {
   const out=[]; const seen=new Set(); const opts=settings.specialSubjects||[];
