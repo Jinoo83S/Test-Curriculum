@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r302</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r304</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-office-layout-profile-r302";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-office-layout-profile-r302";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-office-layout-profile-r302";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-semantic-grid-r304";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-semantic-grid-r304";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-semantic-grid-r304";
 
-const VERSION = "2026-07-09-office-layout-profile-r302";
+const VERSION = "2026-07-10-office-semantic-grid-r304";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -2027,11 +2027,61 @@ function docxCellSize(text="", header=false, overview=false, wideOverview=false)
   if (lines>7 || len>95) return 12;
   return 14;
 }
+function officeTargetFromModel(model=null, fallbackProfile="") {
+  const raw = String(model?.targetType || model?.profile || fallbackProfile || currentOfficeProfile() || "class:individual");
+  return raw.split(":")[0] || "class";
+}
+function officeSemanticPositions(card={}, model=null, fallbackProfile="") {
+  const target = officeTargetFromModel(model, fallbackProfile);
+  const subject = officeProtectText(card.subject || "");
+  const english = officeProtectText(card.english || "");
+  const teacher = officeProtectText(card.teacher || "");
+  const room = officeProtectText(card.room || "");
+  const className = officeProtectText(card.className || card.class || "");
+  if (target === "teacher") return { topLeft:"", topRight:room, bottomLeft:className, bottomRight:"", subject, english };
+  if (target === "room") return { topLeft:"", topRight:teacher, bottomLeft:className, bottomRight:"", subject, english };
+  return { topLeft:"", topRight:room, bottomLeft:teacher, bottomRight:"", subject, english };
+}
+function wNoBorderTcPr(width=400, span=1) {
+  const gridSpan = span > 1 ? `<w:gridSpan w:val="${span}"/>` : "";
+  return `<w:tcPr><w:tcW w:w="${Math.max(1, Math.round(width))}" w:type="dxa"/>${gridSpan}<w:vAlign w:val="center"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="4" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="4" w:type="dxa"/></w:tcMar><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tcBorders></w:tcPr>`;
+}
+function wSemanticTc(paras="", width=400, span=1) {
+  return `<w:tc>${wNoBorderTcPr(width, span)}${paras || wPara("",{size:1,line:18})}</w:tc>`;
+}
+function wSemanticCardGrid(card={}, opts={}, count=1) {
+  const pos = officeSemanticPositions(card, opts.model || { profile: opts.officeProfile || opts.profile }, opts.officeProfile || opts.profile);
+  const totalW = Math.max(1200, Math.round((opts.width || 1600) - 28));
+  const third = Math.floor(totalW / 3);
+  const subjectSize = count >= 2 ? 13 : 15;
+  const englishSize = count >= 2 ? 8 : 9;
+  const metaSize = count >= 2 ? 8 : 9;
+  const topLine = 64;
+  const midLine = count >= 2 ? 92 : 108;
+  const botLine = 64;
+  const topLeft = pos.topLeft ? wPara(pos.topLeft,{align:"left",size:metaSize,line:topLine,color:"475569",noBreak:pos.topLeft.length<=14}) : wPara("",{size:1,line:topLine});
+  const topRight = pos.topRight ? wPara(pos.topRight,{align:"right",size:metaSize,line:topLine,color:"475569",noBreak:pos.topRight.length<=18}) : wPara("",{size:1,line:topLine});
+  const center = [
+    pos.subject ? wPara(pos.subject,{bold:true,align:"center",size:subjectSize,line:midLine,noBreak:pos.subject.length<=30}) : "",
+    pos.english ? wPara(pos.english,{align:"center",size:englishSize,line:Math.max(72, midLine-20),color:"475569",noBreak:pos.english.length<=38}) : ""
+  ].join("") || wPara("",{size:1,line:midLine});
+  const bottomLeft = pos.bottomLeft ? wPara(pos.bottomLeft,{align:"left",size:metaSize,line:botLine,color:"334155",noBreak:pos.bottomLeft.length<=18}) : wPara("",{size:1,line:botLine});
+  const bottomRight = pos.bottomRight ? wPara(pos.bottomRight,{align:"right",size:metaSize,line:botLine,color:"334155",noBreak:pos.bottomRight.length<=18}) : wPara("",{size:1,line:botLine});
+  return `<w:tbl><w:tblPr><w:tblW w:w="${totalW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="${third}"/><w:gridCol w:w="${third}"/><w:gridCol w:w="${totalW - third*2}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="${count>=2?92:118}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(topLeft,third)}${wSemanticTc("",third)}${wSemanticTc(topRight,totalW-third*2)}</w:tr><w:tr><w:trPr><w:trHeight w:val="${count>=2?250:340}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(center,totalW,3)}</w:tr><w:tr><w:trPr><w:trHeight w:val="${count>=2?92:118}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(bottomLeft,third)}${wSemanticTc("",third)}${wSemanticTc(bottomRight,totalW-third*2)}</w:tr></w:tbl>`;
+}
+
 function wordCellBody(text="", opts={}, sz=12) {
   const cards = Array.isArray(opts.cards) ? opts.cards.filter(c=>c && c.lines && c.lines.length) : [];
   if (!opts.header && cards.length) {
     const count = cards.length;
     const overview = !!opts.overview;
+    if (!overview && count <= 2 && cards.some(c => c.subject || c.english || c.teacher || c.room || c.className)) {
+      return cards.map((card, idx) => {
+        const grid = wSemanticCardGrid(card, opts, count);
+        const gap = (count === 2 && idx < count - 1) ? wPara("", { size:1, line:28 }) : "";
+        return grid + gap;
+      }).join("");
+    }
     const dense = count >= 3 || overview;
     const veryDense = count >= 4 || overview;
     const oneCard = count === 1;
@@ -2125,7 +2175,7 @@ function isWideOfficeOverview(model) {
   return isOverviewModel(model) && Number(model?.cols || 0) >= 30;
 }
 function wordModelsForExport(models) {
-  // r302: 전체표 Office 출력은 월~금 전체를 한 표에 둡니다.
+  // r304: r303 과목명 축약은 폐기하고 r302 기준에 셀 내부 의미 격자를 추가합니다. 전체표 Office 출력은 월~금 전체를 한 표에 둡니다.
   // 물리 용지명 대신 LayoutProfile의 가로/세로 비율과 셀 표시 밀도를 따릅니다.
   return models || [];
 }
