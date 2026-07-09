@@ -564,7 +564,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r289</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r290</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -631,11 +631,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-pdf-real-landscape-r288";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-pdf-real-landscape-r288";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-pdf-real-landscape-r288";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-pdf-real-downloadblob-r290";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-pdf-real-downloadblob-r290";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-pdf-real-downloadblob-r290";
 
-const VERSION = "2026-07-09-pdf-real-landscape-r288";
+const VERSION = "2026-07-09-pdf-real-downloadblob-r290";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -2289,7 +2289,7 @@ async function exportPdfReal() {
     const blob = makeImagePdf(jpegList, sizes, orientation);
     const title = safeFilePart($('outputKind')?.selectedOptions?.[0]?.textContent || '시간표');
     const suffix = orientation === 'portrait' ? '세로' : '가로';
-    downloadBlob(blob, `${pdfEscapeName(title)}_${suffix}.pdf`);
+    downloadBlobFile(`${pdfEscapeName(title)}_${suffix}.pdf`, blob);
   } catch (err) {
     console.error('[PDF export failed]', err);
     alert('PDF 직접 저장에 실패했습니다. 브라우저 인쇄 방식으로 다시 시도합니다.');
