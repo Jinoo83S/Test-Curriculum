@@ -544,7 +544,7 @@ body.font-nanum{--print-font:"Nanum Gothic","나눔고딕","Malgun Gothic","맑�
 body.print-portrait #printPageStyle::after{content:""}
 
 
-/* r287: 전체표 하단 여백 보정 - 페이지별 행 수에 따라 표 높이를 채웁니다. */
+/* r288: 전체표 하단 여백 보정 - 페이지별 행 수에 따라 표 높이를 채웁니다. */
 .preview-page.overview-wide.class-overview-fit9{display:flex;flex-direction:column;overflow:hidden}
 .preview-page.overview-wide.class-overview-fit9 .print-title-row{flex:0 0 auto;margin-bottom:4px}
 .preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days{flex:1 1 auto;height:calc(100% - 28px);table-layout:fixed}
@@ -564,7 +564,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r287</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r288</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -631,11 +631,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-print-overview-fill-r287";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-print-overview-fill-r287";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-print-overview-fill-r287";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-pdf-real-landscape-r288";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-pdf-real-landscape-r288";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-pdf-real-landscape-r288";
 
-const VERSION = "2026-07-09-print-overview-fill-r287";
+const VERSION = "2026-07-09-pdf-real-landscape-r288";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1970,6 +1970,140 @@ function buildOfficeHtml(kind="word") {
   const excelMeta = kind === "excel" ? '<meta name="ProgId" content="Excel.Sheet"><meta name="Generator" content="HIS Timetable Export">' : '<meta name="ProgId" content="Word.Document"><meta name="Generator" content="HIS Timetable Export">';
   return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="Section1 office-export-root"><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</div></body></html>`;
 }
+
+function pdfByteStringToUint8(str) {
+  const out = new Uint8Array(str.length);
+  for (let i=0;i<str.length;i++) out[i] = str.charCodeAt(i) & 255;
+  return out;
+}
+function pdfAscii(str) { return new TextEncoder().encode(str); }
+function pdfConcat(parts) {
+  const total = parts.reduce((sum,p)=>sum+p.length,0);
+  const out = new Uint8Array(total);
+  let pos=0;
+  parts.forEach(p=>{ out.set(p,pos); pos+=p.length; });
+  return out;
+}
+function pdfEscapeName(name) { return String(name || 'Timetable').replace(/[\\/?:*"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80) || 'Timetable'; }
+function collectPdfSnapshotCss() {
+  const css = Array.from(document.querySelectorAll('style')).map(st=>st.textContent || '').join('\n');
+  return `${css}\nhtml,body{margin:0!important;padding:0!important;background:#fff!important;overflow:hidden!important}.preview-page{margin:0!important;box-shadow:none!important;border:0!important;page-break-after:auto!important}.topbar,.sidebar,.preview-toolbar{display:none!important}`;
+}
+function inlinePdfExportPage(page, w, h) {
+  const clone = page.cloneNode(true);
+  clone.removeAttribute('id');
+  clone.style.margin = '0';
+  clone.style.boxShadow = 'none';
+  clone.style.border = '0';
+  clone.style.width = w + 'px';
+  clone.style.height = h + 'px';
+  clone.style.maxWidth = w + 'px';
+  clone.style.maxHeight = h + 'px';
+  clone.style.minHeight = h + 'px';
+  clone.style.background = '#fff';
+  return clone;
+}
+async function canvasFromPreviewPage(page, orientation, scale=2) {
+  const isPortrait = orientation === 'portrait';
+  const w = isPortrait ? 794 : 1123;
+  const h = isPortrait ? 1123 : 794;
+  const css = collectPdfSnapshotCss();
+  const clone = inlinePdfExportPage(page, w, h);
+  const xml = new XMLSerializer().serializeToString(clone);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><foreignObject x="0" y="0" width="${w}" height="${h}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${css.replace(/<\//g,'<\\/')}</style>${xml}</div></foreignObject></svg>`;
+  const blob = new Blob([svg], {type:'image/svg+xml;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve,reject)=>{
+      const im = new Image();
+      im.onload=()=>resolve(im);
+      im.onerror=reject;
+      im.src=url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext('2d', {alpha:false});
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+function makeImagePdf(jpegBytesList, imageSizes, orientation) {
+  const landscape = orientation !== 'portrait';
+  const pageW = landscape ? 841.89 : 595.28;
+  const pageH = landscape ? 595.28 : 841.89;
+  let objId = 1;
+  const catalogId = objId++;
+  const pagesId = objId++;
+  const pageIds = [];
+  const imageIds = [];
+  const contentIds = [];
+  for (let i=0;i<jpegBytesList.length;i++) { pageIds.push(objId++); imageIds.push(objId++); contentIds.push(objId++); }
+  const objects = [];
+  objects[catalogId] = pdfAscii(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
+  objects[pagesId] = pdfAscii(`<< /Type /Pages /Kids [${pageIds.map(id=>id+' 0 R').join(' ')}] /Count ${pageIds.length} >>`);
+  for (let i=0;i<jpegBytesList.length;i++) {
+    const imgName = `Im${i+1}`;
+    const content = pdfAscii(`q\n${pageW.toFixed(2)} 0 0 ${pageH.toFixed(2)} 0 0 cm\n/${imgName} Do\nQ`);
+    objects[contentIds[i]] = pdfAscii(`<< /Length ${content.length} >>\nstream\n${new TextDecoder().decode(content)}\nendstream`);
+    const jpeg = jpegBytesList[i];
+    const size = imageSizes[i];
+    objects[imageIds[i]] = pdfConcat([
+      pdfAscii(`<< /Type /XObject /Subtype /Image /Width ${size.w} /Height ${size.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`),
+      jpeg,
+      pdfAscii(`\nendstream`)
+    ]);
+    objects[pageIds[i]] = pdfAscii(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /${imgName} ${imageIds[i]} 0 R >> >> /Contents ${contentIds[i]} 0 R >>`);
+  }
+  const parts=[]; let pos=0; const offsets=[];
+  const add=(b)=>{ parts.push(b); pos+=b.length; };
+  add(pdfByteStringToUint8('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
+  for (let id=1; id<objects.length; id++) {
+    offsets[id]=pos;
+    add(pdfAscii(`${id} 0 obj\n`)); add(objects[id]); add(pdfAscii(`\nendobj\n`));
+  }
+  const xref=pos;
+  add(pdfAscii(`xref\n0 ${objects.length}\n0000000000 65535 f \n`));
+  for (let id=1; id<objects.length; id++) add(pdfAscii(String(offsets[id]).padStart(10,'0') + ' 00000 n \n'));
+  add(pdfAscii(`trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`));
+  return new Blob(parts, {type:'application/pdf'});
+}
+async function exportPdfReal() {
+  if (!dataReady) return;
+  showRenderOverlay('PDF 파일을 생성하는 중입니다…');
+  try {
+    renderEntityList();
+    const allEnts = selectedEntities();
+    renderPagesFor(allEnts, '출력 전체 · ');
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const orientation = paperOrientation();
+    const pages = Array.from(document.querySelectorAll('#previewInner .preview-page'));
+    const jpegList=[]; const sizes=[];
+    for (const page of pages) {
+      const canvas = await canvasFromPreviewPage(page, orientation, 2);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      const bin = atob(dataUrl.split(',')[1] || '');
+      jpegList.push(pdfByteStringToUint8(bin));
+      sizes.push({w:canvas.width, h:canvas.height});
+    }
+    const blob = makeImagePdf(jpegList, sizes, orientation);
+    const title = safeFilePart($('outputKind')?.selectedOptions?.[0]?.textContent || '시간표');
+    const suffix = orientation === 'portrait' ? '세로' : '가로';
+    downloadBlob(blob, `${pdfEscapeName(title)}_${suffix}.pdf`);
+  } catch (err) {
+    console.error('[PDF export failed]', err);
+    alert('PDF 직접 저장에 실패했습니다. 브라우저 인쇄 방식으로 다시 시도합니다.');
+    window.print();
+  } finally {
+    hideRenderOverlay();
+    renderPreview();
+  }
+}
+
 function exportOffice(kind) {
   return exportOfficeReal(kind);
 }
@@ -1977,14 +2111,7 @@ function runMainExport() {
   const f = format();
   if (f === "excel") return exportOffice("excel");
   if (f === "word") return exportOffice("word");
-  if (!dataReady) return;
-  renderEntityList();
-  const allEnts = selectedEntities();
-  renderPagesFor(allEnts, "출력 전체 · ");
-  const restore=()=>{ window.removeEventListener("afterprint", restore); renderPreview(); };
-  window.addEventListener("afterprint", restore);
-  const nextPaper=normalizedPaperValue($("paper")?.value || "a4-landscape"); if ($("paper")) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability();
-  setTimeout(()=>window.print(), 80);
+  return exportPdfReal();
 }
 function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addEventListener("change", switchProfile)); $("format")?.addEventListener("change",()=>{ updateExportButtonLabel(); markDirty("출력 형식 변경됨"); }); document.body.addEventListener("change", e=>{ if (applying) return;
  if (e.target.id === "format") { updateExportButtonLabel(); markDirty("출력 형식 변경됨"); return; }
