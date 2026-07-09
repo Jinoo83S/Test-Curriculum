@@ -564,7 +564,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r288</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r289</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -2003,34 +2003,230 @@ function inlinePdfExportPage(page, w, h) {
   clone.style.background = '#fff';
   return clone;
 }
+
+function pdfCssPx(value, fallback=10) {
+  const n = parseFloat(String(value || '').replace('px',''));
+  return Number.isFinite(n) ? n : fallback;
+}
+function pdfMapRect(rect, baseRect, sx, sy) {
+  return {
+    x: (rect.left - baseRect.left) * sx,
+    y: (rect.top - baseRect.top) * sy,
+    w: rect.width * sx,
+    h: rect.height * sy
+  };
+}
+function pdfMeasureWrappedLines(ctx, text, maxW, maxLines) {
+  text = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!text) return [];
+  const words = text.split(' ');
+  const lines = [];
+  let line = '';
+  const pushCharWrapped = (chunk) => {
+    let cur = '';
+    for (const ch of chunk) {
+      const test = cur + ch;
+      if (ctx.measureText(test).width <= maxW || !cur) cur = test;
+      else { lines.push(cur); cur = ch; if (lines.length >= maxLines) return; }
+    }
+    if (cur && lines.length < maxLines) lines.push(cur);
+  };
+  for (const word of words) {
+    if (!word) continue;
+    const test = line ? line + ' ' + word : word;
+    if (ctx.measureText(test).width <= maxW) {
+      line = test;
+    } else {
+      if (line) lines.push(line);
+      if (lines.length >= maxLines) break;
+      if (ctx.measureText(word).width > maxW) pushCharWrapped(word);
+      else line = word;
+    }
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  return lines.slice(0, maxLines);
+}
+function pdfDrawWrappedText(ctx, text, box, opt={}) {
+  text = String(text || '').trim();
+  if (!text || box.w <= 1 || box.h <= 1) return;
+  const fs = Math.max(opt.minSize || 3.5, Math.min(opt.maxSize || 24, opt.size || 8));
+  const weight = opt.weight || '400';
+  const family = opt.family || '"Malgun Gothic","맑은 고딕",Arial,sans-serif';
+  const color = opt.color || '#111827';
+  const align = opt.align || 'center';
+  const valign = opt.valign || 'middle';
+  const pad = opt.pad ?? Math.max(1, fs * 0.12);
+  const x = box.x + pad, y = box.y + pad, w = Math.max(1, box.w - pad * 2), h = Math.max(1, box.h - pad * 2);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(box.x, box.y, box.w, box.h);
+  ctx.clip();
+  ctx.font = `${weight} ${fs}px ${family}`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = align;
+  const lh = Math.max(fs * 1.12, fs + 0.8);
+  const maxLines = Math.max(1, Math.floor(h / lh));
+  const lines = pdfMeasureWrappedLines(ctx, text, w, maxLines);
+  let yy = y;
+  if (valign === 'middle') yy = y + Math.max(0, (h - lines.length * lh) / 2);
+  else if (valign === 'bottom') yy = y + Math.max(0, h - lines.length * lh);
+  const tx = align === 'left' ? x : (align === 'right' ? x + w : x + w / 2);
+  for (const line of lines) {
+    ctx.fillText(line, tx, yy);
+    yy += lh;
+  }
+  ctx.restore();
+}
+function pdfDrawElementText(ctx, el, pageRect, sx, sy, override={}) {
+  const text = (el.innerText || el.textContent || '').trim();
+  if (!text) return;
+  const rect = pdfMapRect(el.getBoundingClientRect(), pageRect, sx, sy);
+  if (rect.w < 1 || rect.h < 1) return;
+  const st = getComputedStyle(el);
+  const fs = pdfCssPx(st.fontSize, override.size || 8);
+  const weightNum = parseInt(st.fontWeight, 10);
+  const weight = override.weight || (Number.isFinite(weightNum) && weightNum >= 700 ? '700' : (st.fontWeight || '400'));
+  let align = override.align || st.textAlign || 'center';
+  if (align === 'start') align = 'left';
+  if (align === 'end') align = 'right';
+  pdfDrawWrappedText(ctx, text, rect, {
+    size: override.size || fs,
+    weight,
+    color: override.color || st.color || '#111827',
+    align,
+    valign: override.valign || 'middle',
+    pad: override.pad ?? 0.5,
+    minSize: override.minSize || 3.2,
+    maxSize: override.maxSize || 22
+  });
+}
+function pdfDrawTableCellText(ctx, cell, box) {
+  const text = (cell.innerText || cell.textContent || '').trim();
+  if (!text) return;
+  const st = getComputedStyle(cell);
+  const isHead = cell.tagName === 'TH';
+  const fs = pdfCssPx(st.fontSize, isHead ? 8 : 6);
+  pdfDrawWrappedText(ctx, text, box, {
+    size: fs,
+    weight: isHead ? '700' : '500',
+    color: st.color || '#111827',
+    align: 'center',
+    valign: 'middle',
+    pad: 1,
+    minSize: 3.2,
+    maxSize: isHead ? 14 : 11
+  });
+}
+function pdfDrawMiniContent(ctx, root, pageRect, sx, sy) {
+  const leafSelectors = [
+    '.field-subject','.field-english-inline','.field-english','.field-teacher','.field-room','.field-class','.field-period',
+    '.compact-subject','.compact-sub','.compact-meta','.overview-mini b','.overview-mini em','.overview-mini .ov-teacher','.overview-mini strong'
+  ].join(',');
+  const leaves = Array.from(root.querySelectorAll(leafSelectors)).filter(el=>{
+    if (!el.innerText && !el.textContent) return false;
+    // 상위 leaf가 다시 잡혀 중복되는 것을 방지합니다.
+    return !leavesAncestorMatched(el, leafSelectors);
+  });
+  if (leaves.length) {
+    leaves.forEach(el=>pdfDrawElementText(ctx, el, pageRect, sx, sy));
+    return;
+  }
+  const rect = pdfMapRect(root.getBoundingClientRect(), pageRect, sx, sy);
+  const st = getComputedStyle(root);
+  pdfDrawWrappedText(ctx, root.innerText || root.textContent || '', rect, {
+    size: pdfCssPx(st.fontSize, 6),
+    weight: parseInt(st.fontWeight,10) >= 700 ? '700' : '500',
+    color: st.color || '#111827',
+    align: st.textAlign || 'center',
+    valign: 'middle',
+    pad: 1,
+    minSize: 3.2,
+    maxSize: 12
+  });
+}
+function leavesAncestorMatched(el, selector) {
+  let p = el.parentElement;
+  while (p && p !== document.body) {
+    if (p.matches && p.matches(selector)) return true;
+    if (p.classList && (p.classList.contains('mini-card') || p.classList.contains('overview-mini'))) return false;
+    p = p.parentElement;
+  }
+  return false;
+}
 async function canvasFromPreviewPage(page, orientation, scale=2) {
+  // r289: SVG foreignObject 방식은 Chrome 보안/환경에 따라 canvas export가 실패할 수 있어
+  // DOM의 표/텍스트를 직접 canvas에 그린 뒤 PDF 이미지로 넣습니다.
   const isPortrait = orientation === 'portrait';
   const w = isPortrait ? 794 : 1123;
   const h = isPortrait ? 1123 : 794;
-  const css = collectPdfSnapshotCss();
-  const clone = inlinePdfExportPage(page, w, h);
-  const xml = new XMLSerializer().serializeToString(clone);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><foreignObject x="0" y="0" width="${w}" height="${h}"><div xmlns="http://www.w3.org/1999/xhtml"><style>${css.replace(/<\//g,'<\\/')}</style>${xml}</div></foreignObject></svg>`;
-  const blob = new Blob([svg], {type:'image/svg+xml;charset=utf-8'});
-  const url = URL.createObjectURL(blob);
-  try {
-    const img = await new Promise((resolve,reject)=>{
-      const im = new Image();
-      im.onload=()=>resolve(im);
-      im.onerror=reject;
-      im.src=url;
-    });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(w * scale);
-    canvas.height = Math.round(h * scale);
-    const ctx = canvas.getContext('2d', {alpha:false});
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    return canvas;
-  } finally {
-    URL.revokeObjectURL(url);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const ctx = canvas.getContext('2d', {alpha:false});
+  ctx.setTransform(scale,0,0,scale,0,0);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0,0,w,h);
+  const pageRect = page.getBoundingClientRect();
+  const sx = w / Math.max(1, pageRect.width);
+  const sy = h / Math.max(1, pageRect.height);
+
+  // 제목/좌우 주석
+  const titleRow = page.querySelector('.print-title-row');
+  if (titleRow) {
+    titleRow.querySelectorAll('.title-note,h3').forEach(el=>pdfDrawElementText(ctx, el, pageRect, sx, sy));
+  } else {
+    page.querySelectorAll('h3,.preview-sub').forEach(el=>pdfDrawElementText(ctx, el, pageRect, sx, sy));
   }
+
+  const table = page.querySelector('table.tt-table');
+  if (!table) {
+    pdfDrawWrappedText(ctx, page.innerText || '', {x:20,y:20,w:w-40,h:h-40}, {size:10, align:'center', valign:'top'});
+    return canvas;
+  }
+
+  // 셀 배경/테두리 먼저 그림
+  const cells = Array.from(table.querySelectorAll('th,td'));
+  ctx.save();
+  cells.forEach(cell=>{
+    const r = pdfMapRect(cell.getBoundingClientRect(), pageRect, sx, sy);
+    if (r.w <= .5 || r.h <= .5) return;
+    const isHead = cell.tagName === 'TH';
+    ctx.fillStyle = isHead ? '#f8fafc' : '#ffffff';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.strokeStyle = '#1f2937';
+    ctx.lineWidth = isHead ? 0.8 : 0.55;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+  });
+  ctx.restore();
+
+  // 카드/내부 분할선
+  const cards = Array.from(table.querySelectorAll('.mini-card,.overview-mini'));
+  ctx.save();
+  cards.forEach(card=>{
+    const r = pdfMapRect(card.getBoundingClientRect(), pageRect, sx, sy);
+    if (r.w <= .5 || r.h <= .5) return;
+    const st = getComputedStyle(card);
+    const bw = Math.max(pdfCssPx(st.borderTopWidth, 0), pdfCssPx(st.borderLeftWidth, 0));
+    if (bw > 0 || card.classList.contains('overview-mini')) {
+      ctx.strokeStyle = card.classList.contains('overview-mini') ? '#e5e7eb' : '#cbd5e1';
+      ctx.lineWidth = Math.max(0.35, Math.min(0.8, bw || 0.4));
+      ctx.strokeRect(r.x, r.y, r.w, r.h);
+    }
+  });
+  ctx.restore();
+
+  // 텍스트
+  cells.forEach(cell=>{
+    const minis = Array.from(cell.querySelectorAll('.mini-card,.overview-mini'));
+    if (minis.length) {
+      minis.forEach(m=>pdfDrawMiniContent(ctx, m, pageRect, sx, sy));
+    } else {
+      const r = pdfMapRect(cell.getBoundingClientRect(), pageRect, sx, sy);
+      pdfDrawTableCellText(ctx, cell, r);
+    }
+  });
+  return canvas;
 }
 function makeImagePdf(jpegBytesList, imageSizes, orientation) {
   const landscape = orientation !== 'portrait';
