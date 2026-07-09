@@ -66,7 +66,7 @@
 .card-apply-row .primary{height:32px}.split-config-grid{display:grid;grid-template-columns:44px 1fr 1fr;gap:6px;align-items:center}.split-config-grid b{font-size:12px;color:#334155}.split-config-grid select{height:30px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-size:12px;padding:2px 5px}.mini-card{--card-font:10px;--print-card-font:7.4px}.mini-card .field-item{font-size:var(--card-font,10px)}.mini-card.card-layout-compact,.mini-card.card-layout-simple,.mini-card.card-layout-subject{display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;gap:1px}.compact-subject{font-weight:900;color:#111827;line-height:1.05;max-width:98%;overflow-wrap:anywhere}.compact-sub{color:#64748b;line-height:1.05;max-width:98%;overflow-wrap:anywhere}.compact-meta{color:#334155;font-weight:800;line-height:1.05;max-width:98%;overflow-wrap:anywhere}.mini-card.card-layout-compact .compact-subject{font-size:calc(var(--card-font,10px) * 1.15)}.mini-card.card-layout-compact .compact-sub,.mini-card.card-layout-compact .compact-meta{font-size:calc(var(--card-font,10px) * .78)}.mini-card.card-layout-simple .compact-subject{font-size:calc(var(--card-font,10px) * 1.2)}.mini-card.card-layout-simple .compact-meta{font-size:calc(var(--card-font,10px) * .82)}.mini-card.card-layout-subject .compact-subject{font-size:calc(var(--card-font,10px) * 1.35)}.special-card .compact-subject{font-size:calc(var(--card-font,10px) * 1.45);letter-spacing:.02em}.apply-needed{background:#fff7ed!important;color:#c2410c!important}
 @media print{.mini-card .field-item{font-size:var(--print-card-font,7.4px)}.mini-card.card-layout-compact .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.15)}.mini-card.card-layout-compact .compact-sub,.mini-card.card-layout-compact .compact-meta{font-size:calc(var(--print-card-font,7.4px) * .78)}.mini-card.card-layout-simple .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.2)}.mini-card.card-layout-simple .compact-meta{font-size:calc(var(--print-card-font,7.4px) * .82)}.mini-card.card-layout-subject .compact-subject{font-size:calc(var(--print-card-font,7.4px) * 1.35)}}
 
-/* r296: 숨김 iframe 실크기 인쇄, A4 가로 방향 우선 보정 */
+/* r297: 정리패치 - r295 품질 유지, 실패한 가로강제 우회 제거, 인쇄창 가로 선택 안내 */
 .mini-card .field-subject-group{display:flex!important;flex-direction:column!important;align-items:center;justify-content:center;gap:1px;white-space:normal}
 .mini-card .field-subject,.mini-card .field-english-inline,.mini-card .compact-subject,.mini-card .compact-sub,.mini-card .compact-meta{display:block;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:keep-all}
 .mini-card .compact-subject,.mini-card .compact-sub,.mini-card .compact-meta,.mini-card .field-subject,.mini-card .field-english-inline{overflow:hidden;text-overflow:clip}
@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r296: 인쇄 준비 안내는 현재 화면 모달로만 표시하고, 인쇄 문서는 실크기 숨김 iframe에서 생성합니다. */
+/* r297: 인쇄 품질은 숨김 iframe 방식으로 유지하고, 방향은 브라우저 인쇄창의 가로 선택으로 확정합니다. */
 .render-overlay{z-index:9999!important}
 </style>
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
@@ -596,14 +596,14 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r296</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r297</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
   <button id="loginBtn" class="hidden">Google 로그인</button>
   <button id="logoutBtn" class="hidden">로그아웃</button>
   <button id="refreshBtn">미리보기 새로고침</button>
-  <button id="printBtn" class="primary">미리보기 그대로 인쇄/PDF</button>
+  <button id="printBtn" class="primary">인쇄/PDF</button>
 </header>
 <div id="renderOverlay" class="render-overlay" aria-live="polite" aria-busy="true"><div class="render-box"><div class="render-spinner"></div><div id="renderOverlayText">미리보기를 다시 그리는 중입니다…</div></div></div>
 <main class="app">
@@ -612,6 +612,7 @@ body.print-portrait #printPageStyle::after{content:""}
       <div class="field"><span>출력 대상</span><select id="outputKind"><option value="class:individual">학급 - 개별</option><option value="class:overview">학급 - 전체</option><option value="teacher:individual">교사 - 개별</option><option value="teacher:overview">교사 - 전체</option><option value="room:individual">교실 - 개별</option><option value="room:overview">교실 - 전체</option><option value="student:individual">학생 - 개별</option></select></div>
       <select id="targetType" class="hidden"><option value="class">학급</option><option value="student">학생</option><option value="teacher">교사</option><option value="room">교실</option></select><select id="layoutMode" class="hidden"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select>
       <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="excel">Excel</option><option value="word">Word</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">A4 가로</option><option value="a4-portrait">A4 세로</option></select></div></div>
+      <div class="hint" id="printOrientationHint">PDF로 저장할 때 Chrome 인쇄창에서 <b>레이아웃: 가로</b>를 선택해 주세요. 프로그램은 인쇄 품질만 보장하고, 방향은 브라우저 설정을 따릅니다.</div>
       <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div>
       <div class="note-fields"><div class="field"><span>제목 왼쪽</span><input id="headerLeft" type="text" placeholder="자동: 학년/대상"></div><div class="field"><span>제목 오른쪽</span><input id="headerRight" type="text" placeholder="자동: 날짜"></div></div>
       <div class="field"><span>미리보기 범위</span><select id="previewMode"><option value="sample">샘플 1개만 빠르게 보기</option><option value="selected">선택 대상 전체 미리보기</option></select></div>
@@ -663,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-hidden-iframe-r296";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-hidden-iframe-r296";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-hidden-iframe-r296";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-cleanup-print-r297";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-cleanup-print-r297";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-cleanup-print-r297";
 
-const VERSION = "2026-07-09-hidden-iframe-r296";
+const VERSION = "2026-07-09-cleanup-print-r297";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1585,7 +1586,7 @@ function updateExportButtonLabel() {
   const btn = $("printBtn");
   if (!btn) return;
   const f = format();
-  btn.textContent = f === "excel" ? "Excel 저장" : (f === "word" ? "Word 저장" : "PDF 저장/인쇄");
+  btn.textContent = f === "excel" ? "Excel 저장" : (f === "word" ? "Word 저장" : "인쇄/PDF");
   updateProfileStatus();
 }
 function safeFilePart(value="") {
@@ -2071,306 +2072,8 @@ function buildOfficeHtml(kind="word") {
   return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="Section1 office-export-root"><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</div></body></html>`;
 }
 
-function pdfByteStringToUint8(str) {
-  const out = new Uint8Array(str.length);
-  for (let i=0;i<str.length;i++) out[i] = str.charCodeAt(i) & 255;
-  return out;
-}
-function pdfAscii(str) { return new TextEncoder().encode(str); }
-function pdfConcat(parts) {
-  const total = parts.reduce((sum,p)=>sum+p.length,0);
-  const out = new Uint8Array(total);
-  let pos=0;
-  parts.forEach(p=>{ out.set(p,pos); pos+=p.length; });
-  return out;
-}
-function pdfEscapeName(name) { return String(name || 'Timetable').replace(/[\\/?:*"<>|]+/g,'_').replace(/\s+/g,'_').slice(0,80) || 'Timetable'; }
-function collectPdfSnapshotCss() {
-  const css = Array.from(document.querySelectorAll('style')).map(st=>st.textContent || '').join('\n');
-  return `${css}\nhtml,body{margin:0!important;padding:0!important;background:#fff!important;overflow:hidden!important}.preview-page{margin:0!important;box-shadow:none!important;border:0!important;page-break-after:auto!important}.topbar,.sidebar,.preview-toolbar{display:none!important}`;
-}
-function inlinePdfExportPage(page, w, h) {
-  const clone = page.cloneNode(true);
-  clone.removeAttribute('id');
-  clone.style.margin = '0';
-  clone.style.boxShadow = 'none';
-  clone.style.border = '0';
-  clone.style.width = w + 'px';
-  clone.style.height = h + 'px';
-  clone.style.maxWidth = w + 'px';
-  clone.style.maxHeight = h + 'px';
-  clone.style.minHeight = h + 'px';
-  clone.style.background = '#fff';
-  return clone;
-}
-
-function pdfCssPx(value, fallback=10) {
-  const n = parseFloat(String(value || '').replace('px',''));
-  return Number.isFinite(n) ? n : fallback;
-}
-function pdfMapRect(rect, baseRect, sx, sy) {
-  return {
-    x: (rect.left - baseRect.left) * sx,
-    y: (rect.top - baseRect.top) * sy,
-    w: rect.width * sx,
-    h: rect.height * sy
-  };
-}
-function pdfMeasureWrappedLines(ctx, text, maxW, maxLines) {
-  text = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!text) return [];
-  const words = text.split(' ');
-  const lines = [];
-  let line = '';
-  const pushCharWrapped = (chunk) => {
-    let cur = '';
-    for (const ch of chunk) {
-      const test = cur + ch;
-      if (ctx.measureText(test).width <= maxW || !cur) cur = test;
-      else { lines.push(cur); cur = ch; if (lines.length >= maxLines) return; }
-    }
-    if (cur && lines.length < maxLines) lines.push(cur);
-  };
-  for (const word of words) {
-    if (!word) continue;
-    const test = line ? line + ' ' + word : word;
-    if (ctx.measureText(test).width <= maxW) {
-      line = test;
-    } else {
-      if (line) lines.push(line);
-      if (lines.length >= maxLines) break;
-      if (ctx.measureText(word).width > maxW) pushCharWrapped(word);
-      else line = word;
-    }
-  }
-  if (line && lines.length < maxLines) lines.push(line);
-  return lines.slice(0, maxLines);
-}
-function pdfDrawWrappedText(ctx, text, box, opt={}) {
-  text = String(text || '').trim();
-  if (!text || box.w <= 1 || box.h <= 1) return;
-  const fs = Math.max(opt.minSize || 3.5, Math.min(opt.maxSize || 24, opt.size || 8));
-  const weight = opt.weight || '400';
-  const family = opt.family || '"Malgun Gothic","맑은 고딕",Arial,sans-serif';
-  const color = opt.color || '#111827';
-  const align = opt.align || 'center';
-  const valign = opt.valign || 'middle';
-  const pad = opt.pad ?? Math.max(1, fs * 0.12);
-  const x = box.x + pad, y = box.y + pad, w = Math.max(1, box.w - pad * 2), h = Math.max(1, box.h - pad * 2);
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(box.x, box.y, box.w, box.h);
-  ctx.clip();
-  ctx.font = `${weight} ${fs}px ${family}`;
-  ctx.fillStyle = color;
-  ctx.textBaseline = 'top';
-  ctx.textAlign = align;
-  const lh = Math.max(fs * 1.12, fs + 0.8);
-  const maxLines = Math.max(1, Math.floor(h / lh));
-  const lines = pdfMeasureWrappedLines(ctx, text, w, maxLines);
-  let yy = y;
-  if (valign === 'middle') yy = y + Math.max(0, (h - lines.length * lh) / 2);
-  else if (valign === 'bottom') yy = y + Math.max(0, h - lines.length * lh);
-  const tx = align === 'left' ? x : (align === 'right' ? x + w : x + w / 2);
-  for (const line of lines) {
-    ctx.fillText(line, tx, yy);
-    yy += lh;
-  }
-  ctx.restore();
-}
-function pdfDrawElementText(ctx, el, pageRect, sx, sy, override={}) {
-  const text = (el.innerText || el.textContent || '').trim();
-  if (!text) return;
-  const rect = pdfMapRect(el.getBoundingClientRect(), pageRect, sx, sy);
-  if (rect.w < 1 || rect.h < 1) return;
-  const st = getComputedStyle(el);
-  const fs = pdfCssPx(st.fontSize, override.size || 8);
-  const weightNum = parseInt(st.fontWeight, 10);
-  const weight = override.weight || (Number.isFinite(weightNum) && weightNum >= 700 ? '700' : (st.fontWeight || '400'));
-  let align = override.align || st.textAlign || 'center';
-  if (align === 'start') align = 'left';
-  if (align === 'end') align = 'right';
-  pdfDrawWrappedText(ctx, text, rect, {
-    size: override.size || fs,
-    weight,
-    color: override.color || st.color || '#111827',
-    align,
-    valign: override.valign || 'middle',
-    pad: override.pad ?? 0.5,
-    minSize: override.minSize || 3.2,
-    maxSize: override.maxSize || 22
-  });
-}
-function pdfDrawTableCellText(ctx, cell, box) {
-  const text = (cell.innerText || cell.textContent || '').trim();
-  if (!text) return;
-  const st = getComputedStyle(cell);
-  const isHead = cell.tagName === 'TH';
-  const fs = pdfCssPx(st.fontSize, isHead ? 8 : 6);
-  pdfDrawWrappedText(ctx, text, box, {
-    size: fs,
-    weight: isHead ? '700' : '500',
-    color: st.color || '#111827',
-    align: 'center',
-    valign: 'middle',
-    pad: 1,
-    minSize: 3.2,
-    maxSize: isHead ? 14 : 11
-  });
-}
-function pdfDrawMiniContent(ctx, root, pageRect, sx, sy) {
-  const leafSelectors = [
-    '.field-subject-group','.field-subject','.field-english-inline','.field-english','.field-teacher','.field-room','.field-class','.field-period',
-    '.compact-subject','.compact-sub','.compact-meta','.overview-mini b','.overview-mini em','.overview-mini .ov-teacher','.overview-mini strong'
-  ].join(',');
-  const leaves = Array.from(root.querySelectorAll(leafSelectors)).filter(el=>{
-    if (!el.innerText && !el.textContent) return false;
-    // 상위 leaf가 다시 잡혀 중복되는 것을 방지합니다.
-    return !leavesAncestorMatched(el, leafSelectors);
-  });
-  if (leaves.length) {
-    leaves.forEach(el=>pdfDrawElementText(ctx, el, pageRect, sx, sy));
-    return;
-  }
-  const rect = pdfMapRect(root.getBoundingClientRect(), pageRect, sx, sy);
-  const st = getComputedStyle(root);
-  pdfDrawWrappedText(ctx, root.innerText || root.textContent || '', rect, {
-    size: pdfCssPx(st.fontSize, 6),
-    weight: parseInt(st.fontWeight,10) >= 700 ? '700' : '500',
-    color: st.color || '#111827',
-    align: st.textAlign || 'center',
-    valign: 'middle',
-    pad: 1,
-    minSize: 3.2,
-    maxSize: 12
-  });
-}
-function leavesAncestorMatched(el, selector) {
-  let p = el.parentElement;
-  while (p && p !== document.body) {
-    if (p.matches && p.matches(selector)) return true;
-    if (p.classList && (p.classList.contains('mini-card') || p.classList.contains('overview-mini'))) return false;
-    p = p.parentElement;
-  }
-  return false;
-}
-async function canvasFromPreviewPage(page, orientation, scale=2) {
-  // r289: SVG foreignObject 방식은 Chrome 보안/환경에 따라 canvas export가 실패할 수 있어
-  // DOM의 표/텍스트를 직접 canvas에 그린 뒤 PDF 이미지로 넣습니다.
-  const isPortrait = orientation === 'portrait';
-  const w = isPortrait ? 794 : 1123;
-  const h = isPortrait ? 1123 : 794;
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(w * scale);
-  canvas.height = Math.round(h * scale);
-  const ctx = canvas.getContext('2d', {alpha:false});
-  ctx.setTransform(scale,0,0,scale,0,0);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0,0,w,h);
-  const pageRect = page.getBoundingClientRect();
-  const sx = w / Math.max(1, pageRect.width);
-  const sy = h / Math.max(1, pageRect.height);
-
-  // 제목/좌우 주석
-  const titleRow = page.querySelector('.print-title-row');
-  if (titleRow) {
-    titleRow.querySelectorAll('.title-note,h3').forEach(el=>pdfDrawElementText(ctx, el, pageRect, sx, sy));
-  } else {
-    page.querySelectorAll('h3,.preview-sub').forEach(el=>pdfDrawElementText(ctx, el, pageRect, sx, sy));
-  }
-
-  const table = page.querySelector('table.tt-table');
-  if (!table) {
-    pdfDrawWrappedText(ctx, page.innerText || '', {x:20,y:20,w:w-40,h:h-40}, {size:10, align:'center', valign:'top'});
-    return canvas;
-  }
-
-  // 셀 배경/테두리 먼저 그림
-  const cells = Array.from(table.querySelectorAll('th,td'));
-  ctx.save();
-  cells.forEach(cell=>{
-    const r = pdfMapRect(cell.getBoundingClientRect(), pageRect, sx, sy);
-    if (r.w <= .5 || r.h <= .5) return;
-    const isHead = cell.tagName === 'TH';
-    ctx.fillStyle = isHead ? '#f8fafc' : '#ffffff';
-    ctx.fillRect(r.x, r.y, r.w, r.h);
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = isHead ? 0.8 : 0.55;
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-  });
-  ctx.restore();
-
-  // 카드/내부 분할선
-  const cards = Array.from(table.querySelectorAll('.mini-card,.overview-mini'));
-  ctx.save();
-  cards.forEach(card=>{
-    const r = pdfMapRect(card.getBoundingClientRect(), pageRect, sx, sy);
-    if (r.w <= .5 || r.h <= .5) return;
-    const st = getComputedStyle(card);
-    const bw = Math.max(pdfCssPx(st.borderTopWidth, 0), pdfCssPx(st.borderLeftWidth, 0));
-    if (bw > 0 || card.classList.contains('overview-mini')) {
-      ctx.strokeStyle = card.classList.contains('overview-mini') ? '#e5e7eb' : '#cbd5e1';
-      ctx.lineWidth = Math.max(0.35, Math.min(0.8, bw || 0.4));
-      ctx.strokeRect(r.x, r.y, r.w, r.h);
-    }
-  });
-  ctx.restore();
-
-  // 텍스트
-  cells.forEach(cell=>{
-    const minis = Array.from(cell.querySelectorAll('.mini-card,.overview-mini'));
-    if (minis.length) {
-      minis.forEach(m=>pdfDrawMiniContent(ctx, m, pageRect, sx, sy));
-    } else {
-      const r = pdfMapRect(cell.getBoundingClientRect(), pageRect, sx, sy);
-      pdfDrawTableCellText(ctx, cell, r);
-    }
-  });
-  return canvas;
-}
-function makeImagePdf(jpegBytesList, imageSizes, orientation) {
-  const landscape = orientation !== 'portrait';
-  const pageW = landscape ? 841.89 : 595.28;
-  const pageH = landscape ? 595.28 : 841.89;
-  let objId = 1;
-  const catalogId = objId++;
-  const pagesId = objId++;
-  const pageIds = [];
-  const imageIds = [];
-  const contentIds = [];
-  for (let i=0;i<jpegBytesList.length;i++) { pageIds.push(objId++); imageIds.push(objId++); contentIds.push(objId++); }
-  const objects = [];
-  objects[catalogId] = pdfAscii(`<< /Type /Catalog /Pages ${pagesId} 0 R >>`);
-  objects[pagesId] = pdfAscii(`<< /Type /Pages /Kids [${pageIds.map(id=>id+' 0 R').join(' ')}] /Count ${pageIds.length} >>`);
-  for (let i=0;i<jpegBytesList.length;i++) {
-    const imgName = `Im${i+1}`;
-    const content = pdfAscii(`q\n${pageW.toFixed(2)} 0 0 ${pageH.toFixed(2)} 0 0 cm\n/${imgName} Do\nQ`);
-    objects[contentIds[i]] = pdfAscii(`<< /Length ${content.length} >>\nstream\n${new TextDecoder().decode(content)}\nendstream`);
-    const jpeg = jpegBytesList[i];
-    const size = imageSizes[i];
-    objects[imageIds[i]] = pdfConcat([
-      pdfAscii(`<< /Type /XObject /Subtype /Image /Width ${size.w} /Height ${size.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`),
-      jpeg,
-      pdfAscii(`\nendstream`)
-    ]);
-    objects[pageIds[i]] = pdfAscii(`<< /Type /Page /Parent ${pagesId} 0 R /MediaBox [0 0 ${pageW.toFixed(2)} ${pageH.toFixed(2)}] /Resources << /XObject << /${imgName} ${imageIds[i]} 0 R >> >> /Contents ${contentIds[i]} 0 R >>`);
-  }
-  const parts=[]; let pos=0; const offsets=[];
-  const add=(b)=>{ parts.push(b); pos+=b.length; };
-  add(pdfByteStringToUint8('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
-  for (let id=1; id<objects.length; id++) {
-    offsets[id]=pos;
-    add(pdfAscii(`${id} 0 obj\n`)); add(objects[id]); add(pdfAscii(`\nendobj\n`));
-  }
-  const xref=pos;
-  add(pdfAscii(`xref\n0 ${objects.length}\n0000000000 65535 f \n`));
-  for (let id=1; id<objects.length; id++) add(pdfAscii(String(offsets[id]).padStart(10,'0') + ' 00000 n \n'));
-  add(pdfAscii(`trailer\n<< /Size ${objects.length} /Root ${catalogId} 0 R >>\nstartxref\n${xref}\n%%EOF`));
-  return new Blob(parts, {type:'application/pdf'});
-}
 function stripCssBlock(css, atRuleTester) {
-  // 인쇄용 iframe에는 화면 미리보기 스타일만 가져오고, 기존 @media print/@page 누적 규칙은 제거합니다.
-  // 여러 버전의 print CSS가 남아 있으면 Chrome이 페이지 방향을 잘못 해석할 수 있습니다.
+  // 인쇄용 iframe에는 화면 미리보기 스타일만 가져오고 기존 인쇄 규칙은 제거합니다.
   let out = "";
   let i = 0;
   while (i < css.length) {
@@ -2406,10 +2109,10 @@ function removeHiddenPrintFrame() {
   if (old && old.parentNode) old.parentNode.removeChild(old);
 }
 async function exportPdfReal() {
-  // r296: 새 창/about:blank 없이 숨김 iframe에서 현재 미리보기 DOM과 같은 HTML을 인쇄합니다.
-  // 준비 안내는 현재 화면 오버레이만 사용하고, iframe은 실제 A4 방향 크기로 둡니다.
+  // r297: 새 창/about:blank 없이 숨김 iframe에서 현재 미리보기 DOM과 같은 HTML을 인쇄합니다.
+  // 방향 강제 코드는 제거하고, 사용자가 브라우저 인쇄창에서 가로를 선택하도록 안내합니다.
   if (!dataReady) return;
-  showRenderOverlay("인쇄용 시간표를 준비하는 중입니다…");
+  showRenderOverlay("인쇄용 시간표를 준비하는 중입니다… 인쇄창에서 레이아웃은 '가로'로 선택해 주세요.");
   let frame = null;
   try {
     await nextPaint();
@@ -2419,8 +2122,8 @@ async function exportPdfReal() {
 
     const portrait = paperOrientation() === "portrait";
     const pageCss = portrait
-      ? { pageRule: "210mm 297mm", pageName: "hisPortraitPage", paperW: "210mm", paperH: "297mm", pagePxW: "794px", pagePxH: "1123px" }
-      : { pageRule: "297mm 210mm", pageName: "hisLandscapePage", paperW: "297mm", paperH: "210mm", pagePxW: "1123px", pagePxH: "794px" };
+      ? { pageRule: "A4 portrait", paperW: "210mm", paperH: "297mm", pagePxW: "794px", pagePxH: "1123px" }
+      : { pageRule: "A4 landscape", paperW: "297mm", paperH: "210mm", pagePxW: "1123px", pagePxH: "794px" };
 
     const pages = layoutMode()==="overview" ? overviewPages(allEnts) : allEnts.map(pageForEntity);
     if (!pages.length) throw new Error("생성된 인쇄 페이지가 없습니다.");
@@ -2428,21 +2131,19 @@ async function exportPdfReal() {
     const styleText = printBaseStyleText();
     const bodyClass = Array.from(document.body.classList).filter(c=>/^font-|ellipsis-enabled/.test(c)).join(" ");
     const printCss = `
-      @page ${pageCss.pageName}{size:${pageCss.pageRule};margin:0}
       @page{size:${pageCss.pageRule};margin:0}
-      html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;width:${pageCss.paperW}!important;min-width:${pageCss.paperW}!important;height:auto!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;width:${pageCss.paperW}!important;min-width:${pageCss.paperW}!important;height:auto!important}
       body{font-family:var(--print-font, system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif)!important;color:#102033!important}
       .topbar,.sidebar,.preview-toolbar,.render-overlay{display:none!important}
       .app,.preview-wrap,.preview-scroll,.preview-inner{display:block!important;height:auto!important;min-height:0!important;overflow:visible!important;background:#fff!important;margin:0!important;padding:0!important;width:${pageCss.paperW}!important;max-width:${pageCss.paperW}!important;transform:none!important;zoom:1!important}
       .preview-inner{position:static!important}
-      .preview-page{page:${pageCss.pageName};box-sizing:border-box!important;box-shadow:none!important;border:0!important;margin:0!important;padding:5mm!important;width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-width:${pageCss.paperW}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important}
+      .preview-page{box-sizing:border-box!important;box-shadow:none!important;border:0!important;margin:0!important;padding:5mm!important;width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-width:${pageCss.paperW}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important}
       .preview-page:last-child{break-after:auto!important;page-break-after:auto!important}
       .preview-page.paper-landscape,.preview-page.paper-portrait{width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important}
       @media print{
-        @page ${pageCss.pageName}{size:${pageCss.pageRule};margin:0}
         @page{size:${pageCss.pageRule};margin:0}
-        html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;width:${pageCss.paperW}!important;min-width:${pageCss.paperW}!important;height:auto!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
-        .preview-page{page:${pageCss.pageName};box-sizing:border-box!important;box-shadow:none!important;border:0!important;margin:0!important;padding:5mm!important;width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-width:${pageCss.paperW}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important}
+        html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;width:${pageCss.paperW}!important;min-width:${pageCss.paperW}!important;height:auto!important}
+        .preview-page{box-sizing:border-box!important;box-shadow:none!important;border:0!important;margin:0!important;padding:5mm!important;width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-width:${pageCss.paperW}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important}
         .preview-page:last-child{break-after:auto!important;page-break-after:auto!important}
       }
     `;
@@ -2456,12 +2157,10 @@ async function exportPdfReal() {
     frame.title = "HIS 시간표 인쇄";
     frame.setAttribute("aria-hidden", "true");
     frame.style.position = "fixed";
-    frame.style.left = "-12000px";
-    frame.style.top = "0";
-    frame.style.width = pageCss.pagePxW;
-    frame.style.height = pageCss.pagePxH;
-    frame.style.minWidth = pageCss.pagePxW;
-    frame.style.minHeight = pageCss.pagePxH;
+    frame.style.right = "0";
+    frame.style.bottom = "0";
+    frame.style.width = "1px";
+    frame.style.height = "1px";
     frame.style.border = "0";
     frame.style.opacity = "0";
     frame.style.pointerEvents = "none";
@@ -2473,7 +2172,9 @@ async function exportPdfReal() {
     doc.close();
     await sleep(180);
 
-    $("previewMeta").textContent = `출력 전체 · ${allEnts.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
+    $("previewMeta").textContent = `출력 전체 · ${allEnts.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드 · 인쇄창에서 레이아웃: 가로 선택`;
+    showRenderOverlay("인쇄창이 열리면 레이아웃을 반드시 '가로'로 선택해 주세요.");
+    await sleep(450);
     hideRenderOverlay();
 
     const win = frame.contentWindow;
