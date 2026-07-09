@@ -558,13 +558,25 @@ body.print-portrait #printPageStyle::after{content:""}
   .preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days tbody tr{height:var(--overview-row-mm,18mm)!important}
   .preview-page.overview-wide.class-overview-fit9 .tt-table.overview-full-days td{height:auto!important}
 }
+
+
+/* r291: 공식 출력 보정 - 전체표 내부문구 제거, 전체표는 과목 식별 중심, PDF 직접저장 긴 영문명 줄바꿈 보강 */
+.overview-wide .title-note-right:empty{display:block}
+.overview-wide .field-english-inline{display:none!important}
+.overview-wide .field-subject-group{line-height:1.02!important}
+.overview-wide .field-subject{font-weight:900!important}
+.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important;max-height:none!important}
+.preview-page:not(.overview-wide) .mini-card.wrap-text .field-english-inline{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:keep-all!important}
+.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;word-break:keep-all!important}
+@media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
+
 </style>
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r290</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r291</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -631,11 +643,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-pdf-real-downloadblob-r290";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-pdf-real-downloadblob-r290";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-pdf-real-downloadblob-r290";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-09-print-official-clean-r291";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-09-print-official-clean-r291";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-09-print-official-clean-r291";
 
-const VERSION = "2026-07-09-pdf-real-downloadblob-r290";
+const VERSION = "2026-07-09-print-official-clean-r291";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -791,8 +803,26 @@ function roomIdsForCard(e, c) {
 }
 function itemRoomForCard(e, c) { return roomIdsForCard(e,c).map(roomName).filter(Boolean).join(", "); }
 function entryRoomNames(e) { return entryRoomIds(e).map(roomName).filter(Boolean).join(", "); }
-function cardTitle(c,e) { return clean(c?.subject || c?.label || e?.groupName || e?.subject || "수업"); }
-function cardEnglish(c,e) { return clean(c?.subjectEn || e?.subjectEn || ""); }
+function displaySubjectWithContext(subject, c=null) {
+  const base = clean(subject);
+  if (!base) return "";
+  const track = clean(c?.track);
+  const n = normSpecial(base);
+  if ((n === normSpecial("온라인 AP 과목") || n === normSpecial("Online AP Course")) && track && track !== "공통" && track !== "수동") {
+    return `${base}(${track})`;
+  }
+  return base;
+}
+function cardTitle(c,e) { return displaySubjectWithContext(c?.subject || c?.label || e?.groupName || e?.subject || "수업", c); }
+function cardEnglish(c,e) {
+  const v = clean(c?.subjectEn || e?.subjectEn || "");
+  const track = clean(c?.track);
+  const subjNorm = normSpecial(c?.subject || "");
+  if (v && (subjNorm === normSpecial("온라인 AP 과목") || normSpecial(v) === normSpecial("Online AP Course")) && track && track !== "공통" && track !== "수동") {
+    return `${v} (${track})`;
+  }
+  return v;
+}
 function cardClasses(c,e) { const labels = sortClassLabels([...(c?.classLabels||[]), ...(c?.classKeys||[]).map(classLabelFromKey), ...(e?.audienceClassKeys||[]).map(classLabelFromKey)]); return labels.join(", "); }
 function currentScopeMode() { return document.querySelector('input[name="scope"]:checked')?.value || "all"; }
 function selectedScopeKeys() { return [...document.querySelectorAll('[data-scope-key]:checked')].map(el=>el.dataset.scopeKey).filter(Boolean); }
@@ -1207,6 +1237,9 @@ function compactCardHtml(item, cfg, fields=null) {
   }
   return `${subjLine}${eng}${meta?`<div class="compact-meta" ${fieldFontStyle(teacherCfg,"teacher")}>${esc(meta)}</div>`:""}`;
 }
+function miniCardDataAttrs(item) {
+  return ` data-subject="${esc(item.subject)}" data-english="${esc(item.english)}" data-teacher="${esc(item.teacher)}" data-room="${esc(item.room)}" data-class="${esc(item.class)}"`;
+}
 function normSpecial(v) { return clean(v).toLowerCase().replace(/[\s·⋅・_\-\/()\[\]]+/g, ""); }
 function specialMatchValues(item) {
   return unique([
@@ -1244,8 +1277,8 @@ function miniCardHtml(item, fields, splitCount, settings) {
   const layoutClass = `split-${st.key} card-layout-${st.cfg.layout} ${st.cfg.clip ? "clip-text" : "wrap-text"}`;
   const renderItem = specialLabel ? {...item, subject:specialLabel, english:"", teacher:""} : item;
   const layout = st.cfg.layout;
-  if (layout !== "standard") return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}">${compactCardHtml(renderItem,{...st.cfg,layout}, splitFields)}</div>`;
-  return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}">${standardCardHtml(renderItem, splitFields)}</div>`;
+  if (layout !== "standard") return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}"${miniCardDataAttrs(renderItem)}>${compactCardHtml(renderItem,{...st.cfg,layout}, splitFields)}</div>`;
+  return `<div class="mini-card ${layoutClass} ${specialLabel?"special-card":""}" style="${style}"${miniCardDataAttrs(renderItem)}>${standardCardHtml(renderItem, splitFields)}</div>`;
 }
 function collapseSpecialItems(cellItems, settings) {
   const out=[]; const seen=new Set(); const opts=settings.specialSubjects||[];
@@ -1292,7 +1325,7 @@ function paperClass() { return ($("paper")?.value || "a4-landscape") === "a4-por
 
 function todayLabel() { return new Date().toLocaleDateString("ko-KR"); }
 function headerLeftText(defaultText="") { const v=clean($("headerLeft")?.value || ""); return v || clean(defaultText); }
-function headerRightText(defaultText="") { const v=clean($("headerRight")?.value || ""); return v || clean(defaultText || todayLabel()); }
+function headerRightText(defaultText="") { const v=clean($("headerRight")?.value || ""); return v || clean(defaultText); }
 function titleRowHtml(title, left="", right="") { return `<div class="print-title-row"><div class="title-note title-note-left">${esc(left)}</div><h3>${esc(title)}</h3><div class="title-note title-note-right">${esc(right)}</div></div>`; }
 function pageForEntity(ent) { const title=`${ent.label} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
 function overviewTitle() { return targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; }
@@ -1366,7 +1399,7 @@ function overviewFullPages(ents) {
     const rowPart = rowGroups.length > 1 ? ` · ${gi+1}/${rowGroups.length}` : "";
     const title = `${overviewTitle()}${rowPart}`;
     const left = headerLeftText("Handong International School");
-    const right = headerRightText(`선택 대상 ${ents.length}개`);
+    const right = headerRightText("");
     const fitClass = targetType() === "class" ? "class-overview-fit9" : "";
     const rowMetrics = overviewRowMetrics(group.length);
     const rowStyle = targetType() === "class" ? ` style="--overview-rows:${group.length};--overview-row-mm:${rowMetrics.rowMm}mm;--overview-row-px:${rowMetrics.rowPx}px"` : "";
@@ -1390,7 +1423,7 @@ function overviewDayPages(ents) {
       const rowPart = rowGroups.length > 1 ? ` · ${gi+1}/${rowGroups.length}` : "";
       const title = `${overviewTitle()} - ${dayName}${rowPart}`;
       const left = headerLeftText("Handong International School");
-      const right = headerRightText(`선택 대상 ${ents.length}개`);
+      const right = headerRightText("");
       pages.push(`<section class="preview-page overview day-view pdf-day-overview ${pageClass} ${fontClass}">${titleRowHtml(title,left,right)}<table class="tt-table"><thead><tr><th></th>${labels.map(p=>`<th>${esc(p)}</th>`).join("")}</tr></thead><tbody>${rows}</tbody></table></section>`);
     });
   });
@@ -2120,7 +2153,7 @@ function pdfDrawTableCellText(ctx, cell, box) {
 }
 function pdfDrawMiniContent(ctx, root, pageRect, sx, sy) {
   const leafSelectors = [
-    '.field-subject','.field-english-inline','.field-english','.field-teacher','.field-room','.field-class','.field-period',
+    '.field-subject-group','.field-subject','.field-english-inline','.field-english','.field-teacher','.field-room','.field-class','.field-period',
     '.compact-subject','.compact-sub','.compact-meta','.overview-mini b','.overview-mini em','.overview-mini .ov-teacher','.overview-mini strong'
   ].join(',');
   const leaves = Array.from(root.querySelectorAll(leafSelectors)).filter(el=>{
@@ -2280,8 +2313,8 @@ async function exportPdfReal() {
     const pages = Array.from(document.querySelectorAll('#previewInner .preview-page'));
     const jpegList=[]; const sizes=[];
     for (const page of pages) {
-      const canvas = await canvasFromPreviewPage(page, orientation, 2);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+      const canvas = await canvasFromPreviewPage(page, orientation, page.classList.contains("overview-wide") ? 2.6 : 2.35);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.94);
       const bin = atob(dataUrl.split(',')[1] || '');
       jpegList.push(pdfByteStringToUint8(bin));
       sizes.push({w:canvas.width, h:canvas.height});
