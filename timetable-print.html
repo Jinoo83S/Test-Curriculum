@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r315</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r316</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-style-preserve-r315";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-style-preserve-r315";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-style-preserve-r315";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-word-line-metrics-r316";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-word-line-metrics-r316";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-word-line-metrics-r316";
 
-const VERSION = "2026-07-10-office-card-style-preserve-r315";
+const VERSION = "2026-07-10-office-word-line-metrics-r316";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1728,7 +1728,7 @@ function officeWordIsPortrait() {
 function officeWordTableWidth(model=null) {
   const portrait = officeWordIsPortrait();
   const wide = officePageRatioProfile(model) === "wide";
-  // r315: 세로/가로 모두 같은 시간표 구조를 유지합니다.
+  // r316: 세로/가로 모두 같은 시간표 구조를 유지합니다.
   // 글자가 잘리는 문제는 레이아웃 구조 변경으로 해결하지 않습니다.
   if (wide) return portrait ? 16580 : 23560;
   return portrait ? 11620 : 16580;
@@ -2089,7 +2089,7 @@ function xlsxSlotShape(model) {
     maxCols = Math.max(maxCols, shape.cols || 1);
     maxRows = Math.max(maxRows, shape.rows || 1);
   }));
-  // r315: 카드 1개는 3칸/과목 전체행/영문 전체행/3칸 = 4행 구조를 유지합니다.
+  // r316: 카드 1개는 3칸/과목 전체행/영문 전체행/3칸 = 4행 구조를 유지합니다.
   return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(4, maxRows * 4) };
 }
 let XLSX_STYLE_REGISTRY = { map:new Map(), entries:[] };
@@ -2130,7 +2130,7 @@ function xlsxFieldStyle(fieldKey, cfg, header=false) {
   return XLSX_STYLE_REGISTRY?.map?.get(key) || (cfg?.bold ? 1 : 0);
 }
 function officeCardStructuredIndex(def, cfg) {
-  // r315 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
+  // r316 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
   // 과목·영문은 카드 폭 전체를 쓰는 1행으로 배치하고, 교실/교사 등 위치 필드는 위·아래 3칸을 사용합니다.
   if (def?.key === "subject") return [1, 0];
   if (def?.key === "english") return [2, 0];
@@ -2254,13 +2254,26 @@ function wText(text="") {
   const lines=String(text||"").replace(/\r/g,"").split(/\n/);
   return lines.map((line,i)=>`${i?"<w:br/>":""}<w:t xml:space="preserve">${xmlEsc(line)}</w:t>`).join("");
 }
+function wSafeLineTwips(line=0, size=12, text="") {
+  // r316: Word에서 글자 윗부분이 잘리는 주원인은 셀 여백이 아니라
+  // 폰트 크기보다 작은 exact line-height입니다. w:sz는 half-point, w:line은 twip이므로
+  // 최소 줄높이를 글자 크기보다 크게 잡아야 한글/영문 ascender가 잘리지 않습니다.
+  const sz = Math.max(1, Number(size) || 12);
+  const requested = Math.max(0, Number(line) || 0);
+  if (!String(text || "").trim() && sz <= 2) return Math.max(18, requested || 18);
+  const minLine = Math.ceil(sz * 12.4); // (sz/2 pt) * 20 twip * 1.24
+  return Math.max(requested || 0, minLine, 96);
+}
 function wPara(text="", opts={}) {
   const bold=opts.bold?"<w:b/>":"";
-  const sz=opts.size?`<w:sz w:val="${opts.size}"/><w:szCs w:val="${opts.size}"/>`:"";
+  const sizeVal = Math.max(1, Number(opts.size || 12));
+  const sz=opts.size?`<w:sz w:val="${sizeVal}"/><w:szCs w:val="${sizeVal}"/>`:"";
   const color=opts.color?`<w:color w:val="${opts.color}"/>`:"";
   const noBreak=opts.noBreak?"<w:noBreak/>":"";
   const jc=opts.align?`<w:jc w:val="${opts.align}"/>`:"";
-  const spacing=`<w:spacing w:before="0" w:after="0" w:line="${opts.line||150}" w:lineRule="exact"/>`;
+  const line = wSafeLineTwips(opts.line || 0, sizeVal, text);
+  const lineRule = opts.lineRule || "atLeast";
+  const spacing=`<w:spacing w:before="0" w:after="0" w:line="${line}" w:lineRule="${lineRule}"/>`;
   return `<w:p><w:pPr>${jc}${spacing}</w:pPr><w:r><w:rPr>${bold}${sz}${color}${noBreak}<w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/></w:rPr>${wText(text)}</w:r></w:p>`;
 }
 function officeWordHalfSize(text="", opts={}) {
@@ -2293,7 +2306,7 @@ function docxCellSize(text="", header=false, overview=false, wideOverview=false)
 }
 function wNoBorderTcPr(width=400, span=1) {
   const gridSpan = span > 1 ? `<w:gridSpan w:val="${span}"/>` : "";
-  return `<w:tcPr><w:tcW w:w="${Math.max(1, Math.round(width))}" w:type="dxa"/>${gridSpan}<w:vAlign w:val="center"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="4" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="4" w:type="dxa"/></w:tcMar><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tcBorders></w:tcPr>`;
+  return `<w:tcPr><w:tcW w:w="${Math.max(1, Math.round(width))}" w:type="dxa"/>${gridSpan}<w:vAlign w:val="center"/><w:tcMar><w:top w:w="4" w:type="dxa"/><w:left w:w="4" w:type="dxa"/><w:bottom w:w="4" w:type="dxa"/><w:right w:w="4" w:type="dxa"/></w:tcMar><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tcBorders></w:tcPr>`;
 }
 function wSemanticTc(paras="", width=400, span=1) {
   return `<w:tc>${wNoBorderTcPr(width, span)}${paras || wPara("",{size:1,line:18})}</w:tc>`;
@@ -2380,7 +2393,7 @@ function wCell(text="", opts={}) {
   const span=opts.colspan>1?`<w:gridSpan w:val="${opts.colspan}"/>`:"";
   const fill=opts.header?`<w:shd w:fill="F1F5F9"/>`:"";
   const sz=opts.size || officeWordHalfSize(text, opts);
-  const mar=`<w:tcMar><w:top w:w="2" w:type="dxa"/><w:left w:w="6" w:type="dxa"/><w:bottom w:w="2" w:type="dxa"/><w:right w:w="6" w:type="dxa"/></w:tcMar>`;
+  const mar=`<w:tcMar><w:top w:w="8" w:type="dxa"/><w:left w:w="6" w:type="dxa"/><w:bottom w:w="8" w:type="dxa"/><w:right w:w="6" w:type="dxa"/></w:tcMar>`;
   return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="center"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wordCellBody(text,opts,sz)}</w:tc>`;
 }
 function wordRowHeight(idx, total, overview=false, dayOverview=false, wideOverview=false) {
@@ -2548,7 +2561,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-style-r315",
+    source: "flat-office-grid-style-r316",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2578,17 +2591,17 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r315" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r316" };
   }
   return officeFlattenModelToRealGrid(model);
 }
 function wordModelsForExport(models) {
-  // r315: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word는 가로/세로 모두 같은 실제 격자 구조를 유지합니다.
+  // r316: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word는 가로/세로 모두 같은 실제 격자 구조를 유지합니다.
   // 구조 변경 없이 카드 표시 설정(표시/위치/굵기/글자 크기/칸 자르기)만 반영합니다.
   return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r315: Excel은 전체/개별 모두 실제 격자를 유지하고 카드 표시 설정을 반영합니다.
+  // r316: Excel은 전체/개별 모두 실제 격자를 유지하고 카드 표시 설정을 반영합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
 function officeProfileSummary(models) {
