@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r323: 프로필 내부값 정합성 보정 */
+/* r324: Office 필드 위치 정렬 반영 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r323</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r324</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
-import { auth, db } from "./js/config.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-field-position-align-r324";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-field-position-align-r324";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-field-position-align-r324";
+import { auth, db } from "./js/config.js?v=2026-07-10-office-field-position-align-r324";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-10-print-settings-profile-value-consistency-r323";
+const VERSION = "2026-07-10-office-field-position-align-r324";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1164,7 +1164,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r323.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r324.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -2334,36 +2334,49 @@ function xlsxFieldPt(fieldKey="subject", cfg={}) {
   const px = fontValueToPx(cfg?.fontPx || cfg?.font, fieldKey) || FIELD_FONT_PX_DEFAULTS[fieldKey] || 8;
   return Math.max(5, Math.min(16, Math.round(Number(px) * 0.75 * 10) / 10));
 }
-function xlsxDynamicStyleKey(fieldKey="subject", cfg={}) {
+function officeFieldHorizontalAlign(cfg={}, def={}) {
+  const pos = officeFieldPosition(cfg, def || {});
+  return /r$/.test(pos) ? "right" : (/l$/.test(pos) ? "left" : "center");
+}
+function officeFieldVerticalAlign(cfg={}, def={}) {
+  const pos = officeFieldPosition(cfg, def || {});
+  return /^t/.test(pos) ? "top" : (/^b/.test(pos) ? "bottom" : "center");
+}
+function xlsxDynamicStyleKey(fieldKey="subject", cfg={}, def=null) {
   const pt = xlsxFieldPt(fieldKey, cfg);
   const bold = !!cfg?.bold;
-  return `${fieldKey}:${pt}:${bold ? 1 : 0}`;
+  const align = officeFieldHorizontalAlign(cfg, def || FIELD_DEFS.find(x=>x.key===fieldKey) || {});
+  const valign = officeFieldVerticalAlign(cfg, def || FIELD_DEFS.find(x=>x.key===fieldKey) || {});
+  return `${fieldKey}:${pt}:${bold ? 1 : 0}:${align}:${valign}`;
 }
 function buildXlsxStyleRegistry(models=[]) {
   const map = new Map();
   const entries = [];
-  const add = (fieldKey, cfg={}) => {
-    const key = xlsxDynamicStyleKey(fieldKey, cfg);
+  const add = (fieldKey, cfg={}, def=null) => {
+    const fieldDef = def || FIELD_DEFS.find(x=>x.key===fieldKey) || {};
+    const key = xlsxDynamicStyleKey(fieldKey, cfg, fieldDef);
     if (map.has(key)) return;
     const id = 6 + entries.length;
     const pt = xlsxFieldPt(fieldKey, cfg);
+    const align = officeFieldHorizontalAlign(cfg, fieldDef);
+    const valign = officeFieldVerticalAlign(cfg, fieldDef);
     map.set(key, id);
-    entries.push({ key, fieldKey, pt, bold: !!cfg?.bold });
+    entries.push({ key, fieldKey, pt, bold: !!cfg?.bold, align, valign });
   };
   (models || []).forEach(model => {
     [1,2,3,4].forEach(n => {
       const fields = officeFieldsForCardCount(model, n);
       FIELD_DEFS.forEach(def => {
         const cfg = fields[def.key] || def;
-        if (cfg.enabled !== false) add(def.key, cfg);
+        if (cfg.enabled !== false) add(def.key, cfg, def);
       });
     });
   });
   return { map, entries };
 }
-function xlsxFieldStyle(fieldKey, cfg, header=false) {
+function xlsxFieldStyle(fieldKey, cfg, header=false, def=null) {
   if (header) return 1;
-  const key = xlsxDynamicStyleKey(fieldKey, cfg || {});
+  const key = xlsxDynamicStyleKey(fieldKey, cfg || {}, def || FIELD_DEFS.find(x=>x.key===fieldKey) || {});
   return XLSX_STYLE_REGISTRY?.map?.get(key) || (cfg?.bold ? 1 : 0);
 }
 function officeCardStructuredIndex(def, cfg) {
@@ -2389,7 +2402,7 @@ function xlsxPlaceCard3x3(cells, merges, sheetRowBase, rowBase, colBase, cardRow
     const [pr, pc] = officeCardStructuredIndex(def, cfg);
     const rr = rowBase + pr * unitH;
     const cc = colBase + pc * unitW;
-    xlsxCell(cells, rr, cc, value, xlsxFieldStyle(def.key, cfg));
+    xlsxCell(cells, rr, cc, value, xlsxFieldStyle(def.key, cfg, false, def));
     if (officeCardStructuredColspan(def, cfg) > 1) {
       xlsxMerge(merges, sheetRowBase + rr, cc, sheetRowBase + rr + unitH - 1, colBase + cardCols - 1);
     }
@@ -2416,7 +2429,7 @@ function buildXlsxBlob(models) {
   files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${models.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${models.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
   files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
   const dynamicFonts = (XLSX_STYLE_REGISTRY.entries || []).map(e => `<font>${e.bold ? "<b/>" : ""}<sz val="${e.pt}"/><name val="Malgun Gothic"/></font>`).join("");
-  const dynamicXfs = (XLSX_STYLE_REGISTRY.entries || []).map((e,i) => `<xf numFmtId="0" fontId="${5+i}" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`).join("");
+  const dynamicXfs = (XLSX_STYLE_REGISTRY.entries || []).map((e,i) => `<xf numFmtId="0" fontId="${5+i}" fillId="0" borderId="1" xfId="0"><alignment horizontal="${e.align || "center"}" vertical="${e.valign || "center"}" wrapText="1"/></xf>`).join("");
   const fontCount = 5 + (XLSX_STYLE_REGISTRY.entries || []).length;
   const xfCount = 6 + (XLSX_STYLE_REGISTRY.entries || []).length;
   files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fontCount}"><font><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="7"/><name val="Malgun Gothic"/></font>${dynamicFonts}</fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfCount}"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>${dynamicXfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
@@ -2630,8 +2643,11 @@ function wCell(text="", opts={}) {
   const span=opts.colspan>1?`<w:gridSpan w:val="${opts.colspan}"/>`:"";
   const fill=opts.header?`<w:shd w:fill="F1F5F9"/>`:"";
   const sz=opts.size || officeWordHalfSize(text, opts);
+  const def = opts.fieldDef || FIELD_DEFS.find(x => x.key === opts.fieldKey) || {};
+  const cfg = opts.fieldCfg || {};
+  const vAlign = (!opts.header && opts.fieldKey) ? officeFieldVerticalAlign(cfg, def) : "center";
   const mar=`<w:tcMar><w:top w:w="8" w:type="dxa"/><w:left w:w="6" w:type="dxa"/><w:bottom w:w="8" w:type="dxa"/><w:right w:w="6" w:type="dxa"/></w:tcMar>`;
-  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="center"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wordCellBody(text,opts,sz)}</w:tc>`;
+  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="${vAlign}"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wordCellBody(text,opts,sz)}</w:tc>`;
 }
 function wordRowHeight(idx, total, overview=false, dayOverview=false, wideOverview=false) {
   if (idx === 0) return wideOverview ? 170 : (overview ? 220 : 270);
