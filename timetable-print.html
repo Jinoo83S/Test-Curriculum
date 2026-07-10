@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r310</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r311</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-3-1-1-3-r310";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-3-1-1-3-r310";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-3-1-1-3-r310";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-full-subject-english-r311";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-full-subject-english-r311";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-full-subject-english-r311";
 
-const VERSION = "2026-07-10-office-card-3-1-1-3-r310";
+const VERSION = "2026-07-10-office-card-full-subject-english-r311";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -724,7 +724,7 @@ const PRINT_ORIENTATIONS = ["landscape", "portrait"];
 function isOverviewProfileName(profile="") { return /:overview$/.test(String(profile || "")); }
 function isPortraitAllowedForProfile(profile="") { return !isOverviewProfileName(profile); }
 function isFormatAllowedForProfile(fmt="pdf", profile="") {
-  // r310: 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
+  // r311: 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
   // 전체표는 35교시를 실제 격자로 확장해야 하므로 Excel/PDF만 일관된 출력 대상으로 유지합니다.
   return !(String(fmt || "") === "word" && isOverviewProfileName(profile));
 }
@@ -2053,7 +2053,7 @@ function xlsxSlotShape(model) {
     maxCols = Math.max(maxCols, shape.cols || 1);
     maxRows = Math.max(maxRows, shape.rows || 1);
   }));
-  // r310: 카드 1개는 3칸/과목 1칸/영문 1칸/3칸 = 4행 구조를 기본 단위로 사용합니다.
+  // r311: 카드 1개는 3칸/과목 1칸/영문 1칸/3칸 = 4행 구조를 기본 단위로 사용합니다.
   return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(4, maxRows * 4) };
 }
 function xlsxFieldStyle(fieldKey, cfg, header=false) {
@@ -2062,12 +2062,15 @@ function xlsxFieldStyle(fieldKey, cfg, header=false) {
   return 0;
 }
 function officeCardStructuredIndex(def, cfg) {
-  // r310 Office 실제 격자: 위 3칸 / 과목 1행 / 영문 1행 / 아래 3칸.
-  // 병합셀 없이 편집 가능한 실제 칸을 유지하기 위해 과목·영문은 가운데 칸에 둡니다.
-  if (def?.key === "subject") return [1, 1];
-  if (def?.key === "english") return [2, 1];
+  // r311 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
+  // 과목·영문은 카드 폭 전체를 쓰는 1행으로 배치하고, 교실/교사 등 위치 필드는 위·아래 3칸을 사용합니다.
+  if (def?.key === "subject") return [1, 0];
+  if (def?.key === "english") return [2, 0];
   const [rr, cc] = officeCellMatrixIndex(officeFieldPosition(cfg, def));
   return [rr <= 0 ? 0 : 3, cc];
+}
+function officeCardStructuredColspan(def, cfg) {
+  return (def?.key === "subject" || def?.key === "english") ? 3 : 1;
 }
 function xlsxPlaceCard3x3(cells, merges, sheetRowBase, rowBase, colBase, cardRows, cardCols, card, model, splitCount) {
   const fields = officeFieldsForCardCount(model, splitCount);
@@ -2082,6 +2085,9 @@ function xlsxPlaceCard3x3(cells, merges, sheetRowBase, rowBase, colBase, cardRow
     const rr = rowBase + pr * unitH;
     const cc = colBase + pc * unitW;
     xlsxCell(cells, rr, cc, value, xlsxFieldStyle(def.key, cfg));
+    if (officeCardStructuredColspan(def, cfg) > 1) {
+      xlsxMerge(merges, sheetRowBase + rr, cc, sheetRowBase + rr + unitH - 1, colBase + cardCols - 1);
+    }
   });
 }
 function xlsxExpandedGeometry(model) {
@@ -2120,7 +2126,7 @@ function buildXlsxBlob(models) {
       const startSheetRow = rows.length + 1;
       const cellsByInternal = Array.from({length:internalRows},()=>[]);
       (row || []).forEach((cell,c)=>{
-        if (!cell) return;
+        if (!cell || cell.skip) return;
         const baseCol = xlsxLogicalStartCol(c, geom.slotCols);
         const spanLogical = Math.max(1, Number(cell.colspan)||1);
         const spanCols = c === 0 ? 1 : spanLogical * geom.slotCols;
@@ -2248,7 +2254,13 @@ function wOfficeCard3x3(card={}, opts={}, splitCount=1, totalW=1600, totalH=500)
   const englishH = Math.max(70, Math.floor(totalH * 0.22));
   const bottomH = Math.max(55, totalH - topH - subjectH - englishH);
   const heights = [topH, subjectH, englishH, bottomH];
-  const rows = matrix.map((row, r) => `<w:tr><w:trPr><w:trHeight w:val="${heights[r]}" w:hRule="atLeast"/></w:trPr>${row.map((paras,c)=>wSemanticTc(paras.join("") || wPara("",{size:1,line:18}), widths[c])).join("")}</w:tr>`).join("");
+  const rows = matrix.map((row, r) => {
+    if (r === 1 || r === 2) {
+      const paras = row.flat().join("") || wPara("",{size:1,line:18});
+      return `<w:tr><w:trPr><w:trHeight w:val="${heights[r]}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(paras, totalW, 3)}</w:tr>`;
+    }
+    return `<w:tr><w:trPr><w:trHeight w:val="${heights[r]}" w:hRule="atLeast"/></w:trPr>${row.map((paras,c)=>wSemanticTc(paras.join("") || wPara("",{size:1,line:18}), widths[c])).join("")}</w:tr>`;
+  }).join("");
   return `<w:tbl><w:tblPr><w:tblW w:w="${totalW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid>${widths.map(w=>`<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
 }
 function wOfficeCardsGrid(cards=[], opts={}) {
@@ -2318,7 +2330,7 @@ function wordTableXml(model) {
   const { tblW, widths } = wordTableWidths(colCount, overview, dayOverview, model);
   const rows=model.grid.map((row,ridx)=>{
     let tcs="";
-    row.forEach((cell,cidx)=>{ if(cell) tcs += wCell(officeCellText(cell, "word", model),{cards:cell.cards,header:cell.header,colspan:cell.colspan,width:wordSpanWidth(widths,cidx,cell.colspan),overview,wideOverview,model,officeProfile:model.profile}); });
+    row.forEach((cell,cidx)=>{ if(cell && !cell.skip) tcs += wCell(officeCellText(cell, "word", model),{cards:cell.cards,header:cell.header,colspan:cell.colspan,width:wordSpanWidth(widths,cidx,cell.colspan),overview,wideOverview,model,officeProfile:model.profile}); });
     return `<w:tr><w:trPr><w:trHeight w:val="${wordRowHeight(ridx, model.grid.length, overview, dayOverview, wideOverview)}" w:hRule="exact"/><w:cantSplit/></w:trPr>${tcs}</w:tr>`;
   }).join("");
   return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${widths.map(width=>`<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
@@ -2356,8 +2368,19 @@ function officeCellRequiredGrid(cell={}, model=null) {
 function officeBlankFlatCell(header=false) {
   return { text:"", cards:[], header:!!header, colspan:1, rowspan:1, flat:true };
 }
-function officeTextFlatCell(text="", header=false) {
-  return { text:officeProtectText(text), cards:[], header:!!header, colspan:1, rowspan:1, flat:true };
+function officeTextFlatCell(text="", header=false, colspan=1) {
+  return { text:officeProtectText(text), cards:[], header:!!header, colspan:Math.max(1, Number(colspan)||1), rowspan:1, flat:true };
+}
+function officeSpanSkipCell() {
+  return { text:"", cards:[], header:false, colspan:1, rowspan:1, flat:true, skip:true };
+}
+function officePlaceFlatText(out, r, c, text="", colspan=1) {
+  if (!out[r] || c < 0 || c >= out[r].length || !text) return;
+  const span = Math.max(1, Math.min(Number(colspan)||1, out[r].length - c));
+  const current = out[r][c];
+  const mergedText = current && current.text ? [current.text, officeProtectText(text)].filter(Boolean).join("\n") : officeProtectText(text);
+  out[r][c] = officeTextFlatCell(mergedText, false, span);
+  for (let i=1; i<span; i++) out[r][c+i] = officeSpanSkipCell();
 }
 function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1, model=null) {
   const rows = Math.max(1, allocatedRows|0);
@@ -2384,14 +2407,17 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
     if (cardRow >= maxCardRows) return;
     const baseR = cardRow * 4;
     const baseC = cardCol * 3;
-    for (let rr=0; rr<4; rr++) {
-      for (let cc=0; cc<3; cc++) {
-        const tr = baseR + rr, tc = baseC + cc;
-        if (tr >= rows || tc >= cols) continue;
-        const text = officeSubcellTextForCard(card, rr, cc, model, count);
-        if (text) out[tr][tc] = officeTextFlatCell(text, false);
-      }
-    }
+    const fields = officeFieldsForCardCount(model, count);
+    FIELD_DEFS.forEach(def => {
+      const cfg = fields[def.key] || def;
+      if (cfg.enabled === false) return;
+      const value = officeCardValue(card, def.key);
+      if (!value) return;
+      const [rr, cc] = officeCardStructuredIndex(def, cfg);
+      const tr = baseR + rr, tc = baseC + cc;
+      if (tr >= rows || tc >= cols) return;
+      officePlaceFlatText(out, tr, tc, value, officeCardStructuredColspan(def, cfg));
+    });
   });
   return out;
 }
@@ -2426,7 +2452,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-r310",
+    source: "flat-office-grid-r311",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2456,17 +2482,17 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r310" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r311" };
   }
   return officeFlattenModelToRealGrid(model);
 }
 function wordModelsForExport(models) {
-  // r310: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word만 실제 격자를 유지합니다.
-  // 개별표는 r310의 3-과목-영문-3 실제 격자를 유지합니다.
+  // r311: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word만 실제 격자를 유지합니다.
+  // 개별표는 r311의 3칸-과목전체행-영문전체행-3칸 실제 격자를 유지합니다.
   return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r310: Excel은 전체/개별 모두 실제 격자를 유지합니다.
+  // r311: Excel은 전체/개별 모두 실제 격자를 유지합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
 function officeProfileSummary(models) {
