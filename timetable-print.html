@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r307</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r308</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-flat-grid-r307";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-flat-grid-r307";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-flat-grid-r307";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-word-overview-safe-r308";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-word-overview-safe-r308";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-word-overview-safe-r308";
 
-const VERSION = "2026-07-10-office-flat-grid-r307";
+const VERSION = "2026-07-10-office-word-overview-safe-r308";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -2396,7 +2396,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-r307",
+    source: "flat-office-grid-r308",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2405,13 +2405,38 @@ function officeFlattenModelToRealGrid(model) {
   };
 }
 
+const WORD_TABLE_COL_LIMIT = 63;
+function officeEstimatedFlatColCount(model) {
+  if (!model || model.flatOffice) return Math.max(1, Number(model?.cols || 1));
+  const rows = model.grid || [];
+  const logicalCols = Math.max(1, model.cols || Math.max(1, ...rows.map(r => (r||[]).length)));
+  const colUnits = Array.from({length:logicalCols},()=>1);
+  rows.forEach((row)=>{
+    (row || []).forEach((cell,c)=>{
+      if (!cell || cell.header || c >= logicalCols) return;
+      const need = officeCellRequiredGrid(cell, model);
+      colUnits[c] = Math.max(colUnits[c] || 1, need.cols || 1);
+    });
+  });
+  return colUnits.reduce((a,b)=>a+(b||1),0);
+}
+function wordSafeModelForExport(model) {
+  // Word는 한 표의 열 수가 63개를 넘으면 파일이 열리지 않을 수 있습니다.
+  // 학급/교사/교실 전체표는 35교시 × 내부 3x3 격자로 확장하면 100열을 넘으므로,
+  // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
+  const estimated = officeEstimatedFlatColCount(model);
+  if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r308" };
+  }
+  return officeFlattenModelToRealGrid(model);
+}
 function wordModelsForExport(models) {
-  // r307: Word는 셀 안에 nested table을 넣지 않습니다.
-  // 논리 시간표 칸 자체를 3x3 단위 실제 표 격자로 확장합니다.
-  return (models || []).map(officeFlattenModelToRealGrid);
+  // r308: Word 전체표는 63열 제한을 넘지 않도록 안전 구조를 적용합니다.
+  // 개별표는 r307의 실제 3x3 격자를 유지합니다.
+  return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r307: Excel도 병합셀 없이 동일한 실제 격자 모델을 사용합니다.
+  // r308: Excel은 Word의 63열 제한이 없으므로 r307 실제 격자를 유지합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
 function officeProfileSummary(models) {
