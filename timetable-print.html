@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r324: Office 필드 위치 정렬 반영 */
+/* r325: Office 1-4분할 셀별 계산 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r324</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r325</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-field-position-align-r324";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-field-position-align-r324";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-field-position-align-r324";
-import { auth, db } from "./js/config.js?v=2026-07-10-office-field-position-align-r324";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-split-aware-grid-r325";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-split-aware-grid-r325";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-split-aware-grid-r325";
+import { auth, db } from "./js/config.js?v=2026-07-10-office-split-aware-grid-r325";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-10-office-field-position-align-r324";
+const VERSION = "2026-07-10-office-split-aware-grid-r325";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1164,7 +1164,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r324.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r325.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -2449,7 +2449,7 @@ function buildXlsxBlob(models) {
       const startSheetRow = rows.length + 1;
       const cellsByInternal = Array.from({length:internalRows},()=>[]);
       (row || []).forEach((cell,c)=>{
-        if (!cell || cell.skip) return;
+        if (!cell || cell.skip || cell.vmerge === "continue") return;
         const baseCol = xlsxLogicalStartCol(c, geom.slotCols);
         const spanLogical = Math.max(1, Number(cell.colspan)||1);
         const spanCols = c === 0 ? 1 : spanLogical * geom.slotCols;
@@ -2466,9 +2466,10 @@ function buildXlsxBlob(models) {
         const cards = officeCardsForLayout(cell.cards || []).slice(0,6);
         if (!cards.length) {
           const text = officeCellText(cell, "excel", m);
-          const style = cell.fieldKey ? xlsxFieldStyle(cell.fieldKey, cell.fieldCfg || {}) : 0;
+          const style = cell.fieldKey ? xlsxFieldStyle(cell.fieldKey, cell.fieldCfg || {}, false, cell.fieldDef || null) : 0;
+          const rowSpan = Math.max(1, Number(cell.rowspan)||1);
           xlsxCell(cellsByInternal, Math.floor(internalRows/2), baseCol, text, style);
-          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow + internalRows - 1, baseCol + spanCols - 1);
+          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow + Math.max(internalRows, rowSpan) - 1, baseCol + spanCols - 1);
           return;
         }
         const count = Math.max(1, Math.min(4, cards.length));
@@ -2641,13 +2642,15 @@ function wordCellBody(text="", opts={}, sz=12) {
 
 function wCell(text="", opts={}) {
   const span=opts.colspan>1?`<w:gridSpan w:val="${opts.colspan}"/>`:"";
+  const vMerge = opts.vmerge === "restart" ? `<w:vMerge w:val="restart"/>` : (opts.vmerge === "continue" ? `<w:vMerge/>` : "");
   const fill=opts.header?`<w:shd w:fill="F1F5F9"/>`:"";
   const sz=opts.size || officeWordHalfSize(text, opts);
   const def = opts.fieldDef || FIELD_DEFS.find(x => x.key === opts.fieldKey) || {};
   const cfg = opts.fieldCfg || {};
   const vAlign = (!opts.header && opts.fieldKey) ? officeFieldVerticalAlign(cfg, def) : "center";
   const mar=`<w:tcMar><w:top w:w="8" w:type="dxa"/><w:left w:w="6" w:type="dxa"/><w:bottom w:w="8" w:type="dxa"/><w:right w:w="6" w:type="dxa"/></w:tcMar>`;
-  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}<w:vAlign w:val="${vAlign}"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${wordCellBody(text,opts,sz)}</w:tc>`;
+  const body = opts.vmerge === "continue" ? wPara("",{size:1,line:18}) : wordCellBody(text,opts,sz);
+  return `<w:tc><w:tcPr><w:tcW w:w="${opts.width||1600}" w:type="dxa"/>${span}${vMerge}<w:vAlign w:val="${vAlign}"/>${fill}${mar}<w:noWrap w:val="0"/></w:tcPr>${body}</w:tc>`;
 }
 function wordRowHeight(idx, total, overview=false, dayOverview=false, wideOverview=false) {
   if (idx === 0) return wideOverview ? 170 : (overview ? 220 : 270);
@@ -2680,7 +2683,7 @@ function wordTableXml(model) {
   const { tblW, widths } = wordTableWidths(colCount, overview, dayOverview, model);
   const rows=model.grid.map((row,ridx)=>{
     let tcs="";
-    row.forEach((cell,cidx)=>{ if(cell && !cell.skip) tcs += wCell(officeCellText(cell, "word", model),{cards:cell.cards,header:cell.header,colspan:cell.colspan,width:wordSpanWidth(widths,cidx,cell.colspan),overview,wideOverview,model,officeProfile:model.profile,fieldKey:cell.fieldKey,fieldCfg:cell.fieldCfg,fieldDef:cell.fieldDef}); });
+    row.forEach((cell,cidx)=>{ if(cell && !cell.skip) tcs += wCell(officeCellText(cell, "word", model),{cards:cell.cards,header:cell.header,colspan:cell.colspan,width:wordSpanWidth(widths,cidx,cell.colspan),overview,wideOverview,model,officeProfile:model.profile,fieldKey:cell.fieldKey,fieldCfg:cell.fieldCfg,fieldDef:cell.fieldDef,vmerge:cell.vmerge}); });
     return `<w:tr><w:trPr><w:trHeight w:val="${wordRowHeight(ridx, model.grid.length, overview, dayOverview, wideOverview)}" w:hRule="exact"/><w:cantSplit/></w:trPr>${tcs}</w:tr>`;
   }).join("");
   return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8"/><w:left w:val="single" w:sz="8"/><w:bottom w:val="single" w:sz="8"/><w:right w:val="single" w:sz="8"/><w:insideH w:val="single" w:sz="4"/><w:insideV w:val="single" w:sz="4"/></w:tblBorders></w:tblPr><w:tblGrid>${widths.map(width=>`<w:gridCol w:w="${width}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
@@ -2724,25 +2727,64 @@ function officeTextFlatCell(text="", header=false, colspan=1, meta={}) {
     cards:[],
     header:!!header,
     colspan:Math.max(1, Number(colspan)||1),
-    rowspan:1,
+    rowspan:Math.max(1, Number(meta.rowspan)||1),
     flat:true,
     fieldKey: meta.fieldKey || "",
     fieldCfg: meta.fieldCfg || null,
-    fieldDef: meta.fieldDef || null
+    fieldDef: meta.fieldDef || null,
+    vmerge: meta.vmerge || ""
   };
 }
 function officeSpanSkipCell() {
   return { text:"", cards:[], header:false, colspan:1, rowspan:1, flat:true, skip:true };
 }
-function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}) {
+function officeVSpanCell(colspan=1) {
+  return officeTextFlatCell("", false, colspan, { vmerge:"continue" });
+}
+function officeBandStart(index=0, total=1, bands=1) {
+  return Math.max(0, Math.min(total, Math.floor((Number(index)||0) * total / Math.max(1, bands))));
+}
+function officeBandSpanStartEnd(index=0, total=1, bands=1) {
+  const start = officeBandStart(index, total, bands);
+  const end = Math.max(start + 1, officeBandStart(index + 1, total, bands));
+  return [start, Math.min(total, end)];
+}
+function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}, rowspan=1) {
   if (!out[r] || c < 0 || c >= out[r].length || !text) return;
-  const span = Math.max(1, Math.min(Number(colspan)||1, out[r].length - c));
-  const current = out[r][c];
   const incoming = officeProtectText(text);
-  const mergedText = current && current.text ? [current.text, incoming].filter(Boolean).join("\n") : incoming;
-  const mergedMeta = current && current.text ? {} : meta;
-  out[r][c] = officeTextFlatCell(mergedText, false, span, mergedMeta);
+  if (!incoming) return;
+  const span = Math.max(1, Math.min(Number(colspan)||1, out[r].length - c));
+  const rspan = Math.max(1, Math.min(Number(rowspan)||1, out.length - r));
+  const current = out[r][c];
+  const hasCurrentText = !!(current && current.text);
+  const mergedText = hasCurrentText ? [current.text, incoming].filter(Boolean).join("\n") : incoming;
+  const mergedMeta = hasCurrentText ? {} : meta;
+  out[r][c] = officeTextFlatCell(mergedText, false, span, { ...mergedMeta, rowspan:rspan, vmerge:rspan > 1 ? "restart" : "" });
   for (let i=1; i<span; i++) out[r][c+i] = officeSpanSkipCell();
+  if (rspan > 1 && !hasCurrentText) {
+    for (let rr=1; rr<rspan; rr++) {
+      if (!out[r+rr]) continue;
+      out[r+rr][c] = officeVSpanCell(span);
+      for (let i=1; i<span && c+i<out[r+rr].length; i++) out[r+rr][c+i] = officeSpanSkipCell();
+    }
+  }
+}
+function officeCardBandPlacement(cardRow=0, cardCol=0, shapeRows=1, shapeCols=1, rows=1, cols=1) {
+  const [r0, r1] = officeBandSpanStartEnd(cardRow, rows, shapeRows);
+  const [c0, c1] = officeBandSpanStartEnd(cardCol, cols, shapeCols);
+  return { r0, r1, c0, c1, h:Math.max(1, r1-r0), w:Math.max(1, c1-c0) };
+}
+function officeFieldBandPlacement(cardBand, def, cfg) {
+  const [rr, cc] = officeCardStructuredIndex(def, cfg);
+  const [localR0, localR1] = officeBandSpanStartEnd(rr, cardBand.h, 4);
+  const tr = cardBand.r0 + localR0;
+  const rowSpan = Math.max(1, localR1 - localR0);
+  const fullRow = officeCardStructuredColspan(def, cfg) > 1;
+  if (fullRow) {
+    return { r:tr, c:cardBand.c0, rowspan:rowSpan, colspan:Math.max(1, cardBand.w) };
+  }
+  const [localC0, localC1] = officeBandSpanStartEnd(cc, cardBand.w, 3);
+  return { r:tr, c:cardBand.c0 + localC0, rowspan:rowSpan, colspan:Math.max(1, localC1 - localC0) };
 }
 function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1, model=null) {
   const rows = Math.max(1, allocatedRows|0);
@@ -2750,35 +2792,36 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
   const out = Array.from({length:rows},()=>Array.from({length:cols},()=>officeBlankFlatCell(false)));
   if (!cell) return out;
   if (cell.header) {
-    out[0][0] = officeTextFlatCell(cell.text || "", true);
+    officePlaceFlatText(out, 0, 0, cell.text || "", cols, {}, rows);
+    out[0][0].header = true;
     return out;
   }
   const cards = officeCardsForLayout(cell.cards || []);
   if (!cards.length) {
     const text = officeCellText(cell, "excel", model);
-    out[0][0] = officeTextFlatCell(text, false);
+    if (text) officePlaceFlatText(out, 0, 0, text, cols, { fieldKey: cell.fieldKey || "", fieldCfg: cell.fieldCfg || null, fieldDef: cell.fieldDef || null }, rows);
     return out;
   }
+  // r325: 한 교시 칸 안에서 1~4분할을 먼저 계산한 뒤, 그 칸에 배정된 실제 행/열 전체로 비례 확장합니다.
+  // 같은 행의 다른 칸 때문에 행/열이 커져도 1분할 카드는 위쪽 4줄에만 붙지 않고 전체 칸을 사용합니다.
   const count = Math.max(1, Math.min(4, cards.length));
   const shape = officeCardGridShape(count, model);
   const maxCardCols = Math.max(1, shape.cols || 1);
   const maxCardRows = Math.max(1, shape.rows || 1);
+  const fields = officeFieldsForCardCount(model, count);
   cards.slice(0,4).forEach((card, idx) => {
     const cardRow = Math.floor(idx / maxCardCols);
     const cardCol = idx % maxCardCols;
     if (cardRow >= maxCardRows) return;
-    const baseR = cardRow * 4;
-    const baseC = cardCol * 3;
-    const fields = officeFieldsForCardCount(model, count);
+    const cardBand = officeCardBandPlacement(cardRow, cardCol, maxCardRows, maxCardCols, rows, cols);
     FIELD_DEFS.forEach(def => {
       const cfg = fields[def.key] || def;
       if (cfg.enabled === false) return;
       const value = officeCardDisplayValue(card, def.key, model, count);
       if (!value) return;
-      const [rr, cc] = officeCardStructuredIndex(def, cfg);
-      const tr = baseR + rr, tc = baseC + cc;
-      if (tr >= rows || tc >= cols) return;
-      officePlaceFlatText(out, tr, tc, value, officeCardStructuredColspan(def, cfg), { fieldKey: def.key, fieldCfg: cfg, fieldDef: def });
+      const place = officeFieldBandPlacement(cardBand, def, cfg);
+      if (place.r >= rows || place.c >= cols) return;
+      officePlaceFlatText(out, place.r, place.c, value, place.colspan, { fieldKey: def.key, fieldCfg: cfg, fieldDef: def }, place.rowspan);
     });
   });
   return out;
@@ -2814,7 +2857,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-style-r318",
+    source: "flat-office-grid-split-aware-r325",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2844,7 +2887,7 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r318" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r325" };
   }
   return officeFlattenModelToRealGrid(model);
 }
