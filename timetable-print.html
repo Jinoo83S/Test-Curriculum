@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r312</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r314</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-full-subject-english-r312";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-full-subject-english-r312";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-full-subject-english-r312";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-display-settings-r314";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-display-settings-r314";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-display-settings-r314";
 
-const VERSION = "2026-07-10-office-card-full-subject-english-r312";
+const VERSION = "2026-07-10-office-card-display-settings-r314";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1728,8 +1728,8 @@ function officeWordIsPortrait() {
 function officeWordTableWidth(model=null) {
   const portrait = officeWordIsPortrait();
   const wide = officePageRatioProfile(model) === "wide";
-  // r312: Word 세로 출력은 페이지 폭이 11906dxa인데 r311은 표 폭 16580dxa를 그대로 써서
-  // 왼쪽/오른쪽이 잘렸습니다. 실제 페이지 방향에 맞춰 논리 표 폭을 먼저 줄입니다.
+  // r314: 세로/가로 모두 같은 시간표 구조를 유지합니다.
+  // 글자가 잘리는 문제는 레이아웃 구조 변경으로 해결하지 않습니다.
   if (wide) return portrait ? 16580 : 23560;
   return portrait ? 11620 : 16580;
 }
@@ -1742,7 +1742,8 @@ function officeSettingsSnapshot() {
     fields: normalizeFields(s.fields),
     splitStyles: normalizeSplitStyles(s.splitStyles),
     specialSubjects: s.specialSubjects || [],
-    fontScale: s.fontScale || "normal"
+    fontScale: s.fontScale || "normal",
+    ellipsisMode: !!s.ellipsisMode
   };
 }
 function officeSettingsForModel(model=null) {
@@ -1778,6 +1779,30 @@ function officeFieldsForCardCount(model=null, count=1) {
 function officeCardValue(card={}, key="subject") {
   if (key === "class") return officeProtectText(card.className || card.class || "");
   return officeProtectText(card[key] || "");
+}
+function officeClipEnabled(model=null, splitCount=1) {
+  const st = officeSettingsForModel(model);
+  const styles = normalizeSplitStyles(st.splitStyles || null);
+  const key = String(Math.max(1, Math.min(4, Number(splitCount) || 1)));
+  return !!(styles[key]?.clip || st.ellipsisMode);
+}
+function officeClipLimit(fieldKey="subject", splitCount=1) {
+  const n = Math.max(1, Math.min(4, Number(splitCount) || 1));
+  if (fieldKey === "subject") return n <= 1 ? 18 : (n === 2 ? 13 : 10);
+  if (fieldKey === "english") return n <= 1 ? 28 : (n === 2 ? 18 : 14);
+  if (fieldKey === "teacher") return n <= 1 ? 10 : 7;
+  if (fieldKey === "room") return n <= 1 ? 8 : 6;
+  return n <= 1 ? 10 : 7;
+}
+function officeClipText(value="", fieldKey="subject", model=null, splitCount=1) {
+  const text = officeProtectText(value);
+  if (!text || !officeClipEnabled(model, splitCount)) return text;
+  const limit = officeClipLimit(fieldKey, splitCount);
+  if (text.length <= limit) return text;
+  return text.slice(0, Math.max(1, limit - 1)).trimEnd() + "…";
+}
+function officeCardDisplayValue(card={}, key="subject", model=null, splitCount=1) {
+  return officeClipText(officeCardValue(card, key), key, model, splitCount);
 }
 function officeFieldHalfSize(fieldCfg={}, key="subject", fallback=12) {
   const px = fontValueToPx(fieldCfg.fontPx || fieldCfg.font, key);
@@ -2064,16 +2089,48 @@ function xlsxSlotShape(model) {
     maxCols = Math.max(maxCols, shape.cols || 1);
     maxRows = Math.max(maxRows, shape.rows || 1);
   }));
-  // r312: 카드 1개는 3칸/과목 1칸/영문 1칸/3칸 = 4행 구조를 기본 단위로 사용합니다.
+  // r314: 카드 1개는 3칸/과목 전체행/영문 전체행/3칸 = 4행 구조를 유지합니다.
   return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(4, maxRows * 4) };
+}
+let XLSX_STYLE_REGISTRY = { map:new Map(), entries:[] };
+function xlsxFieldPt(fieldKey="subject", cfg={}) {
+  const px = fontValueToPx(cfg?.fontPx || cfg?.font, fieldKey) || FIELD_FONT_PX_DEFAULTS[fieldKey] || 8;
+  return Math.max(5, Math.min(16, Math.round(Number(px) * 0.75 * 10) / 10));
+}
+function xlsxDynamicStyleKey(fieldKey="subject", cfg={}) {
+  const pt = xlsxFieldPt(fieldKey, cfg);
+  const bold = !!cfg?.bold;
+  return `${fieldKey}:${pt}:${bold ? 1 : 0}`;
+}
+function buildXlsxStyleRegistry(models=[]) {
+  const map = new Map();
+  const entries = [];
+  const add = (fieldKey, cfg={}) => {
+    const key = xlsxDynamicStyleKey(fieldKey, cfg);
+    if (map.has(key)) return;
+    const id = 6 + entries.length;
+    const pt = xlsxFieldPt(fieldKey, cfg);
+    map.set(key, id);
+    entries.push({ key, fieldKey, pt, bold: !!cfg?.bold });
+  };
+  (models || []).forEach(model => {
+    [1,2,3,4].forEach(n => {
+      const fields = officeFieldsForCardCount(model, n);
+      FIELD_DEFS.forEach(def => {
+        const cfg = fields[def.key] || def;
+        if (cfg.enabled !== false) add(def.key, cfg);
+      });
+    });
+  });
+  return { map, entries };
 }
 function xlsxFieldStyle(fieldKey, cfg, header=false) {
   if (header) return 1;
-  if (fieldKey === "subject" || cfg?.bold) return 1;
-  return 0;
+  const key = xlsxDynamicStyleKey(fieldKey, cfg || {});
+  return XLSX_STYLE_REGISTRY?.map?.get(key) || (cfg?.bold ? 1 : 0);
 }
 function officeCardStructuredIndex(def, cfg) {
-  // r312 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
+  // r314 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
   // 과목·영문은 카드 폭 전체를 쓰는 1행으로 배치하고, 교실/교사 등 위치 필드는 위·아래 3칸을 사용합니다.
   if (def?.key === "subject") return [1, 0];
   if (def?.key === "english") return [2, 0];
@@ -2090,7 +2147,7 @@ function xlsxPlaceCard3x3(cells, merges, sheetRowBase, rowBase, colBase, cardRow
   FIELD_DEFS.forEach(def => {
     const cfg = fields[def.key] || def;
     if (cfg.enabled === false) return;
-    const value = officeCardValue(card, def.key);
+    const value = officeCardDisplayValue(card, def.key, model, splitCount);
     if (!value) return;
     const [pr, pc] = officeCardStructuredIndex(def, cfg);
     const rr = rowBase + pr * unitH;
@@ -2113,6 +2170,7 @@ function xlsxLogicalStartCol(c, slotCols) {
 }
 function buildXlsxBlob(models) {
   models = excelModelsForExport(models);
+  XLSX_STYLE_REGISTRY = buildXlsxStyleRegistry(models);
   const used=new Set();
   const sheetNames=models.map(m=>sheetName(m.title,used));
   const files=[];
@@ -2120,7 +2178,11 @@ function buildXlsxBlob(models) {
   files.push({name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`});
   files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${models.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${models.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
   files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
-  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="7"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
+  const dynamicFonts = (XLSX_STYLE_REGISTRY.entries || []).map(e => `<font>${e.bold ? "<b/>" : ""}<sz val="${e.pt}"/><name val="Malgun Gothic"/></font>`).join("");
+  const dynamicXfs = (XLSX_STYLE_REGISTRY.entries || []).map((e,i) => `<xf numFmtId="0" fontId="${5+i}" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>`).join("");
+  const fontCount = 5 + (XLSX_STYLE_REGISTRY.entries || []).length;
+  const xfCount = 6 + (XLSX_STYLE_REGISTRY.entries || []).length;
+  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fontCount}"><font><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="7"/><name val="Malgun Gothic"/></font>${dynamicFonts}</fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfCount}"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>${dynamicXfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
   models.forEach((m,idx)=>{
     const overview = m.layoutMode==="overview" || /전체표/.test(m.title||"");
     const geom = xlsxExpandedGeometry(m);
@@ -2235,8 +2297,8 @@ function wNoBorderTcPr(width=400, span=1) {
 function wSemanticTc(paras="", width=400, span=1) {
   return `<w:tc>${wNoBorderTcPr(width, span)}${paras || wPara("",{size:1,line:18})}</w:tc>`;
 }
-function wCardFieldPara(value="", fieldKey="subject", cfg={}, def={}, opts={}) {
-  const text = officeProtectText(value);
+function wCardFieldPara(value="", fieldKey="subject", cfg={}, def={}, opts={}, splitCount=1) {
+  const text = officeClipText(value, fieldKey, opts.model || { profile: opts.officeProfile || opts.profile }, splitCount);
   if (!text) return "";
   const isSubject = fieldKey === "subject";
   const isEnglish = fieldKey === "english";
@@ -2244,8 +2306,9 @@ function wCardFieldPara(value="", fieldKey="subject", cfg={}, def={}, opts={}) {
   const size = officeFieldHalfSize(cfg, fieldKey, fallback);
   const color = isEnglish ? "475569" : (isSubject ? "111827" : "334155");
   const line = isSubject ? 104 : (isEnglish ? 76 : 70);
-  const align = /r$/.test(officeFieldPosition(cfg, def)) ? "right" : (/l$/.test(officeFieldPosition(cfg, def)) ? "left" : "center");
-  return wPara(text,{bold:!!cfg.bold,align,size,line,color,noBreak:text.length<=32});
+  const pos = officeFieldPosition(cfg, def);
+  const align = /r$/.test(pos) ? "right" : (/l$/.test(pos) ? "left" : "center");
+  return wPara(text,{bold:!!cfg.bold,align,size,line,color,noBreak:true});
 }
 function wOfficeCard3x3(card={}, opts={}, splitCount=1, totalW=1600, totalH=500) {
   const fields = officeFieldsForCardCount(opts.model || { profile: opts.officeProfile || opts.profile }, splitCount);
@@ -2256,7 +2319,7 @@ function wOfficeCard3x3(card={}, opts={}, splitCount=1, totalW=1600, totalH=500)
     const value = officeCardValue(card, def.key);
     if (!value) return;
     const [r,c] = officeCardStructuredIndex(def, cfg);
-    matrix[r][c].push(wCardFieldPara(value, def.key, cfg, def, opts));
+    matrix[r][c].push(wCardFieldPara(value, def.key, cfg, def, opts, splitCount));
   });
   const w1 = Math.max(1, Math.floor(totalW/3));
   const widths = [w1, w1, Math.max(1, totalW - w1*2)];
@@ -2361,7 +2424,7 @@ function officeSubcellTextForCard(card={}, intraR=1, intraC=1, model=null, split
   FIELD_DEFS.forEach(def => {
     const cfg = fields[def.key] || def;
     if (cfg.enabled === false) return;
-    const value = officeCardValue(card, def.key);
+    const value = officeCardDisplayValue(card, def.key, model, splitCount);
     if (!value) return;
     const [rr, cc] = officeCardStructuredIndex(def, cfg);
     if (rr === intraR && cc === intraC) parts.push(value);
@@ -2422,7 +2485,7 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
     FIELD_DEFS.forEach(def => {
       const cfg = fields[def.key] || def;
       if (cfg.enabled === false) return;
-      const value = officeCardValue(card, def.key);
+      const value = officeCardDisplayValue(card, def.key, model, count);
       if (!value) return;
       const [rr, cc] = officeCardStructuredIndex(def, cfg);
       const tr = baseR + rr, tc = baseC + cc;
@@ -2463,7 +2526,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-r312",
+    source: "flat-office-grid-r314",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2493,17 +2556,17 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r312" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r314" };
   }
   return officeFlattenModelToRealGrid(model);
 }
 function wordModelsForExport(models) {
-  // r312: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word만 실제 격자를 유지합니다.
-  // 개별표는 r312의 3칸-과목전체행-영문전체행-3칸 실제 격자를 유지합니다.
+  // r314: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word는 가로/세로 모두 같은 실제 격자 구조를 유지합니다.
+  // 구조 변경 없이 카드 표시 설정(표시/위치/굵기/글자 크기/칸 자르기)만 반영합니다.
   return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r312: Excel은 전체/개별 모두 실제 격자를 유지합니다.
+  // r314: Excel은 전체/개별 모두 실제 격자를 유지하고 카드 표시 설정을 반영합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
 function officeProfileSummary(models) {
