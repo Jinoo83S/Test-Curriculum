@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r325: Office 1-4분할 셀별 계산 */
+/* r326: Office 1-4분할 셀별 계산 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r325</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r326</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-split-aware-grid-r325";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-split-aware-grid-r325";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-split-aware-grid-r325";
-import { auth, db } from "./js/config.js?v=2026-07-10-office-split-aware-grid-r325";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-split-aware-grid-r326";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-split-aware-grid-r326";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-split-aware-grid-r326";
+import { auth, db } from "./js/config.js?v=2026-07-10-office-split-aware-grid-r326";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-10-office-split-aware-grid-r325";
+const VERSION = "2026-07-10-office-split-aware-grid-r326";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1164,7 +1164,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r325.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r326.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -2749,25 +2749,20 @@ function officeBandSpanStartEnd(index=0, total=1, bands=1) {
   const end = Math.max(start + 1, officeBandStart(index + 1, total, bands));
   return [start, Math.min(total, end)];
 }
-function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}, rowspan=1) {
+function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}) {
   if (!out[r] || c < 0 || c >= out[r].length || !text) return;
   const incoming = officeProtectText(text);
   if (!incoming) return;
   const span = Math.max(1, Math.min(Number(colspan)||1, out[r].length - c));
-  const rspan = Math.max(1, Math.min(Number(rowspan)||1, out.length - r));
   const current = out[r][c];
   const hasCurrentText = !!(current && current.text);
   const mergedText = hasCurrentText ? [current.text, incoming].filter(Boolean).join("\n") : incoming;
   const mergedMeta = hasCurrentText ? {} : meta;
-  out[r][c] = officeTextFlatCell(mergedText, false, span, { ...mergedMeta, rowspan:rspan, vmerge:rspan > 1 ? "restart" : "" });
+  // r326: 1~4분할 계산은 유지하되, 행 방향 병합(vMerge/rowspan)은 쓰지 않습니다.
+  // r325처럼 과목/영문/교사 행을 세로로 병합하면 같은 교시의 다른 분할 수에 끌려
+  // 카드가 과도하게 커지고 Word 페이지가 늘어납니다. 텍스트는 계산된 한 행에만 배치합니다.
+  out[r][c] = officeTextFlatCell(mergedText, false, span, { ...mergedMeta, rowspan:1, vmerge:"" });
   for (let i=1; i<span; i++) out[r][c+i] = officeSpanSkipCell();
-  if (rspan > 1 && !hasCurrentText) {
-    for (let rr=1; rr<rspan; rr++) {
-      if (!out[r+rr]) continue;
-      out[r+rr][c] = officeVSpanCell(span);
-      for (let i=1; i<span && c+i<out[r+rr].length; i++) out[r+rr][c+i] = officeSpanSkipCell();
-    }
-  }
 }
 function officeCardBandPlacement(cardRow=0, cardCol=0, shapeRows=1, shapeCols=1, rows=1, cols=1) {
   const [r0, r1] = officeBandSpanStartEnd(cardRow, rows, shapeRows);
@@ -2792,18 +2787,18 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
   const out = Array.from({length:rows},()=>Array.from({length:cols},()=>officeBlankFlatCell(false)));
   if (!cell) return out;
   if (cell.header) {
-    officePlaceFlatText(out, 0, 0, cell.text || "", cols, {}, rows);
+    officePlaceFlatText(out, 0, 0, cell.text || "", cols, {});
     out[0][0].header = true;
     return out;
   }
   const cards = officeCardsForLayout(cell.cards || []);
   if (!cards.length) {
     const text = officeCellText(cell, "excel", model);
-    if (text) officePlaceFlatText(out, 0, 0, text, cols, { fieldKey: cell.fieldKey || "", fieldCfg: cell.fieldCfg || null, fieldDef: cell.fieldDef || null }, rows);
+    if (text) officePlaceFlatText(out, 0, 0, text, cols, { fieldKey: cell.fieldKey || "", fieldCfg: cell.fieldCfg || null, fieldDef: cell.fieldDef || null });
     return out;
   }
-  // r325: 한 교시 칸 안에서 1~4분할을 먼저 계산한 뒤, 그 칸에 배정된 실제 행/열 전체로 비례 확장합니다.
-  // 같은 행의 다른 칸 때문에 행/열이 커져도 1분할 카드는 위쪽 4줄에만 붙지 않고 전체 칸을 사용합니다.
+  // r326: 한 교시 칸 안에서 1~4분할을 먼저 계산합니다.
+  // 단, 세로 병합은 하지 않고 계산된 위치의 한 행에만 필드를 놓아 과도한 카드 확대를 막습니다.
   const count = Math.max(1, Math.min(4, cards.length));
   const shape = officeCardGridShape(count, model);
   const maxCardCols = Math.max(1, shape.cols || 1);
@@ -2821,7 +2816,7 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
       if (!value) return;
       const place = officeFieldBandPlacement(cardBand, def, cfg);
       if (place.r >= rows || place.c >= cols) return;
-      officePlaceFlatText(out, place.r, place.c, value, place.colspan, { fieldKey: def.key, fieldCfg: cfg, fieldDef: def }, place.rowspan);
+      officePlaceFlatText(out, place.r, place.c, value, place.colspan, { fieldKey: def.key, fieldCfg: cfg, fieldDef: def });
     });
   });
   return out;
@@ -2857,7 +2852,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-split-aware-r325",
+    source: "flat-office-grid-split-aware-r326",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2887,7 +2882,7 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r325" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r326" };
   }
   return officeFlattenModelToRealGrid(model);
 }
