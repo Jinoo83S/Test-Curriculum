@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r304</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r305</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-semantic-grid-r304";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-semantic-grid-r304";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-semantic-grid-r304";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-grid-r305";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-grid-r305";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-grid-r305";
 
-const VERSION = "2026-07-10-office-semantic-grid-r304";
+const VERSION = "2026-07-10-office-card-grid-r305";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1695,6 +1695,63 @@ function officePageRatioProfile(model=null) {
   return officeModelProfile(model).word?.page || (isWideOfficeOverview(model) ? "wide" : "standard");
 }
 
+function officeSettingsSnapshot() {
+  const s = collectSettings();
+  return {
+    splitDirections: normalizeSplitDirections(s.splitDirections),
+    splitFields: normalizeSplitFields(s.splitFields, s.fields),
+    fields: normalizeFields(s.fields),
+    splitStyles: normalizeSplitStyles(s.splitStyles),
+    specialSubjects: s.specialSubjects || [],
+    fontScale: s.fontScale || "normal"
+  };
+}
+function officeSettingsForModel(model=null) {
+  return model?.officeSettings || officeSettingsSnapshot();
+}
+function officeCardsForLayout(cards=[]) {
+  return (cards || []).filter(c => c && c.lines && c.lines.length);
+}
+function officeCardSplitCount(cards=[]) {
+  return Math.max(1, Math.min(4, officeCardsForLayout(cards).length || 1));
+}
+function officeSplitDirectionForCount(count=1, model=null) {
+  if (count <= 1) return "single";
+  const dirs = normalizeSplitDirections(officeSettingsForModel(model).splitDirections || {});
+  const key = String(Math.max(2, Math.min(4, count)));
+  const dir = dirs[key] || "auto";
+  if (dir === "rows" || dir === "cols" || dir === "grid") return dir;
+  return count >= 3 ? "grid" : "cols";
+}
+function officeCardGridShape(count=1, model=null) {
+  const n = Math.max(1, Math.min(4, Number(count) || 1));
+  const dir = officeSplitDirectionForCount(n, model);
+  if (n <= 1) return { cols:1, rows:1, dir:"single" };
+  if (dir === "rows") return { cols:1, rows:n, dir };
+  if (dir === "cols") return { cols:n, rows:1, dir };
+  return { cols:2, rows:Math.ceil(n/2), dir:"grid" };
+}
+function officeFieldsForCardCount(model=null, count=1) {
+  const st = officeSettingsForModel(model);
+  const splitFields = normalizeSplitFields(st.splitFields, st.fields);
+  return normalizeFields(splitFields[String(Math.max(1, Math.min(4, Number(count)||1)))] || st.fields || null);
+}
+function officeCardValue(card={}, key="subject") {
+  if (key === "class") return officeProtectText(card.className || card.class || "");
+  return officeProtectText(card[key] || "");
+}
+function officeFieldHalfSize(fieldCfg={}, key="subject", fallback=12) {
+  const px = fontValueToPx(fieldCfg.fontPx || fieldCfg.font, key);
+  return wordHalfFromPx(px, fallback, 6, 28);
+}
+function officeFieldPosition(fieldCfg={}, fieldDef={}) {
+  return (fieldCfg && fieldCfg.pos) || fieldDef?.pos || "mc";
+}
+function officeCellMatrixIndex(pos="mc") {
+  const map = { tl:[0,0], tc:[0,1], tr:[0,2], ml:[1,0], mc:[1,1], mr:[1,2], bl:[2,0], bc:[2,1], br:[2,2] };
+  return map[pos] || map.mc;
+}
+
 function officeTextFrom(el) { return officeProtectText(el?.innerText || el?.textContent || ""); }
 function cssPxFromEl(el, fallback=0) {
   if (!el) return fallback;
@@ -1864,6 +1921,7 @@ function individualExportMatrix(ent, allEntries=visibleEntriesForScope()) {
     rightNote: headerRightText(todayLabel()),
     profile: layoutProfile.profile,
     officeProfile: layoutProfile,
+    officeSettings: officeSettingsSnapshot(),
     targetType: targetType(),
     layoutMode: "individual",
     source: "data-matrix",
@@ -1909,6 +1967,7 @@ function overviewExportMatrixPages(ents, allEntries=visibleEntriesForScope()) {
       rightNote: headerRightText(""),
       profile: layoutProfile.profile,
       officeProfile: layoutProfile,
+      officeSettings: officeSettingsSnapshot(),
       targetType: targetType(),
       layoutMode: "overview",
       source: "data-matrix",
@@ -1936,6 +1995,65 @@ function sheetName(name, used=new Set()) {
   while(used.has(out)){ const suffix=` ${i++}`; out=(base.slice(0,31-suffix.length)+suffix).trim(); }
   used.add(out); return out;
 }
+function xlsxCell(cells, r, c, text="", style=0) {
+  if (!text) return;
+  if (!cells[r]) cells[r] = [];
+  const prev = cells[r].find(x => x.c === c);
+  if (prev) { prev.text = [prev.text, text].filter(Boolean).join("\n"); prev.style = Math.max(prev.style || 0, style || 0); return; }
+  cells[r].push({ c, text, style });
+}
+function xlsxMerge(merges, r1, c1, r2, c2) {
+  if (r2 > r1 || c2 > c1) merges.push({ r1, c1, r2, c2 });
+}
+function xlsxSlotShape(model) {
+  let maxCols = 1, maxRows = 1;
+  (model.grid || []).forEach(row => (row || []).forEach(cell => {
+    if (!cell || cell.header) return;
+    const cards = officeCardsForLayout(cell.cards || []);
+    if (!cards.length) return;
+    const shape = officeCardGridShape(Math.max(1, Math.min(4, cards.length)), model);
+    maxCols = Math.max(maxCols, shape.cols || 1);
+    maxRows = Math.max(maxRows, shape.rows || 1);
+  }));
+  return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(3, maxRows * 3) };
+}
+function xlsxFieldStyle(fieldKey, cfg, header=false) {
+  if (header) return 1;
+  if (fieldKey === "subject" || cfg?.bold) return 1;
+  return 0;
+}
+function xlsxPlaceCard3x3(cells, merges, rowBase, colBase, cardRows, cardCols, card, model, splitCount) {
+  const fields = officeFieldsForCardCount(model, splitCount);
+  const unitH = Math.max(1, Math.floor(cardRows / 3));
+  const unitW = Math.max(1, Math.floor(cardCols / 3));
+  const occupied = new Map();
+  FIELD_DEFS.forEach(def => {
+    const cfg = fields[def.key] || def;
+    if (cfg.enabled === false) return;
+    const value = officeCardValue(card, def.key);
+    if (!value) return;
+    const [pr, pc] = officeCellMatrixIndex(officeFieldPosition(cfg, def));
+    const rr = rowBase + pr * unitH;
+    const cc = colBase + pc * unitW;
+    const rs = pr === 2 ? Math.max(1, cardRows - unitH * 2) : unitH;
+    const cs = pc === 2 ? Math.max(1, cardCols - unitW * 2) : unitW;
+    const key = `${rr}:${cc}`;
+    xlsxCell(cells, rr, cc, value, xlsxFieldStyle(def.key, cfg));
+    if (!occupied.has(key)) {
+      occupied.set(key, true);
+      xlsxMerge(merges, rr, cc, rr + rs - 1, cc + cs - 1);
+    }
+  });
+}
+function xlsxExpandedGeometry(model) {
+  const logicalCols = Math.max(1, model.cols || 1);
+  const { slotCols, slotRows } = xlsxSlotShape(model);
+  const expandedCols = logicalCols <= 1 ? 1 : 1 + (logicalCols - 1) * slotCols;
+  return { logicalCols, slotCols, slotRows, expandedCols };
+}
+function xlsxLogicalStartCol(c, slotCols) {
+  return c === 0 ? 1 : 2 + (c - 1) * slotCols;
+}
 function buildXlsxBlob(models) {
   models = excelModelsForExport(models);
   const used=new Set();
@@ -1947,38 +2065,64 @@ function buildXlsxBlob(models) {
   files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
   files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="5"><font><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><sz val="14"/><name val="Malgun Gothic"/></font><font><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><sz val="7"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
   models.forEach((m,idx)=>{
-    const colCount=Math.max(1,m.cols||1);
     const overview = m.layoutMode==="overview" || /전체표/.test(m.title||"");
-    const dayOverview = !!m.wordDayOverview || (overview && Number(m.cols||0) <= 9);
-    const wideOverview = isWideOfficeOverview(m);
+    const geom = xlsxExpandedGeometry(m);
     const merges=[]; const rows=[];
-    const titleStart = colCount >= 3 ? 2 : 1;
-    const titleEnd = colCount >= 3 ? colCount-1 : colCount;
-    rows.push({height:24,cells:[{c:1,text:m.leftNote||"",style:3},{c:titleStart,text:m.title,style:2},{c:colCount,text:m.rightNote||"",style:3}]});
+    const titleStart = geom.expandedCols >= 3 ? 2 : 1;
+    const titleEnd = geom.expandedCols >= 3 ? geom.expandedCols-1 : geom.expandedCols;
+    rows.push({height:24,cells:[{c:1,text:m.leftNote||"",style:3},{c:titleStart,text:m.title,style:2},{c:geom.expandedCols,text:m.rightNote||"",style:3}]});
     rows.push({height:4,cells:[]});
     if (titleEnd > titleStart) merges.push({r1:1,c1:titleStart,r2:1,c2:titleEnd});
-    m.grid.forEach((row,r)=>{
-      const cells=[]; let maxLines=1; let maxLen=0;
-      row.forEach((cell,c)=>{
-        if(cell){
-          const text = officeCellText(cell, "excel", m);
-          maxLines = Math.max(maxLines, officeLineCount(cell, "excel", m));
-          maxLen = Math.max(maxLen, text.length);
-          const dense = text.length>120 || maxLines>8;
-          cells.push({c:c+1,text,style:cell.header?(officeModelProfile(m).excel.headerStyle):(dense?4:officeModelProfile(m).excel.bodyStyle)});
+    const headerRows = overview ? 2 : 1;
+    (m.grid || []).forEach((row,r)=>{
+      const isHeaderRow = r < headerRows;
+      const internalRows = isHeaderRow ? 1 : geom.slotRows;
+      const startSheetRow = rows.length + 1;
+      const cellsByInternal = Array.from({length:internalRows},()=>[]);
+      (row || []).forEach((cell,c)=>{
+        if (!cell) return;
+        const baseCol = xlsxLogicalStartCol(c, geom.slotCols);
+        const spanLogical = Math.max(1, Number(cell.colspan)||1);
+        const spanCols = c === 0 ? 1 : spanLogical * geom.slotCols;
+        if (cell.header) {
+          xlsxCell(cellsByInternal, 0, baseCol, cell.text || "", 1);
+          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow, baseCol + spanCols - 1);
+          return;
         }
+        if (c === 0) {
+          xlsxCell(cellsByInternal, 0, baseCol, cell.text || "", 1);
+          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow + internalRows - 1, baseCol);
+          return;
+        }
+        const cards = officeCardsForLayout(cell.cards || []).slice(0,6);
+        if (!cards.length) {
+          const text = officeCellText(cell, "excel", m);
+          xlsxCell(cellsByInternal, Math.floor(internalRows/2), baseCol, text, 0);
+          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow + internalRows - 1, baseCol + spanCols - 1);
+          return;
+        }
+        const count = Math.max(1, Math.min(4, cards.length));
+        const shape = officeCardGridShape(count, m);
+        const cardCols = Math.max(3, Math.floor(spanCols / shape.cols));
+        const cardRows = Math.max(3, Math.floor(internalRows / shape.rows));
+        cards.forEach((card,i)=>{
+          const rr = Math.floor(i / shape.cols);
+          const cc = i % shape.cols;
+          if (rr >= shape.rows) return;
+          xlsxPlaceCard3x3(cellsByInternal, merges, rr * cardRows, baseCol + cc * cardCols, cardRows, cardCols, card, m, count);
+        });
       });
-      const headerRow = r < (overview ? 2 : 1);
-      // r274: Excel 인쇄 렌더에서 행 내부 글자가 잘리는 문제를 줄이기 위해 학급-개별 행 높이를 충분히 확보합니다.
       const baseBodyHeight = officeModelProfile(m).excel.bodyHeight || (overview ? 58 : 78);
-      const bodyHeight = overview ? Math.min(baseBodyHeight, Math.max(Math.floor(baseBodyHeight*0.55), maxLines*5.8)) : Math.min(122, Math.max(baseBodyHeight, maxLines*9.0));
-      rows.push({height:headerRow?(overview?13:16):bodyHeight,cells});
+      const unitHeight = isHeaderRow ? (overview ? 13 : 16) : Math.max(6, Math.min(18, baseBodyHeight / internalRows));
+      cellsByInternal.forEach((cells,i)=>rows.push({height:unitHeight,cells}));
     });
-    m.merges.forEach(x=>merges.push({r1:x.r1+2,c1:x.c1,r2:x.r2+2,c2:x.c2}));
+    (m.merges || []).forEach(x=>{
+      // 표준 행렬의 헤더 병합은 위에서 확장 처리하므로, 일반 병합만 보존합니다.
+    });
     const lpExcel = officeModelProfile(m).excel || {};
-    const colWidth = overview ? (lpExcel.colWidth || 4.9) : (lpExcel.colWidth || 23.2);
+    const visualColWidth = overview ? (lpExcel.colWidth || 4.9) : (lpExcel.colWidth || 23.2);
     const firstColWidth = overview ? (lpExcel.firstColWidth || 5.0) : (lpExcel.firstColWidth || 4.0);
-    const colsXml=Array.from({length:colCount},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?firstColWidth:colWidth}" customWidth="1"/>`).join("");
+    const colsXml=Array.from({length:geom.expandedCols},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?firstColWidth:Math.max(0.75, visualColWidth / geom.slotCols)}" customWidth="1"/>`).join("");
     const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
     const mergeXml=merges.length?`<mergeCells count="${merges.length}">${merges.map(x=>`<mergeCell ref="${colName(x.c1)}${x.r1}:${colName(x.c2)}${x.r2}"/>`).join("")}</mergeCells>`:"";
     const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
@@ -2027,21 +2171,6 @@ function docxCellSize(text="", header=false, overview=false, wideOverview=false)
   if (lines>7 || len>95) return 12;
   return 14;
 }
-function officeTargetFromModel(model=null, fallbackProfile="") {
-  const raw = String(model?.targetType || model?.profile || fallbackProfile || currentOfficeProfile() || "class:individual");
-  return raw.split(":")[0] || "class";
-}
-function officeSemanticPositions(card={}, model=null, fallbackProfile="") {
-  const target = officeTargetFromModel(model, fallbackProfile);
-  const subject = officeProtectText(card.subject || "");
-  const english = officeProtectText(card.english || "");
-  const teacher = officeProtectText(card.teacher || "");
-  const room = officeProtectText(card.room || "");
-  const className = officeProtectText(card.className || card.class || "");
-  if (target === "teacher") return { topLeft:"", topRight:room, bottomLeft:className, bottomRight:"", subject, english };
-  if (target === "room") return { topLeft:"", topRight:teacher, bottomLeft:className, bottomRight:"", subject, english };
-  return { topLeft:"", topRight:room, bottomLeft:teacher, bottomRight:"", subject, english };
-}
 function wNoBorderTcPr(width=400, span=1) {
   const gridSpan = span > 1 ? `<w:gridSpan w:val="${span}"/>` : "";
   return `<w:tcPr><w:tcW w:w="${Math.max(1, Math.round(width))}" w:type="dxa"/>${gridSpan}<w:vAlign w:val="center"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="4" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="4" w:type="dxa"/></w:tcMar><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tcBorders></w:tcPr>`;
@@ -2049,76 +2178,63 @@ function wNoBorderTcPr(width=400, span=1) {
 function wSemanticTc(paras="", width=400, span=1) {
   return `<w:tc>${wNoBorderTcPr(width, span)}${paras || wPara("",{size:1,line:18})}</w:tc>`;
 }
-function wSemanticCardGrid(card={}, opts={}, count=1) {
-  const pos = officeSemanticPositions(card, opts.model || { profile: opts.officeProfile || opts.profile }, opts.officeProfile || opts.profile);
-  const totalW = Math.max(1200, Math.round((opts.width || 1600) - 28));
-  const third = Math.floor(totalW / 3);
-  const subjectSize = count >= 2 ? 13 : 15;
-  const englishSize = count >= 2 ? 8 : 9;
-  const metaSize = count >= 2 ? 8 : 9;
-  const topLine = 64;
-  const midLine = count >= 2 ? 92 : 108;
-  const botLine = 64;
-  const topLeft = pos.topLeft ? wPara(pos.topLeft,{align:"left",size:metaSize,line:topLine,color:"475569",noBreak:pos.topLeft.length<=14}) : wPara("",{size:1,line:topLine});
-  const topRight = pos.topRight ? wPara(pos.topRight,{align:"right",size:metaSize,line:topLine,color:"475569",noBreak:pos.topRight.length<=18}) : wPara("",{size:1,line:topLine});
-  const center = [
-    pos.subject ? wPara(pos.subject,{bold:true,align:"center",size:subjectSize,line:midLine,noBreak:pos.subject.length<=30}) : "",
-    pos.english ? wPara(pos.english,{align:"center",size:englishSize,line:Math.max(72, midLine-20),color:"475569",noBreak:pos.english.length<=38}) : ""
-  ].join("") || wPara("",{size:1,line:midLine});
-  const bottomLeft = pos.bottomLeft ? wPara(pos.bottomLeft,{align:"left",size:metaSize,line:botLine,color:"334155",noBreak:pos.bottomLeft.length<=18}) : wPara("",{size:1,line:botLine});
-  const bottomRight = pos.bottomRight ? wPara(pos.bottomRight,{align:"right",size:metaSize,line:botLine,color:"334155",noBreak:pos.bottomRight.length<=18}) : wPara("",{size:1,line:botLine});
-  return `<w:tbl><w:tblPr><w:tblW w:w="${totalW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="${third}"/><w:gridCol w:w="${third}"/><w:gridCol w:w="${totalW - third*2}"/></w:tblGrid><w:tr><w:trPr><w:trHeight w:val="${count>=2?92:118}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(topLeft,third)}${wSemanticTc("",third)}${wSemanticTc(topRight,totalW-third*2)}</w:tr><w:tr><w:trPr><w:trHeight w:val="${count>=2?250:340}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(center,totalW,3)}</w:tr><w:tr><w:trPr><w:trHeight w:val="${count>=2?92:118}" w:hRule="atLeast"/></w:trPr>${wSemanticTc(bottomLeft,third)}${wSemanticTc("",third)}${wSemanticTc(bottomRight,totalW-third*2)}</w:tr></w:tbl>`;
+function wCardFieldPara(value="", fieldKey="subject", cfg={}, def={}, opts={}) {
+  const text = officeProtectText(value);
+  if (!text) return "";
+  const isSubject = fieldKey === "subject";
+  const isEnglish = fieldKey === "english";
+  const fallback = isSubject ? 15 : (isEnglish ? 9 : 8);
+  const size = officeFieldHalfSize(cfg, fieldKey, fallback);
+  const color = isEnglish ? "475569" : (isSubject ? "111827" : "334155");
+  const line = isSubject ? 104 : (isEnglish ? 76 : 70);
+  const align = /r$/.test(officeFieldPosition(cfg, def)) ? "right" : (/l$/.test(officeFieldPosition(cfg, def)) ? "left" : "center");
+  return wPara(text,{bold:!!cfg.bold,align,size,line,color,noBreak:text.length<=32});
 }
-
+function wOfficeCard3x3(card={}, opts={}, splitCount=1, totalW=1600, totalH=500) {
+  const fields = officeFieldsForCardCount(opts.model || { profile: opts.officeProfile || opts.profile }, splitCount);
+  const defs = Object.fromEntries(FIELD_DEFS.map(f=>[f.key,f]));
+  const matrix = Array.from({length:3},()=>Array.from({length:3},()=>[]));
+  FIELD_DEFS.forEach(def => {
+    const cfg = fields[def.key] || def;
+    if (cfg.enabled === false) return;
+    const value = officeCardValue(card, def.key);
+    if (!value) return;
+    const [r,c] = officeCellMatrixIndex(officeFieldPosition(cfg, def));
+    // 영문명은 독립 필드이지만 기본값은 과목 아래 영역입니다. 디자이너 설정값이 있으면 그대로 따릅니다.
+    matrix[r][c].push(wCardFieldPara(value, def.key, cfg, def, opts));
+  });
+  const w1 = Math.max(1, Math.floor(totalW/3));
+  const widths = [w1, w1, Math.max(1, totalW - w1*2)];
+  const h1 = Math.max(70, Math.floor(totalH/3));
+  const heights = [h1, Math.max(100, totalH - h1*2), h1];
+  const rows = matrix.map((row, r) => `<w:tr><w:trPr><w:trHeight w:val="${heights[r]}" w:hRule="atLeast"/></w:trPr>${row.map((paras,c)=>wSemanticTc(paras.join("") || wPara("",{size:1,line:18}), widths[c])).join("")}</w:tr>`).join("");
+  return `<w:tbl><w:tblPr><w:tblW w:w="${totalW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid>${widths.map(w=>`<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>${rows}</w:tbl>`;
+}
+function wOfficeCardsGrid(cards=[], opts={}) {
+  const list = officeCardsForLayout(cards).slice(0,6);
+  if (!list.length) return "";
+  const count = Math.max(1, Math.min(4, list.length));
+  const shape = officeCardGridShape(count, opts.model || { profile: opts.officeProfile || opts.profile });
+  const totalW = Math.max(1200, Math.round((opts.width || 1600) - 28));
+  const cardW = Math.max(900, Math.floor(totalW / shape.cols));
+  const rowH = opts.overview ? 260 : (shape.rows > 1 ? 360 : 520);
+  const gridCols = Array.from({length:shape.cols},(_,i)=> i === shape.cols-1 ? totalW - cardW*(shape.cols-1) : cardW);
+  let idx = 0;
+  const rows = [];
+  for (let r=0; r<shape.rows; r++) {
+    const tcs=[];
+    for (let c=0; c<shape.cols; c++) {
+      const card = list[idx++];
+      const w = gridCols[c] || cardW;
+      tcs.push(wSemanticTc(card ? wOfficeCard3x3(card, opts, count, w, rowH) : wPara("",{size:1,line:18}), w));
+    }
+    rows.push(`<w:tr><w:trPr><w:trHeight w:val="${rowH}" w:hRule="atLeast"/></w:trPr>${tcs.join("")}</w:tr>`);
+  }
+  return `<w:tbl><w:tblPr><w:tblW w:w="${totalW}" w:type="dxa"/><w:jc w:val="center"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid>${gridCols.map(w=>`<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>${rows.join("")}</w:tbl>`;
+}
 function wordCellBody(text="", opts={}, sz=12) {
   const cards = Array.isArray(opts.cards) ? opts.cards.filter(c=>c && c.lines && c.lines.length) : [];
-  if (!opts.header && cards.length) {
-    const count = cards.length;
-    const overview = !!opts.overview;
-    if (!overview && count <= 2 && cards.some(c => c.subject || c.english || c.teacher || c.room || c.className)) {
-      return cards.map((card, idx) => {
-        const grid = wSemanticCardGrid(card, opts, count);
-        const gap = (count === 2 && idx < count - 1) ? wPara("", { size:1, line:28 }) : "";
-        return grid + gap;
-      }).join("");
-    }
-    const dense = count >= 3 || overview;
-    const veryDense = count >= 4 || overview;
-    const oneCard = count === 1;
-    const twoCards = count === 2;
-    const blocks = cards.map((card)=>{
-      const lines = officeLinesForCard(card, count, "word");
-      const subj = officeProtectText(lines[0] || "");
-      const eng = (!dense && lines.length >= 3) ? officeProtectText(lines[1]) : "";
-      const meta = dense ? officeProtectText(lines[1] || "") : officeProtectText(lines.length >= 3 ? lines[2] : lines[1] || "");
-      const subjSz = wordHalfFromPx(card.subjectPx, oneCard ? 15 : 13, dense ? 10 : 10, oneCard ? 22 : 18);
-      const engSz = wordHalfFromPx(card.englishPx, oneCard ? 10 : 9, 8, oneCard ? 16 : 14);
-      const metaSz = wordHalfFromPx(card.metaPx, oneCard ? 10 : 9, 8, oneCard ? 16 : 14);
-      return {subj, eng, meta, subjSz, engSz, metaSz, subjectBold: card.subjectBold !== false, metaBold: !!card.metaBold};
-    });
-    // r280: Word 전체표는 A4 한계상 셀마다 핵심 정보 1줄 압축을 기본으로 합니다.
-    if (dense) {
-      return blocks.map((b)=>{
-        const one = [b.subj, b.meta].filter(Boolean).join(" · ");
-        if (!one) return "";
-        const prof = officeModelProfile(opts.model || { profile: opts.officeProfile || opts.profile });
-        const compactSz = overview ? (prof.word?.bodyHalf || (opts.wideOverview ? 7 : 11)) : Math.max(12, Math.min(15, Math.min(b.subjSz || 14, b.metaSz || 13)));
-        const compactLine = opts.wideOverview ? 78 : (overview ? 96 : (veryDense ? 118 : 124));
-        return wPara(one,{bold:true,align:"center",size:compactSz,line:compactLine,noBreak:one.length<=54});
-      }).join("");
-    }
-    return blocks.map((b,idx)=>{
-      const parts=[];
-      const subjectSz = Math.max(twoCards ? 12 : 14, Math.min(twoCards ? 17 : 22, b.subjSz || (oneCard ? 15 : 13)));
-      const subSz = Math.max(8, Math.min(twoCards ? 14 : 16, b.engSz || (oneCard ? 10 : 9)));
-      const metaSz = Math.max(8, Math.min(twoCards ? 14 : 16, b.metaSz || (oneCard ? 10 : 9)));
-      if (b.subj) parts.push(wPara(b.subj,{bold:b.subjectBold !== false,align:"center",size:subjectSz,line:oneCard?136:112,noBreak:b.subj.length<=32}));
-      if (b.eng) parts.push(wPara(b.eng,{align:"center",size:subSz,line:oneCard?104:88,color:"475569",noBreak:b.eng.length<=42}));
-      if (b.meta) parts.push(wPara(b.meta,{bold:b.metaBold,align:"center",size:metaSz,line:oneCard?100:86,noBreak:b.meta.length<=44}));
-      if (twoCards && idx < blocks.length-1) parts.push(wPara("",{align:"center",size:1,line:10,color:"CBD5E1"}));
-      return parts.join("");
-    }).join("");
-  }
+  if (!opts.header && cards.length) return wOfficeCardsGrid(cards, opts);
   return wPara(officeProtectText(text),{bold:opts.header,align:"center",size:sz,line:Math.max(100, Math.min(150, sz*12)),noBreak:String(text||"").length<=18});
 }
 
@@ -2175,7 +2291,7 @@ function isWideOfficeOverview(model) {
   return isOverviewModel(model) && Number(model?.cols || 0) >= 30;
 }
 function wordModelsForExport(models) {
-  // r304: r303 과목명 축약은 폐기하고 r302 기준에 셀 내부 의미 격자를 추가합니다. 전체표 Office 출력은 월~금 전체를 한 표에 둡니다.
+  // r305: Office 출력은 디자이너 카드 표시/분할 규칙을 3x3 의미 격자로 변환합니다.
   // 물리 용지명 대신 LayoutProfile의 가로/세로 비율과 셀 표시 밀도를 따릅니다.
   return models || [];
 }
