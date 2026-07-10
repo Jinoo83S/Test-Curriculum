@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r322: 전체 출력 프로필 키 정규화 */
+/* r323: 프로필 내부값 정합성 보정 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r322</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r323</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-print-settings-all-profile-normalize-r322";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-print-settings-all-profile-normalize-r322";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-print-settings-all-profile-normalize-r322";
-import { auth, db } from "./js/config.js?v=2026-07-10-print-settings-all-profile-normalize-r322";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
+import { auth, db } from "./js/config.js?v=2026-07-10-print-settings-profile-value-consistency-r323";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-10-print-settings-all-profile-normalize-r322";
+const VERSION = "2026-07-10-print-settings-profile-value-consistency-r323";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1022,15 +1022,21 @@ function normalizeProfileValue(key, value) {
   if ((parts[0] !== "excel" && parts[0] !== "pdf" && parts[0] !== "word") || parts.length < 4) return { ...v, printProfile: canonical || v.printProfile || key };
   const fmt = parts[0];
   const ori = normalizeOrientationForProfile(fmt, parts[1], parts[2], parts[3]);
+  const target = parts[2] || "class";
+  const mode = target === "student" ? "individual" : (parts[3] || "individual");
+  const printProfile = `${fmt}:${ori}:${target}:${mode}`;
+  // r323: 프로필 key가 기준입니다.
+  // 구버전/복사 설정 안에 targetType/layoutMode/format/orientation 값이 섞여 있어도
+  // 적용 시 엉뚱한 출력 종류로 이동하지 않도록 내부 메타값을 key 기준으로 강제 정합화합니다.
   return {
     ...v,
-    targetType: v.targetType || parts[2],
-    layoutMode: v.layoutMode || parts[3],
+    targetType: target,
+    layoutMode: mode,
     format: fmt,
     paper: fmt === "excel" ? "a4-landscape" : (ori === "portrait" ? "a4-portrait" : "a4-landscape"),
     orientation: fmt === "excel" ? "sheet" : ori,
-    outputProfile: `${parts[2]}:${parts[3]}`,
-    printProfile: `${fmt}:${ori}:${parts[2]}:${parts[3]}`
+    outputProfile: `${target}:${mode}`,
+    printProfile
   };
 }
 function profileKeyCandidates(key=profileKey()) {
@@ -1073,6 +1079,15 @@ function readStore() {
 }
 function writeStore(store) {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(normalizeDesignerStore(store||{}))); } catch {}
+}
+function normalizeLocalDesignerStorage() {
+  try {
+    const normalized = readStore();
+    writeStore(normalized);
+    const last = clean(localStorage.getItem(LAST_KEY));
+    if (last) localStorage.setItem(LAST_KEY, canonicalProfileKey(last));
+    return normalized;
+  } catch { return {}; }
 }
 function findProfileSettings(store, key=profileKey()) {
   for (const k of profileKeyCandidates(key)) {
@@ -1144,11 +1159,12 @@ function currentDesignerSettingsPayload(activeProfile=profileKey(), activeSettin
 }
 function exportDesignerSettings() {
   try {
+    normalizeLocalDesignerStorage();
     syncActiveFieldDraft();
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r322.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r323.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -1210,7 +1226,7 @@ async function saveDesignerSettingsToFirestore(store, activeProfile, activeSetti
   firestoreSettingsLoaded = true;
   return { saved: true };
 }
-function saveSettings() { if (applying) return; syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
+function saveSettings() { if (applying) return; normalizeLocalDesignerStorage(); syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
