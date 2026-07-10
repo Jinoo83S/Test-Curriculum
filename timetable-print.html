@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r320: 출력 종류 패널 2열 폭 보정 */
+/* r321: Excel 구버전 방향별 프로필 정리 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r320</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r321</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-print-settings-profile-normalize-r320";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-print-settings-profile-normalize-r320";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-print-settings-profile-normalize-r320";
-import { auth, db } from "./js/config.js?v=2026-07-10-print-settings-profile-normalize-r320";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-print-settings-excel-profile-clean-r321";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-print-settings-excel-profile-clean-r321";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-print-settings-excel-profile-clean-r321";
+import { auth, db } from "./js/config.js?v=2026-07-10-print-settings-excel-profile-clean-r321";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-10-print-settings-profile-normalize-r320";
+const VERSION = "2026-07-10-print-settings-excel-profile-clean-r321";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -956,13 +956,13 @@ function profileKey() { const t=targetType(); const m=t === "student" ? "individ
 function lastProfileKey() {
   try {
     const direct = clean(localStorage.getItem(LAST_KEY));
-    if (direct) return direct;
+    if (direct) return canonicalProfileKey(direct);
     for (const key of LEGACY_LAST_KEYS) {
       const v = clean(localStorage.getItem(key));
-      if (v) return v;
+      if (v) return canonicalProfileKey(v);
     }
   } catch {}
-  return profileKey();
+  return canonicalProfileKey(profileKey());
 }
 function defaultFieldSettings() { return Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos,font:"normal",fontPx:""}])); }
 function normalizeFields(raw) { const base=defaultFieldSettings(); if (raw && typeof raw === "object") FIELD_DEFS.forEach(f=>{ base[f.key]={...base[f.key], ...(raw[f.key]||{})}; }); return base; }
@@ -972,6 +972,26 @@ function canonicalProfileKey(key=profileKey()) {
   const parts = clean(key).split(":");
   if (parts[0] === "excel" && parts.length >= 4) return `excel:sheet:${parts[2]}:${parts[3]}`;
   return clean(key);
+}
+function isLegacyExcelProfileKey(key="") {
+  const parts = clean(key).split(":");
+  return parts[0] === "excel" && (parts[1] === "portrait" || parts[1] === "landscape") && parts.length >= 4;
+}
+function normalizeExcelProfileValue(key, value) {
+  const canonical = canonicalProfileKey(key);
+  const parts = canonical.split(":");
+  const v = value && typeof value === "object" ? value : {};
+  if (parts[0] !== "excel" || parts.length < 4) return { ...v, printProfile: canonical || v.printProfile || key };
+  return {
+    ...v,
+    targetType: v.targetType || parts[2],
+    layoutMode: v.layoutMode || parts[3],
+    format: "excel",
+    paper: "a4-landscape",
+    orientation: "sheet",
+    outputProfile: `${parts[2]}:${parts[3]}`,
+    printProfile: canonical
+  };
 }
 function profileKeyCandidates(key=profileKey()) {
   const k = canonicalProfileKey(key);
@@ -989,19 +1009,17 @@ function profileKeyCandidates(key=profileKey()) {
 }
 function normalizeDesignerStore(store) {
   const src = store && typeof store === "object" ? store : {};
-  const out = { ...src };
+  const out = {};
   Object.entries(src).forEach(([key, value]) => {
     if (!value || typeof value !== "object") return;
     const canonical = canonicalProfileKey(key);
-    if (canonical !== key && !out[canonical]) {
-      out[canonical] = {
-        ...value,
-        format: "excel",
-        paper: "a4-landscape",
-        orientation: "sheet",
-        printProfile: canonical
-      };
+    const normalized = normalizeExcelProfileValue(key, value);
+    if (!canonical) return;
+    if (isLegacyExcelProfileKey(key)) {
+      if (!out[canonical]) out[canonical] = normalized;
+      return;
     }
+    out[canonical] = normalized;
   });
   return out;
 }
@@ -1085,7 +1103,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r320.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r321.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
