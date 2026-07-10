@@ -596,10 +596,11 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r317</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r318</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
+  <button id="exportSettingsBtn" type="button" title="임시 기능: 현재 출력 디자이너 설정을 JSON으로 백업합니다.">설정 내보내기</button>
   <button id="loginBtn" class="hidden">Google 로그인</button>
   <button id="logoutBtn" class="hidden">로그아웃</button>
   <button id="refreshBtn">미리보기 새로고침</button>
@@ -664,11 +665,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-excel-neutral-r317";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-excel-neutral-r317";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-excel-neutral-r317";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-print-settings-firestore-r318";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-print-settings-firestore-r318";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-print-settings-firestore-r318";
+import { auth, db } from "./js/config.js?v=2026-07-10-print-settings-firestore-r318";
+import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-10-office-excel-neutral-r317";
+const VERSION = "2026-07-10-print-settings-firestore-r318";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -713,6 +716,9 @@ const STORE_KEY = "his_print_designer_profiles_v2";
 const LAST_KEY = "his_print_designer_last_profile_v2";
 const LEGACY_STORE_KEYS = ["his_print_designer_profiles_r246","his_print_designer_profiles_r244","his_print_designer_profiles_r243","his_print_designer_profiles_r242","his_print_designer_profiles_r241","his_print_designer_profiles_r240"];
 const LEGACY_LAST_KEYS = ["his_print_designer_last_profile_r246","his_print_designer_last_profile_r244","his_print_designer_last_profile_r243","his_print_designer_last_profile_r242","his_print_designer_last_profile_r241","his_print_designer_last_profile_r240"];
+const FIRESTORE_SETTINGS_REF = doc(db, "boards", "printDesignerProfiles");
+let firestoreSettingsLoaded = false;
+let firestoreSettingsLoading = false;
 const OFFICE_PROFILE_MATRIX = [
   "class:individual", "class:overview",
   "teacher:individual", "teacher:overview",
@@ -728,7 +734,7 @@ function isFormatAllowedForProfile(fmt="pdf", profile="") {
   // 전체표는 35교시를 실제 격자로 확장해야 하므로 Excel/PDF만 일관된 출력 대상으로 유지합니다.
   return !(String(fmt || "") === "word" && isOverviewProfileName(profile));
 }
-// r317: Excel은 가로/세로 출력 프로필을 나누지 않습니다.
+// r318: Excel은 가로/세로 출력 프로필을 나누지 않습니다.
 // Excel은 편집 가능한 격자 파일이므로 용지 방향은 PDF/Word에서만 의미를 갖습니다.
 const PRINT_ORIENTATION_BY_FORMAT = { pdf: PRINT_ORIENTATIONS, word: PRINT_ORIENTATIONS, excel: ["sheet"] };
 const PRINT_PROFILE_MATRIX = PRINT_FORMATS.flatMap(fmt => (PRINT_ORIENTATION_BY_FORMAT[fmt] || PRINT_ORIENTATIONS).flatMap(ori => OFFICE_PROFILE_MATRIX
@@ -977,7 +983,7 @@ function normalizeSplitStyles(raw) { const out=structuredClone(SPLIT_DEFAULTS); 
 function applySplitStyles(raw) { const styles=normalizeSplitStyles(raw); splitFieldStyleDraft=structuredClone(styles); [1,2,3,4].forEach(n=>{ const k=String(n); const font=$("splitFont"+n); const layout=$("splitLayout"+n); if(font) font.value=styles[k].font; if(layout) layout.value=styles[k].layout; }); if ($("ellipsisMode")) $("ellipsisMode").checked = !!styles[String(activeSplitTab||"1")]?.clip; }
 function cardControlChanged(el) { return !!el.closest('#fieldRows') || ['cellLayout','fontScale','applyMode','fontMode','splitFont1','splitFont2','splitFont3','splitFont4','splitLayout1','splitLayout2','splitLayout3','splitLayout4','splitDir2','splitDir3','splitDir4','ellipsisMode'].includes(el.id); }
 function markDirty(msg='설정 저장 필요') { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent=msg; btn.classList.add('dirty'); btn.classList.remove('saved'); } }
-function markSaved() { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent='설정 저장됨'; btn.classList.remove('dirty'); btn.classList.add('saved'); clearTimeout(markSaved.t); markSaved.t=setTimeout(()=>{ btn.textContent='설정 저장'; btn.classList.remove('saved'); },1400); } }
+function markSaved(msg='설정 저장됨') { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent=msg; btn.classList.remove('dirty'); btn.classList.add('saved'); clearTimeout(markSaved.t); markSaved.t=setTimeout(()=>{ btn.textContent='설정 저장'; btn.classList.remove('saved'); },1400); } }
 function markCardApplyNeeded() { const btn=$("applyCardSettingsBtn"); if(btn) btn.classList.add('pending'); markDirty(); }
 function markCardApplied() { const btn=$("applyCardSettingsBtn"); if(btn) btn.classList.remove('pending'); }
 function readFieldControls() { const fields={}; FIELD_DEFS.forEach(f=>{ fields[f.key]={ enabled: !!document.querySelector(`[data-field-enabled="${f.key}"]`)?.checked, bold: !!document.querySelector(`[data-field-bold="${f.key}"]`)?.checked, pos: document.querySelector(`[data-field-pos="${f.key}"]`)?.value || f.pos, fontPx: document.querySelector(`[data-field-font="${f.key}"]`)?.value || "" }; }); return normalizeFields(fields); }
@@ -1002,7 +1008,94 @@ function applySplitFontPresetToControls(font) {
 function syncActiveFieldDraft() { if (!splitFieldDraft) splitFieldDraft = normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); }
 function syncActiveStyleDraft() { if (!splitFieldStyleDraft) splitFieldStyleDraft = normalizeSplitStyles(null); const k=String(activeSplitTab||"1"); splitFieldStyleDraft[k] = { ...(splitFieldStyleDraft[k]||SPLIT_DEFAULTS[k]), font: $("splitFont"+k)?.value || SPLIT_DEFAULTS[k].font, layout: $("splitLayout"+k)?.value || SPLIT_DEFAULTS[k].layout, clip: !!$("ellipsisMode")?.checked }; }
 function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
-function saveSettings() { if (applying) return; syncActiveFieldDraft(); const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, format:s.format, paper:s.paper, orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:profileKey(), fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(); updateProfileStatus(); renderPreview(); }
+function normalizeFirestoreDesignerPayload(payload) {
+  const profiles = payload?.profiles && typeof payload.profiles === "object" ? payload.profiles : (payload?.store && typeof payload.store === "object" ? payload.store : {});
+  return { profiles, lastProfile: clean(payload?.lastProfile || payload?.activeProfile || "") };
+}
+function currentDesignerSettingsPayload(activeProfile=profileKey(), activeSettings=null) {
+  const store = readStore();
+  const lastProfile = clean(localStorage.getItem(LAST_KEY) || activeProfile || profileKey());
+  return {
+    version: 1,
+    appVersion: VERSION,
+    source: "timetable-print-designer",
+    storeKey: STORE_KEY,
+    lastKey: LAST_KEY,
+    exportedAt: new Date().toISOString(),
+    lastProfile,
+    activeProfile: activeProfile || lastProfile,
+    activeSettings: activeSettings || store[activeProfile] || null,
+    profiles: store
+  };
+}
+function exportDesignerSettings() {
+  try {
+    syncActiveFieldDraft();
+    syncActiveStyleDraft();
+    const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
+    const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r318.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+  } catch (e) {
+    console.error("출력 디자이너 설정 내보내기 실패", e);
+    alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
+  }
+}
+function mergeFirestoreDesignerSettings(payload) {
+  const incoming = normalizeFirestoreDesignerPayload(payload);
+  const local = readStore();
+  const localHasProfiles = Object.keys(local || {}).length > 0;
+  const merged = localHasProfiles ? { ...incoming.profiles, ...local } : { ...incoming.profiles };
+  if (Object.keys(merged).length) writeStore(merged);
+  try {
+    if (!clean(localStorage.getItem(LAST_KEY)) && incoming.lastProfile) localStorage.setItem(LAST_KEY, incoming.lastProfile);
+  } catch {}
+  return Object.keys(incoming.profiles || {}).length;
+}
+async function loadDesignerSettingsFromFirestore(applyToUi=false) {
+  if (LOCAL_DEV_MODE || firestoreSettingsLoaded || firestoreSettingsLoading) return false;
+  firestoreSettingsLoading = true;
+  try {
+    const snap = await getDoc(FIRESTORE_SETTINGS_REF);
+    firestoreSettingsLoaded = true;
+    if (!snap.exists()) return false;
+    const count = mergeFirestoreDesignerSettings(snap.data());
+    if (applyToUi && count) {
+      const last = lastProfileKey();
+      const store = readStore();
+      const base = last && store[last] ? store[last] : defaultSettings();
+      applySettings(base, false, true);
+      currentScopeType = targetType();
+      buildScopeUi();
+      buildSpecialSubjects();
+      restoreScopeState(scopeMemory[currentScopeType] || base);
+      applySpecialSubjects(base.specialSubjects || []);
+      renderEntityList();
+      updateExportButtonLabel();
+      updateProfileStatus();
+      scheduleRender();
+    }
+    return true;
+  } catch (e) {
+    console.warn("Firestore 출력 디자이너 설정 불러오기 실패", e);
+    return false;
+  } finally {
+    firestoreSettingsLoading = false;
+  }
+}
+async function saveDesignerSettingsToFirestore(store, activeProfile, activeSettings) {
+  if (LOCAL_DEV_MODE) return { skipped: true, reason: "local-dev" };
+  const payload = {
+    ...currentDesignerSettingsPayload(activeProfile, activeSettings),
+    profiles: store || readStore(),
+    updatedAt: serverTimestamp(),
+    updatedAtClient: new Date().toISOString(),
+    updatedBy: auth.currentUser ? { uid: auth.currentUser.uid || "", email: auth.currentUser.email || "", displayName: auth.currentUser.displayName || "" } : null
+  };
+  await setDoc(FIRESTORE_SETTINGS_REF, payload, { merge: false });
+  firestoreSettingsLoaded = true;
+  return { saved: true };
+}
+function saveSettings() { if (applying) return; syncActiveFieldDraft(); const store=readStore(); const key=profileKey(); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, format:s.format, paper:s.paper, orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:profileKey(), fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
@@ -1741,7 +1834,7 @@ function officeWordIsPortrait() {
 function officeWordTableWidth(model=null) {
   const portrait = officeWordIsPortrait();
   const wide = officePageRatioProfile(model) === "wide";
-  // r317: 세로/가로 모두 같은 시간표 구조를 유지합니다.
+  // r318: 세로/가로 모두 같은 시간표 구조를 유지합니다.
   // 글자가 잘리는 문제는 레이아웃 구조 변경으로 해결하지 않습니다.
   if (wide) return portrait ? 16580 : 23560;
   return portrait ? 11620 : 16580;
@@ -2102,7 +2195,7 @@ function xlsxSlotShape(model) {
     maxCols = Math.max(maxCols, shape.cols || 1);
     maxRows = Math.max(maxRows, shape.rows || 1);
   }));
-  // r317: 카드 1개는 3칸/과목 전체행/영문 전체행/3칸 = 4행 구조를 유지합니다.
+  // r318: 카드 1개는 3칸/과목 전체행/영문 전체행/3칸 = 4행 구조를 유지합니다.
   return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(4, maxRows * 4) };
 }
 let XLSX_STYLE_REGISTRY = { map:new Map(), entries:[] };
@@ -2143,7 +2236,7 @@ function xlsxFieldStyle(fieldKey, cfg, header=false) {
   return XLSX_STYLE_REGISTRY?.map?.get(key) || (cfg?.bold ? 1 : 0);
 }
 function officeCardStructuredIndex(def, cfg) {
-  // r317 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
+  // r318 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
   // 과목·영문은 카드 폭 전체를 쓰는 1행으로 배치하고, 교실/교사 등 위치 필드는 위·아래 3칸을 사용합니다.
   if (def?.key === "subject") return [1, 0];
   if (def?.key === "english") return [2, 0];
@@ -2258,7 +2351,7 @@ function buildXlsxBlob(models) {
     const colsXml=Array.from({length:geom.expandedCols},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?firstColWidth:Math.max(0.75, visualColWidth / geom.slotCols)}" customWidth="1"/>`).join("");
     const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
     const mergeXml=merges.length?`<mergeCells count="${merges.length}">${merges.map(x=>`<mergeCell ref="${colName(x.c1)}${x.r1}:${colName(x.c2)}${x.r2}"/>`).join("")}</mergeCells>`:"";
-    // r317: Excel은 가로/세로 구분 없이 같은 격자 구조를 저장합니다.
+    // r318: Excel은 가로/세로 구분 없이 같은 격자 구조를 저장합니다.
     files.push({name:`xl/worksheets/sheet${idx+1}.xml`,data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>${colsXml?`<cols>${colsXml}</cols>`:""}<sheetData>${rowsXml}</sheetData>${mergeXml}<printOptions horizontalCentered="1" verticalCentered="1"/><pageMargins left="0.15" right="0.15" top="0.2" bottom="0.2" header="0" footer="0"/><pageSetup fitToWidth="1" fitToHeight="1"/></worksheet>`});
   });
   return zipStore(files);
@@ -2268,7 +2361,7 @@ function wText(text="") {
   return lines.map((line,i)=>`${i?"<w:br/>":""}<w:t xml:space="preserve">${xmlEsc(line)}</w:t>`).join("");
 }
 function wSafeLineTwips(line=0, size=12, text="") {
-  // r317: Word에서 글자 윗부분이 잘리는 주원인은 셀 여백이 아니라
+  // r318: Word에서 글자 윗부분이 잘리는 주원인은 셀 여백이 아니라
   // 폰트 크기보다 작은 exact line-height입니다. w:sz는 half-point, w:line은 twip이므로
   // 최소 줄높이를 글자 크기보다 크게 잡아야 한글/영문 ascender가 잘리지 않습니다.
   const sz = Math.max(1, Number(size) || 12);
@@ -2574,7 +2667,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-style-r317",
+    source: "flat-office-grid-style-r318",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2604,17 +2697,17 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r317" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-style-r318" };
   }
   return officeFlattenModelToRealGrid(model);
 }
 function wordModelsForExport(models) {
-  // r317: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word는 가로/세로 모두 같은 실제 격자 구조를 유지합니다.
+  // r318: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word는 가로/세로 모두 같은 실제 격자 구조를 유지합니다.
   // 구조 변경 없이 카드 표시 설정(표시/위치/굵기/글자 크기/칸 자르기)만 반영합니다.
   return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r317: Excel은 전체/개별 모두 실제 격자를 유지하고 카드 표시 설정을 반영합니다.
+  // r318: Excel은 전체/개별 모두 실제 격자를 유지하고 카드 표시 설정을 반영합니다.
   // 가로/세로 프로필을 나누지 않고 같은 XLSX 구조로 저장합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
@@ -2860,8 +2953,8 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    return;
  }
  if (e.target.id === "outputKind") return;
- if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
-function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } }
+ if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } if (user && !LOCAL_DEV_MODE) { loadDesignerSettingsFromFirestore(true); } }
 function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
 </script>
