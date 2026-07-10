@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r308</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r309</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-word-overview-safe-r308";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-word-overview-safe-r308";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-word-overview-safe-r308";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-overview-word-removed-r309";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-overview-word-removed-r309";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-overview-word-removed-r309";
 
-const VERSION = "2026-07-10-office-word-overview-safe-r308";
+const VERSION = "2026-07-10-office-overview-word-removed-r309";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -723,8 +723,13 @@ const PRINT_FORMATS = ["pdf", "word", "excel"];
 const PRINT_ORIENTATIONS = ["landscape", "portrait"];
 function isOverviewProfileName(profile="") { return /:overview$/.test(String(profile || "")); }
 function isPortraitAllowedForProfile(profile="") { return !isOverviewProfileName(profile); }
+function isFormatAllowedForProfile(fmt="pdf", profile="") {
+  // r309: 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
+  // 전체표는 35교시를 실제 격자로 확장해야 하므로 Excel/PDF만 일관된 출력 대상으로 유지합니다.
+  return !(String(fmt || "") === "word" && isOverviewProfileName(profile));
+}
 const PRINT_PROFILE_MATRIX = PRINT_FORMATS.flatMap(fmt => PRINT_ORIENTATIONS.flatMap(ori => OFFICE_PROFILE_MATRIX
-  .filter(profile => ori !== "portrait" || isPortraitAllowedForProfile(profile))
+  .filter(profile => (ori !== "portrait" || isPortraitAllowedForProfile(profile)) && isFormatAllowedForProfile(fmt, profile))
   .map(profile => `${fmt}:${ori}:${profile}`)));
 const PRINT_PROFILE_LABELS = {
   pdf:"PDF", word:"Word", excel:"Excel",
@@ -754,6 +759,21 @@ function enforcePaperAvailability() {
     applyPaper("a4-landscape");
   }
 }
+function enforceFormatAvailability() {
+  const formatEl = $("format");
+  if (!formatEl) return;
+  const profile = currentOfficeProfile();
+  const wordOpt = formatEl.querySelector('option[value="word"]');
+  const blockWord = !isFormatAllowedForProfile("word", profile);
+  if (wordOpt) {
+    wordOpt.disabled = blockWord;
+    wordOpt.hidden = blockWord;
+    wordOpt.textContent = blockWord ? "Word (전체 출력 제외)" : "Word";
+  }
+  if (blockWord && formatEl.value === "word") {
+    formatEl.value = "excel";
+  }
+}
 function currentPrintProfileLabel() {
   const [fmt, ori, type, mode] = currentPrintProfileKey().split(":");
   return `${PRINT_PROFILE_LABELS[fmt]||fmt} ${PRINT_PROFILE_LABELS[ori]||ori} · ${PRINT_PROFILE_LABELS[type]||type}-${PRINT_PROFILE_LABELS[mode]||mode}`;
@@ -761,6 +781,7 @@ function currentPrintProfileLabel() {
 function updateProfileStatus() {
   // r286: 좌측 출력종류 패널의 프로필 설명 문구는 표시하지 않습니다.
   enforcePaperAvailability();
+  enforceFormatAvailability();
 }
 
 const $ = id => document.getElementById(id);
@@ -889,7 +910,12 @@ function syncOutputKindToHidden(value=outputKindValue()) { const p=parseOutputKi
 function setOutputKind(type, mode="individual") { const t=type || "class"; const m=t === "student" ? "individual" : (mode || "individual"); const v=`${t}:${m}`; if ($("outputKind")) $("outputKind").value=v; syncOutputKindToHidden(v); }
 function targetType() { return parseOutputKind().type; }
 function layoutMode() { return parseOutputKind().mode; }
-function format() { return $("format").value; }
+function format() {
+  const el = $("format");
+  if (!el) return "pdf";
+  if (!isFormatAllowedForProfile(el.value, currentOfficeProfile())) el.value = "excel";
+  return el.value;
+}
 function syncLayoutModeOptions() { syncOutputKindToHidden(); }
 function applyPaper(paper) {
   const portrait = paper === "a4-portrait";
@@ -972,8 +998,10 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   if (!keepMain) {
     setOutputKind(s.targetType, s.layoutMode);
     $("format").value=s.format;
+    enforceFormatAvailability();
   } else {
     syncOutputKindToHidden();
+    enforceFormatAvailability();
   }
   syncLayoutModeOptions();
   const nextPaper = normalizedPaperValue(s.paper || "a4-landscape");
@@ -1583,11 +1611,11 @@ function setupPreviewPan() {
 }
 
 function updateExportButtonLabel() {
+  updateProfileStatus();
   const btn = $("printBtn");
   if (!btn) return;
   const f = format();
   btn.textContent = f === "excel" ? "Excel 저장" : (f === "word" ? "Word 저장" : "인쇄/PDF");
-  updateProfileStatus();
 }
 function safeFilePart(value="") {
   return clean(value).replace(/[\\/:*?"<>|]+/g,"_").replace(/\s+/g,"_").slice(0,80) || "시간표";
@@ -2396,7 +2424,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-r308",
+    source: "flat-office-grid-r309",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2426,17 +2454,17 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r308" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r309" };
   }
   return officeFlattenModelToRealGrid(model);
 }
 function wordModelsForExport(models) {
-  // r308: Word 전체표는 63열 제한을 넘지 않도록 안전 구조를 적용합니다.
+  // r309: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word만 실제 격자를 유지합니다.
   // 개별표는 r307의 실제 3x3 격자를 유지합니다.
   return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r308: Excel은 Word의 63열 제한이 없으므로 r307 실제 격자를 유지합니다.
+  // r309: Excel은 전체/개별 모두 실제 격자를 유지합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
 function officeProfileSummary(models) {
@@ -2657,6 +2685,12 @@ async function exportPdfReal() {
 }
 
 function exportOffice(kind) {
+  if (kind === "word" && isOverviewProfile()) {
+    const fmt = $("format");
+    if (fmt) fmt.value = "excel";
+    updateExportButtonLabel();
+    return exportOfficeReal("excel");
+  }
   return exportOfficeReal(kind);
 }
 function runMainExport() {
