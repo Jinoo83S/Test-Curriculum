@@ -596,7 +596,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r311</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r312</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -664,11 +664,11 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-full-subject-english-r311";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-full-subject-english-r311";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-full-subject-english-r311";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-10-office-card-full-subject-english-r312";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-10-office-card-full-subject-english-r312";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-10-office-card-full-subject-english-r312";
 
-const VERSION = "2026-07-10-office-card-full-subject-english-r311";
+const VERSION = "2026-07-10-office-card-full-subject-english-r312";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -724,7 +724,7 @@ const PRINT_ORIENTATIONS = ["landscape", "portrait"];
 function isOverviewProfileName(profile="") { return /:overview$/.test(String(profile || "")); }
 function isPortraitAllowedForProfile(profile="") { return !isOverviewProfileName(profile); }
 function isFormatAllowedForProfile(fmt="pdf", profile="") {
-  // r311: 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
+  // r312: 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
   // 전체표는 35교시를 실제 격자로 확장해야 하므로 Excel/PDF만 일관된 출력 대상으로 유지합니다.
   return !(String(fmt || "") === "word" && isOverviewProfileName(profile));
 }
@@ -1722,6 +1722,17 @@ function officeCellDisplayMode(card=null, model=null) {
 function officePageRatioProfile(model=null) {
   return officeModelProfile(model).word?.page || (isWideOfficeOverview(model) ? "wide" : "standard");
 }
+function officeWordIsPortrait() {
+  return ($("paper")?.value || "a4-landscape") === "a4-portrait";
+}
+function officeWordTableWidth(model=null) {
+  const portrait = officeWordIsPortrait();
+  const wide = officePageRatioProfile(model) === "wide";
+  // r312: Word 세로 출력은 페이지 폭이 11906dxa인데 r311은 표 폭 16580dxa를 그대로 써서
+  // 왼쪽/오른쪽이 잘렸습니다. 실제 페이지 방향에 맞춰 논리 표 폭을 먼저 줄입니다.
+  if (wide) return portrait ? 16580 : 23560;
+  return portrait ? 11620 : 16580;
+}
 
 function officeSettingsSnapshot() {
   const s = collectSettings();
@@ -2053,7 +2064,7 @@ function xlsxSlotShape(model) {
     maxCols = Math.max(maxCols, shape.cols || 1);
     maxRows = Math.max(maxRows, shape.rows || 1);
   }));
-  // r311: 카드 1개는 3칸/과목 1칸/영문 1칸/3칸 = 4행 구조를 기본 단위로 사용합니다.
+  // r312: 카드 1개는 3칸/과목 1칸/영문 1칸/3칸 = 4행 구조를 기본 단위로 사용합니다.
   return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(4, maxRows * 4) };
 }
 function xlsxFieldStyle(fieldKey, cfg, header=false) {
@@ -2062,7 +2073,7 @@ function xlsxFieldStyle(fieldKey, cfg, header=false) {
   return 0;
 }
 function officeCardStructuredIndex(def, cfg) {
-  // r311 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
+  // r312 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
   // 과목·영문은 카드 폭 전체를 쓰는 1행으로 배치하고, 교실/교사 등 위치 필드는 위·아래 3칸을 사용합니다.
   if (def?.key === "subject") return [1, 0];
   if (def?.key === "english") return [2, 0];
@@ -2308,7 +2319,7 @@ function wordRowHeight(idx, total, overview=false, dayOverview=false, wideOvervi
 }
 function wordTableWidths(colCount, overview=false, dayOverview=false, model=null) {
   const wideOverview = isWideOfficeOverview(model);
-  const tblW = officePageRatioProfile(model) === "wide" ? 23560 : 16580;
+  const tblW = officeWordTableWidth(model);
   if (colCount <= 1) return { tblW, widths: [tblW] };
   const first = overview ? (wideOverview ? 680 : (dayOverview ? 780 : 650)) : 520;
   const rest = Math.floor((tblW - first) / (colCount - 1));
@@ -2452,7 +2463,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-grid-r311",
+    source: "flat-office-grid-r312",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     grid: newGrid,
@@ -2482,17 +2493,17 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r311" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-r312" };
   }
   return officeFlattenModelToRealGrid(model);
 }
 function wordModelsForExport(models) {
-  // r311: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word만 실제 격자를 유지합니다.
-  // 개별표는 r311의 3칸-과목전체행-영문전체행-3칸 실제 격자를 유지합니다.
+  // r312: Word 전체표 저장은 UI/내보내기에서 제거되었습니다. 개별 Word만 실제 격자를 유지합니다.
+  // 개별표는 r312의 3칸-과목전체행-영문전체행-3칸 실제 격자를 유지합니다.
   return (models || []).map(wordSafeModelForExport);
 }
 function excelModelsForExport(models) {
-  // r311: Excel은 전체/개별 모두 실제 격자를 유지합니다.
+  // r312: Excel은 전체/개별 모두 실제 격자를 유지합니다.
   return (models || []).map(officeFlattenModelToRealGrid);
 }
 function officeProfileSummary(models) {
@@ -2504,8 +2515,8 @@ function wordHeaderRowXml(model) {
   const left = model.leftNote || "";
   const right = model.rightNote || "";
   const wideOverview = isWideOfficeOverview(model);
-  const tblW = officePageRatioProfile(model) === "wide" ? 23560 : 16580;
-  const sideW = officePageRatioProfile(model) === "wide" ? 4700 : 3700;
+  const tblW = officeWordTableWidth(model);
+  const sideW = Math.max(2200, Math.round(tblW * (officePageRatioProfile(model) === "wide" ? 0.20 : 0.22)));
   const centerW = tblW - sideW*2;
   const row = `<w:tr><w:trPr><w:trHeight w:val="260" w:hRule="exact"/></w:trPr>` +
     `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(left,{align:"left",size:10,line:120,color:"475569",noBreak:left.length<=26})}</w:tc>` +
