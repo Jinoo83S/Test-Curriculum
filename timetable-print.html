@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r338: Office 1-4분할 셀별 계산 */
+/* r339: Office 1-4분할 셀별 계산 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r338</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r339</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -627,7 +627,7 @@ body.print-portrait #printPageStyle::after{content:""}
 
     <section class="panel"><h2 class="card-title-row"><span>카드 표시</span><button id="applyCardSettingsBtn" class="primary inline-apply" type="button">카드 설정 적용</button></h2><div class="body">
       <input type="hidden" id="cellLayout" value="auto"><input type="hidden" id="applyMode" value="card"><input type="hidden" id="fontScale" value="normal">
-      <label class="check ellipsis-toggle"><input type="checkbox" id="ellipsisMode"><span>긴 과목/영문명은 칸에서 자르기</span></label>
+      <label class="check ellipsis-toggle" title="1~4분할 전체에 공통 적용"><input type="checkbox" id="ellipsisMode"><span>긴 과목/영문명은 칸에서 자르기</span></label>
       <div class="split-tabs" role="tablist" aria-label="분할별 카드 설정">
         <button type="button" class="active" data-split-tab="1">1</button><button type="button" data-split-tab="2">2</button><button type="button" data-split-tab="3">3</button><button type="button" data-split-tab="4">4</button>
       </div>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-13-word-fixed-page-r338";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-13-word-fixed-page-r338";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-13-word-fixed-page-r338";
-import { auth, db } from "./js/config.js?v=2026-07-13-word-fixed-page-r338";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-13-word-rule-engine-r339";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-13-word-rule-engine-r339";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-13-word-rule-engine-r339";
+import { auth, db } from "./js/config.js?v=2026-07-13-word-rule-engine-r339";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-13-word-fixed-page-r338";
+const VERSION = "2026-07-13-word-rule-engine-r339";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -705,10 +705,11 @@ function fontValueToPx(value, key="subject") {
 }
 
 const SPLIT_DEFAULTS = {
+  // r339: 자르기는 분할별 숨은 값이 아니라 하나의 공통 옵션으로만 관리합니다.
   "1": { font: "normal", layout: "standard", clip: false },
-  "2": { font: "small", layout: "compact", clip: true },
-  "3": { font: "xsmall", layout: "simple", clip: true },
-  "4": { font: "xsmall", layout: "simple", clip: true }
+  "2": { font: "small", layout: "compact", clip: false },
+  "3": { font: "xsmall", layout: "simple", clip: false },
+  "4": { font: "xsmall", layout: "simple", clip: false }
 };
 const SPLIT_FONT = {
   xsmall: { px: 7.8, print: 5.8 },
@@ -1100,10 +1101,23 @@ function getSettings() {
   const found = findProfileSettings(store, profileKey());
   return {...defaultSettings(), ...(found||{})};
 }
-function splitStylesFromDom() { const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]={ font: $("splitFont"+n)?.value || SPLIT_DEFAULTS[k].font, layout: $("splitLayout"+n)?.value || SPLIT_DEFAULTS[k].layout, clip: !!(normalizeSplitStyles(splitFieldStyleDraft)[k]?.clip ?? SPLIT_DEFAULTS[k].clip) }; }); if (out[String(activeSplitTab||"1")]) out[String(activeSplitTab||"1")].clip = !!$("ellipsisMode")?.checked; return out; }
+function splitStylesFromDom() {
+  const out = {};
+  const clip = !!$("ellipsisMode")?.checked;
+  [1,2,3,4].forEach(n => {
+    const k = String(n);
+    out[k] = {
+      font: $("splitFont"+n)?.value || SPLIT_DEFAULTS[k].font,
+      layout: $("splitLayout"+n)?.value || SPLIT_DEFAULTS[k].layout,
+      // r339: 저장 호환성 때문에 clip 필드는 남기되, 모든 분할에 같은 공통값을 기록합니다.
+      clip
+    };
+  });
+  return out;
+}
 function splitDirectionsFromDom() { return {"2":$("splitDir2")?.value || "cols", "3":$("splitDir3")?.value || "grid", "4":$("splitDir4")?.value || "grid"}; }
 function normalizeSplitDirections(raw) {
-  // r338: 자동분할은 계산에서 제외합니다. 저장소에 남은 auto/legacy 값도 명시 규칙으로 정규화합니다.
+  // r339: 자동분할은 계산에서 제외합니다. 저장소에 남은 auto/legacy 값도 명시 규칙으로 정규화합니다.
   const map = (v, fallback) => {
     if (v === "columns" || v === "vertical") v = v === "columns" ? "cols" : "rows";
     if (v === "rows" || v === "cols" || v === "grid") return v;
@@ -1114,7 +1128,19 @@ function normalizeSplitDirections(raw) {
 }
 function applySplitDirections(raw) { const dirs=normalizeSplitDirections(raw); [2,3,4].forEach(n=>{ const el=$("splitDir"+n); if(el) el.value=dirs[String(n)]; }); }
 function normalizeSplitStyles(raw) { const out=structuredClone(SPLIT_DEFAULTS); if (raw && typeof raw === "object") [1,2,3,4].forEach(n=>{ const k=String(n); out[k]={...out[k], ...(raw[k]||{})}; out[k].clip = !!out[k].clip; }); return out; }
-function applySplitStyles(raw) { const styles=normalizeSplitStyles(raw); splitFieldStyleDraft=structuredClone(styles); [1,2,3,4].forEach(n=>{ const k=String(n); const font=$("splitFont"+n); const layout=$("splitLayout"+n); if(font) font.value=styles[k].font; if(layout) layout.value=styles[k].layout; }); if ($("ellipsisMode")) $("ellipsisMode").checked = !!styles[String(activeSplitTab||"1")]?.clip; }
+function applySplitStyles(raw) {
+  const styles = normalizeSplitStyles(raw);
+  splitFieldStyleDraft = structuredClone(styles);
+  [1,2,3,4].forEach(n => {
+    const k = String(n);
+    const font = $("splitFont"+n);
+    const layout = $("splitLayout"+n);
+    if (font) font.value = styles[k].font;
+    if (layout) layout.value = styles[k].layout;
+  });
+  // r339: ellipsisMode은 applySettings에서 불러온 공통값을 유지합니다.
+  // 분할 탭을 바꾸거나 과거 splitStyles.clip 값이 checkbox를 덮어쓰지 않습니다.
+}
 function cardControlChanged(el) { return !!el.closest('#fieldRows') || ['cellLayout','fontScale','applyMode','fontMode','splitFont1','splitFont2','splitFont3','splitFont4','splitLayout1','splitLayout2','splitLayout3','splitLayout4','splitDir2','splitDir3','splitDir4','ellipsisMode'].includes(el.id); }
 function markDirty(msg='설정 저장 필요') { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent=msg; btn.classList.add('dirty'); btn.classList.remove('saved'); } }
 function markSaved(msg='설정 저장됨') { const btn=$("saveSettingsBtn"); if(btn){ btn.textContent=msg; btn.classList.remove('dirty'); btn.classList.add('saved'); clearTimeout(markSaved.t); markSaved.t=setTimeout(()=>{ btn.textContent='설정 저장'; btn.classList.remove('saved'); },1400); } }
@@ -1140,7 +1166,24 @@ function applySplitFontPresetToControls(font) {
 }
 
 function syncActiveFieldDraft() { if (!splitFieldDraft) splitFieldDraft = normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); }
-function syncActiveStyleDraft() { if (!splitFieldStyleDraft) splitFieldStyleDraft = normalizeSplitStyles(null); const k=String(activeSplitTab||"1"); splitFieldStyleDraft[k] = { ...(splitFieldStyleDraft[k]||SPLIT_DEFAULTS[k]), font: $("splitFont"+k)?.value || SPLIT_DEFAULTS[k].font, layout: $("splitLayout"+k)?.value || SPLIT_DEFAULTS[k].layout, clip: !!$("ellipsisMode")?.checked }; }
+function syncActiveStyleDraft() {
+  if (!splitFieldStyleDraft) splitFieldStyleDraft = normalizeSplitStyles(null);
+  const activeKey = String(activeSplitTab || "1");
+  const clip = !!$("ellipsisMode")?.checked;
+  [1,2,3,4].forEach(n => {
+    const k = String(n);
+    splitFieldStyleDraft[k] = {
+      ...(splitFieldStyleDraft[k] || SPLIT_DEFAULTS[k]),
+      clip
+    };
+  });
+  splitFieldStyleDraft[activeKey] = {
+    ...splitFieldStyleDraft[activeKey],
+    font: $("splitFont"+activeKey)?.value || SPLIT_DEFAULTS[activeKey].font,
+    layout: $("splitLayout"+activeKey)?.value || SPLIT_DEFAULTS[activeKey].layout,
+    clip
+  };
+}
 function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
 function normalizeFirestoreDesignerPayload(payload) {
   const profiles = payload?.profiles && typeof payload.profiles === "object" ? payload.profiles : (payload?.store && typeof payload.store === "object" ? payload.store : {});
@@ -1170,7 +1213,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r338.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r339.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -1821,7 +1864,20 @@ function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach
   else { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.english={enabled:true,bold:false,pos:"bc"}; s.fields.teacher={enabled:true,bold:false,pos:"bl"}; s.fields.room={enabled:true,bold:true,pos:"br"}; s.fields.class={enabled:false,bold:false,pos:"tl"}; s.fields.period={enabled:false,bold:false,pos:"tr"}; s.fontScale="normal"; s.splitStyles=structuredClone(SPLIT_DEFAULTS); }
   applySettings(s,true); markCardApplyNeeded(); }
 function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); updateExportButtonLabel(); }
-function setSplitTab(n) { const next=String(n); if (!applying) { if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } activeSplitTab=next; document.querySelectorAll("[data-split-tab]").forEach(btn=>btn.classList.toggle("active", btn.dataset.splitTab===next)); document.querySelectorAll("[data-split-panel]").forEach(panel=>panel.classList.toggle("hidden", panel.dataset.splitPanel!==next)); if (splitFieldDraft) writeFieldControls(splitFieldDraft[next]); if ($("ellipsisMode")) $("ellipsisMode").checked = !!(normalizeSplitStyles(splitFieldStyleDraft)[next]?.clip); updateFieldFontInputState(); }
+function setSplitTab(n) {
+  const next = String(n);
+  if (!applying) {
+    if (!splitFieldDraft) splitFieldDraft = normalizeSplitFields(null);
+    splitFieldDraft[String(activeSplitTab || "1")] = readFieldControls();
+    syncActiveStyleDraft();
+  }
+  activeSplitTab = next;
+  document.querySelectorAll("[data-split-tab]").forEach(btn => btn.classList.toggle("active", btn.dataset.splitTab === next));
+  document.querySelectorAll("[data-split-panel]").forEach(panel => panel.classList.toggle("hidden", panel.dataset.splitPanel !== next));
+  if (splitFieldDraft) writeFieldControls(splitFieldDraft[next]);
+  // r339: 자르기 옵션은 1~4분할 공통이므로 탭 전환 시 값을 바꾸지 않습니다.
+  updateFieldFontInputState();
+}
 
 function setupPreviewPan() {
   const sc = $("previewScroll");
@@ -2003,7 +2059,7 @@ function officeSplitDirectionForCount(count=1, model=null) {
   const dirs = normalizeSplitDirections(officeSettingsForModel(model).splitDirections || {});
   const key = String(Math.max(2, Math.min(4, count)));
   const dir = dirs[key];
-  // r338: rows / cols / grid 세 가지 명시 분할만 사용합니다. auto는 여기까지 들어오지 않습니다.
+  // r339: rows / cols / grid 세 가지 명시 분할만 사용합니다. auto는 여기까지 들어오지 않습니다.
   if (dir === "rows" || dir === "cols" || dir === "grid") return dir;
   return count >= 3 ? "grid" : "cols";
 }
@@ -2026,9 +2082,9 @@ function officeCardValue(card={}, key="subject") {
 }
 function officeClipEnabled(model=null, splitCount=1) {
   const st = officeSettingsForModel(model);
-  const styles = normalizeSplitStyles(st.splitStyles || null);
-  const key = String(Math.max(1, Math.min(4, Number(splitCount) || 1)));
-  return !!(styles[key]?.clip || st.ellipsisMode);
+  // r339: 화면에 보이는 공통 checkbox만 진실의 원천입니다.
+  // 과거 분할별 splitStyles.clip 값은 호환 데이터로만 보존하고 출력 판단에는 사용하지 않습니다.
+  return st?.ellipsisMode === true;
 }
 function officeClipLimit(fieldKey="subject", splitCount=1) {
   const n = Math.max(1, Math.min(4, Number(splitCount) || 1));
@@ -2038,9 +2094,13 @@ function officeClipLimit(fieldKey="subject", splitCount=1) {
   if (fieldKey === "room") return n <= 1 ? 8 : 6;
   return n <= 1 ? 10 : 7;
 }
+function officeClipAppliesToField(fieldKey="subject") {
+  // 옵션 이름 그대로 과목/영문명에만 적용합니다. 교사·교실·반은 말줄임표를 생성하지 않습니다.
+  return fieldKey === "subject" || fieldKey === "english";
+}
 function officeClipText(value="", fieldKey="subject", model=null, splitCount=1) {
   const text = officeProtectText(value);
-  if (!text || !officeClipEnabled(model, splitCount)) return text;
+  if (!text || !officeClipAppliesToField(fieldKey) || !officeClipEnabled(model, splitCount)) return text;
   const limit = officeClipLimit(fieldKey, splitCount);
   if (text.length <= limit) return text;
   return text.slice(0, Math.max(1, limit - 1)).trimEnd() + "…";
@@ -2079,9 +2139,9 @@ function officePlacedClipUnits(fieldKey="subject", splitCount=1, place=null, all
 function officeClipTextForPlace(value="", fieldKey="subject", model=null, splitCount=1, place=null, allocatedCols=3) {
   const text = officeProtectText(value);
   if (!text) return "";
-  // r338: 과목/영문명도 사용자가 "긴 과목/영문명 칸에서 자르기"를 켠 경우에만 말줄임표로 자릅니다.
+  // r339: 과목/영문명도 사용자가 "긴 과목/영문명 칸에서 자르기"를 켠 경우에만 말줄임표로 자릅니다.
   // 표 크기는 고정하고, 옵션이 꺼져 있으면 Word 셀의 noWrap/고정 높이에서 자연스럽게 잘리도록 둡니다.
-  if (!officeClipEnabled(model, splitCount)) return text;
+  if (!officeClipAppliesToField(fieldKey) || !officeClipEnabled(model, splitCount)) return text;
   return officeClipToVisualUnits(text, officePlacedClipUnits(fieldKey, splitCount, place, allocatedCols));
 }
 function officeCardDisplayValue(card={}, key="subject", model=null, splitCount=1) {
@@ -2091,35 +2151,40 @@ function officeFieldHalfSize(fieldCfg={}, key="subject", fallback=12) {
   const px = fontValueToPx(fieldCfg.fontPx || fieldCfg.font, key);
   return wordHalfFromPx(px, fallback, 6, 28);
 }
-function officeSplitFontRatio(splitCount=1) {
-  // r338: Word는 1~4분할을 같은 글자 크기로 찍으면 실제 카드 폭/높이 비율이 무너집니다.
-  // 각 분할 탭의 설정 글꼴을 우선 사용하되, 같은 설정값이라도 분할 수에 따라 최소 비율 보정을 적용합니다.
-  const n = Math.max(1, Math.min(4, Number(splitCount) || 1));
-  return n <= 1 ? 1.00 : (n === 2 ? 0.92 : (n === 3 ? 0.84 : 0.78));
-}
 function officeFieldHalfSizeForSplit(fieldCfg={}, key="subject", fallback=12, splitCount=1, fieldScale=1) {
   const base = officeFieldHalfSize(fieldCfg, key, fallback);
-  const scale = Math.max(0.38, Math.min(1.25, Number(fieldScale) || 1));
-  const scaled = Math.round(base * officeSplitFontRatio(splitCount) * scale);
+  // r339: 분할 개수의 임의 고정계수를 중복 적용하지 않습니다.
+  // 각 분할 탭의 설정 글꼴을 기준으로, 실제 카드가 차지하는 폭/높이 비율(fieldScale)만 적용합니다.
+  const scale = Math.max(0.46, Math.min(1.25, Number(fieldScale) || 1));
+  const scaled = Math.round(base * scale);
   const minSize = (key === "room" || key === "teacher" || key === "class" || key === "meta") ? 5 : 6;
   return Math.max(minSize, Math.min(28, scaled));
 }
 function officeCellFieldScale(cell={}) {
   const n = Number(cell?.fieldScale);
-  return Number.isFinite(n) && n > 0 ? Math.max(0.38, Math.min(1.25, n)) : 1;
+  return Number.isFinite(n) && n > 0 ? Math.max(0.46, Math.min(1.25, n)) : 1;
 }
-function officeFieldScaleForPlacement(fieldKey="subject", cardBand={}, place={}, splitCount=1) {
-  // r338: 글자 크기는 단순 1~4분할 개수가 아니라 실제 카드가 차지하는 폭/높이 비율까지 함께 반영합니다.
-  // 기준은 1분할 전체 카드(3열 × 4행) = 1.0 입니다.
+function officeFieldScaleForPlacement(fieldKey="subject", cardBand={}, place={}, splitCount=1, model=null) {
+  // r339 규칙 엔진:
+  // 1) 데이터 글자 수는 크기 계산에 사용하지 않습니다.
+  // 2) 카드의 실제 폭/높이, 필드가 차지한 폭, 용지의 실제 표 폭만 비율로 계산합니다.
+  // 3) 같은 데이터 구조는 학년도/과목명이 바뀌어도 같은 비율을 얻습니다.
   const totalCols = Math.max(1, Number(cardBand.totalCols) || Number(cardBand.w) || 3);
   const totalRows = Math.max(1, Number(cardBand.totalRows) || Number(cardBand.h) || 4);
-  const cardAreaRatio = Math.max(0.16, Math.min(1, (Math.max(1, Number(cardBand.w)||1) / totalCols) * (Math.max(1, Number(cardBand.h)||1) / totalRows)));
-  const areaScale = Math.pow(cardAreaRatio, 0.25);
-  const placeWidthRatio = Math.max(0.08, Math.min(1, Math.max(1, Number(place.colspan)||1) / totalCols));
-  const expectedUnit = (fieldKey === "subject" || fieldKey === "english") ? (Math.max(1, Number(cardBand.w)||3) / totalCols) : (Math.max(1, Number(cardBand.w)||3) / totalCols / 3);
-  const widthScale = Math.pow(Math.max(0.25, Math.min(1.15, placeWidthRatio / Math.max(0.08, expectedUnit))), (fieldKey === "subject" || fieldKey === "english") ? 0.10 : 0.30);
-  const min = (fieldKey === "room" || fieldKey === "teacher" || fieldKey === "class" || fieldKey === "meta") ? 0.52 : 0.62;
-  return Math.max(min, Math.min(1, areaScale * widthScale));
+  const cardWidthRatio = Math.max(0.12, Math.min(1, Math.max(1, Number(cardBand.w) || 1) / totalCols));
+  const cardHeightRatio = Math.max(0.12, Math.min(1, Math.max(1, Number(cardBand.h) || 1) / totalRows));
+  const placeWidthRatio = Math.max(0.08, Math.min(1, Math.max(1, Number(place?.colspan) || 1) / totalCols));
+  const fullRow = fieldKey === "subject" || fieldKey === "english";
+  const expectedWidth = fullRow ? cardWidthRatio : Math.max(0.08, cardWidthRatio / 3);
+  const localWidthRatio = Math.max(0.36, Math.min(1.12, placeWidthRatio / expectedWidth));
+
+  // 폭과 높이를 따로 반영합니다. 2×2, 가로, 세로 분할이 같은 개수라도 실제 모양에 따라 달라집니다.
+  const widthScale = Math.pow(cardWidthRatio, fullRow ? 0.18 : 0.25) * Math.pow(localWidthRatio, fullRow ? 0.08 : 0.18);
+  const heightScale = Math.pow(cardHeightRatio, fullRow ? 0.22 : 0.18);
+  const pageWidthRatio = Math.max(0.68, Math.min(1, officeWordTableWidth(model) / 16580));
+  const pageScale = Math.pow(pageWidthRatio, 0.22);
+  const min = fullRow ? 0.58 : 0.50;
+  return Math.max(min, Math.min(1, Math.min(widthScale, heightScale) * pageScale));
 }
 function officeFieldPosition(fieldCfg={}, fieldDef={}) {
   return (fieldCfg && fieldCfg.pos) || fieldDef?.pos || "mc";
@@ -2411,11 +2476,11 @@ function xlsxFieldPt(fieldKey="subject", cfg={}) {
   return Math.max(5, Math.min(16, Math.round(Number(px) * 0.75 * 10) / 10));
 }
 function officeFieldHorizontalAlign(cfg={}, def={}) {
-  // r338: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 가로 가운데 정렬합니다.
+  // r339: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 가로 가운데 정렬합니다.
   return "center";
 }
 function officeFieldVerticalAlign(cfg={}, def={}) {
-  // r338: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 세로 가운데 정렬합니다.
+  // r339: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 세로 가운데 정렬합니다.
   return "center";
 }
 function xlsxDynamicStyleKey(fieldKey="subject", cfg={}, def=null) {
@@ -2653,7 +2718,7 @@ function wCardFieldPara(value="", fieldKey="subject", cfg={}, def={}, opts={}, s
   const size = officeFieldHalfSizeForSplit(cfg, fieldKey, fallback, splitCount);
   const color = isEnglish ? "475569" : (isSubject ? "111827" : "334155");
   const line = isSubject ? 104 : (isEnglish ? 76 : 70);
-  // r338: 위치는 3/1/1/3 내부 어느 칸에 놓을지만 결정하고, 실제 텍스트는 그 칸 안에서 항상 가운데 정렬합니다.
+  // r339: 위치는 3/1/1/3 내부 어느 칸에 놓을지만 결정하고, 실제 텍스트는 그 칸 안에서 항상 가운데 정렬합니다.
   const align = "center";
   return wPara(text,{bold:!!cfg.bold,align,size,line,color,noBreak:true,charScale:92,charSpacing:-3});
 }
@@ -2757,7 +2822,7 @@ function wCell(text="", opts={}) {
 }
 function wordFlatRowKind(row=[]) {
   const cells = (row || []).filter(c => c && !c.skip);
-  // r338: 교시 표시 셀이 세로 병합되어 같은 내부 행에 존재해도,
+  // r339: 교시 표시 셀이 세로 병합되어 같은 내부 행에 존재해도,
   // 그 행 전체를 header로 보면 과목/영문/하단 행 높이 비율 계산이 모두 무너집니다.
   // 행 전체가 헤더인 경우만 header로 보고, 데이터 셀이 섞인 행은 필드 위치 기준으로 계산합니다.
   if (cells.length && cells.every(c => c.header)) return "header";
@@ -2789,28 +2854,29 @@ function officeFlatRowMaxHalfSize(row=[], posKind="blank") {
     return officeFieldHalfSizeForSplit(c.fieldCfg || {}, c.fieldKey, fallback, c.splitCount || 1, officeCellFieldScale(c));
   }));
 }
-function officeFlatRowRatio(posKind="blank") {
-  // r338: 카드 내부 4행은 위치 비율로 계산하되, 과목/영문 행의 여백을 줄여 1페이지 고정을 우선합니다.
-  // 3열 상단 / 1열 과목 / 1열 영문 / 3열 하단 구조는 유지합니다.
-  if (posKind === "subject") return 1.32;
-  if (posKind === "english") return 0.92;
-  if (posKind === "top" || posKind === "bottom" || posKind === "meta" || posKind === "text") return 0.70;
-  if (posKind === "header") return 1.0;
-  return 0.34;
+function officeFlatRowMetricRatio(model=null, idx=0, row=[]) {
+  const posKind = officeFlatPositionKind(model, idx, row);
+  if (posKind === "header") return 1;
+  const half = officeFlatRowMaxHalfSize(row, posKind);
+  const line = wSafeLineTwips(0, half, "가A");
+  // 셀 여백은 0. 행의 몫은 해당 위치에 설정된 글꼴의 안전 줄높이로만 계산합니다.
+  const factor = posKind === "subject" ? 1.04
+    : (posKind === "english" ? 1.00
+    : (posKind === "top" || posKind === "bottom" || posKind === "meta" || posKind === "text" ? 0.96 : 0.48));
+  return Math.max(18, line * factor);
 }
 function officeFlatSiblingRatioTotal(model=null, idx=0) {
   return officeFlatSiblingIndexes(model, idx)
-    .map(i => officeFlatRowRatio(officeFlatPositionKind(model, i, (model?.grid || [])[i] || [])))
+    .map(i => officeFlatRowMetricRatio(model, i, (model?.grid || [])[i] || []))
     .reduce((a,b)=>a+b,0) || 1;
 }
 function officeFlatRatioHeight(kind="word", row=[], model=null, idx=0, overview=false, dayOverview=false, wideOverview=false) {
   const posKind = officeFlatPositionKind(model, idx, row);
   if (posKind === "header") return officeFlatBudgetedHeight(kind, row, model, idx, overview, dayOverview, wideOverview);
   const ratioSum = officeFlatSiblingRatioTotal(model, idx);
-  const myRatio = officeFlatRowRatio(posKind);
+  const myRatio = officeFlatRowMetricRatio(model, idx, row);
   const baseBudget = officeFlatLogicalRowBudget(kind, model, idx, overview, dayOverview, wideOverview);
-  // r338: 표 크기 고정 우선. 글자가 잘려도 논리 교시 높이는 데이터 길이 때문에 커지지 않습니다.
-  // 이전 minBudget/minSelf 보정이 10A/11A/12A를 여러 페이지로 밀어냈으므로 제거합니다.
+  // r339: 한 교시의 고정 총높이를 설정 글꼴의 비율로만 나눕니다. 실제 문자열 길이는 표 크기를 바꾸지 않습니다.
   const val = baseBudget * myRatio / ratioSum;
   return kind === "excel" ? Math.round(val * 10) / 10 : Math.max(18, Math.round(val));
 }
@@ -2853,6 +2919,21 @@ function officeFlatSiblingWeightTotal(model=null, idx=0) {
     .map(i => officeFlatRowWeight((model?.grid || [])[i] || []))
     .reduce((a,b)=>a+b,0) || 1;
 }
+function officeLogicalSourceRowCount(model=null) {
+  const meta = model?.officeFlatRowMeta || [];
+  if (meta.length) return Math.max(1, ...meta.map(m => Math.max(0, Number(m?.sourceRow) || 0))) + 1;
+  return Math.max(1, Number(model?.grid?.length) || 1);
+}
+function officeLogicalBodyRowCount(model=null) {
+  const headerRows = isOverviewModel(model) ? 2 : 1;
+  return Math.max(1, officeLogicalSourceRowCount(model) - headerRows);
+}
+function officeWordFixedBodyHeight(model=null, overview=false, dayOverview=false, wideOverview=false) {
+  // r339: r338에서 검증된 7교시 총 표 높이를 "총높이" 규칙으로 고정합니다.
+  // 교시 수가 바뀌면 동일 총높이를 교시 수로 자동 재분배하므로 다음 학년도에도 한 페이지 원칙을 유지합니다.
+  if (overview || dayOverview || wideOverview) return wideOverview ? 620 * Math.max(1, officeLogicalBodyRowCount(model)) : 900 * Math.max(1, officeLogicalBodyRowCount(model));
+  return officeWordIsPortrait() ? 11620 : 9520;
+}
 function officeFlatLogicalRowBudget(kind="word", model=null, idx=0, overview=false, dayOverview=false, wideOverview=false) {
   const meta = model?.officeFlatRowMeta?.[idx];
   const portrait = officeWordIsPortrait();
@@ -2865,15 +2946,13 @@ function officeFlatLogicalRowBudget(kind="word", model=null, idx=0, overview=fal
     const lpExcel = officeModelProfile(model).excel || {};
     return Math.max(34, Number(lpExcel.bodyHeight) || (overview ? 58 : 78));
   }
-  // r338: 모든 반은 Word 1페이지 안에 들어가야 하므로 논리 교시 총 높이를 고정합니다.
-  // 1~4분할 내부행은 이 예산을 비율로 나눌 뿐, 글자 길이 때문에 예산을 늘리지 않습니다.
-  if (overview || dayOverview || wideOverview) return wideOverview ? 620 : 900;
-  return portrait ? 1660 : 1360;
+  const bodyRows = officeLogicalBodyRowCount(model);
+  return officeWordFixedBodyHeight(model, overview, dayOverview, wideOverview) / bodyRows;
 }
 function officeFieldRequiredLineCount(text="", fieldKey="", kind="word") {
   const t = String(text || "").trim();
   if (!t) return 1;
-  // r338: 셀 높이는 자동 줄바꿈을 전제로 키우지 않습니다.
+  // r339: 셀 높이는 자동 줄바꿈을 전제로 키우지 않습니다.
   // 긴 과목/영문명은 폭 기준으로 미리 자르고, Word/Excel에서는 한 줄 유지가 원칙입니다.
   return Math.max(1, t.split(/\n/).length);
 }
@@ -2892,7 +2971,7 @@ function officeWordFieldRequiredHeight(cell={}) {
   const line = wSafeLineTwips(requested, size, text);
   const lines = officeFieldRequiredLineCount(text, fieldKey, "word");
   const boldPad = cfg?.bold ? 10 : 0;
-  const cellPad = 8; // r338: 셀 내부 여백은 0으로 두고, 테두리/Word 내부 보정만 최소 반영
+  const cellPad = 8; // r339: 셀 내부 여백은 0으로 두고, 테두리/Word 내부 보정만 최소 반영
   return Math.ceil(line * lines + cellPad + boldPad);
 }
 function officeExcelFieldRequiredHeight(cell={}) {
@@ -2919,7 +2998,7 @@ function officeFlatMinHeight(kind="word", row=[]) {
     if (k === "meta" || k === "text") return Math.max(12.5, required);
     return Math.max(4.0, required);
   }
-  // r338: 고정 최솟값으로 모든 행을 같게 키우지 않습니다.
+  // r339: 고정 최솟값으로 모든 행을 같게 키우지 않습니다.
   // 행 위치별 기본값 + 실제 분할별 글꼴 크기로 계산한 required만 사용합니다.
   if (k === "header") return Math.max(160, required);
   if (k === "subject") return Math.max(96, required);
@@ -2931,7 +3010,7 @@ function officeFlatBudgetedHeight(kind="word", row=[], model=null, idx=0, overvi
   const posKind = officeFlatPositionKind(model, idx, row);
   const min = officeFlatMinHeight(kind, row);
   const base = officeFlatPositionBaseHeight(kind, posKind, row);
-  // r338: 행 높이는 내용이 우연히 길어졌다고 제각각 달라지면 안 됩니다.
+  // r339: 행 높이는 내용이 우연히 길어졌다고 제각각 달라지면 안 됩니다.
   // 같은 논리 교시 안의 4행 구조(상단/과목/영문/하단)는 위치별 기준 높이를 먼저 적용하고,
   // 실제 폰트 기준 최소값이 더 클 때만 보정합니다.
   const val = Math.max(base, min);
@@ -3103,7 +3182,7 @@ function officeHasDifferentOwnerAcross(owner, side="right", r=0, c=0, rowspan=1,
   return false;
 }
 function officeSlotBoundaryBorders(owner, r=0, c=0, cell={}) {
-  // r338: 점선은 “분할 경계” 한쪽에서만 그립니다.
+  // r339: 점선은 “분할 경계” 한쪽에서만 그립니다.
   // - 카드 내부 3/1/1/3 보조 구조는 모두 nil 처리해 보이지 않게 유지합니다.
   // - 1분할은 점선 없음.
   // - 2~4분할은 가로/세로/2x2 분할에서 카드 소유자가 달라지는 경계만 점선입니다.
@@ -3158,7 +3237,7 @@ function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}) {
     ? { ...meta, fieldKey: current.fieldKey || meta.fieldKey || "", fieldCfg: current.fieldCfg || meta.fieldCfg || null, fieldDef: current.fieldDef || meta.fieldDef || null, fieldScale: current.fieldScale || meta.fieldScale || 1, borders: officeMergeBorders(current.borders, meta.borders) }
     : meta;
   const allBorders = officeMergeBorders(current?.borders, mergedMeta.borders);
-  // r338: 병합은 카드 내부 3/1/1/3 구조를 깨는 것이 아니라, 1~4분할 슬롯 범위를 카드가 차지하도록 만드는 작업입니다.
+  // r339: 병합은 카드 내부 3/1/1/3 구조를 깨는 것이 아니라, 1~4분할 슬롯 범위를 카드가 차지하도록 만드는 작업입니다.
   // 2~4분할 카드 사이의 내부 경계만 점선으로 표시합니다.
   out[r][c] = officeTextFlatCell(mergedText, false, span, { ...mergedMeta, rowspan:rowSpan, vmerge:rowSpan > 1 ? "restart" : "", borders: officeBordersForVMergePart(allBorders, rowSpan > 1 ? "start" : "single") });
   for (let i=1; i<span; i++) out[r][c+i] = officeSpanSkipCell();
@@ -3170,7 +3249,7 @@ function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}) {
   }
 }
 function officeHeaderMergeBlock(cell={}, rows=1, cols=1) {
-  // r338: 요일/교시 표시 영역은 내부 분할 격자에 끌려가면 안 됩니다.
+  // r339: 요일/교시 표시 영역은 내부 분할 격자에 끌려가면 안 됩니다.
   // 특히 교시 셀은 같은 논리 교시의 모든 내부 행을 세로 병합합니다.
   const rCount = Math.max(1, Number(rows) || 1);
   const cCount = Math.max(1, Number(cols) || 1);
@@ -3184,7 +3263,7 @@ function officeHeaderMergeBlock(cell={}, rows=1, cols=1) {
   return out;
 }
 function officeCardBandPlacement(cardRow=0, cardCol=0, shapeRows=1, shapeCols=1, rows=1, cols=1, count=1, dir="grid") {
-  // r338: 최대 4분할 슬롯을 기준으로, 카드가 차지해야 할 슬롯 범위를 먼저 병합합니다.
+  // r339: 최대 4분할 슬롯을 기준으로, 카드가 차지해야 할 슬롯 범위를 먼저 병합합니다.
   // 카드 내부는 그 병합된 범위 안에서 다시 3/1/1/3 구조로 나뉘므로 반/교사/교실 위치 규칙은 깨지지 않습니다.
   const totalRows = Math.max(1, Number(rows) || 1);
   const totalCols = Math.max(1, Number(cols) || 1);
@@ -3253,7 +3332,7 @@ function officePlaceCardBandSkeleton(out, card={}, cardBand, model=null, splitCo
     const value = officeClipTextForPlace(officeCardValue(card, def.key), def.key, model, splitCount, place, cardBand.w);
     if (!value) return;
     groupTexts[rr][groupC].push(value);
-    if (!groupMeta[rr][groupC]) groupMeta[rr][groupC] = { fieldKey:def.key, fieldCfg:cfg, fieldDef:def, fieldScale:officeFieldScaleForPlacement(def.key, cardBand, place, splitCount), splitCount, splitRows:1, splitCols:1 };
+    if (!groupMeta[rr][groupC]) groupMeta[rr][groupC] = { fieldKey:def.key, fieldCfg:cfg, fieldDef:def, fieldScale:officeFieldScaleForPlacement(def.key, cardBand, place, splitCount, model), splitCount, splitRows:1, splitCols:1 };
   });
   for (let rr=0; rr<4; rr++) {
     const cols = (rr === 1 || rr === 2) ? [0] : [0,1,2];
@@ -3282,7 +3361,7 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
     if (text) officePlaceFlatText(out, 0, 0, text, cols, { fieldKey: cell.fieldKey || "", fieldCfg: cell.fieldCfg || null, fieldDef: cell.fieldDef || null });
     return out;
   }
-  // r338: 한 교시 칸 안에서 1~4분할을 먼저 계산하고, 카드가 차지하는 슬롯 범위를 병합합니다.
+  // r339: 한 교시 칸 안에서 1~4분할을 먼저 계산하고, 카드가 차지하는 슬롯 범위를 병합합니다.
   // 카드 내부 3/1/1/3 구조는 병합된 카드 범위 안에서 다시 유지합니다.
   const count = Math.max(1, Math.min(4, cards.length));
   const shape = officeCardGridShape(count, model);
@@ -3315,7 +3394,7 @@ function officeFlattenModelToRealGrid(model) {
       rowUnits[r] = Math.max(rowUnits[r] || 1, need.rows);
     });
   });
-  // r338: 요일 너비 고정. 한 요일에 4분할이 있어도 다른 요일과 전체 너비가 달라지면 안 됩니다.
+  // r339: 요일 너비 고정. 한 요일에 4분할이 있어도 다른 요일과 전체 너비가 달라지면 안 됩니다.
   // 첫 열은 교시 표시 열로 두고, 월~금 논리 열은 모두 같은 내부 단위 수를 사용합니다.
   if (!isOverviewModel(model) && logicalCols > 1) {
     const maxDayUnits = Math.max(1, ...colUnits.slice(1).map(v => Math.max(1, Number(v) || 1)));
@@ -3343,7 +3422,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-fixed-page-r338",
+    source: "flat-office-rule-engine-r339",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     officeFlatRowMeta: flatRowMeta,
@@ -3374,7 +3453,7 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-fixed-page-r338" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-rule-engine-r339" };
   }
   return officeFlattenModelToRealGrid(model);
 }
@@ -3438,7 +3517,7 @@ function excelDbGradeForItem(ent={}, item={}) {
   return excelGradeFromClassLabel(itemClass) || entSub || "";
 }
 function excelDbRowsForExport() {
-  // r338: Excel은 더 이상 출력용 표 모양을 흉내 내지 않습니다.
+  // r339: Excel은 더 이상 출력용 표 모양을 흉내 내지 않습니다.
   // 데이터베이스 다운로드 전용: 학년/이름/과목/영문/교사/교실 6개 컬럼만 제공합니다.
   renderEntityList();
   const ents = selectedEntities();
@@ -3683,7 +3762,7 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    return;
  }
  if (e.target.id === "outputKind") return;
- if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+ if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.id === "ellipsisMode") { document.body.classList.toggle("ellipsis-enabled", !!e.target.checked); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } if (user && !LOCAL_DEV_MODE) { loadDesignerSettingsFromFirestore(true); } }
 function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
