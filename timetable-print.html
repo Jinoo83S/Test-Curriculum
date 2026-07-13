@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r337: Office 1-4분할 셀별 계산 */
+/* r338: Office 1-4분할 셀별 계산 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r337</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r338</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -670,13 +670,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-13-word-ratio-sizing-r337";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-13-word-ratio-sizing-r337";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-13-word-ratio-sizing-r337";
-import { auth, db } from "./js/config.js?v=2026-07-13-word-ratio-sizing-r337";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-13-word-fixed-page-r338";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-13-word-fixed-page-r338";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-13-word-fixed-page-r338";
+import { auth, db } from "./js/config.js?v=2026-07-13-word-fixed-page-r338";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-13-word-ratio-sizing-r337";
+const VERSION = "2026-07-13-word-fixed-page-r338";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1103,7 +1103,7 @@ function getSettings() {
 function splitStylesFromDom() { const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]={ font: $("splitFont"+n)?.value || SPLIT_DEFAULTS[k].font, layout: $("splitLayout"+n)?.value || SPLIT_DEFAULTS[k].layout, clip: !!(normalizeSplitStyles(splitFieldStyleDraft)[k]?.clip ?? SPLIT_DEFAULTS[k].clip) }; }); if (out[String(activeSplitTab||"1")]) out[String(activeSplitTab||"1")].clip = !!$("ellipsisMode")?.checked; return out; }
 function splitDirectionsFromDom() { return {"2":$("splitDir2")?.value || "cols", "3":$("splitDir3")?.value || "grid", "4":$("splitDir4")?.value || "grid"}; }
 function normalizeSplitDirections(raw) {
-  // r337: 자동분할은 계산에서 제외합니다. 저장소에 남은 auto/legacy 값도 명시 규칙으로 정규화합니다.
+  // r338: 자동분할은 계산에서 제외합니다. 저장소에 남은 auto/legacy 값도 명시 규칙으로 정규화합니다.
   const map = (v, fallback) => {
     if (v === "columns" || v === "vertical") v = v === "columns" ? "cols" : "rows";
     if (v === "rows" || v === "cols" || v === "grid") return v;
@@ -1170,7 +1170,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r337.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r338.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -1937,10 +1937,10 @@ function officeProtectText(value="") {
 }
 
 const OFFICE_LAYOUT_PROFILES = Object.freeze({
-  "class:individual":   { profile:"class:individual",   mode:"individual", textMode:"subjectEnglishMeta", word:{page:"standard", bodyHalf:14, headerHalf:14}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
-  "student:individual": { profile:"student:individual", mode:"individual", textMode:"subjectEnglishMeta", word:{page:"standard", bodyHalf:14, headerHalf:14}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
-  "teacher:individual": { profile:"teacher:individual", mode:"individual", textMode:"subjectMeta",        word:{page:"standard", bodyHalf:14, headerHalf:14}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
-  "room:individual":    { profile:"room:individual",    mode:"individual", textMode:"subjectMeta",        word:{page:"standard", bodyHalf:14, headerHalf:14}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
+  "class:individual":   { profile:"class:individual",   mode:"individual", textMode:"subjectEnglishMeta", word:{page:"standard", bodyHalf:14, headerHalf:16}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
+  "student:individual": { profile:"student:individual", mode:"individual", textMode:"subjectEnglishMeta", word:{page:"standard", bodyHalf:14, headerHalf:16}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
+  "teacher:individual": { profile:"teacher:individual", mode:"individual", textMode:"subjectMeta",        word:{page:"standard", bodyHalf:14, headerHalf:16}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
+  "room:individual":    { profile:"room:individual",    mode:"individual", textMode:"subjectMeta",        word:{page:"standard", bodyHalf:14, headerHalf:16}, excel:{bodyStyle:0, headerStyle:1, colWidth:23.2, firstColWidth:4.0, bodyHeight:78} },
   "class:overview":     { profile:"class:overview",     mode:"overview",   textMode:"subject",            word:{page:"wide", bodyHalf:7,  headerHalf:7},  excel:{bodyStyle:4, headerStyle:5, colWidth:4.9, firstColWidth:5.0, bodyHeight:58} },
   "teacher:overview":   { profile:"teacher:overview",   mode:"overview",   textMode:"subjectMeta",        word:{page:"wide", bodyHalf:7,  headerHalf:7},  excel:{bodyStyle:4, headerStyle:5, colWidth:4.9, firstColWidth:5.0, bodyHeight:58} },
   "room:overview":      { profile:"room:overview",      mode:"overview",   textMode:"subjectMeta",        word:{page:"wide", bodyHalf:7,  headerHalf:7},  excel:{bodyStyle:4, headerStyle:5, colWidth:4.9, firstColWidth:5.0, bodyHeight:58} }
@@ -2003,7 +2003,7 @@ function officeSplitDirectionForCount(count=1, model=null) {
   const dirs = normalizeSplitDirections(officeSettingsForModel(model).splitDirections || {});
   const key = String(Math.max(2, Math.min(4, count)));
   const dir = dirs[key];
-  // r337: rows / cols / grid 세 가지 명시 분할만 사용합니다. auto는 여기까지 들어오지 않습니다.
+  // r338: rows / cols / grid 세 가지 명시 분할만 사용합니다. auto는 여기까지 들어오지 않습니다.
   if (dir === "rows" || dir === "cols" || dir === "grid") return dir;
   return count >= 3 ? "grid" : "cols";
 }
@@ -2079,8 +2079,9 @@ function officePlacedClipUnits(fieldKey="subject", splitCount=1, place=null, all
 function officeClipTextForPlace(value="", fieldKey="subject", model=null, splitCount=1, place=null, allocatedCols=3) {
   const text = officeProtectText(value);
   if (!text) return "";
-  const mustClip = fieldKey === "subject" || fieldKey === "english" || officeClipEnabled(model, splitCount);
-  if (!mustClip) return text;
+  // r338: 과목/영문명도 사용자가 "긴 과목/영문명 칸에서 자르기"를 켠 경우에만 말줄임표로 자릅니다.
+  // 표 크기는 고정하고, 옵션이 꺼져 있으면 Word 셀의 noWrap/고정 높이에서 자연스럽게 잘리도록 둡니다.
+  if (!officeClipEnabled(model, splitCount)) return text;
   return officeClipToVisualUnits(text, officePlacedClipUnits(fieldKey, splitCount, place, allocatedCols));
 }
 function officeCardDisplayValue(card={}, key="subject", model=null, splitCount=1) {
@@ -2091,7 +2092,7 @@ function officeFieldHalfSize(fieldCfg={}, key="subject", fallback=12) {
   return wordHalfFromPx(px, fallback, 6, 28);
 }
 function officeSplitFontRatio(splitCount=1) {
-  // r337: Word는 1~4분할을 같은 글자 크기로 찍으면 실제 카드 폭/높이 비율이 무너집니다.
+  // r338: Word는 1~4분할을 같은 글자 크기로 찍으면 실제 카드 폭/높이 비율이 무너집니다.
   // 각 분할 탭의 설정 글꼴을 우선 사용하되, 같은 설정값이라도 분할 수에 따라 최소 비율 보정을 적용합니다.
   const n = Math.max(1, Math.min(4, Number(splitCount) || 1));
   return n <= 1 ? 1.00 : (n === 2 ? 0.92 : (n === 3 ? 0.84 : 0.78));
@@ -2108,7 +2109,7 @@ function officeCellFieldScale(cell={}) {
   return Number.isFinite(n) && n > 0 ? Math.max(0.38, Math.min(1.25, n)) : 1;
 }
 function officeFieldScaleForPlacement(fieldKey="subject", cardBand={}, place={}, splitCount=1) {
-  // r337: 글자 크기는 단순 1~4분할 개수가 아니라 실제 카드가 차지하는 폭/높이 비율까지 함께 반영합니다.
+  // r338: 글자 크기는 단순 1~4분할 개수가 아니라 실제 카드가 차지하는 폭/높이 비율까지 함께 반영합니다.
   // 기준은 1분할 전체 카드(3열 × 4행) = 1.0 입니다.
   const totalCols = Math.max(1, Number(cardBand.totalCols) || Number(cardBand.w) || 3);
   const totalRows = Math.max(1, Number(cardBand.totalRows) || Number(cardBand.h) || 4);
@@ -2410,11 +2411,11 @@ function xlsxFieldPt(fieldKey="subject", cfg={}) {
   return Math.max(5, Math.min(16, Math.round(Number(px) * 0.75 * 10) / 10));
 }
 function officeFieldHorizontalAlign(cfg={}, def={}) {
-  // r337: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 가로 가운데 정렬합니다.
+  // r338: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 가로 가운데 정렬합니다.
   return "center";
 }
 function officeFieldVerticalAlign(cfg={}, def={}) {
-  // r337: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 세로 가운데 정렬합니다.
+  // r338: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 세로 가운데 정렬합니다.
   return "center";
 }
 function xlsxDynamicStyleKey(fieldKey="subject", cfg={}, def=null) {
@@ -2610,7 +2611,7 @@ function wPara(text="", opts={}) {
 }
 function officeWordHalfSize(text="", opts={}) {
   const profile = officeModelProfile(opts.model || { profile: opts.officeProfile || opts.profile });
-  if (opts.header) return profile.word?.headerHalf || (opts.wideOverview ? 7 : (opts.overview ? 10 : 14));
+  if (opts.header) return profile.word?.headerHalf || (opts.wideOverview ? 8 : (opts.overview ? 11 : 16));
   if (opts.overview) return profile.word?.bodyHalf || (opts.wideOverview ? 7 : 10);
   return docxCellSize(text, !!opts.header, !!opts.overview, !!opts.wideOverview);
 }
@@ -2652,7 +2653,7 @@ function wCardFieldPara(value="", fieldKey="subject", cfg={}, def={}, opts={}, s
   const size = officeFieldHalfSizeForSplit(cfg, fieldKey, fallback, splitCount);
   const color = isEnglish ? "475569" : (isSubject ? "111827" : "334155");
   const line = isSubject ? 104 : (isEnglish ? 76 : 70);
-  // r337: 위치는 3/1/1/3 내부 어느 칸에 놓을지만 결정하고, 실제 텍스트는 그 칸 안에서 항상 가운데 정렬합니다.
+  // r338: 위치는 3/1/1/3 내부 어느 칸에 놓을지만 결정하고, 실제 텍스트는 그 칸 안에서 항상 가운데 정렬합니다.
   const align = "center";
   return wPara(text,{bold:!!cfg.bold,align,size,line,color,noBreak:true,charScale:92,charSpacing:-3});
 }
@@ -2756,7 +2757,7 @@ function wCell(text="", opts={}) {
 }
 function wordFlatRowKind(row=[]) {
   const cells = (row || []).filter(c => c && !c.skip);
-  // r337: 교시 표시 셀이 세로 병합되어 같은 내부 행에 존재해도,
+  // r338: 교시 표시 셀이 세로 병합되어 같은 내부 행에 존재해도,
   // 그 행 전체를 header로 보면 과목/영문/하단 행 높이 비율 계산이 모두 무너집니다.
   // 행 전체가 헤더인 경우만 header로 보고, 데이터 셀이 섞인 행은 필드 위치 기준으로 계산합니다.
   if (cells.length && cells.every(c => c.header)) return "header";
@@ -2789,13 +2790,13 @@ function officeFlatRowMaxHalfSize(row=[], posKind="blank") {
   }));
 }
 function officeFlatRowRatio(posKind="blank") {
-  // r337: 카드 내부 4행은 위치 비율로 계산합니다.
-  // 3열 상단/과목/영문/3열 하단의 구조는 유지하고, 높이만 같은 논리 교시 안에서 이 비율로 배분합니다.
-  if (posKind === "subject") return 1.55;
-  if (posKind === "english") return 1.10;
-  if (posKind === "top" || posKind === "bottom" || posKind === "meta" || posKind === "text") return 0.78;
+  // r338: 카드 내부 4행은 위치 비율로 계산하되, 과목/영문 행의 여백을 줄여 1페이지 고정을 우선합니다.
+  // 3열 상단 / 1열 과목 / 1열 영문 / 3열 하단 구조는 유지합니다.
+  if (posKind === "subject") return 1.32;
+  if (posKind === "english") return 0.92;
+  if (posKind === "top" || posKind === "bottom" || posKind === "meta" || posKind === "text") return 0.70;
   if (posKind === "header") return 1.0;
-  return 0.42;
+  return 0.34;
 }
 function officeFlatSiblingRatioTotal(model=null, idx=0) {
   return officeFlatSiblingIndexes(model, idx)
@@ -2805,22 +2806,13 @@ function officeFlatSiblingRatioTotal(model=null, idx=0) {
 function officeFlatRatioHeight(kind="word", row=[], model=null, idx=0, overview=false, dayOverview=false, wideOverview=false) {
   const posKind = officeFlatPositionKind(model, idx, row);
   if (posKind === "header") return officeFlatBudgetedHeight(kind, row, model, idx, overview, dayOverview, wideOverview);
-  const siblings = officeFlatSiblingIndexes(model, idx);
   const ratioSum = officeFlatSiblingRatioTotal(model, idx);
   const myRatio = officeFlatRowRatio(posKind);
   const baseBudget = officeFlatLogicalRowBudget(kind, model, idx, overview, dayOverview, wideOverview);
-  let minBudget = 0;
-  siblings.forEach(i => {
-    const r = (model?.grid || [])[i] || [];
-    const pk = officeFlatPositionKind(model, i, r);
-    const ratio = officeFlatRowRatio(pk);
-    const min = officeFlatMinHeight(kind, r);
-    minBudget = Math.max(minBudget, min * ratioSum / Math.max(0.1, ratio));
-  });
-  const budget = Math.max(baseBudget, minBudget);
-  const val = budget * myRatio / ratioSum;
-  const minSelf = officeFlatMinHeight(kind, row);
-  return kind === "excel" ? Math.round(Math.max(minSelf, val) * 10) / 10 : Math.round(Math.max(minSelf, val));
+  // r338: 표 크기 고정 우선. 글자가 잘려도 논리 교시 높이는 데이터 길이 때문에 커지지 않습니다.
+  // 이전 minBudget/minSelf 보정이 10A/11A/12A를 여러 페이지로 밀어냈으므로 제거합니다.
+  const val = baseBudget * myRatio / ratioSum;
+  return kind === "excel" ? Math.round(val * 10) / 10 : Math.max(18, Math.round(val));
 }
 function officeFlatPositionBaseHeight(kind="word", posKind="blank", row=[]) {
   if (kind === "excel") {
@@ -2867,22 +2859,21 @@ function officeFlatLogicalRowBudget(kind="word", model=null, idx=0, overview=fal
   const headerRows = overview ? 2 : 1;
   if (meta && meta.sourceRow < headerRows) {
     if (kind === "excel") return overview ? 13 : 16;
-    return (!overview && !dayOverview && !wideOverview) ? (portrait ? 190 : 170) : (wideOverview ? 150 : 190);
+    return (!overview && !dayOverview && !wideOverview) ? (portrait ? 220 : 210) : (wideOverview ? 165 : 210);
   }
   if (kind === "excel") {
     const lpExcel = officeModelProfile(model).excel || {};
     return Math.max(34, Number(lpExcel.bodyHeight) || (overview ? 58 : 78));
   }
-  // r337: 1~4분할 때문에 한 교시가 4/8/12/16 내부행으로 늘어나도
-  // 논리 교시 1칸의 전체 높이는 먼저 고정하고, 그 안에서 필드행 가중치로 나눕니다.
-  // 데이터가 복잡해질수록 표 전체가 폭증하는 것을 막기 위한 규칙입니다.
+  // r338: 모든 반은 Word 1페이지 안에 들어가야 하므로 논리 교시 총 높이를 고정합니다.
+  // 1~4분할 내부행은 이 예산을 비율로 나눌 뿐, 글자 길이 때문에 예산을 늘리지 않습니다.
   if (overview || dayOverview || wideOverview) return wideOverview ? 620 : 900;
-  return portrait ? 1900 : 1480;
+  return portrait ? 1660 : 1360;
 }
 function officeFieldRequiredLineCount(text="", fieldKey="", kind="word") {
   const t = String(text || "").trim();
   if (!t) return 1;
-  // r337: 셀 높이는 자동 줄바꿈을 전제로 키우지 않습니다.
+  // r338: 셀 높이는 자동 줄바꿈을 전제로 키우지 않습니다.
   // 긴 과목/영문명은 폭 기준으로 미리 자르고, Word/Excel에서는 한 줄 유지가 원칙입니다.
   return Math.max(1, t.split(/\n/).length);
 }
@@ -2901,7 +2892,7 @@ function officeWordFieldRequiredHeight(cell={}) {
   const line = wSafeLineTwips(requested, size, text);
   const lines = officeFieldRequiredLineCount(text, fieldKey, "word");
   const boldPad = cfg?.bold ? 10 : 0;
-  const cellPad = 8; // r337: 셀 내부 여백은 0으로 두고, 테두리/Word 내부 보정만 최소 반영
+  const cellPad = 8; // r338: 셀 내부 여백은 0으로 두고, 테두리/Word 내부 보정만 최소 반영
   return Math.ceil(line * lines + cellPad + boldPad);
 }
 function officeExcelFieldRequiredHeight(cell={}) {
@@ -2928,7 +2919,7 @@ function officeFlatMinHeight(kind="word", row=[]) {
     if (k === "meta" || k === "text") return Math.max(12.5, required);
     return Math.max(4.0, required);
   }
-  // r337: 고정 최솟값으로 모든 행을 같게 키우지 않습니다.
+  // r338: 고정 최솟값으로 모든 행을 같게 키우지 않습니다.
   // 행 위치별 기본값 + 실제 분할별 글꼴 크기로 계산한 required만 사용합니다.
   if (k === "header") return Math.max(160, required);
   if (k === "subject") return Math.max(96, required);
@@ -2940,7 +2931,7 @@ function officeFlatBudgetedHeight(kind="word", row=[], model=null, idx=0, overvi
   const posKind = officeFlatPositionKind(model, idx, row);
   const min = officeFlatMinHeight(kind, row);
   const base = officeFlatPositionBaseHeight(kind, posKind, row);
-  // r337: 행 높이는 내용이 우연히 길어졌다고 제각각 달라지면 안 됩니다.
+  // r338: 행 높이는 내용이 우연히 길어졌다고 제각각 달라지면 안 됩니다.
   // 같은 논리 교시 안의 4행 구조(상단/과목/영문/하단)는 위치별 기준 높이를 먼저 적용하고,
   // 실제 폰트 기준 최소값이 더 클 때만 보정합니다.
   const val = Math.max(base, min);
@@ -2950,7 +2941,7 @@ function wordFlatRowHeight(row=[], model=null, idx=0, total=1, overview=false, d
   const kind = wordFlatRowKind(row);
   const portrait = officeWordIsPortrait();
   const compact = !overview && !dayOverview && !wideOverview;
-  if (kind === "header") return compact ? (portrait ? 190 : 170) : (wideOverview ? 150 : 190);
+  if (kind === "header") return compact ? (portrait ? 220 : 210) : (wideOverview ? 165 : 210);
   if (model?.officeFlatRowMeta?.[idx]) return officeFlatRatioHeight("word", row, model, idx, overview, dayOverview, wideOverview);
   if (kind === "subject") return compact ? (portrait ? 300 : 280) : (wideOverview ? 190 : 230);
   if (kind === "english") return compact ? (portrait ? 240 : 220) : (wideOverview ? 170 : 200);
@@ -3112,7 +3103,7 @@ function officeHasDifferentOwnerAcross(owner, side="right", r=0, c=0, rowspan=1,
   return false;
 }
 function officeSlotBoundaryBorders(owner, r=0, c=0, cell={}) {
-  // r337: 점선은 “분할 경계” 한쪽에서만 그립니다.
+  // r338: 점선은 “분할 경계” 한쪽에서만 그립니다.
   // - 카드 내부 3/1/1/3 보조 구조는 모두 nil 처리해 보이지 않게 유지합니다.
   // - 1분할은 점선 없음.
   // - 2~4분할은 가로/세로/2x2 분할에서 카드 소유자가 달라지는 경계만 점선입니다.
@@ -3167,7 +3158,7 @@ function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}) {
     ? { ...meta, fieldKey: current.fieldKey || meta.fieldKey || "", fieldCfg: current.fieldCfg || meta.fieldCfg || null, fieldDef: current.fieldDef || meta.fieldDef || null, fieldScale: current.fieldScale || meta.fieldScale || 1, borders: officeMergeBorders(current.borders, meta.borders) }
     : meta;
   const allBorders = officeMergeBorders(current?.borders, mergedMeta.borders);
-  // r337: 병합은 카드 내부 3/1/1/3 구조를 깨는 것이 아니라, 1~4분할 슬롯 범위를 카드가 차지하도록 만드는 작업입니다.
+  // r338: 병합은 카드 내부 3/1/1/3 구조를 깨는 것이 아니라, 1~4분할 슬롯 범위를 카드가 차지하도록 만드는 작업입니다.
   // 2~4분할 카드 사이의 내부 경계만 점선으로 표시합니다.
   out[r][c] = officeTextFlatCell(mergedText, false, span, { ...mergedMeta, rowspan:rowSpan, vmerge:rowSpan > 1 ? "restart" : "", borders: officeBordersForVMergePart(allBorders, rowSpan > 1 ? "start" : "single") });
   for (let i=1; i<span; i++) out[r][c+i] = officeSpanSkipCell();
@@ -3179,7 +3170,7 @@ function officePlaceFlatText(out, r, c, text="", colspan=1, meta={}) {
   }
 }
 function officeHeaderMergeBlock(cell={}, rows=1, cols=1) {
-  // r337: 요일/교시 표시 영역은 내부 분할 격자에 끌려가면 안 됩니다.
+  // r338: 요일/교시 표시 영역은 내부 분할 격자에 끌려가면 안 됩니다.
   // 특히 교시 셀은 같은 논리 교시의 모든 내부 행을 세로 병합합니다.
   const rCount = Math.max(1, Number(rows) || 1);
   const cCount = Math.max(1, Number(cols) || 1);
@@ -3193,7 +3184,7 @@ function officeHeaderMergeBlock(cell={}, rows=1, cols=1) {
   return out;
 }
 function officeCardBandPlacement(cardRow=0, cardCol=0, shapeRows=1, shapeCols=1, rows=1, cols=1, count=1, dir="grid") {
-  // r337: 최대 4분할 슬롯을 기준으로, 카드가 차지해야 할 슬롯 범위를 먼저 병합합니다.
+  // r338: 최대 4분할 슬롯을 기준으로, 카드가 차지해야 할 슬롯 범위를 먼저 병합합니다.
   // 카드 내부는 그 병합된 범위 안에서 다시 3/1/1/3 구조로 나뉘므로 반/교사/교실 위치 규칙은 깨지지 않습니다.
   const totalRows = Math.max(1, Number(rows) || 1);
   const totalCols = Math.max(1, Number(cols) || 1);
@@ -3291,7 +3282,7 @@ function officeExpandCellIntoFlatGrid(cell={}, allocatedRows=1, allocatedCols=1,
     if (text) officePlaceFlatText(out, 0, 0, text, cols, { fieldKey: cell.fieldKey || "", fieldCfg: cell.fieldCfg || null, fieldDef: cell.fieldDef || null });
     return out;
   }
-  // r337: 한 교시 칸 안에서 1~4분할을 먼저 계산하고, 카드가 차지하는 슬롯 범위를 병합합니다.
+  // r338: 한 교시 칸 안에서 1~4분할을 먼저 계산하고, 카드가 차지하는 슬롯 범위를 병합합니다.
   // 카드 내부 3/1/1/3 구조는 병합된 카드 범위 안에서 다시 유지합니다.
   const count = Math.max(1, Math.min(4, cards.length));
   const shape = officeCardGridShape(count, model);
@@ -3324,6 +3315,12 @@ function officeFlattenModelToRealGrid(model) {
       rowUnits[r] = Math.max(rowUnits[r] || 1, need.rows);
     });
   });
+  // r338: 요일 너비 고정. 한 요일에 4분할이 있어도 다른 요일과 전체 너비가 달라지면 안 됩니다.
+  // 첫 열은 교시 표시 열로 두고, 월~금 논리 열은 모두 같은 내부 단위 수를 사용합니다.
+  if (!isOverviewModel(model) && logicalCols > 1) {
+    const maxDayUnits = Math.max(1, ...colUnits.slice(1).map(v => Math.max(1, Number(v) || 1)));
+    for (let c=1; c<logicalCols; c++) colUnits[c] = maxDayUnits;
+  }
   const newGrid = [];
   const flatRowMeta = [];
   originalRows.forEach((row, r) => {
@@ -3346,7 +3343,7 @@ function officeFlattenModelToRealGrid(model) {
   return {
     ...model,
     title: model.title,
-    source: "flat-office-ratio-sizing-r337",
+    source: "flat-office-fixed-page-r338",
     flatOffice: true,
     officeGridUnits: { rowUnits, colUnits },
     officeFlatRowMeta: flatRowMeta,
@@ -3377,7 +3374,7 @@ function wordSafeModelForExport(model) {
   // Word 전체표만 논리 교시 1칸 구조로 보존하고 Excel/개별표는 실제 격자를 유지합니다.
   const estimated = officeEstimatedFlatColCount(model);
   if (isOverviewModel(model) && estimated > WORD_TABLE_COL_LIMIT) {
-    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-ratio-sizing-r337" };
+    return { ...model, wordOverviewSafeGrid: true, source: "word-overview-safe-fixed-page-r338" };
   }
   return officeFlattenModelToRealGrid(model);
 }
@@ -3403,10 +3400,10 @@ function wordHeaderRowXml(model) {
   const tblW = officeWordTableWidth(model);
   const sideW = Math.max(2200, Math.round(tblW * (officePageRatioProfile(model) === "wide" ? 0.20 : 0.22)));
   const centerW = tblW - sideW*2;
-  const row = `<w:tr><w:trPr><w:trHeight w:val="260" w:hRule="exact"/></w:trPr>` +
-    `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(left,{align:"left",size:10,line:120,color:"475569",noBreak:left.length<=26})}</w:tc>` +
-    `<w:tc><w:tcPr><w:tcW w:w="${centerW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(model.title,{bold:true,align:"center",size:18,line:200,noBreak:true})}</w:tc>` +
-    `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(right,{align:"right",size:10,line:120,color:"475569",noBreak:right.length<=26})}</w:tc>` +
+  const row = `<w:tr><w:trPr><w:trHeight w:val="320" w:hRule="exact"/></w:trPr>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(left,{align:"left",size:11,line:132,color:"475569",noBreak:left.length<=26})}</w:tc>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${centerW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(model.title,{bold:true,align:"center",size:22,line:244,noBreak:true})}</w:tc>` +
+    `<w:tc><w:tcPr><w:tcW w:w="${sideW}" w:type="dxa"/><w:vAlign w:val="bottom"/><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/></w:tcBorders></w:tcPr>${wPara(right,{align:"right",size:11,line:132,color:"475569",noBreak:right.length<=26})}</w:tc>` +
     `</w:tr>`;
   return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="${sideW}"/><w:gridCol w:w="${centerW}"/><w:gridCol w:w="${sideW}"/></w:tblGrid>${row}</w:tbl>`;
 }
@@ -3441,7 +3438,7 @@ function excelDbGradeForItem(ent={}, item={}) {
   return excelGradeFromClassLabel(itemClass) || entSub || "";
 }
 function excelDbRowsForExport() {
-  // r337: Excel은 더 이상 출력용 표 모양을 흉내 내지 않습니다.
+  // r338: Excel은 더 이상 출력용 표 모양을 흉내 내지 않습니다.
   // 데이터베이스 다운로드 전용: 학년/이름/과목/영문/교사/교실 6개 컬럼만 제공합니다.
   renderEntityList();
   const ents = selectedEntities();
