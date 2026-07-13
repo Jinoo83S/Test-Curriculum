@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-06-condition-popup-multiroom-persist-r225";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-13-system-audit-r343";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -9,9 +9,9 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r188/HIS_CP_SAT_Local_Server_r188.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r225";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r225 CP-SAT API bridge";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r343/HIS_CP_SAT_Local_Server_r343.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r343";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r343 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -166,7 +166,7 @@ function applyManualCardExclusionToPayloadTimetable(tt = {}) {
   });
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.manualCardExcludedIds = [...excludedIds];
-  tt.autoAssignMeta.manualCardExclusionMode = "r225-manual-card-vault";
+  tt.autoAssignMeta.manualCardExclusionMode = "manual-card-vault-v1";
   return tt;
 }
 function cardIdsFromEntryForPayload(entry = {}) {
@@ -345,7 +345,7 @@ function applyFixedRoomPreflightForSolverPayload(data = {}) {
   const roster = teacherRosterSetForPayload(data);
   const teacherConstraints = tt.teacherConstraints && typeof tt.teacherConstraints === "object" ? tt.teacherConstraints : {};
   const meta = {
-    version: "r225",
+    version: "r343",
     generatedAt: nowIso(),
     rule: "specified/manualMultiRooms/classHomeroom/teacherOwnRoom fixed before CP-SAT; teacher homeRoomId ignored",
     totalCards: cards.length,
@@ -488,7 +488,7 @@ function applyScheduleConditionPreflightForSolverPayload(data = {}) {
   const cardById = new Map(cards.map(card => [cleanLocal(card?.id), card]).filter(([id]) => id));
   const roomsList = asArray(data?.rooms?.rooms);
   const meta = {
-    version: "r225",
+    version: "r343",
     generatedAt: nowIso(),
     rule: "durationPeriods/requiredRoomCount/manualRoomIds are normalized before CP-SAT payload.",
     cardDurationCount: 0,
@@ -564,7 +564,7 @@ function filterSolverSeedEntriesForPayload(entries = [], tt = {}) {
   const kept = list.filter(e => isSolverSeedEntryForPayload(e, list.length));
   if (!tt.autoAssignMeta || typeof tt.autoAssignMeta !== "object") tt.autoAssignMeta = {};
   tt.autoAssignMeta.cpSatEntrySeedPreflight = {
-    version: "r225",
+    version: "r343",
     originalEntryCount: list.length,
     keptSeedEntryCount: kept.length,
     droppedGeneratedEntryCount: Math.max(0, list.length - kept.length),
@@ -764,21 +764,53 @@ function issueText(apiResult = {}, limit = 8) {
   const lines = issueLines(apiResult, limit);
   return lines.length ? lines.map(x => `- ${x}`).join("\n") : "- 상세 원인 없음";
 }
-function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount = 0) {
-  const severe = severeCoverageFailure(apiResult, normalizedEntries, currentEntryCount);
-  if (severe.block) return { canApply: false, level: "bad", reason: severe.reason };
-  const hard = hardValidationBlock(apiResult);
-  if (hard.block) return { canApply: false, level: "bad", reason: hard.reason };
-  const validation = apiResult?.validation || {};
-  if (validation.ok === false) {
+function solverEngineLabel(apiResult = {}) {
+  return cleanLocal(
+    apiResult?.meta?.engine ||
+    apiResult?.engine ||
+    apiResult?.status ||
+    apiResult?.state ||
+    ""
+  );
+}
+function engineApplyBlock(apiResult = {}) {
+  if (apiResult?.applyAllowed === false || apiResult?.meta?.applyAllowed === false) {
     return {
-      canApply: true,
-      level: "warn",
-      reason: softValidationSummary(apiResult) || validation.summary || "부분 배치 결과입니다.",
-      soft: true,
+      block: true,
+      reason: cleanLocal(apiResult?.applyBlockReason || apiResult?.meta?.applyBlockReason) || "서버가 이 결과의 적용을 차단했습니다.",
     };
   }
-  return { canApply: asArray(normalizedEntries).length > 0, level: "ok", reason: "정상 적용 가능", soft: false };
+  const engine = solverEngineLabel(apiResult);
+  const status = cleanLocal(apiResult?.status || "");
+  const isCpSat = /OR-Tools\s*CP-SAT/i.test(engine) || /^CP-SAT-/i.test(status);
+  if (!isCpSat) {
+    return {
+      block: true,
+      reason: `운영 적용은 OR-Tools CP-SAT 결과만 허용합니다. 현재 엔진: ${engine || "확인 불가"}`,
+    };
+  }
+  return { block: false, reason: "" };
+}
+function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount = 0) {
+  const engine = engineApplyBlock(apiResult);
+  if (engine.block) return { canApply: false, level: "bad", reason: engine.reason, soft: false };
+  const severe = severeCoverageFailure(apiResult, normalizedEntries, currentEntryCount);
+  if (severe.block) return { canApply: false, level: "bad", reason: severe.reason, soft: false };
+  const hard = hardValidationBlock(apiResult);
+  if (hard.block) return { canApply: false, level: "bad", reason: hard.reason, soft: false };
+  const validation = apiResult?.validation || {};
+  if (validation.ok !== true) {
+    return {
+      canApply: false,
+      level: "bad",
+      reason: softValidationSummary(apiResult) || validation.summary || "검증을 통과하지 못한 결과입니다.",
+      soft: false,
+    };
+  }
+  if (!asArray(normalizedEntries).length) {
+    return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다.", soft: false };
+  }
+  return { canApply: true, level: "ok", reason: "OR-Tools CP-SAT 검증 완료", soft: false };
 }
 function solvePhaseLabel(apiResult = {}) {
   const phase = cleanLocal(apiResult?.phase || apiResult?.meta?.phase || "");
@@ -1279,7 +1311,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r225\n백업도 배치 보관에 저장했습니다.`);
+    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r343\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1380,7 +1412,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       const rowData = [
         ["상태", data?.status || data?.state || (data?.ok ? "OK" : "확인 필요")],
         ["검증", validation.summary || (validation.ok === true ? "정상" : "-")],
-        ["적용판정", policy.canApply ? (policy.soft ? `부분 적용 가능 · ${policy.reason}` : "적용 가능") : `적용 차단 · ${policy.reason}`],
+        ["적용판정", policy.canApply ? `적용 가능 · ${policy.reason}` : `적용 차단 · ${policy.reason}`],
         ["원인요약", issuePreview || "-"],
         ["카드", counts.cards ?? "-"],
         ["그룹카드", counts.groups ?? "-"],
@@ -1406,11 +1438,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r188.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r343.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r188에 <code>HIS_CP_SAT_Local_Server_r188.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r343에 <code>HIS_CP_SAT_Local_Server_r343.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
 
@@ -1422,7 +1454,7 @@ export function setupCpSatWebappImport(ctx = {}) {
         setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>현재검증 메타 갱신 완료</b><br>${escapeHtml(body?.validation?.summary || "현재검증 완료")}<br><span style="font-size:11px;color:#64748b">현재 entries ${asArray(entries?.()).length}개 기준으로 autoAssignMeta를 저장했습니다.</span>`, 100);
         renderApiSummary(body, "refresh-current-meta");
       } catch (err) {
-        setStatus("bad", `<b>현재검증 메타 갱신 실패</b><br>${escapeHtml(err?.message || err)}<br><br>로컬 서버 r188 이상이 실행 중인지 확인하세요.`, 0);
+        setStatus("bad", `<b>현재검증 메타 갱신 실패</b><br>${escapeHtml(err?.message || err)}<br><br>r343 로컬 서버가 실행 중인지 확인하세요.`, 0);
       } finally { setBusy(false); }
     });
 
@@ -1430,10 +1462,17 @@ export function setupCpSatWebappImport(ctx = {}) {
       try {
         setBusy(true); setStatus("warn", "서버 확인 중...", 10);
         const data = await getJson(`${apiBase()}/health`, 10000);
-        setStatus("ok", `<b>서버 정상</b> · OR-Tools ${escapeHtml(data?.data?.ortools || data?.ortools || "installed")}`, 100);
-        renderApiSummary(data?.data || data, "health");
+        const body = data?.data || data;
+        const ortools = cleanLocal(body?.ortools || "not-installed");
+        const ready = body?.solverReady === true || (ortools && ortools !== "not-installed");
+        if (!ready) {
+          setStatus("bad", `<b>서버는 실행 중이지만 OR-Tools가 없습니다.</b><br>GREEDY 진단 결과는 시간표에 적용할 수 없습니다. requirements.txt 설치를 완료한 뒤 다시 확인하세요.`, 0);
+        } else {
+          setStatus("ok", `<b>서버 정상</b> · OR-Tools ${escapeHtml(ortools)}`, 100);
+        }
+        renderApiSummary(body, "health");
       } catch (err) {
-        setStatus("bad", `<b>서버 연결 실패</b><br>${escapeHtml(err?.message || err)}<br><br>START_CP_SAT_LOCAL_SERVER.bat 또는 START_API_LOCAL.bat가 실행 중인지 확인하세요.<br>로컬 서버가 없으면 [로컬 서버 다운로드] 버튼으로 받은 뒤 압축 해제 후 실행하세요.`, 0);
+        setStatus("bad", `<b>서버 연결 실패</b><br>${escapeHtml(err?.message || err)}<br><br>START_CP_SAT_LOCAL_SERVER.bat가 실행 중인지 확인하세요.<br>로컬 서버가 없으면 [로컬 서버 다운로드] 버튼으로 받은 뒤 압축 해제 후 실행하세요.`, 0);
       } finally { setBusy(false); }
     });
     $('[data-action="analyze"]')?.addEventListener("click", async () => {
@@ -1535,11 +1574,11 @@ export function setupCpSatWebappImport(ctx = {}) {
             const issues = issueLines(latestResult, 4);
             const issueHtml = issues.length ? `<br><span style="font-size:11px;color:#64748b">${escapeHtml(issues.join(" / "))}</span>` : "";
             const applyHtml = policy.canApply
-              ? (policy.soft ? `<br><b>부분 배치 적용 가능:</b> ${escapeHtml(policy.reason)} · 적용 전 결과 JSON 저장을 권장합니다.` : "")
+              ? `<br><b>적용 가능:</b> ${escapeHtml(policy.reason)}`
               : `<br><b>적용 차단:</b> ${escapeHtml(policy.reason)} 결과 JSON은 저장할 수 있습니다.`;
             setStatus(policy.level || "ok", `<b>${escapeHtml(solvePhaseLabel(latestResult))}</b><br>${escapeHtml(latestResult?.validation?.summary || latestResult?.status || "완료")}${applyHtml}${issueHtml}`, 100);
             renderApiSummary(latestResult, "solve");
-            applyBtn.textContent = policy.soft ? "4. 부분결과 적용" : "4. 결과 적용";
+            applyBtn.textContent = "4. 결과 적용";
             applyBtn.disabled = !policy.canApply;
             resultBtn.disabled = false;
             break;
@@ -1548,9 +1587,9 @@ export function setupCpSatWebappImport(ctx = {}) {
             if (job.result && asArray(job.result.entries).length) {
               latestResult = job.result;
               const policy = resultApplyPolicy(latestResult);
-              setStatus(policy.level || "warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>부분 배치 적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
+              setStatus(policy.level || "warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
               renderApiSummary(latestResult, "solve-failed-with-result");
-              applyBtn.textContent = policy.soft ? "4. 부분결과 적용" : "4. 결과 적용";
+              applyBtn.textContent = "4. 결과 적용";
               applyBtn.disabled = !policy.canApply;
               resultBtn.disabled = false;
               break;
@@ -1573,8 +1612,8 @@ export function setupCpSatWebappImport(ctx = {}) {
         return;
       }
       const assignCount = asArray(latestResult.entries).filter(e => e?.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
-      const prefix = policy.soft ? "CP-SAT 부분 배치 결과를 현재 시간표에 적용할까요?" : "CP-SAT API 결과를 현재 시간표에 적용할까요?";
-      const warning = policy.soft ? `\n주의: ${policy.reason}\n${issueText(latestResult, 6)}\n` : "";
+      const prefix = "검증을 통과한 CP-SAT 결과를 현재 시간표에 적용할까요?";
+      const warning = "";
       const msg = `${prefix}\n\nentries: ${latestResult.entries.length}\n교실 배정 포함 entry: ${assignCount}\n검증: ${latestResult.validation?.summary || "-"}${warning}\n현재 시간표는 배치 보관에 자동 백업됩니다.`;
       if (!confirm(msg)) return;
       try { if (await applySolvedEntries(latestResult.entries, latestResult, apiBase())) overlay.remove(); }

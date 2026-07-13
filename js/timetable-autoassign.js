@@ -8,7 +8,7 @@
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-06-condition-popup-multiroom-persist-r225";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-13-system-audit-r343";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -562,7 +562,7 @@ export function createAutoAssignAll(deps) {
         };
       }) : [],
       residualPuzzleReport: compactResidualPuzzle(stripStaleResidualPuzzleReport(meta.residualPuzzleReport)),
-      validatorVersion: String(meta.validatorVersion || "2026-07-06-condition-popup-multiroom-persist-r225"),
+      validatorVersion: String(meta.validatorVersion || "2026-07-13-system-audit-r343"),
       experimentalResidualRepairEnabled: meta.experimentalResidualRepairEnabled === true,
       experimentalResidualRepairSkipped: meta.experimentalResidualRepairSkipped === true,
       experimentalResidualRepairSkipReason: String(meta.experimentalResidualRepairSkipReason || "")
@@ -902,7 +902,7 @@ export function createAutoAssignAll(deps) {
     if (!domain || !canonicalMeta || typeof canonicalMeta !== "object" || !Array.isArray(canonicalEntries) || !canonicalEntries.length) return;
     const compact = compactAutoAssignSnapshotMeta({
       ...canonicalMeta,
-      schemaVersion: canonicalMeta.schemaVersion || "2026-07-06-condition-popup-multiroom-persist-r225",
+      schemaVersion: canonicalMeta.schemaVersion || "2026-07-13-system-audit-r343",
       metricCompleteness: canonicalMeta.metricCompleteness || "complete",
       metricSource: canonicalMeta.metricSource || "canonicalEvaluation"
     });
@@ -1132,8 +1132,8 @@ export function createAutoAssignAll(deps) {
     const grades = autoItemGradeNumbers(item);
     const maxGrade = grades.length ? Math.max(...grades) : 0;
 
-    // r79: ASC가 해결한 구조를 참고해 "나중에 남으면 사실상 후보가 사라지는" 병목을 먼저 잡습니다.
-    // 데이터 자체를 ASC에 맞추는 것이 아니라, 자동배치 순서에서 큰 동시수업/희소카드를 보호합니다.
+    // 큰 동시수업과 희소카드는 후보가 소진되기 전에 먼저 배치합니다.
+    // 외부 시간표 데이터에 의존하지 않고 내부 제약도와 후보 수를 기준으로 보호합니다.
     if (classCount >= 3 && /(11\s*체육|체육|sports|physical\s*education|\bpe\b)/i.test(text)) return 0;
     if (classCount >= 3 && /(섬김|리더십|leadership|servant|transformational)/i.test(text)) return 1;
     if (classCount >= 3 && /(채플|chapel|자율|동아리|club|ca\b|sa\b)/i.test(text)) return 2;
@@ -1228,8 +1228,8 @@ export function createAutoAssignAll(deps) {
     const teacherCount = new Set(getTeacherNamesFromCards(cards)).size;
 
     // 실제 HIS 시간표에서 먼저 자리를 잡아야 하는 뼈대 그룹입니다.
-    // r79: ASC가 보여준 병목은 선택묶음보다 "11체육/리더십/전체학급"을 늦게 배치한 데서 발생했습니다.
-    // ASC 데이터를 복사하지 않고, 같은 유형의 병목 그룹을 우선 배치하도록 순서만 강화합니다.
+    // 선택묶음보다 전체학급·대형 동시수업을 늦게 배치하면 후보가 급격히 줄어듭니다.
+    // 외부 결과를 복사하지 않고 병목 그룹 우선순위만 내부 규칙으로 계산합니다.
     if (/HS\s*국어|고등\s*국어/i.test(text)) return 0;
     if (classCount >= 3 && /(11\s*체육|체육|sports|physical\s*education|\bpe\b)/i.test(text)) return 1;
     if (classCount >= 3 && /(섬김|리더십|leadership|servant|transformational)/i.test(text)) return 2;
@@ -6330,7 +6330,7 @@ export function createAutoAssignAll(deps) {
         pending.push(normalizeTimetableEntry({
           ...entry,
           autoBlockKey: block.key,
-          autoEngine: "fresh-csp-r225",
+          autoEngine: "fresh-csp-r343",
           autoGroupBlock: block.kind !== "standalone",
           autoOccurrence: block.occurrence || 1,
           durationPeriods: duration,
@@ -7256,7 +7256,7 @@ export function createAutoAssignAll(deps) {
           autoRollbackDisabled: true,
           reason: "새 엔진은 기준 보관본 품질게이트로 결과를 폐기하지 않고, 계산 결과와 검증 리포트를 그대로 표시합니다."
         },
-        validatorVersion: "2026-07-06-condition-popup-multiroom-persist-r225"
+        validatorVersion: "2026-07-13-system-audit-r343"
       };
 
       let afterAutoSnapshot = null;

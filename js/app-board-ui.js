@@ -3,7 +3,7 @@
 // ================================================================
 import { GRADE_GROUPS } from "./config.js";
 import { canEdit } from "./auth.js";
-import { appState, saveNow } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
+import { appState, saveNow } from "./state.js?v=2026-07-13-system-audit-r343";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],

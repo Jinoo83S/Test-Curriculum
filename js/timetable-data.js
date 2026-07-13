@@ -2,7 +2,7 @@
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
-import { appState } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
+import { appState } from "./state.js?v=2026-07-13-system-audit-r343";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
 export { getTtCardById } from "./ttcards.js";
@@ -782,7 +782,7 @@ export function getAllClasses() {
   });
 }
 
-/** Full timetable: rows = classes (7A,7B,...), columns = days × periods (like aScTimetables) */
+/** Full timetable: rows = classes (7A,7B,...), columns = days × periods */
 
 export function entryGradeKeys(e) {
   return e.gradeKeys?.length ? e.gradeKeys : (e.gradeKey ? [e.gradeKey] : []);

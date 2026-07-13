@@ -7,7 +7,7 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-06-stable-state-pdf-r234";
+} from "./state.js?v=2026-07-13-system-audit-r343";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 import { APP_VERSION, versioned } from "./version.js";
 

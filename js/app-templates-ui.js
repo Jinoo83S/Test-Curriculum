@@ -2,7 +2,7 @@
 // app-templates-ui.js · Template sidebar/form/manager UI wiring
 // ================================================================
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, normalizeTemplate } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
+import { appState, scheduleSave, normalizeTemplate } from "./state.js?v=2026-07-13-system-audit-r343";
 import {
   renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
   addTemplateManagerRow, getOrCreateDraft, resetDraft, commitDraft,

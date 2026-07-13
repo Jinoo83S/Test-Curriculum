@@ -221,7 +221,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-cell[data-day="2"]{border-right:2px solid #c7d2e0}
 .tt-cell[data-day="3"]{border-right:2px solid #c7d2e0}
 .tt-cell[data-day="4"]{border-right:1px solid #e2e8f0}
-/* ── All-classes grid (aScTimetables style) ── */
+/* ── All-classes grid: 월~금 × 교시 전체표 ── */
 .tt-all-class-table{table-layout:auto;min-width:max-content;border-collapse:collapse}
 .tt-all-corner{background:#1e3a5f;color:white;font-size:11px;font-weight:700;text-align:center;padding:4px 8px;min-width:44px;white-space:nowrap;border-bottom:2px solid #1e3a5f;border-right:2px solid #475569;position:sticky;left:0;z-index:3}
 .tt-all-row-hdr{min-width:44px;max-width:52px;text-align:center;padding:2px 4px;font-size:11px;border-right:2px solid #cbd5e1;white-space:nowrap;position:sticky;left:0;z-index:2;cursor:default}
@@ -1000,7 +1000,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-07-06-stable-state-pdf-r234"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-07-13-system-audit-r343"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1879,7 +1879,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r290</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r343</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1950,12 +1950,12 @@ body.tt-bottom-is-open #ttGrid{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-07-06-stable-state-pdf-r234";</script>
+<script>window.HIS_APP_VERSION = "2026-07-13-system-audit-r343";</script>
 <script type="importmap">
-{"imports":{"./js/state.js":"./js/state.js?v=2026-07-06-stable-state-pdf-r234"}}
+{"imports":{"./js/state.js":"./js/state.js?v=2026-07-13-system-audit-r343"}}
 </script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-07-06-stable-state-pdf-r234";
+  import { versioned } from "./js/version.js?v=2026-07-13-system-audit-r343";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -2335,7 +2335,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-06-stable-state-pdf-r234");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-13-system-audit-r343");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();

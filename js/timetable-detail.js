@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
-import { appState, scheduleSave } from "./state.js?v=2026-07-06-stable-state-pdf-r234";
+import { appState, scheduleSave } from "./state.js?v=2026-07-13-system-audit-r343";
 import { canEdit } from "./auth.js";
 import { getRooms } from "./rooms.js";
 import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js";
