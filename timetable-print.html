@@ -588,7 +588,7 @@ body.print-portrait #printPageStyle::after{content:""}
 @media print{.overview-wide .field-english-inline{display:none!important}.preview-page:not(.overview-wide) .mini-card.wrap-text .field-subject-group{overflow:visible!important}}
 
 
-/* r341: Office 1-4분할 셀별 계산 */
+/* r342: Excel DB 저장 버튼 분리 및 출력 형식 정리 */
 .panel .two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
 .panel .field{min-width:0;max-width:100%}
 .panel .field input,.panel .field select{width:100%;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis}
@@ -601,7 +601,7 @@ body.print-portrait #printPageStyle::after{content:""}
 <body>
 <header class="topbar">
   <a href="timetable.html">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r341</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r342</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -609,6 +609,7 @@ body.print-portrait #printPageStyle::after{content:""}
   <button id="loginBtn" class="hidden">Google 로그인</button>
   <button id="logoutBtn" class="hidden">로그아웃</button>
   <button id="refreshBtn">미리보기 새로고침</button>
+  <button id="excelDbBtn" type="button" title="현재 선택 범위를 학년/이름/과목/영문/교사/교실 데이터베이스 형식으로 저장합니다.">Excel DB 저장</button>
   <button id="printBtn" class="primary">인쇄/PDF</button>
 </header>
 <div id="renderOverlay" class="render-overlay" aria-live="polite" aria-busy="true"><div class="render-box"><div class="render-spinner"></div><div id="renderOverlayText">미리보기를 다시 그리는 중입니다…</div></div></div>
@@ -617,7 +618,7 @@ body.print-portrait #printPageStyle::after{content:""}
     <section class="panel"><h2>출력 종류</h2><div class="body">
       <div class="field"><span>출력 대상</span><select id="outputKind"><option value="class:individual">학급 - 개별</option><option value="class:overview">학급 - 전체</option><option value="teacher:individual">교사 - 개별</option><option value="teacher:overview">교사 - 전체</option><option value="room:individual">교실 - 개별</option><option value="room:overview">교실 - 전체</option><option value="student:individual">학생 - 개별</option></select></div>
       <select id="targetType" class="hidden"><option value="class">학급</option><option value="student">학생</option><option value="teacher">교사</option><option value="room">교실</option></select><select id="layoutMode" class="hidden"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select>
-      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="excel">Excel</option><option value="word">Word</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">가로</option><option value="a4-portrait">세로</option></select></div></div>
+      <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="word">Word</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">가로</option><option value="a4-portrait">세로</option></select></div></div>
       
       <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div>
       <div class="note-fields"><div class="field"><span>제목 왼쪽</span><input id="headerLeft" type="text" placeholder="자동: 학년/대상"></div><div class="field"><span>제목 오른쪽</span><input id="headerRight" type="text" placeholder="자동: 날짜"></div></div>
@@ -670,13 +671,13 @@ body.print-portrait #printPageStyle::after{content:""}
   </aside>
 </main>
 <script type="module">
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-13-word-row-safe-expansion-r341";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-13-word-row-safe-expansion-r341";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-13-word-row-safe-expansion-r341";
-import { auth, db } from "./js/config.js?v=2026-07-13-word-row-safe-expansion-r341";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-13-excel-db-toolbar-r342";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./js/state.js?v=2026-07-13-excel-db-toolbar-r342";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-13-excel-db-toolbar-r342";
+import { auth, db } from "./js/config.js?v=2026-07-13-excel-db-toolbar-r342";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const VERSION = "2026-07-13-word-row-safe-expansion-r341";
+const VERSION = "2026-07-13-excel-db-toolbar-r342";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -731,14 +732,16 @@ const OFFICE_PROFILE_MATRIX = [
   "room:individual", "room:overview",
   "student:individual"
 ];
-const PRINT_FORMATS = ["pdf", "word", "excel"];
+const PRINT_FORMATS = ["pdf", "word"];
 const PRINT_ORIENTATIONS = ["landscape", "portrait"];
 function isOverviewProfileName(profile="") { return /:overview$/.test(String(profile || "")); }
 function isPortraitAllowedForProfile(profile="") { return !isOverviewProfileName(profile); }
 function isFormatAllowedForProfile(fmt="pdf", profile="") {
-  // r312: 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
-  // 전체표는 35교시를 실제 격자로 확장해야 하므로 Excel/PDF만 일관된 출력 대상으로 유지합니다.
-  return !(String(fmt || "") === "word" && isOverviewProfileName(profile));
+  // r342: Excel은 출력 형식 선택에서 분리하고 상단의 전용 DB 저장 버튼으로만 제공합니다.
+  const value = String(fmt || "");
+  if (value === "excel") return false;
+  // 학급/교사/교실 전체표는 Word 저장을 제공하지 않습니다.
+  return !(value === "word" && isOverviewProfileName(profile));
 }
 // r318: Excel은 가로/세로 출력 프로필을 나누지 않습니다.
 // Excel은 편집 가능한 격자 파일이므로 용지 방향은 PDF/Word에서만 의미를 갖습니다.
@@ -794,7 +797,7 @@ function enforceFormatAvailability() {
     wordOpt.textContent = blockWord ? "Word (전체 출력 제외)" : "Word";
   }
   if (blockWord && formatEl.value === "word") {
-    formatEl.value = "excel";
+    formatEl.value = "pdf";
   }
 }
 function currentPrintProfileLabel() {
@@ -938,7 +941,9 @@ function layoutMode() { return parseOutputKind().mode; }
 function format() {
   const el = $("format");
   if (!el) return "pdf";
-  if (!isFormatAllowedForProfile(el.value, currentOfficeProfile())) el.value = "excel";
+  // r342: 과거 저장값이 Excel이어도 현재 UI 형식은 PDF/Word 중 하나로 정규화합니다.
+  if (el.value !== "pdf" && el.value !== "word") el.value = "pdf";
+  if (!isFormatAllowedForProfile(el.value, currentOfficeProfile())) el.value = "pdf";
   return el.value;
 }
 function syncLayoutModeOptions() { syncOutputKindToHidden(); }
@@ -1213,7 +1218,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r341.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r342.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -1283,7 +1288,7 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   const s={...defaultSettings(),...settings};
   if (!keepMain) {
     setOutputKind(s.targetType, s.layoutMode);
-    $("format").value=s.format;
+    $("format").value = s.format === "word" ? "word" : "pdf";
     enforceFormatAvailability();
   } else {
     syncOutputKindToHidden();
@@ -1914,7 +1919,7 @@ function updateExportButtonLabel() {
   const btn = $("printBtn");
   if (!btn) return;
   const f = format();
-  btn.textContent = f === "excel" ? "Excel 저장" : (f === "word" ? "Word 저장" : "인쇄/PDF");
+  btn.textContent = f === "word" ? "Word 저장" : "인쇄/PDF";
 }
 function safeFilePart(value="") {
   return clean(value).replace(/[\\/:*?"<>|]+/g,"_").replace(/\s+/g,"_").slice(0,80) || "시간표";
@@ -3592,6 +3597,11 @@ function buildXlsxDatabaseBlob() {
   return zipStore(files);
 }
 
+function downloadExcelDatabase() {
+  if (!dataReady) return;
+  downloadBlobFile(exportFileName("xlsx"), buildXlsxDatabaseBlob());
+}
+
 function exportOfficeReal(kind) {
   if (!dataReady) return;
   const models = sheetModelsFromPreview();
@@ -3774,15 +3784,14 @@ async function exportPdfReal() {
 function exportOffice(kind) {
   if (kind === "word" && isOverviewProfile()) {
     const fmt = $("format");
-    if (fmt) fmt.value = "excel";
+    if (fmt) fmt.value = "pdf";
     updateExportButtonLabel();
-    return exportOfficeReal("excel");
+    return exportPdfReal();
   }
   return exportOfficeReal(kind);
 }
 function runMainExport() {
   const f = format();
-  if (f === "excel") return exportOffice("excel");
   if (f === "word") return exportOffice("word");
   return exportPdfReal();
 }
@@ -3796,7 +3805,7 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    return;
  }
  if (e.target.id === "outputKind") return;
- if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.id === "ellipsisMode") { document.body.classList.toggle("ellipsis-enabled", !!e.target.checked); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
+ if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.id === "ellipsisMode") { document.body.classList.toggle("ellipsis-enabled", !!e.target.checked); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("excelDbBtn")?.addEventListener("click",downloadExcelDatabase); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } if (user && !LOCAL_DEV_MODE) { loadDesignerSettingsFromFirestore(true); } }
 function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
