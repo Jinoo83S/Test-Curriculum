@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-constraints.js · Teacher constraints + homeroom UI
 // ================================================================
-import { normalizeTimetableConstraint } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
+import { normalizeTimetableConstraint } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
 
 export function createTimetableConstraintsHandlers({
   appState,

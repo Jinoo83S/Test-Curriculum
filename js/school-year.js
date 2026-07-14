@@ -4,6 +4,7 @@
 // 2026 keeps the existing Firestore paths for backward compatibility.
 // New years use isolated schoolYears/{year}/... paths.
 
+export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-login-hotfix-r346";
 export const LEGACY_SCHOOL_YEAR = "2026";
 export const SCHOOL_YEAR_KEY = "his_active_school_year_v1";
 export const KNOWN_SCHOOL_YEARS_KEY = "his_known_school_years_v1";
@@ -100,10 +101,17 @@ function hasUnsavedChanges() {
 }
 
 export function setupSchoolYearUi() {
-  if (typeof document === "undefined") return;
+  if (typeof document === "undefined") return false;
   injectStyle();
-  const host = document.querySelector(".topbar-right, .tt-topbar-right, header .right, .topbar");
-  if (!host || document.getElementById("hisSchoolYearSwitch")) return;
+
+  // The mode switch can be nested after another topbar helper rearranges the DOM.
+  // Always use the anchor's real parent as the insertion host. Calling
+  // host.insertBefore() with a descendant (not a direct child) throws NotFoundError
+  // and previously stopped the entire login bootstrap.
+  const modeSwitch = document.querySelector(".top-mode-switch, .tt-mode-switch");
+  const fallbackHost = document.querySelector(".topbar-right, .tt-topbar-right, header .right, .topbar");
+  const host = modeSwitch?.parentElement || fallbackHost;
+  if (!host || document.getElementById("hisSchoolYearSwitch")) return false;
 
   const wrap = document.createElement("div");
   wrap.id = "hisSchoolYearSwitch";
@@ -143,11 +151,24 @@ export function setupSchoolYearUi() {
   manage.title = "새 학년도 생성·복제·전환";
 
   wrap.append(select, manage);
-  const modeSwitch = host.querySelector(".top-mode-switch, .tt-mode-switch");
-  const spacer = host.querySelector(".spacer");
-  if (modeSwitch) host.insertBefore(wrap, modeSwitch);
-  else if (spacer) host.insertBefore(wrap, spacer.nextSibling);
-  else host.insertBefore(wrap, host.firstChild);
+  const spacer = host.querySelector?.(":scope > .spacer") || host.querySelector?.(".spacer");
+
+  try {
+    if (modeSwitch?.parentNode) {
+      modeSwitch.parentNode.insertBefore(wrap, modeSwitch);
+    } else if (spacer?.parentNode) {
+      spacer.parentNode.insertBefore(wrap, spacer.nextSibling);
+    } else {
+      host.insertBefore(wrap, host.firstChild);
+    }
+    return true;
+  } catch (error) {
+    // Academic-year switching is auxiliary UI. It must never block authentication
+    // or the main application bootstrap if a page has an unexpected topbar layout.
+    console.error("[school-year] UI insertion failed; continuing without switch.", error);
+    wrap.remove();
+    return false;
+  }
 }
 
 if (typeof window !== "undefined") {

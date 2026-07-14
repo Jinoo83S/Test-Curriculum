@@ -2,7 +2,7 @@
 // save-status-ui.js · Unified save button + quota/local-dev controls
 // ================================================================
 import { canEdit } from "./auth.js";
-import { LOCAL_DEV_MODE } from "./local-dev.js";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
 import {
   setOnSaveStatus,
   isAutoSaveEnabled,
@@ -13,7 +13,7 @@ import {
   importLocalSnapshot,
   resetLocalSnapshot,
   exportFirestoreDiagnosticSnapshot,
-} from "./state.js?v=2026-07-14-school-year-workspaces-r345";
+} from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
 import { openDataCleanupDialog } from "./data-cleanup.js";
 import { openFirestoreUsageDialog } from "./firestore-usage.js";
 import { openAppHealthCheckDialog } from "./app-health-check.js";

@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js";
 import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
+import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
 } from "./templates.js";

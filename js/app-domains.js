@@ -2,7 +2,7 @@
 // app-domains.js · View-scoped Firestore subscription manager
 // ================================================================
 import { canEdit } from "./auth.js";
-import { initialLoad, subscribeDomains, unsubscribeAll, unsubscribeDomains } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
+import { initialLoad, subscribeDomains, unsubscribeAll, unsubscribeDomains } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
 
 // 화면별로 필요한 Firestore 도메인만 실시간 구독합니다.
 // appState에는 마지막으로 읽은 값이 남아 있으므로, 화면 전환 시 필요한 도메인만 다시 붙입니다.

@@ -5,7 +5,7 @@ import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey,
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js";
 import { canEdit } from "./auth.js";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";

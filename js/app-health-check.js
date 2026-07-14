@@ -7,8 +7,8 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-14-school-year-workspaces-r345";
-import { LOCAL_DEV_MODE } from "./local-dev.js";
+} from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
 import { APP_VERSION, versioned } from "./version.js";
 
 const MODULE_FILES = [

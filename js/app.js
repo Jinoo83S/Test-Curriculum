@@ -1,4 +1,4 @@
-// ================================================================
+ // ================================================================
 // app.js · Main Entry / Bootstrap
 // ================================================================
 // 이 파일은 앱 전체 초기화만 담당합니다.
@@ -10,8 +10,8 @@ import { setupSaveStatusUi } from "./save-status-ui.js";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js";
-import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
-import { versioned } from "./version.js?v=2026-07-14-school-year-workspaces-r345";
+import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { versioned } from "./version.js?v=2026-07-14-school-year-login-hotfix-r346";
 import { createAppModuleLoader } from "./app-module-loader.js";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js";
 import { setupStudentManagementUi } from "./app-students-ui.js";

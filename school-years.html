@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -54,11 +54,11 @@
 <script type="module">
 import { auth, db } from "./js/config.js";
 import { login, logout, onAuth } from "./js/auth.js";
-import { LOCAL_DEV_MODE, LOCAL_STATE_KEY } from "./js/local-dev.js";
+import { LOCAL_DEV_MODE, LOCAL_STATE_KEY } from "./js/local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
 import {
   ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
   getKnownSchoolYears, registerKnownSchoolYears, setActiveSchoolYear
-} from "./js/school-year.js";
+} from "./js/school-year.js?v=2026-07-14-school-year-login-hotfix-r346";
 import {
   collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";

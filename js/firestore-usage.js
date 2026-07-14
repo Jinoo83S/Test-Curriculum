@@ -5,8 +5,8 @@ import {
   getFirestoreUsageStats,
   resetFirestoreUsageStats,
   exportFirestoreUsageSnapshot
-} from "./state.js?v=2026-07-14-school-year-workspaces-r345";
-import { LOCAL_DEV_MODE } from "./local-dev.js";
+} from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
 
 function pct(value, limit) {
   if (!limit) return 0;

@@ -4,7 +4,7 @@
 import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js";
 import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
+import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
