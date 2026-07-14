@@ -27,6 +27,7 @@
     <h2>학년도별 완전 분리 작업공간</h2>
     <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
     <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
+    <p class="muted"><b>최초 1회 필수:</b> Firestore 보안 규칙에 <code>schoolYears</code> 경로 권한을 추가해야 합니다. 웹 파일 배포만으로 보안 규칙은 바뀌지 않습니다.</p>
   </section>
 
   <div class="grid">
@@ -54,11 +55,11 @@
 <script type="module">
 import { auth, db } from "./js/config.js";
 import { login, logout, onAuth } from "./js/auth.js";
-import { LOCAL_DEV_MODE, LOCAL_STATE_KEY } from "./js/local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { LOCAL_DEV_MODE, LOCAL_STATE_KEY } from "./js/local-dev.js?v=2026-07-14-school-year-permission-guard-r347";
 import {
   ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
   getKnownSchoolYears, registerKnownSchoolYears, setActiveSchoolYear
-} from "./js/school-year.js?v=2026-07-14-school-year-login-hotfix-r346";
+} from "./js/school-year.js?v=2026-07-14-school-year-permission-guard-r347";
 import {
   collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -67,6 +68,31 @@ const $ = id => document.getElementById(id);
 let user = null;
 let busy = false;
 let serverYears = [];
+let committedTargetWrites = 0;
+
+function isPermissionDenied(error) {
+  const code = String(error?.code || "").toLowerCase();
+  const message = String(error?.message || error || "").toLowerCase();
+  return code.includes("permission-denied") || message.includes("missing or insufficient permissions");
+}
+
+function permissionErrorMessage() {
+  return [
+    "Firestore 보안 규칙에 schoolYears 경로 권한이 없습니다.",
+    "Firebase Console → Firestore Database → 규칙(Rules)에 r347 제공 블록을 추가하고 '게시'한 뒤 다시 실행해 주세요.",
+    "웹 파일만 배포해서는 Firestore 보안 규칙이 변경되지 않습니다."
+  ].join("\n");
+}
+
+function normalizeWorkspaceError(error) {
+  if (isPermissionDenied(error)) {
+    const wrapped = new Error(permissionErrorMessage());
+    wrapped.code = "school-year-permission-denied";
+    wrapped.cause = error;
+    return wrapped;
+  }
+  return error instanceof Error ? error : new Error(String(error || "알 수 없는 오류"));
+}
 const DOMAIN_NAMES = ["curriculum","templates","classes","teachers","rosters","rooms","timetable"];
 const COLLECTION_NAMES = ["classes","rosters","timetableEntries","ttcards"];
 
@@ -142,24 +168,34 @@ async function targetHasData(year) {
   if (LOCAL_DEV_MODE) {
     try { return !!localStorage.getItem(localKeyForYear(year)); } catch (_) { return false; }
   }
-  const meta = await getDoc(yearMetaRef(year));
-  if (meta.exists()) return true;
-  for (const name of DOMAIN_NAMES) {
-    const snap = await getDoc(domainRef(year, name));
-    if (snap.exists()) return true;
+  try {
+    const meta = await getDoc(yearMetaRef(year));
+    if (meta.exists()) return true;
+    for (const name of DOMAIN_NAMES) {
+      const snap = await getDoc(domainRef(year, name));
+      if (snap.exists()) return true;
+    }
+    for (const name of COLLECTION_NAMES) {
+      const snap = await getDocs(collectionRef(year, name));
+      if (!snap.empty) return true;
+    }
+    return (await getDoc(timetableMetaRef(year))).exists();
+  } catch (error) {
+    throw normalizeWorkspaceError(error);
   }
-  for (const name of COLLECTION_NAMES) {
-    const snap = await getDocs(collectionRef(year, name));
-    if (!snap.empty) return true;
-  }
-  return (await getDoc(timetableMetaRef(year))).exists();
 }
 async function commitOps(ops) {
   const CHUNK = 450;
   for (let i=0;i<ops.length;i+=CHUNK) {
+    const chunk = ops.slice(i,i+CHUNK);
     const batch = writeBatch(db);
-    ops.slice(i,i+CHUNK).forEach(op => batch.set(op.ref, op.data, { merge:false }));
-    await batch.commit();
+    chunk.forEach(op => batch.set(op.ref, op.data, { merge:false }));
+    try {
+      await batch.commit();
+    } catch (error) {
+      throw normalizeWorkspaceError(error);
+    }
+    committedTargetWrites += chunk.length;
     appendLog(`쓰기 ${Math.min(i+CHUNK,ops.length)}/${ops.length} 완료`);
   }
 }
@@ -205,18 +241,28 @@ async function copyOnlineWorkspace(source, target) {
     throw new Error(`원본 데이터가 불완전합니다. domains=${counts.domains}, classes=${counts.classes}, rosters=${counts.rosters}, cards=${counts.ttcards}`);
   }
   await commitOps(ops);
-  await setDoc(yearMetaRef(target), {
-    year:target, label:`${target}학년도`, status:"draft", sourceYear:source, createMode:"copy",
-    counts, createdAt:serverTimestamp(), updatedAt:serverTimestamp(), createdBy:user?.email || user?.uid || "unknown"
-  }, { merge:false });
+  try {
+    await setDoc(yearMetaRef(target), {
+      year:target, label:`${target}학년도`, status:"draft", sourceYear:source, createMode:"copy",
+      counts, createdAt:serverTimestamp(), updatedAt:serverTimestamp(), createdBy:user?.email || user?.uid || "unknown"
+    }, { merge:false });
+    committedTargetWrites += 1;
+  } catch (error) {
+    throw normalizeWorkspaceError(error);
+  }
   return counts;
 }
 async function createEmptyOnlineWorkspace(target) {
-  await setDoc(yearMetaRef(target), {
-    year:target, label:`${target}학년도`, status:"draft", sourceYear:null, createMode:"empty",
-    counts:{ domains:0, classes:0, rosters:0, timetableEntries:0, ttcards:0, timetableMeta:0 },
-    createdAt:serverTimestamp(), updatedAt:serverTimestamp(), createdBy:user?.email || user?.uid || "unknown"
-  }, { merge:false });
+  try {
+    await setDoc(yearMetaRef(target), {
+      year:target, label:`${target}학년도`, status:"draft", sourceYear:null, createMode:"empty",
+      counts:{ domains:0, classes:0, rosters:0, timetableEntries:0, ttcards:0, timetableMeta:0 },
+      createdAt:serverTimestamp(), updatedAt:serverTimestamp(), createdBy:user?.email || user?.uid || "unknown"
+    }, { merge:false });
+    committedTargetWrites += 1;
+  } catch (error) {
+    throw normalizeWorkspaceError(error);
+  }
 }
 function copyLocalWorkspace(source, target, empty) {
   const targetKey = localKeyForYear(target);
@@ -242,6 +288,7 @@ async function createWorkspace() {
   if (!LOCAL_DEV_MODE && !user) { alert("먼저 로그인하세요."); return; }
   if (!confirm(`${target}학년도 작업공간을 ${mode==="copy"?`${source}학년도 복제 방식으로`:"빈 작업공간으로"} 생성할까요?`)) return;
   setBusy(true);
+  committedTargetWrites = 0;
   $("log").textContent = `${target}학년도 생성 시작...`;
   try {
     if (await targetHasData(target)) throw new Error(`${target}학년도 작업공간이 이미 존재합니다. 기존 데이터는 덮어쓰지 않았습니다.`);
@@ -258,10 +305,20 @@ async function createWorkspace() {
     appendLog(`${target}학년도 생성 완료${counts?` · 학급 ${counts.classes}, 명단 ${counts.rosters}, 카드 ${counts.ttcards}, 배치 ${counts.timetableEntries}`:""}`);
     refreshSelectors();
     if (confirm(`${target}학년도가 안전하게 생성되었습니다.\n지금 새 학년도로 전환할까요?`)) switchYear(target);
-  } catch (e) {
+  } catch (rawError) {
+    const e = normalizeWorkspaceError(rawError);
     console.error(e);
     appendLog(`오류: ${e?.message || e}`);
-    try { await cleanupTargetWorkspace(target); } catch (cleanupError) { appendLog(`부분 데이터 자동 정리 실패: ${cleanupError?.message || cleanupError}`); }
+    if (committedTargetWrites > 0) {
+      try {
+        await cleanupTargetWorkspace(target);
+      } catch (cleanupError) {
+        const cleanup = normalizeWorkspaceError(cleanupError);
+        appendLog(`부분 데이터 자동 정리 실패: ${cleanup?.message || cleanup}`);
+      }
+    } else {
+      appendLog("서버에 기록된 데이터가 없어 자동 정리를 생략했습니다.");
+    }
     alert(`학년도 생성 실패: ${e?.message || e}`);
   } finally {
     setBusy(false);
