@@ -8,8 +8,9 @@
     :root{--nav:#173b68;--line:#dbe3ef;--bg:#f4f7fb;--text:#162033;--muted:#64748b;--blue:#2563eb;--green:#15803d;--danger:#b91c1c}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     header{min-height:54px;background:var(--nav);color:#fff;display:flex;align-items:center;gap:12px;padding:8px 18px}header h1{margin:0;font-size:18px}.spacer{flex:1}header a{color:#dbeafe;text-decoration:none;font-weight:900}header button{height:32px;border:1px solid #bfdbfe;border-radius:9px;background:#fff;color:#173b68;font-weight:900;padding:0 12px;cursor:pointer}
-    main{max-width:1100px;margin:22px auto;padding:0 18px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 10px 28px rgba(15,23,42,.06);margin-bottom:14px}.card h2{margin:0 0 10px;font-size:18px;color:#0f2946}.notice{border-left:5px solid #2563eb;background:#eff6ff}.warning{border-left-color:#f59e0b;background:#fffbeb}.muted{color:var(--muted);font-size:13px;line-height:1.6}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{display:grid;gap:6px;margin:10px 0}.field label{font-size:13px;font-weight:900;color:#334155}.field input,.field select{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;background:#fff;font-size:14px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{height:36px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:900;padding:0 13px;cursor:pointer}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.success{background:var(--green);border-color:var(--green);color:#fff}.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}.btn:disabled{opacity:.45;cursor:not-allowed}.badge{display:inline-flex;align-items:center;min-height:24px;padding:2px 9px;border-radius:999px;background:#dbeafe;color:#1e3a8a;font-size:12px;font-weight:900}.badge.current{background:#dcfce7;color:#166534}.badge.legacy{background:#fef3c7;color:#92400e}.badge.ok{background:#dcfce7;color:#166534}.badge.bad{background:#fee2e2;color:#991b1b}.badge.pending{background:#fef3c7;color:#92400e}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #e2e8f0;padding:9px;text-align:left}th{background:#f8fafc}.log{min-height:150px;max-height:330px;overflow:auto;background:#0f172a;color:#dbeafe;border-radius:12px;padding:12px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}.danger-text{color:var(--danger);font-weight:900}.integrity-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}.metric{border:1px solid #e2e8f0;border-radius:10px;padding:9px;background:#f8fafc}.metric b{display:block;font-size:18px;color:#0f2946}.issue-list{margin:8px 0 0;padding-left:22px;font-size:13px;line-height:1.55}.issue-list.error{color:#991b1b}.issue-list.warning{color:#92400e}.result-ok{border-left:5px solid #15803d}.result-bad{border-left:5px solid #b91c1c}
-    @media(max-width:780px){.grid{grid-template-columns:1fr}.integrity-summary{grid-template-columns:repeat(2,minmax(0,1fr))}header{align-items:flex-start;flex-wrap:wrap}.spacer{display:none}}
+    main{max-width:1100px;margin:22px auto;padding:0 18px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 10px 28px rgba(15,23,42,.06);margin-bottom:14px}.card h2{margin:0 0 10px;font-size:18px;color:#0f2946}.notice{border-left:5px solid #2563eb;background:#eff6ff}.warning{border-left-color:#f59e0b;background:#fffbeb}.muted{color:var(--muted);font-size:13px;line-height:1.6}.grid{display:grid;grid-template-columns:minmax(670px,1.25fr) minmax(360px,.75fr);gap:14px}.field{display:grid;gap:6px;margin:10px 0}.field label{font-size:13px;font-weight:900;color:#334155}.field input,.field select{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;background:#fff;font-size:14px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{height:36px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:900;padding:0 13px;cursor:pointer;white-space:nowrap;word-break:keep-all}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.success{background:var(--green);border-color:var(--green);color:#fff}.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}.btn:disabled{opacity:.45;cursor:not-allowed}.badge{display:inline-flex;align-items:center;min-height:24px;padding:2px 9px;border-radius:999px;background:#dbeafe;color:#1e3a8a;font-size:12px;font-weight:900;white-space:nowrap;word-break:keep-all}.badge.current{background:#dcfce7;color:#166534}.badge.legacy{background:#fef3c7;color:#92400e}.badge.ok{background:#dcfce7;color:#166534}.badge.bad{background:#fee2e2;color:#991b1b}.badge.pending{background:#fef3c7;color:#92400e}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #e2e8f0;padding:9px;text-align:left}th{background:#f8fafc}.workspace-table-wrap{width:100%;overflow-x:auto}.workspace-table{min-width:620px;table-layout:fixed}.workspace-table th,.workspace-table td{vertical-align:middle;word-break:keep-all}.workspace-table th:nth-child(1),.workspace-table td:nth-child(1){width:90px;white-space:nowrap}.workspace-table th:nth-child(2),.workspace-table td:nth-child(2){width:125px}.workspace-table th:nth-child(3),.workspace-table td:nth-child(3){width:170px}.workspace-table th:nth-child(4),.workspace-table td:nth-child(4){width:235px}.workspace-status{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;white-space:nowrap}.workspace-actions{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;white-space:nowrap}.workspace-actions .btn{height:34px;padding:0 11px;font-size:12px}.log{min-height:150px;max-height:330px;overflow:auto;background:#0f172a;color:#dbeafe;border-radius:12px;padding:12px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}.danger-text{color:var(--danger);font-weight:900}.integrity-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}.metric{border:1px solid #e2e8f0;border-radius:10px;padding:9px;background:#f8fafc}.metric b{display:block;font-size:18px;color:#0f2946}.issue-list{margin:8px 0 0;padding-left:22px;font-size:13px;line-height:1.55}.issue-list.error{color:#991b1b}.issue-list.warning{color:#92400e}.result-ok{border-left:5px solid #15803d}.result-bad{border-left:5px solid #b91c1c}
+    @media(max-width:1040px){.grid{grid-template-columns:1fr}.workspace-table{min-width:620px}}
+    @media(max-width:780px){.integrity-summary{grid-template-columns:repeat(2,minmax(0,1fr))}header{align-items:flex-start;flex-wrap:wrap}.spacer{display:none}}
   </style>
 </head>
 <body>
@@ -27,7 +28,7 @@
     <h2>학년도별 완전 분리 작업공간</h2>
     <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
     <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
-    <p class="muted"><b>r349:</b> 복제된 학년도는 내부 참조와 원본 수량 검사를 통과해야 전환할 수 있습니다. 검증 후 데이터를 수정하면 상태가 자동으로 <b>재점검 필요</b>로 바뀝니다. 빈 작업공간은 작성 중인 초안을 경고와 함께 허용합니다.</p>
+    <p class="muted"><b>r350:</b> 복제된 학년도는 내부 참조와 원본 수량 검사를 통과해야 전환할 수 있습니다. 검증 후 데이터를 수정하면 상태가 자동으로 <b>재점검 필요</b>로 바뀝니다. 빈 작업공간은 작성 중인 초안을 경고와 함께 허용합니다.</p>
     <p class="muted"><b>최초 1회 필수:</b> Firestore 보안 규칙에 <code>schoolYears</code> 경로 권한을 추가해야 합니다. 웹 파일 배포만으로 보안 규칙은 바뀌지 않습니다.</p>
     <p class="muted">현재 선택 학년도의 데이터만 비우는 별도 도구는 <a href="reset-school-year.html"><b>현재 학년도 초기화</b></a>에서 실행할 수 있습니다.</p>
   </section>
@@ -60,17 +61,17 @@
 </main>
 
 <script type="module">
-import { auth, db } from "./js/config.js?v=2026-07-14-school-year-integrity-r349";
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-14-school-year-integrity-r349";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-14-school-year-integrity-r349";
+import { auth, db } from "./js/config.js?v=2026-07-14-school-year-ui-bootstrap-r350";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-14-school-year-ui-bootstrap-r350";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-14-school-year-ui-bootstrap-r350";
 import {
   ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
   getKnownSchoolYears, registerKnownSchoolYears, unregisterKnownSchoolYear, setActiveSchoolYear,
   getSchoolYearVerification, isSchoolYearVerified, setSchoolYearVerification, clearSchoolYearVerification
-} from "./js/school-year.js?v=2026-07-14-school-year-integrity-r349";
+} from "./js/school-year.js?v=2026-07-14-school-year-ui-bootstrap-r350";
 import {
   validateWorkspaceSnapshot, summarizeWorkspaceSnapshot, compactIntegrityReport, formatIntegritySummary
-} from "./js/school-year-integrity.js?v=2026-07-14-school-year-integrity-r349";
+} from "./js/school-year-integrity.js?v=2026-07-14-school-year-ui-bootstrap-r350";
 import {
   collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -171,16 +172,16 @@ function refreshSelectors() {
   renderYearTable(years);
 }
 function renderYearTable(years) {
-  $("yearTable").innerHTML = `<table><thead><tr><th>학년도</th><th>저장 구조</th><th>검증 상태</th><th>작업</th></tr></thead><tbody>${years.map(year => {
+  $("yearTable").innerHTML = `<div class="workspace-table-wrap"><table class="workspace-table"><thead><tr><th>학년도</th><th>저장 구조</th><th>검증 상태</th><th>작업</th></tr></thead><tbody>${years.map(year => {
     const current = year === ACTIVE_SCHOOL_YEAR;
     const legacy = year === LEGACY_SCHOOL_YEAR;
     const verified = verifiedForSwitch(year);
     const checkButton = `<button class="btn check-year" data-year="${year}" type="button">정합성 점검</button>`;
     const switchButton = current ? "" : `<button class="btn switch-year" data-year="${year}" type="button" ${verified?"":"disabled"} title="${verified?"학년도 전환":"정합성 점검 통과 후 전환할 수 있습니다."}">전환</button>`;
     const deleteButton = legacy ? "" : `<button class="btn danger delete-year" data-year="${year}" type="button">삭제</button>`;
-    const currentBadge = current ? '<span class="badge current">현재 사용 중</span> ' : "";
-    return `<tr><td><b>${year}학년도</b></td><td>${legacy?"기존 운영 경로":"학년도 독립 경로"}</td><td>${currentBadge}${verificationBadge(year)}</td><td><div class="row">${checkButton}${switchButton}${deleteButton}</div></td></tr>`;
-  }).join("")}</tbody></table><p class="muted"><b>2026학년도는 삭제할 수 없습니다.</b> 2027학년도 이후 작업공간은 정합성 점검을 통과해야 전환 버튼이 활성화됩니다.</p>`;
+    const currentBadge = current ? '<span class="badge current">현재 사용 중</span>' : "";
+    return `<tr><td><b>${year}학년도</b></td><td>${legacy?"기존 운영 경로":"학년도 독립 경로"}</td><td><div class="workspace-status">${currentBadge}${verificationBadge(year)}</div></td><td><div class="workspace-actions">${checkButton}${switchButton}${deleteButton}</div></td></tr>`;
+  }).join("")}</tbody></table></div><p class="muted"><b>2026학년도는 삭제할 수 없습니다.</b> 2027학년도 이후 작업공간은 정합성 점검을 통과해야 전환 버튼이 활성화됩니다.</p>`;
   document.querySelectorAll(".check-year").forEach(btn => btn.addEventListener("click", () => runIntegrityCheck(btn.dataset.year)));
   document.querySelectorAll(".switch-year").forEach(btn => btn.addEventListener("click", () => switchYear(btn.dataset.year)));
   document.querySelectorAll(".delete-year").forEach(btn => btn.addEventListener("click", () => deleteWorkspace(btn.dataset.year)));
@@ -587,7 +588,7 @@ async function createWorkspace() {
   } finally { setBusy(false); }
 }
 
-$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r349`;
+$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r350`;
 $("loginBtn").addEventListener("click", login);
 $("logoutBtn").addEventListener("click", logout);
 $("createBtn").addEventListener("click", createWorkspace);
