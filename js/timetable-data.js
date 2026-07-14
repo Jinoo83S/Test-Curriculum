@@ -2,7 +2,7 @@
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
-import { appState } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { appState } from "./state.js?v=2026-07-14-school-year-integrity-r349";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
 import { getTtCards, getTtCardById } from "./ttcards.js";
 export { getTtCardById } from "./ttcards.js";

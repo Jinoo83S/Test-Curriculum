@@ -3,7 +3,7 @@
 // ================================================================
 import { GRADE_GROUPS } from "./config.js";
 import { canEdit } from "./auth.js";
-import { appState, saveNow } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { appState, saveNow } from "./state.js?v=2026-07-14-school-year-integrity-r349";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],

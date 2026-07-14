@@ -5,7 +5,8 @@ import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey,
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js";
 import { canEdit } from "./auth.js";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-14-school-year-integrity-r349";
+import { invalidateSchoolYearVerification } from "./school-year.js?v=2026-07-14-school-year-integrity-r349";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -67,6 +68,35 @@ let autoSaveSuspendSeq = 0;
 export const SAVE_DELAY_MS = LOCAL_DEV_MODE ? 30000 : 20000;
 export const FAST_SAVE_DELAY_MS = LOCAL_DEV_MODE ? 8000 : 5000;
 const AUTO_SAVE_KEY = "his_auto_save_v1";
+
+// A verified next-year workspace becomes stale as soon as any domain is edited.
+// Invalidate locally immediately and persist one lightweight marker per page load.
+let workspaceIntegrityInvalidationStarted = false;
+function invalidateActiveWorkspaceIntegrity(reason = "workspace-edited") {
+  if (IS_LEGACY_SCHOOL_YEAR) return;
+  const now = new Date().toISOString();
+  invalidateSchoolYearVerification(ACTIVE_SCHOOL_YEAR, reason);
+  if (LOCAL_DEV_MODE || workspaceIntegrityInvalidationStarted) return;
+  workspaceIntegrityInvalidationStarted = true;
+  const metaRef = doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR);
+  const integrity = {
+    schemaVersion: 1,
+    ok: false,
+    stale: true,
+    checkedAt: now,
+    invalidatedAt: now,
+    errorCount: 0,
+    warningCount: 0,
+    source: "workspace-edit",
+    reason: String(reason || "workspace-edited")
+  };
+  setDoc(metaRef, { integrity, updatedAt: serverTimestamp() }, { mergeFields: ["integrity", "updatedAt"] })
+    .then(() => recordFirestoreUsage("writes", 1, `invalidate: schoolYears/${ACTIVE_SCHOOL_YEAR}`, { operation: "setDoc" }))
+    .catch(error => {
+      workspaceIntegrityInvalidationStarted = false;
+      console.warn("학년도 정합성 상태를 서버에서 무효화하지 못했습니다. 로컬 전환 차단은 유지됩니다.", error);
+    });
+}
 
 
 // ── Firestore usage monitor (client-side estimate) ───────────────
@@ -346,6 +376,7 @@ export function scheduleSave(domain, options = {}) {
   if (!canEdit() || !initialLoad[domain]) return;
   bumpDomainEditRevision(domain);
   dirtyDomains.add(domain);
+  invalidateActiveWorkspaceIntegrity(`schedule-save:${domain}`);
 
   if (!isAutoSaveEnabled()) {
     clearTimeout(saveTimers[domain]);
@@ -464,6 +495,7 @@ export async function saveNow(domain, options = {}) {
   clearTimeout(saveTimers[domain]);
   delete saveTimers[domain];
   dirtyDomains.add(domain);
+  invalidateActiveWorkspaceIntegrity(`save-now:${domain}`);
   queuedSaveOptions[domain] = mergeSaveOptions(queuedSaveOptions[domain], options);
 
   if (activeSavePromises[domain]) {

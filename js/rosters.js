@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js";
 import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave } from "./state.js?v=2026-07-14-school-year-login-hotfix-r346";
+import { appState, scheduleSave } from "./state.js?v=2026-07-14-school-year-integrity-r349";
 import { getClasses, getClassById } from "./students.js";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js";
 

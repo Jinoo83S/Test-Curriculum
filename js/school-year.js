@@ -4,10 +4,11 @@
 // 2026 keeps the existing Firestore paths for backward compatibility.
 // New years use isolated schoolYears/{year}/... paths.
 
-export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-delete-r348";
+export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-integrity-r349";
 export const LEGACY_SCHOOL_YEAR = "2026";
 export const SCHOOL_YEAR_KEY = "his_active_school_year_v1";
 export const KNOWN_SCHOOL_YEARS_KEY = "his_known_school_years_v1";
+export const SCHOOL_YEAR_VERIFICATION_KEY = "his_school_year_verification_v1";
 
 export function normalizeSchoolYear(value, fallback = LEGACY_SCHOOL_YEAR) {
   const m = String(value ?? "").trim().match(/(20\d{2})/);
@@ -77,7 +78,91 @@ export function unregisterKnownSchoolYear(value) {
     .filter(year => year !== target)
     .sort((a, b) => Number(b) - Number(a));
   try { localStorage.setItem(KNOWN_SCHOOL_YEARS_KEY, JSON.stringify(years)); } catch (_) {}
+  clearSchoolYearVerification(target);
   return years;
+}
+
+
+function readVerificationStore() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SCHOOL_YEAR_VERIFICATION_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeVerificationStore(store) {
+  try { localStorage.setItem(SCHOOL_YEAR_VERIFICATION_KEY, JSON.stringify(store || {})); }
+  catch (_) {}
+}
+
+export function getSchoolYearVerification(value) {
+  const year = normalizeSchoolYear(value, "");
+  if (!year) return null;
+  if (year === LEGACY_SCHOOL_YEAR) {
+    return { year, ok: true, checkedAt: "legacy-operating-workspace", source: "legacy" };
+  }
+  const row = readVerificationStore()[year];
+  return row && typeof row === "object" ? { year, ...row } : null;
+}
+
+export function isSchoolYearVerified(value) {
+  const year = normalizeSchoolYear(value, "");
+  return year === LEGACY_SCHOOL_YEAR || getSchoolYearVerification(year)?.ok === true;
+}
+
+export function setSchoolYearVerification(value, report = {}) {
+  const year = normalizeSchoolYear(value, "");
+  if (!year || year === LEGACY_SCHOOL_YEAR) return getSchoolYearVerification(year);
+  const store = readVerificationStore();
+  store[year] = {
+    ok: report?.ok === true,
+    checkedAt: String(report?.checkedAt || new Date().toISOString()),
+    signature: String(report?.signature || ""),
+    errorCount: Number(report?.errorCount || 0) || 0,
+    warningCount: Number(report?.warningCount || 0) || 0,
+    counts: report?.counts && typeof report.counts === "object" ? report.counts : {},
+    source: String(report?.source || "integrity-check"),
+    stale: report?.stale === true,
+    invalidatedAt: String(report?.invalidatedAt || ""),
+    reason: String(report?.reason || ""),
+  };
+  writeVerificationStore(store);
+  registerKnownSchoolYears([year]);
+  return { year, ...store[year] };
+}
+
+
+export function invalidateSchoolYearVerification(value, reason = "workspace-edited") {
+  const year = normalizeSchoolYear(value, "");
+  if (!year || year === LEGACY_SCHOOL_YEAR) return null;
+  const now = new Date().toISOString();
+  const store = readVerificationStore();
+  store[year] = {
+    ...(store[year] && typeof store[year] === "object" ? store[year] : {}),
+    ok: false,
+    stale: true,
+    checkedAt: now,
+    invalidatedAt: now,
+    errorCount: 0,
+    warningCount: 0,
+    source: "workspace-edit",
+    reason: String(reason || "workspace-edited"),
+  };
+  writeVerificationStore(store);
+  registerKnownSchoolYears([year]);
+  return { year, ...store[year] };
+}
+
+export function clearSchoolYearVerification(value) {
+  const year = normalizeSchoolYear(value, "");
+  if (!year || year === LEGACY_SCHOOL_YEAR) return false;
+  const store = readVerificationStore();
+  const existed = Object.prototype.hasOwnProperty.call(store, year);
+  delete store[year];
+  writeVerificationStore(store);
+  return existed;
 }
 
 export function setActiveSchoolYear(year, options = {}) {
@@ -140,7 +225,9 @@ export function setupSchoolYearUi() {
   getKnownSchoolYears().forEach(year => {
     const option = document.createElement("option");
     option.value = year;
-    option.textContent = `${year}학년도`;
+    option.textContent = year === LEGACY_SCHOOL_YEAR || isSchoolYearVerified(year)
+      ? `${year}학년도`
+      : `${year}학년도 · 점검 필요`;
     option.selected = year === ACTIVE_SCHOOL_YEAR;
     select.appendChild(option);
   });
@@ -148,6 +235,12 @@ export function setupSchoolYearUi() {
   select.addEventListener("change", () => {
     const next = normalizeSchoolYear(select.value);
     if (next === ACTIVE_SCHOOL_YEAR) return;
+    if (!isSchoolYearVerified(next)) {
+      alert(`${schoolYearLabel(next)}는 복제 정합성 점검을 통과하지 않았습니다.\n학년도 관리에서 먼저 정합성 점검을 실행해 주세요.`);
+      select.value = ACTIVE_SCHOOL_YEAR;
+      globalThis.location.href = "school-years.html";
+      return;
+    }
     const dirty = hasUnsavedChanges();
     if (dirty.length) {
       alert(`저장되지 않은 변경사항이 있습니다: ${dirty.join(", ")}\n저장을 완료한 뒤 학년도를 전환해 주세요.`);
@@ -194,6 +287,11 @@ if (typeof window !== "undefined") {
     getKnownSchoolYears,
     registerKnownSchoolYears,
     unregisterKnownSchoolYear,
+    getSchoolYearVerification,
+    isSchoolYearVerified,
+    setSchoolYearVerification,
+    invalidateSchoolYearVerification,
+    clearSchoolYearVerification,
     setActiveSchoolYear,
     setupSchoolYearUi,
   };

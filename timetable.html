@@ -1000,7 +1000,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-07-14-school-year-login-hotfix-r346"/>
+<link rel="stylesheet" href="timetable-ui.css?v=2026-07-14-school-year-integrity-r349"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1879,7 +1879,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r346</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge">r349</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1950,12 +1950,12 @@ body.tt-bottom-is-open #ttGrid{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-07-14-school-year-login-hotfix-r346";</script>
+<script>window.HIS_APP_VERSION = "2026-07-14-school-year-integrity-r349";</script>
 <script type="importmap">
-{"imports":{"./js/state.js":"./js/state.js?v=2026-07-14-school-year-login-hotfix-r346"}}
+{"imports":{"./js/state.js":"./js/state.js?v=2026-07-14-school-year-integrity-r349"}}
 </script>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-07-14-school-year-login-hotfix-r346";
+  import { versioned } from "./js/version.js?v=2026-07-14-school-year-integrity-r349";
   await import(versioned("./js/timetable.js"));
 </script>
 <script>
@@ -2335,7 +2335,7 @@ window._ttBottomToggle = (function() {
 <!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-14-school-year-login-hotfix-r346");
+  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-14-school-year-integrity-r349");
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
