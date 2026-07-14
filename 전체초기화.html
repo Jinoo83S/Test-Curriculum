@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HIS 전체 데이터 초기화</title>
+  <title>HIS 학년도 데이터 초기화</title>
   <style>
     :root { --navy:#173b68; --line:#d9e2ef; --bg:#f5f7fb; --danger:#dc2626; --ok:#15803d; --muted:#64748b; }
     * { box-sizing:border-box; }
@@ -36,7 +36,7 @@
 </head>
 <body>
 <header>
-  <h1>HIS 전체 데이터 초기화</h1>
+  <h1>HIS 학년도 데이터 초기화 <span id="yearBadge" class="pill" style="margin-left:8px"></span></h1>
   <div class="right">
     <span id="authStatus">로그인 확인 중…</span>
     <button id="loginBtn" class="primary" type="button">Google 로그인</button>
@@ -46,8 +46,8 @@
 </header>
 <main>
   <section class="card">
-    <h2>온라인 Firestore 전체 초기화 도구</h2>
-    <p class="danger-text">이 도구는 보드만 초기화하지 않고, 온라인 Firestore에 저장된 커리큘럼/과목카드/학급/학생/수강명단/교사/교실/시간표 데이터를 모두 삭제합니다.</p>
+    <h2>현재 학년도 Firestore 초기화 도구</h2>
+    <p class="danger-text">이 도구는 현재 선택된 학년도의 커리큘럼/과목카드/학급/학생/수강명단/교사/교실/시간표만 삭제합니다. 다른 학년도 작업공간은 삭제하지 않습니다.</p>
     <p class="muted">실행 전 반드시 시간표 화면의 <b>Firestore 진단</b> 또는 기존 백업 기능으로 JSON 백업을 먼저 받아두세요. 삭제 후 복구는 백업 파일 없이는 어렵습니다.</p>
   </section>
 
@@ -56,34 +56,23 @@
       <h2>삭제 대상</h2>
       <table>
         <thead><tr><th>구분</th><th>경로</th><th>설명</th></tr></thead>
-        <tbody>
-          <tr><td>단일 문서</td><td>boards/curriculum</td><td>커리큘럼 보드</td></tr>
-          <tr><td>단일 문서</td><td>boards/templates</td><td>과목 원본 카드</td></tr>
-          <tr><td>단일 문서</td><td>boards/teachers</td><td>교사 데이터</td></tr>
-          <tr><td>단일 문서</td><td>boards/rooms</td><td>교실 데이터</td></tr>
-          <tr><td>레거시 문서</td><td>boards/classes / rosters / timetable / main</td><td>이전 저장 구조 호환 데이터</td></tr>
-          <tr><td>분리 컬렉션</td><td>boards/_split/classes</td><td>학급/학생</td></tr>
-          <tr><td>분리 컬렉션</td><td>boards/_split/rosters</td><td>수강명단</td></tr>
-          <tr><td>분리 컬렉션</td><td>boards/_split/timetableEntries</td><td>배치 시간표</td></tr>
-          <tr><td>분리 컬렉션</td><td>boards/_split/ttcards</td><td>시간표 카드</td></tr>
-          <tr><td>분리 문서</td><td>boards/_split/timetableMeta/main</td><td>시간표 설정/교사조건/그룹</td></tr>
-        </tbody>
+        <tbody id="targetPathRows"></tbody>
       </table>
     </section>
 
     <section class="card">
       <h2>실행</h2>
       <p>1. 로그인 후 <b>삭제 대상 확인</b>을 먼저 누르세요.</p>
-      <p>2. 확인 문구에 <b>전체초기화</b>를 입력해야 삭제 버튼이 활성화됩니다.</p>
+      <p>2. 확인 문구에 현재 학년도를 포함한 문구를 입력해야 삭제 버튼이 활성화됩니다.</p>
       <div class="row">
         <button id="previewBtn" type="button">삭제 대상 확인</button>
-        <input id="confirmText" type="text" placeholder="전체초기화 입력" />
+        <input id="confirmText" type="text" placeholder="학년도초기화 확인 문구" />
       </div>
       <div class="row">
         <label><input id="confirmCheck" type="checkbox" /> 백업을 완료했고 온라인 데이터를 모두 삭제하는 것을 이해했습니다.</label>
       </div>
       <div class="row">
-        <button id="resetBtn" class="danger" type="button" disabled>온라인 전체 초기화 실행</button>
+        <button id="resetBtn" class="danger" type="button" disabled>현재 학년도 초기화 실행</button>
         <button id="localClearBtn" type="button">이 브라우저 로컬 캐시도 초기화</button>
       </div>
       <p class="muted">초기화 후 기존 앱 화면은 반드시 새로고침하세요. 가능하면 Ctrl+F5로 강력 새로고침을 권장합니다.</p>
@@ -102,6 +91,7 @@
 </main>
 
 <script type="module">
+  import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearLabel } from "./js/school-year.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import {
@@ -129,24 +119,49 @@
   let currentUser = null;
   let running = false;
 
+  const domainDoc = name => IS_LEGACY_SCHOOL_YEAR
+    ? doc(db, "boards", name)
+    : doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "domains", name);
+  const splitCollection = name => IS_LEGACY_SCHOOL_YEAR
+    ? collection(db, "boards", "_split", name)
+    : collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, name);
+  const timetableMeta = IS_LEGACY_SCHOOL_YEAR
+    ? doc(db, "boards", "_split", "timetableMeta", "main")
+    : doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "meta", "timetable");
+  const workspaceMeta = doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR);
+
   const singleDocs = [
-    ["curriculum", doc(db, "boards", "curriculum")],
-    ["templates", doc(db, "boards", "templates")],
-    ["classes legacy", doc(db, "boards", "classes")],
-    ["teachers", doc(db, "boards", "teachers")],
-    ["rosters legacy", doc(db, "boards", "rosters")],
-    ["rooms", doc(db, "boards", "rooms")],
-    ["timetable legacy", doc(db, "boards", "timetable")],
-    ["legacy main", doc(db, "boards", "main")],
-    ["timetable meta", doc(db, "boards", "_split", "timetableMeta", "main")],
+    ["curriculum", domainDoc("curriculum")],
+    ["templates", domainDoc("templates")],
+    ["classes fallback", domainDoc("classes")],
+    ["teachers", domainDoc("teachers")],
+    ["rosters fallback", domainDoc("rosters")],
+    ["rooms", domainDoc("rooms")],
+    ["timetable fallback", domainDoc("timetable")],
+    ["legacy main", domainDoc("main")],
+    ["timetable meta", timetableMeta],
+    ...(!IS_LEGACY_SCHOOL_YEAR ? [["workspace meta", workspaceMeta]] : []),
   ];
 
   const collectionsToDelete = [
-    ["split/classes", collection(db, "boards", "_split", "classes")],
-    ["split/rosters", collection(db, "boards", "_split", "rosters")],
-    ["split/timetableEntries", collection(db, "boards", "_split", "timetableEntries")],
-    ["split/ttcards", collection(db, "boards", "_split", "ttcards")],
+    ["classes", splitCollection("classes")],
+    ["rosters", splitCollection("rosters")],
+    ["timetableEntries", splitCollection("timetableEntries")],
+    ["ttcards", splitCollection("ttcards")],
   ];
+
+  const basePath = IS_LEGACY_SCHOOL_YEAR ? "boards (2026 기존 경로)" : `schoolYears/${ACTIVE_SCHOOL_YEAR}`;
+  $("yearBadge").textContent = schoolYearLabel(ACTIVE_SCHOOL_YEAR);
+  $("targetPathRows").innerHTML = [
+    ["단일 문서", `${basePath}/curriculum·templates·teachers·rooms`, "기본 도메인"],
+    ["분리 컬렉션", `${basePath}/classes`, "학급/학생"],
+    ["분리 컬렉션", `${basePath}/rosters`, "수강명단"],
+    ["분리 컬렉션", `${basePath}/timetableEntries`, "배치 시간표"],
+    ["분리 컬렉션", `${basePath}/ttcards`, "시간표 카드"],
+    ["분리 문서", `${basePath}/meta/timetable`, "시간표 설정/조건/그룹"],
+  ].map(row => `<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join("");
+  const confirmPhrase = `${ACTIVE_SCHOOL_YEAR}학년도초기화`;
+  $("confirmText").placeholder = `${confirmPhrase} 입력`;
 
   function appendLog(msg) {
     const time = new Date().toLocaleTimeString();
@@ -162,7 +177,7 @@
   }
 
   function canReset() {
-    return !!currentUser && $("confirmText").value.trim() === "전체초기화" && $("confirmCheck").checked;
+    return !!currentUser && $("confirmText").value.trim() === confirmPhrase && $("confirmCheck").checked;
   }
 
   function refreshResetState() {
@@ -234,9 +249,9 @@
 
   async function resetAll() {
     if (!canReset()) { alert("확인 문구와 체크박스를 확인해 주세요."); return; }
-    if (!confirm("정말 온라인 Firestore 전체 데이터를 삭제할까요?\n이 작업은 되돌릴 수 없습니다.")) return;
+    if (!confirm("정말 현재 학년도 Firestore 데이터를 삭제할까요?\n다른 학년도는 유지되지만 이 작업은 되돌릴 수 없습니다.")) return;
     setBusy(true);
-    logEl.textContent = "온라인 전체 초기화를 시작합니다...";
+    logEl.textContent = "현재 학년도 초기화를 시작합니다...";
     let deletedDocs = 0;
     try {
       for (const [label, collRef] of collectionsToDelete) {
@@ -254,8 +269,8 @@
       }
       clearBrowserState(false);
       appendLog(`완료: 총 ${deletedDocs}개 삭제 요청을 처리했습니다.`);
-      summaryEl.innerHTML = `<p class="ok-text">온라인 전체 초기화가 완료되었습니다. 기존 앱 화면을 Ctrl+F5로 새로고침한 뒤 테스트를 시작하세요.</p>`;
-      alert("온라인 전체 초기화가 완료되었습니다. 앱 화면을 강력 새로고침하세요.");
+      summaryEl.innerHTML = `<p class="ok-text">현재 학년도 초기화가 완료되었습니다. 기존 앱 화면을 Ctrl+F5로 새로고침한 뒤 테스트를 시작하세요.</p>`;
+      alert("현재 학년도 초기화가 완료되었습니다. 앱 화면을 강력 새로고침하세요.");
     } catch (e) {
       console.error(e);
       appendLog(`오류: ${e?.message || e}`);
@@ -267,8 +282,8 @@
 
   function clearBrowserState(showAlert = true) {
     const keys = [
-      "his_local_dev_state_v1",
-      "his_split_confirmed_v1",
+      `his_local_dev_state_v1${IS_LEGACY_SCHOOL_YEAR ? "" : `_${ACTIVE_SCHOOL_YEAR}`}`,
+      `his_split_confirmed_v1${IS_LEGACY_SCHOOL_YEAR ? "" : `_${ACTIVE_SCHOOL_YEAR}`}`,
       "his_auto_save_v1",
       "his_firestore_usage_v1",
       "his_local_dev_mode_v1"

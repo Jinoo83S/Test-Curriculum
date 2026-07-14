@@ -3,7 +3,7 @@
 // ================================================================
 import { GRADE_KEYS } from "./config.js";
 import { clean, escapeHtml, getEffectiveCredit } from "./utils.js";
-import { appState } from "./state.js?v=2026-07-13-system-audit-r343";
+import { appState } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
 import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js";
 import { getRosterMeta, getClassCount } from "./rosters.js";
 

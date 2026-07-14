@@ -7,14 +7,14 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-13-system-audit-r343";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-13-system-audit-r343";
-import { versioned } from "./version.js?v=2026-07-13-system-audit-r343";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-13-system-audit-r343";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-13-system-audit-r343";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-13-system-audit-r343";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-workspaces-r345";
+import { versioned } from "./version.js?v=2026-07-14-school-year-workspaces-r345";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-14-school-year-workspaces-r345";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-14-school-year-workspaces-r345";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-workspaces-r345";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
-import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-13-system-audit-r343";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-14-school-year-workspaces-r345";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,

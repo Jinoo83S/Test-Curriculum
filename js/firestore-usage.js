@@ -5,7 +5,7 @@ import {
   getFirestoreUsageStats,
   resetFirestoreUsageStats,
   exportFirestoreUsageSnapshot
-} from "./state.js?v=2026-07-13-system-audit-r343";
+} from "./state.js?v=2026-07-14-school-year-workspaces-r345";
 import { LOCAL_DEV_MODE } from "./local-dev.js";
 
 function pct(value, limit) {

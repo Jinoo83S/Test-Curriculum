@@ -3,7 +3,7 @@
 // ================================================================
 import { uid, clean, makeBtn } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-13-system-audit-r343";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
 import { GRADE_KEYS } from "./config.js";
 
 const rDomain = () => appState.rooms;

@@ -1,0 +1,287 @@
+ <!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIS 학년도 작업공간 관리</title>
+  <style>
+    :root{--nav:#173b68;--line:#dbe3ef;--bg:#f4f7fb;--text:#162033;--muted:#64748b;--blue:#2563eb;--green:#15803d;--danger:#b91c1c}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{min-height:54px;background:var(--nav);color:#fff;display:flex;align-items:center;gap:12px;padding:8px 18px}header h1{margin:0;font-size:18px}.spacer{flex:1}header a{color:#dbeafe;text-decoration:none;font-weight:900}header button{height:32px;border:1px solid #bfdbfe;border-radius:9px;background:#fff;color:#173b68;font-weight:900;padding:0 12px;cursor:pointer}
+    main{max-width:1100px;margin:22px auto;padding:0 18px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:0 10px 28px rgba(15,23,42,.06);margin-bottom:14px}.card h2{margin:0 0 10px;font-size:18px;color:#0f2946}.notice{border-left:5px solid #2563eb;background:#eff6ff}.warning{border-left-color:#f59e0b;background:#fffbeb}.muted{color:var(--muted);font-size:13px;line-height:1.6}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.field{display:grid;gap:6px;margin:10px 0}.field label{font-size:13px;font-weight:900;color:#334155}.field input,.field select{height:38px;border:1px solid #cbd5e1;border-radius:10px;padding:0 10px;background:#fff;font-size:14px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.btn{height:36px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:900;padding:0 13px;cursor:pointer}.btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}.btn.success{background:var(--green);border-color:var(--green);color:#fff}.btn:disabled{opacity:.45;cursor:not-allowed}.badge{display:inline-flex;align-items:center;min-height:24px;padding:2px 9px;border-radius:999px;background:#dbeafe;color:#1e3a8a;font-size:12px;font-weight:900}.badge.current{background:#dcfce7;color:#166534}.badge.legacy{background:#fef3c7;color:#92400e}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #e2e8f0;padding:9px;text-align:left}th{background:#f8fafc}.log{min-height:150px;max-height:330px;overflow:auto;background:#0f172a;color:#dbeafe;border-radius:12px;padding:12px;white-space:pre-wrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}.danger{color:var(--danger);font-weight:900}
+    @media(max-width:780px){.grid{grid-template-columns:1fr}header{align-items:flex-start;flex-wrap:wrap}.spacer{display:none}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>HIS 학년도 작업공간 관리</h1>
+  <span id="activeBadge" class="badge current">확인 중</span>
+  <span class="spacer"></span>
+  <span id="authStatus">로그인 확인 중…</span>
+  <button id="loginBtn" type="button">Google 로그인</button>
+  <button id="logoutBtn" type="button" hidden>로그아웃</button>
+  <a href="index.html">커리큘럼으로 돌아가기</a>
+</header>
+<main>
+  <section class="card notice">
+    <h2>학년도별 완전 분리 작업공간</h2>
+    <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
+    <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>등록된 작업공간</h2>
+      <div id="yearTable"><p class="muted">목록을 불러오는 중입니다.</p></div>
+    </section>
+
+    <section class="card warning">
+      <h2>새 학년도 생성</h2>
+      <div class="field"><label for="targetYear">새 학년도</label><input id="targetYear" type="number" min="2027" max="2099" value="2027" /></div>
+      <div class="field"><label for="createMode">생성 방식</label><select id="createMode"><option value="copy">전년도 데이터 안전 복제 후 수정</option><option value="empty">완전 신규 빈 작업공간</option></select></div>
+      <div class="field" id="sourceField"><label for="sourceYear">복제할 원본 학년도</label><select id="sourceYear"></select></div>
+      <p class="muted">복제는 원본을 읽기만 하고 새 학년도 경로에 새 문서로 작성합니다. 기존 학년도는 덮어쓰지 않습니다.</p>
+      <div class="row"><button id="createBtn" class="btn primary" type="button" disabled>새 학년도 생성</button></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>작업 로그</h2>
+    <div id="log" class="log">대기 중입니다.</div>
+  </section>
+</main>
+
+<script type="module">
+import { auth, db } from "./js/config.js";
+import { login, logout, onAuth } from "./js/auth.js";
+import { LOCAL_DEV_MODE, LOCAL_STATE_KEY } from "./js/local-dev.js";
+import {
+  ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
+  getKnownSchoolYears, registerKnownSchoolYears, setActiveSchoolYear
+} from "./js/school-year.js";
+import {
+  collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const $ = id => document.getElementById(id);
+let user = null;
+let busy = false;
+let serverYears = [];
+const DOMAIN_NAMES = ["curriculum","templates","classes","teachers","rosters","rooms","timetable"];
+const COLLECTION_NAMES = ["classes","rosters","timetableEntries","ttcards"];
+
+function appendLog(message) {
+  const time = new Date().toLocaleTimeString();
+  $("log").textContent += `\n[${time}] ${message}`;
+  $("log").scrollTop = $("log").scrollHeight;
+}
+function localKeyForYear(year) {
+  return year === LEGACY_SCHOOL_YEAR ? "his_local_dev_state_v1" : `his_local_dev_state_v1_${year}`;
+}
+function domainRef(year, name) {
+  return year === LEGACY_SCHOOL_YEAR
+    ? doc(db, "boards", name)
+    : doc(db, "schoolYears", year, "domains", name);
+}
+function collectionRef(year, name) {
+  if (year === LEGACY_SCHOOL_YEAR) return collection(db, "boards", "_split", name);
+  return collection(db, "schoolYears", year, name);
+}
+function timetableMetaRef(year) {
+  return year === LEGACY_SCHOOL_YEAR
+    ? doc(db, "boards", "_split", "timetableMeta", "main")
+    : doc(db, "schoolYears", year, "meta", "timetable");
+}
+function yearMetaRef(year) { return doc(db, "schoolYears", year); }
+
+function allYears() {
+  return [...new Set([LEGACY_SCHOOL_YEAR, ACTIVE_SCHOOL_YEAR, ...getKnownSchoolYears(), ...serverYears])]
+    .map(y => normalizeSchoolYear(y, "")).filter(Boolean).sort((a,b)=>Number(b)-Number(a));
+}
+function refreshSelectors() {
+  const years = allYears();
+  registerKnownSchoolYears(years);
+  const source = $("sourceYear");
+  source.innerHTML = years.map(y => `<option value="${y}" ${y===ACTIVE_SCHOOL_YEAR?"selected":""}>${y}학년도</option>`).join("");
+  renderYearTable(years);
+}
+function renderYearTable(years) {
+  $("yearTable").innerHTML = `<table><thead><tr><th>학년도</th><th>저장 구조</th><th>상태</th><th>전환</th></tr></thead><tbody>${years.map(year => {
+    const current = year === ACTIVE_SCHOOL_YEAR;
+    const legacy = year === LEGACY_SCHOOL_YEAR;
+    return `<tr><td><b>${year}학년도</b></td><td>${legacy?"기존 운영 경로":"학년도 독립 경로"}</td><td>${current?'<span class="badge current">현재 사용 중</span>':legacy?'<span class="badge legacy">운영 기준</span>':'<span class="badge">독립 작업공간</span>'}</td><td>${current?"-":`<button class="btn switch-year" data-year="${year}" type="button">전환</button>`}</td></tr>`;
+  }).join("")}</tbody></table>`;
+  document.querySelectorAll(".switch-year").forEach(btn => btn.addEventListener("click", () => switchYear(btn.dataset.year)));
+}
+function setBusy(value) {
+  busy = value;
+  $("createBtn").disabled = value || (!LOCAL_DEV_MODE && !user);
+  $("targetYear").disabled = value;
+  $("createMode").disabled = value;
+  $("sourceYear").disabled = value;
+}
+function switchYear(year) {
+  if (busy) return;
+  if (!confirm(`${schoolYearLabel(year)}로 전환할까요?\n커리큘럼 화면이 새 작업공간으로 다시 열립니다.`)) return;
+  setActiveSchoolYear(year, { reload:false });
+  location.href = "index.html";
+}
+async function loadServerYears() {
+  if (LOCAL_DEV_MODE || !user) { serverYears = getKnownSchoolYears(); refreshSelectors(); return; }
+  try {
+    const snap = await getDocs(collection(db, "schoolYears"));
+    serverYears = snap.docs.map(d => normalizeSchoolYear(d.id, "")).filter(Boolean);
+    appendLog(`서버 학년도 작업공간 ${serverYears.length}개 확인`);
+  } catch (e) {
+    appendLog(`학년도 목록 읽기 실패: ${e?.message || e}`);
+    serverYears = getKnownSchoolYears();
+  }
+  refreshSelectors();
+}
+async function targetHasData(year) {
+  if (LOCAL_DEV_MODE) {
+    try { return !!localStorage.getItem(localKeyForYear(year)); } catch (_) { return false; }
+  }
+  const meta = await getDoc(yearMetaRef(year));
+  if (meta.exists()) return true;
+  for (const name of DOMAIN_NAMES) {
+    const snap = await getDoc(domainRef(year, name));
+    if (snap.exists()) return true;
+  }
+  for (const name of COLLECTION_NAMES) {
+    const snap = await getDocs(collectionRef(year, name));
+    if (!snap.empty) return true;
+  }
+  return (await getDoc(timetableMetaRef(year))).exists();
+}
+async function commitOps(ops) {
+  const CHUNK = 450;
+  for (let i=0;i<ops.length;i+=CHUNK) {
+    const batch = writeBatch(db);
+    ops.slice(i,i+CHUNK).forEach(op => batch.set(op.ref, op.data, { merge:false }));
+    await batch.commit();
+    appendLog(`쓰기 ${Math.min(i+CHUNK,ops.length)}/${ops.length} 완료`);
+  }
+}
+async function cleanupTargetWorkspace(year) {
+  if (LOCAL_DEV_MODE) { try { localStorage.removeItem(localKeyForYear(year)); } catch (_) {} return; }
+  const refs = [];
+  for (const name of COLLECTION_NAMES) {
+    const snap = await getDocs(collectionRef(year, name));
+    snap.docs.forEach(d => refs.push(d.ref));
+  }
+  for (const name of DOMAIN_NAMES) refs.push(domainRef(year, name));
+  refs.push(timetableMetaRef(year), yearMetaRef(year));
+  const CHUNK = 450;
+  for (let i=0;i<refs.length;i+=CHUNK) {
+    const batch = writeBatch(db);
+    refs.slice(i,i+CHUNK).forEach(ref => batch.delete(ref));
+    await batch.commit();
+  }
+  appendLog(`실패한 ${year}학년도 부분 복제 데이터를 자동 정리했습니다.`);
+}
+async function copyOnlineWorkspace(source, target) {
+  const ops = [];
+  const counts = { domains:0, classes:0, rosters:0, timetableEntries:0, ttcards:0, timetableMeta:0 };
+  for (const name of DOMAIN_NAMES) {
+    const snap = await getDoc(domainRef(source, name));
+    if (!snap.exists()) continue;
+    const data = { ...snap.data(), copiedFromYear: source, updatedAt: serverTimestamp() };
+    ops.push({ ref:domainRef(target,name), data });
+    counts.domains++;
+  }
+  for (const name of COLLECTION_NAMES) {
+    const snap = await getDocs(collectionRef(source, name));
+    counts[name] = snap.size;
+    snap.docs.forEach(d => ops.push({ ref:doc(collectionRef(target,name), d.id), data:{ ...d.data(), copiedFromYear:source, updatedAt:serverTimestamp() } }));
+    appendLog(`${name}: ${snap.size}개 읽음`);
+  }
+  const meta = await getDoc(timetableMetaRef(source));
+  if (meta.exists()) {
+    ops.push({ ref:timetableMetaRef(target), data:{ ...meta.data(), copiedFromYear:source, updatedAt:serverTimestamp() } });
+    counts.timetableMeta = 1;
+  }
+  if (!counts.domains || !counts.classes || !counts.rosters || !counts.ttcards) {
+    throw new Error(`원본 데이터가 불완전합니다. domains=${counts.domains}, classes=${counts.classes}, rosters=${counts.rosters}, cards=${counts.ttcards}`);
+  }
+  await commitOps(ops);
+  await setDoc(yearMetaRef(target), {
+    year:target, label:`${target}학년도`, status:"draft", sourceYear:source, createMode:"copy",
+    counts, createdAt:serverTimestamp(), updatedAt:serverTimestamp(), createdBy:user?.email || user?.uid || "unknown"
+  }, { merge:false });
+  return counts;
+}
+async function createEmptyOnlineWorkspace(target) {
+  await setDoc(yearMetaRef(target), {
+    year:target, label:`${target}학년도`, status:"draft", sourceYear:null, createMode:"empty",
+    counts:{ domains:0, classes:0, rosters:0, timetableEntries:0, ttcards:0, timetableMeta:0 },
+    createdAt:serverTimestamp(), updatedAt:serverTimestamp(), createdBy:user?.email || user?.uid || "unknown"
+  }, { merge:false });
+}
+function copyLocalWorkspace(source, target, empty) {
+  const targetKey = localKeyForYear(target);
+  if (empty) {
+    localStorage.setItem(targetKey, JSON.stringify({ version:1, mode:"his-local-dev", schoolYear:target, createdAt:new Date().toISOString(), data:{} }));
+    return;
+  }
+  const raw = localStorage.getItem(localKeyForYear(source));
+  if (!raw) throw new Error(`${source}학년도 로컬 데이터가 없습니다.`);
+  const parsed = JSON.parse(raw);
+  parsed.schoolYear = target;
+  parsed.copiedFromYear = source;
+  parsed.copiedAt = new Date().toISOString();
+  localStorage.setItem(targetKey, JSON.stringify(parsed));
+}
+async function createWorkspace() {
+  if (busy) return;
+  const target = normalizeSchoolYear($("targetYear").value, "");
+  const mode = $("createMode").value;
+  const source = normalizeSchoolYear($("sourceYear").value);
+  if (!target || Number(target) < 2027) { alert("새 학년도는 2027 이상으로 입력해 주세요."); return; }
+  if (target === LEGACY_SCHOOL_YEAR || target === source) { alert("원본과 다른 새 학년도를 입력해 주세요."); return; }
+  if (!LOCAL_DEV_MODE && !user) { alert("먼저 로그인하세요."); return; }
+  if (!confirm(`${target}학년도 작업공간을 ${mode==="copy"?`${source}학년도 복제 방식으로`:"빈 작업공간으로"} 생성할까요?`)) return;
+  setBusy(true);
+  $("log").textContent = `${target}학년도 생성 시작...`;
+  try {
+    if (await targetHasData(target)) throw new Error(`${target}학년도 작업공간이 이미 존재합니다. 기존 데이터는 덮어쓰지 않았습니다.`);
+    let counts = null;
+    if (LOCAL_DEV_MODE) {
+      copyLocalWorkspace(source, target, mode === "empty");
+    } else if (mode === "copy") {
+      counts = await copyOnlineWorkspace(source, target);
+    } else {
+      await createEmptyOnlineWorkspace(target);
+    }
+    registerKnownSchoolYears([target]);
+    serverYears = [...new Set([...serverYears,target])];
+    appendLog(`${target}학년도 생성 완료${counts?` · 학급 ${counts.classes}, 명단 ${counts.rosters}, 카드 ${counts.ttcards}, 배치 ${counts.timetableEntries}`:""}`);
+    refreshSelectors();
+    if (confirm(`${target}학년도가 안전하게 생성되었습니다.\n지금 새 학년도로 전환할까요?`)) switchYear(target);
+  } catch (e) {
+    console.error(e);
+    appendLog(`오류: ${e?.message || e}`);
+    try { await cleanupTargetWorkspace(target); } catch (cleanupError) { appendLog(`부분 데이터 자동 정리 실패: ${cleanupError?.message || cleanupError}`); }
+    alert(`학년도 생성 실패: ${e?.message || e}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"}`;
+$("loginBtn").addEventListener("click", login);
+$("logoutBtn").addEventListener("click", logout);
+$("createBtn").addEventListener("click", createWorkspace);
+$("createMode").addEventListener("change", () => { $("sourceField").style.display = $("createMode").value === "copy" ? "grid" : "none"; });
+onAuth(current => {
+  user = current || null;
+  $("authStatus").textContent = current ? (LOCAL_DEV_MODE ? "Local Dev" : (current.email || current.displayName || "로그인됨")) : "로그인 필요";
+  $("loginBtn").hidden = !!current || LOCAL_DEV_MODE;
+  $("logoutBtn").hidden = !current || LOCAL_DEV_MODE;
+  setBusy(false);
+  loadServerYears();
+});
+refreshSelectors();
+</script>
+</body>
+</html>

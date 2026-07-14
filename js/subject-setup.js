@@ -32,7 +32,7 @@ function renderSetupLevelTabs(onChange) {
 }
 import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState } from "./state.js?v=2026-07-13-system-audit-r343";
+import { appState } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js";
 import { getRosterMeta, setRosterClassCount, getClassCount } from "./rosters.js";
 

@@ -1,7 +1,7 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS } from "./config.js";
+import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath } from "./config.js";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js";
 import { canEdit } from "./auth.js";
@@ -15,12 +15,27 @@ import {
 // one huge document. Public appState shape stays the same for the UI modules.
 export const SPLIT_COLLECTION_DOMAINS = new Set(["classes", "rosters", "timetable"]);
 
-const splitRefs = {
+const splitRefs = IS_LEGACY_SCHOOL_YEAR ? {
   classes: collection(db, "boards", "_split", "classes"),
   rosters: collection(db, "boards", "_split", "rosters"),
   timetableEntries: collection(db, "boards", "_split", "timetableEntries"),
   ttcards: collection(db, "boards", "_split", "ttcards"),
   timetableMeta: doc(db, "boards", "_split", "timetableMeta", "main"),
+} : {
+  classes: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "classes"),
+  rosters: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "rosters"),
+  timetableEntries: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "timetableEntries"),
+  ttcards: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "ttcards"),
+  timetableMeta: doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "meta", "timetable"),
+};
+
+const storageLabel = {
+  domain: (domain) => schoolYearDomainPath(domain),
+  classes: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/classes" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/classes`,
+  rosters: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/rosters" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/rosters`,
+  timetableEntries: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/timetableEntries" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/timetableEntries`,
+  ttcards: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/ttcards" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/ttcards`,
+  timetableMeta: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/timetableMeta/main" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/meta/timetable`,
 };
 
 
@@ -141,21 +156,21 @@ function recordCollectionSnapshotUsage(label, snap, state = {}) {
 
 function estimateCurrentDomainReadCount(domain) {
   if (domain === "classes") {
-    return { domain, count: (appState.classes?.classes || []).length, note: "split/classes 컬렉션" };
+    return { domain, count: (appState.classes?.classes || []).length, note: `${storageLabel.classes} 컬렉션` };
   }
   if (domain === "rosters") {
     const ids = uniqueOrdered([
       ...Object.keys(appState.rosters?.rosters || {}),
       ...Object.keys(appState.rosters?.rosterMeta || {})
     ]);
-    return { domain, count: ids.length, note: "split/rosters 과목별 문서" };
+    return { domain, count: ids.length, note: `${storageLabel.rosters} 과목별 문서` };
   }
   if (domain === "timetable") {
     const entries = (appState.timetable?.entries || []).length;
     const cards = (appState.timetable?.ttcards || []).length;
     return { domain, count: entries + cards + 1, note: `entries ${entries} + cards ${cards} + meta 1` };
   }
-  return { domain, count: 1, note: `boards/${domain} 단일 문서` };
+  return { domain, count: 1, note: `${storageLabel.domain(domain)} 단일 문서` };
 }
 
 export function getFirestoreUsageStats() {
@@ -309,6 +324,9 @@ export function setAutoSaveEnabled(enabled) {
 export function getDirtyDomains() {
   return [...dirtyDomains];
 }
+if (typeof globalThis !== "undefined") {
+  globalThis.HIS_GET_DIRTY_DOMAINS = getDirtyDomains;
+}
 
 function bumpDomainEditRevision(domain) {
   domainEditRevisions[domain] = (domainEditRevisions[domain] || 0) + 1;
@@ -381,7 +399,7 @@ async function performDomainSave(domain, normalized, options = {}) {
 
   // Ordinary domains, or split domains temporarily running in legacy fallback mode.
   await setDoc(refs[domain], { ...normalized, updatedAt: serverTimestamp() });
-  recordFirestoreUsage("writes", 1, `save: boards/${domain}`, { operation: "setDoc" });
+  recordFirestoreUsage("writes", 1, `save: ${storageLabel.domain(domain)}`, { operation: "setDoc" });
   return { legacy: true };
 }
 
@@ -1942,19 +1960,19 @@ export async function exportFirestoreDiagnosticSnapshot() {
     rostersLegacyDoc, roomsDoc, timetableLegacyDoc, legacyDoc,
     classesSplit, rostersSplit, timetableEntriesSplit, ttcardsSplit, timetableMetaDoc
   ] = await Promise.all([
-    readDiagnosticDoc("boards/curriculum", refs.curriculum),
-    readDiagnosticDoc("boards/templates", refs.templates),
-    readDiagnosticDoc("boards/classes", refs.classes),
-    readDiagnosticDoc("boards/teachers", refs.teachers),
-    readDiagnosticDoc("boards/rosters", refs.rosters),
-    readDiagnosticDoc("boards/rooms", refs.rooms),
-    readDiagnosticDoc("boards/timetable", refs.timetable),
-    readDiagnosticDoc("boards/main", refs.legacy),
-    readDiagnosticCollection("boards/_split/classes", splitRefs.classes),
-    readDiagnosticCollection("boards/_split/rosters", splitRefs.rosters),
-    readDiagnosticCollection("boards/_split/timetableEntries", splitRefs.timetableEntries),
-    readDiagnosticCollection("boards/_split/ttcards", splitRefs.ttcards),
-    readDiagnosticDoc("boards/_split/timetableMeta/main", splitRefs.timetableMeta),
+    readDiagnosticDoc(storageLabel.domain("curriculum"), refs.curriculum),
+    readDiagnosticDoc(storageLabel.domain("templates"), refs.templates),
+    readDiagnosticDoc(storageLabel.domain("classes"), refs.classes),
+    readDiagnosticDoc(storageLabel.domain("teachers"), refs.teachers),
+    readDiagnosticDoc(storageLabel.domain("rosters"), refs.rosters),
+    readDiagnosticDoc(storageLabel.domain("rooms"), refs.rooms),
+    readDiagnosticDoc(storageLabel.domain("timetable"), refs.timetable),
+    readDiagnosticDoc(storageLabel.domain("main"), refs.legacy),
+    readDiagnosticCollection(storageLabel.classes, splitRefs.classes),
+    readDiagnosticCollection(storageLabel.rosters, splitRefs.rosters),
+    readDiagnosticCollection(storageLabel.timetableEntries, splitRefs.timetableEntries),
+    readDiagnosticCollection(storageLabel.ttcards, splitRefs.ttcards),
+    readDiagnosticDoc(storageLabel.timetableMeta, splitRefs.timetableMeta),
   ]);
 
   const raw = {
@@ -1983,6 +2001,8 @@ export async function exportFirestoreDiagnosticSnapshot() {
     mode: "his-firestore-diagnostic",
     exportedAt: new Date().toISOString(),
     projectId: "his-curriculum-8e737",
+    schoolYear: ACTIVE_SCHOOL_YEAR,
+    storageMode: IS_LEGACY_SCHOOL_YEAR ? "legacy-2026" : "isolated-school-year",
     source: "Firestore direct read",
     note: "학생 이름 등 운영 데이터가 포함될 수 있습니다. 외부 공유 전 개인정보 범위를 확인해 주세요.",
     summary: summarizeDiagnostic(normalized),
@@ -2380,7 +2400,7 @@ async function saveSplitDomain(domain, options = {}) {
 async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
   try {
     const snap = await getDoc(refs[domain]);
-    recordFirestoreUsage("reads", 1, `legacy fallback: boards/${domain}`, { operation: "getDoc" });
+    recordFirestoreUsage("reads", 1, `fallback: ${storageLabel.domain(domain)}`, { operation: "getDoc" });
     if (!snap.exists()) return false;
     const normalized = normalizeFn(snap.data());
     const hasData = options.hasData ? options.hasData(normalized) : true;
@@ -2402,7 +2422,7 @@ async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
 function handleSnap(domain, normalizeFn) {
   const usageState = { seen: false };
   return async (snap) => {
-    recordDocSnapshotUsage(`listen: boards/${domain}`, snap, usageState);
+    recordDocSnapshotUsage(`listen: ${storageLabel.domain(domain)}`, snap, usageState);
     if (!snap.exists()) {
       const normalized = normalizeFn({});
       appState[domain] = normalized;
@@ -2419,7 +2439,9 @@ const unsubs = {};
 
 // ── Split confirmed flags (localStorage) ─────────────────────────
 // _split 컬렉션에 데이터가 확인되면 플래그 저장 → 이후 fallback 시도 생략
-const SPLIT_CONFIRMED_KEY = "his_split_confirmed_v1";
+const SPLIT_CONFIRMED_KEY = IS_LEGACY_SCHOOL_YEAR
+  ? "his_split_confirmed_v1"
+  : `his_split_confirmed_v1_${ACTIVE_SCHOOL_YEAR}`;
 function getSplitConfirmed() {
   try { return new Set(JSON.parse(localStorage.getItem(SPLIT_CONFIRMED_KEY) || "[]")); }
   catch (_) { return new Set(); }
@@ -2451,7 +2473,7 @@ function domainHasData(domain) {
 function fallbackToLegacyDocument(domain, normalizeFn, err) {
   if (splitUnavailableDomains.has(domain)) return;
   splitUnavailableDomains.add(domain);
-  console.warn(`Split Firestore path unavailable for ${domain}; falling back to boards/${domain}.`, err);
+  console.warn(`Split Firestore path unavailable for ${domain}; falling back to ${storageLabel.domain(domain)}.`, err);
 
   // Stop split listeners if they were registered.
   if (unsubs[domain]) {
@@ -2489,7 +2511,7 @@ export function isDomainSubscribed(domain) {
 function subscribeClassesSplit() {
   const usageState = { seen: false };
   unsubs.classes = onSnapshot(splitRefs.classes, async snap => {
-    recordCollectionSnapshotUsage("listen: split/classes", snap, usageState);
+    recordCollectionSnapshotUsage(`listen: ${storageLabel.classes}`, snap, usageState);
     if (!snap.empty) markSplitConfirmed("classes");
 
     // _split 컬렉션 확인됨 → fallback 불필요
@@ -2510,7 +2532,7 @@ function subscribeClassesSplit() {
 function subscribeRostersSplit() {
   const usageState = { seen: false };
   unsubs.rosters = onSnapshot(splitRefs.rosters, async snap => {
-    recordCollectionSnapshotUsage("listen: split/rosters", snap, usageState);
+    recordCollectionSnapshotUsage(`listen: ${storageLabel.rosters}`, snap, usageState);
     if (!snap.empty) markSplitConfirmed("rosters");
 
     if (snap.empty && !splitConfirmed.has("rosters") && !splitFallbackAttempted.rosters) {
@@ -2569,7 +2591,7 @@ async function applyTimetableSplitIfReady() {
 
   if (splitTimetableLooksTruncatedForGuard() && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;
-    console.warn("[Firestore guard:r231] split 시간표가 비정상적으로 작아 legacy boards/timetable 복구를 시도합니다.", {
+    console.warn(`[Firestore guard:r231] split 시간표가 비정상적으로 작아 ${storageLabel.domain("timetable")} 복구를 시도합니다.`, {
       entries: timetableSplitCache.entries.length,
       cards: timetableSplitCache.ttcards.length,
       metaExists: timetableSplitCache.metaExists
@@ -2630,19 +2652,19 @@ function subscribeTimetableSplit() {
   const metaUsage = { seen: false };
 
   const unsubEntries = onSnapshot(splitRefs.timetableEntries, snap => {
-    recordCollectionSnapshotUsage("listen: split/timetableEntries", snap, entriesUsage);
+    recordCollectionSnapshotUsage(`listen: ${storageLabel.timetableEntries}`, snap, entriesUsage);
     timetableSplitCache.entries = snap.docs.map(d => normalizeTimetableEntry({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyTimetableSplitIfReady();
   }, onSplitError);
 
   const unsubCards = onSnapshot(splitRefs.ttcards, snap => {
-    recordCollectionSnapshotUsage("listen: split/ttcards", snap, cardsUsage);
+    recordCollectionSnapshotUsage(`listen: ${storageLabel.ttcards}`, snap, cardsUsage);
     timetableSplitCache.ttcards = snap.docs.map(d => normalizeTtCard({ id: d.id, ...withoutFirestoreMeta(d.data()) }));
     applyTimetableSplitIfReady();
   }, onSplitError);
 
   const unsubMeta = onSnapshot(splitRefs.timetableMeta, snap => {
-    recordDocSnapshotUsage("listen: split/timetableMeta", snap, metaUsage);
+    recordDocSnapshotUsage(`listen: ${storageLabel.timetableMeta}`, snap, metaUsage);
     timetableSplitCache.metaExists = snap.exists();
     timetableSplitCache.meta = snap.exists() ? withoutFirestoreMeta(snap.data()) : {};
     applyTimetableSplitIfReady();
@@ -2711,7 +2733,7 @@ export function unsubscribeAll() {
 // DATA MIGRATION: old boards/main → new separate docs
 // ================================================================
 export async function migrateFromLegacy() {
-  if (LOCAL_DEV_MODE) return;
+  if (LOCAL_DEV_MODE || !IS_LEGACY_SCHOOL_YEAR) return;
   // ① localStorage 캐시 — 이미 완료된 경우 Firestore 왕복 없이 즉시 반환
   const MIGRATE_KEY = "his_migrated_v2";
   if (localStorage.getItem(MIGRATE_KEY) === "done") return;
@@ -2719,7 +2741,7 @@ export async function migrateFromLegacy() {
   let legacySnap = null;
   try {
     legacySnap = await getDoc(refs.legacy);
-    recordFirestoreUsage("reads", 1, "legacy migration: boards/main", { operation: "getDoc" });
+    recordFirestoreUsage("reads", 1, `legacy migration: ${storageLabel.domain("main")}`, { operation: "getDoc" });
   } catch (e) {
     console.warn("Legacy migration skipped; legacy document could not be read.", e);
     localStorage.setItem(MIGRATE_KEY, "done"); // 읽기 실패도 더 이상 시도 안 함
@@ -2744,7 +2766,7 @@ export async function migrateFromLegacy() {
 
   const snaps = await Promise.all(
     migrationTargets.map(async ([domain]) => {
-      try { const snap = await getDoc(refs[domain]); recordFirestoreUsage("reads", 1, `migration check: boards/${domain}`, { operation: "getDoc" }); return snap; }
+      try { const snap = await getDoc(refs[domain]); recordFirestoreUsage("reads", 1, `migration check: ${storageLabel.domain(domain)}`, { operation: "getDoc" }); return snap; }
       catch (e) { console.warn(`Migration check skipped for ${domain}.`, e); return null; }
     })
   );

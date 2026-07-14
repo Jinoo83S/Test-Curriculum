@@ -1,6 +1,7 @@
 // ================================================================
 // local-dev.js · Firebase-free local development mode
 // ================================================================
+import { ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, setupSchoolYearUi } from "./school-year.js";
 const MODE_KEY = "his_local_dev_mode_v1";
 const DEV_TOOLS_KEY = "his_developer_tools_v1";
 
@@ -29,7 +30,9 @@ export const LOCAL_DEV_MODE = (() => {
   catch (_) { return false; }
 })();
 
-export const LOCAL_STATE_KEY = "his_local_dev_state_v1";
+export const LOCAL_STATE_KEY = ACTIVE_SCHOOL_YEAR === LEGACY_SCHOOL_YEAR
+  ? "his_local_dev_state_v1"
+  : `his_local_dev_state_v1_${ACTIVE_SCHOOL_YEAR}`;
 
 export const LOCAL_DEV_USER = {
   uid: "local-dev-user",
@@ -143,7 +146,7 @@ async function seedLocalStateFromCurrentRuntime() {
   // 온라인 화면에서 이미 불러온 Firestore 데이터를 로컬 저장소로 복사합니다.
   // Firestore quota가 막힌 뒤에도, 현재 화면에 로드된 데이터만큼은 local=1에서 계속 테스트할 수 있습니다.
   try {
-    const mod = await import("./state.js?v=2026-07-13-system-audit-r343");
+    const mod = await import("./state.js?v=2026-07-14-school-year-workspaces-r345");
     if (typeof mod.seedLocalSnapshotFromRuntime === "function") {
       return mod.seedLocalSnapshotFromRuntime();
     }
@@ -175,6 +178,7 @@ function switchModeToOnline() {
 }
 
 function setupTopModeSwitchButtons() {
+  setupSchoolYearUi();
   applyDeveloperToolsVisibility();
   const localBtn = document.getElementById("topLocalModeBtn");
   const onlineBtn = document.getElementById("topOnlineModeBtn");

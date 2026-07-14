@@ -4,6 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR } from "./school-year.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
@@ -22,19 +23,18 @@ export const db = initializeFirestore(fbApp, {
 });
 export const provider = new GoogleAuthProvider();
 
-// ── Firestore refs — one document per domain ──────────────────────
-// Keeps curriculum separate from student/teacher data.
-// Prevents accidental full-overwrite on partial saves.
-export const refs = {
-  curriculum: doc(db, "boards", "curriculum"),
-  templates:  doc(db, "boards", "templates"),
-  classes:    doc(db, "boards", "classes"),
-  teachers:   doc(db, "boards", "teachers"),
-  rosters:    doc(db, "boards", "rosters"),
-  rooms:      doc(db, "boards", "rooms"),
-  timetable:  doc(db, "boards", "timetable"),
-  legacy:     doc(db, "boards", "main"),
-};
+// ── Firestore refs — active academic-year workspace ─────────────
+// 2026 keeps the existing production paths. New years are isolated under
+// schoolYears/{year}/domains so next-year preparation cannot overwrite 2026.
+export { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR };
+export const schoolYearDomainPath = (domain) => IS_LEGACY_SCHOOL_YEAR
+  ? `boards/${domain}`
+  : `schoolYears/${ACTIVE_SCHOOL_YEAR}/domains/${domain}`;
+export const refs = Object.fromEntries([
+  "curriculum", "templates", "classes", "teachers", "rosters", "rooms", "timetable", "main"
+].map(domain => [domain === "main" ? "legacy" : domain, IS_LEGACY_SCHOOL_YEAR
+  ? doc(db, "boards", domain)
+  : doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "domains", domain)]));
 
 // ── Grade / group constants ───────────────────────────────────────
 export const GRADE_KEYS   = ["7학년","8학년","9학년","10학년","11학년","12학년"];

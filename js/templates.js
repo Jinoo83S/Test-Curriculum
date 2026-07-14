@@ -4,7 +4,7 @@
 import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js";
 import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js";
 import { canEdit } from "./auth.js";
-import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag } from "./state.js?v=2026-07-13-system-audit-r343";
+import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag } from "./state.js?v=2026-07-14-school-year-workspaces-r345";
 
 const tDomain   = () => appState.templates;
 const templates = () => tDomain().templates;
