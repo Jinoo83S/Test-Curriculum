@@ -4,7 +4,7 @@
 // 2026 keeps the existing Firestore paths for backward compatibility.
 // New years use isolated schoolYears/{year}/... paths.
 
-export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-login-hotfix-r346";
+export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-delete-r348";
 export const LEGACY_SCHOOL_YEAR = "2026";
 export const SCHOOL_YEAR_KEY = "his_active_school_year_v1";
 export const KNOWN_SCHOOL_YEARS_KEY = "his_known_school_years_v1";
@@ -60,6 +60,22 @@ export function getKnownSchoolYears() {
 export function registerKnownSchoolYears(values = []) {
   const years = [...new Set([...getKnownSchoolYears(), ...(Array.isArray(values) ? values : [values])]
     .map(y => normalizeSchoolYear(y, "")).filter(Boolean))].sort((a, b) => Number(b) - Number(a));
+  try { localStorage.setItem(KNOWN_SCHOOL_YEARS_KEY, JSON.stringify(years)); } catch (_) {}
+  return years;
+}
+
+export function unregisterKnownSchoolYear(value) {
+  const target = normalizeSchoolYear(value, "");
+  if (!target || target === LEGACY_SCHOOL_YEAR) return getKnownSchoolYears();
+  let stored = [];
+  try {
+    const parsed = JSON.parse(localStorage.getItem(KNOWN_SCHOOL_YEARS_KEY) || "[]");
+    if (Array.isArray(parsed)) stored = parsed;
+  } catch (_) {}
+  const years = [...new Set([LEGACY_SCHOOL_YEAR, ...stored]
+    .map(y => normalizeSchoolYear(y, "")).filter(Boolean))]
+    .filter(year => year !== target)
+    .sort((a, b) => Number(b) - Number(a));
   try { localStorage.setItem(KNOWN_SCHOOL_YEARS_KEY, JSON.stringify(years)); } catch (_) {}
   return years;
 }
@@ -177,6 +193,7 @@ if (typeof window !== "undefined") {
     legacy: LEGACY_SCHOOL_YEAR,
     getKnownSchoolYears,
     registerKnownSchoolYears,
+    unregisterKnownSchoolYear,
     setActiveSchoolYear,
     setupSchoolYearUi,
   };

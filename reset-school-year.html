@@ -41,6 +41,7 @@
     <span id="authStatus">로그인 확인 중…</span>
     <button id="loginBtn" class="primary" type="button">Google 로그인</button>
     <button id="logoutBtn" type="button" hidden>로그아웃</button>
+    <a href="school-years.html" style="color:#dbeafe;font-weight:900;text-decoration:none;">학년도 관리</a>
     <a href="index.html" style="color:#dbeafe;font-weight:900;text-decoration:none;">커리큘럼으로 돌아가기</a>
   </div>
 </header>
@@ -91,7 +92,7 @@
 </main>
 
 <script type="module">
-  import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearLabel } from "./js/school-year.js?v=2026-07-14-school-year-login-hotfix-r346";
+  import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearLabel } from "./js/school-year.js?v=2026-07-14-school-year-delete-r348";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import {
