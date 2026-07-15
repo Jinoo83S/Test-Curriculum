@@ -15,8 +15,16 @@ import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=2026-07-1
 import { createDocxBuilder } from "./timetable-print-word.js?v=2026-07-15-print-modules-r361";
 import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=2026-07-15-print-modules-r361";
 import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-modules-r361";
+import {
+  allocateProportionalHeights,
+  card3x3Dimensions,
+  cardGridDimensions,
+  docxCellSize,
+  wordSpanWidth,
+  wordTableWidths as computeWordTableWidths,
+} from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-15-print-modules-r361";
+const VERSION = "2026-07-15-word-layout-r362";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1786,28 +1794,6 @@ function officeWordHalfSize(text="", opts={}) {
   if (opts.overview) return profile.word?.bodyHalf || (opts.wideOverview ? 7 : 10);
   return docxCellSize(text, !!opts.header, !!opts.overview, !!opts.wideOverview);
 }
-function docxCellSize(text="", header=false, overview=false, wideOverview=false) {
-  if (header) return wideOverview ? 7 : (overview ? 10 : 14);
-  const t=String(text||"");
-  const lines=t.split(/\n/).length;
-  const len=t.length;
-  if (overview) {
-    if (wideOverview) {
-      if (lines>8 || len>100) return 6;
-      if (lines>5 || len>70) return 7;
-      return 8;
-    }
-    if (lines>10 || len>130) return 8;
-    if (lines>7 || len>90) return 9;
-    return 10;
-  }
-  // r277: Word는 한 페이지 고정이 우선이지만, 너무 작으면 출력물로 의미가 없습니다.
-  // 1~2과목 셀은 기본 가독성을 보장하고, 3~4과목은 별도 compact 규칙에서 처리합니다.
-  if (lines>14 || len>190) return 9;
-  if (lines>10 || len>140) return 10;
-  if (lines>7 || len>95) return 12;
-  return 14;
-}
 function wNoBorderTcPr(width=400, span=1) {
   const gridSpan = span > 1 ? `<w:gridSpan w:val="${span}"/>` : "";
   return `<w:tcPr><w:tcW w:w="${Math.max(1, Math.round(width))}" w:type="dxa"/>${gridSpan}<w:vAlign w:val="center"/><w:tcMar><w:top w:w="0" w:type="dxa"/><w:left w:w="0" w:type="dxa"/><w:bottom w:w="0" w:type="dxa"/><w:right w:w="0" w:type="dxa"/></w:tcMar><w:tcBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tcBorders></w:tcPr>`;
@@ -1839,13 +1825,7 @@ function wOfficeCard3x3(card={}, opts={}, splitCount=1, totalW=1600, totalH=500)
     const [r,c] = officeCardStructuredIndex(def, cfg);
     matrix[r][c].push(wCardFieldPara(value, def.key, cfg, def, opts, splitCount));
   });
-  const w1 = Math.max(1, Math.floor(totalW/3));
-  const widths = [w1, w1, Math.max(1, totalW - w1*2)];
-  const topH = Math.max(55, Math.floor(totalH * 0.20));
-  const subjectH = Math.max(90, Math.floor(totalH * 0.30));
-  const englishH = Math.max(70, Math.floor(totalH * 0.22));
-  const bottomH = Math.max(55, totalH - topH - subjectH - englishH);
-  const heights = [topH, subjectH, englishH, bottomH];
+  const { widths, heights } = card3x3Dimensions(totalW, totalH);
   const rows = matrix.map((row, r) => {
     if (r === 1 || r === 2) {
       const paras = row.flat().join("") || wPara("",{size:1,line:18});
@@ -1860,17 +1840,14 @@ function wOfficeCardsGrid(cards=[], opts={}) {
   if (!list.length) return "";
   const count = Math.max(1, Math.min(4, list.length));
   const shape = officeCardGridShape(count, opts.model || { profile: opts.officeProfile || opts.profile });
-  const totalW = Math.max(1200, Math.round((opts.width || 1600) - 28));
-  const cardW = Math.max(900, Math.floor(totalW / shape.cols));
-  const rowH = opts.overview ? 260 : (shape.rows > 1 ? 360 : 520);
-  const gridCols = Array.from({length:shape.cols},(_,i)=> i === shape.cols-1 ? totalW - cardW*(shape.cols-1) : cardW);
+  const { totalW, gridCols, rowH } = cardGridDimensions(opts.width || 1600, shape.rows, shape.cols, !!opts.overview);
   let idx = 0;
   const rows = [];
   for (let r=0; r<shape.rows; r++) {
     const tcs=[];
     for (let c=0; c<shape.cols; c++) {
       const card = list[idx++];
-      const w = gridCols[c] || cardW;
+      const w = gridCols[c] || gridCols[0] || 900;
       tcs.push(wSemanticTc(card ? wOfficeCard3x3(card, opts, count, w, rowH) : wPara("",{size:1,line:18}), w));
     }
     rows.push(`<w:tr><w:trPr><w:trHeight w:val="${rowH}" w:hRule="atLeast"/></w:trPr>${tcs.join("")}</w:tr>`);
@@ -2006,37 +1983,7 @@ function officeWordLandscapeThreeRowAllocatedHeights(model=null, idx=0, overview
   const minInts = mins.map(v => Math.max(18, Math.ceil(v || 18)));
   if (minInts.reduce((a,b)=>a+b,0) > total) return null;
 
-  const locked = new Set();
-  const values = Array(indexes.length).fill(0);
-  for (let guard=0; guard<indexes.length+2; guard++) {
-    const lockedTotal = [...locked].reduce((sum, i) => sum + minInts[i], 0);
-    const remaining = Math.max(0, total - lockedTotal);
-    const ratioTotal = ratios.reduce((sum, v, i) => sum + (locked.has(i) ? 0 : v), 0) || 1;
-    const newlyLocked = [];
-    ratios.forEach((ratio, i) => {
-      if (locked.has(i)) { values[i] = minInts[i]; return; }
-      values[i] = remaining * ratio / ratioTotal;
-      if (values[i] < minInts[i]) newlyLocked.push(i);
-    });
-    if (!newlyLocked.length) break;
-    newlyLocked.forEach(i => locked.add(i));
-  }
-
-  const ints = values.map((v,i) => Math.max(minInts[i], Math.floor(v)));
-  let diff = total - ints.reduce((a,b)=>a+b,0);
-  if (diff > 0) {
-    const order = values.map((v,i)=>({i, frac:v-Math.floor(v)})).sort((a,b)=>b.frac-a.frac || a.i-b.i);
-    for (let n=0; diff>0; n++, diff--) ints[order[n % order.length].i]++;
-  } else if (diff < 0) {
-    const order = ints.map((v,i)=>({i, room:v-minInts[i]})).filter(x=>x.room>0).sort((a,b)=>b.room-a.room || a.i-b.i);
-    let n=0;
-    while (diff < 0 && order.length) {
-      const item = order[n % order.length];
-      if (ints[item.i] > minInts[item.i]) { ints[item.i]--; diff++; }
-      n++;
-      if (n > total * 2) break;
-    }
-  }
+  const ints = allocateProportionalHeights(total, ratios, minInts);
   return new Map(indexes.map((sourceIndex, i) => [sourceIndex, ints[i]]));
 }
 function officeFlatRatioHeight(kind="word", row=[], model=null, idx=0, overview=false, dayOverview=false, wideOverview=false) {
@@ -2220,20 +2167,7 @@ function wordRowHeight(idx, total, overview=false, dayOverview=false, wideOvervi
   return Math.max(wideOverview ? 980 : (dayOverview ? 760 : 620), Math.floor(usable/bodyRows));
 }
 function wordTableWidths(colCount, overview=false, dayOverview=false, model=null) {
-  const wideOverview = isWideOfficeOverview(model);
-  const tblW = officeWordTableWidth(model);
-  if (colCount <= 1) return { tblW, widths: [tblW] };
-  const first = overview ? (wideOverview ? 680 : (dayOverview ? 780 : 650)) : 520;
-  const rest = Math.floor((tblW - first) / (colCount - 1));
-  const widths = [first, ...Array.from({ length: colCount - 1 }, () => rest)];
-  const diff = tblW - widths.reduce((a,b)=>a+b,0);
-  widths[widths.length - 1] += diff;
-  return { tblW, widths };
-}
-function wordSpanWidth(widths, startIndex=0, span=1) {
-  let sum = 0;
-  for (let i=startIndex; i<Math.min(widths.length, startIndex + Math.max(1, span)); i++) sum += widths[i] || 0;
-  return sum || widths[startIndex] || 1600;
+  return computeWordTableWidths(officeWordTableWidth(model), colCount, overview, dayOverview, isWideOfficeOverview(model));
 }
 function wordTableXml(model) {
   const colCount=Math.max(1,model.cols||1);
