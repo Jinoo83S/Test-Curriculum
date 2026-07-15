@@ -2,6 +2,8 @@
 // timetable-print-pdf.js · Hidden iframe PDF/browser-print controller
 // ================================================================
 
+const PRINT_STYLE_CACHE = new WeakMap();
+
 export function stripCssBlock(css, atRuleTester) {
   let out = "";
   let index = 0;
@@ -41,15 +43,13 @@ export function stripCssBlock(css, atRuleTester) {
 export function collectDocumentStyleText(doc = document) {
   const chunks = [];
 
-  // r359부터 출력 CSS가 외부 <link> 파일로 분리되었습니다.
-  // style 태그만 읽으면 PDF iframe에는 표/테두리/카드 CSS가 하나도 전달되지 않습니다.
-  // 이미 로드된 same-origin CSSOM을 우선 사용하여 외부 CSS도 동기적으로 복사합니다.
+  // 출력 CSS는 외부 파일이므로 same-origin CSSOM을 읽습니다.
   for (const sheet of Array.from(doc?.styleSheets || [])) {
     try {
       const text = Array.from(sheet?.cssRules || []).map(rule => rule?.cssText || "").filter(Boolean).join("\n");
       if (text) chunks.push(text);
     } catch (_) {
-      // 접근할 수 없는 외부 스타일시트는 아래 style 태그 fallback에서 제외됩니다.
+      // 접근할 수 없는 스타일시트는 인라인 style fallback으로 처리합니다.
     }
   }
 
@@ -66,9 +66,32 @@ export function printBaseStyleText(doc = document) {
   return css;
 }
 
+export function cachedPrintBaseStyleText(doc = document) {
+  if (doc && PRINT_STYLE_CACHE.has(doc)) return PRINT_STYLE_CACHE.get(doc);
+  const css = printBaseStyleText(doc);
+  if (doc) PRINT_STYLE_CACHE.set(doc, css);
+  return css;
+}
+
 export function removeHiddenPrintFrame(doc = document) {
   const old = doc.getElementById("hisHiddenPrintFrame");
   if (old?.parentNode) old.parentNode.removeChild(old);
+}
+
+function warmPrintStyleCache(doc = document) {
+  const work = () => {
+    try { cachedPrintBaseStyleText(doc); } catch (_) {}
+  };
+  if (typeof globalThis.requestIdleCallback === "function") {
+    globalThis.requestIdleCallback(work, { timeout: 800 });
+  } else {
+    setTimeout(work, 0);
+  }
+}
+
+function waitForFramePaint(frameWindow, sleep) {
+  if (typeof frameWindow?.requestAnimationFrame !== "function") return sleep(35);
+  return new Promise(resolve => frameWindow.requestAnimationFrame(() => frameWindow.requestAnimationFrame(resolve)));
 }
 
 export function createPdfExporter(deps = {}) {
@@ -81,9 +104,14 @@ export function createPdfExporter(deps = {}) {
     if (typeof deps[key] !== "function") throw new TypeError(`PDF 의존 함수 누락: ${key}`);
   }
 
+  // r365: 사용자가 PDF 버튼을 누르기 전에 외부 CSSOM을 유휴 시간에 한 번만 준비합니다.
+  // 이후 출력에서는 58KB 이상의 CSS를 다시 순회·직렬화하지 않습니다.
+  if (typeof document !== "undefined") warmPrintStyleCache(document);
+
   return async function exportPdfReal() {
     if (!deps.isDataReady()) return;
     deps.showRenderOverlay("인쇄용 시간표를 준비하는 중입니다…");
+    const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
     try {
       await deps.nextPaint();
       deps.renderEntityList();
@@ -97,7 +125,7 @@ export function createPdfExporter(deps = {}) {
       const pages = deps.pagesForEntities(entities);
       if (!pages.length) throw new Error("생성된 인쇄 페이지가 없습니다.");
 
-      const styleText = printBaseStyleText(document);
+      const styleText = cachedPrintBaseStyleText(document);
       const bodyClass = Array.from(document.body.classList).filter(className => /^font-|ellipsis-enabled/.test(className)).join(" ");
       const printCss = `
         @page{size:${pageCss.pageRule};margin:0}
@@ -119,12 +147,12 @@ export function createPdfExporter(deps = {}) {
       const title = deps.exportTitle();
       const esc = deps.escapeHtml;
       const baseHref = String(document.baseURI || globalThis.location?.href || "");
-      const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="${esc(baseHref)}"><title>${esc(title)}</title><style>${styleText}</style><style>${printCss}</style></head><body class="${esc(bodyClass)} ${portrait ? "print-portrait" : "print-landscape"}"><main class="preview-inner">${pages.join("")}</main></body></html>`;
+      const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="${esc(baseHref)}"><title>${esc(title)}</title><style>${styleText}</style><style>${printCss}</style></head><body class="${esc(bodyClass)} ${portrait ? "print-portrait" : "print-landscape"}"><main class="preview-inner">${pages.join("")}</main></body></html>`;
 
       removeHiddenPrintFrame(document);
       const frame = document.createElement("iframe");
       frame.id = "hisHiddenPrintFrame";
-      frame.title = "HIS 시간표 인쇄";
+      frame.title = "HIS timetable print";
       frame.setAttribute("aria-hidden", "true");
       Object.assign(frame.style, {
         position: "fixed", right: "0", bottom: "0", width: "1px", height: "1px",
@@ -136,19 +164,21 @@ export function createPdfExporter(deps = {}) {
       frameDocument.open();
       frameDocument.write(html);
       frameDocument.close();
+
+      // r364의 고정 대기(최대 1.43초)를 제거했습니다.
+      // 실제 iframe 페인트와 짧은 글꼴 준비만 기다린 뒤 즉시 인쇄창을 엽니다.
+      const frameWindow = frame.contentWindow;
+      await waitForFramePaint(frameWindow, deps.sleep);
       try {
         if (frameDocument.fonts?.ready) {
-          await Promise.race([frameDocument.fonts.ready, deps.sleep(800)]);
+          await Promise.race([frameDocument.fonts.ready, deps.sleep(220)]);
         }
       } catch (_) {}
-      await deps.sleep(180);
 
       deps.setPreviewMeta(deps.previewMetaText(entities));
       deps.showRenderOverlay("인쇄창을 여는 중입니다…");
-      await deps.sleep(450);
       deps.hideRenderOverlay();
 
-      const frameWindow = frame.contentWindow;
       let cleaned = false;
       const cleanup = () => {
         if (cleaned) return;
@@ -159,6 +189,9 @@ export function createPdfExporter(deps = {}) {
       setTimeout(cleanup, 60000);
       frameWindow.focus();
       frameWindow.print();
+
+      const elapsed = Math.round((typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt);
+      console.info(`[PDF prepare:r365] ${elapsed}ms · pages=${pages.length}`);
     } catch (error) {
       console.error("[hidden iframe print failed]", error);
       deps.hideRenderOverlay();

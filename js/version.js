@@ -5,7 +5,7 @@
 // HIS_RUNTIME_ASSET_VERSION is intentionally separate: a release may change
 // only a few modules, so unchanged files can keep their previous cache URL.
 // This prevents every patch from containing nearly the entire application.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-07-15-print-output-hotfix-r364");
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-07-15-print-usability-r365");
 export const ASSET_VERSION = String(globalThis.HIS_RUNTIME_ASSET_VERSION || APP_VERSION);
 
 export function versioned(path) {

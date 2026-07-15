@@ -13,8 +13,8 @@ const css = read("timetable-print.css");
 const app = read("js/timetable-print-app.js");
 const semester = read("js/timetable-print-semester.js");
 
-assert.match(html, /<link rel="stylesheet" href="timetable-print\.css\?v=2026-07-15-print-module-boundary-r359">/);
-assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-output-hotfix-r364"><\/script>/);
+assert.match(html, /<link rel="stylesheet" href="timetable-print\.css\?v=2026-07-15-print-usability-r365">/);
+assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-usability-r365"><\/script>/);
 assert.doesNotMatch(html, /<script type="module">[\s\S]*?<\/script>/, "large inline module must not return");
 assert.doesNotMatch(html, /:root\{--nav:/, "main print stylesheet must stay external");
 assert.match(html, /<style id="printPageStyle">@page\{size:/, "runtime page style element must remain available");
@@ -72,8 +72,8 @@ for (const importPath of ["./auth.js?", "./state.js?", "./local-dev.js?", "./con
 }
 assert.doesNotMatch(app, /from "\.\/js\//, "external module must not resolve to js/js/*");
 assert.match(app, /from "\.\/timetable-print-word-layout\.js\?v=2026-07-15-word-layout-r362"/);
-assert.match(app, /from "\.\/timetable-print-pdf\.js\?v=2026-07-15-print-output-hotfix-r364"/);
-assert.match(app, /const VERSION = "2026-07-15-print-output-hotfix-r364"/);
+assert.match(app, /from "\.\/timetable-print-pdf\.js\?v=2026-07-15-print-usability-r365"/);
+assert.match(app, /const VERSION = "2026-07-15-print-usability-r365"/);
 assert.doesNotMatch(app, /function (?:allocateProportionalHeights|card3x3Dimensions|cardGridDimensions|docxCellSize|wordSpanWidth)\(/, "Word layout helpers must stay in the pure module");
 
 const names = [...app.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]);

@@ -90,10 +90,10 @@ assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-se
 assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
 assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-15-timetable-loading-hotfix-r358/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-15-print-output-hotfix-r364/);
-assert.match(printHtml, /<span class="badge">r364<\/span>/);
-assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-output-hotfix-r364/);
-assert.match(printApp, /const VERSION = "2026-07-15-print-output-hotfix-r364"/);
+assert.match(version, /2026-07-15-print-usability-r365/);
+assert.match(printHtml, /<span class="badge">r365<\/span>/);
+assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
+assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
 
 const importMapMatch = html.match(/<script type="importmap">\s*([\s\S]*?)\s*<\/script>/);
 assert.ok(importMapMatch, "timetable import map missing");
@@ -125,6 +125,7 @@ const regressionTests = [
   "test-timetable-print-export-modules.mjs",
   "test-timetable-print-word-layout.mjs",
   "test-timetable-print-operational-data.mjs",
+  "test-timetable-print-usability.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });

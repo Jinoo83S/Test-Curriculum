@@ -91,7 +91,7 @@ assert.equal(entrySem2.subject, "미적분 I");
 assert.equal(entrySem2.teacher, "Teacher B");
 
 assert.match(html, /<select id="semester"><option value="1">1학기<\/option><option value="2">2학기<\/option><\/select>/);
-assert.match(html, /timetable-print-app\.js\?v=2026-07-15-print-output-hotfix-r364/);
+assert.match(html, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(app, /subscribeDomains\(\["classes","timetable","rooms","rosters","templates"\]\)/);
 assert.match(app, /semester:selectedSemester\(\)/);
 assert.match(app, /semester:s\.semester/);

@@ -588,3 +588,9 @@ body.print-portrait #printPageStyle::after{content:""}
 #format,#paper{min-width:0;max-width:100%}
 /* r298: 출력 안내 문구 정리 - 용지 표기는 가로/세로만 표시합니다. */
 .render-overlay{z-index:9999!important}
+
+
+/* r365: 화면 미리보기에서도 영문명을 PDF·Word와 동일하게 표시 */
+@media screen{
+  .overview-wide .field-english-inline{display:block!important}
+}

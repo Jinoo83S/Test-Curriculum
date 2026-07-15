@@ -14,7 +14,7 @@ import { downloadBlobFile, downloadTextFile, safeFilePart } from "./timetable-pr
 import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=2026-07-15-print-modules-r361";
 import { createDocxBuilder } from "./timetable-print-word.js?v=2026-07-15-print-modules-r361";
 import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=2026-07-15-print-modules-r361";
-import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-output-hotfix-r364";
+import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-usability-r365";
 import {
   allocateProportionalHeights,
   card3x3Dimensions,
@@ -24,7 +24,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-15-print-output-hotfix-r364";
+const VERSION = "2026-07-15-print-usability-r365";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -68,6 +68,7 @@ const SPLIT_FONT = {
 };
 const STORE_KEY = "his_print_designer_profiles_v2";
 const LAST_KEY = "his_print_designer_last_profile_v2";
+const LAST_SEMESTER_KEY = "his_print_designer_last_semester_v1";
 const LEGACY_STORE_KEYS = ["his_print_designer_profiles_r246","his_print_designer_profiles_r244","his_print_designer_profiles_r243","his_print_designer_profiles_r242","his_print_designer_profiles_r241","his_print_designer_profiles_r240"];
 const LEGACY_LAST_KEYS = ["his_print_designer_last_profile_r246","his_print_designer_last_profile_r244","his_print_designer_last_profile_r243","his_print_designer_last_profile_r242","his_print_designer_last_profile_r241","his_print_designer_last_profile_r240"];
 const FIRESTORE_SETTINGS_REF = doc(db, "boards", "printDesignerProfiles");
@@ -189,8 +190,22 @@ function sortClassLabels(labels=[]) {
 }
 function classLabelFromKey(k="") { const n=normalizeClassKey(k); const m=n.match(/^(\d{1,2})[:\-]?(.+)$/); return m ? `${Number(m[1])}${m[2].toUpperCase()}` : clean(k).replace(":",""); }
 function splitTeachers(v="") { return unique(Array.isArray(v) ? v : clean(v).split(/[,，、\/]+/)); }
-function selectedSemester() { return normalizePrintSemester($("semester")?.value || "1"); }
+function readRememberedSemester(fallback="") {
+  try {
+    const stored = clean(localStorage.getItem(LAST_SEMESTER_KEY));
+    if (stored === "1" || stored === "2") return stored;
+  } catch {}
+  return fallback ? normalizePrintSemester(fallback) : "";
+}
+function rememberSemester(value=selectedSemester()) {
+  const semester = normalizePrintSemester(value);
+  try { localStorage.setItem(LAST_SEMESTER_KEY, semester); } catch {}
+  return semester;
+}
+function selectedSemester() { return normalizePrintSemester($("semester")?.value || readRememberedSemester("1") || "1"); }
 function selectedSemesterLabel() { return printSemesterLabel(selectedSemester()); }
+function selectedSemesterTitle() { return `Semester ${selectedSemester()}`; }
+function individualTimetableTitle(label="") { return `${clean(label)} Timetable · ${selectedSemesterTitle()}`; }
 function templateMap() { const source=appState.templates?.templates || []; if (source !== printTemplateMapSource) { printTemplateMapSource=source; printTemplateMapCache=buildPrintTemplateMap(source); } return printTemplateMapCache; }
 function semesterCardValues(c, e={}) { return resolveSemesterCardValues(c || {}, e || {}, templateMap(), selectedSemester()); }
 function semesterEntryValues(e) { return resolveSemesterEntryValues(e || {}, templateMap(), selectedSemester()); }
@@ -449,7 +464,9 @@ function findProfileSettings(store, key=profileKey()) {
 function getSettings() {
   const store = readStore();
   const found = findProfileSettings(store, profileKey());
-  return {...defaultSettings(), ...(found||{})};
+  const settings = {...defaultSettings(), ...(found||{})};
+  settings.semester = readRememberedSemester(settings.semester) || normalizePrintSemester(settings.semester || "1");
+  return settings;
 }
 function splitStylesFromDom() {
   const out = {};
@@ -644,6 +661,7 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus();
   if ($("fontMode")) $("fontMode").value=s.fontMode || "system";
   applyFontMode(s.fontMode || "system");
+  if($("semester")) $("semester").value = readRememberedSemester(s.semester) || normalizePrintSemester(s.semester || "1");
   if($("previewMode")) $("previewMode").value=s.previewMode || "sample";
   if($("headerLeft")) $("headerLeft").value=s.headerLeft || "";
   if($("headerRight")) $("headerRight").value=s.headerRight || "";
@@ -902,22 +920,12 @@ function conciseEnglishLabel(eng="") {
   return "";
 }
 function shouldShowEnglishLabel(item={}, splitCount=1) {
-  const eng = clean(item.english);
-  if (!eng) return false;
-  const subj = clean(item.subject);
-  if (!subj) return true;
-  if (isClassOfficialPrint()) {
-    if (layoutMode() === "overview") return false;
-    if (Number(splitCount || 1) >= 2) return false;
-    return !!conciseEnglishLabel(eng);
-  }
-  return true;
+  // 미리보기·PDF·Word가 같은 표시 규칙을 사용합니다.
+  // 분할 수나 출력 대상 때문에 영문명을 임의로 숨기지 않습니다.
+  return !!clean(item.english);
 }
 function englishForCard(item={}, splitCount=1) {
-  const eng = clean(item.english);
-  if (!eng) return "";
-  if (isClassOfficialPrint()) return shouldShowEnglishLabel(item, splitCount) ? (conciseEnglishLabel(eng) || eng) : "";
-  return eng;
+  return shouldShowEnglishLabel(item, splitCount) ? clean(item.english) : "";
 }
 function fieldHtml(item, f, settings) { const v = clean(item[f.key]); if (!v || settings.enabled === false) return ""; return `<span class="field-item field-${f.key} pos-${esc(settings.pos||f.pos)} ${settings.bold?"bold":""}" ${fieldFontStyle(settings, f.key)}>${esc(v)}</span>`; }
 function subjectEnglishHtml(item, fields, splitCount=1) { const subjCfg=fields.subject || {}; const engCfg=fields.english || {}; const subj=clean(item.subject); const eng=englishForCard(item, splitCount); const showSubj = subj && subjCfg.enabled !== false; const showEng = eng && engCfg.enabled !== false; if (!showSubj && !showEng) return ""; const pos = subjCfg.pos || "mc"; const bold = subjCfg.bold ? "bold" : ""; return `<span class="field-item field-subject-group pos-${esc(pos)} ${bold}">${showSubj?`<span class="field-subject" ${fieldFontStyle(subjCfg,"subject")}>${esc(subj)}</span>`:""}${showEng?`<span class="field-english-inline ${engCfg.bold?"bold":""}" ${fieldFontStyle(engCfg,"english")}>${esc(eng)}</span>`:""}</span>`; }
@@ -1037,8 +1045,14 @@ function todayLabel() { return new Date().toLocaleDateString("ko-KR"); }
 function headerLeftText(defaultText="") { const v=clean($("headerLeft")?.value || ""); return v || clean(defaultText); }
 function headerRightText(defaultText="") { const v=clean($("headerRight")?.value || ""); return v || clean(defaultText); }
 function titleRowHtml(title, left="", right="") { return `<div class="print-title-row"><div class="title-note title-note-left">${esc(left)}</div><h3>${esc(title)}</h3><div class="title-note title-note-right">${esc(right)}</div></div>`; }
-function pageForEntity(ent) { const title=`${ent.label} ${selectedSemesterLabel()} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
-function overviewTitle() { const base=targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; return `${selectedSemesterLabel()} ${base}`; }
+function pageForEntity(ent) { const title=individualTimetableTitle(ent.label); const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
+function overviewTitle() {
+  const base = targetType()==="class" ? "Class Timetable Overview"
+    : targetType()==="teacher" ? "Teacher Timetable Overview"
+    : targetType()==="room" ? "Room Timetable Overview"
+    : "Student Timetable";
+  return `${base} · ${selectedSemesterTitle()}`;
+}
 function balancedChunkList(list, maxSize) {
   const arr = Array.isArray(list) ? list : [];
   const max = Math.max(1, Number(maxSize) || 1);
@@ -1677,7 +1691,7 @@ function individualExportMatrix(ent, allEntries=visibleEntriesForScope()) {
     grid.push(row);
   });
   return {
-    title: `${ent.label} ${selectedSemesterLabel()} 시간표`,
+    title: individualTimetableTitle(ent.label),
     sub: ent.sub || "",
     leftNote: headerLeftText(ent.sub || ""),
     rightNote: headerRightText(todayLabel()),
@@ -2691,6 +2705,7 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
  }
  if (e.target.id === "outputKind") return;
  if (e.target.id === "semester") {
+   rememberSemester(e.target.value);
    scopeMemory[currentScopeType] = captureScopeState();
    buildScopeUi();
    restoreScopeState(scopeMemory[currentScopeType]);
