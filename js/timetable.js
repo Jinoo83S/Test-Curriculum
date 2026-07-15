@@ -1,20 +1,20 @@
  // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-school-year-path-guard-r353";
-import { versioned } from "./version.js?v=2026-07-15-school-year-path-guard-r353";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-school-year-path-guard-r353";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-school-year-path-guard-r353";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
-import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
-import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-school-year-path-guard-r353";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
+import { versioned } from "./version.js?v=2026-07-15-teacher-id-migration-r354";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-teacher-id-migration-r354";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-teacher-id-migration-r354";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-teacher-id-migration-r354";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -24,10 +24,10 @@ import {
   conflictDetailBetween as occConflictDetailBetween,
   formatClassLabelFromKey as occFormatClassLabelFromKey,
   normalizeClassKey as occNormalizeClassKey
-} from "./timetable-occupancy.js?v=2026-07-15-school-year-path-guard-r353";
-import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-15-school-year-path-guard-r353";
-import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-school-year-path-guard-r353";
-import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-school-year-path-guard-r353";
+} from "./timetable-occupancy.js?v=2026-07-15-teacher-id-migration-r354";
+import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-15-teacher-id-migration-r354";
+import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-teacher-id-migration-r354";
+import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-teacher-id-migration-r354";
 
 
 const [
@@ -536,11 +536,13 @@ const undoHandlers = createTimetableUndoHandlers({
     entries: ttDomain().entries || [],
     config: ttDomain().config || {},
     teacherConstraints: ttDomain().teacherConstraints || {},
+    teacherConstraintsById: ttDomain().teacherConstraintsById || {},
   }),
   restoreSnapshot: snapshot => {
     ttDomain().entries = snapshot.entries || [];
     ttDomain().config = snapshot.config || ttDomain().config || {};
     ttDomain().teacherConstraints = snapshot.teacherConstraints || {};
+    ttDomain().teacherConstraintsById = snapshot.teacherConstraintsById || {};
   },
   scheduleSave,
   recomputeConflicts,

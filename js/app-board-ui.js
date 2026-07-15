@@ -1,11 +1,11 @@
 // ================================================================
 // app-board-ui.js · Curriculum board tabs / export / reset UI
 // ================================================================
-import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { schoolYearLabel } from "./school-year.js?v=2026-07-15-school-year-path-guard-r353";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState, saveNow } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
-import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-school-year-path-guard-r353";
+import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { schoolYearLabel } from "./school-year.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState, saveNow } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-teacher-id-migration-r354";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],

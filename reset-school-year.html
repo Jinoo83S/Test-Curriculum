@@ -92,10 +92,10 @@
 </main>
 
 <script type="module">
-  import { auth, db, getSchoolYearRefs, assertSchoolYearWriteContext, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR } from "./js/config.js?v=2026-07-15-school-year-path-guard-r353";
-  import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-school-year-path-guard-r353";
-  import { schoolYearLabel } from "./js/school-year.js?v=2026-07-15-school-year-path-guard-r353";
-  import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-school-year-path-guard-r353";
+  import { auth, db, getSchoolYearRefs, assertSchoolYearWriteContext, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR } from "./js/config.js?v=2026-07-15-teacher-id-migration-r354";
+  import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-teacher-id-migration-r354";
+  import { schoolYearLabel } from "./js/school-year.js?v=2026-07-15-teacher-id-migration-r354";
+  import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-teacher-id-migration-r354";
   import { getDocs, getDoc, writeBatch, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const $ = id => document.getElementById(id);

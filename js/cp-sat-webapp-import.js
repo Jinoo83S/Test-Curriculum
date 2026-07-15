@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-school-year-path-guard-r353";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-teacher-id-migration-r354";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -232,6 +232,16 @@ function teacherNamesForCardPayload(card = {}, entry = {}, roster = new Set()) {
     entry.teacherName
   ], roster);
 }
+function canonicalTeacherIdsForEntryPayload(entry = {}, cardById = new Map()) {
+  const cardIds = cardIdsFromEntryForPayload(entry);
+  const fromCards = unique(cardIds.flatMap(id => {
+    const card = cardById.get(id);
+    return Array.isArray(card?.teacherIds) ? card.teacherIds.map(cleanLocal).filter(Boolean) : [];
+  }));
+  if (fromCards.length) return fromCards;
+  return unique(Array.isArray(entry.teacherIds) ? entry.teacherIds.map(cleanLocal).filter(Boolean) : []);
+}
+
 function canonicalTeacherNamesForEntryPayload(entry = {}, cardById = new Map(), roster = new Set()) {
   const ids = cardIdsFromEntryForPayload(entry);
   const fromCards = ids.flatMap(id => {
@@ -276,7 +286,9 @@ function normalizeTeacherReferencesForPayload(data = {}) {
     }
   });
   asArray(tt.entries).forEach(entry => {
+    const ids = canonicalTeacherIdsForEntryPayload(entry, cardById);
     const names = canonicalTeacherNamesForEntryPayload(entry, cardById, roster);
+    entry.teacherIds = ids;
     entry.teacherName = names.join(", ");
     if (names.length) entry.teacherNames = names;
     else delete entry.teacherNames;
@@ -1098,10 +1110,14 @@ export function setupCpSatWebappImport(ctx = {}) {
     for (const key of ["ttcardId", "templateId", "gradeKey", "groupId", "unitId", "groupName", "teacherName", "roomRule"]) {
       if ((normalized[key] == null || normalized[key] === "") && raw[key] != null) normalized[key] = raw[key];
     }
-    for (const key of ["ttcardIds", "templateIds", "gradeKeys", "audienceClassKeys"]) {
+    for (const key of ["ttcardIds", "templateIds", "gradeKeys", "audienceClassKeys", "teacherIds", "teacherNames"]) {
       if (Array.isArray(raw[key]) && raw[key].length) normalized[key] = unique(raw[key]);
     }
 
+    const tt = ttDomain?.() || appState?.timetable || {};
+    const cards = asArray(tt.ttcards || tt.ttCards || tt.cards);
+    const cardById = new Map(cards.map(c => [cleanLocal(c?.id), c]).filter(([id]) => id));
+    normalized.teacherIds = canonicalTeacherIdsForEntryPayload(normalized, cardById);
     const canonicalTeacherName = canonicalTeacherNameForSolvedEntry(normalized);
     if (canonicalTeacherName) {
       normalized.teacherName = canonicalTeacherName;

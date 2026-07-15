@@ -1,10 +1,10 @@
 // ================================================================
 // templates.js · Template/Group Mutations + All Template Rendering
 // ================================================================
-import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
 
 const tDomain   = () => appState.templates;
 const templates = () => tDomain().templates;
@@ -31,10 +31,16 @@ export function getSemesterTemplateData(tplOrId, semKey) {
   const item = typeof tplOrId === "string" ? getTemplateById(tplOrId) : tplOrId;
   if (!item) return { nameKo:"", nameEn:"", teacher:"", language:"Both" };
   const p = semKey === "sem2" ? "sem2" : "sem1";
+  const overrideIds = Array.isArray(item[`${p}TeacherIds`]) ? item[`${p}TeacherIds`] : [];
+  const baseIds = Array.isArray(item.teacherIds) ? item.teacherIds : [];
+  const overrideNames = Array.isArray(item[`${p}TeacherNames`]) ? item[`${p}TeacherNames`] : [];
+  const baseNames = Array.isArray(item.teacherNames) ? item.teacherNames : [];
   return {
     nameKo:   clean(item[`${p}NameKo`])  || clean(item.nameKo)  || clean(item.nameEn),
     nameEn:   clean(item[`${p}NameEn`])  || clean(item.nameEn)  || clean(item.nameKo),
     teacher:  clean(item[`${p}Teacher`]) || clean(item.teacher),
+    teacherIds: overrideIds.length ? [...overrideIds] : [...baseIds],
+    teacherNames: overrideNames.length ? [...overrideNames] : [...baseNames],
     language: item.language || "Both"
   };
 }
@@ -55,13 +61,29 @@ export function splitTeacherNames(str) {
   return clean(str).split(/[,，·]+/).map(s => s.trim()).filter(Boolean);
 }
 
-/** Return deduplicated list of all teacher names on this template */
+function teacherNameById(teacherId) {
+  const id = clean(teacherId);
+  return clean((appState.teachers?.teachers || []).find(t => t.id === id)?.name);
+}
+
+/** Canonical teacher IDs used by this template across both semesters. */
+export function getTemplateTeacherIds(item) {
+  if (!item) return [];
+  const sem1 = getSemesterTemplateData(item, "sem1");
+  const sem2 = getSemesterTemplateData(item, "sem2");
+  return uniqueOrdered([...(sem1.teacherIds || []), ...(sem2.teacherIds || [])].map(clean).filter(Boolean));
+}
+
+/** Return current teacher names from canonical IDs, with legacy snapshots as fallback. */
 export function getTemplateTeacherNames(item) {
-  const all = [
+  if (!item) return [];
+  const ids = getTemplateTeacherIds(item);
+  const fromIds = ids.map(teacherNameById).filter(Boolean);
+  const legacy = [
     getSemesterTemplateData(item, "sem1").teacher,
     getSemesterTemplateData(item, "sem2").teacher,
   ].flatMap(splitTeacherNames);
-  return uniqueOrdered(all);
+  return uniqueOrdered([...fromIds, ...legacy]);
 }
 
 export function getTemplateTeacherSummary(item) {
@@ -110,16 +132,20 @@ export function syncSchoolLevels() {
   if (changed) scheduleSave("templates");
 }
 
-/** Return list of subject titles where this teacher name appears in any template */
-export function getSubjectsForTeacher(teacherName) {
-  const name = clean(teacherName);
-  if (!name) return [];
+/** Return subjects linked to a canonical teacher ID. A name is accepted for legacy callers. */
+export function getSubjectsForTeacher(teacherIdentity) {
+  const raw = clean(teacherIdentity);
+  if (!raw) return [];
+  const teacher = (appState.teachers?.teachers || []).find(t => t.id === raw)
+    || (appState.teachers?.teachers || []).find(t => clean(t.name) === raw);
+  const teacherId = clean(teacher?.id);
+  const teacherName = clean(teacher?.name || raw);
   const seen = new Set();
   const result = [];
   templates().forEach(t => {
-    const allNames = [t.teacher, t.sem1Teacher, t.sem2Teacher]
-      .flatMap(splitTeacherNames);
-    if (allNames.includes(name)) {
+    const ids = getTemplateTeacherIds(t);
+    const legacyNames = [t.teacher, t.sem1Teacher, t.sem2Teacher].flatMap(splitTeacherNames);
+    if ((teacherId && ids.includes(teacherId)) || legacyNames.includes(teacherName)) {
       const title = getTemplateCardTitle(t);
       if (title && !seen.has(title)) { seen.add(title); result.push(title); }
     }

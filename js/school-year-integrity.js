@@ -4,7 +4,7 @@
 // Pure validation logic. It does not read Firestore directly and can be
 // exercised with exported diagnostics or local-development snapshots.
 
-export const SCHOOL_YEAR_INTEGRITY_BUILD = "2026-07-15-school-year-path-guard-r353";
+export const SCHOOL_YEAR_INTEGRITY_BUILD = "2026-07-15-teacher-id-migration-r354";
 export const INTEGRITY_SCHEMA_VERSION = 1;
 
 const COPY_COUNT_KEYS = [
@@ -209,6 +209,7 @@ export function validateWorkspaceSnapshot(raw = {}, options = {}) {
   const templateIds = new Set(templates.map(item => clean(item.id)).filter(Boolean));
   const templateById = new Map(templates.map(item => [clean(item.id), item]).filter(([id]) => id));
   const teacherItems = asArray(snapshot.teachers.teachers);
+  const teacherIds = new Set(teacherItems.map(item => clean(item.id)).filter(Boolean));
   const teacherNames = new Set(teacherItems.map(item => clean(item.name)).filter(Boolean));
   const roomItems = asArray(snapshot.rooms.rooms);
   const roomIds = new Set(roomItems.map(item => clean(item.id)).filter(Boolean));
@@ -272,17 +273,28 @@ export function validateWorkspaceSnapshot(raw = {}, options = {}) {
     });
   });
 
+  const validateTeacherIds = (ids, context, meta = {}) => {
+    uniqueStrings(ids).forEach(teacherId => {
+      if (!teacherIds.has(teacherId)) issues.error("teacher-id-missing", `${context}이 존재하지 않는 교사 ID를 참조합니다: ${teacherId}`, { ...meta, teacherId });
+    });
+  };
+
   roomItems.forEach(room => {
     const classId = clean(room.homeRoomClassId || room.homeRoomId);
     if (classId && !classIds.has(classId)) issues.error("room-homeroom-class-missing", `교실 ${clean(room.name)}의 홈룸 학급이 존재하지 않습니다: ${classId}`, { roomId: clean(room.id), classId });
-    splitTeacherNames(room.teacherName).forEach(name => {
+    validateTeacherIds([room.teacherId], `교실 ${clean(room.name)}의 담당교사`, { roomId: clean(room.id) });
+    if (!clean(room.teacherId)) splitTeacherNames(room.teacherName).forEach(name => {
       if (!teacherNames.has(name)) issues.warn("room-teacher-name-missing", `교실 ${clean(room.name)}의 담당교사명이 교사 목록에 없습니다: ${name}`, { roomId: clean(room.id), teacherName: name });
     });
   });
 
   templates.forEach(template => {
-    splitTeacherNames(template.teacher).forEach(name => {
-      if (!teacherNames.has(name)) issues.warn("template-teacher-name-missing", `과목카드 ${clean(template.nameKo || template.nameEn || template.id)}의 교사명이 교사 목록에 없습니다: ${name}`, { templateId: clean(template.id), teacherName: name });
+    const templateLabel = clean(template.nameKo || template.nameEn || template.id);
+    validateTeacherIds([...(asArray(template.teacherIds)), ...(asArray(template.sem1TeacherIds)), ...(asArray(template.sem2TeacherIds))], `과목카드 ${templateLabel}`, { templateId: clean(template.id) });
+    asArray(template.compoundParts).forEach(part => validateTeacherIds(asArray(part.teacherIds), `복합과목 ${templateLabel} / ${clean(part.nameKo || part.nameEn || part.id)}`, { templateId: clean(template.id), partId: clean(part.id) }));
+    const hasAnyIds = asArray(template.teacherIds).length || asArray(template.sem1TeacherIds).length || asArray(template.sem2TeacherIds).length;
+    if (!hasAnyIds) splitTeacherNames(template.teacher).forEach(name => {
+      if (!teacherNames.has(name)) issues.warn("template-teacher-name-missing", `과목카드 ${templateLabel}의 교사명이 교사 목록에 없습니다: ${name}`, { templateId: clean(template.id), teacherName: name });
     });
   });
 
@@ -310,7 +322,8 @@ export function validateWorkspaceSnapshot(raw = {}, options = {}) {
       if (!parent) issues.error("compound-parent-template-missing", `복합 시간표 카드의 원본 과목카드가 없습니다: ${parentId}`, { cardId, templateId: parentId });
       else if (partId && !asArray(parent.compoundParts).some(part => clean(part.id) === partId)) issues.error("compound-part-missing", `복합 시간표 카드의 세부 과목이 원본에 없습니다: ${partId}`, { cardId, templateId: parentId, partId });
     }
-    uniqueStrings([card.teacherName, ...asArray(card.teachers)]).flatMap(splitTeacherNames).forEach(name => {
+    validateTeacherIds(asArray(card.teacherIds), `시간표 카드 ${clean(card.subject || card.label || cardId)}`, { cardId });
+    if (!asArray(card.teacherIds).length) uniqueStrings([card.teacherName, ...asArray(card.teachers)]).flatMap(splitTeacherNames).forEach(name => {
       if (!teacherNames.has(name) && clean(card.teacherMode) !== "none") issues.warn("ttcard-teacher-name-missing", `시간표 카드 ${clean(card.subject || card.label || cardId)}의 교사명이 교사 목록에 없습니다: ${name}`, { cardId, teacherName: name });
     });
   });
@@ -368,6 +381,7 @@ export function validateWorkspaceSnapshot(raw = {}, options = {}) {
     Object.keys(asObject(entry.roomAssignmentsByTtCardId)).forEach(cardId => {
       if (!cardIds.has(cardId)) issues.error("entry-room-map-card-missing", `교실 배정표가 존재하지 않는 시간표 카드를 참조합니다: ${cardId}`, { entryId, cardId });
     });
+    validateTeacherIds(asArray(entry.teacherIds), `시간표 배치 ${entryId}`, { entryId });
     const groupId = clean(entry.groupId);
     if (groupId && !groupIds.has(groupId)) issues.error("entry-group-missing", `시간표 배치가 존재하지 않는 그룹을 참조합니다: ${groupId}`, { entryId, groupId });
   });

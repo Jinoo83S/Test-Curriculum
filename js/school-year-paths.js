@@ -2,7 +2,7 @@
 // school-year-paths.js · Single source of truth for academic-year paths
 // ================================================================
 
-export const SCHOOL_YEAR_PATHS_BUILD = "2026-07-15-school-year-path-guard-r353";
+export const SCHOOL_YEAR_PATHS_BUILD = "2026-07-15-teacher-id-migration-r354";
 export const LEGACY_PATH_YEAR = "2026";
 export const SCHOOL_YEAR_DOMAIN_NAMES = Object.freeze([
   "curriculum", "templates", "classes", "teachers", "rosters", "rooms", "timetable", "main"

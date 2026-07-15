@@ -1,12 +1,12 @@
 // ================================================================
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
-import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
-import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-path-guard-r353";
-export { getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-path-guard-r353";
-import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
+import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
+import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-teacher-id-migration-r354";
+export { getTtCardById } from "./ttcards.js?v=2026-07-15-teacher-id-migration-r354";
+import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];
@@ -137,6 +137,13 @@ export function getCreditsForTtCard(card) {
     .find(r => r.sem1TemplateId === card.templateId || r.sem2TemplateId === card.templateId);
   if (isChanCheCategory(row?.category)) return 1;
   return getEffectiveCredit(row);
+}
+
+export function getTeacherIdsForTtCard(card) {
+  if (!card || clean(card.teacherMode) === "none") return [];
+  if (Array.isArray(card.teacherIds) && card.teacherIds.length) return [...new Set(card.teacherIds.map(clean).filter(Boolean))];
+  const tpl = getTemplateById(card.templateId);
+  return tpl ? getTemplateTeacherIds(tpl) : [];
 }
 
 export function getTeachersForTtCard(card) {
@@ -353,7 +360,9 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
   const first = validCards[0];
   const templateIds = [...new Set(validCards.map(c => c.templateId).filter(Boolean))];
   const gradeKeys = [...new Set(validCards.map(c => c.gradeKey).filter(Boolean))];
-  const teacherName = [...new Set(validCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))].join(",");
+  const teacherIds = [...new Set(validCards.flatMap(c => getTeacherIdsForTtCard(c)).map(clean).filter(Boolean))];
+  const teacherNames = [...new Set(validCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))];
+  const teacherName = teacherNames.join(",");
   return {
     day, period,
     sectionIdx: first.sectionIdx ?? 0,
@@ -366,6 +375,8 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
     gradeKeys,
     templateId: templateIds[0] || first.templateId,
     gradeKey: gradeKeys[0] || first.gradeKey,
+    teacherIds,
+    teacherNames,
     teacherName,
     audienceClassKeys: [...new Set(validCards.flatMap(c => getTtCardClassInfos(c).map(classKey)).filter(Boolean))],
     // 학생 key는 시간표 배치/충돌 기준에서 제외합니다.

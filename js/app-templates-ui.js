@@ -1,8 +1,8 @@
 // ================================================================
 // app-templates-ui.js · Template sidebar/form/manager UI wiring
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState, scheduleSave, normalizeTemplate } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState, scheduleSave, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
 import {
   renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
   addTemplateManagerRow, getOrCreateDraft, resetDraft, commitDraft,
@@ -14,7 +14,7 @@ import {
   setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
+} from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
 const $ = id => document.getElementById(id);
 
 export function setupAppTemplatesUi({
@@ -264,6 +264,7 @@ export function setupAppTemplatesUi({
     if (idx >= 0) tpls[idx] = data;
     else tpls.push(data);
 
+    synchronizeTeacherIdentityState({ persist:true, reason:"template-form-save" });
     resetDraft();
     resetTemplateForm();
     scheduleSave("templates");

@@ -1,14 +1,14 @@
 // ================================================================
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
-} from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
-import { getClassCount } from "./rosters.js?v=2026-07-15-school-year-path-guard-r353";
+} from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
+import { getClassCount } from "./rosters.js?v=2026-07-15-teacher-id-migration-r354";
 
 const TTCARD_TEACHER_MODES = new Set(["homeroom", "representative", "none"]);
 const TTCARD_TEACHER_MODE_LABELS = {
@@ -24,6 +24,7 @@ function getTtCardTeacherOptions() {
   const raw = appState.timetable?.ttcardTeacherOptions || {};
   return {
     mode: normalizeTeacherOptionMode(raw.mode),
+    representativeTeacherId: clean(raw.representativeTeacherId),
     representativeTeacher: clean(raw.representativeTeacher),
   };
 }
@@ -35,6 +36,10 @@ function setTtCardTeacherOptions(patch = {}) {
   };
   appState.timetable.ttcardTeacherOptions.mode = normalizeTeacherOptionMode(appState.timetable.ttcardTeacherOptions.mode);
   appState.timetable.ttcardTeacherOptions.representativeTeacher = clean(appState.timetable.ttcardTeacherOptions.representativeTeacher);
+  if (Object.prototype.hasOwnProperty.call(patch, "representativeTeacher")) {
+    appState.timetable.ttcardTeacherOptions.representativeTeacherId = "";
+  }
+  synchronizeTeacherIdentityState({ persist:false, reason:"ttcard-teacher-options" });
   scheduleSave("timetable");
 }
 function normalizeClassLabel(label) {
@@ -58,6 +63,13 @@ function getAllTeacherNames() {
       ...splitTeacherNames(tpl.sem2Teacher),
     ]);
   return uniqueNames([...fromTeacherTable, ...fromTemplates]).sort((a, b) => a.localeCompare(b, "ko"));
+}
+
+function teacherIdsForNames(names = []) {
+  const byName = new Map((appState.teachers?.teachers || [])
+    .filter(t => clean(t.id) && clean(t.name))
+    .map(t => [clean(t.name).toLowerCase(), clean(t.id)]));
+  return [...new Set((names || []).map(name => byName.get(clean(name).toLowerCase())).filter(Boolean))];
 }
 
 function getGroupDefaultRooms() {
@@ -155,20 +167,21 @@ function getHomeroomTeachersForClassLabels(classLabels = []) {
 function resolveGeneratedTeachers({ templateTeacherName = "", classLabels = [] } = {}) {
   const templateTeachers = splitTeacherNames(templateTeacherName);
   if (templateTeachers.length) {
-    return { teacherName: templateTeachers.join(", "), teachers: templateTeachers, source: "template" };
+    return { teacherIds: teacherIdsForNames(templateTeachers), teacherName: templateTeachers.join(", "), teachers: templateTeachers, source: "template" };
   }
 
   const opts = getTtCardTeacherOptions();
   if (opts.mode === "homeroom") {
     const homeroomTeachers = getHomeroomTeachersForClassLabels(classLabels);
     if (homeroomTeachers.length) {
-      return { teacherName: homeroomTeachers.join(", "), teachers: homeroomTeachers, source: "homeroom" };
+      return { teacherIds: teacherIdsForNames(homeroomTeachers), teacherName: homeroomTeachers.join(", "), teachers: homeroomTeachers, source: "homeroom" };
     }
   }
   if (opts.mode === "representative" && opts.representativeTeacher) {
-    return { teacherName: opts.representativeTeacher, teachers: [opts.representativeTeacher], source: "representative" };
+    const representativeIds = opts.representativeTeacherId ? [opts.representativeTeacherId] : teacherIdsForNames([opts.representativeTeacher]);
+    return { teacherIds: representativeIds, teacherName: opts.representativeTeacher, teachers: [opts.representativeTeacher], source: "representative" };
   }
-  return { teacherName: "", teachers: [], source: "none" };
+  return { teacherIds: [], teacherName: "", teachers: [], source: "none" };
 }
 function normalizeCompoundParts(tpl) {
   if (!tpl || !tpl.isCompound || !Array.isArray(tpl.compoundParts)) return [];
@@ -191,7 +204,8 @@ function getCompoundPartTitle(part, fallbackTitle = "") {
 }
 function getCompoundPartTeacherInfo(part) {
   const names = splitTeacherNames(part?.teacher);
-  return { teacherName: names.join(", "), teachers: names, source: "compound" };
+  const ids = Array.isArray(part?.teacherIds) && part.teacherIds.length ? part.teacherIds : teacherIdsForNames(names);
+  return { teacherIds: [...new Set(ids.map(clean).filter(Boolean))], teacherName: names.join(", "), teachers: names, source: "compound" };
 }
 
 function shouldSkipTimetableCardRow(row) {
@@ -442,6 +456,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     label: existing?.label || "",
     subject: isCompoundPart ? getCompoundPartTitle(compoundPart, baseTitle) : baseTitle,
     subjectEn: isCompoundPart ? (clean(compoundPart.nameEn) || clean(compoundPart.nameKo) || existing?.subjectEn || "") : (tpl?.nameEn || existing?.subjectEn || ""),
+    teacherIds: teacherInfo.teacherIds || [],
     teacherName: teacherInfo.teacherName,
     teachers: teacherInfo.teachers,
     teacherMode: clean(existing?.teacherMode) || (teacherInfo.source === "none" ? "none" : ""),
@@ -470,7 +485,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
-    ["label","teacherName","teachers","teacherMode","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots"].forEach(k => {
+    ["label","teacherIds","teacherName","teachers","teacherMode","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots"].forEach(k => {
       if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
@@ -1072,12 +1087,15 @@ function repairTimetableEntryAudienceFromCards(cards, meta) {
       meta.repairedEntryCount += 1;
       pushCardGenerationIssue(meta, "warning", "entry-audience-repaired", `배치 entry의 audienceClassKeys를 카드 기준으로 보정했습니다.`, { entryId: entry.id, repaired: true });
     }
+    const teacherIds = [...new Set(related.flatMap(card => Array.isArray(card.teacherIds) ? card.teacherIds : []).map(clean).filter(Boolean))];
     const teachers = uniqueNames(related.flatMap(card => [card.teacherName, ...(card.teachers || [])].flatMap(t => splitTeacherNames(t))));
     const joined = teachers.join(", ");
-    if (clean(entry.teacherName) !== joined) {
+    if (!sameArrayValues(entry.teacherIds || [], teacherIds) || clean(entry.teacherName) !== joined) {
+      entry.teacherIds = teacherIds;
+      entry.teacherNames = teachers;
       entry.teacherName = joined;
       meta.repairedEntryCount += 1;
-      pushCardGenerationIssue(meta, "warning", "entry-teacher-repaired", `배치 entry의 teacherName을 카드 기준으로 보정했습니다.`, { entryId: entry.id, repaired: true });
+      pushCardGenerationIssue(meta, "warning", "entry-teacher-repaired", `배치 entry의 교사 ID/이름 스냅샷을 카드 기준으로 보정했습니다.`, { entryId: entry.id, repaired: true });
     }
   });
 }
@@ -1159,6 +1177,7 @@ export function refreshTtCardData() {
   const { cards: nextCards } = validateAndRepairTtCardGeneration(mergedCards, { action: "refresh", previous: before });
   appState.timetable.ttcards = nextCards;
   pruneObsoleteGeneratedTtCardRefs(nextCards, before);
+  synchronizeTeacherIdentityState({ persist:false, reason:"ttcard-refresh" });
   scheduleSave("timetable");
   return nextCards.length;
 }
@@ -1180,6 +1199,11 @@ function updateTtCardField(cardId, field, value) {
     card.studentKeys = [];
   } else if (["classLabels","classKeys","teachers"].includes(field)) {
     card[field] = String(value || "").split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
+    if (field === "teachers") card.teacherIds = [];
+  } else if (field === "teacherName") {
+    card.teacherName = String(value || "").trim();
+    card.teachers = splitTeacherNames(card.teacherName);
+    card.teacherIds = [];
   } else if (field === "credits") {
     card[field] = isChanCheCategory(card.category) ? 1 : (parseFloat(value) || 0);
   } else if (field === "isWholeGrade") {
@@ -1188,9 +1212,11 @@ function updateTtCardField(cardId, field, value) {
     card[field] = value;
   }
   card.manualEdited = true;
+  if (["teacherName","teachers"].includes(field)) {
+    synchronizeTeacherIdentityState({ persist:false, reason:`ttcard-teacher:${cardId}` });
+  }
   scheduleSave("timetable");
 }
-
 
 function arrText(v) {
   return Array.isArray(v) ? v.filter(Boolean).join(", ") : clean(v);

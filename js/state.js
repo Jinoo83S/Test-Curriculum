@@ -1,11 +1,12 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
-import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-school-year-path-guard-r353";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-school-year-path-guard-r353";
+import { refs, db, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
+import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
+import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-teacher-id-migration-r354";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -606,13 +607,17 @@ export function normalizeTemplate(item = {}) {
   const language = ["Korean","English","Both"].includes(item.language) ? item.language : "Both";
   const s1ko=clean(item.sem1NameKo), s1en=clean(item.sem1NameEn), s1te=clean(item.sem1Teacher);
   const s2ko=clean(item.sem2NameKo), s2en=clean(item.sem2NameEn), s2te=clean(item.sem2Teacher);
-  const useSemesterOverrides = Boolean(item.useSemesterOverrides || s1ko || s1en || s1te || s2ko || s2en || s2te);
+  const hasSemesterTeacherIds = (Array.isArray(item.sem1TeacherIds) && item.sem1TeacherIds.length)
+    || (Array.isArray(item.sem2TeacherIds) && item.sem2TeacherIds.length);
+  const useSemesterOverrides = Boolean(item.useSemesterOverrides || s1ko || s1en || s1te || s2ko || s2en || s2te || hasSemesterTeacherIds);
   const compoundParts = Array.isArray(item.compoundParts)
     ? item.compoundParts.map((part, idx) => ({
         id: clean(part?.id) || uid("part"),
         nameKo: clean(part?.nameKo),
         nameEn: clean(part?.nameEn),
         teacher: clean(part?.teacher),
+        teacherIds: Array.isArray(part?.teacherIds) ? uniqueOrdered(part.teacherIds.map(clean).filter(Boolean)) : [],
+        teacherNames: Array.isArray(part?.teacherNames) ? uniqueOrdered(part.teacherNames.map(clean).filter(Boolean)) : [],
         credits: clean(part?.credits) || (idx === 0 ? "" : "")
       })).filter(part => part.nameKo || part.nameEn || part.teacher || part.credits)
     : [];
@@ -620,8 +625,14 @@ export function normalizeTemplate(item = {}) {
   return {
     id: item.id || uid("tpl"), language, useSemesterOverrides,
     nameKo: clean(item.nameKo), nameEn: clean(item.nameEn), teacher: clean(item.teacher),
+    teacherIds: Array.isArray(item.teacherIds) ? uniqueOrdered(item.teacherIds.map(clean).filter(Boolean)) : [],
+    teacherNames: Array.isArray(item.teacherNames) ? uniqueOrdered(item.teacherNames.map(clean).filter(Boolean)) : [],
     sem1NameKo:s1ko, sem1NameEn:s1en, sem1Teacher:s1te,
+    sem1TeacherIds: Array.isArray(item.sem1TeacherIds) ? uniqueOrdered(item.sem1TeacherIds.map(clean).filter(Boolean)) : [],
+    sem1TeacherNames: Array.isArray(item.sem1TeacherNames) ? uniqueOrdered(item.sem1TeacherNames.map(clean).filter(Boolean)) : [],
     sem2NameKo:s2ko, sem2NameEn:s2en, sem2Teacher:s2te,
+    sem2TeacherIds: Array.isArray(item.sem2TeacherIds) ? uniqueOrdered(item.sem2TeacherIds.map(clean).filter(Boolean)) : [],
+    sem2TeacherNames: Array.isArray(item.sem2TeacherNames) ? uniqueOrdered(item.sem2TeacherNames.map(clean).filter(Boolean)) : [],
     calcGroupId: clean(item.calcGroupId) || null,
     schoolLevel: ["중등","고등","공통"].includes(item.schoolLevel) ? item.schoolLevel : "공통",
     // 복합 과목: 하나의 커리큘럼 카드/수강명단을 여러 실제 시간표 카드로 분할 생성합니다.
@@ -653,7 +664,14 @@ function normalizeClassesDomain(raw = {}) {
 
 // ── Teachers ──────────────────────────────────────────────────────
 export function normalizeTeacher(t = {}) {
-  return { id: t.id || uid("tch"), name: clean(t.name), subjects: Array.isArray(t.subjects) ? t.subjects.map(clean).filter(Boolean) : [], email: clean(t.email), note: clean(t.note) };
+  return {
+    id: t.id || uid("tch"),
+    name: clean(t.name),
+    aliases: Array.isArray(t.aliases) ? uniqueOrdered(t.aliases.map(clean).filter(Boolean)) : [],
+    subjects: Array.isArray(t.subjects) ? t.subjects.map(clean).filter(Boolean) : [],
+    email: clean(t.email),
+    note: clean(t.note)
+  };
 }
 
 
@@ -791,7 +809,8 @@ export function normalizeRoom(r = {}) {
     grade: GRADE_KEYS.includes(r.grade) ? r.grade : "",
     // 홈룸: 명단에서 설정한 반 ID를 저장합니다. 표시값은 rooms.js에서 7A/8B 형식으로 계산합니다.
     homeRoomClassId: clean(r.homeRoomClassId || r.homeRoomId),
-    // 담당/전용 교사 표시용. 시간표 교사 조건의 홈룸/본인 교실과 연동됩니다.
+    // 담당 교사는 teacherId가 기준이며 teacherName은 화면/내보내기용 스냅샷입니다.
+    teacherId: clean(r.teacherId),
     teacherName: clean(r.teacherName),
     // r207: Ground/TH201/TH301처럼 같은 시간에 여러 카드가 동시에 배정돼도
     // 정상인 공용 교실 표시. true일 때만 room 충돌 검사에서 제외됩니다.
@@ -842,6 +861,8 @@ export function normalizeTimetableEntry(e = {}) {
     // Arrays: for units with multiple templates/grades (cross-grade co-teaching)
     templateIds: Array.isArray(e.templateIds) ? e.templateIds.filter(Boolean) : (templateId ? [templateId] : []),
     gradeKeys:   Array.isArray(e.gradeKeys)   ? e.gradeKeys.filter(Boolean)   : (gradeKey   ? [gradeKey]   : []),
+    teacherIds: Array.isArray(e.teacherIds) ? uniqueOrdered(e.teacherIds.map(clean).filter(Boolean)) : [],
+    teacherNames: Array.isArray(e.teacherNames) ? uniqueOrdered(e.teacherNames.map(clean).filter(Boolean)) : [],
     teacherName: clean(e.teacherName),
     audienceClassKeys: Array.isArray(e.audienceClassKeys) ? e.audienceClassKeys.map(clean).filter(Boolean) : [],
     // 학생 개인 key는 시간표 배치 단계에서 더 이상 사용하지 않습니다.
@@ -875,6 +896,7 @@ export function normalizeTtCard(item = {}) {
     // 시간표 화면은 이 값을 우선 사용하고, 매번 수강명단/반 정보를 재추론하지 않습니다.
     subject:     clean(item.subject),
     subjectEn:   clean(item.subjectEn),
+    teacherIds:  arr(item.teacherIds),
     teacherName: clean(item.teacherName),
     teachers:    arr(item.teachers),
     // none: 이 카드는 실제 담당 교사를 점유하지 않도록 사용자가 명시적으로 허용했습니다.
@@ -1422,6 +1444,8 @@ function buildTimetableMetaStorageDoc(normalized = {}) {
   const base = {
     config: n.config,
     teacherConstraints: n.teacherConstraints,
+    teacherConstraintsById: n.teacherConstraintsById || {},
+    ttcardTeacherOptions: n.ttcardTeacherOptions || {},
     ttcardGroups: n.ttcardGroups || [],
     savedSchedules: [],
     cardGenerationMeta: n.cardGenerationMeta || null,
@@ -1631,6 +1655,7 @@ function normalizeTtCardTeacherOptions(raw = {}) {
   const mode = allowedModes.has(clean(raw.mode)) ? clean(raw.mode) : "none";
   return {
     mode,
+    representativeTeacherId: clean(raw.representativeTeacherId),
     representativeTeacher: clean(raw.representativeTeacher)
   };
 }
@@ -1695,6 +1720,9 @@ function normalizeTimetableDomain(raw = {}) {
     savedSchedules: syncedAutoMetaRefs.savedSchedules,
     bestAutoAssignSnapshot: syncedAutoMetaRefs.bestSnapshot,
     teacherConstraints: constraints,
+    teacherConstraintsById: raw.teacherConstraintsById && typeof raw.teacherConstraintsById === "object"
+      ? Object.fromEntries(Object.entries(raw.teacherConstraintsById).map(([id, value]) => [clean(id), normalizeTimetableConstraint(value)]).filter(([id]) => id))
+      : {},
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: normalizeCardGenerationMeta(raw),
     autoAssignMeta: syncedAutoMetaRefs.meta,
@@ -1909,6 +1937,8 @@ function buildNormalizedDiagnostic(raw) {
   const timetableRaw = {
     config: splitMetaDoc?.data?.config || {},
     teacherConstraints: splitMetaDoc?.data?.teacherConstraints || {},
+    teacherConstraintsById: splitMetaDoc?.data?.teacherConstraintsById || {},
+    ttcardTeacherOptions: splitMetaDoc?.data?.ttcardTeacherOptions || {},
     ttcardGroups: splitMetaDoc?.data?.ttcardGroups || splitMetaDoc?.data?.templateGroups || [],
     savedSchedules: splitMetaDoc?.data?.savedSchedules || [],
     cardGenerationMeta: splitMetaDoc?.data?.cardGenerationMeta || null,
@@ -2030,6 +2060,30 @@ export async function exportFirestoreDiagnosticSnapshot() {
   };
 }
 
+// Canonical teacher IDs are synchronized across all loaded domains. Names are
+// retained only as display/export snapshots so teacher renames do not break links.
+let teacherIdentitySyncRunning = false;
+export function synchronizeTeacherIdentityState({ persist = true, reason = "manual" } = {}) {
+  if (teacherIdentitySyncRunning) return { changedDomains: [], skipped: true, reason };
+  if (!initialLoad.teachers) return { changedDomains: [], skipped: true, reason, waitingForTeachers:true };
+  teacherIdentitySyncRunning = true;
+  try {
+    const report = synchronizeTeacherIdentityReferences(appState);
+    report.reason = reason;
+    if (typeof window !== "undefined") window.__HIS_TEACHER_IDENTITY_REPORT__ = report;
+    if (persist && report.changedDomains.length) {
+      report.changedDomains.forEach(domain => scheduleSave(domain));
+      console.info(`[teacher-id:r354] ${reason}`, report);
+    }
+    if (report.ambiguousNames.length || report.duplicateTeacherIds.length) {
+      console.warn("[teacher-id:r354] 교사 ID 자동 연결에 확인이 필요한 항목이 있습니다.", report);
+    }
+    return report;
+  } finally {
+    teacherIdentitySyncRunning = false;
+  }
+}
+
 // Ensure consistency (re-normalize in place)
 export function ensureConsistency(domain) {
   if (domain === "curriculum") appState.curriculum = normalizeCurriculumDomain(appState.curriculum);
@@ -2058,6 +2112,7 @@ function _checkAllLoaded() {
   const allLoaded = [..._subscribedDomains].every(d => initialLoad[d]);
   if (allLoaded) {
     _pendingInitialRender = false;
+    synchronizeTeacherIdentityState({ persist: canEdit(), reason: "initial-load" });
     _onUpdate("all"); // 전체 로드 완료 — 1회 render
   }
 }
@@ -2628,6 +2683,8 @@ async function applyTimetableSplitIfReady() {
   const raw = {
     config: timetableSplitCache.meta?.config || {},
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
+    teacherConstraintsById: timetableSplitCache.meta?.teacherConstraintsById || {},
+    ttcardTeacherOptions: timetableSplitCache.meta?.ttcardTeacherOptions || {},
     ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
     savedSchedules: timetableSplitCache.meta?.savedSchedules || [],
     cardGenerationMeta: timetableSplitCache.meta?.cardGenerationMeta || null,

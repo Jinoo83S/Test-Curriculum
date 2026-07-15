@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-constraints.js · Teacher constraints + homeroom UI
 // ================================================================
-import { normalizeTimetableConstraint } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { normalizeTimetableConstraint, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
 
 export function createTimetableConstraintsHandlers({
   appState,
@@ -34,6 +34,10 @@ export function createTimetableConstraintsHandlers({
   showEntryDetail = null,
   $,
 }) {
+  function syncTeacherIds(reason = "constraint-edit") {
+    synchronizeTeacherIdentityState({ persist:false, reason });
+  }
+
   function ensureConstraint(teacher) {
     if (!constraints()[teacher]) constraints()[teacher] = normalizeTimetableConstraint({});
     return constraints()[teacher];
@@ -67,6 +71,7 @@ export function createTimetableConstraintsHandlers({
       if (room.id === roomId) room.teacherName = teacherName || "";
       else if (teacherName && room.teacherName === teacherName) room.teacherName = "";
     });
+    syncTeacherIds("room-owner-change");
     scheduleSave("rooms");
   }
 
@@ -85,6 +90,7 @@ export function createTimetableConstraintsHandlers({
       c.useHomeRoom = true;
       c.assignedRoomId = roomId;
     }
+    syncTeacherIds("teacher-room-sync");
     scheduleSave("timetable");
   }
 
@@ -209,6 +215,7 @@ export function createTimetableConstraintsHandlers({
     const c = ensureConstraint(teacher);
     captureTimetableUndo("교사 제약 수정");
     c[field] = value;
+    syncTeacherIds("constraint-field-update");
     scheduleSave("timetable");
     if (rerender) {
       recomputeConflicts();
@@ -223,6 +230,7 @@ export function createTimetableConstraintsHandlers({
     const slots = c.unavailableSlots || (c.unavailableSlots = []);
     const idx = slots.findIndex(s => s.day === day && s.period === period);
     if (idx >= 0) slots.splice(idx, 1); else slots.push({ day, period });
+    syncTeacherIds("constraint-unavailable-toggle");
     scheduleSave("timetable");
     recomputeConflicts();
     requestAnimationFrame(() => renderAll());
@@ -606,6 +614,7 @@ export function createTimetableConstraintsHandlers({
   }
 
   function commitConstraintChange({ page = false, modal = true } = {}) {
+    syncTeacherIds("constraint-modal-commit");
     scheduleSave("timetable");
     recomputeConflicts();
     if (page) renderAll();

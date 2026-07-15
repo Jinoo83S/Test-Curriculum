@@ -7,9 +7,10 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-15-school-year-path-guard-r353";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-school-year-path-guard-r353";
-import { APP_VERSION, versioned } from "./version.js?v=2026-07-15-school-year-path-guard-r353";
+} from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
+import { APP_VERSION, versioned } from "./version.js?v=2026-07-15-teacher-id-migration-r354";
+import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=2026-07-15-teacher-id-migration-r354";
 
 const MODULE_FILES = [
   "./js/app.js",
@@ -32,6 +33,7 @@ const MODULE_FILES = [
   "./js/templates.js",
   "./js/students.js",
   "./js/teachers.js",
+  "./js/teacher-identity.js",
   "./js/rooms.js",
   "./js/rosters.js",
   "./js/results.js",
@@ -197,6 +199,31 @@ function summarizeData(report) {
   add(report, "시간표 데이터", entries.length ? "ok" : "warn", "배치 엔트리", `${entries.length}개`);
   add(report, "시간표 데이터", groups.length ? "ok" : "info", "동시배정/그룹", `${groups.length}개`);
   add(report, "시간표 데이터", savedSchedules.length ? "ok" : "info", "보관된 배치 버전", `${savedSchedules.length}개`);
+}
+
+function checkTeacherIdentity(report) {
+  const teachers = asArray(appState.teachers?.teachers);
+  const index = buildTeacherIdentityIndex(teachers);
+  const teacherIds = new Set(teachers.map(t => String(t?.id || "").trim()).filter(Boolean));
+  const templateRefs = asArray(appState.templates?.templates).flatMap(t => [
+    ...(asArray(t.teacherIds)), ...(asArray(t.sem1TeacherIds)), ...(asArray(t.sem2TeacherIds)),
+    ...asArray(t.compoundParts).flatMap(part => asArray(part.teacherIds))
+  ]);
+  const roomRefs = asArray(appState.rooms?.rooms).map(room => room.teacherId).filter(Boolean);
+  const cardRefs = asArray(appState.timetable?.ttcards).flatMap(card => asArray(card.teacherIds));
+  const entryRefs = asArray(appState.timetable?.entries).flatMap(entry => asArray(entry.teacherIds));
+  const allRefs = [...templateRefs, ...roomRefs, ...cardRefs, ...entryRefs].map(String).filter(Boolean);
+  const missing = [...new Set(allRefs.filter(id => !teacherIds.has(id)))];
+  const legacyTemplateCount = asArray(appState.templates?.templates).filter(t => {
+    const hasName = [t.teacher, t.sem1Teacher, t.sem2Teacher].some(v => String(v || "").trim());
+    const hasId = asArray(t.teacherIds).length || asArray(t.sem1TeacherIds).length || asArray(t.sem2TeacherIds).length;
+    return hasName && !hasId;
+  }).length;
+  add(report, "교사 ID", index.duplicateIds.length ? "error" : "ok", "교사 ID 중복", index.duplicateIds.length ? index.duplicateIds.join(", ") : "없음");
+  add(report, "교사 ID", index.duplicateNames.length ? "error" : "ok", "교사명 중복", index.duplicateNames.length ? `${index.duplicateNames.length}건` : "없음");
+  add(report, "교사 ID", missing.length ? "error" : "ok", "존재하지 않는 교사 ID 참조", missing.length ? missing.join(", ") : "없음");
+  add(report, "교사 ID", legacyTemplateCount ? "warn" : "ok", "이름만 남은 과목카드", legacyTemplateCount ? `${legacyTemplateCount}개 · 저장 시 자동 연결` : "없음");
+  add(report, "교사 ID", "info", "ID 기반 참조 수", `${allRefs.length}개`);
 }
 
 function checkDom(report) {
@@ -390,6 +417,7 @@ export async function runAppHealthCheck() {
 
   summarizeRuntime(report);
   summarizeData(report);
+  checkTeacherIdentity(report);
   checkDom(report);
   checkTimetableReferences(report);
   await checkModuleFiles(report);

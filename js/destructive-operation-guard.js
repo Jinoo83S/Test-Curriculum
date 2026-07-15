@@ -1,11 +1,11 @@
- // ================================================================
+// ================================================================
 // destructive-operation-guard.js · Backup / audit / target guards
 // ================================================================
-import { auth, db, getSchoolYearRefs } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
-import { assertSchoolYearPathSpec, getSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=2026-07-15-school-year-path-guard-r353";
+import { auth, db, getSchoolYearRefs } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { assertSchoolYearPathSpec, getSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=2026-07-15-teacher-id-migration-r354";
 import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-export const DESTRUCTIVE_OPERATION_GUARD_BUILD = "2026-07-15-school-year-path-guard-r353";
+export const DESTRUCTIVE_OPERATION_GUARD_BUILD = "2026-07-15-teacher-id-migration-r354";
 
 function safePart(value, fallback = "data") {
   const cleaned = String(value ?? "")

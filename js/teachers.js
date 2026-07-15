@@ -1,30 +1,76 @@
 // ================================================================
 // teachers.js · Teacher Mutations + Teacher View Rendering
 // ================================================================
-import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState, scheduleSave, normalizeTeacher } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
-import { getSubjectsForTeacher } from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
+import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { countTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-teacher-id-migration-r354";
+import { getSubjectsForTeacher } from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
 
 const tDomain   = () => appState.teachers;
 export const getTeachers    = () => tDomain().teachers;
 export const getTeacherById = id => getTeachers().find(t => t.id === id) || null;
+const teacherNameKey = value => clean(value).replace(/\s+/g, " ").toLocaleLowerCase("ko");
+const findTeacherByName = (name, exceptId = "") => {
+  const key = teacherNameKey(name);
+  return key ? getTeachers().find(t => t.id !== exceptId && teacherNameKey(t.name) === key) || null : null;
+};
 
 // ── Mutations ─────────────────────────────────────────────────────
 export function addTeacher(data = {}) {
   if (!canEdit()) return null;
   const t = normalizeTeacher({ ...data, id: uid("tch") });
+  if (!clean(t.name)) { alert("교사 이름은 비워둘 수 없습니다."); return null; }
+  const duplicate = findTeacherByName(t.name);
+  if (duplicate) {
+    alert(`동일한 교사 이름이 이미 있습니다: ${t.name}\n교사 ID 자동 연결을 위해 이름은 중복될 수 없습니다.`);
+    return null;
+  }
   getTeachers().push(t); scheduleSave("teachers"); return t;
 }
 export function updateTeacher(id, field, value) {
   if (!canEdit()) return;
   const t = getTeacherById(id); if (!t) return;
-  t[field] = value; scheduleSave("teachers");
+  if (field === "name") {
+    const nextName = clean(value);
+    if (!nextName) { alert("교사 이름은 비워둘 수 없습니다."); return; }
+    const duplicate = findTeacherByName(nextName, id);
+    if (duplicate) { alert(`동일한 교사 이름이 이미 있습니다: ${nextName}
+교사 ID 자동 연결을 위해 이름은 중복될 수 없습니다.`); return; }
+    const previousName = clean(t.name);
+    if (previousName && previousName !== nextName) {
+      t.aliases = [...new Set([...(Array.isArray(t.aliases) ? t.aliases : []), previousName].map(clean).filter(Boolean))];
+    }
+    t.name = nextName;
+    scheduleSave("teachers");
+    synchronizeTeacherIdentityState({ persist:true, reason:`teacher-rename:${id}` });
+    return;
+  }
+  t[field] = value;
+  scheduleSave("teachers");
 }
 export function deleteTeacher(id) {
   if (!canEdit()) return;
   const t = getTeacherById(id); if (!t) return;
-  if (!confirm(`"${t.name}" 선생님을 삭제할까요?`)) return;
+  const refs = countTeacherIdentityReferences(appState, t.id, t.name);
+  if (refs.total > 0) {
+    alert([
+      `"${t.name}" 선생님은 다른 데이터에서 사용 중이므로 삭제할 수 없습니다.`,
+      "",
+      `과목카드 ${refs.templates}개`,
+      `복합과목 구성 ${refs.compoundParts}개`,
+      `교실 ${refs.rooms}개`,
+      `시간표 카드 ${refs.timetableCards}개`,
+      `현재 배치 ${refs.timetableEntries}개`,
+      `보관 배치 ${refs.savedEntries}개`,
+      `교사 조건 ${refs.constraints}개`,
+      "",
+      "연결된 과목·교실·시간표에서 다른 교사를 먼저 지정한 뒤 삭제해 주세요."
+    ].join("\n"));
+    return false;
+  }
+  if (!confirm(`"${t.name}" 선생님을 삭제할까요?
+교사 ID: ${t.id}`)) return false;
   tDomain().teachers = getTeachers().filter(t2 => t2.id !== id);
   scheduleSave("teachers"); return true;
 }
@@ -89,10 +135,25 @@ export function renderTeacherView(container) {
     if (!raw) { alert("붙여넣기 영역이 비어 있습니다."); return; }
     const parsed = parseTeacherPaste(raw);
     if (!parsed.length) { alert("파싱된 선생님이 없습니다."); return; }
-    parsed.forEach(t => getTeachers().push(t));
-    scheduleSave("teachers"); textarea.value = "";
+    const existingNames = new Set(getTeachers().map(t => teacherNameKey(t.name)).filter(Boolean));
+    const accepted = [];
+    const duplicates = [];
+    parsed.forEach(t => {
+      const key = teacherNameKey(t.name);
+      if (!key || existingNames.has(key)) { duplicates.push(t.name || "이름 없음"); return; }
+      existingNames.add(key);
+      accepted.push(t);
+    });
+    if (accepted.length) {
+      getTeachers().push(...accepted);
+      scheduleSave("teachers");
+    }
+    textarea.value = "";
     renderTeacherView(container);
-    alert(`${parsed.length}명이 추가되었습니다.`);
+    alert([
+      `${accepted.length}명이 추가되었습니다.`,
+      duplicates.length ? `중복 이름 ${duplicates.length}명은 제외했습니다: ${duplicates.join(", ")}` : ""
+    ].filter(Boolean).join("\n"));
   });
   parseBtn.disabled = !canEdit();
   const clearBtn  = makeBtn("지우기", "secondary-btn", () => { textarea.value = ""; });
@@ -134,7 +195,7 @@ export function renderTeacherView(container) {
 
     // Auto-derived subjects (read-only)
     const subTd = document.createElement("td"); subTd.className = "teacher-subjects-cell";
-    const derivedSubjects = getSubjectsForTeacher(t.name);
+    const derivedSubjects = getSubjectsForTeacher(t.id);
     if (derivedSubjects.length) {
       derivedSubjects.forEach(s => {
         const chip = document.createElement("span"); chip.className = "teacher-subject-chip"; chip.textContent = s;
@@ -156,10 +217,10 @@ export function renderTeacherView(container) {
 
 export function exportTeachersXlsx() {
   const wb = XLSX.utils.book_new();
-  const rows = [["이름","담당 과목","이메일","메모"]];
-  getTeachers().forEach(t => rows.push([t.name, getSubjectsForTeacher(t.name).join(", "), t.email, t.note]));
+  const rows = [["교사 ID","이름","담당 과목","이메일","메모"]];
+  getTeachers().forEach(t => rows.push([t.id, t.name, getSubjectsForTeacher(t.id).join(", "), t.email, t.note]));
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch:12 },{ wch:30 },{ wch:24 },{ wch:30 }];
+  ws["!cols"] = [{ wch:28 },{ wch:16 },{ wch:30 },{ wch:24 },{ wch:30 }];
   XLSX.utils.book_append_sheet(wb, ws, "선생님 명단");
   XLSX.writeFile(wb, "HIS_Teachers.xlsx");
 }

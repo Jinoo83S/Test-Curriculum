@@ -1,10 +1,10 @@
 // ================================================================
 // rooms.js · Room CRUD + View Rendering
 // ================================================================
-import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
 
 const rDomain = () => appState.rooms;
 export const getRooms    = () => rDomain().rooms;
@@ -632,12 +632,23 @@ function appendRoomAssignmentStatus(container, options = {}) {
 export function addRoom(data = {}) {
   if (!canEdit()) return null;
   const r = normalizeRoom({ ...data, id: uid("room") });
-  getRooms().push(r); scheduleSave("rooms"); return r;
+  getRooms().push(r);
+  synchronizeTeacherIdentityState({ persist:false, reason:"room-add" });
+  scheduleSave("rooms");
+  return r;
 }
 export function updateRoom(id, field, value) {
   if (!canEdit()) return;
   const r = getRoomById(id); if (!r) return;
-  r[field] = value; scheduleSave("rooms");
+  if (field === "teacherName") {
+    r.teacherName = clean(value);
+    r.teacherId = "";
+    synchronizeTeacherIdentityState({ persist:true, reason:`room-teacher:${id}` });
+    scheduleSave("rooms");
+    return;
+  }
+  r[field] = value;
+  scheduleSave("rooms");
 }
 export function deleteRoom(id) {
   if (!canEdit()) return false;
