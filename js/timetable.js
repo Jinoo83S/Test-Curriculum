@@ -1,13 +1,14 @@
  // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_KEYS, ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot,
+         listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { versioned } from "./version.js?v=2026-07-15-room-availability-separation-r355";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
@@ -29,6 +30,7 @@ import {
 import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-room-availability-separation-r355";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
+import { createTimetableRevisionHistoryUi } from "./timetable-revision-history.js?v=2026-07-15-timetable-revision-restore-r357";
 
 
 const [
@@ -4478,9 +4480,9 @@ function openScheduleVersionManager() {
     <div class="tt-version-modal" role="dialog" aria-modal="true" aria-labelledby="ttScheduleVersionsTitle">
       <div class="tt-version-head">
         <div>
-          <p class="tt-version-kicker">배치 버전 관리</p>
-          <h3 id="ttScheduleVersionsTitle">저장된 시간표 배치</h3>
-          <p>커리큘럼 카드나 교사 조건은 그대로 두고, 시간표에 배치된 entries만 버전별로 저장하고 불러옵니다.</p>
+          <p class="tt-version-kicker">시간표 저장 및 복구</p>
+          <h3 id="ttScheduleVersionsTitle">시간표 저장 기록</h3>
+          <p>서버 자동 저장 이력은 전체 시간표 복구용이며, 아래 수동 배치 보관은 entries만 별도로 저장합니다.</p>
         </div>
         <button type="button" class="tt-version-close" aria-label="닫기">×</button>
       </div>
@@ -4488,8 +4490,9 @@ function openScheduleVersionManager() {
         <div class="tt-version-summary">
           <span>현재 배치 <b>${currentStats.entryCount}</b>개</span>
           <span>현재 수업블록 <b>${currentStats.blockCount}</b>개</span>
-          <span>저장본 <b>${versions.length}</b>개</span>
+          <span>수동 저장본 <b>${versions.length}</b>개</span>
         </div>
+        <div id="ttFirestoreRevisionHistory"></div>
         <div class="tt-version-savebox">
           <input id="ttVersionNameInput" type="text" value="${escapeHtml(defaultSavedScheduleName())}" aria-label="저장할 배치 이름">
           <button type="button" data-action="save-current">현재 배치 저장</button>
@@ -4528,6 +4531,18 @@ function openScheduleVersionManager() {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  const revisionHistoryUi = createTimetableRevisionHistoryUi({
+    activeSchoolYear: ACTIVE_SCHOOL_YEAR,
+    listRevisions: listTimetableSaveRevisions,
+    restoreRevision: restoreTimetableSaveRevision,
+    getConfirmationText: getTimetableRevisionRestoreConfirmation,
+    escapeHtml,
+    onRestored: () => {
+      recomputeConflicts();
+      renderAll();
+    },
+  });
+  void revisionHistoryUi.mount(overlay.querySelector("#ttFirestoreRevisionHistory"));
   const close = () => overlay.remove();
   overlay.querySelector(".tt-version-close")?.addEventListener("click", close);
   overlay.addEventListener("click", e => { if (e.target === overlay) close(); });

@@ -90,4 +90,12 @@ assert.match(id, /^ttrev-20260715024012345-[a-z0-9]{5}$/);
 assert.ok(getTimetableRevisionHistorySlot(id) >= 0 && getTimetableRevisionHistorySlot(id) < 30);
 assert.equal(getTimetableRevisionHistorySlot(id), getTimetableRevisionHistorySlot(id));
 
+const sequentialId = createTimetableSaveRevisionId({
+  now: new Date("2026-07-15T02:40:12.345Z"),
+  random: 0.5,
+  slot: 7,
+});
+assert.match(sequentialId, /^ttrev-20260715024012345-[a-z0-9]{5}-s07$/);
+assert.equal(getTimetableRevisionHistorySlot(sequentialId), 7);
+
 console.log("TIMETABLE_SAVE_REVISION_TEST_OK");

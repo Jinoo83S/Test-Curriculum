@@ -32,12 +32,14 @@ for (const rel of [
   "js/state.js",
   "js/version.js",
   "js/timetable-save-revision.js",
+  "js/timetable-revision-history.js",
+  "js/timetable.js",
   "timetable.html",
 ]) {
   assert.ok(fs.existsSync(path.join(root, rel)), `missing ${rel}`);
 }
 
-for (const rel of ["js/state.js", "js/version.js", "js/timetable-save-revision.js"]) {
+for (const rel of ["js/state.js", "js/version.js", "js/timetable-save-revision.js", "js/timetable-revision-history.js", "js/timetable.js"]) {
   const result = spawnSync(process.execPath, ["--check", path.join(root, rel)], { encoding: "utf8" });
   assert.equal(result.status, 0, `${rel} syntax failed\n${result.stderr}`);
 }
@@ -45,14 +47,28 @@ for (const rel of ["js/state.js", "js/version.js", "js/timetable-save-revision.j
 const state = read("js/state.js");
 const html = read("timetable.html");
 const version = read("js/version.js");
+const timetable = read("js/timetable.js");
+const revisionModule = read("js/timetable-save-revision.js");
+const revisionUi = read("js/timetable-revision-history.js");
 
 assert.match(state, /commitWriteOpsAtomic\(ops, `timetable revision \$\{revisionId\}`\)/);
 assert.match(state, /assertAtomicTimetableRevisionCapacity/);
+assert.match(state, /encodeTimetableRevisionSnapshot/);
+assert.match(state, /decodeTimetableRevisionSnapshot/);
+assert.match(state, /listTimetableSaveRevisions/);
+assert.match(state, /restoreTimetableSaveRevision/);
+assert.match(state, /pre-restore-backup/);
 assert.match(state, /timetableRevisionSlot-/);
 assert.doesNotMatch(state, /entries \$\{entryWrites\}, cards \$\{cardWrites\}, meta \$\{metaWrites\}/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-15-atomic-timetable-revisions-r356"/);
+assert.match(revisionModule, /CompressionStream/);
+assert.match(revisionModule, /TIMETABLE_REVISION_MAX_PAYLOAD_BYTES/);
+assert.match(revisionUi, /복구 전 자동 백업/);
+assert.match(timetable, /ttFirestoreRevisionHistory/);
+assert.match(timetable, /createTimetableRevisionHistoryUi/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-15-timetable-revision-restore-r357"/);
 assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355"/);
-assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-atomic-timetable-revisions-r356/);
+assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
+assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-15-timetable-revision-restore-r357/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
 
 const importMapMatch = html.match(/<script type="importmap">\s*([\s\S]*?)\s*<\/script>/);
@@ -60,11 +76,15 @@ assert.ok(importMapMatch, "timetable import map missing");
 const importMap = JSON.parse(importMapMatch[1]);
 assert.equal(
   importMap.imports["./js/state.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/state.js?v=2026-07-15-atomic-timetable-revisions-r356"
+  "./js/state.js?v=2026-07-15-timetable-revision-restore-r357"
 );
 assert.equal(
   importMap.imports["./js/version.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/version.js?v=2026-07-15-atomic-timetable-revisions-r356"
+  "./js/version.js?v=2026-07-15-timetable-revision-restore-r357"
+);
+assert.equal(
+  importMap.imports["./js/timetable.js?v=2026-07-15-room-availability-separation-r355"],
+  "./js/timetable.js?v=2026-07-15-timetable-revision-restore-r357"
 );
 
 const regressionTests = [
@@ -74,6 +94,7 @@ const regressionTests = [
   "test-school-year-verification-lifecycle.mjs",
   "test-teacher-id-migration.mjs",
   "test-timetable-save-revision.mjs",
+  "test-timetable-revision-history.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });

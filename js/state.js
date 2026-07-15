@@ -1,14 +1,14 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
-import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, TIMETABLE_REVISION_SCHEMA_VERSION } from "./timetable-save-revision.js?v=2026-07-15-atomic-timetable-revisions-r356";
+import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, encodeTimetableRevisionSnapshot, decodeTimetableRevisionSnapshot, isRestorableTimetableRevision, TIMETABLE_REVISION_SCHEMA_VERSION, TIMETABLE_REVISION_HISTORY_SLOTS } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -46,6 +46,47 @@ function timetableSaveRevisionRef(revisionId) {
   const slot = String(getTimetableRevisionHistorySlot(id)).padStart(2, "0");
   segments[segments.length - 1] = `timetableRevisionSlot-${slot}`;
   return doc(db, ...segments);
+}
+
+function timetableSaveRevisionCollectionRef() {
+  const segments = [...activeWorkspaceRefs.spec.timetableMeta];
+  return collection(db, ...segments.slice(0, -1));
+}
+
+function currentRevisionActor() {
+  const user = auth?.currentUser || null;
+  return {
+    uid: clean(user?.uid) || null,
+    email: clean(user?.email) || null,
+    displayName: clean(user?.displayName) || null,
+  };
+}
+
+function firestoreTimeToMillis(value) {
+  if (!value) return 0;
+  if (typeof value?.toMillis === "function") return value.toMillis();
+  if (typeof value?.toDate === "function") return value.toDate().getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getTimetableRevisionConfirmationText(revisionId) {
+  const suffix = clean(revisionId).slice(-5) || "record";
+  return `${ACTIVE_SCHOOL_YEAR}-시간표-${suffix}-복구`;
+}
+
+export function getTimetableRevisionRestoreConfirmation(revisionId) {
+  return getTimetableRevisionConfirmationText(revisionId);
+}
+
+function createNextTimetableRevisionIdentity() {
+  const sequence = Math.max(0, Number(lastTimetableSaveRevisionSequence || 0)) + 1;
+  const slot = sequence % TIMETABLE_REVISION_HISTORY_SLOTS;
+  return {
+    id: createTimetableSaveRevisionId({ slot }),
+    sequence,
+    slot,
+  };
 }
 
 function verifyWriteContext(context) {
@@ -239,6 +280,7 @@ const splitDocFingerprints = {
   timetable: { timetableEntries: new Map(), ttcards: new Map(), timetableMeta: null },
 };
 let lastTimetableSaveRevisionId = "";
+let lastTimetableSaveRevisionSequence = 0;
 
 let _onSaveStatus = null;
 export const setOnSaveStatus = (cb) => {
@@ -421,11 +463,18 @@ async function performDomainSave(domain, normalized, options = {}) {
   verifyWriteContext(`Firestore 저장(${domain})`);
   if (LOCAL_DEV_MODE) {
     saveLocalDomain(domain, normalized);
+    if (domain === "timetable") {
+      await recordLocalTimetableRevision(normalized, {
+        reason: clean(options.revisionReason) || "save",
+        label: clean(options.revisionLabel) || "시간표 저장",
+        parentId: lastTimetableSaveRevisionId,
+      });
+    }
     return { local: true };
   }
 
   if (SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
-    await saveSplitDomain(domain, { force: !!options.force, normalized });
+    await saveSplitDomain(domain, { ...options, force: !!options.force, normalized });
     return { split: true };
   }
 
@@ -1804,6 +1853,61 @@ function saveLocalDomain(domain, normalized = normalizedForDomain(domain)) {
   throw new Error("localStorage 저장 실패: 브라우저 저장공간 한도를 초과했을 수 있습니다. 오래된 자동배치 보관본을 정리한 뒤 다시 시도해 주세요.");
 }
 
+
+const LOCAL_TIMETABLE_REVISION_KEY = `his_timetable_revision_history_v2_${ACTIVE_SCHOOL_YEAR}`;
+const LOCAL_TIMETABLE_REVISION_LIMIT = 6;
+
+function readLocalTimetableRevisions() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LOCAL_TIMETABLE_REVISION_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter(v => v && v.id) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeLocalTimetableRevisions(list = []) {
+  try {
+    localStorage.setItem(LOCAL_TIMETABLE_REVISION_KEY, JSON.stringify((list || []).slice(0, LOCAL_TIMETABLE_REVISION_LIMIT)));
+    return true;
+  } catch (error) {
+    console.warn("Local timetable revision history storage skipped.", error);
+    return false;
+  }
+}
+
+async function recordLocalTimetableRevision(normalized, { reason = "save", label = "시간표 저장", parentId = "", restoredFrom = "" } = {}) {
+  const identity = createNextTimetableRevisionIdentity();
+  const revisionId = identity.id;
+  const snapshot = await encodeTimetableRevisionSnapshot({
+    schoolYear: ACTIVE_SCHOOL_YEAR,
+    timetable: normalizeTimetableDomain(normalized),
+  });
+  const record = {
+    schemaVersion: TIMETABLE_REVISION_SCHEMA_VERSION,
+    id: revisionId,
+    sequence: identity.sequence,
+    slot: identity.slot,
+    parentId: clean(parentId) || null,
+    schoolYear: ACTIVE_SCHOOL_YEAR,
+    status: "committed",
+    reason: clean(reason) || "save",
+    label: clean(label) || "시간표 저장",
+    restoredFrom: clean(restoredFrom) || null,
+    counts: snapshot.counts,
+    changes: null,
+    actor: { uid: "local-dev", email: "local-dev@his", displayName: "Local Dev" },
+    committedAt: new Date().toISOString(),
+    snapshot,
+  };
+  const list = readLocalTimetableRevisions().filter(v => v.id !== revisionId);
+  list.unshift(record);
+  writeLocalTimetableRevisions(list);
+  lastTimetableSaveRevisionId = revisionId;
+  lastTimetableSaveRevisionSequence = identity.sequence;
+  return record;
+}
+
 function subscribeLocalDomains(domainList = ALL_DOMAINS) {
   const unique = [...new Set(domainList || [])].filter(d => DOMAIN_NORMALIZERS[d]);
   setSubscribedDomains(unique);
@@ -2546,13 +2650,25 @@ async function saveSplitDomain(domain, options = {}) {
       return;
     }
 
-    const revisionId = createTimetableSaveRevisionId();
+    const identity = createNextTimetableRevisionIdentity();
+    const revisionId = identity.id;
     const parentRevisionId = clean(lastTimetableSaveRevisionId);
+    const snapshot = await encodeTimetableRevisionSnapshot({
+      schoolYear: ACTIVE_SCHOOL_YEAR,
+      timetable: normalized,
+    });
     const revisionInfo = {
       schemaVersion: TIMETABLE_REVISION_SCHEMA_VERSION,
       id: revisionId,
+      sequence: identity.sequence,
+      slot: identity.slot,
       parentId: parentRevisionId || null,
       schoolYear: ACTIVE_SCHOOL_YEAR,
+      reason: clean(options.revisionReason) || "save",
+      label: clean(options.revisionLabel) || "시간표 저장",
+      restoredFrom: clean(options.restoredFrom) || null,
+      restorable: true,
+      snapshotBytes: snapshot.payloadBytes,
       counts: {
         entries: normalized.entries.length,
         cards: normalized.ttcards.length,
@@ -2566,6 +2682,7 @@ async function saveSplitDomain(domain, options = {}) {
         metaChanged: summary.metaChanged,
         totalWrites: summary.totalWrites,
       },
+      actor: currentRevisionActor(),
       committedAt: serverTimestamp(),
     };
     const metaData = { ...baseMeta, saveRevision: revisionInfo };
@@ -2608,6 +2725,7 @@ async function saveSplitDomain(domain, options = {}) {
         cardSetIds: cardPlan.sets.map(v => v.id),
         cardDeleteIds: cardPlan.deletes.map(v => v.id),
         metaFingerprint: baseMetaHash,
+        snapshot,
         createdAt: serverTimestamp(),
       },
       options: { merge: false },
@@ -2618,9 +2736,317 @@ async function saveSplitDomain(domain, options = {}) {
     splitDocFingerprints.timetable.ttcards = cardPlan.current;
     splitDocFingerprints.timetable.timetableMeta = baseMetaHash;
     lastTimetableSaveRevisionId = revisionId;
+    lastTimetableSaveRevisionSequence = identity.sequence;
 
     console.info(`[Firestore save] timetable atomic revision committed: ${revisionId}`, summary);
   }
+}
+
+function revisionListItem(record = {}, slotDocId = "") {
+  const snapshot = record?.snapshot && typeof record.snapshot === "object" ? record.snapshot : {};
+  return {
+    schemaVersion: Number(record.schemaVersion || 0) || 0,
+    id: clean(record.id),
+    sequence: Number(record.sequence || 0) || 0,
+    slot: Number(record.slot || 0) || 0,
+    slotDocId: clean(slotDocId),
+    parentId: clean(record.parentId) || null,
+    schoolYear: clean(record.schoolYear),
+    status: clean(record.status),
+    reason: clean(record.reason) || "save",
+    label: clean(record.label) || "시간표 저장",
+    restoredFrom: clean(record.restoredFrom) || null,
+    counts: record.counts && typeof record.counts === "object" ? { ...record.counts } : {},
+    changes: record.changes && typeof record.changes === "object" ? { ...record.changes } : null,
+    actor: record.actor && typeof record.actor === "object" ? { ...record.actor } : {},
+    committedAt: record.committedAt || record.createdAt || null,
+    restorable: isRestorableTimetableRevision(record),
+    snapshot: {
+      encoding: clean(snapshot.encoding),
+      payloadBytes: Number(snapshot.payloadBytes || 0) || 0,
+      compressedBytes: Number(snapshot.compressedBytes || 0) || 0,
+      jsonBytes: Number(snapshot.jsonBytes || 0) || 0,
+      checksum: clean(snapshot.checksum),
+      counts: snapshot.counts && typeof snapshot.counts === "object" ? { ...snapshot.counts } : {},
+    },
+  };
+}
+
+export async function listTimetableSaveRevisions({ limit = 30 } = {}) {
+  const max = Math.max(1, Math.min(30, Number.parseInt(limit, 10) || 30));
+  if (LOCAL_DEV_MODE) {
+    return readLocalTimetableRevisions()
+      .map(record => revisionListItem(record, "local"))
+      .filter(record => record.schoolYear === ACTIVE_SCHOOL_YEAR)
+      .sort((a, b) => firestoreTimeToMillis(b.committedAt) - firestoreTimeToMillis(a.committedAt))
+      .slice(0, max);
+  }
+
+  const snap = await getDocs(timetableSaveRevisionCollectionRef());
+  recordFirestoreUsage("reads", Math.max(1, snap.size || 0), `revision history: ${storageLabel.timetableMeta}`, { operation: "getDocs" });
+  return snap.docs
+    .filter(item => item.id.startsWith("timetableRevisionSlot-"))
+    .map(item => revisionListItem(withoutFirestoreMeta(item.data()), item.id))
+    .filter(record => record.id && record.schoolYear === ACTIVE_SCHOOL_YEAR)
+    .sort((a, b) => firestoreTimeToMillis(b.committedAt) - firestoreTimeToMillis(a.committedAt))
+    .slice(0, max);
+}
+
+async function readTimetableSaveRevisionRecord(revisionId) {
+  const id = clean(revisionId);
+  if (!id) throw new Error("복구할 시간표 저장 기록 ID가 없습니다.");
+  if (LOCAL_DEV_MODE) {
+    const record = readLocalTimetableRevisions().find(item => item.id === id);
+    if (!record) throw new Error("선택한 로컬 시간표 저장 기록을 찾을 수 없습니다.");
+    return record;
+  }
+  const snap = await getDoc(timetableSaveRevisionRef(id));
+  recordFirestoreUsage("reads", 1, `revision read: ${storageLabel.timetableMeta}`, { operation: "getDoc" });
+  if (!snap.exists()) throw new Error("선택한 시간표 저장 기록이 이미 순환 보관에서 교체되었습니다.");
+  const record = withoutFirestoreMeta(snap.data());
+  if (clean(record.id) !== id) {
+    const error = new Error("선택한 시간표 저장 기록이 이미 다른 기록으로 교체되었습니다. 목록을 새로고침해 주세요.");
+    error.code = "timetable-revision-slot-replaced";
+    throw error;
+  }
+  return record;
+}
+
+async function commitTimetableSnapshotOnlyRevision(normalized, {
+  reason = "backup",
+  label = "현재 시간표 자동 백업",
+  parentId = "",
+  restoredFrom = "",
+} = {}) {
+  const current = normalizeTimetableDomain(normalized || appState.timetable);
+  if (LOCAL_DEV_MODE) {
+    return recordLocalTimetableRevision(current, { reason, label, parentId, restoredFrom });
+  }
+  const identity = createNextTimetableRevisionIdentity();
+  const revisionId = identity.id;
+  const snapshot = await encodeTimetableRevisionSnapshot({ schoolYear: ACTIVE_SCHOOL_YEAR, timetable: current });
+  const baseMeta = buildTimetableMetaStorageDoc(current);
+  const revisionInfo = {
+    schemaVersion: TIMETABLE_REVISION_SCHEMA_VERSION,
+    id: revisionId,
+    sequence: identity.sequence,
+    slot: identity.slot,
+    parentId: clean(parentId) || clean(lastTimetableSaveRevisionId) || null,
+    schoolYear: ACTIVE_SCHOOL_YEAR,
+    reason: clean(reason) || "backup",
+    label: clean(label) || "현재 시간표 자동 백업",
+    restoredFrom: clean(restoredFrom) || null,
+    restorable: true,
+    snapshotBytes: snapshot.payloadBytes,
+    counts: snapshot.counts,
+    changes: {
+      entrySets: 0,
+      entryDeletes: 0,
+      cardSets: 0,
+      cardDeletes: 0,
+      metaChanged: false,
+      totalWrites: 2,
+    },
+    actor: currentRevisionActor(),
+    committedAt: serverTimestamp(),
+  };
+  const metaData = { ...baseMeta, saveRevision: revisionInfo };
+  await commitWriteOpsAtomic([
+    {
+      type: "set",
+      ref: splitRefs.timetableMeta,
+      data: { ...metaData, updatedAt: serverTimestamp() },
+      options: { merge: false },
+    },
+    {
+      type: "set",
+      ref: timetableSaveRevisionRef(revisionId),
+      data: {
+        ...revisionInfo,
+        status: "committed",
+        targetPaths: {
+          entries: storageLabel.timetableEntries,
+          cards: storageLabel.ttcards,
+          meta: storageLabel.timetableMeta,
+        },
+        snapshot,
+        metaFingerprint: fp(baseMeta),
+        createdAt: serverTimestamp(),
+      },
+      options: { merge: false },
+    },
+  ], `timetable backup revision ${revisionId}`);
+  splitDocFingerprints.timetable.timetableMeta = fp(baseMeta);
+  lastTimetableSaveRevisionId = revisionId;
+  lastTimetableSaveRevisionSequence = identity.sequence;
+  return revisionListItem({ ...revisionInfo, status: "committed", snapshot, committedAt: new Date().toISOString() });
+}
+
+export async function restoreTimetableSaveRevision(revisionId, options = {}) {
+  verifyWriteContext("시간표 저장 기록 복구");
+  if (!canEdit()) throw new Error("시간표 복구 권한이 없습니다.");
+  if (!initialLoad.timetable) throw new Error("시간표 데이터가 아직 로드되지 않았습니다.");
+
+  if (dirtyDomains.has("timetable") || activeSavePromises.timetable || queuedSaveOptions.timetable) {
+    options.onProgress?.("현재 편집 내용을 먼저 저장하고 있습니다.");
+    const saved = await saveNow("timetable", { force: true, throwOnError: true, revisionReason: "pre-restore-save", revisionLabel: "복구 전 미저장 변경 저장" });
+    if (!saved) throw new Error("현재 편집 내용을 저장하지 못해 복구를 중단했습니다.");
+  }
+
+  options.onProgress?.("선택한 저장 기록을 확인하고 있습니다.");
+  const targetRecord = await readTimetableSaveRevisionRecord(revisionId);
+  const expectedConfirmation = getTimetableRevisionConfirmationText(targetRecord.id);
+  if (clean(options.confirmationText) !== expectedConfirmation) {
+    const error = new Error(`확인 문구가 일치하지 않습니다. ${expectedConfirmation}`);
+    error.code = "timetable-revision-confirmation-mismatch";
+    error.expectedConfirmation = expectedConfirmation;
+    throw error;
+  }
+  const envelope = await decodeTimetableRevisionSnapshot(targetRecord);
+  if (clean(envelope.schoolYear) !== ACTIVE_SCHOOL_YEAR) {
+    const error = new Error(`다른 학년도의 시간표 기록은 복구할 수 없습니다. 현재 ${ACTIVE_SCHOOL_YEAR} / 기록 ${clean(envelope.schoolYear) || "미상"}`);
+    error.code = "timetable-revision-school-year-mismatch";
+    throw error;
+  }
+
+  const current = normalizeTimetableDomain(appState.timetable);
+  const target = normalizeTimetableDomain(envelope.timetable);
+  if (isDangerousTimetableSaveForGuard(target, { allowEmptyTimetable: options.allowEmptyTimetable === true })) {
+    throw new Error("비정상적으로 비어 있는 시간표 저장 기록은 복구할 수 없습니다.");
+  }
+
+  const currentEntryMap = mapFromItems(current.entries, item => item);
+  const currentCardMap = mapFromItems(current.ttcards, item => item);
+  const entryPlan = buildCollectionRevisionPlan({
+    baseline: currentEntryMap,
+    items: target.entries,
+    toDocData: item => item,
+    fingerprint: fp,
+  });
+  const cardPlan = buildCollectionRevisionPlan({
+    baseline: currentCardMap,
+    items: target.ttcards,
+    toDocData: item => item,
+    fingerprint: fp,
+  });
+  const targetMeta = buildTimetableMetaStorageDoc(target);
+  const targetMetaHash = fp(targetMeta);
+  const currentMetaHash = fp(buildTimetableMetaStorageDoc(current));
+  const summary = summarizeTimetableRevisionPlan({ entryPlan, cardPlan, metaChanged: targetMetaHash !== currentMetaHash });
+  if (!summary.hasChanges) {
+    return { restored: false, unchanged: true, revision: revisionListItem(targetRecord), summary };
+  }
+  assertAtomicTimetableRevisionCapacity(summary);
+
+  options.onProgress?.("현재 시간표를 복구 전 자동 백업으로 저장하고 있습니다.");
+  const backup = await commitTimetableSnapshotOnlyRevision(current, {
+    reason: "pre-restore-backup",
+    label: `복구 전 자동 백업 · ${clean(targetRecord.label) || targetRecord.id}`,
+    parentId: lastTimetableSaveRevisionId,
+    restoredFrom: targetRecord.id,
+  });
+
+  options.onProgress?.("선택한 시간표를 원자적으로 복구하고 있습니다.");
+  if (LOCAL_DEV_MODE) {
+    saveLocalDomain("timetable", target);
+    const restoredRecord = await recordLocalTimetableRevision(target, {
+      reason: "restore",
+      label: `저장 기록 복구 · ${clean(targetRecord.label) || targetRecord.id}`,
+      parentId: backup.id,
+      restoredFrom: targetRecord.id,
+    });
+    appState.timetable = target;
+    markDomainSaved("timetable", target);
+    dirtyDomains.delete("timetable");
+    fireUpdate("timetable");
+    return { restored: true, backup, revision: revisionListItem(restoredRecord), summary };
+  }
+
+  const restoreIdentity = createNextTimetableRevisionIdentity();
+  const restoreRevisionId = restoreIdentity.id;
+  const restoreSnapshot = await encodeTimetableRevisionSnapshot({ schoolYear: ACTIVE_SCHOOL_YEAR, timetable: target });
+  const restoreInfo = {
+    schemaVersion: TIMETABLE_REVISION_SCHEMA_VERSION,
+    id: restoreRevisionId,
+    sequence: restoreIdentity.sequence,
+    slot: restoreIdentity.slot,
+    parentId: backup.id,
+    schoolYear: ACTIVE_SCHOOL_YEAR,
+    reason: "restore",
+    label: `저장 기록 복구 · ${clean(targetRecord.label) || targetRecord.id}`,
+    restoredFrom: targetRecord.id,
+    restorable: true,
+    snapshotBytes: restoreSnapshot.payloadBytes,
+    counts: restoreSnapshot.counts,
+    changes: {
+      entrySets: summary.entrySets,
+      entryDeletes: summary.entryDeletes,
+      cardSets: summary.cardSets,
+      cardDeletes: summary.cardDeletes,
+      metaChanged: summary.metaChanged,
+      totalWrites: summary.totalWrites,
+    },
+    actor: currentRevisionActor(),
+    committedAt: serverTimestamp(),
+  };
+  const restoreMetaData = { ...targetMeta, saveRevision: restoreInfo };
+  const ops = [];
+  entryPlan.sets.forEach(change => ops.push({
+    type: "set",
+    ref: doc(splitRefs.timetableEntries, change.id),
+    data: { ...change.data, updatedAt: serverTimestamp() },
+    options: { merge: false },
+  }));
+  entryPlan.deletes.forEach(change => ops.push({ type: "delete", ref: doc(splitRefs.timetableEntries, change.id) }));
+  cardPlan.sets.forEach(change => ops.push({
+    type: "set",
+    ref: doc(splitRefs.ttcards, change.id),
+    data: { ...change.data, updatedAt: serverTimestamp() },
+    options: { merge: false },
+  }));
+  cardPlan.deletes.forEach(change => ops.push({ type: "delete", ref: doc(splitRefs.ttcards, change.id) }));
+  ops.push({
+    type: "set",
+    ref: splitRefs.timetableMeta,
+    data: { ...restoreMetaData, updatedAt: serverTimestamp() },
+    options: { merge: false },
+  });
+  ops.push({
+    type: "set",
+    ref: timetableSaveRevisionRef(restoreRevisionId),
+    data: {
+      ...restoreInfo,
+      status: "committed",
+      targetPaths: {
+        entries: storageLabel.timetableEntries,
+        cards: storageLabel.ttcards,
+        meta: storageLabel.timetableMeta,
+      },
+      entrySetIds: entryPlan.sets.map(v => v.id),
+      entryDeleteIds: entryPlan.deletes.map(v => v.id),
+      cardSetIds: cardPlan.sets.map(v => v.id),
+      cardDeleteIds: cardPlan.deletes.map(v => v.id),
+      snapshot: restoreSnapshot,
+      metaFingerprint: targetMetaHash,
+      createdAt: serverTimestamp(),
+    },
+    options: { merge: false },
+  });
+
+  await commitWriteOpsAtomic(ops, `timetable restore revision ${restoreRevisionId}`);
+  splitDocFingerprints.timetable.timetableEntries = entryPlan.current;
+  splitDocFingerprints.timetable.ttcards = cardPlan.current;
+  splitDocFingerprints.timetable.timetableMeta = targetMetaHash;
+  lastTimetableSaveRevisionId = restoreRevisionId;
+  lastTimetableSaveRevisionSequence = restoreIdentity.sequence;
+  appState.timetable = target;
+  markDomainSaved("timetable", target);
+  dirtyDomains.delete("timetable");
+  fireUpdate("timetable");
+
+  const restoredRevision = revisionListItem({ ...restoreInfo, status: "committed", snapshot: restoreSnapshot, committedAt: new Date().toISOString() });
+  console.info(`[Firestore restore] timetable revision restored: ${targetRecord.id} -> ${restoreRevisionId}`, summary);
+  return { restored: true, backup, revision: restoredRevision, source: revisionListItem(targetRecord), summary };
 }
 
 async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
@@ -2902,6 +3328,7 @@ function subscribeTimetableSplit() {
     timetableSplitCache.metaExists = snap.exists();
     timetableSplitCache.meta = snap.exists() ? withoutFirestoreMeta(snap.data()) : {};
     lastTimetableSaveRevisionId = clean(timetableSplitCache.meta?.saveRevision?.id);
+    lastTimetableSaveRevisionSequence = Number(timetableSplitCache.meta?.saveRevision?.sequence || 0) || 0;
     applyTimetableSplitIfReady();
   }, onSplitError);
 
