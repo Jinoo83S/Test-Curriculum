@@ -39,6 +39,11 @@ for (const rel of [
   "timetable-print.css",
   "js/timetable-print-app.js",
   "js/timetable-print-semester.js",
+  "js/timetable-print-archive.js",
+  "js/timetable-print-file-utils.js",
+  "js/timetable-print-word.js",
+  "js/timetable-print-excel.js",
+  "js/timetable-print-pdf.js",
   "timetable-print.html",
   "timetable.html",
 ]) {
@@ -110,6 +115,7 @@ const regressionTests = [
   "test-timetable-runtime-symbols.mjs",
   "test-timetable-print-module-boundaries.mjs",
   "test-timetable-print-semester.mjs",
+  "test-timetable-print-export-modules.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });

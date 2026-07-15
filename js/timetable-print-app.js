@@ -10,8 +10,13 @@ import {
   resolveSemesterCardValues,
   resolveSemesterEntryValues,
 } from "./timetable-print-semester.js?v=2026-07-15-print-semester-r360";
+import { downloadBlobFile, downloadTextFile, safeFilePart } from "./timetable-print-file-utils.js?v=2026-07-15-print-modules-r361";
+import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=2026-07-15-print-modules-r361";
+import { createDocxBuilder } from "./timetable-print-word.js?v=2026-07-15-print-modules-r361";
+import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=2026-07-15-print-modules-r361";
+import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-modules-r361";
 
-const VERSION = "2026-07-15-print-semester-r360";
+const VERSION = "2026-07-15-print-modules-r361";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -559,7 +564,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r360.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r361.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -1262,67 +1267,11 @@ function updateExportButtonLabel() {
   const f = format();
   btn.textContent = f === "word" ? "Word 저장" : "인쇄/PDF";
 }
-function safeFilePart(value="") {
-  return clean(value).replace(/[\\/:*?"<>|]+/g,"_").replace(/\s+/g,"_").slice(0,80) || "시간표";
-}
 function exportFileName(ext) {
   const kindText = $("outputKind")?.selectedOptions?.[0]?.textContent || "시간표";
   const scope = currentScopeMode();
   const stamp = new Date().toISOString().slice(0,10);
   return `${safeFilePart(kindText)}_${safeFilePart(selectedSemesterLabel())}_${safeFilePart(scope)}_${stamp}.${ext}`;
-}
-function downloadTextFile(filename, content, mime) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
-}
-
-function downloadBlobFile(filename, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1000);
-}
-function xmlEsc(v="") { return clean(v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/'/g,"&apos;"); }
-function colName(n) { let s=""; while(n>0){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
-function crc32Bytes(bytes) {
-  if (!crc32Bytes.table) {
-    crc32Bytes.table = Array.from({length:256},(_,i)=>{ let c=i; for(let k=0;k<8;k++) c=(c&1)?(0xedb88320^(c>>>1)):(c>>>1); return c>>>0; });
-  }
-  let crc=0xffffffff;
-  for (const b of bytes) crc = crc32Bytes.table[(crc ^ b) & 255] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-function u8FromString(s) { return new TextEncoder().encode(String(s)); }
-function concatU8(parts) { const total=parts.reduce((n,p)=>n+p.length,0); const out=new Uint8Array(total); let off=0; for(const p of parts){ out.set(p,off); off+=p.length; } return out; }
-function le16(v){ const b=new Uint8Array(2); new DataView(b.buffer).setUint16(0,v,true); return b; }
-function le32(v){ const b=new Uint8Array(4); new DataView(b.buffer).setUint32(0,v>>>0,true); return b; }
-function zipStore(files) {
-  const now = new Date();
-  const dostime = ((now.getHours()&31)<<11) | ((now.getMinutes()&63)<<5) | ((Math.floor(now.getSeconds()/2))&31);
-  const dosdate = (((now.getFullYear()-1980)&127)<<9) | (((now.getMonth()+1)&15)<<5) | (now.getDate()&31);
-  let offset=0; const locals=[]; const centrals=[];
-  for (const f of files) {
-    const nameBytes=u8FromString(f.name);
-    const data=f.data instanceof Uint8Array ? f.data : u8FromString(f.data);
-    const crc=crc32Bytes(data);
-    const local=concatU8([le32(0x04034b50),le16(20),le16(0),le16(0),le16(dostime),le16(dosdate),le32(crc),le32(data.length),le32(data.length),le16(nameBytes.length),le16(0),nameBytes,data]);
-    locals.push(local);
-    const central=concatU8([le32(0x02014b50),le16(20),le16(20),le16(0),le16(0),le16(dostime),le16(dosdate),le32(crc),le32(data.length),le32(data.length),le16(nameBytes.length),le16(0),le16(0),le16(0),le16(0),le32(0),le32(offset),nameBytes]);
-    centrals.push(central);
-    offset += local.length;
-  }
-  const centralSize=centrals.reduce((n,p)=>n+p.length,0);
-  const end=concatU8([le32(0x06054b50),le16(0),le16(0),le16(files.length),le16(files.length),le32(centralSize),le32(offset),le16(0)]);
-  return new Blob([concatU8([...locals,...centrals,end])], {type:"application/zip"});
 }
 function officeProtectText(value="") {
   let s = clean(value).replace(/\s+/g, " ").trim();
@@ -1802,221 +1751,6 @@ function sheetModelsFromPreview() {
   // r299: Word/Excel은 더 이상 화면 DOM을 해석하지 않고, 시간표 데이터에서 표준 ExportMatrix를 직접 작성합니다.
   // PDF/미리보기 렌더러와 Office 출력 모델을 분리해야 7개 출력종류 × 가로/세로 × Word/Excel을 안정적으로 확장할 수 있습니다.
   return sheetModelsFromData();
-}
-function sheetName(name, used=new Set()) {
-  let base = clean(name).replace(/[\\/?*\[\]:]/g," ").trim().slice(0,31) || "Sheet";
-  let out=base, i=2;
-  while(used.has(out)){ const suffix=` ${i++}`; out=(base.slice(0,31-suffix.length)+suffix).trim(); }
-  used.add(out); return out;
-}
-function xlsxCell(cells, r, c, text="", style=0) {
-  if (!text) return;
-  if (!cells[r]) cells[r] = [];
-  const prev = cells[r].find(x => x.c === c);
-  if (prev) { prev.text = [prev.text, text].filter(Boolean).join("\n"); prev.style = Math.max(prev.style || 0, style || 0); return; }
-  cells[r].push({ c, text, style });
-}
-function xlsxRangesOverlap(a, b) {
-  return !(a.r2 < b.r1 || b.r2 < a.r1 || a.c2 < b.c1 || b.c2 < a.c1);
-}
-function xlsxMerge(merges, r1, c1, r2, c2) {
-  r1 = Math.max(1, Math.floor(Number(r1) || 1));
-  c1 = Math.max(1, Math.floor(Number(c1) || 1));
-  r2 = Math.max(r1, Math.floor(Number(r2) || r1));
-  c2 = Math.max(c1, Math.floor(Number(c2) || c1));
-  if (r2 === r1 && c2 === c1) return;
-  const next = { r1, c1, r2, c2 };
-  if (merges.some(m => xlsxRangesOverlap(m, next))) return;
-  merges.push(next);
-}
-function xlsxSlotShape(model) {
-  let maxCols = 1, maxRows = 1;
-  (model.grid || []).forEach(row => (row || []).forEach(cell => {
-    if (!cell || cell.header) return;
-    const cards = officeCardsForLayout(cell.cards || []);
-    if (!cards.length) return;
-    const shape = officeCardGridShape(Math.max(1, Math.min(4, cards.length)), model);
-    maxCols = Math.max(maxCols, shape.cols || 1);
-    maxRows = Math.max(maxRows, shape.rows || 1);
-  }));
-  // r318: 카드 1개는 3칸/과목 전체행/영문 전체행/3칸 = 4행 구조를 유지합니다.
-  return { slotCols: Math.max(3, maxCols * 3), slotRows: Math.max(4, maxRows * 4) };
-}
-let XLSX_STYLE_REGISTRY = { map:new Map(), entries:[] };
-function xlsxFieldPt(fieldKey="subject", cfg={}) {
-  const px = fontValueToPx(cfg?.fontPx || cfg?.font, fieldKey) || FIELD_FONT_PX_DEFAULTS[fieldKey] || 8;
-  return Math.max(5, Math.min(16, Math.round(Number(px) * 0.75 * 10) / 10));
-}
-function officeFieldHorizontalAlign(cfg={}, def={}) {
-  // r341: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 가로 가운데 정렬합니다.
-  return "center";
-}
-function officeFieldVerticalAlign(cfg={}, def={}) {
-  // r341: 데이터 텍스트는 필드가 배치된 셀 내부에서 모두 세로 가운데 정렬합니다.
-  return "center";
-}
-function xlsxDynamicStyleKey(fieldKey="subject", cfg={}, def=null) {
-  const pt = xlsxFieldPt(fieldKey, cfg);
-  const bold = !!cfg?.bold;
-  const align = officeFieldHorizontalAlign(cfg, def || FIELD_DEFS.find(x=>x.key===fieldKey) || {});
-  const valign = officeFieldVerticalAlign(cfg, def || FIELD_DEFS.find(x=>x.key===fieldKey) || {});
-  return `${fieldKey}:${pt}:${bold ? 1 : 0}:${align}:${valign}`;
-}
-function buildXlsxStyleRegistry(models=[]) {
-  const map = new Map();
-  const entries = [];
-  const add = (fieldKey, cfg={}, def=null) => {
-    const fieldDef = def || FIELD_DEFS.find(x=>x.key===fieldKey) || {};
-    const key = xlsxDynamicStyleKey(fieldKey, cfg, fieldDef);
-    if (map.has(key)) return;
-    const id = 6 + entries.length;
-    const pt = xlsxFieldPt(fieldKey, cfg);
-    const align = officeFieldHorizontalAlign(cfg, fieldDef);
-    const valign = officeFieldVerticalAlign(cfg, fieldDef);
-    map.set(key, id);
-    entries.push({ key, fieldKey, pt, bold: !!cfg?.bold, align, valign });
-  };
-  (models || []).forEach(model => {
-    [1,2,3,4].forEach(n => {
-      const fields = officeFieldsForCardCount(model, n);
-      FIELD_DEFS.forEach(def => {
-        const cfg = fields[def.key] || def;
-        if (cfg.enabled !== false) add(def.key, cfg, def);
-      });
-    });
-  });
-  return { map, entries };
-}
-function xlsxFieldStyle(fieldKey, cfg, header=false, def=null) {
-  if (header) return 1;
-  const key = xlsxDynamicStyleKey(fieldKey, cfg || {}, def || FIELD_DEFS.find(x=>x.key===fieldKey) || {});
-  return XLSX_STYLE_REGISTRY?.map?.get(key) || (cfg?.bold ? 1 : 0);
-}
-function officeCardStructuredIndex(def, cfg) {
-  // r318 Office 실제 격자: 위 3칸 / 과목 전체행 / 영문 전체행 / 아래 3칸.
-  // 과목·영문은 카드 폭 전체를 쓰는 1행으로 배치하고, 교실/교사 등 위치 필드는 위·아래 3칸을 사용합니다.
-  if (def?.key === "subject") return [1, 0];
-  if (def?.key === "english") return [2, 0];
-  const [rr, cc] = officeCellMatrixIndex(officeFieldPosition(cfg, def));
-  return [rr <= 0 ? 0 : 3, cc];
-}
-function officeCardStructuredColspan(def, cfg) {
-  return (def?.key === "subject" || def?.key === "english") ? 3 : 1;
-}
-function xlsxPlaceCard3x3(cells, merges, sheetRowBase, rowBase, colBase, cardRows, cardCols, card, model, splitCount) {
-  const fields = officeFieldsForCardCount(model, splitCount);
-  const unitH = Math.max(1, Math.floor(cardRows / 4));
-  const unitW = Math.max(1, Math.floor(cardCols / 3));
-  FIELD_DEFS.forEach(def => {
-    const cfg = fields[def.key] || def;
-    if (cfg.enabled === false) return;
-    const value = officeCardDisplayValue(card, def.key, model, splitCount);
-    if (!value) return;
-    const [pr, pc] = officeCardStructuredIndex(def, cfg);
-    const rr = rowBase + pr * unitH;
-    const cc = colBase + pc * unitW;
-    xlsxCell(cells, rr, cc, value, xlsxFieldStyle(def.key, cfg, false, def));
-    if (officeCardStructuredColspan(def, cfg) > 1) {
-      xlsxMerge(merges, sheetRowBase + rr, cc, sheetRowBase + rr + unitH - 1, colBase + cardCols - 1);
-    }
-  });
-}
-function xlsxExpandedGeometry(model) {
-  const logicalCols = Math.max(1, model.cols || 1);
-  if (model && model.flatOffice) return { logicalCols, slotCols: 1, slotRows: 1, expandedCols: logicalCols };
-  const { slotCols, slotRows } = xlsxSlotShape(model);
-  const expandedCols = logicalCols <= 1 ? 1 : 1 + (logicalCols - 1) * slotCols;
-  return { logicalCols, slotCols, slotRows, expandedCols };
-}
-function xlsxLogicalStartCol(c, slotCols) {
-  return c === 0 ? 1 : 2 + (c - 1) * slotCols;
-}
-function buildXlsxBlob(models) {
-  models = excelModelsForExport(models);
-  XLSX_STYLE_REGISTRY = buildXlsxStyleRegistry(models);
-  const used=new Set();
-  const sheetNames=models.map(m=>sheetName(m.title,used));
-  const files=[];
-  files.push({name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${models.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("")}</Types>`});
-  files.push({name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`});
-  files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${models.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join("")}<Relationship Id="rId${models.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
-  files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets>${sheetNames.map((n,i)=>`<sheet name="${xmlEsc(n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join("")}</sheets></workbook>`});
-  const dynamicFonts = (XLSX_STYLE_REGISTRY.entries || []).map(e => `<font>${e.bold ? "<b/>" : ""}<condense/><sz val="${e.pt}"/><name val="Malgun Gothic"/></font>`).join("");
-  const dynamicXfs = (XLSX_STYLE_REGISTRY.entries || []).map((e,i) => `<xf numFmtId="0" fontId="${5+i}" fillId="0" borderId="1" xfId="0"><alignment horizontal="${e.align || "center"}" vertical="${e.valign || "center"}" wrapText="0"/></xf>`).join("");
-  const fontCount = 5 + (XLSX_STYLE_REGISTRY.entries || []).length;
-  const xfCount = 6 + (XLSX_STYLE_REGISTRY.entries || []).length;
-  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fontCount}"><font><condense/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><condense/><sz val="8.2"/><name val="Malgun Gothic"/></font><font><b/><condense/><sz val="14"/><name val="Malgun Gothic"/></font><font><condense/><sz val="7"/><name val="Malgun Gothic"/></font><font><b/><condense/><sz val="7"/><name val="Malgun Gothic"/></font>${dynamicFonts}</fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF1F5F9"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FF111827"/></left><right style="thin"><color rgb="FF111827"/></right><top style="thin"><color rgb="FF111827"/></top><bottom style="thin"><color rgb="FF111827"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfCount}"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="1" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment horizontal="left" vertical="center"/></xf><xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="0" fontId="4" fillId="1" borderId="1" xfId="0"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>${dynamicXfs}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
-  models.forEach((m,idx)=>{
-    const overview = m.layoutMode==="overview" || /전체표/.test(m.title||"");
-    const geom = xlsxExpandedGeometry(m);
-    const merges=[]; const rows=[];
-    const titleStart = geom.expandedCols >= 3 ? 2 : 1;
-    const titleEnd = geom.expandedCols >= 3 ? geom.expandedCols-1 : geom.expandedCols;
-    rows.push({height:24,cells:[{c:1,text:m.leftNote||"",style:3},{c:titleStart,text:m.title,style:2},{c:geom.expandedCols,text:m.rightNote||"",style:3}]});
-    rows.push({height:4,cells:[]});
-    if (!m.flatOffice && titleEnd > titleStart) merges.push({r1:1,c1:titleStart,r2:1,c2:titleEnd});
-    const headerRows = overview ? 2 : 1;
-    (m.grid || []).forEach((row,r)=>{
-      const isHeaderRow = r < headerRows;
-      const internalRows = isHeaderRow ? 1 : geom.slotRows;
-      const startSheetRow = rows.length + 1;
-      const cellsByInternal = Array.from({length:internalRows},()=>[]);
-      (row || []).forEach((cell,c)=>{
-        if (!cell || cell.skip || cell.vmerge === "continue") return;
-        const baseCol = xlsxLogicalStartCol(c, geom.slotCols);
-        const spanLogical = Math.max(1, Number(cell.colspan)||1);
-        const spanCols = c === 0 ? 1 : spanLogical * geom.slotCols;
-        if (cell.header) {
-          xlsxCell(cellsByInternal, 0, baseCol, cell.text || "", 1);
-          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow, baseCol + spanCols - 1);
-          return;
-        }
-        if (c === 0) {
-          xlsxCell(cellsByInternal, 0, baseCol, cell.text || "", 1);
-          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow + internalRows - 1, baseCol);
-          return;
-        }
-        const cards = officeCardsForLayout(cell.cards || []).slice(0,6);
-        if (!cards.length) {
-          const text = officeCellText(cell, "excel", m);
-          const style = cell.fieldKey ? xlsxFieldStyle(cell.fieldKey, cell.fieldCfg || {}, false, cell.fieldDef || null) : 0;
-          const rowSpan = Math.max(1, Number(cell.rowspan)||1);
-          xlsxCell(cellsByInternal, Math.floor(internalRows/2), baseCol, text, style);
-          xlsxMerge(merges, startSheetRow, baseCol, startSheetRow + Math.max(internalRows, rowSpan) - 1, baseCol + spanCols - 1);
-          return;
-        }
-        const count = Math.max(1, Math.min(4, cards.length));
-        const shape = officeCardGridShape(count, m);
-        const cardCols = Math.max(3, Math.floor(spanCols / shape.cols));
-        const cardRows = Math.max(3, Math.floor(internalRows / shape.rows));
-        cards.forEach((card,i)=>{
-          const rr = Math.floor(i / shape.cols);
-          const cc = i % shape.cols;
-          if (rr >= shape.rows) return;
-          xlsxPlaceCard3x3(cellsByInternal, merges, startSheetRow, rr * cardRows, baseCol + cc * cardCols, cardRows, cardCols, card, m, count);
-        });
-      });
-      const baseBodyHeight = officeModelProfile(m).excel.bodyHeight || (overview ? 58 : 78);
-      const unitHeight = isHeaderRow ? (overview ? 13 : 16) : Math.max(6, Math.min(18, baseBodyHeight / internalRows));
-      cellsByInternal.forEach((cells,i)=>{
-        const rowRef = m.flatOffice ? (m.grid || [])[r] || [] : null;
-        const budgetedHeight = m.flatOffice ? officeFlatBudgetedHeight("excel", rowRef, m, r, overview, false, false) : unitHeight;
-        rows.push({height:budgetedHeight,cells});
-      });
-    });
-    (m.merges || []).forEach(x=>{
-      // 표준 행렬의 헤더 병합은 위에서 확장 처리하므로, 일반 병합만 보존합니다.
-    });
-    const lpExcel = officeModelProfile(m).excel || {};
-    const visualColWidth = overview ? (lpExcel.colWidth || 4.9) : (lpExcel.colWidth || 23.2);
-    const firstColWidth = overview ? (lpExcel.firstColWidth || 5.0) : (lpExcel.firstColWidth || 4.0);
-    const colsXml=Array.from({length:geom.expandedCols},(_,i)=>`<col min="${i+1}" max="${i+1}" width="${i===0?firstColWidth:Math.max(0.75, visualColWidth / geom.slotCols)}" customWidth="1"/>`).join("");
-    const rowsXml=rows.map((row,ridx)=>`<row r="${ridx+1}" ht="${row.height}" customHeight="1">${row.cells.map(cell=>`<c r="${colName(cell.c)}${ridx+1}" t="inlineStr" s="${cell.style}"><is><t xml:space="preserve">${xmlEsc(cell.text)}</t></is></c>`).join("")}</row>`).join("");
-    const mergeXml=merges.length?`<mergeCells count="${merges.length}">${merges.map(x=>`<mergeCell ref="${colName(x.c1)}${x.r1}:${colName(x.c2)}${x.r2}"/>`).join("")}</mergeCells>`:"";
-    // r318: Excel은 가로/세로 구분 없이 같은 격자 구조를 저장합니다.
-    files.push({name:`xl/worksheets/sheet${idx+1}.xml`,data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/>${colsXml?`<cols>${colsXml}</cols>`:""}<sheetData>${rowsXml}</sheetData>${mergeXml}<printOptions horizontalCentered="1" verticalCentered="1"/><pageMargins left="0.15" right="0.15" top="0.2" bottom="0.2" header="0" footer="0"/><pageSetup fitToWidth="1" fitToHeight="1"/></worksheet>`});
-  });
-  return zipStore(files);
 }
 function wText(text="") {
   const lines=String(text||"").replace(/\r/g,"").split(/\n/);
@@ -2935,28 +2669,15 @@ function wordHeaderRowXml(model) {
     `</w:tr>`;
   return `<w:tbl><w:tblPr><w:tblW w:w="${tblW}" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="nil"/><w:left w:val="nil"/><w:bottom w:val="nil"/><w:right w:val="nil"/><w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders></w:tblPr><w:tblGrid><w:gridCol w:w="${sideW}"/><w:gridCol w:w="${centerW}"/><w:gridCol w:w="${sideW}"/></w:tblGrid>${row}</w:tbl>`;
 }
-function buildDocxBlob(models) {
-  const wordModels = wordModelsForExport(models);
-  const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
-  const hasWideOverview = wordModels.some(isWideOfficeOverview);
-  const pageMetricModel = hasWideOverview ? { profile:"class:overview", layoutMode:"overview", cols:35 } : (wordModels[0] || null);
-  const pageSize = officeWordPageSize(pageMetricModel);
-  const pgW = pageSize.w;
-  const pgH = pageSize.h;
-  const mar = officeWordPageMargins();
-  const body = wordModels.map((m,i)=>`${i?'<w:p><w:r><w:br w:type="page"/></w:r></w:p>':""}${wordHeaderRowXml(m)}${wordTableXml(m)}`).join("");
-  const doc=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="${pgW}" w:h="${pgH}"${portrait?"":" w:orient=\"landscape\""}/><w:pgMar w:top="${mar.top}" w:right="${mar.right}" w:bottom="${mar.bottom}" w:left="${mar.left}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr></w:body></w:document>`;
-  const styles=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:rPr><w:rFonts w:ascii="Malgun Gothic" w:hAnsi="Malgun Gothic" w:eastAsia="맑은 고딕"/><w:sz w:val="12"/><w:szCs w:val="12"/></w:rPr><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:style></w:styles>`;
-  const settings=`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:defaultTabStop w:val="720"/></w:settings>`;
-  return zipStore([
-    {name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>`},
-    {name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`},
-    {name:"word/_rels/document.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml"/></Relationships>`},
-    {name:"word/document.xml",data:doc},
-    {name:"word/styles.xml",data:styles},
-    {name:"word/settings.xml",data:settings}
-  ]);
-}
+const buildDocxBlob = createDocxBuilder({
+  wordModelsForExport,
+  isWideOfficeOverview,
+  officeWordPageSize,
+  officeWordPageMargins,
+  wordHeaderRowXml,
+  wordTableXml,
+  isPortrait: () => ($("paper")?.value || "a4-landscape") === "a4-portrait",
+});
 
 function excelGradeFromClassLabel(label="") {
   const m = String(label || "").match(/(\d{1,2})\s*[A-Z]?/i);
@@ -2995,204 +2716,33 @@ function excelDbRowsForExport() {
   });
   return rows;
 }
-function buildXlsxDatabaseBlob() {
-  const rows = excelDbRowsForExport();
-  const files=[];
-  files.push({name:"[Content_Types].xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`});
-  files.push({name:"_rels/.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`});
-  files.push({name:"xl/_rels/workbook.xml.rels",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`});
-  files.push({name:"xl/workbook.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr/><sheets><sheet name="database" sheetId="1" r:id="rId1"/></sheets></workbook>`});
-  files.push({name:"xl/styles.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="10"/><name val="Malgun Gothic"/></font><font><b/><sz val="10"/><name val="Malgun Gothic"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE2E8F0"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="1" borderId="0" xfId="0" applyFill="1"><alignment horizontal="center" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`});
-  const widths = [10,16,28,36,24,18];
-  const colsXml = widths.map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("");
-  const rowsXml = rows.map((row,ridx)=>`<row r="${ridx+1}"${ridx===0?' ht="20" customHeight="1"':''}>${row.map((v,cidx)=>`<c r="${colName(cidx+1)}${ridx+1}" t="inlineStr" s="${ridx===0?1:0}"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`).join("")}</row>`).join("");
-  files.push({name:"xl/worksheets/sheet1.xml",data:`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>${colsXml}</cols><sheetData>${rowsXml}</sheetData><autoFilter ref="A1:F${Math.max(1, rows.length)}"/><pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/></worksheet>`});
-  return zipStore(files);
-}
-
 function downloadExcelDatabase() {
   if (!dataReady) return;
-  downloadBlobFile(exportFileName("xlsx"), buildXlsxDatabaseBlob());
+  downloadBlobFile(exportFileName("xlsx"), buildXlsxDatabaseBlob(excelDbRowsForExport()));
 }
 
 function exportOfficeReal(kind) {
   if (!dataReady) return;
   const models = sheetModelsFromPreview();
-  if (kind === "excel") downloadBlobFile(exportFileName("xlsx"), buildXlsxDatabaseBlob());
+  if (kind === "excel") downloadBlobFile(exportFileName("xlsx"), buildXlsxDatabaseBlob(excelDbRowsForExport()));
   else downloadBlobFile(exportFileName("docx"), buildDocxBlob(models));
   setTimeout(renderPreview, 250);
 }
-function officeExportCss(kind="word") {
-  const portrait = ($("paper")?.value || "a4-landscape") === "a4-portrait";
-  const pageSize = portrait ? "210mm 297mm" : "297mm 210mm";
-  const orient = portrait ? "portrait" : "landscape";
-  const font = getComputedStyle(document.body).getPropertyValue("--print-font") || '"Malgun Gothic","맑은 고딕",Arial,sans-serif';
-  const isExcel = kind === "excel";
-  return `<style>
-@page Section1{size:${pageSize};mso-page-orientation:${orient};margin:8mm}
-@page{size:${pageSize};mso-page-orientation:${orient};margin:8mm}
-html,body{margin:0;padding:0;background:#fff}
-body{font-family:${font};font-size:${isExcel ? "10px" : "11px"};color:#111827;background:#fff}
-.Section1{page:Section1}
-h1,h2,h3{font-family:${font};text-align:center;margin:0 0 6px}
-.preview-page{page-break-after:always;break-after:page;margin:0;padding:8px;background:#fff;width:100%!important;min-height:auto!important;box-shadow:none!important;border:0!important}
-.preview-page:last-child{page-break-after:auto!important;break-after:auto!important}
-.preview-sub{font-size:10px;color:#475569;margin:0 0 6px}
-table{border-collapse:collapse;table-layout:fixed;width:100%}
-th,td{border:1px solid #111827;text-align:center;vertical-align:middle;padding:2px;white-space:normal}
-th{font-weight:700;background:#f8fafc}
-.tt-table{border:2px solid #111827;width:100%!important}
-.mini-card{border:0!important;background:#fff;min-height:16px;padding:1px!important;overflow:hidden}
-.lesson-cell,.overview-cell{display:block;width:100%;height:100%}
-.field-item,.compact-subject,.compact-sub,.compact-meta,.field-subject-group{position:static!important;transform:none!important;display:block!important;max-width:100%!important;white-space:normal;overflow:hidden;text-overflow:clip;line-height:1.15;text-align:center}
-.field-subject,.compact-subject{font-weight:700}
-.field-english,.field-english-inline,.compact-sub{font-size:.82em;color:#475569}
-.field-room,.compact-meta{font-size:.88em;font-weight:700}
-.office-note{font-size:10px;color:#64748b;margin:6px 0 12px}
-</style>`;
-}
-function buildOfficeHtml(kind="word") {
-  const clone = $("previewInner").cloneNode(true);
-  clone.querySelectorAll("script,style,button,input,select").forEach(el=>el.remove());
-  clone.querySelectorAll(".preview-page").forEach(p=>{
-    p.removeAttribute("style");
-    p.classList.add("office-export-root");
-  });
-  clone.querySelectorAll("[style]").forEach(el=>{
-    // Office/Excel에서 transform/zoom 때문에 작게 깨지는 문제 방지
-    const style = el.getAttribute("style") || "";
-    const filtered = style.split(";").filter(x=>!/\b(transform|zoom|position)\b/i.test(x)).join(";");
-    if (filtered.trim()) el.setAttribute("style", filtered); else el.removeAttribute("style");
-  });
-  const title = safeFilePart($("outputKind")?.selectedOptions?.[0]?.textContent || "시간표");
-  const meta = `${title} · ${selectedSemesterLabel()} · ${new Date().toLocaleString("ko-KR")}`;
-  const excelMeta = kind === "excel" ? '<meta name="ProgId" content="Excel.Sheet"><meta name="Generator" content="HIS Timetable Export">' : '<meta name="ProgId" content="Word.Document"><meta name="Generator" content="HIS Timetable Export">';
-  return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="Section1 office-export-root"><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</div></body></html>`;
-}
-
-function stripCssBlock(css, atRuleTester) {
-  // 인쇄용 iframe에는 화면 미리보기 스타일만 가져오고 기존 인쇄 규칙은 제거합니다.
-  let out = "";
-  let i = 0;
-  while (i < css.length) {
-    const at = css.indexOf("@", i);
-    if (at < 0) { out += css.slice(i); break; }
-    out += css.slice(i, at);
-    const head = css.slice(at, Math.min(css.length, at + 80));
-    if (!atRuleTester(head)) { out += "@"; i = at + 1; continue; }
-    const brace = css.indexOf("{", at);
-    if (brace < 0) { i = css.length; break; }
-    let depth = 0;
-    let j = brace;
-    for (; j < css.length; j++) {
-      const ch = css[j];
-      if (ch === "{") depth++;
-      else if (ch === "}") {
-        depth--;
-        if (depth === 0) { j++; break; }
-      }
-    }
-    i = j;
-  }
-  return out;
-}
-function printBaseStyleText() {
-  const raw = Array.from(document.querySelectorAll('style')).map(el=>el.textContent || "").join("\n");
-  let css = stripCssBlock(raw, head=>/^@media\s+print\b/i.test(head));
-  css = stripCssBlock(css, head=>/^@page\b/i.test(head));
-  return css;
-}
-function removeHiddenPrintFrame() {
-  const old = document.getElementById("hisHiddenPrintFrame");
-  if (old && old.parentNode) old.parentNode.removeChild(old);
-}
-async function exportPdfReal() {
-  // r298: 새 창/about:blank 없이 숨김 iframe에서 현재 미리보기 DOM과 같은 HTML을 인쇄합니다.
-  // 방향 강제 우회 코드는 제거하고, UI 안내 문구는 최소화합니다.
-  if (!dataReady) return;
-  showRenderOverlay("인쇄용 시간표를 준비하는 중입니다…");
-  let frame = null;
-  try {
-    await nextPaint();
-    renderEntityList();
-    const allEnts = selectedEntities();
-    if (!allEnts.length) throw new Error("출력할 대상이 없습니다.");
-
-    const portrait = paperOrientation() === "portrait";
-    const pageCss = portrait
-      ? { pageRule: "A4 portrait", paperW: "210mm", paperH: "297mm", pagePxW: "794px", pagePxH: "1123px" }
-      : { pageRule: "A4 landscape", paperW: "297mm", paperH: "210mm", pagePxW: "1123px", pagePxH: "794px" };
-
-    const pages = layoutMode()==="overview" ? overviewPages(allEnts) : allEnts.map(pageForEntity);
-    if (!pages.length) throw new Error("생성된 인쇄 페이지가 없습니다.");
-
-    const styleText = printBaseStyleText();
-    const bodyClass = Array.from(document.body.classList).filter(c=>/^font-|ellipsis-enabled/.test(c)).join(" ");
-    const printCss = `
-      @page{size:${pageCss.pageRule};margin:0}
-      html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;width:${pageCss.paperW}!important;min-width:${pageCss.paperW}!important;height:auto!important}
-      body{font-family:var(--print-font, system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif)!important;color:#102033!important}
-      .topbar,.sidebar,.preview-toolbar,.render-overlay{display:none!important}
-      .app,.preview-wrap,.preview-scroll,.preview-inner{display:block!important;height:auto!important;min-height:0!important;overflow:visible!important;background:#fff!important;margin:0!important;padding:0!important;width:${pageCss.paperW}!important;max-width:${pageCss.paperW}!important;transform:none!important;zoom:1!important}
-      .preview-inner{position:static!important}
-      .preview-page{box-sizing:border-box!important;box-shadow:none!important;border:0!important;margin:0!important;padding:5mm!important;width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-width:${pageCss.paperW}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important}
-      .preview-page:last-child{break-after:auto!important;page-break-after:auto!important}
-      .preview-page.paper-landscape,.preview-page.paper-portrait{width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important}
-      @media print{
-        @page{size:${pageCss.pageRule};margin:0}
-        html,body{margin:0!important;padding:0!important;background:#fff!important;overflow:visible!important;width:${pageCss.paperW}!important;min-width:${pageCss.paperW}!important;height:auto!important}
-        .preview-page{box-sizing:border-box!important;box-shadow:none!important;border:0!important;margin:0!important;padding:5mm!important;width:${pageCss.paperW}!important;height:${pageCss.paperH}!important;min-width:${pageCss.paperW}!important;min-height:${pageCss.paperH}!important;max-width:${pageCss.paperW}!important;max-height:${pageCss.paperH}!important;overflow:hidden!important;background:#fff!important;break-after:page!important;page-break-after:always!important}
-        .preview-page:last-child{break-after:auto!important;page-break-after:auto!important}
-      }
-    `;
-
-    const title = exportFileName("pdf").replace(/\.pdf$/i,"");
-    const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title><style>${styleText}</style><style>${printCss}</style></head><body class="${esc(bodyClass)} ${portrait ? "print-portrait" : "print-landscape"}"><main class="preview-inner">${pages.join("")}</main></body></html>`;
-
-    removeHiddenPrintFrame();
-    frame = document.createElement("iframe");
-    frame.id = "hisHiddenPrintFrame";
-    frame.title = "HIS 시간표 인쇄";
-    frame.setAttribute("aria-hidden", "true");
-    frame.style.position = "fixed";
-    frame.style.right = "0";
-    frame.style.bottom = "0";
-    frame.style.width = "1px";
-    frame.style.height = "1px";
-    frame.style.border = "0";
-    frame.style.opacity = "0";
-    frame.style.pointerEvents = "none";
-    document.body.appendChild(frame);
-
-    const doc = frame.contentDocument || frame.contentWindow.document;
-    doc.open();
-    doc.write(html);
-    doc.close();
-    await sleep(180);
-
-    $("previewMeta").textContent = `${selectedSemesterLabel()} · 출력 전체 · ${allEnts.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
-    showRenderOverlay("인쇄창을 여는 중입니다…");
-    await sleep(450);
-    hideRenderOverlay();
-
-    const win = frame.contentWindow;
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      setTimeout(removeHiddenPrintFrame, 300);
-    };
-    try { win.addEventListener("afterprint", cleanup, {once:true}); } catch {}
-    setTimeout(cleanup, 60000);
-    win.focus();
-    win.print();
-  } catch (err) {
-    console.error('[hidden iframe print failed]', err);
-    hideRenderOverlay();
-    removeHiddenPrintFrame();
-    alert('인쇄용 시간표 생성 중 오류가 발생했습니다: ' + (err && err.message ? err.message : String(err)));
-  }
-}
+const exportPdfReal = createPdfExporter({
+  isDataReady: () => dataReady,
+  showRenderOverlay,
+  nextPaint,
+  renderEntityList,
+  selectedEntities,
+  isPortrait: () => paperOrientation() === "portrait",
+  pagesForEntities: allEnts => layoutMode() === "overview" ? overviewPages(allEnts) : allEnts.map(pageForEntity),
+  exportTitle: () => exportFileName("pdf").replace(/\.pdf$/i, ""),
+  escapeHtml: esc,
+  sleep,
+  setPreviewMeta: text => { const el = $("previewMeta"); if (el) el.textContent = text; },
+  previewMetaText: allEnts => `${selectedSemesterLabel()} · 출력 전체 · ${allEnts.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`,
+  hideRenderOverlay,
+});
 
 function exportOffice(kind) {
   if (kind === "word" && isOverviewProfile()) {

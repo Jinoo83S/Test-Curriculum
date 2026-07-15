@@ -14,22 +14,41 @@ const app = read("js/timetable-print-app.js");
 const semester = read("js/timetable-print-semester.js");
 
 assert.match(html, /<link rel="stylesheet" href="timetable-print\.css\?v=2026-07-15-print-module-boundary-r359">/);
-assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-semester-r360"><\/script>/);
+assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-modules-r361"><\/script>/);
 assert.doesNotMatch(html, /<script type="module">[\s\S]*?<\/script>/, "large inline module must not return");
 assert.doesNotMatch(html, /:root\{--nav:/, "main print stylesheet must stay external");
 assert.match(html, /<style id="printPageStyle">@page\{size:/, "runtime page style element must remain available");
 assert.ok(css.length > 50000, "external print stylesheet looks incomplete");
-assert.ok(app.length > 180000, "external print application module looks incomplete");
+assert.ok(app.length > 160000, "external print application module looks incomplete");
 assert.match(semester, /export function resolveSemesterCardValues/);
 
 for (const signature of [
-  /function buildDocxBlob\(/,
-  /function buildXlsxDatabaseBlob\(/,
-  /async function exportPdfReal\(/,
+  /const buildDocxBlob = createDocxBuilder\(/,
+  /buildXlsxDatabaseBlob\(excelDbRowsForExport\(\)\)/,
+  /const exportPdfReal = createPdfExporter\(/,
   /function exportOfficeReal\(/,
   /function runMainExport\(/,
   /function boot\(/,
 ]) assert.match(app, signature);
+
+for (const removed of [
+  /function buildXlsxBlob\(/,
+  /function buildOfficeHtml\(/,
+  /function officeExportCss\(/,
+  /function zipStore\(/,
+]) assert.doesNotMatch(app, removed);
+
+for (const rel of [
+  "js/timetable-print-archive.js",
+  "js/timetable-print-file-utils.js",
+  "js/timetable-print-word.js",
+  "js/timetable-print-excel.js",
+  "js/timetable-print-pdf.js",
+]) {
+  assert.ok(fs.existsSync(path.join(root, rel)), `missing ${rel}`);
+  const syntaxResult = spawnSync(process.execPath, ["--check", path.join(root, rel)], { encoding: "utf8" });
+  assert.equal(syntaxResult.status, 0, `${rel} syntax failed\n${syntaxResult.stderr}`);
+}
 
 for (const importPath of ["./auth.js?", "./state.js?", "./local-dev.js?", "./config.js?"]) {
   assert.ok(app.includes(`from "${importPath}`), `print app import must be relative to js/: ${importPath}`);
