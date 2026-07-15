@@ -14,7 +14,7 @@ const app = read("js/timetable-print-app.js");
 const semester = read("js/timetable-print-semester.js");
 
 assert.match(html, /<link rel="stylesheet" href="timetable-print\.css\?v=2026-07-15-print-module-boundary-r359">/);
-assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-operational-print-regression-r363"><\/script>/);
+assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-output-hotfix-r364"><\/script>/);
 assert.doesNotMatch(html, /<script type="module">[\s\S]*?<\/script>/, "large inline module must not return");
 assert.doesNotMatch(html, /:root\{--nav:/, "main print stylesheet must stay external");
 assert.match(html, /<style id="printPageStyle">@page\{size:/, "runtime page style element must remain available");
@@ -50,8 +50,6 @@ for (const removed of [
   /function overviewRoom\(/,
   /function classOverviewPages\(/,
   /function officeCardSplitCount\(/,
-  /function officeFieldPosition\(/,
-  /function officeCellMatrixIndex\(/,
   /function officeLineCount\(/,
   /function officeVSpanCell\(/,
 ]) assert.doesNotMatch(app, removed);
@@ -74,12 +72,37 @@ for (const importPath of ["./auth.js?", "./state.js?", "./local-dev.js?", "./con
 }
 assert.doesNotMatch(app, /from "\.\/js\//, "external module must not resolve to js/js/*");
 assert.match(app, /from "\.\/timetable-print-word-layout\.js\?v=2026-07-15-word-layout-r362"/);
-assert.match(app, /const VERSION = "2026-07-15-operational-print-regression-r363"/);
+assert.match(app, /from "\.\/timetable-print-pdf\.js\?v=2026-07-15-print-output-hotfix-r364"/);
+assert.match(app, /const VERSION = "2026-07-15-print-output-hotfix-r364"/);
 assert.doesNotMatch(app, /function (?:allocateProportionalHeights|card3x3Dimensions|cardGridDimensions|docxCellSize|wordSpanWidth)\(/, "Word layout helpers must stay in the pure module");
 
 const names = [...app.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]);
 const duplicates = names.filter((name, index) => names.indexOf(name) !== index);
 assert.deepEqual([...new Set(duplicates)], [], `duplicate top-level print functions: ${[...new Set(duplicates)].join(", ")}`);
+
+// Word/Office 출력은 동적 브라우저 실행 시에만 일부 경로가 호출됩니다.
+// office*/xlsx* 호출 이름이 선언 또는 import되지 않은 상태를 정적 검사합니다.
+const declared = new Set(names);
+for (const match of app.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g)) declared.add(match[1]);
+for (const block of app.matchAll(/import\s*\{([\s\S]*?)\}\s*from/g)) {
+  for (const raw of block[1].split(",")) {
+    const part = raw.trim();
+    if (!part) continue;
+    declared.add((part.split(/\s+as\s+/).pop() || "").trim());
+  }
+}
+for (const match of app.matchAll(/import\s+([A-Za-z_$][\w$]*)\s+from/g)) declared.add(match[1]);
+const calledOfficeSymbols = new Set([...app.matchAll(/(?<![.\w$])((?:office|xlsx)[A-Z][A-Za-z0-9_$]*)\s*\(/g)].map(match => match[1]));
+const unresolvedOfficeSymbols = [...calledOfficeSymbols].filter(name => !declared.has(name)).sort();
+assert.deepEqual(unresolvedOfficeSymbols, [], `unresolved Office runtime symbols: ${unresolvedOfficeSymbols.join(", ")}`);
+for (const helper of [
+  "xlsxFieldPt",
+  "officeFieldVerticalAlign",
+  "officeFieldPosition",
+  "officeCellMatrixIndex",
+  "officeCardStructuredIndex",
+  "officeCardStructuredColspan",
+]) assert.ok(declared.has(helper), `required Office helper missing: ${helper}`);
 
 const syntax = spawnSync(process.execPath, ["--check", path.join(root, "js/timetable-print-app.js")], { encoding: "utf8" });
 assert.equal(syntax.status, 0, syntax.stderr || "print app syntax failed");

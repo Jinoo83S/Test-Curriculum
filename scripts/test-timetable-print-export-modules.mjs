@@ -1,11 +1,11 @@
- import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { crc32Bytes, officeXmlEsc, u8FromString, zipStore } from "../js/timetable-print-archive.js";
 import { createDocxBuilder } from "../js/timetable-print-word.js";
 import { buildXlsxDatabaseBlob } from "../js/timetable-print-excel.js";
-import { stripCssBlock } from "../js/timetable-print-pdf.js";
+import { collectDocumentStyleText, printBaseStyleText, stripCssBlock } from "../js/timetable-print-pdf.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -54,6 +54,28 @@ const withoutPrint = stripCssBlock(css, head => /^@media\s+print\b/i.test(head))
 assert.equal(withoutPrint, "a{color:red}b{color:blue}@page{size:A4}c{color:green}");
 const withoutPage = stripCssBlock(withoutPrint, head => /^@page\b/i.test(head));
 assert.equal(withoutPage, "a{color:red}b{color:blue}c{color:green}");
+
+const cssomDocument = {
+  styleSheets: [{ cssRules: [
+    { cssText: ".timetable-grid{border:1px solid #000}" },
+    { cssText: ".timetable-grid td{border:1px solid #333}" },
+    { cssText: "@media print{.timetable-grid{border:0}}" },
+    { cssText: "@page{size:A4}" },
+  ] }],
+  querySelectorAll: () => [],
+};
+assert.match(collectDocumentStyleText(cssomDocument), /timetable-grid/);
+const printableExternalCss = printBaseStyleText(cssomDocument);
+assert.match(printableExternalCss, /timetable-grid\{border:1px solid #000\}/);
+assert.match(printableExternalCss, /timetable-grid td\{border:1px solid #333\}/);
+assert.doesNotMatch(printableExternalCss, /@media print/);
+assert.doesNotMatch(printableExternalCss, /@page/);
+
+const inlineFallbackDocument = {
+  styleSheets: [],
+  querySelectorAll: selector => selector === "style" ? [{ textContent: ".fallback-table{border:1px solid}" }] : [],
+};
+assert.match(printBaseStyleText(inlineFallbackDocument), /fallback-table/);
 
 const app = read("js/timetable-print-app.js");
 assert.match(app, /createDocxBuilder/);

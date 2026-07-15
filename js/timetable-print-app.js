@@ -14,7 +14,7 @@ import { downloadBlobFile, downloadTextFile, safeFilePart } from "./timetable-pr
 import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=2026-07-15-print-modules-r361";
 import { createDocxBuilder } from "./timetable-print-word.js?v=2026-07-15-print-modules-r361";
 import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=2026-07-15-print-modules-r361";
-import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-modules-r361";
+import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-output-hotfix-r364";
 import {
   allocateProportionalHeights,
   card3x3Dimensions,
@@ -24,7 +24,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-15-operational-print-regression-r363";
+const VERSION = "2026-07-15-print-output-hotfix-r364";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -563,7 +563,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r363.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r364.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -1468,6 +1468,33 @@ function officeCellFieldScale(cell={}) {
   const n = Number(cell?.fieldScale);
   return Number.isFinite(n) && n > 0 ? Math.max(0.46, Math.min(1.25, n)) : 1;
 }
+// r364: Word/Office 출력에서 실제로 사용하는 공통 배치 보조 함수입니다.
+// r361의 사용하지 않는 XLSX 코드 정리 과정에서 함께 제거되어 런타임 오류가 발생했으므로,
+// 호출 경로와 분리된 안정적인 공통 함수로 복구합니다.
+function xlsxFieldPt(fieldKey="subject", cfg={}) {
+  const px = fontValueToPx(cfg?.fontPx || cfg?.font, fieldKey) || FIELD_FONT_PX_DEFAULTS[fieldKey] || 8;
+  return Math.max(5, Math.min(16, Math.round(Number(px) * 0.75 * 10) / 10));
+}
+function officeFieldVerticalAlign(cfg={}, def={}) {
+  return "center";
+}
+function officeFieldPosition(fieldCfg={}, fieldDef={}) {
+  return (fieldCfg && fieldCfg.pos) || fieldDef?.pos || "mc";
+}
+function officeCellMatrixIndex(pos="mc") {
+  const map = { tl:[0,0], tc:[0,1], tr:[0,2], ml:[1,0], mc:[1,1], mr:[1,2], bl:[2,0], bc:[2,1], br:[2,2] };
+  return map[pos] || map.mc;
+}
+function officeCardStructuredIndex(def, cfg) {
+  if (def?.key === "subject") return [1, 0];
+  if (def?.key === "english") return [2, 0];
+  const [rr, cc] = officeCellMatrixIndex(officeFieldPosition(cfg, def));
+  return [rr <= 0 ? 0 : 3, cc];
+}
+function officeCardStructuredColspan(def, cfg) {
+  return (def?.key === "subject" || def?.key === "english") ? 3 : 1;
+}
+
 function officeFieldScaleForPlacement(fieldKey="subject", cardBand={}, place={}, splitCount=1, model=null) {
   // r341 규칙 엔진:
   // 1) 데이터 글자 수는 크기 계산에 사용하지 않습니다.

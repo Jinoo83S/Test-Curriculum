@@ -38,8 +38,29 @@ export function stripCssBlock(css, atRuleTester) {
   return out;
 }
 
+export function collectDocumentStyleText(doc = document) {
+  const chunks = [];
+
+  // r359부터 출력 CSS가 외부 <link> 파일로 분리되었습니다.
+  // style 태그만 읽으면 PDF iframe에는 표/테두리/카드 CSS가 하나도 전달되지 않습니다.
+  // 이미 로드된 same-origin CSSOM을 우선 사용하여 외부 CSS도 동기적으로 복사합니다.
+  for (const sheet of Array.from(doc?.styleSheets || [])) {
+    try {
+      const text = Array.from(sheet?.cssRules || []).map(rule => rule?.cssText || "").filter(Boolean).join("\n");
+      if (text) chunks.push(text);
+    } catch (_) {
+      // 접근할 수 없는 외부 스타일시트는 아래 style 태그 fallback에서 제외됩니다.
+    }
+  }
+
+  if (!chunks.length && typeof doc?.querySelectorAll === "function") {
+    chunks.push(...Array.from(doc.querySelectorAll("style")).map(element => element.textContent || "").filter(Boolean));
+  }
+  return chunks.join("\n");
+}
+
 export function printBaseStyleText(doc = document) {
-  const raw = Array.from(doc.querySelectorAll("style")).map(element => element.textContent || "").join("\n");
+  const raw = collectDocumentStyleText(doc);
   let css = stripCssBlock(raw, head => /^@media\s+print\b/i.test(head));
   css = stripCssBlock(css, head => /^@page\b/i.test(head));
   return css;
@@ -97,7 +118,8 @@ export function createPdfExporter(deps = {}) {
       `;
       const title = deps.exportTitle();
       const esc = deps.escapeHtml;
-      const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(title)}</title><style>${styleText}</style><style>${printCss}</style></head><body class="${esc(bodyClass)} ${portrait ? "print-portrait" : "print-landscape"}"><main class="preview-inner">${pages.join("")}</main></body></html>`;
+      const baseHref = String(document.baseURI || globalThis.location?.href || "");
+      const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><base href="${esc(baseHref)}"><title>${esc(title)}</title><style>${styleText}</style><style>${printCss}</style></head><body class="${esc(bodyClass)} ${portrait ? "print-portrait" : "print-landscape"}"><main class="preview-inner">${pages.join("")}</main></body></html>`;
 
       removeHiddenPrintFrame(document);
       const frame = document.createElement("iframe");
@@ -114,6 +136,11 @@ export function createPdfExporter(deps = {}) {
       frameDocument.open();
       frameDocument.write(html);
       frameDocument.close();
+      try {
+        if (frameDocument.fonts?.ready) {
+          await Promise.race([frameDocument.fonts.ready, deps.sleep(800)]);
+        }
+      } catch (_) {}
       await deps.sleep(180);
 
       deps.setPreviewMeta(deps.previewMetaText(entities));
