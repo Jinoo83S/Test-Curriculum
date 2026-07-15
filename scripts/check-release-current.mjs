@@ -36,6 +36,9 @@ for (const rel of [
   "js/timetable-constraint-model.js",
   "js/timetable.js",
   "timetable-revision-history.css",
+  "timetable-print.css",
+  "js/timetable-print-app.js",
+  "timetable-print.html",
   "timetable.html",
 ]) {
   assert.ok(fs.existsSync(path.join(root, rel)), `missing ${rel}`);
@@ -104,6 +107,7 @@ const regressionTests = [
   "test-timetable-save-revision.mjs",
   "test-timetable-revision-history.mjs",
   "test-timetable-runtime-symbols.mjs",
+  "test-timetable-print-module-boundaries.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });
