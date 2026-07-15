@@ -28,7 +28,7 @@
     <h2>학년도별 완전 분리 작업공간</h2>
     <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
     <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
-    <p class="muted"><b>r351:</b> 복제된 학년도는 내부 참조와 원본 수량 검사를 통과해야 전환할 수 있습니다. 검증 후 데이터를 수정하면 상태가 자동으로 <b>재점검 필요</b>로 바뀝니다. 빈 작업공간은 작성 중인 초안을 경고와 함께 허용합니다.</p>
+    <p class="muted"><b>r352:</b> 복제·생성 검증은 새 학년도 작성 직후 한 번만 수행합니다. 검증을 통과한 뒤 새 학년도 내용을 정상적으로 수정해도 검증 상태는 유지되며, 2026학년도와 달라지는 것은 정상입니다. 현재 데이터의 내부 참조 검사는 관리자가 <b>정합성 점검</b>을 눌렀을 때만 별도로 실행합니다.</p>
     <p class="muted"><b>최초 1회 필수:</b> Firestore 보안 규칙에 <code>schoolYears</code> 경로 권한을 추가해야 합니다. 웹 파일 배포만으로 보안 규칙은 바뀌지 않습니다.</p>
     <p class="muted">현재 선택 학년도의 데이터만 비우는 별도 도구는 <a href="reset-school-year.html"><b>현재 학년도 초기화</b></a>에서 실행할 수 있습니다.</p>
   </section>
@@ -50,7 +50,7 @@
   </div>
 
   <section id="integrityCard" class="card" hidden>
-    <h2>복제 정합성 점검 결과</h2>
+    <h2>학년도 정합성 점검 결과</h2>
     <div id="integrityResult"></div>
   </section>
 
@@ -61,17 +61,17 @@
 </main>
 
 <script type="module">
-import { auth, db } from "./js/config.js?v=2026-07-14-school-year-isolation-r351";
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-14-school-year-isolation-r351";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-14-school-year-isolation-r351";
+import { auth, db } from "./js/config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 import {
   ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
   getKnownSchoolYears, registerKnownSchoolYears, unregisterKnownSchoolYear, setActiveSchoolYear,
-  getSchoolYearVerification, isSchoolYearVerified, setSchoolYearVerification, clearSchoolYearVerification
-} from "./js/school-year.js?v=2026-07-14-school-year-isolation-r351";
+  getSchoolYearVerification, setSchoolYearVerification, clearSchoolYearVerification
+} from "./js/school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 import {
   validateWorkspaceSnapshot, summarizeWorkspaceSnapshot, compactIntegrityReport, formatIntegritySummary
-} from "./js/school-year-integrity.js?v=2026-07-14-school-year-isolation-r351";
+} from "./js/school-year-integrity.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 import {
   collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -139,26 +139,57 @@ function timetableMetaRef(year) {
 }
 function yearMetaRef(year) { return doc(db, "schoolYears", year); }
 
-function verificationForYear(year) {
-  if (year === LEGACY_SCHOOL_YEAR) return { ok:true, checkedAt:"운영 기준" };
+function creationVerificationFromLegacyMeta(year, meta = {}) {
+  const candidates = [
+    meta?.integrity && typeof meta.integrity === "object" ? meta.integrity : null,
+    getSchoolYearVerification(year),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const wasEditInvalidation = candidate.stale === true && String(candidate.source || "") === "workspace-edit";
+    if (candidate.ok !== true && !wasEditInvalidation) continue;
+
+    return {
+      schemaVersion: Number(candidate.schemaVersion || 1) || 1,
+      ok: true,
+      checkedAt: String(candidate.checkedAt || new Date().toISOString()),
+      signature: String(candidate.signature || ""),
+      errorCount: 0,
+      warningCount: Number(candidate.warningCount || 0) || 0,
+      counts: candidate.counts && typeof candidate.counts === "object" ? candidate.counts : (meta.counts || {}),
+      source: wasEditInvalidation ? "creation-verification-migrated-r352" : String(candidate.source || "creation-verification-migrated-r352"),
+      phase: "creation",
+      sourceYear: String(candidate.sourceYear || meta.sourceYear || ""),
+      createMode: String(candidate.createMode || meta.createMode || ""),
+      migratedFromWorkspaceEdit: wasEditInvalidation,
+    };
+  }
+
+  return null;
+}
+function creationVerificationForYear(year) {
+  if (year === LEGACY_SCHOOL_YEAR) return { ok:true, checkedAt:"운영 기준", createMode:"legacy" };
+  const meta = serverYearMeta.get(year) || {};
+  const explicit = meta.creationVerification;
+  if (explicit && typeof explicit === "object") return explicit;
   const local = getSchoolYearVerification(year);
-  if (local?.stale === true) return local;
-  const server = serverYearMeta.get(year)?.integrity;
-  if (server && typeof server === "object") return server;
-  return local;
+  if (local?.ok === true) return local;
+  return creationVerificationFromLegacyMeta(year, meta);
 }
 function verifiedForSwitch(year) {
   if (year === LEGACY_SCHOOL_YEAR) return true;
   if (!LOCAL_DEV_MODE && !serverYearsLoaded) return false;
-  return verificationForYear(year)?.ok === true;
+  return creationVerificationForYear(year)?.ok === true;
 }
 function verificationBadge(year) {
   if (year === LEGACY_SCHOOL_YEAR) return '<span class="badge legacy">운영 기준</span>';
-  const row = verificationForYear(year);
-  if (!row) return '<span class="badge pending">점검 필요</span>';
-  if (row.stale === true) return '<span class="badge pending">변경됨 · 재점검 필요</span>';
-  if (row.ok === true) return `<span class="badge ok">정상 · 경고 ${Number(row.warningCount || 0)}</span>`;
-  return `<span class="badge bad">오류 ${Number(row.errorCount || 0)}</span>`;
+  const row = creationVerificationForYear(year);
+  if (!row) return '<span class="badge pending">생성 검증 필요</span>';
+  if (row.ok === true) {
+    const mode = String(row.createMode || serverYearMeta.get(year)?.createMode || "");
+    return `<span class="badge ok">${mode === "copy" ? "복제 검증 완료" : "생성 검증 완료"}</span>`;
+  }
+  return '<span class="badge bad">생성 검증 실패</span>';
 }
 function allYears() {
   return [...new Set([LEGACY_SCHOOL_YEAR, ACTIVE_SCHOOL_YEAR, ...getKnownSchoolYears(), ...serverYears])]
@@ -177,11 +208,11 @@ function renderYearTable(years) {
     const legacy = year === LEGACY_SCHOOL_YEAR;
     const verified = verifiedForSwitch(year);
     const checkButton = `<button class="btn check-year" data-year="${year}" type="button">정합성 점검</button>`;
-    const switchButton = current ? "" : `<button class="btn switch-year" data-year="${year}" type="button" ${verified?"":"disabled"} title="${verified?"학년도 전환":"정합성 점검 통과 후 전환할 수 있습니다."}">전환</button>`;
+    const switchButton = current ? "" : `<button class="btn switch-year" data-year="${year}" type="button" ${verified?"":"disabled"} title="${verified?"학년도 전환":"생성 직후 검증을 통과해야 전환할 수 있습니다."}">전환</button>`;
     const deleteButton = legacy ? "" : `<button class="btn danger delete-year" data-year="${year}" type="button">삭제</button>`;
     const currentBadge = current ? '<span class="badge current">현재 사용 중</span>' : "";
     return `<tr><td><b>${year}학년도</b></td><td>${legacy?"기존 운영 경로":"학년도 독립 경로"}</td><td><div class="workspace-status">${currentBadge}${verificationBadge(year)}</div></td><td><div class="workspace-actions">${checkButton}${switchButton}${deleteButton}</div></td></tr>`;
-  }).join("")}</tbody></table></div><p class="muted"><b>2026학년도는 삭제할 수 없습니다.</b> 2027학년도 이후 작업공간은 정합성 점검을 통과해야 전환 버튼이 활성화됩니다.</p>`;
+  }).join("")}</tbody></table></div><p class="muted"><b>2026학년도는 삭제할 수 없습니다.</b> 2027학년도 이후 작업공간은 생성 직후 복제·생성 검증을 통과하면 전환할 수 있습니다. 이후 정상 편집은 이 상태를 무효화하지 않습니다.</p>`;
   document.querySelectorAll(".check-year").forEach(btn => btn.addEventListener("click", () => runIntegrityCheck(btn.dataset.year)));
   document.querySelectorAll(".switch-year").forEach(btn => btn.addEventListener("click", () => switchYear(btn.dataset.year)));
   document.querySelectorAll(".delete-year").forEach(btn => btn.addEventListener("click", () => deleteWorkspace(btn.dataset.year)));
@@ -205,7 +236,7 @@ function setBusy(value) {
 function switchYear(year) {
   if (busy) return;
   if (!verifiedForSwitch(year)) {
-    alert(`${schoolYearLabel(year)}는 정합성 점검을 통과하지 않았습니다.\n먼저 '정합성 점검'을 실행해 주세요.`);
+    alert(`${schoolYearLabel(year)}는 생성 직후 검증 기록이 없습니다.\n새 학년도 생성 과정을 다시 확인해 주세요.`);
     return;
   }
   if (!confirm(`${schoolYearLabel(year)}로 전환할까요?\n커리큘럼 화면이 새 작업공간으로 다시 열립니다.`)) return;
@@ -227,15 +258,27 @@ async function loadServerYears() {
     getKnownSchoolYears().forEach(year => {
       if (year !== LEGACY_SCHOOL_YEAR && !serverSet.has(year)) unregisterKnownSchoolYear(year);
     });
-    serverYears.forEach(year => {
-      const integrity = serverYearMeta.get(year)?.integrity;
-      const local = getSchoolYearVerification(year);
-      const localInvalidatedAt = Date.parse(local?.invalidatedAt || "") || 0;
-      const serverCheckedAt = Date.parse(integrity?.checkedAt || "") || 0;
-      if (local?.stale === true && localInvalidatedAt > serverCheckedAt) return;
-      if (integrity && typeof integrity === "object") setSchoolYearVerification(year, { ...integrity, source:"firestore-meta" });
-      else clearSchoolYearVerification(year);
-    });
+    for (const year of serverYears) {
+      const meta = serverYearMeta.get(year) || {};
+      let creation = meta.creationVerification;
+      if (!creation || typeof creation !== "object") {
+        creation = creationVerificationFromLegacyMeta(year, meta);
+        if (creation) {
+          try {
+            await setDoc(yearMetaRef(year), { creationVerification:creation, updatedAt:serverTimestamp() }, { merge:true });
+            serverYearMeta.set(year, { ...meta, creationVerification:creation });
+            appendLog(`${year}학년도 기존 검증 상태를 생성 검증 완료로 전환`);
+          } catch (migrationError) {
+            console.warn(`${year}학년도 생성 검증 상태 마이그레이션을 서버에 저장하지 못했습니다.`, migrationError);
+          }
+        }
+      }
+      if (creation && typeof creation === "object") {
+        setSchoolYearVerification(year, { ...creation, source:creation.source || "firestore-creation-verification" });
+      } else {
+        clearSchoolYearVerification(year);
+      }
+    }
     serverYearsLoaded = true;
     appendLog(`서버 학년도 작업공간 ${serverYears.length}개 확인`);
   } catch (e) {
@@ -400,14 +443,28 @@ async function readWorkspaceSnapshot(year) {
 }
 async function persistIntegrityReport(year, report, extra = {}) {
   const compact = { ...compactIntegrityReport(report), sourceYear:extra.sourceYear || null, createMode:extra.createMode || null };
+  const creationPhase = extra.creationPhase === true;
+  const creationVerification = creationPhase ? { ...compact, phase:"creation", source:"creation-verification" } : null;
+
   if (!LOCAL_DEV_MODE && year !== LEGACY_SCHOOL_YEAR) {
     try {
-      await setDoc(yearMetaRef(year), { integrity:compact, updatedAt:serverTimestamp() }, { merge:true });
+      const patch = { integrity:compact, updatedAt:serverTimestamp() };
+      if (creationVerification) patch.creationVerification = creationVerification;
+      await setDoc(yearMetaRef(year), patch, { merge:true });
       const prev = serverYearMeta.get(year) || {};
-      serverYearMeta.set(year, { ...prev, integrity:compact });
+      serverYearMeta.set(year, {
+        ...prev,
+        integrity:compact,
+        ...(creationVerification ? { creationVerification } : {}),
+      });
     } catch (error) { throw normalizeWorkspaceError(error); }
   }
-  if (year !== LEGACY_SCHOOL_YEAR) setSchoolYearVerification(year, { ...compact, source:"integrity-check" });
+
+  // Local storage is the creation/switch gate only. Manual integrity checks are
+  // intentionally independent and must not replace or invalidate this record.
+  if (year !== LEGACY_SCHOOL_YEAR && creationVerification) {
+    setSchoolYearVerification(year, creationVerification);
+  }
   return compact;
 }
 function renderIntegrityReport(year, report) {
@@ -444,7 +501,11 @@ async function performIntegrityCheck(year, options = {}) {
   report.year = year;
   report.sourceYear = sourceYear || null;
   report.createMode = createMode || null;
-  await persistIntegrityReport(year, report, { sourceYear, createMode });
+  await persistIntegrityReport(year, report, {
+    sourceYear,
+    createMode,
+    creationPhase:options.creationPhase === true,
+  });
   renderIntegrityReport(year, report);
   appendLog(`${year}학년도 정합성 점검: ${report.ok?"정상":"오류"} · 오류 ${report.errorCount} · 경고 ${report.warningCount}`);
   (report.errors || []).slice(0,20).forEach(item => appendLog(`오류 [${item.code}] ${item.message}`));
@@ -565,7 +626,8 @@ async function createWorkspace() {
       sourceSnapshot,
       strictCopy:mode === "copy",
       allowEmpty:mode === "empty",
-      createMode:mode
+      createMode:mode,
+      creationPhase:true
     });
     if (!report.ok) throw new Error(`복제 정합성 점검에 실패했습니다. 오류 ${report.errorCount}건을 확인해 주세요.`);
     registerKnownSchoolYears([target]);
@@ -588,7 +650,7 @@ async function createWorkspace() {
   } finally { setBusy(false); }
 }
 
-$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r351`;
+$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r352`;
 $("loginBtn").addEventListener("click", login);
 $("logoutBtn").addEventListener("click", logout);
 $("createBtn").addEventListener("click", createWorkspace);

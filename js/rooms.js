@@ -1,10 +1,10 @@
 // ================================================================
 // rooms.js · Room CRUD + View Rendering
 // ================================================================
-import { uid, clean, makeBtn } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
-import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-14-school-year-isolation-r351";
-import { GRADE_KEYS } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 
 const rDomain = () => appState.rooms;
 export const getRooms    = () => rDomain().rooms;

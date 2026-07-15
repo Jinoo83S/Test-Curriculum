@@ -1,10 +1,10 @@
 // ================================================================
 // app-board-ui.js · Curriculum board tabs / export / reset UI
 // ================================================================
-import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, assertSchoolYearWriteContext } from "./config.js?v=2026-07-14-school-year-isolation-r351";
-import { schoolYearLabel } from "./school-year.js?v=2026-07-14-school-year-isolation-r351";
-import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
-import { appState, saveNow } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { schoolYearLabel } from "./school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { appState, saveNow } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],

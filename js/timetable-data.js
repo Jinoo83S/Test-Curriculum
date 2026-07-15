@@ -1,12 +1,12 @@
 // ================================================================
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
-import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-14-school-year-isolation-r351";
-import { appState } from "./state.js?v=2026-07-14-school-year-isolation-r351";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
-import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-14-school-year-isolation-r351";
-export { getTtCardById } from "./ttcards.js?v=2026-07-14-school-year-isolation-r351";
-import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
+import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { appState } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+export { getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];

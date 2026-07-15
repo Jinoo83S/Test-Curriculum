@@ -92,7 +92,7 @@
 </main>
 
 <script type="module">
-  import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearLabel, clearSchoolYearVerification } from "./js/school-year.js?v=2026-07-14-school-year-isolation-r351";
+  import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearLabel } from "./js/school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
   import {
@@ -273,16 +273,16 @@
           integrity: {
             schemaVersion: 1,
             ok: false,
-            stale: true,
+            stale: false,
+            source: "workspace-reset",
             errorCount: 1,
             warningCount: 0,
             checkedAt: new Date().toISOString(),
-            errors: [{ code: "workspace-reset", message: "학년도 데이터가 초기화되어 정합성 재점검이 필요합니다." }]
+            errors: [{ code: "workspace-reset", message: "학년도 데이터가 초기화되었습니다. 필요할 때 정합성 점검을 다시 실행하세요." }]
           },
           updatedAt: serverTimestamp()
         }, { merge: true });
       }
-      clearSchoolYearVerification(ACTIVE_SCHOOL_YEAR);
       clearBrowserState(false);
       appendLog(`완료: 총 ${deletedDocs}개 삭제 요청을 처리했습니다.`);
       summaryEl.innerHTML = `<p class="ok-text">현재 학년도 초기화가 완료되었습니다. 기존 앱 화면을 Ctrl+F5로 새로고침한 뒤 테스트를 시작하세요.</p>`;
@@ -305,8 +305,7 @@
       "his_local_dev_mode_v1"
     ];
     keys.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
-    clearSchoolYearVerification(ACTIVE_SCHOOL_YEAR);
-    appendLog("이 브라우저의 HIS 로컬 캐시 키와 학년도 검증 상태를 정리했습니다.");
+    appendLog("이 브라우저의 HIS 로컬 캐시 키를 정리했습니다. 생성 검증 기록은 유지됩니다.");
     if (showAlert) alert("이 브라우저의 HIS 로컬 캐시를 정리했습니다. 페이지를 새로고침하세요.");
   }
 

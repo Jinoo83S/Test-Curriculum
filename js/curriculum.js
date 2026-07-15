@@ -1,10 +1,10 @@
 // ================================================================
 // curriculum.js · Curriculum Board Mutations + Rendering
 // ================================================================
-import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js?v=2026-07-14-school-year-isolation-r351";
-import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
-import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
-import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -24,7 +24,7 @@ export function getCategoryColor(category) {
 }
 
 // ── Template lookup (reads from templates domain) ─────────────────
-import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
+import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=2026-07-15-school-year-verification-lifecycle-r352";
 
 // ── Row Mutations ─────────────────────────────────────────────────
 /**

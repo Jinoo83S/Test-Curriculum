@@ -4,7 +4,7 @@
 // 2026 keeps the existing Firestore paths for backward compatibility.
 // New years use isolated schoolYears/{year}/... paths.
 
-export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-isolation-r351";
+export const SCHOOL_YEAR_UI_BUILD = "2026-07-15-school-year-verification-lifecycle-r352";
 export const LEGACY_SCHOOL_YEAR = "2026";
 export const SCHOOL_YEAR_KEY = "his_active_school_year_v1";
 export const KNOWN_SCHOOL_YEARS_KEY = "his_known_school_years_v1";
@@ -138,14 +138,45 @@ function writeVerificationStore(store) {
   catch (_) {}
 }
 
+function normalizeCreationVerificationRow(year, row) {
+  if (!row || typeof row !== "object") return null;
+
+  // r349-r351 downgraded a successfully created workspace whenever ordinary
+  // data was edited. That marker did not mean the creation copy had failed.
+  // Migrate it once so normal editing no longer blocks year switching.
+  if (row.stale === true && String(row.source || "") === "workspace-edit") {
+    return {
+      ...row,
+      ok: true,
+      stale: false,
+      source: "creation-verification-migrated-r352",
+      migratedFromWorkspaceEdit: true,
+      invalidatedAt: "",
+      reason: "",
+    };
+  }
+
+  return { ...row, stale: false };
+}
+
 export function getSchoolYearVerification(value) {
   const year = normalizeSchoolYear(value, "");
   if (!year) return null;
   if (year === LEGACY_SCHOOL_YEAR) {
     return { year, ok: true, checkedAt: "legacy-operating-workspace", source: "legacy" };
   }
-  const row = readVerificationStore()[year];
-  return row && typeof row === "object" ? { year, ...row } : null;
+
+  const store = readVerificationStore();
+  const original = store[year];
+  const row = normalizeCreationVerificationRow(year, original);
+  if (!row) return null;
+
+  if (original?.stale === true && row.stale === false) {
+    store[year] = row;
+    writeVerificationStore(store);
+  }
+
+  return { year, ...row };
 }
 
 export function isSchoolYearVerified(value) {
@@ -164,10 +195,13 @@ export function setSchoolYearVerification(value, report = {}) {
     errorCount: Number(report?.errorCount || 0) || 0,
     warningCount: Number(report?.warningCount || 0) || 0,
     counts: report?.counts && typeof report.counts === "object" ? report.counts : {},
-    source: String(report?.source || "integrity-check"),
-    stale: report?.stale === true,
-    invalidatedAt: String(report?.invalidatedAt || ""),
-    reason: String(report?.reason || ""),
+    source: String(report?.source || "creation-verification"),
+    phase: "creation",
+    sourceYear: String(report?.sourceYear || ""),
+    createMode: String(report?.createMode || ""),
+    stale: false,
+    invalidatedAt: "",
+    reason: "",
   };
   writeVerificationStore(store);
   registerKnownSchoolYears([year]);
@@ -175,25 +209,11 @@ export function setSchoolYearVerification(value, report = {}) {
 }
 
 
-export function invalidateSchoolYearVerification(value, reason = "workspace-edited") {
-  const year = normalizeSchoolYear(value, "");
-  if (!year || year === LEGACY_SCHOOL_YEAR) return null;
-  const now = new Date().toISOString();
-  const store = readVerificationStore();
-  store[year] = {
-    ...(store[year] && typeof store[year] === "object" ? store[year] : {}),
-    ok: false,
-    stale: true,
-    checkedAt: now,
-    invalidatedAt: now,
-    errorCount: 0,
-    warningCount: 0,
-    source: "workspace-edit",
-    reason: String(reason || "workspace-edited"),
-  };
-  writeVerificationStore(store);
-  registerKnownSchoolYears([year]);
-  return { year, ...store[year] };
+// Deprecated compatibility export. Creation verification is immutable after
+// the workspace has been created successfully, so ordinary edits must not
+// invalidate it. Kept as a no-op for any stale cached module still calling it.
+export function invalidateSchoolYearVerification(value, _reason = "workspace-edited") {
+  return getSchoolYearVerification(value);
 }
 
 export function clearSchoolYearVerification(value) {
@@ -268,7 +288,7 @@ export function setupSchoolYearUi() {
     option.value = year;
     option.textContent = year === LEGACY_SCHOOL_YEAR || isSchoolYearVerified(year)
       ? `${year}학년도`
-      : `${year}학년도 · 점검 필요`;
+      : `${year}학년도 · 생성 검증 필요`;
     option.selected = year === ACTIVE_SCHOOL_YEAR;
     select.appendChild(option);
   });
