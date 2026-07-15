@@ -1,11 +1,11 @@
 // ================================================================
 // results.js · Curriculum Result Tables
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
-import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
-import { appState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
-import { getRosterMeta, getClassCount } from "./rosters.js?v=2026-07-15-teacher-id-migration-r354";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { appState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { getRosterMeta, getClassCount } from "./rosters.js?v=2026-07-15-room-availability-separation-r355";
 
 // ── Data builder ─────────────────────────────────────────────────
 function buildRows() {

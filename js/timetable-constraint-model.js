@@ -8,10 +8,11 @@
 // 4) 교사: 과목 / 교실 / 수업가능시간
 // ================================================================
 
+import { normalizeRoomUnavailableSlots } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+
 const clean = v => String(v ?? "").trim();
 const asArray = v => Array.isArray(v) ? v : [];
 const unique = list => [...new Set(asArray(list).map(clean).filter(Boolean))];
-const ROOM_UNAVAILABLE_PREFIX = "__room_unavailable__:";
 const CLASS_UNAVAILABLE_PREFIX = "__class_unavailable__:";
 const SLOT_FIELDS_ALLOWED = ["allowedSlots", "availableSlots", "possibleSlots", "assignableSlots", "배정가능시간", "수업가능시간"];
 const SLOT_FIELDS_UNAVAILABLE = ["unavailableSlots", "blockedSlots", "disabledSlots", "불가시간", "수업불가시간"];
@@ -136,8 +137,9 @@ function teacherConstraint(state, name = "") {
   return state?.timetable?.teacherConstraints?.[clean(name)] || null;
 }
 function roomUnavailableSlots(state, roomId = "") {
-  const key = ROOM_UNAVAILABLE_PREFIX + clean(roomId);
-  return normalizeSlots(state?.timetable?.teacherConstraints?.[key]?.unavailableSlots || []);
+  const id = clean(roomId);
+  const room = asArray(state?.rooms?.rooms).find(item => clean(item?.id) === id);
+  return normalizeRoomUnavailableSlots(room?.unavailableSlots || []);
 }
 function classUnavailableSlots(state, classId = "", classKey = "", label = "") {
   const tc = state?.timetable?.teacherConstraints || {};

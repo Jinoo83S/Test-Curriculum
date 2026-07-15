@@ -4,8 +4,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, doc, collection } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearRuntimeConsistency } from "./school-year.js?v=2026-07-15-teacher-id-migration-r354";
-import { getSchoolYearPathSpec, assertSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=2026-07-15-teacher-id-migration-r354";
+import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearRuntimeConsistency } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
+import { getSchoolYearPathSpec, assertSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=2026-07-15-room-availability-separation-r355";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",

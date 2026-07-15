@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
@@ -6,7 +6,7 @@
   <title>HIS Curriculum</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-07-15-teacher-id-migration-r354";
+    window.HIS_APP_VERSION = "2026-07-15-room-availability-separation-r355";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -208,7 +208,7 @@
   </section>
 </main>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-07-15-teacher-id-migration-r354";
+  import { versioned } from "./js/version.js?v=2026-07-15-room-availability-separation-r355";
 
   const appModuleUrl = versioned("./js/app.js");
   try {
@@ -219,7 +219,7 @@
     notice.id = "hisBootstrapError";
     notice.setAttribute("role", "alert");
     notice.style.cssText = "position:fixed;left:50%;top:72px;transform:translateX(-50%);z-index:99999;width:min(760px,calc(100vw - 32px));padding:14px 16px;border:1px solid #fecaca;border-left:5px solid #dc2626;border-radius:12px;background:#fff7f7;color:#7f1d1d;box-shadow:0 12px 30px rgba(15,23,42,.18);font:600 14px/1.5 system-ui,sans-serif";
-    notice.textContent = "커리큘럼 시작 모듈을 불러오지 못했습니다. 배포된 js/app.js에 충돌 표시가 남았거나 이전 파일이 캐시된 상태일 수 있습니다. r354 파일을 다시 덮어쓴 뒤 Ctrl+F5를 눌러 주세요.";
+    notice.textContent = "커리큘럼 시작 모듈을 불러오지 못했습니다. 배포된 js/app.js에 충돌 표시가 남았거나 이전 파일이 캐시된 상태일 수 있습니다. r355 파일을 다시 덮어쓴 뒤 Ctrl+F5를 눌러 주세요.";
     document.body.appendChild(notice);
   }
 </script>

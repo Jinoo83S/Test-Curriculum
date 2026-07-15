@@ -1,8 +1,10 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-teacher-id-migration-r354";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-room-availability-separation-r355";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
 // ================================================================
+
+import { migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
 const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
@@ -255,7 +257,7 @@ function normalizeTeacherConstraintKeysForPayload(tt = {}, roster = new Set()) {
   const tc = tt.teacherConstraints;
   if (!tc || typeof tc !== "object" || !roster.size) return;
   Object.keys(tc).forEach(key => {
-    if (String(key).startsWith("__room_unavailable__:") || String(key).startsWith("__class_unavailable__:")) return;
+    if (String(key).startsWith("__class_unavailable__:")) return;
     const names = normalizeTeacherListForPayload([key], roster);
     if (names.length === 1 && roster.has(names[0])) {
       const nextKey = names[0];
@@ -343,7 +345,7 @@ function stripTeacherHomeRoomFromSolverPayload(tt = {}) {
   let changed = 0;
   Object.entries(tc).forEach(([key, cfg]) => {
     if (!cfg || typeof cfg !== "object") return;
-    if (String(key).startsWith("__room_unavailable__:") || String(key).startsWith("__class_unavailable__:")) return;
+    if (String(key).startsWith("__class_unavailable__:")) return;
     if ("homeRoomId" in cfg) { delete cfg.homeRoomId; changed += 1; }
     if ("useHomeRoom" in cfg) { delete cfg.useHomeRoom; changed += 1; }
   });
@@ -668,9 +670,12 @@ function makeSolverState(appState, live = {}) {
     classes: appState?.classes || {},
     teachers: appState?.teachers || {},
     rosters: appState?.rosters || {},
-    rooms: appState?.rooms || {},
+    rooms: deepClone(appState?.rooms || {}),
     timetable: liveTimetable,
   });
+  // 서버 전송본에서도 구버전 의사 교사 키를 교실 도메인으로 이관해
+  // 교사 조건과 교실 불가시간이 섞이지 않도록 보장합니다.
+  migrateLegacyRoomAvailability(data.rooms, data.timetable);
   data.constraintDetection = buildSolverConstraintSummary(data);
   const wrapped = {
     version: 1,

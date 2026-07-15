@@ -50,10 +50,10 @@
   <section class="card"><h2>작업 로그</h2><div id="log" class="log">대기 중입니다.</div></section>
 </main>
 <script type="module">
-import { auth, getSchoolYearRefs } from "./js/config.js?v=2026-07-15-teacher-id-migration-r354";
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { LEGACY_SCHOOL_YEAR } from "./js/school-year.js?v=2026-07-15-teacher-id-migration-r354";
-import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-teacher-id-migration-r354";
+import { auth, getSchoolYearRefs } from "./js/config.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-room-availability-separation-r355";
+import { LEGACY_SCHOOL_YEAR } from "./js/school-year.js?v=2026-07-15-room-availability-separation-r355";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const $=id=>document.getElementById(id);let user=null;let payload=null;let curriculum=null;let busy=false;

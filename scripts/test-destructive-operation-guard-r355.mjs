@@ -42,6 +42,6 @@ const guard = read("js/destructive-operation-guard.js");
 const pathSource = read("js/school-year-paths.js");
 assert(pathSource.includes("schoolYearOperations"), "operation audit path missing");
 assert(guard.includes("throw new Error(\"백업 JSON 생성에 실패했습니다.\")"), "backup serialization guard missing");
-assert(!fs.readdirSync(root).some(name => name.toLowerCase().endsWith(".bat")), "BAT file included in r354 source");
+assert(!fs.readdirSync(root).some(name => name.toLowerCase().endsWith(".bat")), "BAT file included in r355 source");
 
-console.log("DESTRUCTIVE_OPERATION_GUARD_R354_OK");
+console.log("DESTRUCTIVE_OPERATION_GUARD_R355_OK");

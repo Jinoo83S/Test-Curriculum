@@ -1,12 +1,13 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
-import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
-import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-teacher-id-migration-r354";
-import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
-import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-teacher-id-migration-r354";
+import { refs, db, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
+import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
+import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -812,6 +813,9 @@ export function normalizeRoom(r = {}) {
     // 담당 교사는 teacherId가 기준이며 teacherName은 화면/내보내기용 스냅샷입니다.
     teacherId: clean(r.teacherId),
     teacherName: clean(r.teacherName),
+    // 교실 불가시간의 단일 저장 위치입니다. 이전 teacherConstraints 의사 키는
+    // 초기 로드 시 room-availability.js가 이 필드로 이관합니다.
+    unavailableSlots: normalizeRoomUnavailableSlots(r.unavailableSlots),
     // r207: Ground/TH201/TH301처럼 같은 시간에 여러 카드가 동시에 배정돼도
     // 정상인 공용 교실 표시. true일 때만 room 충돌 검사에서 제외됩니다.
     sharedUse: r.sharedUse === true,
@@ -1445,6 +1449,7 @@ function buildTimetableMetaStorageDoc(normalized = {}) {
     config: n.config,
     teacherConstraints: n.teacherConstraints,
     teacherConstraintsById: n.teacherConstraintsById || {},
+    roomAvailabilityOrphans: n.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: n.ttcardTeacherOptions || {},
     ttcardGroups: n.ttcardGroups || [],
     savedSchedules: [],
@@ -1723,6 +1728,8 @@ function normalizeTimetableDomain(raw = {}) {
     teacherConstraintsById: raw.teacherConstraintsById && typeof raw.teacherConstraintsById === "object"
       ? Object.fromEntries(Object.entries(raw.teacherConstraintsById).map(([id, value]) => [clean(id), normalizeTimetableConstraint(value)]).filter(([id]) => id))
       : {},
+    // 삭제된/누락된 교실 ID의 불가시간은 교사 조건으로 되돌리지 않고 별도 보존합니다.
+    roomAvailabilityOrphans: normalizeRoomAvailabilityOrphans(raw.roomAvailabilityOrphans),
     // 시간표 카드 생성/자동배치 점검 메타입니다. 로컬 JSON과 Firestore meta 문서에 보존합니다.
     cardGenerationMeta: normalizeCardGenerationMeta(raw),
     autoAssignMeta: syncedAutoMetaRefs.meta,
@@ -1938,6 +1945,7 @@ function buildNormalizedDiagnostic(raw) {
     config: splitMetaDoc?.data?.config || {},
     teacherConstraints: splitMetaDoc?.data?.teacherConstraints || {},
     teacherConstraintsById: splitMetaDoc?.data?.teacherConstraintsById || {},
+    roomAvailabilityOrphans: splitMetaDoc?.data?.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: splitMetaDoc?.data?.ttcardTeacherOptions || {},
     ttcardGroups: splitMetaDoc?.data?.ttcardGroups || splitMetaDoc?.data?.templateGroups || [],
     savedSchedules: splitMetaDoc?.data?.savedSchedules || [],
@@ -2060,6 +2068,33 @@ export async function exportFirestoreDiagnosticSnapshot() {
   };
 }
 
+// Room unavailable-time migration must run before teacher identity migration.
+// It moves reserved pseudo-teacher keys into rooms.rooms[].unavailableSlots and
+// leaves unresolved room IDs in a dedicated orphan store instead of the teacher map.
+let roomAvailabilitySyncRunning = false;
+export function synchronizeRoomAvailabilityState({ persist = true, reason = "manual" } = {}) {
+  if (roomAvailabilitySyncRunning) return { changedDomains: [], skipped: true, reason };
+  if (!initialLoad.rooms || !initialLoad.timetable) {
+    return { changedDomains: [], skipped: true, reason, waitingForDomains: true };
+  }
+  roomAvailabilitySyncRunning = true;
+  try {
+    const report = migrateLegacyRoomAvailability(appState.rooms, appState.timetable);
+    report.reason = reason;
+    if (typeof window !== "undefined") window.__HIS_ROOM_AVAILABILITY_REPORT__ = report;
+    if (persist && report.changedDomains.length) {
+      report.changedDomains.forEach(domain => scheduleSave(domain, { immediate: true }));
+      console.info(`[room-availability:r355] ${reason}`, report);
+    }
+    if (report.orphanRoomIds.length) {
+      console.warn("[room-availability:r355] 등록되지 않은 교실 ID의 불가시간을 별도 보존했습니다.", report);
+    }
+    return report;
+  } finally {
+    roomAvailabilitySyncRunning = false;
+  }
+}
+
 // Canonical teacher IDs are synchronized across all loaded domains. Names are
 // retained only as display/export snapshots so teacher renames do not break links.
 let teacherIdentitySyncRunning = false;
@@ -2073,10 +2108,10 @@ export function synchronizeTeacherIdentityState({ persist = true, reason = "manu
     if (typeof window !== "undefined") window.__HIS_TEACHER_IDENTITY_REPORT__ = report;
     if (persist && report.changedDomains.length) {
       report.changedDomains.forEach(domain => scheduleSave(domain));
-      console.info(`[teacher-id:r354] ${reason}`, report);
+      console.info(`[teacher-id:r355] ${reason}`, report);
     }
     if (report.ambiguousNames.length || report.duplicateTeacherIds.length) {
-      console.warn("[teacher-id:r354] 교사 ID 자동 연결에 확인이 필요한 항목이 있습니다.", report);
+      console.warn("[teacher-id:r355] 교사 ID 자동 연결에 확인이 필요한 항목이 있습니다.", report);
     }
     return report;
   } finally {
@@ -2112,6 +2147,7 @@ function _checkAllLoaded() {
   const allLoaded = [..._subscribedDomains].every(d => initialLoad[d]);
   if (allLoaded) {
     _pendingInitialRender = false;
+    synchronizeRoomAvailabilityState({ persist: canEdit(), reason: "initial-load" });
     synchronizeTeacherIdentityState({ persist: canEdit(), reason: "initial-load" });
     _onUpdate("all"); // 전체 로드 완료 — 1회 render
   }
@@ -2684,6 +2720,7 @@ async function applyTimetableSplitIfReady() {
     config: timetableSplitCache.meta?.config || {},
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
     teacherConstraintsById: timetableSplitCache.meta?.teacherConstraintsById || {},
+    roomAvailabilityOrphans: timetableSplitCache.meta?.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: timetableSplitCache.meta?.ttcardTeacherOptions || {},
     ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
     savedSchedules: timetableSplitCache.meta?.savedSchedules || [],

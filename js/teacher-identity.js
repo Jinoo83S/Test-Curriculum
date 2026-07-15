@@ -4,6 +4,8 @@
 // Teacher IDs are the canonical relationship key. Human-readable names remain
 // as snapshots for display, export, and backward compatibility with older data.
 
+import { isLegacyRoomAvailabilityKey } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+
 const cleanLocal = value => String(value ?? "").trim();
 const nameKey = value => cleanLocal(value).replace(/\s+/g, " ").toLocaleLowerCase("ko");
 
@@ -182,7 +184,7 @@ function synchronizeConstraintMaps(timetable, index, report) {
     // Legacy timetable constraints also contain reserved room/class availability
     // keys. They are not teacher names and must remain untouched until the
     // dedicated constraint-map separation migration.
-    if (name.startsWith("__room_unavailable__:") || name.startsWith("__class_unavailable__:")) {
+    if (isLegacyRoomAvailabilityKey(name) || name.startsWith("__class_unavailable__:")) {
       unresolvedLegacy[name] = constraint;
       return;
     }

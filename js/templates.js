@@ -1,10 +1,10 @@
 // ================================================================
 // templates.js · Template/Group Mutations + All Template Rendering
 // ================================================================
-import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
-import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
-import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
+import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 
 const tDomain   = () => appState.templates;
 const templates = () => tDomain().templates;

@@ -1,8 +1,8 @@
 // ================================================================
 // save-status-ui.js · Unified save button + quota/local-dev controls
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
+import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import {
   setOnSaveStatus,
   isAutoSaveEnabled,
@@ -13,10 +13,10 @@ import {
   importLocalSnapshot,
   resetLocalSnapshot,
   exportFirestoreDiagnosticSnapshot,
-} from "./state.js?v=2026-07-15-teacher-id-migration-r354";
-import { openDataCleanupDialog } from "./data-cleanup.js?v=2026-07-15-teacher-id-migration-r354";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-teacher-id-migration-r354";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-teacher-id-migration-r354";
+} from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { openDataCleanupDialog } from "./data-cleanup.js?v=2026-07-15-room-availability-separation-r355";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-room-availability-separation-r355";
 
 const saveStatusEl = document.getElementById("saveStatusEl");
 const topbarRight = document.querySelector(".topbar-right");

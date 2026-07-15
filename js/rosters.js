@@ -1,12 +1,12 @@
 // ================================================================
 // rosters.js · Subject-Student Roster Mutations + View Rendering
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
-import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
-import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { appState, scheduleSave } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
-import { getClasses, getClassById } from "./students.js?v=2026-07-15-teacher-id-migration-r354";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { appState, scheduleSave } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { getClasses, getClassById } from "./students.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 
 const ROSTER_LEVELS = {
   middle: { label: "중등", hint: "7–9학년", grades: ["7학년", "8학년", "9학년"] },

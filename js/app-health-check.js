@@ -7,10 +7,11 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-15-teacher-id-migration-r354";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
-import { APP_VERSION, versioned } from "./version.js?v=2026-07-15-teacher-id-migration-r354";
-import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=2026-07-15-teacher-id-migration-r354";
+} from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
+import { APP_VERSION, versioned } from "./version.js?v=2026-07-15-room-availability-separation-r355";
+import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
+import { inspectRoomAvailabilitySeparation } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 
 const MODULE_FILES = [
   "./js/app.js",
@@ -34,6 +35,7 @@ const MODULE_FILES = [
   "./js/students.js",
   "./js/teachers.js",
   "./js/teacher-identity.js",
+  "./js/room-availability.js",
   "./js/rooms.js",
   "./js/rosters.js",
   "./js/results.js",
@@ -224,6 +226,13 @@ function checkTeacherIdentity(report) {
   add(report, "교사 ID", missing.length ? "error" : "ok", "존재하지 않는 교사 ID 참조", missing.length ? missing.join(", ") : "없음");
   add(report, "교사 ID", legacyTemplateCount ? "warn" : "ok", "이름만 남은 과목카드", legacyTemplateCount ? `${legacyTemplateCount}개 · 저장 시 자동 연결` : "없음");
   add(report, "교사 ID", "info", "ID 기반 참조 수", `${allRefs.length}개`);
+}
+
+function checkRoomAvailabilityStorage(report) {
+  const stats = inspectRoomAvailabilitySeparation(appState.rooms || {}, appState.timetable || {});
+  add(report, "교실 불가시간", stats.legacyKeyCount ? "error" : "ok", "교사 조건에 남은 교실 키", stats.legacyKeyCount ? `${stats.legacyKeyCount}개 · ${stats.legacySlotCount}칸 · r355 저장 후 제거 필요` : "없음");
+  add(report, "교실 불가시간", "info", "교실별 불가시간", `${stats.unavailableRoomCount}개 교실 · ${stats.roomSlotCount}칸`);
+  add(report, "교실 불가시간", stats.orphanRoomCount ? "warn" : "ok", "미등록 교실 ID 보존값", stats.orphanRoomCount ? `${stats.orphanRoomCount}개 교실 ID · ${stats.orphanSlotCount}칸` : "없음");
 }
 
 function checkDom(report) {
@@ -418,6 +427,7 @@ export async function runAppHealthCheck() {
   summarizeRuntime(report);
   summarizeData(report);
   checkTeacherIdentity(report);
+  checkRoomAvailabilityStorage(report);
   checkDom(report);
   checkTimetableReferences(report);
   await checkModuleFiles(report);

@@ -1,20 +1,21 @@
  // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
-import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-teacher-id-migration-r354";
-import { versioned } from "./version.js?v=2026-07-15-teacher-id-migration-r354";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-teacher-id-migration-r354";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-teacher-id-migration-r354";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-teacher-id-migration-r354";
-import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
-import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-teacher-id-migration-r354";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
+import { versioned } from "./version.js?v=2026-07-15-room-availability-separation-r355";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
+import { normalizeRoomUnavailableSlots, isLegacyRoomAvailabilityKey } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -24,10 +25,10 @@ import {
   conflictDetailBetween as occConflictDetailBetween,
   formatClassLabelFromKey as occFormatClassLabelFromKey,
   normalizeClassKey as occNormalizeClassKey
-} from "./timetable-occupancy.js?v=2026-07-15-teacher-id-migration-r354";
-import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-15-teacher-id-migration-r354";
-import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-teacher-id-migration-r354";
-import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-teacher-id-migration-r354";
+} from "./timetable-occupancy.js?v=2026-07-15-room-availability-separation-r355";
+import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-15-room-availability-separation-r355";
+import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-room-availability-separation-r355";
+import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 
 
 const [
@@ -537,12 +538,21 @@ const undoHandlers = createTimetableUndoHandlers({
     config: ttDomain().config || {},
     teacherConstraints: ttDomain().teacherConstraints || {},
     teacherConstraintsById: ttDomain().teacherConstraintsById || {},
+    roomAvailability: getRooms().map(room => ({
+      id: room.id,
+      unavailableSlots: normalizeRoomUnavailableSlots(room.unavailableSlots),
+    })),
   }),
   restoreSnapshot: snapshot => {
     ttDomain().entries = snapshot.entries || [];
     ttDomain().config = snapshot.config || ttDomain().config || {};
     ttDomain().teacherConstraints = snapshot.teacherConstraints || {};
     ttDomain().teacherConstraintsById = snapshot.teacherConstraintsById || {};
+    const availabilityById = new Map((snapshot.roomAvailability || []).map(row => [clean(row?.id), normalizeRoomUnavailableSlots(row?.unavailableSlots)]));
+    getRooms().forEach(room => {
+      if (availabilityById.has(clean(room?.id))) room.unavailableSlots = availabilityById.get(clean(room.id));
+    });
+    scheduleSave("rooms");
   },
   scheduleSave,
   recomputeConflicts,
@@ -569,56 +579,24 @@ function getRoomDisplayName(roomId) {
   return getRooms().find(r => r.id === roomId)?.name || roomId;
 }
 
-const ROOM_UNAVAILABLE_PREFIX = "__room_unavailable__:";
-const CLASS_UNAVAILABLE_PREFIX = "__class_unavailable__:";
-
-function roomUnavailableConstraintKey(roomId) {
-  return ROOM_UNAVAILABLE_PREFIX + clean(roomId);
-}
-
-function normalizeRoomUnavailableSlots(slots = []) {
-  const seen = new Set();
-  return (Array.isArray(slots) ? slots : [])
-    .map(s => ({ day: Number(s?.day), period: Number(s?.period) }))
-    .filter(s => Number.isInteger(s.day) && s.day >= 0 && s.day <= 4 && Number.isInteger(s.period) && s.period >= 0 && s.period <= 11)
-    .filter(s => {
-      const key = `${s.day}:${s.period}`;
-      if (seen.has(key)) return false;
-      seen.add(key); return true;
-    })
-    .sort((a, b) => a.day - b.day || a.period - b.period);
-}
-
 function getRoomUnavailableSlots(roomId) {
-  const key = roomUnavailableConstraintKey(roomId);
-  return normalizeRoomUnavailableSlots(constraints()?.[key]?.unavailableSlots || []);
+  const room = getRoomById(clean(roomId));
+  return normalizeRoomUnavailableSlots(room?.unavailableSlots || []);
 }
 
 function setRoomUnavailableSlots(roomId, slots) {
   if (!canEdit() || !roomId) return false;
-  const key = roomUnavailableConstraintKey(roomId);
-  const next = normalizeRoomUnavailableSlots(slots);
-  const domain = constraints();
-  if (!next.length) delete domain[key];
-  else {
-    domain[key] = {
-      ...(domain[key] || {}),
-      unavailableSlots: next,
-      workType: "fulltime",
-      maxPerDay: 99,
-      maxConsecutive: 99,
-      maxPerWeek: 0,
-      constraintNote: "교실 불가시간 저장용",
-    };
-  }
-  scheduleSave("timetable");
+  const room = getRoomById(clean(roomId));
+  if (!room) return false;
+  room.unavailableSlots = normalizeRoomUnavailableSlots(slots);
+  scheduleSave("rooms", { immediate: true });
   return true;
 }
 
 function getEffectiveRoomsForTimetable() {
   return getRooms().map(room => ({
     ...room,
-    unavailableSlots: getRoomUnavailableSlots(room.id)
+    unavailableSlots: normalizeRoomUnavailableSlots(room?.unavailableSlots || []),
   }));
 }
 
@@ -834,7 +812,7 @@ function normalizeTimetableTeacherReferences({ persist = false } = {}) {
 
   const tc = constraints() || {};
   Object.keys(tc).forEach(key => {
-    if (key.startsWith(ROOM_UNAVAILABLE_PREFIX) || key.startsWith(CLASS_UNAVAILABLE_PREFIX)) return;
+    if (isLegacyRoomAvailabilityKey(key) || key.startsWith(CLASS_UNAVAILABLE_PREFIX)) return;
     const names = normalizeTeacherNameList([key]);
 
     if (names.length === 1 && roster.has(names[0])) {

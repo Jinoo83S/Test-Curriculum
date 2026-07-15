@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const identity = await import(pathToFileUrl(path.join(root, "js", "teacher-identity.js")));
+const roomAvailability = await import(pathToFileUrl(path.join(root, "js", "room-availability.js")));
 
 function pathToFileUrl(file) {
   const resolved = path.resolve(file).replaceAll("\\", "/");
@@ -34,13 +35,17 @@ const base = {
     bestAutoAssignSnapshot:{ entries:[{ id:"best-entry-1", teacherName:"Teacher A" }] },
     teacherConstraints:{
       "Teacher A":{ unavailableSlots:["월-1"] },
-      "__room_unavailable__:room-1":{ unavailableSlots:["화-2"] }
+      "__room_unavailable__:room-1":{ unavailableSlots:[{ day:1, period:1 }] }
     },
     ttcardTeacherOptions:{ representativeTeacher:"Teacher B" },
   }
 };
 
 const state = clone(base);
+const roomMigration = roomAvailability.migrateLegacyRoomAvailability(state.rooms, state.timetable);
+assert(roomMigration.changed && roomMigration.migratedRoomCount === 1, "room availability migration did not run before teacher migration");
+assert(!state.timetable.teacherConstraints["__room_unavailable__:room-1"], "legacy room key remains in teacher constraints");
+assert(state.rooms.rooms[0].unavailableSlots.length === 1, "room unavailable slot was not moved to room domain");
 const first = identity.synchronizeTeacherIdentityReferences(state);
 assert(first.ok, "initial teacher identity migration failed");
 assert(first.missingIds.length === 0, "migration produced missing IDs");
@@ -53,7 +58,6 @@ assert(state.timetable.ttcards[0].teacherIds.join(",") === "teacher-a,teacher-b"
 assert(state.timetable.entries[0].teacherIds[0] === "teacher-a", "timetable entry teacher ID missing");
 assert(state.timetable.savedSchedules[0].entries[0].teacherIds[0] === "teacher-b", "saved schedule teacher ID missing");
 assert(state.timetable.teacherConstraintsById["teacher-a"], "teacher constraint ID map missing");
-assert(state.timetable.teacherConstraints["__room_unavailable__:room-1"], "reserved room constraint key lost");
 assert(state.timetable.ttcardTeacherOptions.representativeTeacherId === "teacher-b", "representative teacher ID missing");
 
 const second = identity.synchronizeTeacherIdentityReferences(state);
@@ -76,4 +80,4 @@ duplicateState.teachers.teachers.push({ id:"teacher-c", name:"Teacher A" });
 const duplicate = identity.synchronizeTeacherIdentityReferences(duplicateState);
 assert(!duplicate.ok && duplicate.duplicateTeacherNames.length === 1, "duplicate teacher name was not detected");
 
-console.log("TEACHER_ID_MIGRATION_R354_OK");
+console.log("TEACHER_ID_MIGRATION_R355_OK");

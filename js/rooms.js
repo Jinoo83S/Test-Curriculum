@@ -1,10 +1,10 @@
 // ================================================================
 // rooms.js · Room CRUD + View Rendering
 // ================================================================
-import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-teacher-id-migration-r354";
-import { canEdit } from "./auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-teacher-id-migration-r354";
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-teacher-id-migration-r354";
+import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 
 const rDomain = () => appState.rooms;
 export const getRooms    = () => rDomain().rooms;
@@ -683,7 +683,7 @@ function summarizeRoomUsage(options = {}) {
     overlapCount: countRoomOverlaps(allEntries),
     homeRoomCount: getRooms().filter(r => clean(r.homeRoomClassId)).length,
     teacherRoomCount: getRooms().filter(r => clean(r.teacherName)).length,
-    unavailableRoomCount: 0,
+    unavailableRoomCount: getRooms().filter(r => Array.isArray(r?.unavailableSlots) && r.unavailableSlots.length > 0).length,
   };
 }
 

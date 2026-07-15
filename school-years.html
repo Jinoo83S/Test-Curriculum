@@ -28,7 +28,7 @@
     <h2>학년도별 완전 분리 작업공간</h2>
     <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
     <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
-    <p class="muted"><b>r354:</b> 학년도 경로 안전장치를 유지하면서 교사 연결을 이름이 아닌 고유 교사 ID 기준으로 전환합니다. 교사명 변경 시 과목카드·교실·시간표 연결은 유지되고 표시 이름만 자동 갱신됩니다.</p>
+    <p class="muted"><b>r355:</b> 학년도 경로 안전장치를 유지하면서 교사 연결을 이름이 아닌 고유 교사 ID 기준으로 전환합니다. 교사명 변경 시 과목카드·교실·시간표 연결은 유지되고 표시 이름만 자동 갱신됩니다.</p>
     <p class="muted"><b>최초 1회 필수:</b> Firestore 보안 규칙에 <code>schoolYears</code> 경로 권한을 추가해야 합니다. 웹 파일 배포만으로 보안 규칙은 바뀌지 않습니다.</p>
     <p class="muted">현재 선택 학년도의 데이터만 비우는 별도 도구는 <a href="reset-school-year.html"><b>현재 학년도 초기화</b></a>에서 실행할 수 있습니다.</p>
   </section>
@@ -61,18 +61,18 @@
 </main>
 
 <script type="module">
-import { auth, db, getSchoolYearRefs } from "./js/config.js?v=2026-07-15-teacher-id-migration-r354";
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-teacher-id-migration-r354";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-15-teacher-id-migration-r354";
+import { auth, db, getSchoolYearRefs } from "./js/config.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-room-availability-separation-r355";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import {
   ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
   getKnownSchoolYears, registerKnownSchoolYears, unregisterKnownSchoolYear, setActiveSchoolYear,
   getSchoolYearVerification, setSchoolYearVerification, clearSchoolYearVerification
-} from "./js/school-year.js?v=2026-07-15-teacher-id-migration-r354";
+} from "./js/school-year.js?v=2026-07-15-room-availability-separation-r355";
 import {
   validateWorkspaceSnapshot, summarizeWorkspaceSnapshot, compactIntegrityReport, formatIntegritySummary
-} from "./js/school-year-integrity.js?v=2026-07-15-teacher-id-migration-r354";
-import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-teacher-id-migration-r354";
+} from "./js/school-year-integrity.js?v=2026-07-15-room-availability-separation-r355";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
 import {
   collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -728,7 +728,7 @@ async function createWorkspace() {
   } finally { setBusy(false); }
 }
 
-$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r354`;
+$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r355`;
 $("loginBtn").addEventListener("click", login);
 $("logoutBtn").addEventListener("click", logout);
 $("createBtn").addEventListener("click", createWorkspace);
