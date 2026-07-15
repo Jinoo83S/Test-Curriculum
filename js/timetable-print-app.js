@@ -3,8 +3,15 @@ import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { auth, db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  buildPrintTemplateMap,
+  normalizePrintSemester,
+  printSemesterLabel,
+  resolveSemesterCardValues,
+  resolveSemesterEntryValues,
+} from "./timetable-print-semester.js?v=2026-07-15-print-semester-r360";
 
-const VERSION = "2026-07-15-print-module-boundary-r359";
+const VERSION = "2026-07-15-print-semester-r360";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -153,6 +160,8 @@ let splitFieldDraft = null;
 let splitFieldStyleDraft = null;
 let scopeMemory = {};
 let currentScopeType = "class";
+let printTemplateMapSource = null;
+let printTemplateMapCache = new Map();
 
 function gradeNo(value="") { const m = clean(value).match(/\d{1,2}/); return m ? Number(m[0]) : 0; }
 function sectionName(value="") { return clean(value).replace(/^\d+\s*/, "").replace(/^학년\s*/, "") || clean(value); }
@@ -174,6 +183,11 @@ function sortClassLabels(labels=[]) {
 }
 function classLabelFromKey(k="") { const n=normalizeClassKey(k); const m=n.match(/^(\d{1,2})[:\-]?(.+)$/); return m ? `${Number(m[1])}${m[2].toUpperCase()}` : clean(k).replace(":",""); }
 function splitTeachers(v="") { return unique(Array.isArray(v) ? v : clean(v).split(/[,，、\/]+/)); }
+function selectedSemester() { return normalizePrintSemester($("semester")?.value || "1"); }
+function selectedSemesterLabel() { return printSemesterLabel(selectedSemester()); }
+function templateMap() { const source=appState.templates?.templates || []; if (source !== printTemplateMapSource) { printTemplateMapSource=source; printTemplateMapCache=buildPrintTemplateMap(source); } return printTemplateMapCache; }
+function semesterCardValues(c, e={}) { return resolveSemesterCardValues(c || {}, e || {}, templateMap(), selectedSemester()); }
+function semesterEntryValues(e) { return resolveSemesterEntryValues(e || {}, templateMap(), selectedSemester()); }
 function classes() { return (appState.classes?.classes || []).map(c => ({...c, key:classKey(c), label:classLabel(c), gradeNo:gradeNo(c.gradeKey || c.grade)})).filter(c => c.gradeNo>=7 && c.gradeNo<=12).sort((a,b)=>a.gradeNo-b.gradeNo || a.label.localeCompare(b.label,"ko",{numeric:true})); }
 function rooms() { return (appState.rooms?.rooms || []).map(r => ({...r, label:clean(r.name || r.short || r.id)})).filter(r=>r.id && r.label).sort((a,b)=>a.label.localeCompare(b.label,"ko",{numeric:true})); }
 function entries() { return appState.timetable?.entries || []; }
@@ -186,8 +200,8 @@ function cardClassKeys(c) { return unique([...(c?.classKeys||[]), ...(c?.classLa
 function entryClassKeys(e) { const cm = cardMap(); const keys = unique([...(e?.audienceClassKeys||[]).map(normalizeClassKey), ...entryCardIds(e).flatMap(id => cardClassKeys(cm.get(id)))]); return keys; }
 function classKeysForItem(item) { return unique([...(item.card?.classKeys||[]).map(normalizeClassKey), ...(item.card?.classLabels||[]).map(normalizeClassKey), ...(item.entry?.audienceClassKeys||[]).map(normalizeClassKey)]); }
 function entryMatchesClass(e, cls) { return entryClassKeys(e).includes(cls.key); }
-function cardTeachers(c) { return unique([...(c?.teachers||[]), ...splitTeachers(c?.teacherName)]); }
-function entryTeachers(e) { const cm=cardMap(); return unique([...splitTeachers(e?.teacherName), ...entryCardIds(e).flatMap(id => cardTeachers(cm.get(id)))]); }
+function cardTeachers(c, e={}) { return semesterCardValues(c,e).teachers; }
+function entryTeachers(e) { const cm=cardMap(); const ids=entryCardIds(e); if (ids.length) return unique(ids.flatMap(id => cardTeachers(cm.get(id), e))); return semesterEntryValues(e).teachers; }
 function entryMatchesTeacher(e, teacher) { return entryTeachers(e).includes(clean(teacher.key)); }
 function entryRoomIds(e) { const cm=cardMap(); const ids = unique([e?.roomId, ...(e?.roomIds||[]), ...Object.values(e?.roomAssignmentsByTtCardId||{}), ...entryCardIds(e).map(id=>cm.get(id)?.fixedRoomId)]); return ids; }
 function entryMatchesRoom(e, room) { return entryRoomIds(e).includes(room.id); }
@@ -210,11 +224,11 @@ function displaySubjectWithContext(subject, c=null) {
   }
   return base;
 }
-function cardTitle(c,e) { return displaySubjectWithContext(c?.subject || c?.label || e?.groupName || e?.subject || "수업", c); }
+function cardTitle(c,e) { const resolved=semesterCardValues(c,e); return displaySubjectWithContext(resolved.subject || "수업", c); }
 function cardEnglish(c,e) {
-  const v = clean(c?.subjectEn || e?.subjectEn || "");
+  const v = clean(semesterCardValues(c,e).english || "");
   const track = clean(c?.track);
-  const subjNorm = normSpecial(c?.subject || "");
+  const subjNorm = normSpecial(semesterCardValues(c,e).subject || c?.subject || "");
   if (v && (subjNorm === normSpecial("온라인 AP 과목") || normSpecial(v) === normSpecial("Online AP Course")) && track && track !== "공통" && track !== "수동") {
     return `${v} (${track})`;
   }
@@ -300,7 +314,7 @@ function lastProfileKey() {
 function defaultFieldSettings() { return Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos,font:"normal",fontPx:""}])); }
 function normalizeFields(raw) { const base=defaultFieldSettings(); if (raw && typeof raw === "object") FIELD_DEFS.forEach(f=>{ base[f.key]={...base[f.key], ...(raw[f.key]||{})}; }); return base; }
 function normalizeSplitFields(raw, fallbackFields=null) { const fallback=normalizeFields(fallbackFields); const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]=normalizeFields(raw?.[k] || fallback); }); return out; }
-function defaultSettings() { return { targetType:"class", layoutMode:"individual", format:"pdf", paper:"a4-landscape", fontMode:"system", previewMode:"sample", headerLeft:"", headerRight:"", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
+function defaultSettings() { return { targetType:"class", layoutMode:"individual", semester:"1", format:"pdf", paper:"a4-landscape", fontMode:"system", previewMode:"sample", headerLeft:"", headerRight:"", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
 function formatFromPaper(paper="a4-landscape") { return clean(paper).includes("portrait") ? "portrait" : "landscape"; }
 function normalizeOrientationForProfile(fmt="pdf", ori="landscape", t="class", m="individual") {
   const f = clean(fmt || "pdf");
@@ -516,7 +530,7 @@ function syncActiveStyleDraft() {
     clip
   };
 }
-function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
+function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), semester:selectedSemester(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
 function normalizeFirestoreDesignerPayload(payload) {
   const profiles = payload?.profiles && typeof payload.profiles === "object" ? payload.profiles : (payload?.store && typeof payload.store === "object" ? payload.store : {});
   return { profiles, lastProfile: clean(payload?.lastProfile || payload?.activeProfile || "") };
@@ -545,7 +559,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r359.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r360.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -607,7 +621,7 @@ async function saveDesignerSettingsToFirestore(store, activeProfile, activeSetti
   firestoreSettingsLoaded = true;
   return { saved: true };
 }
-function saveSettings() { if (applying) return; normalizeLocalDesignerStorage(); syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
+function saveSettings() { if (applying) return; normalizeLocalDesignerStorage(); syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, semester:s.semester, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
 function showSaved() { markCardApplied(); }
 function showChanged() { markDirty(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
@@ -649,7 +663,7 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   updateFieldFontInputState();
   applying=false;
 }
-function switchProfile() { showRenderOverlay("출력 대상을 바꾸는 중입니다…"); setTimeout(()=>{ scopeMemory[currentScopeType] = captureScopeState(); syncLayoutModeOptions(); const nextType = targetType(); currentScopeType = nextType; buildScopeUi(); const s = getSettings(); applySettings(s, true, true); restoreScopeState(scopeMemory[nextType]); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); updateProfileStatus(); scheduleHeavyRender("미리보기를 다시 그리는 중입니다…", 30); }, 30); }
+function switchProfile() { showRenderOverlay("출력 대상을 바꾸는 중입니다…"); setTimeout(()=>{ scopeMemory[currentScopeType] = captureScopeState(); syncLayoutModeOptions(); const nextType = targetType(); currentScopeType = nextType; buildScopeUi(); const s = getSettings(); applySettings(s, true, true); buildScopeUi(); restoreScopeState(scopeMemory[nextType]); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); updateProfileStatus(); scheduleHeavyRender("미리보기를 다시 그리는 중입니다…", 30); }, 30); }
 function buildFieldRows() {
   $("fieldRows").innerHTML = FIELD_DEFS.map(f => {
     const pos = f.key === "english" ? `<span class="pos-fixed" title="영문명은 과목 아래 고정">↓</span>` : `<select data-field-pos="${f.key}" title="위치">${POSITIONS.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select>`;
@@ -793,7 +807,7 @@ function buildEntities() { const type=targetType(); const visibleEntries=visible
 function renderEntityList() { entitiesCache = buildEntities(); if ($("scopeHint")) $("scopeHint").textContent = `${entitiesCache.length}개 대상이 출력됩니다.`; }
 function selectedEntities() { entitiesCache = buildEntities(); return entitiesCache; }
 function fieldSettings() { return collectSettings().fields; }
-function itemFromCard(e,c,periodLabel) { return { entry:e, card:c, subject:cardTitle(c,e), english:cardEnglish(c,e), teacher:clean(c?.teacherName || (c?.teachers||[]).join(", ") || e?.teacherName), room:itemRoomForCard(e,c), class:cardClasses(c,e), period:periodLabel, group:clean(c?.group), track:clean(c?.track), rawSubject:clean(c?.subject), rawLabel:clean(c?.label) }; }
+function itemFromCard(e,c,periodLabel) { const resolved=semesterCardValues(c,e); return { entry:e, card:c, subject:cardTitle(c,e), english:cardEnglish(c,e), teacher:clean(resolved.teacher || e?.teacherName), room:itemRoomForCard(e,c), class:cardClasses(c,e), period:periodLabel, group:clean(c?.group), track:clean(c?.track), rawSubject:clean(c?.subject), rawLabel:clean(c?.label) }; }
 function inferEntrySubject(e, cardsForEntry=[]) {
   const direct = clean(e?.groupName || e?.subject || e?.title || e?.name || e?.label || e?.displayName || e?.templateName || e?.subjectName || e?.courseName || e?.lessonName);
   if (direct) return direct;
@@ -818,13 +832,13 @@ function representativeItemFromCards(e, cardsForEntry, periodLabel, overrides={}
   const cs = (cardsForEntry||[]).filter(Boolean);
   const first = cs[0] || null;
   const classes = sortClassLabels([...(e?.audienceClassKeys||[]).map(classLabelFromKey), ...cs.flatMap(c=>[...(c?.classLabels||[]), ...(c?.classKeys||[]).map(classLabelFromKey)])]);
-  const teachers = unique([...cs.flatMap(c=>cardTeachers(c)), ...splitTeachers(overrides.teacher || "")]);
+  const teachers = unique([...cs.flatMap(c=>cardTeachers(c,e)), ...splitTeachers(overrides.teacher || "")]);
   const cardRoomText = unique(cs.flatMap(c=>itemRoomForCard(e,c).split(/,\s*/))).filter(Boolean).join(", ");
   const rooms = clean(overrides.room) || cardRoomText || (cs.length ? "" : entryRoomNames(e));
   const englishes = unique(cs.map(c=>cardEnglish(c,e)));
   return { entry:e, card:first, subject:joinedSubjectFromCards(e, cs), english:englishes.length===1?englishes[0]:"", teacher:clean(overrides.teacher) || teachers.join(", ") || clean(e.teacherName), room:rooms, class:classes.join(", "), period:periodLabel, rawSubject:clean(first?.subject || e?.subject), rawLabel:clean(first?.label || e?.label) };
 }
-function itemFromEntry(e,periodLabel) { const cs=entryCardIds(e).map(id=>cardMap().get(id)).filter(Boolean); return { entry:e, card:cs[0]||null, subject:inferEntrySubject(e, cs), english:unique(cs.map(c=>cardEnglish(c,e))).length===1?unique(cs.map(c=>cardEnglish(c,e)))[0]:clean(e.subjectEn||""), teacher:clean(e.teacherName), room:entryRoomNames(e), class:sortClassLabels((e.audienceClassKeys||[]).map(classLabelFromKey)).join(", "), period:periodLabel }; }
+function itemFromEntry(e,periodLabel) { const cs=entryCardIds(e).map(id=>cardMap().get(id)).filter(Boolean); const resolved=semesterEntryValues(e); return { entry:e, card:cs[0]||null, subject:cs.length?inferEntrySubject(e, cs):resolved.subject, english:unique(cs.map(c=>cardEnglish(c,e))).length===1?unique(cs.map(c=>cardEnglish(c,e)))[0]:resolved.english, teacher:cs.length?unique(cs.flatMap(c=>cardTeachers(c,e))).join(", "):resolved.teacher, room:entryRoomNames(e), class:sortClassLabels((e.audienceClassKeys||[]).map(classLabelFromKey)).join(", "), period:periodLabel }; }
 function entryItems(e, ent, periodLabel) {
   const cm=cardMap();
   const type=targetType();
@@ -834,12 +848,12 @@ function entryItems(e, ent, periodLabel) {
   if (type === "teacher") {
     if (entryCards.length) {
       const matched = entryCards.filter(c => {
-        const teachers = cardTeachers(c);
+        const teachers = cardTeachers(c,e);
         return teachers.length ? teachers.includes(ent.key) : splitTeachers(e.teacherName).includes(ent.key);
       });
       return matched.length ? [representativeItemFromCards(e, matched, periodLabel, { teacher: ent.key })] : [];
     }
-    return splitTeachers(e.teacherName).includes(ent.key) ? [itemFromEntry(e, periodLabel)] : [];
+    return semesterEntryValues(e).teachers.includes(ent.key) ? [itemFromEntry(e, periodLabel)] : [];
   }
 
   if (type === "room") {
@@ -1022,8 +1036,8 @@ function todayLabel() { return new Date().toLocaleDateString("ko-KR"); }
 function headerLeftText(defaultText="") { const v=clean($("headerLeft")?.value || ""); return v || clean(defaultText); }
 function headerRightText(defaultText="") { const v=clean($("headerRight")?.value || ""); return v || clean(defaultText); }
 function titleRowHtml(title, left="", right="") { return `<div class="print-title-row"><div class="title-note title-note-left">${esc(left)}</div><h3>${esc(title)}</h3><div class="title-note title-note-right">${esc(right)}</div></div>`; }
-function pageForEntity(ent) { const title=`${ent.label} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
-function overviewTitle() { return targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; }
+function pageForEntity(ent) { const title=`${ent.label} ${selectedSemesterLabel()} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
+function overviewTitle() { const base=targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; return `${selectedSemesterLabel()} ${base}`; }
 function chunkList(list, size) { const out=[]; for(let i=0;i<list.length;i+=size) out.push(list.slice(i,i+size)); return out; }
 function balancedChunkList(list, maxSize) {
   const arr = Array.isArray(list) ? list : [];
@@ -1154,7 +1168,7 @@ function scheduleHeavyRender(text="미리보기를 다시 그리는 중입니다
 function renderPagesFor(ents, metaPrefix="") {
   const pages = layoutMode()==="overview" ? overviewPages(ents) : ents.map(pageForEntity);
   const inner = $("previewInner");
-  $("previewMeta").textContent = `${metaPrefix}${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
+  $("previewMeta").textContent = `${selectedSemesterLabel()} · ${metaPrefix}${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
   inner.innerHTML = pages.length ? pages.join("") : `<section class="preview-page"><div class="disabled-note">출력할 대상이 없습니다. 오른쪽 범위를 확인해 주세요.</div></section>`;
   applyZoom();
 }
@@ -1255,7 +1269,7 @@ function exportFileName(ext) {
   const kindText = $("outputKind")?.selectedOptions?.[0]?.textContent || "시간표";
   const scope = currentScopeMode();
   const stamp = new Date().toISOString().slice(0,10);
-  return `${safeFilePart(kindText)}_${safeFilePart(scope)}_${stamp}.${ext}`;
+  return `${safeFilePart(kindText)}_${safeFilePart(selectedSemesterLabel())}_${safeFilePart(scope)}_${stamp}.${ext}`;
 }
 function downloadTextFile(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
@@ -1715,7 +1729,7 @@ function individualExportMatrix(ent, allEntries=visibleEntriesForScope()) {
     grid.push(row);
   });
   return {
-    title: `${ent.label} 시간표`,
+    title: `${ent.label} ${selectedSemesterLabel()} 시간표`,
     sub: ent.sub || "",
     leftNote: headerLeftText(ent.sub || ""),
     rightNote: headerRightText(todayLabel()),
@@ -3051,7 +3065,7 @@ function buildOfficeHtml(kind="word") {
     if (filtered.trim()) el.setAttribute("style", filtered); else el.removeAttribute("style");
   });
   const title = safeFilePart($("outputKind")?.selectedOptions?.[0]?.textContent || "시간표");
-  const meta = `${title} · ${new Date().toLocaleString("ko-KR")}`;
+  const meta = `${title} · ${selectedSemesterLabel()} · ${new Date().toLocaleString("ko-KR")}`;
   const excelMeta = kind === "excel" ? '<meta name="ProgId" content="Excel.Sheet"><meta name="Generator" content="HIS Timetable Export">' : '<meta name="ProgId" content="Word.Document"><meta name="Generator" content="HIS Timetable Export">';
   return `<!doctype html><html><head><meta charset="utf-8">${excelMeta}<title>${esc(title)}</title>${officeExportCss(kind)}</head><body><div class="Section1 office-export-root"><div class="office-note">${esc(meta)}</div>${clone.innerHTML}</div></body></html>`;
 }
@@ -3156,7 +3170,7 @@ async function exportPdfReal() {
     doc.close();
     await sleep(180);
 
-    $("previewMeta").textContent = `출력 전체 · ${allEnts.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
+    $("previewMeta").textContent = `${selectedSemesterLabel()} · 출력 전체 · ${allEnts.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
     showRenderOverlay("인쇄창을 여는 중입니다…");
     await sleep(450);
     hideRenderOverlay();
@@ -3204,7 +3218,15 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    return;
  }
  if (e.target.id === "outputKind") return;
+ if (e.target.id === "semester") {
+   scopeMemory[currentScopeType] = captureScopeState();
+   buildScopeUi();
+   restoreScopeState(scopeMemory[currentScopeType]);
+   markDirty("학기 변경됨 · 설정 저장 가능");
+   scheduleHeavyRender(`${selectedSemesterLabel()} 시간표를 다시 그리는 중입니다…`, 30);
+   return;
+ }
  if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.id === "ellipsisMode") { document.body.classList.toggle("ellipsis-enabled", !!e.target.checked); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("excelDbBtn")?.addEventListener("click",downloadExcelDatabase); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
-function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters"]); } if (user && !LOCAL_DEV_MODE) { loadDesignerSettingsFromFirestore(true); } }
-function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
+function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters","templates"]); } if (user && !LOCAL_DEV_MODE) { loadDesignerSettingsFromFirestore(true); } }
+function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms && initialLoad.templates; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); buildScopeUi(); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }

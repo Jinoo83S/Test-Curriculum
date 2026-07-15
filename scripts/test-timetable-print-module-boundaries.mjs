@@ -11,14 +11,16 @@ const read = rel => fs.readFileSync(path.join(root, rel), "utf8");
 const html = read("timetable-print.html");
 const css = read("timetable-print.css");
 const app = read("js/timetable-print-app.js");
+const semester = read("js/timetable-print-semester.js");
 
 assert.match(html, /<link rel="stylesheet" href="timetable-print\.css\?v=2026-07-15-print-module-boundary-r359">/);
-assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-module-boundary-r359"><\/script>/);
+assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-semester-r360"><\/script>/);
 assert.doesNotMatch(html, /<script type="module">[\s\S]*?<\/script>/, "large inline module must not return");
 assert.doesNotMatch(html, /:root\{--nav:/, "main print stylesheet must stay external");
 assert.match(html, /<style id="printPageStyle">@page\{size:/, "runtime page style element must remain available");
 assert.ok(css.length > 50000, "external print stylesheet looks incomplete");
 assert.ok(app.length > 180000, "external print application module looks incomplete");
+assert.match(semester, /export function resolveSemesterCardValues/);
 
 for (const signature of [
   /function buildDocxBlob\(/,
