@@ -1,14 +1,14 @@
 // ================================================================
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
-} from "./templates.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getClassCount } from "./rosters.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+} from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
+import { getClassCount } from "./rosters.js?v=2026-07-15-school-year-path-guard-r353";
 
 const TTCARD_TEACHER_MODES = new Set(["homeroom", "representative", "none"]);
 const TTCARD_TEACHER_MODE_LABELS = {

@@ -4,19 +4,19 @@
 // 이 파일은 앱 전체 초기화만 담당합니다.
 // 화면별 UI, 도메인 구독, 지연 로딩, 렌더링은 전용 모듈로 분리되어 있습니다.
 
-import { onAuth, canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { versioned } from "./version.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { createAppModuleLoader } from "./app-module-loader.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupAppBoardUi } from "./app-board-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { onAuth, canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-15-school-year-path-guard-r353";
+import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { versioned } from "./version.js?v=2026-07-15-school-year-path-guard-r353";
+import { createAppModuleLoader } from "./app-module-loader.js?v=2026-07-15-school-year-path-guard-r353";
+import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupAppBoardUi } from "./app-board-ui.js?v=2026-07-15-school-year-path-guard-r353";
+import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-school-year-path-guard-r353";
 
 const DEFAULT_VIEW = "board";
 const FIRESTORE_RENDER_DEBOUNCE_MS = 50;

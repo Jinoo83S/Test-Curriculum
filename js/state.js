@@ -1,11 +1,11 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { refs, db, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
+import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -15,27 +15,21 @@ import {
 // one huge document. Public appState shape stays the same for the UI modules.
 export const SPLIT_COLLECTION_DOMAINS = new Set(["classes", "rosters", "timetable"]);
 
-const splitRefs = IS_LEGACY_SCHOOL_YEAR ? {
-  classes: collection(db, "boards", "_split", "classes"),
-  rosters: collection(db, "boards", "_split", "rosters"),
-  timetableEntries: collection(db, "boards", "_split", "timetableEntries"),
-  ttcards: collection(db, "boards", "_split", "ttcards"),
-  timetableMeta: doc(db, "boards", "_split", "timetableMeta", "main"),
-} : {
-  classes: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "classes"),
-  rosters: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "rosters"),
-  timetableEntries: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "timetableEntries"),
-  ttcards: collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "ttcards"),
-  timetableMeta: doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "meta", "timetable"),
+const splitRefs = {
+  classes: activeWorkspaceRefs.collections.classes,
+  rosters: activeWorkspaceRefs.collections.rosters,
+  timetableEntries: activeWorkspaceRefs.collections.timetableEntries,
+  ttcards: activeWorkspaceRefs.collections.ttcards,
+  timetableMeta: activeWorkspaceRefs.timetableMeta,
 };
 
 const storageLabel = {
   domain: (domain) => schoolYearDomainPath(domain),
-  classes: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/classes" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/classes`,
-  rosters: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/rosters" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/rosters`,
-  timetableEntries: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/timetableEntries" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/timetableEntries`,
-  ttcards: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/ttcards" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/ttcards`,
-  timetableMeta: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/timetableMeta/main" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/meta/timetable`,
+  classes: activeWorkspaceRefs.spec.labels.collections.classes,
+  rosters: activeWorkspaceRefs.spec.labels.collections.rosters,
+  timetableEntries: activeWorkspaceRefs.spec.labels.collections.timetableEntries,
+  ttcards: activeWorkspaceRefs.spec.labels.collections.ttcards,
+  timetableMeta: activeWorkspaceRefs.spec.labels.timetableMeta,
 };
 
 function verifyWriteContext(context) {

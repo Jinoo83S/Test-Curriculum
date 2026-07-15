@@ -1,7 +1,7 @@
 // ================================================================
 // app-students-ui.js · Student Management UI Coordinator
 // ================================================================
-import { scheduleSave } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { scheduleSave } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
 
 const $ = id => document.getElementById(id);
 

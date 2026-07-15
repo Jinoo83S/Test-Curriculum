@@ -1,15 +1,15 @@
 // ================================================================
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
-import { appState, scheduleSave } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getRooms } from "./rooms.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { appState, scheduleSave } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { getRooms } from "./rooms.js?v=2026-07-15-school-year-path-guard-r353";
+import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
-} from "./timetable-data.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+} from "./timetable-data.js?v=2026-07-15-school-year-path-guard-r353";
+import { getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-path-guard-r353";
 
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;

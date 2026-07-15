@@ -1,10 +1,10 @@
 // ================================================================
 // teachers.js · Teacher Mutations + Teacher View Rendering
 // ================================================================
-import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState, scheduleSave, normalizeTeacher } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getSubjectsForTeacher } from "./templates.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState, scheduleSave, normalizeTeacher } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { getSubjectsForTeacher } from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
 
 const tDomain   = () => appState.teachers;
 export const getTeachers    = () => tDomain().teachers;

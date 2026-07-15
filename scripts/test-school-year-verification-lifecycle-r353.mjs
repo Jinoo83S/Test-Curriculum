@@ -1,25 +1,26 @@
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
-const root = path.resolve(process.argv[2] || ".");
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(here, "..");
 const state = fs.readFileSync(path.join(root, "js/state.js"), "utf8");
-const school = fs.readFileSync(path.join(root, "js/school-year.js"), "utf8");
+const schoolPath = path.join(root, "js/school-year.js");
+const school = fs.readFileSync(schoolPath, "utf8");
 const management = fs.readFileSync(path.join(root, "school-years.html"), "utf8");
 const reset = fs.readFileSync(path.join(root, "reset-school-year.html"), "utf8");
 
 const checks = [
   [!state.includes("invalidateActiveWorkspaceIntegrity"), "ordinary saves do not invalidate creation verification"],
   [!state.includes("invalidateSchoolYearVerification"), "state no longer imports the invalidation API"],
-  [management.includes("creationVerification"), "server metadata has a separate creation verification record"],
-  [management.includes("creationPhase:true"), "new workspace creation persists the creation verification"],
-  [management.includes("creationPhase:options.creationPhase === true"), "manual checks are separated from creation checks"],
+  [management.includes("creationVerification"), "server metadata has separate creation verification"],
+  [management.includes("creationPhase:true"), "workspace creation persists creation verification"],
+  [management.includes("creationPhase:options.creationPhase === true"), "manual integrity checks stay separate"],
   [management.includes("복제 검증 완료"), "management UI shows immutable copy verification"],
-  [!management.includes("변경됨 · 재점검 필요"), "edit-driven recheck badge removed"],
-  [!reset.includes("clearSchoolYearVerification(ACTIVE_SCHOOL_YEAR)"), "workspace reset does not erase creation verification"],
-  [school.includes("creation-verification-migrated-r352"), "r349-r351 stale records migrate safely"],
+  [!management.includes("변경됨 · 재점검 필요"), "edit-driven recheck badge remains removed"],
+  [!reset.includes("clearSchoolYearVerification(ACTIVE_SCHOOL_YEAR)"), "full reset does not erase creation verification"],
+  [school.includes("creation-verification-migrated-r352"), "r349-r351 stale records still migrate safely"],
 ];
-
 for (const [ok, label] of checks) console.log(`${ok ? "PASS" : "FAIL"} ${label}`);
 if (checks.some(([ok]) => !ok)) process.exit(1);
 
@@ -29,12 +30,10 @@ class MemoryStorage {
   setItem(key, value) { this.map.set(key, String(value)); }
   removeItem(key) { this.map.delete(key); }
 }
-
 globalThis.localStorage = new MemoryStorage();
 globalThis.location = { search: "", href: "https://example.test/index.html" };
 
-const verificationKey = "his_school_year_verification_v1";
-localStorage.setItem(verificationKey, JSON.stringify({
+localStorage.setItem("his_school_year_verification_v1", JSON.stringify({
   "2027": {
     ok: false,
     stale: true,
@@ -46,14 +45,17 @@ localStorage.setItem(verificationKey, JSON.stringify({
   }
 }));
 
-const schoolModuleUrl = `${pathToFileURL(path.join(root, "js/school-year.js")).href}?test=${Date.now()}`;
-const mod = await import(schoolModuleUrl);
+const testSource = school.replace(
+  /import \{ LEGACY_PATH_YEAR \} from .*?;\n/,
+  'const LEGACY_PATH_YEAR = "2026";\n'
+);
+const mod = await import(`data:text/javascript;base64,${Buffer.from(testSource).toString("base64")}`);
 const migrated = mod.getSchoolYearVerification("2027");
 if (!migrated?.ok || migrated?.stale === true || migrated?.source !== "creation-verification-migrated-r352") {
-  console.error("FAIL stale r351 verification migration", migrated);
+  console.error("FAIL stale verification migration", migrated);
   process.exit(1);
 }
-console.log("PASS stale r351 verification becomes immutable creation verification");
+console.log("PASS stale verification becomes immutable creation verification");
 
 mod.invalidateSchoolYearVerification("2027", "ordinary-edit");
 const afterNoOp = mod.getSchoolYearVerification("2027");
@@ -61,4 +63,5 @@ if (!afterNoOp?.ok || afterNoOp?.stale === true) {
   console.error("FAIL compatibility invalidation must be a no-op", afterNoOp);
   process.exit(1);
 }
-console.log("PASS compatibility invalidation is a no-op");
+console.log("PASS compatibility invalidation remains a no-op");
+console.log("SCHOOL_YEAR_VERIFICATION_LIFECYCLE_R353_OK");

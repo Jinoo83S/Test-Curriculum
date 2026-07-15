@@ -3,8 +3,9 @@
 // ================================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { initializeFirestore, persistentLocalCache, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, assertSchoolYearRuntimeConsistency } from "./school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { initializeFirestore, persistentLocalCache, doc, collection } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearRuntimeConsistency } from "./school-year.js?v=2026-07-15-school-year-path-guard-r353";
+import { getSchoolYearPathSpec, assertSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=2026-07-15-school-year-path-guard-r353";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
@@ -24,20 +25,50 @@ export const db = initializeFirestore(fbApp, {
 export const provider = new GoogleAuthProvider();
 
 // ── Firestore refs — active academic-year workspace ─────────────
-// 2026 keeps the existing production paths. New years are isolated under
-// schoolYears/{year}/domains so next-year preparation cannot overwrite 2026.
-export { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR };
+// Every read/write/delete path is derived from school-year-paths.js.
+export { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR };
 export function assertSchoolYearWriteContext(context = "Firestore 저장") {
-  return assertSchoolYearRuntimeConsistency(context);
+  assertSchoolYearRuntimeConsistency(context);
+  return assertSchoolYearPathSpec(getSchoolYearPathSpec(ACTIVE_SCHOOL_YEAR), ACTIVE_SCHOOL_YEAR, context);
 }
-export const schoolYearDomainPath = (domain) => IS_LEGACY_SCHOOL_YEAR
-  ? `boards/${domain}`
-  : `schoolYears/${ACTIVE_SCHOOL_YEAR}/domains/${domain}`;
+
+function docFromSegments(segments) {
+  if (!Array.isArray(segments) || segments.length < 2 || segments.length % 2 !== 0) {
+    throw new Error(`잘못된 Firestore 문서 경로: ${pathSegmentsToString(segments)}`);
+  }
+  return doc(db, ...segments);
+}
+function collectionFromSegments(segments) {
+  if (!Array.isArray(segments) || segments.length < 1 || segments.length % 2 !== 1) {
+    throw new Error(`잘못된 Firestore 컬렉션 경로: ${pathSegmentsToString(segments)}`);
+  }
+  return collection(db, ...segments);
+}
+
+export function getSchoolYearRefs(year = ACTIVE_SCHOOL_YEAR) {
+  const spec = getSchoolYearPathSpec(year);
+  assertSchoolYearPathSpec(spec, year, "Firestore 경로 생성");
+  return {
+    spec,
+    domains: Object.fromEntries(Object.entries(spec.domains).map(([name, segments]) => [name, docFromSegments(segments)])),
+    collections: Object.fromEntries(Object.entries(spec.collections).map(([name, segments]) => [name, collectionFromSegments(segments)])),
+    timetableMeta: docFromSegments(spec.timetableMeta),
+    workspaceMeta: spec.workspaceMeta ? docFromSegments(spec.workspaceMeta) : null,
+    schoolYearsCollection: collectionFromSegments(spec.schoolYearsCollection),
+    operationAuditCollection: collectionFromSegments(spec.operationAuditCollection),
+  };
+}
+
+export const activeWorkspaceRefs = getSchoolYearRefs(ACTIVE_SCHOOL_YEAR);
+export const schoolYearDomainPath = (domain, year = ACTIVE_SCHOOL_YEAR) => {
+  const spec = getSchoolYearPathSpec(year);
+  const segments = spec.domains[String(domain)];
+  if (!segments) throw new Error(`알 수 없는 학년도 도메인: ${domain}`);
+  return pathSegmentsToString(segments);
+};
 export const refs = Object.fromEntries([
   "curriculum", "templates", "classes", "teachers", "rosters", "rooms", "timetable", "main"
-].map(domain => [domain === "main" ? "legacy" : domain, IS_LEGACY_SCHOOL_YEAR
-  ? doc(db, "boards", domain)
-  : doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "domains", domain)]));
+].map(domain => [domain === "main" ? "legacy" : domain, activeWorkspaceRefs.domains[domain]]));
 
 // ── Grade / group constants ───────────────────────────────────────
 export const GRADE_KEYS   = ["7학년","8학년","9학년","10학년","11학년","12학년"];

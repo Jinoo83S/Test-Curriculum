@@ -1,8 +1,8 @@
 // ================================================================
 // auth.js · Authentication
 // ================================================================
-import { auth, provider } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { auth, provider } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   signInWithPopup, getRedirectResult,
   signOut, onAuthStateChanged

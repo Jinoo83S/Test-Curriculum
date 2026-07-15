@@ -1,10 +1,11 @@
 // ================================================================
 // app-board-ui.js · Curriculum board tabs / export / reset UI
 // ================================================================
-import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { schoolYearLabel } from "./school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState, saveNow } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { schoolYearLabel } from "./school-year.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState, saveNow } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-school-year-path-guard-r353";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],
@@ -90,11 +91,30 @@ export function setupAppBoardUi({
     }
 
     const targetGrades = [...(GRADE_GROUPS[activeTab] || [])];
+    const levelKey = activeTab === "tab7to9" ? "중등" : "고등";
     const levelLabel = activeTab === "tab7to9" ? "중등(7·8·9학년)" : "고등(10·11·12학년)";
-    const phrase = `${ACTIVE_SCHOOL_YEAR}-${activeTab === "tab7to9" ? "중등" : "고등"}-보드초기화`;
+    const targetPath = schoolYearDomainPath("curriculum");
+    const phrase = ACTIVE_SCHOOL_YEAR === LEGACY_SCHOOL_YEAR
+      ? `${ACTIVE_SCHOOL_YEAR}-운영데이터-${levelKey}-보드초기화`
+      : `${ACTIVE_SCHOOL_YEAR}-${levelKey}-보드초기화`;
 
-    if (!confirm(`${schoolYearLabel(ACTIVE_SCHOOL_YEAR)} ${levelLabel} 보드만 초기화합니다.\n다른 학년도와 반대 학년군은 유지됩니다.\n계속할까요?`)) return;
-    const typed = prompt(`실수 방지를 위해 아래 문구를 정확히 입력하세요.\n\n${phrase}`, "");
+    try {
+      assertDestructiveTarget({ year: ACTIVE_SCHOOL_YEAR, expectedPath: targetPath, context: "커리큘럼 보드 초기화" });
+    } catch (error) {
+      alert(error?.message || "초기화 대상 경로 검증에 실패했습니다.");
+      return;
+    }
+
+    const impact = ACTIVE_SCHOOL_YEAR === LEGACY_SCHOOL_YEAR ? "2026 운영 데이터 직접 변경" : "없음";
+    if (!confirm(`${schoolYearLabel(ACTIVE_SCHOOL_YEAR)} ${levelLabel} 보드만 초기화합니다.
+
+실제 저장 경로: ${targetPath}
+2026 운영 경로 영향: ${impact}
+
+다른 학년도와 반대 학년군은 유지됩니다. 계속할까요?`)) return;
+    const typed = prompt(`실수 방지를 위해 아래 문구를 정확히 입력하세요.
+
+${phrase}`, "");
     if (typed === null) return;
     if (typed.trim() !== phrase) {
       alert("확인 문구가 일치하지 않아 초기화하지 않았습니다.");
@@ -102,6 +122,41 @@ export function setupAppBoardUi({
     }
 
     const previousCurriculum = structuredClone(appState.curriculum || {});
+    const beforeCounts = Object.fromEntries(targetGrades.map(grade => [grade, (previousCurriculum?.gradeBoards?.[grade] || []).length]));
+    let backupInfo;
+    try {
+      const backupFilename = buildBackupFilename({
+        year: ACTIVE_SCHOOL_YEAR,
+        scope: activeTab === "tab7to9" ? "middle-curriculum" : "high-curriculum",
+        operation: "board-reset",
+      });
+      backupInfo = downloadJsonBackup({
+        version: 1,
+        mode: "his-before-destructive-operation",
+        exportedAt: new Date().toISOString(),
+        schoolYear: ACTIVE_SCHOOL_YEAR,
+        operation: "curriculum-board-reset",
+        scope: levelLabel,
+        targetPath,
+        targetGrades,
+        counts: beforeCounts,
+        curriculum: previousCurriculum,
+      }, backupFilename);
+    } catch (error) {
+      await recordDestructiveOperation({
+        year: ACTIVE_SCHOOL_YEAR,
+        operation: "curriculum-board-reset",
+        scope: levelLabel,
+        status: "blocked-backup-failed",
+        targetPaths: [targetPath],
+        counts: beforeCounts,
+        message: error?.message || String(error),
+      });
+      alert(`초기화 전 JSON 백업 생성에 실패하여 작업을 중단했습니다.
+${error?.message || error}`);
+      return;
+    }
+
     const options = structuredClone(appState.curriculum?.options || DEFAULT_BOARD_OPTIONS);
     const gradeBoards = structuredClone(appState.curriculum?.gradeBoards || {});
     targetGrades.forEach(grade => {
@@ -114,12 +169,34 @@ export function setupAppBoardUi({
       const saved = await saveNow("curriculum", { throwOnError: true });
       if (!saved) throw new Error("학년도 저장 안전장치가 저장을 차단했습니다.");
       console.info(`[board-reset] ${schoolYearLabel(ACTIVE_SCHOOL_YEAR)} ${levelLabel} 저장 완료`);
+      await recordDestructiveOperation({
+        year: ACTIVE_SCHOOL_YEAR,
+        operation: "curriculum-board-reset",
+        scope: levelLabel,
+        status: "success",
+        targetPaths: [targetPath],
+        counts: beforeCounts,
+        backupFilename: backupInfo?.filename,
+        backupBytes: backupInfo?.bytes,
+      });
       renderApp?.("curriculum");
     } catch (error) {
+      await recordDestructiveOperation({
+        year: ACTIVE_SCHOOL_YEAR,
+        operation: "curriculum-board-reset",
+        scope: levelLabel,
+        status: "failed",
+        targetPaths: [targetPath],
+        counts: beforeCounts,
+        backupFilename: backupInfo?.filename,
+        backupBytes: backupInfo?.bytes,
+        message: error?.message || String(error),
+      });
       appState.curriculum = previousCurriculum;
       invalidateTabs();
       renderApp?.("curriculum");
-      alert(`보드 초기화를 저장하지 못해 화면 상태를 되돌렸습니다.\n${error?.message || error}`);
+      alert(`보드 초기화를 저장하지 못해 화면 상태를 되돌렸습니다.
+${error?.message || error}`);
     }
   }
 

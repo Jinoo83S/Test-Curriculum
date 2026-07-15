@@ -92,75 +92,57 @@
 </main>
 
 <script type="module">
-  import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearLabel } from "./js/school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-  import {
-    initializeFirestore, persistentLocalCache,
-    doc, collection, getDocs, getDoc, writeBatch, deleteDoc, setDoc, serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
-    authDomain: "his-curriculum-8e737.firebaseapp.com",
-    projectId: "his-curriculum-8e737",
-    storageBucket: "his-curriculum-8e737.firebasestorage.app",
-    messagingSenderId: "1091130688532",
-    appId: "1:1091130688532:web:79622f9da3591ab2d3d301",
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
-  const provider = new GoogleAuthProvider();
-  const db = initializeFirestore(app, { cache: persistentLocalCache() });
+  import { auth, db, getSchoolYearRefs, assertSchoolYearWriteContext, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR } from "./js/config.js?v=2026-07-15-school-year-path-guard-r353";
+  import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-school-year-path-guard-r353";
+  import { schoolYearLabel } from "./js/school-year.js?v=2026-07-15-school-year-path-guard-r353";
+  import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-school-year-path-guard-r353";
+  import { getDocs, getDoc, writeBatch, deleteDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
   const $ = id => document.getElementById(id);
   const logEl = $("log");
   const summaryEl = $("summary");
+  const workspace = getSchoolYearRefs(ACTIVE_SCHOOL_YEAR);
+  const spec = workspace.spec;
   let currentUser = null;
   let running = false;
+  let previewCounts = null;
 
-  const domainDoc = name => IS_LEGACY_SCHOOL_YEAR
-    ? doc(db, "boards", name)
-    : doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "domains", name);
-  const splitCollection = name => IS_LEGACY_SCHOOL_YEAR
-    ? collection(db, "boards", "_split", name)
-    : collection(db, "schoolYears", ACTIVE_SCHOOL_YEAR, name);
-  const timetableMeta = IS_LEGACY_SCHOOL_YEAR
-    ? doc(db, "boards", "_split", "timetableMeta", "main")
-    : doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR, "meta", "timetable");
-  const workspaceMeta = doc(db, "schoolYears", ACTIVE_SCHOOL_YEAR);
+  assertDestructiveTarget({ year:ACTIVE_SCHOOL_YEAR, context:"학년도 전체 초기화" });
 
   const singleDocs = [
-    ["curriculum", domainDoc("curriculum")],
-    ["templates", domainDoc("templates")],
-    ["classes fallback", domainDoc("classes")],
-    ["teachers", domainDoc("teachers")],
-    ["rosters fallback", domainDoc("rosters")],
-    ["rooms", domainDoc("rooms")],
-    ["timetable fallback", domainDoc("timetable")],
-    ["legacy main", domainDoc("main")],
-    ["timetable meta", timetableMeta],
+    ["curriculum", workspace.domains.curriculum],
+    ["templates", workspace.domains.templates],
+    ["classes fallback", workspace.domains.classes],
+    ["teachers", workspace.domains.teachers],
+    ["rosters fallback", workspace.domains.rosters],
+    ["rooms", workspace.domains.rooms],
+    ["timetable fallback", workspace.domains.timetable],
+    ["legacy main", workspace.domains.main],
+    ["timetable meta", workspace.timetableMeta],
   ];
-
   const collectionsToDelete = [
-    ["classes", splitCollection("classes")],
-    ["rosters", splitCollection("rosters")],
-    ["timetableEntries", splitCollection("timetableEntries")],
-    ["ttcards", splitCollection("ttcards")],
+    ["classes", workspace.collections.classes],
+    ["rosters", workspace.collections.rosters],
+    ["timetableEntries", workspace.collections.timetableEntries],
+    ["ttcards", workspace.collections.ttcards],
   ];
 
-  const basePath = IS_LEGACY_SCHOOL_YEAR ? "boards (2026 기존 경로)" : `schoolYears/${ACTIVE_SCHOOL_YEAR}`;
   $("yearBadge").textContent = schoolYearLabel(ACTIVE_SCHOOL_YEAR);
   $("targetPathRows").innerHTML = [
-    ["단일 문서", `${basePath}/curriculum·templates·teachers·rooms`, "기본 도메인"],
-    ["분리 컬렉션", `${basePath}/classes`, "학급/학생"],
-    ["분리 컬렉션", `${basePath}/rosters`, "수강명단"],
-    ["분리 컬렉션", `${basePath}/timetableEntries`, "배치 시간표"],
-    ["분리 컬렉션", `${basePath}/ttcards`, "시간표 카드"],
-    ["분리 문서", `${basePath}/meta/timetable`, "시간표 설정/조건/그룹"],
+    ["단일 문서", spec.labels.domains.curriculum, "커리큘럼"],
+    ["단일 문서", spec.labels.domains.templates, "과목카드"],
+    ["단일 문서", spec.labels.domains.teachers, "교사"],
+    ["단일 문서", spec.labels.domains.rooms, "교실"],
+    ["분리 컬렉션", spec.labels.collections.classes, "학급/학생"],
+    ["분리 컬렉션", spec.labels.collections.rosters, "수강명단"],
+    ["분리 컬렉션", spec.labels.collections.timetableEntries, "배치 시간표"],
+    ["분리 컬렉션", spec.labels.collections.ttcards, "시간표 카드"],
+    ["분리 문서", spec.labels.timetableMeta, "시간표 설정/조건/그룹"],
   ].map(row => `<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join("");
-  const confirmPhrase = `${ACTIVE_SCHOOL_YEAR}학년도초기화`;
+
+  const confirmPhrase = IS_LEGACY_SCHOOL_YEAR
+    ? `${ACTIVE_SCHOOL_YEAR}-운영데이터-학년도전체초기화`
+    : `${ACTIVE_SCHOOL_YEAR}-학년도전체초기화`;
   $("confirmText").placeholder = `${confirmPhrase} 입력`;
 
   function appendLog(msg) {
@@ -168,31 +150,47 @@
     logEl.textContent += `\n[${time}] ${msg}`;
     logEl.scrollTop = logEl.scrollHeight;
   }
-
+  function canReset() {
+    return !!currentUser && !!previewCounts && $("confirmText").value.trim() === confirmPhrase && $("confirmCheck").checked;
+  }
   function setBusy(busy) {
     running = busy;
     $("previewBtn").disabled = busy || !currentUser;
     $("resetBtn").disabled = busy || !canReset();
     $("localClearBtn").disabled = busy;
   }
-
-  function canReset() {
-    return !!currentUser && $("confirmText").value.trim() === confirmPhrase && $("confirmCheck").checked;
-  }
-
   function refreshResetState() {
-    if (running) return;
-    $("resetBtn").disabled = !canReset();
+    if (!running) $("resetBtn").disabled = !canReset();
   }
 
-  async function countDoc(label, ref) {
-    const snap = await getDoc(ref);
-    return { label, count: snap.exists() ? 1 : 0 };
-  }
-
-  async function countCollection(label, collRef) {
-    const snap = await getDocs(collRef);
-    return { label, count: snap.size };
+  async function readBackupSnapshot() {
+    const snapshot = {
+      version:1,
+      mode:"his-before-destructive-operation",
+      exportedAt:new Date().toISOString(),
+      schoolYear:ACTIVE_SCHOOL_YEAR,
+      operation:"school-year-full-reset",
+      targetRoot:spec.labels.root,
+      domains:{},
+      collections:{},
+      timetableMeta:null,
+      workspaceMeta:null,
+    };
+    for (const [label, ref] of singleDocs) {
+      const snap = await getDoc(ref);
+      if (!snap.exists()) continue;
+      if (label === "timetable meta") snapshot.timetableMeta = snap.data() || {};
+      else snapshot.domains[label] = snap.data() || {};
+    }
+    for (const [label, ref] of collectionsToDelete) {
+      const snap = await getDocs(ref);
+      snapshot.collections[label] = snap.docs.map(d => ({ id:d.id, data:d.data() || {} }));
+    }
+    if (workspace.workspaceMeta) {
+      const snap = await getDoc(workspace.workspaceMeta);
+      if (snap.exists()) snapshot.workspaceMeta = snap.data() || {};
+    }
+    return snapshot;
   }
 
   async function preview() {
@@ -200,131 +198,144 @@
     setBusy(true);
     logEl.textContent = "삭제 대상 확인 중입니다...";
     try {
-      const docCounts = [];
+      const rows = [];
       for (const [label, ref] of singleDocs) {
-        const row = await countDoc(label, ref);
-        docCounts.push(row);
-        appendLog(`${label}: ${row.count}개`);
+        const snap = await getDoc(ref);
+        rows.push({ label, count:snap.exists()?1:0 });
+        appendLog(`${label}: ${snap.exists()?1:0}개`);
       }
-      const collCounts = [];
       for (const [label, ref] of collectionsToDelete) {
-        const row = await countCollection(label, ref);
-        collCounts.push(row);
-        appendLog(`${label}: ${row.count}개`);
+        const snap = await getDocs(ref);
+        rows.push({ label, count:snap.size });
+        appendLog(`${label}: ${snap.size}개`);
       }
-      const total = [...docCounts, ...collCounts].reduce((sum, r) => sum + r.count, 0);
-      summaryEl.innerHTML = `
-        <p><span class="pill">총 ${total}개</span> 삭제 대상이 확인되었습니다.</p>
-        <table><thead><tr><th>대상</th><th>개수</th></tr></thead><tbody>
-          ${[...docCounts, ...collCounts].map(r => `<tr><td>${r.label}</td><td>${r.count}</td></tr>`).join("")}
-        </tbody></table>`;
-      appendLog("확인 완료. 백업 후 확인 문구를 입력하면 초기화를 실행할 수 있습니다.");
-    } catch (e) {
-      console.error(e);
-      appendLog(`오류: ${e?.message || e}`);
+      const total = rows.reduce((sum,row)=>sum+row.count,0);
+      previewCounts = Object.fromEntries(rows.map(row=>[row.label,row.count]));
+      previewCounts.total = total;
+      summaryEl.innerHTML = `<p><span class="pill">총 ${total}개</span> 삭제 대상이 확인되었습니다.</p>
+        <p><b>대상 학년도:</b> ${ACTIVE_SCHOOL_YEAR}학년도 · <b>대상 루트:</b> ${spec.labels.root} · <b>2026 운영 경로 영향:</b> ${IS_LEGACY_SCHOOL_YEAR?"직접 변경":"없음"}</p>
+        <table><thead><tr><th>대상</th><th>개수</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r.label}</td><td>${r.count}</td></tr>`).join("")}</tbody></table>`;
+      appendLog("확인 완료. 초기화 실행 시 전체 JSON 백업을 먼저 생성합니다.");
+    } catch (error) {
+      previewCounts = null;
+      console.error(error);
+      appendLog(`오류: ${error?.message || error}`);
       alert("삭제 대상 확인 중 오류가 발생했습니다. 콘솔을 확인해 주세요.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); refreshResetState(); }
   }
 
   async function deleteCollectionAll(label, collRef) {
     const snap = await getDocs(collRef);
-    if (snap.empty) {
-      appendLog(`${label}: 삭제할 문서 없음`);
-      return 0;
-    }
+    if (snap.empty) { appendLog(`${label}: 삭제할 문서 없음`); return 0; }
     let deleted = 0;
-    const docs = snap.docs;
-    const CHUNK = 450;
-    for (let i = 0; i < docs.length; i += CHUNK) {
+    for (let i=0;i<snap.docs.length;i+=450) {
       const batch = writeBatch(db);
-      docs.slice(i, i + CHUNK).forEach(d => batch.delete(d.ref));
+      snap.docs.slice(i,i+450).forEach(d=>batch.delete(d.ref));
       await batch.commit();
-      deleted += docs.slice(i, i + CHUNK).length;
-      appendLog(`${label}: ${deleted}/${docs.length}개 삭제`);
+      deleted += snap.docs.slice(i,i+450).length;
+      appendLog(`${label}: ${deleted}/${snap.docs.length}개 삭제`);
     }
     return deleted;
   }
 
   async function resetAll() {
-    if (!canReset()) { alert("확인 문구와 체크박스를 확인해 주세요."); return; }
-    if (!confirm("정말 현재 학년도 Firestore 데이터를 삭제할까요?\n다른 학년도는 유지되지만 이 작업은 되돌릴 수 없습니다.")) return;
+    if (!canReset()) { alert("삭제 대상 확인, 확인 문구와 체크박스를 확인해 주세요."); return; }
+    if (!confirm(`정말 ${ACTIVE_SCHOOL_YEAR}학년도 데이터를 초기화할까요?\n\n대상 루트: ${spec.labels.root}\n2026 운영 경로 영향: ${IS_LEGACY_SCHOOL_YEAR?"직접 변경":"없음"}\n\n백업 생성에 실패하면 초기화도 실행하지 않습니다.`)) return;
     setBusy(true);
-    logEl.textContent = "현재 학년도 초기화를 시작합니다...";
+    logEl.textContent = "현재 학년도 초기화 전 전체 백업을 생성합니다...";
+    let backupInfo = null;
     let deletedDocs = 0;
     try {
-      for (const [label, collRef] of collectionsToDelete) {
-        deletedDocs += await deleteCollectionAll(label, collRef);
-      }
+      const snapshot = await readBackupSnapshot();
+      backupInfo = downloadJsonBackup(snapshot, buildBackupFilename({ year:ACTIVE_SCHOOL_YEAR, scope:"full-workspace", operation:"reset" }));
+      appendLog(`백업 생성 완료: ${backupInfo.filename} (${backupInfo.bytes} bytes)`);
+    } catch (error) {
+      await recordDestructiveOperation({
+        year:ACTIVE_SCHOOL_YEAR,
+        operation:"school-year-full-reset",
+        scope:"full-workspace",
+        status:"blocked-backup-failed",
+        targetPaths:[spec.labels.root],
+        counts:previewCounts||{},
+        message:error?.message || String(error),
+      });
+      appendLog(`백업 실패: ${error?.message || error}`);
+      alert(`초기화 전 전체 백업 생성에 실패하여 작업을 중단했습니다.
+${error?.message || error}`);
+      setBusy(false);
+      return;
+    }
+
+    try {
+      assertSchoolYearWriteContext("학년도 전체 초기화 실행");
+      for (const [label, collRef] of collectionsToDelete) deletedDocs += await deleteCollectionAll(label, collRef);
       for (const [label, ref] of singleDocs) {
-        try {
-          await deleteDoc(ref);
-          deletedDocs += 1;
-          appendLog(`${label}: 삭제 요청 완료`);
-        } catch (e) {
-          appendLog(`${label}: 삭제 중 오류 - ${e?.message || e}`);
-          throw e;
-        }
+        await deleteDoc(ref);
+        deletedDocs += 1;
+        appendLog(`${label}: 삭제 요청 완료`);
       }
-      if (!IS_LEGACY_SCHOOL_YEAR) {
-        await setDoc(workspaceMeta, {
-          status: "draft",
-          integrity: {
-            schemaVersion: 1,
-            ok: false,
-            stale: false,
-            source: "workspace-reset",
-            errorCount: 1,
-            warningCount: 0,
-            checkedAt: new Date().toISOString(),
-            errors: [{ code: "workspace-reset", message: "학년도 데이터가 초기화되었습니다. 필요할 때 정합성 점검을 다시 실행하세요." }]
-          },
-          updatedAt: serverTimestamp()
-        }, { merge: true });
+      if (workspace.workspaceMeta) {
+        await setDoc(workspace.workspaceMeta, {
+          status:"draft",
+          integrity:{ schemaVersion:1, ok:false, stale:false, source:"workspace-reset", errorCount:1, warningCount:0, checkedAt:new Date().toISOString(), errors:[{ code:"workspace-reset", message:"학년도 데이터가 초기화되었습니다." }] },
+          updatedAt:serverTimestamp(),
+        }, { merge:true });
       }
+      await recordDestructiveOperation({
+        year:ACTIVE_SCHOOL_YEAR,
+        operation:"school-year-full-reset",
+        scope:"full-workspace",
+        status:"success",
+        targetPaths:[spec.labels.root],
+        counts:{ ...(previewCounts||{}), deletedDocuments:deletedDocs },
+        backupFilename:backupInfo.filename,
+        backupBytes:backupInfo.bytes,
+      });
       clearBrowserState(false);
       appendLog(`완료: 총 ${deletedDocs}개 삭제 요청을 처리했습니다.`);
-      summaryEl.innerHTML = `<p class="ok-text">현재 학년도 초기화가 완료되었습니다. 기존 앱 화면을 Ctrl+F5로 새로고침한 뒤 테스트를 시작하세요.</p>`;
+      summaryEl.innerHTML = `<p class="ok-text">현재 학년도 초기화가 완료되었습니다. 앱을 Ctrl+F5로 새로고침하세요.</p>`;
       alert("현재 학년도 초기화가 완료되었습니다. 앱 화면을 강력 새로고침하세요.");
-    } catch (e) {
-      console.error(e);
-      appendLog(`오류: ${e?.message || e}`);
+    } catch (error) {
+      await recordDestructiveOperation({
+        year:ACTIVE_SCHOOL_YEAR,
+        operation:"school-year-full-reset",
+        scope:"full-workspace",
+        status:"failed",
+        targetPaths:[spec.labels.root],
+        counts:previewCounts||{},
+        backupFilename:backupInfo?.filename,
+        backupBytes:backupInfo?.bytes,
+        message:error?.message || String(error),
+      });
+      console.error(error);
+      appendLog(`오류: ${error?.message || error}`);
       alert("초기화 중 오류가 발생했습니다. 콘솔과 로그를 확인해 주세요.");
-    } finally {
-      setBusy(false);
-    }
+    } finally { setBusy(false); }
   }
 
   function clearBrowserState(showAlert = true) {
-    const keys = [
-      `his_local_dev_state_v1${IS_LEGACY_SCHOOL_YEAR ? "" : `_${ACTIVE_SCHOOL_YEAR}`}`,
-      `his_split_confirmed_v1${IS_LEGACY_SCHOOL_YEAR ? "" : `_${ACTIVE_SCHOOL_YEAR}`}`,
-      "his_auto_save_v1",
-      "his_firestore_usage_v1",
-      "his_local_dev_mode_v1"
-    ];
-    keys.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
-    appendLog("이 브라우저의 HIS 로컬 캐시 키를 정리했습니다. 생성 검증 기록은 유지됩니다.");
-    if (showAlert) alert("이 브라우저의 HIS 로컬 캐시를 정리했습니다. 페이지를 새로고침하세요.");
+    const suffix = IS_LEGACY_SCHOOL_YEAR ? "" : `_${ACTIVE_SCHOOL_YEAR}`;
+    [`his_local_dev_state_v1${suffix}`, `his_split_confirmed_v1${suffix}`, `his_timetable_local_snapshot_v1${suffix}`]
+      .forEach(key=>{ try{ localStorage.removeItem(key); }catch(_){} });
+    appendLog("현재 학년도 브라우저 캐시를 정리했습니다.");
+    if (showAlert) alert("현재 학년도 브라우저 캐시를 정리했습니다. 페이지를 새로고침하세요.");
   }
 
-  $("loginBtn").addEventListener("click", () => signInWithPopup(auth, provider));
-  $("logoutBtn").addEventListener("click", () => signOut(auth));
+  $("loginBtn").addEventListener("click", login);
+  $("logoutBtn").addEventListener("click", logout);
   $("previewBtn").addEventListener("click", preview);
   $("resetBtn").addEventListener("click", resetAll);
-  $("localClearBtn").addEventListener("click", () => clearBrowserState(true));
+  $("localClearBtn").addEventListener("click", ()=>clearBrowserState(true));
   $("confirmText").addEventListener("input", refreshResetState);
   $("confirmCheck").addEventListener("change", refreshResetState);
-
-  onAuthStateChanged(auth, user => {
-    currentUser = user || null;
-    $("authStatus").textContent = user ? `${user.displayName || user.email} 로그인됨` : "로그인 필요";
-    $("loginBtn").hidden = !!user;
-    $("logoutBtn").hidden = !user;
-    $("previewBtn").disabled = !user;
+  onAuth(user=>{
+    currentUser=user||null;
+    $("authStatus").textContent=user?`${user.displayName||user.email} 로그인됨`:"로그인 필요";
+    $("loginBtn").hidden=!!user;
+    $("logoutBtn").hidden=!user;
+    $("previewBtn").disabled=!user;
     refreshResetState();
-    if (user) appendLog(`${user.email || user.displayName} 로그인 확인`);
+    if(user) appendLog(`${user.email||user.displayName} 로그인 확인`);
   });
 </script>
 </body>

@@ -1,12 +1,12 @@
 // ================================================================
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
-import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-export { getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
+import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-path-guard-r353";
+export { getTtCardById } from "./ttcards.js?v=2026-07-15-school-year-path-guard-r353";
+import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];

@@ -1,12 +1,12 @@
 // ================================================================
 // rosters.js · Subject-Student Roster Mutations + View Rendering
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState, scheduleSave } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getClasses, getClassById } from "./students.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState, scheduleSave } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { getClasses, getClassById } from "./students.js?v=2026-07-15-school-year-path-guard-r353";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-school-year-path-guard-r353";
 
 const ROSTER_LEVELS = {
   middle: { label: "중등", hint: "7–9학년", grades: ["7학년", "8학년", "9학년"] },

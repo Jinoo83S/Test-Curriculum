@@ -1,7 +1,7 @@
 // ================================================================
 // app-module-loader.js · Lazy module loader for main app views
 // ================================================================
-import { versioned } from "./version.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { versioned } from "./version.js?v=2026-07-15-school-year-path-guard-r353";
 
 const DEFAULT_MODULE_PATHS = Object.freeze({
   students:     "./students.js",

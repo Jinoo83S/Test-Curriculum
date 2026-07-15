@@ -1,10 +1,10 @@
 // ================================================================
 // students.js · Class/Student Mutations + Student View Rendering
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { canEdit } from "./auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { appState, scheduleSave, normalizeClass, normalizeStudent } from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { GRADE_KEYS } from "./config.js?v=2026-07-15-school-year-path-guard-r353";
+import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-school-year-path-guard-r353";
+import { canEdit } from "./auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { appState, scheduleSave, normalizeClass, normalizeStudent } from "./state.js?v=2026-07-15-school-year-path-guard-r353";
 
 const clsDomain = () => appState.classes;
 export const getClasses   = () => clsDomain().classes;

@@ -28,7 +28,7 @@
     <h2>학년도별 완전 분리 작업공간</h2>
     <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
     <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
-    <p class="muted"><b>r352:</b> 복제·생성 검증은 새 학년도 작성 직후 한 번만 수행합니다. 검증을 통과한 뒤 새 학년도 내용을 정상적으로 수정해도 검증 상태는 유지되며, 2026학년도와 달라지는 것은 정상입니다. 현재 데이터의 내부 참조 검사는 관리자가 <b>정합성 점검</b>을 눌렀을 때만 별도로 실행합니다.</p>
+    <p class="muted"><b>r353:</b> 모든 학년도 경로는 중앙 경로표에서만 생성하며, 삭제·초기화 전 대상 경로 표시와 JSON 백업을 강제합니다. 복제·생성 검증은 새 학년도 작성 직후 한 번만 수행합니다. 검증을 통과한 뒤 새 학년도 내용을 정상적으로 수정해도 검증 상태는 유지되며, 2026학년도와 달라지는 것은 정상입니다. 현재 데이터의 내부 참조 검사는 관리자가 <b>정합성 점검</b>을 눌렀을 때만 별도로 실행합니다.</p>
     <p class="muted"><b>최초 1회 필수:</b> Firestore 보안 규칙에 <code>schoolYears</code> 경로 권한을 추가해야 합니다. 웹 파일 배포만으로 보안 규칙은 바뀌지 않습니다.</p>
     <p class="muted">현재 선택 학년도의 데이터만 비우는 별도 도구는 <a href="reset-school-year.html"><b>현재 학년도 초기화</b></a>에서 실행할 수 있습니다.</p>
   </section>
@@ -61,17 +61,18 @@
 </main>
 
 <script type="module">
-import { auth, db } from "./js/config.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+import { auth, db, getSchoolYearRefs } from "./js/config.js?v=2026-07-15-school-year-path-guard-r353";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { LOCAL_DEV_MODE } from "./js/local-dev.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, normalizeSchoolYear, schoolYearLabel,
   getKnownSchoolYears, registerKnownSchoolYears, unregisterKnownSchoolYear, setActiveSchoolYear,
   getSchoolYearVerification, setSchoolYearVerification, clearSchoolYearVerification
-} from "./js/school-year.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+} from "./js/school-year.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   validateWorkspaceSnapshot, summarizeWorkspaceSnapshot, compactIntegrityReport, formatIntegritySummary
-} from "./js/school-year-integrity.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+} from "./js/school-year-integrity.js?v=2026-07-15-school-year-path-guard-r353";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-school-year-path-guard-r353";
 import {
   collection, doc, getDoc, getDocs, setDoc, writeBatch, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -123,21 +124,23 @@ function appendLog(message) {
 function localKeyForYear(year) {
   return year === LEGACY_SCHOOL_YEAR ? "his_local_dev_state_v1" : `his_local_dev_state_v1_${year}`;
 }
+function workspaceRefs(year) { return getSchoolYearRefs(year); }
 function domainRef(year, name) {
-  return year === LEGACY_SCHOOL_YEAR
-    ? doc(db, "boards", name)
-    : doc(db, "schoolYears", year, "domains", name);
+  const ref = workspaceRefs(year).domains[String(name)];
+  if (!ref) throw new Error(`알 수 없는 학년도 도메인: ${name}`);
+  return ref;
 }
 function collectionRef(year, name) {
-  if (year === LEGACY_SCHOOL_YEAR) return collection(db, "boards", "_split", name);
-  return collection(db, "schoolYears", year, name);
+  const ref = workspaceRefs(year).collections[String(name)];
+  if (!ref) throw new Error(`알 수 없는 학년도 컬렉션: ${name}`);
+  return ref;
 }
-function timetableMetaRef(year) {
-  return year === LEGACY_SCHOOL_YEAR
-    ? doc(db, "boards", "_split", "timetableMeta", "main")
-    : doc(db, "schoolYears", year, "meta", "timetable");
+function timetableMetaRef(year) { return workspaceRefs(year).timetableMeta; }
+function yearMetaRef(year) {
+  const ref = workspaceRefs(year).workspaceMeta;
+  if (!ref) throw new Error("2026학년도는 독립 작업공간 메타 문서를 사용하지 않습니다.");
+  return ref;
 }
-function yearMetaRef(year) { return doc(db, "schoolYears", year); }
 
 function creationVerificationFromLegacyMeta(year, meta = {}) {
   const candidates = [
@@ -247,7 +250,7 @@ async function loadServerYears() {
   if (LOCAL_DEV_MODE) { serverYearsLoaded = true; serverYears = getKnownSchoolYears(); refreshSelectors(); return; }
   if (!user) { serverYearsLoaded = false; serverYears = getKnownSchoolYears(); refreshSelectors(); return; }
   try {
-    const snap = await getDocs(collection(db, "schoolYears"));
+    const snap = await getDocs(workspaceRefs(LEGACY_SCHOOL_YEAR).schoolYearsCollection);
     serverYearMeta = new Map();
     serverYears = snap.docs.map(d => {
       const year = normalizeSchoolYear(d.id, "");
@@ -374,19 +377,83 @@ async function deleteWorkspace(rawYear) {
   const year = normalizeSchoolYear(rawYear, "");
   if (!year || year === LEGACY_SCHOOL_YEAR || Number(year) < 2027) { alert("2026학년도 운영 기준 작업공간은 삭제할 수 없습니다."); return; }
   if (!LOCAL_DEV_MODE && !user) { alert("먼저 로그인하세요."); return; }
-  const phrase = `${year}학년도삭제`;
-  const typed = prompt(`${year}학년도 작업공간을 완전히 삭제합니다.\n커리큘럼·학생·수강명단·시간표가 모두 삭제되며 되돌릴 수 없습니다.\n계속하려면 아래 문구를 정확히 입력하세요.\n\n${phrase}`, "");
+
+  const refsForYear = workspaceRefs(year);
+  const targetPath = refsForYear.spec.labels.root;
+  try {
+    assertDestructiveTarget({ year, context: "학년도 전체 삭제" });
+  } catch (error) {
+    alert(error?.message || "삭제 대상 경로 검증에 실패했습니다.");
+    return;
+  }
+
+  const phrase = `${year}-학년도전체삭제`;
+  const typed = prompt(`${year}학년도 작업공간을 완전히 삭제합니다.
+커리큘럼·학생·수강명단·시간표가 모두 삭제되며 되돌릴 수 없습니다.
+
+실제 대상 경로: ${targetPath}
+2026 운영 경로 영향: 없음
+
+계속하려면 아래 문구를 정확히 입력하세요.
+
+${phrase}`, "");
   if (typed === null) return;
   if (typed.trim() !== phrase) { alert("확인 문구가 일치하지 않아 삭제하지 않았습니다."); return; }
-  if (!confirm(`${year}학년도 독립 작업공간을 최종 삭제할까요?\n2026학년도와 다른 학년도는 유지됩니다.`)) return;
+  if (!confirm(`${year}학년도 독립 작업공간을 최종 삭제할까요?
+삭제 전에 전체 JSON 백업 파일을 자동 생성합니다.
+2026학년도와 다른 학년도는 유지됩니다.`)) return;
+
   setBusy(true);
-  $("log").textContent = `${year}학년도 삭제 시작...`;
+  $("log").textContent = `${year}학년도 삭제 전 백업 시작...`;
   const wasActive = year === ACTIVE_SCHOOL_YEAR;
+  let backupInfo = null;
+  let backupCounts = {};
+  try {
+    const snapshot = await readWorkspaceSnapshot(year);
+    backupCounts = summarizeWorkspaceSnapshot(snapshot);
+    const filename = buildBackupFilename({ year, scope:"full-workspace", operation:"delete" });
+    backupInfo = downloadJsonBackup({
+      version:1,
+      mode:"his-before-destructive-operation",
+      exportedAt:new Date().toISOString(),
+      schoolYear:year,
+      operation:"school-year-delete",
+      targetPath,
+      counts:backupCounts,
+      snapshot,
+    }, filename);
+    appendLog(`삭제 전 백업 생성 완료: ${backupInfo.filename} (${backupInfo.bytes} bytes)`);
+  } catch (error) {
+    await recordDestructiveOperation({
+      year,
+      operation:"school-year-delete",
+      scope:"full-workspace",
+      status:"blocked-backup-failed",
+      targetPaths:[targetPath],
+      message:error?.message || String(error),
+    });
+    appendLog(`백업 실패: ${error?.message || error}`);
+    alert(`삭제 전 전체 백업 생성에 실패하여 삭제를 중단했습니다.
+${error?.message || error}`);
+    setBusy(false);
+    return;
+  }
+
   try {
     const result = await deleteWorkspaceData(year, "삭제");
     unregisterKnownSchoolYear(year);
     serverYears = serverYears.filter(item => item !== year);
     serverYearMeta.delete(year);
+    await recordDestructiveOperation({
+      year,
+      operation:"school-year-delete",
+      scope:"full-workspace",
+      status:"success",
+      targetPaths:[targetPath],
+      counts:{ ...backupCounts, deletedDocuments:result.total },
+      backupFilename:backupInfo?.filename,
+      backupBytes:backupInfo?.bytes,
+    });
     appendLog(`${year}학년도 삭제 완료 · 총 ${result.total}개 문서`);
     alert(`${year}학년도 작업공간을 삭제했습니다.`);
     if (wasActive) {
@@ -397,6 +464,17 @@ async function deleteWorkspace(rawYear) {
     refreshSelectors();
   } catch (rawError) {
     const error = normalizeWorkspaceError(rawError);
+    await recordDestructiveOperation({
+      year,
+      operation:"school-year-delete",
+      scope:"full-workspace",
+      status:"failed",
+      targetPaths:[targetPath],
+      counts:backupCounts,
+      backupFilename:backupInfo?.filename,
+      backupBytes:backupInfo?.bytes,
+      message:error?.message || String(error),
+    });
     console.error(error);
     appendLog(`삭제 오류: ${error?.message || error}`);
     alert(`학년도 삭제 실패: ${error?.message || error}`);
@@ -650,7 +728,7 @@ async function createWorkspace() {
   } finally { setBusy(false); }
 }
 
-$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r352`;
+$("activeBadge").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 · ${LOCAL_DEV_MODE?"로컬":"온라인"} · r353`;
 $("loginBtn").addEventListener("click", login);
 $("logoutBtn").addEventListener("click", logout);
 $("createBtn").addEventListener("click", createWorkspace);

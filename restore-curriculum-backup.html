@@ -50,29 +50,60 @@
   <section class="card"><h2>작업 로그</h2><div id="log" class="log">대기 중입니다.</div></section>
 </main>
 <script type="module">
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { auth, getSchoolYearRefs } from "./js/config.js?v=2026-07-15-school-year-path-guard-r353";
+import { login, logout, onAuth } from "./js/auth.js?v=2026-07-15-school-year-path-guard-r353";
+import { LEGACY_SCHOOL_YEAR } from "./js/school-year.js?v=2026-07-15-school-year-path-guard-r353";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./js/destructive-operation-guard.js?v=2026-07-15-school-year-path-guard-r353";
+import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const firebaseConfig={apiKey:"AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",authDomain:"his-curriculum-8e737.firebaseapp.com",projectId:"his-curriculum-8e737",storageBucket:"his-curriculum-8e737.firebasestorage.app",messagingSenderId:"1091130688532",appId:"1:1091130688532:web:79622f9da3591ab2d3d301"};
-const app=initializeApp(firebaseConfig);const auth=getAuth(app);const db=getFirestore(app);const provider=new GoogleAuthProvider();
 const $=id=>document.getElementById(id);let user=null;let payload=null;let curriculum=null;let busy=false;
 const grades=["7학년","8학년","9학년","10학년","11학년","12학년"];
-function year(){return String($("targetYear").value||"2026");}
-function phrase(){return `${year()}학년도커리큘럼복원`;}
-function targetRef(){return year()==="2026"?doc(db,"boards","curriculum"):doc(db,"schoolYears",year(),"domains","curriculum");}
+function year(){return String($("targetYear").value||LEGACY_SCHOOL_YEAR);}
+function phrase(){return year()===LEGACY_SCHOOL_YEAR?`${year()}-운영데이터-커리큘럼복원`:`${year()}-커리큘럼복원`;}
+function targetRef(){return getSchoolYearRefs(year()).domains.curriculum;}
+function targetPath(){return getSchoolYearRefs(year()).spec.labels.domains.curriculum;}
 function counts(data){return Object.fromEntries(grades.map(g=>[g,Array.isArray(data?.gradeBoards?.[g])?data.gradeBoards[g].length:0]));}
 function totalRows(data){return Object.values(counts(data)).reduce((a,b)=>a+b,0);}
 function append(msg){const time=new Date().toLocaleTimeString();$("log").textContent+=`\n[${time}] ${msg}`;$("log").scrollTop=$("log").scrollHeight;}
 function refresh(){const ok=!!user&&!!curriculum&&!busy&&$("confirmCheck").checked&&$("confirmText").value.trim()===phrase();$("restoreBtn").disabled=!ok;$("confirmText").placeholder=`${phrase()} 입력`;}
 function renderBackup(){if(!curriculum){$("backupTable").innerHTML='<p class="muted">백업을 선택하지 않았습니다.</p>';return;}const c=counts(curriculum);$("backupTable").innerHTML=`<p><b>내보낸 시각:</b> ${payload?.exportedAt||"확인 불가"} · <b>총 행:</b> ${totalRows(curriculum)}</p><table><thead><tr>${grades.map(g=>`<th>${g}</th>`).join("")}</tr></thead><tbody><tr>${grades.map(g=>`<td>${c[g]}</td>`).join("")}</tr></tbody></table>`;}
-$("fileInput").addEventListener("change",async e=>{payload=null;curriculum=null;try{const file=e.target.files?.[0];if(!file)return;payload=JSON.parse(await file.text());curriculum=payload?.raw?.boards?.curriculum?.data||payload?.normalized?.curriculum||payload?.data?.curriculum||null;if(!curriculum||!curriculum.gradeBoards)throw new Error("커리큘럼 보드 데이터가 없는 파일입니다.");if(totalRows(curriculum)<6)throw new Error("백업 커리큘럼 행 수가 비정상적으로 작아 복원을 차단했습니다.");$("fileSummary").innerHTML=`<span class="ok">백업 확인 완료</span> · ${file.name} · ${totalRows(curriculum)}행`;append(`백업 파일 확인: ${file.name}, ${totalRows(curriculum)}행`);renderBackup();}catch(error){console.error(error);payload=null;curriculum=null;$("fileSummary").textContent=error?.message||String(error);renderBackup();}refresh();});
-$("targetYear").addEventListener("change",()=>{$("currentSummary").textContent="대상 문서를 다시 확인하세요.";refresh();});
+
+$("fileInput").addEventListener("change",async e=>{payload=null;curriculum=null;try{const file=e.target.files?.[0];if(!file)return;payload=JSON.parse(await file.text());curriculum=payload?.raw?.boards?.curriculum?.data||payload?.normalized?.curriculum||payload?.data?.curriculum||payload?.curriculum||null;if(!curriculum||!curriculum.gradeBoards)throw new Error("커리큘럼 보드 데이터가 없는 파일입니다.");if(totalRows(curriculum)<6)throw new Error("백업 커리큘럼 행 수가 비정상적으로 작아 복원을 차단했습니다.");$("fileSummary").innerHTML=`<span class="ok">백업 확인 완료</span> · ${file.name} · ${totalRows(curriculum)}행`;append(`백업 파일 확인: ${file.name}, ${totalRows(curriculum)}행`);renderBackup();}catch(error){console.error(error);payload=null;curriculum=null;$("fileSummary").textContent=error?.message||String(error);renderBackup();}refresh();});
+$("targetYear").addEventListener("change",()=>{$("currentSummary").textContent=`대상 경로: ${targetPath()} · 현재 문서를 다시 확인하세요.`;refresh();});
 $("confirmText").addEventListener("input",refresh);$("confirmCheck").addEventListener("change",refresh);
-$("currentBtn").addEventListener("click",async()=>{if(!user){alert("먼저 로그인하세요.");return;}try{const snap=await getDoc(targetRef());const data=snap.exists()?snap.data():null;$("currentSummary").textContent=snap.exists()?`${year()}학년도 현재 보드: ${totalRows(data)}행`:`${year()}학년도 현재 보드 문서 없음`;append(`${year()} 현재 보드 확인: ${snap.exists()?totalRows(data):0}행`);}catch(error){append(`현재 문서 확인 실패: ${error?.message||error}`);alert(error?.message||error);}});
-$("restoreBtn").addEventListener("click",async()=>{if($("restoreBtn").disabled)return;if(!confirm(`${year()}학년도 커리큘럼 보드를 선택한 백업으로 복원할까요?\n다른 데이터는 변경하지 않습니다.`))return;busy=true;refresh();try{const clean=structuredClone(curriculum);delete clean.updatedAt;await setDoc(targetRef(),{...clean,updatedAt:serverTimestamp(),restoreMeta:{sourceFile:$("fileInput").files?.[0]?.name||"diagnostic.json",sourceExportedAt:String(payload?.exportedAt||""),restoredAt:new Date().toISOString()}},{merge:false});append(`${year()}학년도 커리큘럼 복원 완료: ${totalRows(clean)}행`);$("currentSummary").innerHTML=`<span class="ok">복원 완료 · ${totalRows(clean)}행</span>`;alert("커리큘럼 보드 복원이 완료되었습니다. 커리큘럼 화면에서 Ctrl+F5를 누르세요.");}catch(error){console.error(error);append(`복원 실패: ${error?.message||error}`);alert(`복원 실패: ${error?.message||error}`);}finally{busy=false;refresh();}});
-$("loginBtn").addEventListener("click",()=>signInWithPopup(auth,provider));$("logoutBtn").addEventListener("click",()=>signOut(auth));
-onAuthStateChanged(auth,next=>{user=next||null;$("authStatus").textContent=user?(user.email||user.displayName||"로그인됨"):"로그인 필요";$("loginBtn").hidden=!!user;$("logoutBtn").hidden=!user;refresh();});
+
+$("currentBtn").addEventListener("click",async()=>{if(!user){alert("먼저 로그인하세요.");return;}try{assertDestructiveTarget({year:year(),expectedPath:targetPath(),context:"커리큘럼 복원 대상 확인"});const snap=await getDoc(targetRef());const data=snap.exists()?snap.data():null;$("currentSummary").textContent=`대상 경로: ${targetPath()} · ${snap.exists()?`${year()}학년도 현재 보드 ${totalRows(data)}행`:`${year()}학년도 현재 보드 문서 없음`}`;append(`${year()} 현재 보드 확인: ${snap.exists()?totalRows(data):0}행 · ${targetPath()}`);}catch(error){append(`현재 문서 확인 실패: ${error?.message||error}`);alert(error?.message||error);}});
+
+$("restoreBtn").addEventListener("click",async()=>{
+  if($("restoreBtn").disabled)return;
+  const path=targetPath();
+  try{assertDestructiveTarget({year:year(),expectedPath:path,context:"커리큘럼 복원"});}catch(error){alert(error?.message||error);return;}
+  const impact=year()===LEGACY_SCHOOL_YEAR?"2026 운영 데이터 직접 덮어쓰기":"없음";
+  if(!confirm(`${year()}학년도 커리큘럼 보드를 선택한 백업으로 복원할까요?\n\n대상 경로: ${path}\n2026 운영 경로 영향: ${impact}\n\n현재 문서는 먼저 JSON으로 백업합니다. 다른 데이터는 변경하지 않습니다.`))return;
+  busy=true;refresh();
+  let backupInfo=null;let currentRows=0;
+  try{
+    const current=await getDoc(targetRef());
+    const currentData=current.exists()?current.data():null;
+    currentRows=totalRows(currentData);
+    backupInfo=downloadJsonBackup({version:1,mode:"his-before-destructive-operation",exportedAt:new Date().toISOString(),schoolYear:year(),operation:"curriculum-restore",targetPath:path,currentExists:current.exists(),currentCurriculum:currentData},buildBackupFilename({year:year(),scope:"curriculum",operation:"restore"}));
+    append(`복원 전 백업 생성 완료: ${backupInfo.filename} (${backupInfo.bytes} bytes)`);
+  }catch(error){await recordDestructiveOperation({year:year(),operation:"curriculum-restore",scope:"curriculum",status:"blocked-backup-failed",targetPaths:[path],message:error?.message||String(error)});append(`복원 전 백업 실패: ${error?.message||error}`);alert(`현재 문서 백업에 실패하여 복원을 중단했습니다.
+${error?.message||error}`);busy=false;refresh();return;}
+  try{
+    const clean=structuredClone(curriculum);delete clean.updatedAt;
+    await setDoc(targetRef(),{...clean,updatedAt:serverTimestamp(),restoreMeta:{sourceFile:$("fileInput").files?.[0]?.name||"diagnostic.json",sourceExportedAt:String(payload?.exportedAt||""),restoredAt:new Date().toISOString(),targetPath:path}},{merge:false});
+    await recordDestructiveOperation({year:year(),operation:"curriculum-restore",scope:"curriculum",status:"success",targetPaths:[path],counts:{beforeRows:currentRows,afterRows:totalRows(clean)},backupFilename:backupInfo.filename,backupBytes:backupInfo.bytes});
+    append(`${year()}학년도 커리큘럼 복원 완료: ${totalRows(clean)}행`);$("currentSummary").innerHTML=`<span class="ok">복원 완료 · ${totalRows(clean)}행</span> · ${path}`;alert("커리큘럼 보드 복원이 완료되었습니다. 커리큘럼 화면에서 Ctrl+F5를 누르세요.");
+  }catch(error){
+    await recordDestructiveOperation({year:year(),operation:"curriculum-restore",scope:"curriculum",status:"failed",targetPaths:[path],counts:{beforeRows:currentRows},backupFilename:backupInfo?.filename,backupBytes:backupInfo?.bytes,message:error?.message||String(error)});
+    console.error(error);append(`복원 실패: ${error?.message||error}`);alert(`복원 실패: ${error?.message||error}`);
+  }finally{busy=false;refresh();}
+});
+
+$("loginBtn").addEventListener("click",login);$("logoutBtn").addEventListener("click",logout);
+onAuth(next=>{user=next||null;$("authStatus").textContent=user?(user.email||user.displayName||"로그인됨"):"로그인 필요";$("loginBtn").hidden=!!user;$("logoutBtn").hidden=!user;refresh();});
+$("currentSummary").textContent=`대상 경로: ${targetPath()} · 대상 문서를 확인하지 않았습니다.`;
 refresh();renderBackup();
 </script>
 </body>

@@ -7,9 +7,9 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-school-year-verification-lifecycle-r352";
-import { APP_VERSION, versioned } from "./version.js?v=2026-07-15-school-year-verification-lifecycle-r352";
+} from "./state.js?v=2026-07-15-school-year-path-guard-r353";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-school-year-path-guard-r353";
+import { APP_VERSION, versioned } from "./version.js?v=2026-07-15-school-year-path-guard-r353";
 
 const MODULE_FILES = [
   "./js/app.js",
