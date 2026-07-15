@@ -4,7 +4,7 @@
 // 2026 keeps the existing Firestore paths for backward compatibility.
 // New years use isolated schoolYears/{year}/... paths.
 
-export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-integrity-r349";
+export const SCHOOL_YEAR_UI_BUILD = "2026-07-14-school-year-isolation-r351";
 export const LEGACY_SCHOOL_YEAR = "2026";
 export const SCHOOL_YEAR_KEY = "his_active_school_year_v1";
 export const KNOWN_SCHOOL_YEARS_KEY = "his_known_school_years_v1";
@@ -46,6 +46,47 @@ export function isLegacySchoolYear(year = ACTIVE_SCHOOL_YEAR) {
 }
 export function schoolYearLabel(year = ACTIVE_SCHOOL_YEAR) {
   return `${normalizeSchoolYear(year)}학년도`;
+}
+
+export function getRequestedSchoolYear() {
+  const fromQuery = querySchoolYear();
+  if (fromQuery) return fromQuery;
+  return readStoredSchoolYear();
+}
+
+export function assertSchoolYearRuntimeConsistency(context = "write") {
+  const requested = getRequestedSchoolYear();
+  const selectorValue = (() => {
+    try { return normalizeSchoolYear(document.getElementById("hisSchoolYearSelect")?.value, ""); }
+    catch (_) { return ""; }
+  })();
+
+  const mismatches = [];
+  if (requested && requested !== ACTIVE_SCHOOL_YEAR) {
+    mismatches.push(`브라우저 선택=${requested}, 실행 모듈=${ACTIVE_SCHOOL_YEAR}`);
+  }
+  if (selectorValue && selectorValue !== ACTIVE_SCHOOL_YEAR) {
+    mismatches.push(`화면 선택=${selectorValue}, 실행 모듈=${ACTIVE_SCHOOL_YEAR}`);
+  }
+
+  if (mismatches.length) {
+    const error = new Error(
+      `학년도 실행 상태가 일치하지 않아 ${context} 작업을 차단했습니다. ` +
+      `${mismatches.join(" / ")}. Ctrl+F5 후 다시 시도해 주세요.`
+    );
+    error.code = "school-year-runtime-mismatch";
+    error.activeSchoolYear = ACTIVE_SCHOOL_YEAR;
+    error.requestedSchoolYear = requested;
+    error.selectorSchoolYear = selectorValue;
+    throw error;
+  }
+
+  return {
+    ok: true,
+    activeSchoolYear: ACTIVE_SCHOOL_YEAR,
+    requestedSchoolYear: requested,
+    selectorSchoolYear: selectorValue,
+  };
 }
 
 export function getKnownSchoolYears() {
@@ -293,6 +334,7 @@ if (typeof window !== "undefined") {
     invalidateSchoolYearVerification,
     clearSchoolYearVerification,
     setActiveSchoolYear,
+    assertSchoolYearRuntimeConsistency,
     setupSchoolYearUi,
   };
 }

@@ -1,8 +1,8 @@
 // ================================================================
 // app-templates-ui.js · Template sidebar/form/manager UI wiring
 // ================================================================
-import { canEdit } from "./auth.js";
-import { appState, scheduleSave, normalizeTemplate } from "./state.js?v=2026-07-14-school-year-integrity-r349";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { appState, scheduleSave, normalizeTemplate } from "./state.js?v=2026-07-14-school-year-isolation-r351";
 import {
   renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
   addTemplateManagerRow, getOrCreateDraft, resetDraft, commitDraft,
@@ -14,7 +14,7 @@ import {
   setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js";
+} from "./templates.js?v=2026-07-14-school-year-isolation-r351";
 const $ = id => document.getElementById(id);
 
 export function setupAppTemplatesUi({

@@ -1,4 +1,4 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-14-school-year-integrity-r349";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-14-school-year-isolation-r351";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.

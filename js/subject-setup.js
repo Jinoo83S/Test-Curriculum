@@ -1,7 +1,7 @@
 // ================================================================
 // subject-setup.js · Subject Track Groups + Section Count
 // ================================================================
-import { GRADE_KEYS } from "./config.js";
+import { GRADE_KEYS } from "./config.js?v=2026-07-14-school-year-isolation-r351";
 
 const SETUP_LEVELS = {
   middle: { label: "중등", hint: "7–9학년", grades: ["7학년", "8학년", "9학년"] },
@@ -30,11 +30,11 @@ function renderSetupLevelTabs(onChange) {
   });
   return tabs;
 }
-import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js";
-import { canEdit } from "./auth.js";
-import { appState } from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js";
-import { getRosterMeta, setRosterClassCount, getClassCount } from "./rosters.js";
+import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { appState } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
+import { getRosterMeta, setRosterClassCount, getClassCount } from "./rosters.js?v=2026-07-14-school-year-isolation-r351";
 
 // ── Build rows from curriculum IN BOARD ORDER ─────────────────────
 function buildRows(gradeKeys = GRADE_KEYS) {

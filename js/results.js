@@ -1,11 +1,11 @@
 // ================================================================
 // results.js · Curriculum Result Tables
 // ================================================================
-import { GRADE_KEYS } from "./config.js";
-import { clean, escapeHtml, getEffectiveCredit } from "./utils.js";
-import { appState } from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js";
-import { getRosterMeta, getClassCount } from "./rosters.js";
+import { GRADE_KEYS } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
+import { appState } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
+import { getRosterMeta, getClassCount } from "./rosters.js?v=2026-07-14-school-year-isolation-r351";
 
 // ── Data builder ─────────────────────────────────────────────────
 function buildRows() {

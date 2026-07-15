@@ -1,15 +1,15 @@
 // ================================================================
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
-import { appState, scheduleSave } from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { canEdit } from "./auth.js";
-import { getRooms } from "./rooms.js";
-import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js";
+import { appState, scheduleSave } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { getRooms } from "./rooms.js?v=2026-07-14-school-year-isolation-r351";
+import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
-} from "./timetable-data.js";
-import { getTtCardById } from "./ttcards.js";
+} from "./timetable-data.js?v=2026-07-14-school-year-isolation-r351";
+import { getTtCardById } from "./ttcards.js?v=2026-07-14-school-year-isolation-r351";
 
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;

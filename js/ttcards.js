@@ -1,14 +1,14 @@
 // ================================================================
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
-import { GRADE_KEYS } from "./config.js";
-import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js";
-import { canEdit } from "./auth.js";
-import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-14-school-year-integrity-r349";
+import { GRADE_KEYS } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup } from "./state.js?v=2026-07-14-school-year-isolation-r351";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
-} from "./templates.js";
-import { getClassCount } from "./rosters.js";
+} from "./templates.js?v=2026-07-14-school-year-isolation-r351";
+import { getClassCount } from "./rosters.js?v=2026-07-14-school-year-isolation-r351";
 
 const TTCARD_TEACHER_MODES = new Set(["homeroom", "representative", "none"]);
 const TTCARD_TEACHER_MODE_LABELS = {

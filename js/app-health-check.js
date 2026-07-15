@@ -7,9 +7,9 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-integrity-r349";
-import { APP_VERSION, versioned } from "./version.js";
+} from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-isolation-r351";
+import { APP_VERSION, versioned } from "./version.js?v=2026-07-14-school-year-isolation-r351";
 
 const MODULE_FILES = [
   "./js/app.js",

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HIS 커리큘럼 백업 복원</title>
+  <style>
+    :root{--navy:#173b68;--line:#d9e2ef;--bg:#f5f7fb;--danger:#b91c1c;--ok:#15803d;--muted:#64748b}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#172033;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    header{min-height:54px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 18px;gap:12px}header h1{margin:0;font-size:18px}.right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    main{max-width:980px;margin:22px auto;padding:0 18px}.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:14px;box-shadow:0 10px 24px rgba(15,23,42,.05)}
+    h2{font-size:17px;margin:0 0 10px;color:#0f2946}p{line-height:1.55}.muted{color:var(--muted);font-size:13px}.danger{color:var(--danger);font-weight:900}.ok{color:var(--ok);font-weight:900}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0}label{font-weight:800}input,select{height:36px;border:1px solid #cbd5e1;border-radius:9px;padding:0 10px}input[type=file]{height:auto;padding:8px;background:#fff;max-width:100%}
+    button{height:36px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;padding:0 13px;font-weight:900;cursor:pointer}button.primary{background:#2563eb;border-color:#2563eb;color:#fff}button.danger-btn{background:#b91c1c;border-color:#b91c1c;color:#fff}button:disabled{opacity:.45;cursor:not-allowed}
+    table{width:100%;border-collapse:collapse;font-size:13px}th,td{border:1px solid #e2e8f0;padding:8px;text-align:left}th{background:#f1f5f9}.log{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;border-radius:12px;padding:12px;min-height:140px;max-height:320px;overflow:auto;font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    a{color:#dbeafe;font-weight:800;text-decoration:none}@media(max-width:760px){.grid{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<header>
+  <h1>HIS 커리큘럼 백업 복원</h1>
+  <div class="right"><span id="authStatus">로그인 확인 중…</span><button id="loginBtn" class="primary">Google 로그인</button><button id="logoutBtn" hidden>로그아웃</button><a href="index.html">커리큘럼으로 돌아가기</a></div>
+</header>
+<main>
+  <section class="card">
+    <h2>복원 범위</h2>
+    <p class="danger">이 도구는 선택한 학년도의 커리큘럼 보드 문서만 복원합니다.</p>
+    <p>과목카드, 교사, 학급·학생, 수강명단, 교실, 시간표는 변경하지 않습니다. 현재 사고처럼 보드만 초기화된 경우에 사용합니다.</p>
+  </section>
+  <div class="grid">
+    <section class="card">
+      <h2>1. 백업 파일 선택</h2>
+      <div class="row"><input id="fileInput" type="file" accept="application/json,.json" /></div>
+      <div id="fileSummary" class="muted">Firestore 진단 JSON을 선택하세요.</div>
+    </section>
+    <section class="card">
+      <h2>2. 복원 대상</h2>
+      <div class="row"><label for="targetYear">학년도</label><select id="targetYear"><option value="2026">2026학년도</option><option value="2027">2027학년도</option></select></div>
+      <div class="row"><button id="currentBtn" type="button">현재 문서 확인</button></div>
+      <div id="currentSummary" class="muted">대상 문서를 확인하지 않았습니다.</div>
+    </section>
+  </div>
+  <section class="card">
+    <h2>3. 복원 실행</h2>
+    <p>파일과 대상 학년도를 확인한 뒤 아래 문구를 정확히 입력하세요.</p>
+    <div class="row"><input id="confirmText" type="text" style="min-width:280px" /><label><input id="confirmCheck" type="checkbox" /> 보드 문서를 백업 내용으로 덮어쓰는 것을 이해했습니다.</label></div>
+    <div class="row"><button id="restoreBtn" class="danger-btn" disabled>커리큘럼 보드 복원</button></div>
+  </section>
+  <section class="card"><h2>백업 내용</h2><div id="backupTable"></div></section>
+  <section class="card"><h2>작업 로그</h2><div id="log" class="log">대기 중입니다.</div></section>
+</main>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig={apiKey:"AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",authDomain:"his-curriculum-8e737.firebaseapp.com",projectId:"his-curriculum-8e737",storageBucket:"his-curriculum-8e737.firebasestorage.app",messagingSenderId:"1091130688532",appId:"1:1091130688532:web:79622f9da3591ab2d3d301"};
+const app=initializeApp(firebaseConfig);const auth=getAuth(app);const db=getFirestore(app);const provider=new GoogleAuthProvider();
+const $=id=>document.getElementById(id);let user=null;let payload=null;let curriculum=null;let busy=false;
+const grades=["7학년","8학년","9학년","10학년","11학년","12학년"];
+function year(){return String($("targetYear").value||"2026");}
+function phrase(){return `${year()}학년도커리큘럼복원`;}
+function targetRef(){return year()==="2026"?doc(db,"boards","curriculum"):doc(db,"schoolYears",year(),"domains","curriculum");}
+function counts(data){return Object.fromEntries(grades.map(g=>[g,Array.isArray(data?.gradeBoards?.[g])?data.gradeBoards[g].length:0]));}
+function totalRows(data){return Object.values(counts(data)).reduce((a,b)=>a+b,0);}
+function append(msg){const time=new Date().toLocaleTimeString();$("log").textContent+=`\n[${time}] ${msg}`;$("log").scrollTop=$("log").scrollHeight;}
+function refresh(){const ok=!!user&&!!curriculum&&!busy&&$("confirmCheck").checked&&$("confirmText").value.trim()===phrase();$("restoreBtn").disabled=!ok;$("confirmText").placeholder=`${phrase()} 입력`;}
+function renderBackup(){if(!curriculum){$("backupTable").innerHTML='<p class="muted">백업을 선택하지 않았습니다.</p>';return;}const c=counts(curriculum);$("backupTable").innerHTML=`<p><b>내보낸 시각:</b> ${payload?.exportedAt||"확인 불가"} · <b>총 행:</b> ${totalRows(curriculum)}</p><table><thead><tr>${grades.map(g=>`<th>${g}</th>`).join("")}</tr></thead><tbody><tr>${grades.map(g=>`<td>${c[g]}</td>`).join("")}</tr></tbody></table>`;}
+$("fileInput").addEventListener("change",async e=>{payload=null;curriculum=null;try{const file=e.target.files?.[0];if(!file)return;payload=JSON.parse(await file.text());curriculum=payload?.raw?.boards?.curriculum?.data||payload?.normalized?.curriculum||payload?.data?.curriculum||null;if(!curriculum||!curriculum.gradeBoards)throw new Error("커리큘럼 보드 데이터가 없는 파일입니다.");if(totalRows(curriculum)<6)throw new Error("백업 커리큘럼 행 수가 비정상적으로 작아 복원을 차단했습니다.");$("fileSummary").innerHTML=`<span class="ok">백업 확인 완료</span> · ${file.name} · ${totalRows(curriculum)}행`;append(`백업 파일 확인: ${file.name}, ${totalRows(curriculum)}행`);renderBackup();}catch(error){console.error(error);payload=null;curriculum=null;$("fileSummary").textContent=error?.message||String(error);renderBackup();}refresh();});
+$("targetYear").addEventListener("change",()=>{$("currentSummary").textContent="대상 문서를 다시 확인하세요.";refresh();});
+$("confirmText").addEventListener("input",refresh);$("confirmCheck").addEventListener("change",refresh);
+$("currentBtn").addEventListener("click",async()=>{if(!user){alert("먼저 로그인하세요.");return;}try{const snap=await getDoc(targetRef());const data=snap.exists()?snap.data():null;$("currentSummary").textContent=snap.exists()?`${year()}학년도 현재 보드: ${totalRows(data)}행`:`${year()}학년도 현재 보드 문서 없음`;append(`${year()} 현재 보드 확인: ${snap.exists()?totalRows(data):0}행`);}catch(error){append(`현재 문서 확인 실패: ${error?.message||error}`);alert(error?.message||error);}});
+$("restoreBtn").addEventListener("click",async()=>{if($("restoreBtn").disabled)return;if(!confirm(`${year()}학년도 커리큘럼 보드를 선택한 백업으로 복원할까요?\n다른 데이터는 변경하지 않습니다.`))return;busy=true;refresh();try{const clean=structuredClone(curriculum);delete clean.updatedAt;await setDoc(targetRef(),{...clean,updatedAt:serverTimestamp(),restoreMeta:{sourceFile:$("fileInput").files?.[0]?.name||"diagnostic.json",sourceExportedAt:String(payload?.exportedAt||""),restoredAt:new Date().toISOString()}},{merge:false});append(`${year()}학년도 커리큘럼 복원 완료: ${totalRows(clean)}행`);$("currentSummary").innerHTML=`<span class="ok">복원 완료 · ${totalRows(clean)}행</span>`;alert("커리큘럼 보드 복원이 완료되었습니다. 커리큘럼 화면에서 Ctrl+F5를 누르세요.");}catch(error){console.error(error);append(`복원 실패: ${error?.message||error}`);alert(`복원 실패: ${error?.message||error}`);}finally{busy=false;refresh();}});
+$("loginBtn").addEventListener("click",()=>signInWithPopup(auth,provider));$("logoutBtn").addEventListener("click",()=>signOut(auth));
+onAuthStateChanged(auth,next=>{user=next||null;$("authStatus").textContent=user?(user.email||user.displayName||"로그인됨"):"로그인 필요";$("loginBtn").hidden=!!user;$("logoutBtn").hidden=!user;refresh();});
+refresh();renderBackup();
+</script>
+</body>
+</html>

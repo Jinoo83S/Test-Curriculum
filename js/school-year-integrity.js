@@ -4,7 +4,7 @@
 // Pure validation logic. It does not read Firestore directly and can be
 // exercised with exported diagnostics or local-development snapshots.
 
-export const SCHOOL_YEAR_INTEGRITY_BUILD = "2026-07-14-school-year-integrity-r349";
+export const SCHOOL_YEAR_INTEGRITY_BUILD = "2026-07-14-school-year-isolation-r351";
 export const INTEGRITY_SCHEMA_VERSION = 1;
 
 const COPY_COUNT_KEYS = [

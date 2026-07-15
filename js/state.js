@@ -1,12 +1,12 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath } from "./config.js";
-import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js";
-import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js";
-import { canEdit } from "./auth.js";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-14-school-year-integrity-r349";
-import { invalidateSchoolYearVerification } from "./school-year.js?v=2026-07-14-school-year-integrity-r349";
+import { refs, db, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
+import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-14-school-year-isolation-r351";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-14-school-year-isolation-r351";
+import { invalidateSchoolYearVerification } from "./school-year.js?v=2026-07-14-school-year-isolation-r351";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -38,6 +38,16 @@ const storageLabel = {
   ttcards: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/ttcards" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/ttcards`,
   timetableMeta: IS_LEGACY_SCHOOL_YEAR ? "boards/_split/timetableMeta/main" : `schoolYears/${ACTIVE_SCHOOL_YEAR}/meta/timetable`,
 };
+
+function verifyWriteContext(context) {
+  try {
+    return assertSchoolYearWriteContext(context);
+  } catch (error) {
+    console.error("[school-year write guard]", error);
+    _onSaveStatus?.("error", error);
+    throw error;
+  }
+}
 
 
 // ── Drag state (shared between board & group manager) ─────────────
@@ -73,6 +83,7 @@ const AUTO_SAVE_KEY = "his_auto_save_v1";
 // Invalidate locally immediately and persist one lightweight marker per page load.
 let workspaceIntegrityInvalidationStarted = false;
 function invalidateActiveWorkspaceIntegrity(reason = "workspace-edited") {
+  verifyWriteContext(`학년도 정합성 상태 변경(${reason})`);
   if (IS_LEGACY_SCHOOL_YEAR) return;
   const now = new Date().toISOString();
   invalidateSchoolYearVerification(ACTIVE_SCHOOL_YEAR, reason);
@@ -374,6 +385,8 @@ function mergeSaveOptions(prev = {}, next = {}) {
 
 export function scheduleSave(domain, options = {}) {
   if (!canEdit() || !initialLoad[domain]) return;
+  try { verifyWriteContext(`자동저장 예약(${domain})`); }
+  catch (_) { return false; }
   bumpDomainEditRevision(domain);
   dirtyDomains.add(domain);
   invalidateActiveWorkspaceIntegrity(`schedule-save:${domain}`);
@@ -418,6 +431,7 @@ export function scheduleFastSave(domain, options = {}) {
 }
 
 async function performDomainSave(domain, normalized, options = {}) {
+  verifyWriteContext(`Firestore 저장(${domain})`);
   if (LOCAL_DEV_MODE) {
     saveLocalDomain(domain, normalized);
     return { local: true };
@@ -491,6 +505,8 @@ async function runSaveLoop(domain) {
 
 export async function saveNow(domain, options = {}) {
   if (!canEdit() || !initialLoad[domain]) return false;
+  try { verifyWriteContext(`즉시 저장(${domain})`); }
+  catch (_) { return false; }
 
   clearTimeout(saveTimers[domain]);
   delete saveTimers[domain];

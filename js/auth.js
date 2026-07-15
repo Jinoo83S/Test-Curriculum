@@ -1,8 +1,8 @@
 // ================================================================
 // auth.js · Authentication
 // ================================================================
-import { auth, provider } from "./config.js";
-import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js";
+import { auth, provider } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js?v=2026-07-14-school-year-isolation-r351";
 import {
   signInWithPopup, getRedirectResult,
   signOut, onAuthStateChanged

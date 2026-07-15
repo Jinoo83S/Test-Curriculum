@@ -2,12 +2,12 @@
 // timetable-conflicts.js · Pure Conflict Detection
 // r190: strict conflict audit + card/class time-availability violations.
 // ================================================================
-import { splitTeacherNames } from "./templates.js";
+import { splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
 import {
   getEntryOccupancy,
   setsIntersect as occSetsIntersect,
   audiencesConflict as occAudiencesConflict
-} from "./timetable-occupancy.js";
+} from "./timetable-occupancy.js?v=2026-07-14-school-year-isolation-r351";
 
 /**
  * Returns Map<entryId, Set<"teacher"|"room"|"roomMissing"|"roomUnavailable"|"student"|"syncRequired">>

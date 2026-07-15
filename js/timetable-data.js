@@ -1,12 +1,12 @@
 // ================================================================
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
-import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js";
-import { appState } from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js";
-import { getTtCards, getTtCardById } from "./ttcards.js";
-export { getTtCardById } from "./ttcards.js";
-import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js";
+import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { appState } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
+import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-14-school-year-isolation-r351";
+export { getTtCardById } from "./ttcards.js?v=2026-07-14-school-year-isolation-r351";
+import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];

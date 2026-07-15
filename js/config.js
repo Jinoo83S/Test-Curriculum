@@ -4,7 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { initializeFirestore, persistentLocalCache, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR } from "./school-year.js?v=2026-07-14-school-year-integrity-r349";
+import { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, assertSchoolYearRuntimeConsistency } from "./school-year.js?v=2026-07-14-school-year-isolation-r351";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBwUERcfAYMiqewOsp9zsY6_CnHef-nfK0",
@@ -27,6 +27,9 @@ export const provider = new GoogleAuthProvider();
 // 2026 keeps the existing production paths. New years are isolated under
 // schoolYears/{year}/domains so next-year preparation cannot overwrite 2026.
 export { ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR };
+export function assertSchoolYearWriteContext(context = "Firestore 저장") {
+  return assertSchoolYearRuntimeConsistency(context);
+}
 export const schoolYearDomainPath = (domain) => IS_LEGACY_SCHOOL_YEAR
   ? `boards/${domain}`
   : `schoolYears/${ACTIVE_SCHOOL_YEAR}/domains/${domain}`;

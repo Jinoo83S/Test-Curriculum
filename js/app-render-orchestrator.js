@@ -4,7 +4,7 @@
 // app.js가 인증/부트스트랩에 집중할 수 있도록 화면 전환, view 표시,
 // 화면별 렌더링, Firestore 업데이트 렌더링을 한 곳에서 관리합니다.
 
-import { VIEW_TO_SECTION } from "./app-navigation-ui.js";
+import { VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-14-school-year-isolation-r351";
 
 export function createAppRenderOrchestrator(options = {}) {
   const {

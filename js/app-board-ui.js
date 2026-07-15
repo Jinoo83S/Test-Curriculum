@@ -1,16 +1,16 @@
 // ================================================================
 // app-board-ui.js · Curriculum board tabs / export / reset UI
 // ================================================================
-import { GRADE_GROUPS } from "./config.js";
-import { canEdit } from "./auth.js";
-import { appState, saveNow } from "./state.js?v=2026-07-14-school-year-integrity-r349";
+import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, assertSchoolYearWriteContext } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { schoolYearLabel } from "./school-year.js?v=2026-07-14-school-year-isolation-r351";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { appState, saveNow } from "./state.js?v=2026-07-14-school-year-isolation-r351";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],
   track: ["공통", "배정", "선택"],
   group: ["선택", "국어", "영어", "수학", "사회", "과학", "정보", "예술", "체육", "자율활동", "동아리", "채플", "기타"],
 };
-const DEFAULT_GRADES = ["7학년", "8학년", "9학년", "10학년", "11학년", "12학년"];
 
 function makeEmptyBoardRow(options) {
   return {
@@ -81,18 +81,46 @@ export function setupAppBoardUi({
 
   async function resetBoard() {
     if (!canEdit()) return;
-    if (!confirm("커리큘럼 보드를 초기화할까요? (과목카드/학생 데이터는 유지됩니다)")) return;
 
-    const options = structuredClone(DEFAULT_BOARD_OPTIONS);
-    const gradeBoards = {};
-    DEFAULT_GRADES.forEach(grade => {
+    try {
+      assertSchoolYearWriteContext("커리큘럼 보드 초기화");
+    } catch (error) {
+      alert(error?.message || "학년도 실행 상태가 일치하지 않아 초기화를 차단했습니다.");
+      return;
+    }
+
+    const targetGrades = [...(GRADE_GROUPS[activeTab] || [])];
+    const levelLabel = activeTab === "tab7to9" ? "중등(7·8·9학년)" : "고등(10·11·12학년)";
+    const phrase = `${ACTIVE_SCHOOL_YEAR}-${activeTab === "tab7to9" ? "중등" : "고등"}-보드초기화`;
+
+    if (!confirm(`${schoolYearLabel(ACTIVE_SCHOOL_YEAR)} ${levelLabel} 보드만 초기화합니다.\n다른 학년도와 반대 학년군은 유지됩니다.\n계속할까요?`)) return;
+    const typed = prompt(`실수 방지를 위해 아래 문구를 정확히 입력하세요.\n\n${phrase}`, "");
+    if (typed === null) return;
+    if (typed.trim() !== phrase) {
+      alert("확인 문구가 일치하지 않아 초기화하지 않았습니다.");
+      return;
+    }
+
+    const previousCurriculum = structuredClone(appState.curriculum || {});
+    const options = structuredClone(appState.curriculum?.options || DEFAULT_BOARD_OPTIONS);
+    const gradeBoards = structuredClone(appState.curriculum?.gradeBoards || {});
+    targetGrades.forEach(grade => {
       gradeBoards[grade] = Array.from({ length: 4 }, () => makeEmptyBoardRow(options));
     });
 
     appState.curriculum = { options, gradeBoards };
     invalidateTabs();
-    await saveNow("curriculum");
-    renderApp?.("curriculum");
+    try {
+      const saved = await saveNow("curriculum", { throwOnError: true });
+      if (!saved) throw new Error("학년도 저장 안전장치가 저장을 차단했습니다.");
+      console.info(`[board-reset] ${schoolYearLabel(ACTIVE_SCHOOL_YEAR)} ${levelLabel} 저장 완료`);
+      renderApp?.("curriculum");
+    } catch (error) {
+      appState.curriculum = previousCurriculum;
+      invalidateTabs();
+      renderApp?.("curriculum");
+      alert(`보드 초기화를 저장하지 못해 화면 상태를 되돌렸습니다.\n${error?.message || error}`);
+    }
   }
 
   function setDisabled(disabled) {

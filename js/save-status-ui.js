@@ -1,8 +1,8 @@
 // ================================================================
 // save-status-ui.js · Unified save button + quota/local-dev controls
 // ================================================================
-import { canEdit } from "./auth.js";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-integrity-r349";
+import { canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-isolation-r351";
 import {
   setOnSaveStatus,
   isAutoSaveEnabled,
@@ -13,10 +13,10 @@ import {
   importLocalSnapshot,
   resetLocalSnapshot,
   exportFirestoreDiagnosticSnapshot,
-} from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { openDataCleanupDialog } from "./data-cleanup.js";
-import { openFirestoreUsageDialog } from "./firestore-usage.js";
-import { openAppHealthCheckDialog } from "./app-health-check.js";
+} from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { openDataCleanupDialog } from "./data-cleanup.js?v=2026-07-14-school-year-isolation-r351";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-14-school-year-isolation-r351";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-14-school-year-isolation-r351";
 
 const saveStatusEl = document.getElementById("saveStatusEl");
 const topbarRight = document.querySelector(".topbar-right");

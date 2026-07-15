@@ -1,20 +1,20 @@
  // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
-import { GRADE_KEYS } from "./config.js";
-import { login, logout, onAuth, canEdit } from "./auth.js";
+import { GRADE_KEYS } from "./config.js?v=2026-07-14-school-year-isolation-r351";
+import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-14-school-year-isolation-r351";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
-         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-14-school-year-integrity-r349";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-integrity-r349";
-import { versioned } from "./version.js?v=2026-07-14-school-year-integrity-r349";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-14-school-year-integrity-r349";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-14-school-year-integrity-r349";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-integrity-r349";
-import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js";
-import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-14-school-year-integrity-r349";
+         exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot } from "./state.js?v=2026-07-14-school-year-isolation-r351";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-14-school-year-isolation-r351";
+import { versioned } from "./version.js?v=2026-07-14-school-year-isolation-r351";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-14-school-year-isolation-r351";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-14-school-year-isolation-r351";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-14-school-year-isolation-r351";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-14-school-year-isolation-r351";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-14-school-year-isolation-r351";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -24,10 +24,10 @@ import {
   conflictDetailBetween as occConflictDetailBetween,
   formatClassLabelFromKey as occFormatClassLabelFromKey,
   normalizeClassKey as occNormalizeClassKey
-} from "./timetable-occupancy.js";
-import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js";
-import { createTimetableUndoHandlers } from "./timetable-undo.js";
-import { createTimetableAuthUi } from "./timetable-auth-ui.js";
+} from "./timetable-occupancy.js?v=2026-07-14-school-year-isolation-r351";
+import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-14-school-year-isolation-r351";
+import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-14-school-year-isolation-r351";
+import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-14-school-year-isolation-r351";
 
 
 const [
