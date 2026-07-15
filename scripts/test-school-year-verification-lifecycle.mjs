@@ -64,4 +64,4 @@ if (!afterNoOp?.ok || afterNoOp?.stale === true) {
   process.exit(1);
 }
 console.log("PASS compatibility invalidation remains a no-op");
-console.log("SCHOOL_YEAR_VERIFICATION_LIFECYCLE_R355_OK");
+console.log("SCHOOL_YEAR_VERIFICATION_LIFECYCLE_CURRENT_OK");

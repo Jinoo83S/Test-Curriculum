@@ -8,6 +8,7 @@ import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r35
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, TIMETABLE_REVISION_SCHEMA_VERSION } from "./timetable-save-revision.js?v=2026-07-15-atomic-timetable-revisions-r356";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -33,6 +34,19 @@ const storageLabel = {
   ttcards: activeWorkspaceRefs.spec.labels.collections.ttcards,
   timetableMeta: activeWorkspaceRefs.spec.labels.timetableMeta,
 };
+
+function timetableSaveRevisionRef(revisionId) {
+  const id = clean(revisionId);
+  if (!id) throw new Error("시간표 저장 리비전 ID가 비어 있습니다.");
+  // Use the same already-authorized collection that contains timetableMeta.
+  // 2026: boards/_split/timetableMeta/timetableRevisionSlot-00..29
+  // 2027+: schoolYears/{year}/meta/timetableRevisionSlot-00..29
+  // Fixed slots prevent autosave revision manifests from growing without limit.
+  const segments = [...activeWorkspaceRefs.spec.timetableMeta];
+  const slot = String(getTimetableRevisionHistorySlot(id)).padStart(2, "0");
+  segments[segments.length - 1] = `timetableRevisionSlot-${slot}`;
+  return doc(db, ...segments);
+}
 
 function verifyWriteContext(context) {
   try {
@@ -224,6 +238,7 @@ const splitDocFingerprints = {
   rosters: { rosters: new Map() },
   timetable: { timetableEntries: new Map(), ttcards: new Map(), timetableMeta: null },
 };
+let lastTimetableSaveRevisionId = "";
 
 let _onSaveStatus = null;
 export const setOnSaveStatus = (cb) => {
@@ -348,6 +363,10 @@ function mergeSaveOptions(prev = {}, next = {}) {
     ...prev,
     ...next,
     force: !!(prev.force || next.force),
+    // force means "save now". A full split-collection rewrite is a separate,
+    // explicit option because rewriting every timetable document can exceed
+    // Firestore's 500-write atomic batch limit.
+    rewriteAll: !!(prev.rewriteAll || next.rewriteAll),
     throwOnError: !!(prev.throwOnError || next.throwOnError)
   };
 }
@@ -2389,6 +2408,26 @@ async function commitChangedDoc(baselinePath, ref, data, options = {}) {
   return 1;
 }
 
+async function commitWriteOpsAtomic(ops, label = "atomic timetable revision") {
+  if (!Array.isArray(ops) || !ops.length) return 0;
+  if (ops.length > 500) {
+    const error = new Error(`Firestore 원자적 저장 한도 초과: ${ops.length}/500`);
+    error.code = "firestore-atomic-batch-limit";
+    throw error;
+  }
+  const batch = writeBatch(db);
+  ops.forEach(op => {
+    if (op.type === "set") batch.set(op.ref, op.data, op.options || undefined);
+    if (op.type === "delete") batch.delete(op.ref);
+  });
+  await batch.commit();
+  const writes = ops.filter(op => op.type === "set").length;
+  const deletes = ops.filter(op => op.type === "delete").length;
+  if (writes) recordFirestoreUsage("writes", writes, label, { operation: "writeBatch", atomic: true });
+  if (deletes) recordFirestoreUsage("deletes", deletes, label, { operation: "writeBatch", atomic: true });
+  return ops.length;
+}
+
 async function commitWriteOps(ops) {
   const CHUNK_SIZE = 450; // Firestore batch limit is 500 writes
   for (let i = 0; i < ops.length; i += CHUNK_SIZE) {
@@ -2477,27 +2516,110 @@ async function saveSplitDomain(domain, options = {}) {
       console.error("[Firestore guard:r231] 비정상적으로 작은 시간표 저장을 차단했습니다.", { next: timetableCountsForGuard(normalized) });
       throw new Error("비정상적으로 작은 시간표 저장 차단: entries=0/cards<=1 상태입니다. 화면을 새로고침한 뒤 다시 확인해 주세요.");
     }
-    const entryWrites = await commitChangedCollection(
-      { domain: "timetable", name: "timetableEntries" },
-      splitRefs.timetableEntries,
-      normalized.entries,
-      item => item,
-      options
-    );
-    const cardWrites = await commitChangedCollection(
-      { domain: "timetable", name: "ttcards" },
-      splitRefs.ttcards,
-      normalized.ttcards,
-      item => item,
-      options
-    );
-    const metaWrites = await commitChangedDoc(
-      ["timetable", "timetableMeta"],
-      splitRefs.timetableMeta,
-      buildTimetableMetaStorageDoc(normalized),
-      options
-    );
-    console.info(`[Firestore save] timetable split writes: entries ${entryWrites}, cards ${cardWrites}, meta ${metaWrites}`);
+
+    // r356: 시간표 entries/cards/meta를 따로 커밋하지 않습니다. 변경 문서와
+    // meta, 리비전 기록을 한 Firestore batch에 넣어 전부 성공하거나 전부
+    // 실패하도록 합니다. saveNow(..., { force:true })의 force는 즉시 저장을
+    // 뜻하며, 모든 문서를 강제 재작성하지 않습니다.
+    const rewriteAll = options.rewriteAll === true;
+    const entryPlan = buildCollectionRevisionPlan({
+      baseline: splitDocFingerprints.timetable.timetableEntries,
+      items: normalized.entries,
+      toDocData: item => item,
+      fingerprint: fp,
+      rewriteAll,
+    });
+    const cardPlan = buildCollectionRevisionPlan({
+      baseline: splitDocFingerprints.timetable.ttcards,
+      items: normalized.ttcards,
+      toDocData: item => item,
+      fingerprint: fp,
+      rewriteAll,
+    });
+    const baseMeta = buildTimetableMetaStorageDoc(normalized);
+    const baseMetaHash = fp(baseMeta);
+    const metaChanged = rewriteAll || splitDocFingerprints.timetable.timetableMeta !== baseMetaHash;
+    const summary = assertAtomicTimetableRevisionCapacity(summarizeTimetableRevisionPlan({ entryPlan, cardPlan, metaChanged }));
+
+    if (!summary.hasChanges) {
+      console.info("[Firestore save] timetable atomic revision skipped: no changes");
+      return;
+    }
+
+    const revisionId = createTimetableSaveRevisionId();
+    const parentRevisionId = clean(lastTimetableSaveRevisionId);
+    const revisionInfo = {
+      schemaVersion: TIMETABLE_REVISION_SCHEMA_VERSION,
+      id: revisionId,
+      parentId: parentRevisionId || null,
+      schoolYear: ACTIVE_SCHOOL_YEAR,
+      counts: {
+        entries: normalized.entries.length,
+        cards: normalized.ttcards.length,
+        groups: normalized.ttcardGroups.length,
+      },
+      changes: {
+        entrySets: summary.entrySets,
+        entryDeletes: summary.entryDeletes,
+        cardSets: summary.cardSets,
+        cardDeletes: summary.cardDeletes,
+        metaChanged: summary.metaChanged,
+        totalWrites: summary.totalWrites,
+      },
+      committedAt: serverTimestamp(),
+    };
+    const metaData = { ...baseMeta, saveRevision: revisionInfo };
+    const ops = [];
+
+    entryPlan.sets.forEach(change => ops.push({
+      type: "set",
+      ref: doc(splitRefs.timetableEntries, change.id),
+      data: { ...change.data, updatedAt: serverTimestamp() },
+      options: { merge: false },
+    }));
+    entryPlan.deletes.forEach(change => ops.push({ type: "delete", ref: doc(splitRefs.timetableEntries, change.id) }));
+    cardPlan.sets.forEach(change => ops.push({
+      type: "set",
+      ref: doc(splitRefs.ttcards, change.id),
+      data: { ...change.data, updatedAt: serverTimestamp() },
+      options: { merge: false },
+    }));
+    cardPlan.deletes.forEach(change => ops.push({ type: "delete", ref: doc(splitRefs.ttcards, change.id) }));
+
+    ops.push({
+      type: "set",
+      ref: splitRefs.timetableMeta,
+      data: { ...metaData, updatedAt: serverTimestamp() },
+      options: { merge: false },
+    });
+    ops.push({
+      type: "set",
+      ref: timetableSaveRevisionRef(revisionId),
+      data: {
+        ...revisionInfo,
+        status: "committed",
+        targetPaths: {
+          entries: storageLabel.timetableEntries,
+          cards: storageLabel.ttcards,
+          meta: storageLabel.timetableMeta,
+        },
+        entrySetIds: entryPlan.sets.map(v => v.id),
+        entryDeleteIds: entryPlan.deletes.map(v => v.id),
+        cardSetIds: cardPlan.sets.map(v => v.id),
+        cardDeleteIds: cardPlan.deletes.map(v => v.id),
+        metaFingerprint: baseMetaHash,
+        createdAt: serverTimestamp(),
+      },
+      options: { merge: false },
+    });
+
+    await commitWriteOpsAtomic(ops, `timetable revision ${revisionId}`);
+    splitDocFingerprints.timetable.timetableEntries = entryPlan.current;
+    splitDocFingerprints.timetable.ttcards = cardPlan.current;
+    splitDocFingerprints.timetable.timetableMeta = baseMetaHash;
+    lastTimetableSaveRevisionId = revisionId;
+
+    console.info(`[Firestore save] timetable atomic revision committed: ${revisionId}`, summary);
   }
 }
 
@@ -2511,9 +2633,14 @@ async function loadLegacyDomainFallback(domain, normalizeFn, options = {}) {
     if (!hasData) return false;
     applyNormalizedDomain(domain, normalized);
     // One-time forward migration from old one-document storage to split collections.
-    // Skip if this domain is already in legacy fallback mode because subcollection access failed.
+    // The legacy document is already a valid loaded source. A migration save failure
+    // must not make the load itself fail or let an empty split snapshot replace it.
     if (canEdit() && SPLIT_COLLECTION_DOMAINS.has(domain) && !splitUnavailableDomains.has(domain)) {
-      await saveSplitDomain(domain, { force: true, normalized });
+      try {
+        await saveSplitDomain(domain, { force: true, normalized });
+      } catch (migrationError) {
+        console.warn(`Legacy ${domain} split migration save deferred.`, migrationError);
+      }
     }
     return true;
   } catch (e) {
@@ -2774,6 +2901,7 @@ function subscribeTimetableSplit() {
     recordDocSnapshotUsage(`listen: ${storageLabel.timetableMeta}`, snap, metaUsage);
     timetableSplitCache.metaExists = snap.exists();
     timetableSplitCache.meta = snap.exists() ? withoutFirestoreMeta(snap.data()) : {};
+    lastTimetableSaveRevisionId = clean(timetableSplitCache.meta?.saveRevision?.id);
     applyTimetableSplitIfReady();
   }, onSplitError);
 

@@ -80,4 +80,4 @@ duplicateState.teachers.teachers.push({ id:"teacher-c", name:"Teacher A" });
 const duplicate = identity.synchronizeTeacherIdentityReferences(duplicateState);
 assert(!duplicate.ok && duplicate.duplicateTeacherNames.length === 1, "duplicate teacher name was not detected");
 
-console.log("TEACHER_ID_MIGRATION_R355_OK");
+console.log("TEACHER_ID_MIGRATION_CURRENT_OK");

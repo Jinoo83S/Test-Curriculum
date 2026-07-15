@@ -54,4 +54,4 @@ for (const name of ["school-years.html", "reset-school-year.html", "restore-curr
   assert(!/collection\(db,\s*["']schoolYears/.test(html), `${name} contains direct schoolYears collection path`);
 }
 
-console.log("SCHOOL_YEAR_PATH_ISOLATION_R355_OK");
+console.log("SCHOOL_YEAR_PATH_ISOLATION_CURRENT_OK");

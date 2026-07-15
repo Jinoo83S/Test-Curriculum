@@ -54,4 +54,4 @@ const second = mod.migrateLegacyRoomAvailability(state.rooms, state.timetable);
 assert(!second.changed, "room availability migration is not idempotent");
 assert(state.rooms.rooms[0].unavailableSlots.length === 2, "idempotent run duplicated room slots");
 
-console.log("ROOM_AVAILABILITY_SEPARATION_R355_OK");
+console.log("ROOM_AVAILABILITY_SEPARATION_CURRENT_OK");

@@ -1950,9 +1950,19 @@ body.tt-bottom-is-open #ttGrid{
   </div>
 </div>
 
-<script>window.HIS_APP_VERSION = "2026-07-15-room-availability-separation-r355";</script>
+<script>
+window.HIS_APP_VERSION = "2026-07-15-atomic-timetable-revisions-r356";
+// r356부터 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
+// 변경되지 않은 시간표 모듈은 r355 URL을 그대로 사용하고, 실제 변경된
+// state/version 모듈만 import map으로 r356 URL에 연결합니다.
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355";
+</script>
 <script type="importmap">
-{"imports":{"./js/state.js":"./js/state.js?v=2026-07-15-room-availability-separation-r355"}}
+{"imports":{
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-15-atomic-timetable-revisions-r356",
+  "./js/state.js":"./js/state.js?v=2026-07-15-atomic-timetable-revisions-r356",
+  "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-15-atomic-timetable-revisions-r356"
+}}
 </script>
 <script type="module">
   import { versioned } from "./js/version.js?v=2026-07-15-room-availability-separation-r355";
