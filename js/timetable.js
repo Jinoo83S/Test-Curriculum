@@ -17,6 +17,7 @@ import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./temp
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, isLegacyRoomAvailabilityKey } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+import { CLASS_UNAVAILABLE_PREFIX } from "./timetable-constraint-model.js?v=2026-07-15-timetable-loading-hotfix-r358";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,

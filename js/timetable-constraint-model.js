@@ -13,7 +13,7 @@ import { normalizeRoomUnavailableSlots } from "./room-availability.js?v=2026-07-
 const clean = v => String(v ?? "").trim();
 const asArray = v => Array.isArray(v) ? v : [];
 const unique = list => [...new Set(asArray(list).map(clean).filter(Boolean))];
-const CLASS_UNAVAILABLE_PREFIX = "__class_unavailable__:";
+export const CLASS_UNAVAILABLE_PREFIX = "__class_unavailable__:";
 const SLOT_FIELDS_ALLOWED = ["allowedSlots", "availableSlots", "possibleSlots", "assignableSlots", "배정가능시간", "수업가능시간"];
 const SLOT_FIELDS_UNAVAILABLE = ["unavailableSlots", "blockedSlots", "disabledSlots", "불가시간", "수업불가시간"];
 const DAY_MIN = 0;

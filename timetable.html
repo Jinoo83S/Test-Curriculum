@@ -1001,6 +1001,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
 <link rel="stylesheet" href="timetable-ui.css?v=2026-07-15-room-availability-separation-r355"/>
+<link rel="stylesheet" href="timetable-revision-history.css?v=2026-07-15-timetable-loading-hotfix-r358"/>
 
 
 <style id="tt-real-merged-group-style-r100">
@@ -1951,18 +1952,18 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-15-timetable-revision-restore-r357";
+window.HIS_APP_VERSION = "2026-07-15-timetable-loading-hotfix-r358";
 // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// 변경되지 않은 모듈은 r355 URL을 유지하고, r357에서 실제 변경된
-// timetable/state/version 모듈만 import map으로 새 URL에 연결합니다.
+// 변경되지 않은 모듈은 기존 캐시 URL을 유지하고, r358에서 실제 변경된
+// timetable/version 모듈만 새 URL에 연결합니다. state는 검증된 r357을 유지합니다.
 window.HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355";
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-15-timetable-revision-restore-r357",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-15-timetable-loading-hotfix-r358",
   "./js/state.js":"./js/state.js?v=2026-07-15-timetable-revision-restore-r357",
   "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-15-timetable-revision-restore-r357",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-15-timetable-revision-restore-r357"
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-15-timetable-loading-hotfix-r358"
 }}
 </script>
 <script type="module">
@@ -2539,27 +2540,6 @@ body.tt-single-scroll-layout-r181.tt-bottom-is-collapsed #ttGrid{
 
 
 
-/* r357 · Firestore timetable revision history */
-.tt-revision-panel{border:1px solid #a7f3d0;background:#f0fdfa;border-radius:12px;padding:14px;display:grid;gap:10px}
-.tt-revision-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
-.tt-revision-head h4{margin:2px 0 4px;color:#0f172a;font-size:15px}
-.tt-revision-head p{margin:0;color:#475569;font-size:11px;line-height:1.55}
-.tt-revision-kicker{font-size:11px;font-weight:900;color:#0f766e}
-.tt-revision-status{border-radius:8px;padding:8px 10px;font-size:12px;background:#ecfeff;color:#155e75}
-.tt-revision-status[data-tone="success"]{background:#ecfdf5;color:#047857}
-.tt-revision-status[data-tone="error"]{background:#fef2f2;color:#b91c1c}
-.tt-revision-list{display:grid;gap:8px;max-height:340px;overflow:auto;padding-right:2px}
-.tt-revision-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;border:1px solid #d1fae5;background:#fff;border-radius:10px;padding:10px}
-.tt-revision-title-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#0f172a;font-size:12px}
-.tt-revision-kind,.tt-revision-ready,.tt-revision-legacy{display:inline-flex;align-items:center;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800}
-.tt-revision-kind{background:#f1f5f9;color:#475569}.tt-revision-ready{background:#dcfce7;color:#166534}.tt-revision-legacy{background:#fef3c7;color:#92400e}
-.tt-revision-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px;color:#64748b;font-size:10px}
-.tt-revision-meta span{background:#f8fafc;border-radius:999px;padding:2px 6px}
-.tt-revision-id{margin-top:5px;color:#94a3b8;font-size:9px;word-break:break-all}
-.tt-revision-row-actions button{height:32px;border:1px solid #0f766e;background:#0f766e;color:#fff;border-radius:8px;padding:0 10px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap}
-.tt-revision-row-actions button:disabled{background:#e2e8f0;border-color:#cbd5e1;color:#94a3b8;cursor:not-allowed}
-.tt-revision-empty{padding:18px;text-align:center;border:1px dashed #99f6e4;border-radius:10px;color:#64748b;background:#fff;font-size:12px}
-@media(max-width:760px){.tt-revision-head,.tt-revision-row{grid-template-columns:1fr;display:grid}.tt-revision-row-actions{justify-self:start}}
 </style>
 
 <script id="tt-single-scroll-layout-r181">
