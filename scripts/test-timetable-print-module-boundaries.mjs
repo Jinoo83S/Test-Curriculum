@@ -14,7 +14,7 @@ const app = read("js/timetable-print-app.js");
 const semester = read("js/timetable-print-semester.js");
 
 assert.match(html, /<link rel="stylesheet" href="timetable-print\.css\?v=2026-07-15-print-module-boundary-r359">/);
-assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-print-modules-r361"><\/script>/);
+assert.match(html, /<script type="module" src="\.\/js\/timetable-print-app\.js\?v=2026-07-15-operational-print-regression-r363"><\/script>/);
 assert.doesNotMatch(html, /<script type="module">[\s\S]*?<\/script>/, "large inline module must not return");
 assert.doesNotMatch(html, /:root\{--nav:/, "main print stylesheet must stay external");
 assert.match(html, /<style id="printPageStyle">@page\{size:/, "runtime page style element must remain available");
@@ -36,6 +36,24 @@ for (const removed of [
   /function buildOfficeHtml\(/,
   /function officeExportCss\(/,
   /function zipStore\(/,
+  /function currentPrintProfileLabel\(/,
+  /function sectionName\(/,
+  /function classKeysForItem\(/,
+  /function selectedClassKeys\(/,
+  /function showChanged\(/,
+  /function buildClassChips\(/,
+  /function fieldSettings\(/,
+  /function chunkList\(/,
+  /function overviewSubject\(/,
+  /function overviewEnglish\(/,
+  /function overviewTeacher\(/,
+  /function overviewRoom\(/,
+  /function classOverviewPages\(/,
+  /function officeCardSplitCount\(/,
+  /function officeFieldPosition\(/,
+  /function officeCellMatrixIndex\(/,
+  /function officeLineCount\(/,
+  /function officeVSpanCell\(/,
 ]) assert.doesNotMatch(app, removed);
 
 for (const rel of [
@@ -44,6 +62,7 @@ for (const rel of [
   "js/timetable-print-word.js",
   "js/timetable-print-excel.js",
   "js/timetable-print-pdf.js",
+  "js/timetable-print-word-layout.js",
 ]) {
   assert.ok(fs.existsSync(path.join(root, rel)), `missing ${rel}`);
   const syntaxResult = spawnSync(process.execPath, ["--check", path.join(root, rel)], { encoding: "utf8" });
@@ -54,6 +73,9 @@ for (const importPath of ["./auth.js?", "./state.js?", "./local-dev.js?", "./con
   assert.ok(app.includes(`from "${importPath}`), `print app import must be relative to js/: ${importPath}`);
 }
 assert.doesNotMatch(app, /from "\.\/js\//, "external module must not resolve to js/js/*");
+assert.match(app, /from "\.\/timetable-print-word-layout\.js\?v=2026-07-15-word-layout-r362"/);
+assert.match(app, /const VERSION = "2026-07-15-operational-print-regression-r363"/);
+assert.doesNotMatch(app, /function (?:allocateProportionalHeights|card3x3Dimensions|cardGridDimensions|docxCellSize|wordSpanWidth)\(/, "Word layout helpers must stay in the pure module");
 
 const names = [...app.matchAll(/^(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/gm)].map(m => m[1]);
 const duplicates = names.filter((name, index) => names.indexOf(name) !== index);

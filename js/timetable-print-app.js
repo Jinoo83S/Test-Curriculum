@@ -24,7 +24,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-15-word-layout-r362";
+const VERSION = "2026-07-15-operational-print-regression-r363";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -147,12 +147,6 @@ function enforceFormatAvailability() {
     formatEl.value = "pdf";
   }
 }
-function currentPrintProfileLabel() {
-  const [fmt, ori, type, mode] = currentPrintProfileKey().split(":");
-  const kind = `${PRINT_PROFILE_LABELS[type]||type}-${PRINT_PROFILE_LABELS[mode]||mode}`;
-  if (fmt === "excel") return `${PRINT_PROFILE_LABELS[fmt]||fmt} · ${kind}`;
-  return `${PRINT_PROFILE_LABELS[fmt]||fmt} ${PRINT_PROFILE_LABELS[ori]||ori} · ${kind}`;
-}
 function updateProfileStatus() {
   // r286: 좌측 출력종류 패널의 프로필 설명 문구는 표시하지 않습니다.
   enforcePaperAvailability();
@@ -177,7 +171,6 @@ let printTemplateMapSource = null;
 let printTemplateMapCache = new Map();
 
 function gradeNo(value="") { const m = clean(value).match(/\d{1,2}/); return m ? Number(m[0]) : 0; }
-function sectionName(value="") { return clean(value).replace(/^\d+\s*/, "").replace(/^학년\s*/, "") || clean(value); }
 function classLabel(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}${n}` : clean(cls.label || cls.name || cls.id); }
 function classKey(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}:${n}` : clean(cls.key || cls.id); }
 function normalizeClassKey(v="") { const raw = clean(v).replace(/학년/g,"").replace(/\s+/g,""); const m = raw.match(/^(\d{1,2})[:\-]?([A-Z가-힣])$/i); return m ? `${Number(m[1])}:${m[2].toUpperCase()}` : raw; }
@@ -211,7 +204,6 @@ function periodLabels() { const cfg = appState.timetable?.config || {}; const ra
 function entryCardIds(e) { return unique([...(e?.ttcardIds||[]), e?.ttcardId]); }
 function cardClassKeys(c) { return unique([...(c?.classKeys||[]), ...(c?.classLabels||[]).map(normalizeClassKey)]).map(normalizeClassKey); }
 function entryClassKeys(e) { const cm = cardMap(); const keys = unique([...(e?.audienceClassKeys||[]).map(normalizeClassKey), ...entryCardIds(e).flatMap(id => cardClassKeys(cm.get(id)))]); return keys; }
-function classKeysForItem(item) { return unique([...(item.card?.classKeys||[]).map(normalizeClassKey), ...(item.card?.classLabels||[]).map(normalizeClassKey), ...(item.entry?.audienceClassKeys||[]).map(normalizeClassKey)]); }
 function entryMatchesClass(e, cls) { return entryClassKeys(e).includes(cls.key); }
 function cardTeachers(c, e={}) { return semesterCardValues(c,e).teachers; }
 function entryTeachers(e) { const cm=cardMap(); const ids=entryCardIds(e); if (ids.length) return unique(ids.flatMap(id => cardTeachers(cm.get(id), e))); return semesterEntryValues(e).teachers; }
@@ -281,7 +273,6 @@ function ensureStudentSingleClassScope() {
   if (!firstChecked) { firstChecked = boxes[0]; firstChecked.checked = true; }
   boxes.forEach(el=>{ if (el !== firstChecked) el.checked = false; });
 }
-function selectedClassKeys() { return selectedScopeKeys(); }
 function classAllowedByScope(cls) { if (targetType() === "student") { const key = selectedScopeKeys()[0] || classes()[0]?.key || ""; return cls.key === key; } const mode = currentScopeMode(); if (mode === "middle") return cls.gradeNo >= 7 && cls.gradeNo <= 9; if (mode === "high") return cls.gradeNo >= 10 && cls.gradeNo <= 12; if (mode === "custom") return selectedScopeKeys().includes(cls.key); return true; }
 function teacherAllowedByScope(name) { const mode=currentScopeMode(); return mode !== "custom" || selectedScopeKeys().includes(clean(name)); }
 function roomAllowedByScope(id) { const mode=currentScopeMode(); return mode !== "custom" || selectedScopeKeys().includes(clean(id)); }
@@ -572,7 +563,7 @@ function exportDesignerSettings() {
     syncActiveStyleDraft();
     const payload = { ...currentDesignerSettingsPayload(profileKey()), mode: LOCAL_DEV_MODE ? "local-dev" : "online" };
     const stamp = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-    downloadTextFile(`timetable-print-designer-settings_${stamp}_r361.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
+    downloadTextFile(`timetable-print-designer-settings_${stamp}_r363.json`, JSON.stringify(payload, null, 2), "application/json;charset=utf-8");
   } catch (e) {
     console.error("출력 디자이너 설정 내보내기 실패", e);
     alert("출력 디자이너 설정 내보내기에 실패했습니다: " + (e?.message || e));
@@ -636,7 +627,6 @@ async function saveDesignerSettingsToFirestore(store, activeProfile, activeSetti
 }
 function saveSettings() { if (applying) return; normalizeLocalDesignerStorage(); syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, semester:s.semester, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
 function showSaved() { markCardApplied(); }
-function showChanged() { markDirty(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
   applying=true;
   const s={...defaultSettings(),...settings};
@@ -685,7 +675,6 @@ function buildFieldRows() {
   }).join("");
 }
 function buildScopeUi() { const type=targetType(); const scopeBox=$("scopeOptions"); const listBox=$("classChips"); if(!scopeBox || !listBox) return; if (type === "teacher") { scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="all" checked><span>전체 교사</span></label><label class="check"><input type="radio" name="scope" value="custom"><span>교사 선택</span></label>`; const names=unique(entries().flatMap(entryTeachers)).sort((a,b)=>a.localeCompare(b,"ko")); listBox.innerHTML = names.map(n=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(n)}"><span>${esc(n)}</span></label>`).join(""); $("scopeHint").textContent = "교사별 출력은 선택한 교사의 본인 과목·본인 교실만 표시합니다."; updateScopeChipEnabled(); return; } if (type === "room") { scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="all" checked><span>전체 교실</span></label><label class="check"><input type="radio" name="scope" value="custom"><span>교실 선택</span></label>`; listBox.innerHTML = rooms().map(r=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(r.id)}"><span>${esc(r.label)}</span></label>`).join(""); $("scopeHint").textContent = "교실별 출력은 선택한 교실에 배정된 대표 수업만 표시합니다."; updateScopeChipEnabled(); return; } if (type === "student") { scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="custom" checked><span>학급 1개 선택</span></label>`; listBox.innerHTML = classes().map(c=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(c.key)}"><span>${esc(c.label)}</span></label>`).join(""); $("scopeHint").textContent = "학생 개인표는 프리징 방지를 위해 한 번에 1개 학급 학생만 출력합니다."; ensureStudentSingleClassScope(); updateScopeChipEnabled(); return; } scopeBox.innerHTML = `<label class="check"><input type="radio" name="scope" value="all" checked><span>전체</span></label><label class="check"><input type="radio" name="scope" value="middle"><span>중등 7–9</span></label><label class="check"><input type="radio" name="scope" value="high"><span>고등 10–12</span></label><label class="check"><input type="radio" name="scope" value="custom"><span>학급 선택</span></label>`; listBox.innerHTML = classes().map(c=>`<label class="chip"><input type="checkbox" data-scope-key="${esc(c.key)}"><span>${esc(c.label)}</span></label>`).join(""); $("scopeHint").textContent = "학급 출력은 선택 범위 안의 학급만 출력합니다."; updateScopeChipEnabled(); }
-function buildClassChips() { buildScopeUi(); }
 function subjectGradeNoFromText(value="") {
   const raw = clean(value);
   let m = raw.match(/^(?:G|Grade)?\s*(7|8|9|10|11|12)(?:학년)?\s*[-_.:·⋅ ]*/i);
@@ -819,7 +808,6 @@ function entryMatchesStudent(e, st, cls) {
 function buildEntities() { const type=targetType(); const visibleEntries=visibleEntriesForScope(); if (type === "class") return classes().filter(classAllowedByScope).map(c=>({type,key:c.key,label:c.label,sub:`${c.gradeNo}학년`, match:e=>entryMatchesClass(e,c)})).filter(ent=>visibleEntries.some(ent.match)); if (type === "student") return students().filter(ent=>visibleEntries.some(ent.match)); if (type === "teacher") { const names=unique(entries().flatMap(entryTeachers)).filter(teacherAllowedByScope).sort((a,b)=>a.localeCompare(b,"ko")); return names.map(n=>({type,key:n,label:n,sub:"교사",match:e=>entryMatchesTeacher(e,{key:n})})).filter(ent=>entries().some(ent.match)); } const rm=rooms().filter(r=>roomAllowedByScope(r.id)); return rm.map(r=>({type,key:r.id,label:r.label,sub:r.type||"교실",room:r,match:e=>entryMatchesRoom(e,r)})).filter(ent=>entries().some(ent.match)); }
 function renderEntityList() { entitiesCache = buildEntities(); if ($("scopeHint")) $("scopeHint").textContent = `${entitiesCache.length}개 대상이 출력됩니다.`; }
 function selectedEntities() { entitiesCache = buildEntities(); return entitiesCache; }
-function fieldSettings() { return collectSettings().fields; }
 function itemFromCard(e,c,periodLabel) { const resolved=semesterCardValues(c,e); return { entry:e, card:c, subject:cardTitle(c,e), english:cardEnglish(c,e), teacher:clean(resolved.teacher || e?.teacherName), room:itemRoomForCard(e,c), class:cardClasses(c,e), period:periodLabel, group:clean(c?.group), track:clean(c?.track), rawSubject:clean(c?.subject), rawLabel:clean(c?.label) }; }
 function inferEntrySubject(e, cardsForEntry=[]) {
   const direct = clean(e?.groupName || e?.subject || e?.title || e?.name || e?.label || e?.displayName || e?.templateName || e?.subjectName || e?.courseName || e?.lessonName);
@@ -1051,7 +1039,6 @@ function headerRightText(defaultText="") { const v=clean($("headerRight")?.value
 function titleRowHtml(title, left="", right="") { return `<div class="print-title-row"><div class="title-note title-note-left">${esc(left)}</div><h3>${esc(title)}</h3><div class="title-note title-note-right">${esc(right)}</div></div>`; }
 function pageForEntity(ent) { const title=`${ent.label} ${selectedSemesterLabel()} 시간표`; const left=headerLeftText(ent.sub||""); const right=headerRightText(todayLabel()); return `<section class="preview-page ${paperClass()} ${collectSettings().fontScale}">${titleRowHtml(title,left,right)}${tableForEntity(ent)}</section>`; }
 function overviewTitle() { const base=targetType()==="class"?"학급 전체표":targetType()==="teacher"?"교사 전체표":targetType()==="room"?"교실 전체표":"개인 시간표"; return `${selectedSemesterLabel()} ${base}`; }
-function chunkList(list, size) { const out=[]; for(let i=0;i<list.length;i+=size) out.push(list.slice(i,i+size)); return out; }
 function balancedChunkList(list, maxSize) {
   const arr = Array.isArray(list) ? list : [];
   const max = Math.max(1, Number(maxSize) || 1);
@@ -1075,14 +1062,6 @@ function overviewRowMetrics(rowCount=1) {
   const rowPx = Math.max(38, Math.min(86, printableHpx / n));
   return { rowMm: rowMm.toFixed(2), rowPx: rowPx.toFixed(1) };
 }
-function overviewSubject(item, settings) {
-  const special = specialLabelForItem(item, settings.specialSubjects || []);
-  if (special) return special;
-  return clean(item.subject || item.card?.subject || item.entry?.subject || "");
-}
-function overviewEnglish(item) { return clean(item.english || item.card?.subjectEn || item.entry?.subjectEn || ""); }
-function overviewTeacher(item) { return clean(item.teacher || item.card?.teacherName || item.entry?.teacherName || ""); }
-function overviewRoom(item) { return clean(item.room || ""); }
 function overviewCellHtml(cellItems) {
   if (!cellItems.length) return `<div class="empty"></div>`;
   const settings=collectSettings();
@@ -1151,7 +1130,6 @@ function overviewDayPages(ents) {
   });
   return pages;
 }
-function classOverviewPages(ents) { return overviewFullPages(ents); }
 function overviewPages(ents) { return overviewFullPages(ents); }
 let zoomFrame = 0;
 let zoomClearTimer = 0;
@@ -1384,9 +1362,6 @@ function officeSettingsForModel(model=null) {
 function officeCardsForLayout(cards=[]) {
   return (cards || []).filter(c => c && c.lines && c.lines.length);
 }
-function officeCardSplitCount(cards=[]) {
-  return Math.max(1, Math.min(4, officeCardsForLayout(cards).length || 1));
-}
 function officeSplitDirectionForCount(count=1, model=null) {
   if (count <= 1) return "single";
   const dirs = normalizeSplitDirections(officeSettingsForModel(model).splitDirections || {});
@@ -1515,14 +1490,6 @@ function officeFieldScaleForPlacement(fieldKey="subject", cardBand={}, place={},
   const min = fullRow ? 0.58 : 0.50;
   return Math.max(min, Math.min(1, Math.min(widthScale, heightScale) * pageScale));
 }
-function officeFieldPosition(fieldCfg={}, fieldDef={}) {
-  return (fieldCfg && fieldCfg.pos) || fieldDef?.pos || "mc";
-}
-function officeCellMatrixIndex(pos="mc") {
-  const map = { tl:[0,0], tc:[0,1], tr:[0,2], ml:[1,0], mc:[1,1], mr:[1,2], bl:[2,0], bc:[2,1], br:[2,2] };
-  return map[pos] || map.mc;
-}
-
 function officeTextFrom(el) { return officeProtectText(el?.innerText || el?.textContent || ""); }
 function cssPxFromEl(el, fallback=0) {
   if (!el) return fallback;
@@ -1594,9 +1561,6 @@ function officeCellText(cell, kind="excel", model=null) {
   const cards = Array.isArray(cell.cards) ? cell.cards : [];
   if (!cards.length) return cell.text || "";
   return cards.map(c => officeLinesForCard(c, cards.length, kind, model).join("\n")).join("\n");
-}
-function officeLineCount(cell, kind="excel", model=null) {
-  return Math.max(1, officeCellText(cell, kind, model).split(/\n/).filter(Boolean).length);
 }
 function tableToGrid(table) {
   const grid=[]; const merges=[]; const occupied=[];
@@ -2237,9 +2201,6 @@ function officeTextFlatCell(text="", header=false, colspan=1, meta={}) {
 }
 function officeSpanSkipCell() {
   return { text:"", cards:[], header:false, colspan:1, rowspan:1, flat:true, skip:true };
-}
-function officeVSpanCell(colspan=1) {
-  return officeTextFlatCell("", false, colspan, { vmerge:"continue" });
 }
 function officeBandStart(index=0, total=1, bands=1) {
   return Math.max(0, Math.min(total, Math.floor((Number(index)||0) * total / Math.max(1, bands))));

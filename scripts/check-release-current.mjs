@@ -44,6 +44,7 @@ for (const rel of [
   "js/timetable-print-word.js",
   "js/timetable-print-excel.js",
   "js/timetable-print-pdf.js",
+  "js/timetable-print-word-layout.js",
   "timetable-print.html",
   "timetable.html",
 ]) {
@@ -63,6 +64,8 @@ const revisionModule = read("js/timetable-save-revision.js");
 const revisionUi = read("js/timetable-revision-history.js");
 const constraintModel = read("js/timetable-constraint-model.js");
 const revisionCss = read("timetable-revision-history.css");
+const printHtml = read("timetable-print.html");
+const printApp = read("js/timetable-print-app.js");
 
 assert.match(state, /commitWriteOpsAtomic\(ops, `timetable revision \$\{revisionId\}`\)/);
 assert.match(state, /assertAtomicTimetableRevisionCapacity/);
@@ -87,6 +90,10 @@ assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-se
 assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
 assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-15-timetable-loading-hotfix-r358/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
+assert.match(version, /2026-07-15-operational-print-regression-r363/);
+assert.match(printHtml, /<span class="badge">r363<\/span>/);
+assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-operational-print-regression-r363/);
+assert.match(printApp, /const VERSION = "2026-07-15-operational-print-regression-r363"/);
 
 const importMapMatch = html.match(/<script type="importmap">\s*([\s\S]*?)\s*<\/script>/);
 assert.ok(importMapMatch, "timetable import map missing");
@@ -116,6 +123,8 @@ const regressionTests = [
   "test-timetable-print-module-boundaries.mjs",
   "test-timetable-print-semester.mjs",
   "test-timetable-print-export-modules.mjs",
+  "test-timetable-print-word-layout.mjs",
+  "test-timetable-print-operational-data.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });
