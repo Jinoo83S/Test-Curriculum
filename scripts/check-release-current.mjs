@@ -36,6 +36,7 @@ for (const rel of [
   "js/timetable-constraint-model.js",
   "js/timetable-preflight-diagnostics.js",
   "js/timetable-solve-result-status.js",
+  "js/timetable-cpsat-run-history.js",
   "js/timetable-autoassign.js",
   "js/cp-sat-webapp-import.js",
   "js/timetable.js",
@@ -69,6 +70,7 @@ const revisionUi = read("js/timetable-revision-history.js");
 const constraintModel = read("js/timetable-constraint-model.js");
 const preflightDiagnostics = read("js/timetable-preflight-diagnostics.js");
 const solveResultStatus = read("js/timetable-solve-result-status.js");
+const cpSatRunHistory = read("js/timetable-cpsat-run-history.js");
 const autoAssign = read("js/timetable-autoassign.js");
 const cpSatBridge = read("js/cp-sat-webapp-import.js");
 const revisionCss = read("timetable-revision-history.css");
@@ -92,6 +94,9 @@ assert.match(preflightDiagnostics, /r367-timetable-preflight-v2/);
 assert.match(solveResultStatus, /r367-cpsat-result-audit-v1/);
 assert.match(solveResultStatus, /complete_success/);
 assert.match(solveResultStatus, /diagnostic_mismatch/);
+assert.match(cpSatRunHistory, /CP_SAT_RUN_HISTORY_LIMIT = 10/);
+assert.match(cpSatRunHistory, /estimateCpSatSaveOperations/);
+assert.match(cpSatRunHistory, /extractCpSatServerTiming/);
 assert.match(preflightDiagnostics, /card-zero-candidate/);
 assert.match(preflightDiagnostics, /protected-teacher-conflict/);
 assert.match(autoAssign, /buildExactSolverCandidatePrecheck/);
@@ -107,19 +112,22 @@ assert.match(cpSatBridge, /최종 판정/);
 assert.match(cpSatBridge, /입력 카드/);
 assert.match(cpSatBridge, /reconcileCpSatEntryIds/);
 assert.match(cpSatBridge, /quickComplete/);
-assert.match(cpSatBridge, /HIS_CP_SAT_Local_Server_r344\.zip/);
+assert.match(cpSatBridge, /HIS_CP_SAT_Local_Server_r345\.zip/);
+assert.match(cpSatBridge, /최근 CP-SAT 실행 기록/);
+assert.match(cpSatBridge, /clientSaveEstimate/);
+assert.match(cpSatBridge, /clientApplyTiming/);
 assert.doesNotMatch(cpSatBridge, /동일 상태를 다시 주입하고 2차 저장/);
 assert.match(timetable, /import \{ CLASS_UNAVAILABLE_PREFIX \} from "\.\/timetable-constraint-model\.js\?v=2026-07-15-timetable-loading-hotfix-r358"/);
 assert.match(revisionCss, /\.tt-revision-panel/);
 assert.doesNotMatch(html, /\.tt-revision-panel\s*\{/);
 assert.match(timetable, /ttFirestoreRevisionHistory/);
 assert.match(timetable, /createTimetableRevisionHistoryUi/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-16-cpsat-save-fast-r368"/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-16-cpsat-run-analysis-r369"/);
 assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355"/);
 assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
 assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-15-timetable-loading-hotfix-r358/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-16-cpsat-save-fast-r368/);
+assert.match(version, /2026-07-16-cpsat-run-analysis-r369/);
 assert.match(printHtml, /<span class="badge">r365<\/span>/);
 assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
@@ -145,7 +153,7 @@ assert.equal(
 );
 assert.equal(
   importMap.imports["./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/cp-sat-webapp-import.js?v=2026-07-16-cpsat-save-fast-r368"
+  "./js/cp-sat-webapp-import.js?v=2026-07-16-cpsat-run-analysis-r369"
 );
 
 const regressionTests = [
@@ -167,6 +175,7 @@ const regressionTests = [
   "test-timetable-autoassign-room-sources.mjs",
   "test-timetable-solve-result-status.mjs",
   "test-cpsat-stable-save.mjs",
+  "test-cpsat-run-history.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });

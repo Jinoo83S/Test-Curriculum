@@ -1,6 +1,7 @@
 import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-room-availability-separation-r355";
 import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
 import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=2026-07-16-cpsat-result-truth-r367";
+import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-16-cpsat-run-analysis-r369";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -14,14 +15,15 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r344/HIS_CP_SAT_Local_Server_r344.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r368";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r368 stable-save + fast-solve bridge";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r345/HIS_CP_SAT_Local_Server_r345.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r369";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r369 execution-analysis bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
 const deepClone = v => JSON.parse(JSON.stringify(v ?? null));
 const nowIso = () => { try { return new Date().toISOString(); } catch (_) { return String(Date.now()); } };
+const perfNow = () => { try { return globalThis.performance?.now?.() ?? Date.now(); } catch (_) { return Date.now(); } };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const unique = list => [...new Set(asArray(list).map(cleanLocal).filter(Boolean))];
 
@@ -1130,6 +1132,8 @@ function ensureStyle() {
     .tt-cpsat-api-progress{height:10px;background:#e2e8f0;border-radius:999px;overflow:hidden;margin-top:8px}.tt-cpsat-api-progress span{display:block;height:100%;width:0%;background:#2563eb;transition:width .25s}
     .tt-cpsat-api-checkline{display:flex;gap:8px;align-items:center;margin-top:8px;color:#334155;font-size:12px}.tt-cpsat-api-checkline input{width:auto;height:auto}
     .tt-cpsat-api-download-note{margin-top:10px;padding:10px 12px;border:1px dashed #94a3b8;border-radius:10px;background:#f8fafc;color:#334155;font-size:12px;line-height:1.55}.tt-cpsat-api-download-note code{font-weight:800;color:#0f172a}
+    .tt-cpsat-history{margin-top:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;overflow:hidden}.tt-cpsat-history>summary{cursor:pointer;padding:10px 12px;background:#f8fafc;font-size:12px;font-weight:900;color:#334155}.tt-cpsat-history-tools{display:flex;justify-content:flex-end;padding:8px 10px;border-top:1px solid #e2e8f0}.tt-cpsat-history-tools button{padding:5px 9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:11px;font-weight:800;cursor:pointer}
+    .tt-cpsat-history-list{display:grid;gap:8px;padding:10px}.tt-cpsat-history-empty{padding:16px;text-align:center;color:#64748b;font-size:12px}.tt-cpsat-history-row{border:1px solid #e2e8f0;border-radius:9px;padding:9px;background:#fff}.tt-cpsat-history-row.ok{border-left:4px solid #16a34a}.tt-cpsat-history-row.warn{border-left:4px solid #f59e0b}.tt-cpsat-history-row.bad{border-left:4px solid #dc2626}.tt-cpsat-history-title{display:flex;justify-content:space-between;gap:12px;font-size:12px;font-weight:900;color:#0f172a}.tt-cpsat-history-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tt-cpsat-history-meta span{background:#f1f5f9;border-radius:999px;padding:3px 7px;font-size:10px;color:#475569}.tt-cpsat-history-reason{margin-top:6px;font-size:11px;line-height:1.45;color:#64748b}
   `;
   document.head.appendChild(style);
 }
@@ -1264,6 +1268,28 @@ export function setupCpSatWebappImport(ctx = {}) {
   function resultMayBeApplied(apiResult = {}) {
     return !!resultApplyPolicy(apiResult).canApply;
   }
+  function saveEstimateForResult(apiResult = {}) {
+    const currentEntries = deepClone(asArray(entries?.()));
+    const normalized = normalizeEntryList(apiResult?.entries || []);
+    if (!normalized.length) return null;
+    const reconciliation = reconcileCpSatEntryIds(normalized, currentEntries);
+    const estimate = estimateCpSatSaveOperations({
+      currentEntries,
+      nextEntries: reconciliation.entries,
+    });
+    return {
+      ...estimate,
+      reused: reconciliation.reused,
+      newIds: reconciliation.created,
+    };
+  }
+
+  function runStatusClass(status = "", applied = false, saved = false) {
+    const text = cleanLocal(status).toLowerCase();
+    if (/fail|error|block|실패|차단/.test(text)) return "bad";
+    if (/partial|warn|부분|불일치/.test(text) || (applied && !saved)) return "warn";
+    return "ok";
+  }
   function makeBackupVersion(name = "CP-SAT API 적용 전 백업") {
     const domain = ttDomain?.();
     if (!domain) return null;
@@ -1318,6 +1344,9 @@ export function setupCpSatWebappImport(ctx = {}) {
   }
 
   async function applySolvedEntries(rawEntries, apiResult, validateBase = "") {
+    const applyStartedPerf = perfNow();
+    let applyValidationMs = 0;
+    let applySaveMs = 0;
     if (!canEdit?.()) { alert("편집 권한이 없습니다. 로그인/권한을 확인하세요."); return false; }
     const domain = ttDomain?.();
     if (!domain) { alert("시간표 데이터가 아직 로드되지 않았습니다."); return false; }
@@ -1326,6 +1355,11 @@ export function setupCpSatWebappImport(ctx = {}) {
     const currentEntriesBeforeApply = deepClone(asArray(entries?.()));
     const idReconciliation = reconcileCpSatEntryIds(normalizedEntries, currentEntriesBeforeApply);
     const nextEntries = idReconciliation.entries;
+    const saveEstimate = estimateCpSatSaveOperations({ currentEntries: currentEntriesBeforeApply, nextEntries });
+    if (apiResult && typeof apiResult === "object") {
+      apiResult.clientSaveEstimate = { ...saveEstimate, reused: idReconciliation.reused, newIds: idReconciliation.created };
+      apiResult.clientEntryIdReconciliation = { reused: idReconciliation.reused, created: idReconciliation.created, total: idReconciliation.total };
+    }
 
     const assignmentCount = nextEntries.filter(e => e.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
     if (assignmentCount <= 0) {
@@ -1387,6 +1421,7 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     let currentValidationBody = null;
     if (validateBase) {
+      const validationStartedPerf = perfNow();
       try {
         currentValidationBody = await validateCurrentEntriesViaApi(validateBase, nextEntries, 45000);
         nextMeta = {
@@ -1412,6 +1447,8 @@ export function setupCpSatWebappImport(ctx = {}) {
           validationSummary: validation.summary || `현재 entries 재검증 실패: ${err?.message || err}`,
           metaSyncSource: "apply-after-cp-sat-validate-failed",
         };
+      } finally {
+        applyValidationMs = Math.max(0, perfNow() - validationStartedPerf);
       }
     }
 
@@ -1427,6 +1464,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       meta: deepClone(nextMeta),
     };
 
+    const saveStartedPerf = perfNow();
     try {
       await persistCpSatTimetable({
         domain,
@@ -1439,6 +1477,16 @@ export function setupCpSatWebappImport(ctx = {}) {
         renderAll,
       });
     } catch (err) {
+      applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
+      if (apiResult && typeof apiResult === "object") {
+        apiResult.clientApplyTiming = {
+          applyValidationMs,
+          applySaveMs,
+          applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
+          saved: false,
+          error: cleanLocal(err?.message || err),
+        };
+      }
       console.error("CP-SAT 저장 실패", err);
       syncCpSatTimetableState(domain, appState, rollbackState.entries, rollbackState.autoAssignMeta, null);
       domain.savedSchedules = deepClone(rollbackState.savedSchedules);
@@ -1458,10 +1506,19 @@ ${err?.message || err}
       return false;
     }
 
+    applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
+    if (apiResult && typeof apiResult === "object") {
+      apiResult.clientApplyTiming = {
+        applyValidationMs,
+        applySaveMs,
+        applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
+        saved: true,
+      };
+    }
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r368\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r369\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1506,6 +1563,11 @@ ${err?.message || err}
           <div class="tt-cpsat-api-progress"><span id="ttCpSatApiProgress"></span></div>
           <div id="ttCpSatApiSummary" class="tt-cpsat-api-box info">아직 결과가 없습니다.</div>
           <pre id="ttCpSatApiDetails" class="tt-cpsat-api-pre"></pre>
+          <details class="tt-cpsat-history" open>
+            <summary>최근 CP-SAT 실행 기록 · 이 PC에 최대 10개만 보관</summary>
+            <div id="ttCpSatRunHistory" class="tt-cpsat-history-list"></div>
+            <div class="tt-cpsat-history-tools"><button type="button" data-action="clear-run-history">최근 기록 지우기</button></div>
+          </details>
         </div>
       </div>`;
     document.body.appendChild(overlay);
@@ -1517,9 +1579,19 @@ ${err?.message || err}
     const progressEl = $("#ttCpSatApiProgress");
     const applyBtn = $('[data-action="apply"]');
     const resultBtn = $('[data-action="download-result"]');
+    const runHistoryEl = $("#ttCpSatRunHistory");
+    let activeRunRecord = null;
     try { $("#ttCpSatQuickComplete").checked = localStorage.getItem(QUICK_COMPLETE_KEY) !== "0"; } catch (_) {}
     $("#ttCpSatQuickComplete")?.addEventListener("change", () => {
       try { localStorage.setItem(QUICK_COMPLETE_KEY, $("#ttCpSatQuickComplete").checked ? "1" : "0"); } catch (_) {}
+    });
+
+    renderRunHistory();
+    $('[data-action="clear-run-history"]')?.addEventListener("click", () => {
+      if (!confirm("이 PC에 저장된 최근 CP-SAT 실행 기록을 모두 지울까요? 시간표 데이터와 서버 결과에는 영향이 없습니다.")) return;
+      clearCpSatRunHistory();
+      activeRunRecord = null;
+      renderRunHistory();
     });
 
     function apiBase() {
@@ -1538,6 +1610,56 @@ ${err?.message || err}
         returnFullState: false,
       };
     }
+    function formatHistoryTime(value) {
+      try {
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? cleanLocal(value) : date.toLocaleString("ko-KR", { hour12: false });
+      } catch (_) { return cleanLocal(value); }
+    }
+    function renderRunHistory() {
+      if (!runHistoryEl) return;
+      const history = readCpSatRunHistory();
+      if (!history.length) {
+        runHistoryEl.innerHTML = '<div class="tt-cpsat-history-empty">아직 이 PC에 저장된 실행 기록이 없습니다.</div>';
+        return;
+      }
+      runHistoryEl.innerHTML = history.map(record => {
+        const cls = runStatusClass(record.status || record.title, record.applied, record.saved);
+        const timing = record.timing || {};
+        const server = record.serverTiming || {};
+        const estimate = record.saveEstimate || {};
+        const badges = [
+          record.quickComplete ? "빠른 완전해" : "품질 최적화",
+          timing.clientTotalMs != null ? `브라우저 ${formatCpSatDuration(timing.clientTotalMs)}` : "",
+          server.solveMs != null ? `Solver ${formatCpSatDuration(server.solveMs)}` : "",
+          server.phase1Ms != null ? `1단계 ${formatCpSatDuration(server.phase1Ms)}` : "",
+          server.phase2Ms ? `2단계 ${formatCpSatDuration(server.phase2Ms)}` : "",
+          estimate.dataOps != null ? `저장 ${estimate.dataOps}/${estimate.dataOpLimit || 498}` : "",
+          record.applied ? (record.saved ? "적용·저장 완료" : "적용 후 저장 실패") : "미적용",
+        ].filter(Boolean);
+        return `<div class="tt-cpsat-history-row ${cls}">
+          <div class="tt-cpsat-history-title"><span>${escapeHtml(record.title || record.status || "CP-SAT 실행")}</span><span>${escapeHtml(formatHistoryTime(record.finishedAt || record.startedAt))}</span></div>
+          <div class="tt-cpsat-history-meta">${badges.map(v => `<span>${escapeHtml(v)}</span>`).join("")}</div>
+          ${record.reason || record.error ? `<div class="tt-cpsat-history-reason">${escapeHtml(record.error || record.reason)}</div>` : ""}
+        </div>`;
+      }).join("");
+    }
+    function persistActiveRun(patch = {}) {
+      if (!activeRunRecord && !patch.id) return null;
+      const previous = activeRunRecord || {};
+      activeRunRecord = {
+        ...previous,
+        ...patch,
+        timing: { ...(previous.timing || {}), ...(patch.timing || {}) },
+        serverTiming: { ...(previous.serverTiming || {}), ...(patch.serverTiming || {}) },
+        counts: { ...(previous.counts || {}), ...(patch.counts || {}) },
+        saveEstimate: { ...(previous.saveEstimate || {}), ...(patch.saveEstimate || {}) },
+      };
+      upsertCpSatRunHistory(activeRunRecord);
+      renderRunHistory();
+      return activeRunRecord;
+    }
+
     async function solverState() {
       if (typeof prepareSolverState === "function") await prepareSolverState();
       latestState = makeSolverState(appState, {
@@ -1556,6 +1678,8 @@ ${err?.message || err}
         entries: entriesForAudit,
         clientPreflight,
       });
+      decorated.clientSaveEstimate = saveEstimateForResult(decorated);
+      decorated.clientServerTiming = extractCpSatServerTiming(decorated);
       return decorated;
     }
     function localSolverPreflight() {
@@ -1603,6 +1727,10 @@ ${err?.message || err}
         ? (policy.audit || cpSatTruthAudit(data || {}, normalizedResultEntries, latestState))
         : { title: "실행 전 데이터 점검", reason: validation.summary || "입력 데이터 확인", scope: data?.clientScopeAudit || buildCpSatScopeAudit(latestState || {}) };
       const scope = audit.scope || data?.clientScopeAudit || {};
+      const serverTiming = data?.clientServerTiming || extractCpSatServerTiming(data || {});
+      const clientTiming = data?.clientTiming || {};
+      const applyTiming = data?.clientApplyTiming || {};
+      const saveEstimate = data?.clientSaveEstimate || (hasResultEntries ? saveEstimateForResult(data) : null);
       const rowData = [
         ["상태", data?.status || data?.state || (data?.ok ? "OK" : "확인 필요")],
         ["최종 판정", `${audit.title || "확인 필요"} · ${audit.reason || "-"}`],
@@ -1618,9 +1746,17 @@ ${err?.message || err}
         ["entries", counts.resultEntries ?? counts.entries ?? asArray(data?.entries).length ?? "-"],
         ["occurrences", counts.occurrences ?? "-"],
         ["교실배정 보존", assignCount || "-"],
+        ["서버 버전", data?.version || data?.meta?.apiVersion || "-"],
+        ["브라우저 준비", clientTiming.payloadBuildMs != null || clientTiming.preflightMs != null ? `JSON ${formatCpSatDuration(clientTiming.payloadBuildMs)} · 사전진단 ${formatCpSatDuration(clientTiming.preflightMs)}` : "-"],
+        ["서버 요청·수신", clientTiming.requestStartMs != null || clientTiming.pollingMs != null ? `시작요청 ${formatCpSatDuration(clientTiming.requestStartMs)} · 결과대기 ${formatCpSatDuration(clientTiming.pollingMs)}` : "-"],
+        ["서버 모델·검증", serverTiming.modelBuildMs != null || serverTiming.validationMs != null ? `모델 ${formatCpSatDuration(serverTiming.modelBuildMs)} · 검증 ${formatCpSatDuration(serverTiming.validationMs)}` : "-"],
+        ["Solver 단계", serverTiming.solveMs != null ? `전체 ${formatCpSatDuration(serverTiming.solveMs)} · 1단계 ${formatCpSatDuration(serverTiming.phase1Ms)} · 2단계 ${formatCpSatDuration(serverTiming.phase2Ms)}` : "-"],
+        ["저장 예상", saveEstimate ? `${saveEstimate.dataOps}/${saveEstimate.dataOpLimit || 498}건 · ID 재사용 ${saveEstimate.reused ?? "-"} / 신규 ${saveEstimate.newIds ?? "-"} · ${saveEstimate.withinLimit ? "저장 가능" : "한도 초과"}` : "-"],
+        ["적용·저장 시간", applyTiming.applyTotalMs != null ? `재검증 ${formatCpSatDuration(applyTiming.applyValidationMs)} · Firestore ${formatCpSatDuration(applyTiming.applySaveMs)} · 전체 ${formatCpSatDuration(applyTiming.applyTotalMs)}` : "-"],
         ["학생 객체 전송", `${privacy?.studentObjects ?? 0}명 / 학급학생목록 ${privacy?.classesWithStudents ?? 0}개`],
         ["시간표 학생필드", `카드 ${privacy?.ttcardsWithStudentKeys ?? 0}개 / entries ${privacy?.entriesWithAudienceStudentKeys ?? 0}개`],
-        ["소요 시간", data?.elapsedSeconds != null ? `${data.elapsedSeconds}초` : "-"],
+        ["서버 전체 시간", serverTiming.totalMs != null ? formatCpSatDuration(serverTiming.totalMs) : (data?.elapsedSeconds != null ? `${data.elapsedSeconds}초` : "-")],
+        ["브라우저 전체 시간", clientTiming.clientTotalMs != null ? formatCpSatDuration(clientTiming.clientTotalMs) : "-"],
       ];
       summaryEl.className = `tt-cpsat-api-box ${policy.level || (validation.ok === false || data?.ok === false ? "warn" : "ok")}`;
       summaryEl.innerHTML = tableRows(rowData, escapeHtml);
@@ -1637,11 +1773,11 @@ ${err?.message || err}
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r344.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r345.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r344에 <code>HIS_CP_SAT_Local_Server_r344.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r345에 <code>HIS_CP_SAT_Local_Server_r345.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
 
@@ -1760,35 +1896,80 @@ ${err?.message || err}
     });
     $('[data-action="solve"]')?.addEventListener("click", async () => {
       const solveSuspendToken = typeof suspendAutoSave === "function" ? suspendAutoSave("cp-sat-running") : null;
+      const runStartedPerf = perfNow();
+      const startedAt = nowIso();
+      const runId = `cpsat-run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const clientTiming = {};
+      let jobId = "";
+      let opt = null;
+      activeRunRecord = {
+        id: runId,
+        startedAt,
+        status: "running",
+        title: "CP-SAT 실행 중",
+        quickComplete: true,
+        timing: {},
+      };
+      persistActiveRun(activeRunRecord);
       try {
         latestResult = null;
         setBusy(true);
-        const opt = options();
+        opt = options();
+        persistActiveRun({
+          quickComplete: opt.quickComplete,
+          timeLimitSeconds: opt.timeLimitSeconds,
+          workers: opt.workers,
+        });
+
+        const payloadStartedPerf = perfNow();
         const state = await solverState();
+        clientTiming.payloadBuildMs = Math.max(0, perfNow() - payloadStartedPerf);
         if (isSolverStateEmpty(state)) {
-          setStatus("bad", `<b>CP-SAT를 실행할 데이터가 없습니다.</b><br>${escapeHtml(emptyStateMessage(state))}`, 0);
-          renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
+          const reason = emptyStateMessage(state);
+          clientTiming.clientTotalMs = Math.max(0, perfNow() - runStartedPerf);
+          setStatus("bad", `<b>CP-SAT를 실행할 데이터가 없습니다.</b><br>${escapeHtml(reason)}`, 0);
+          renderApiSummary({ ok: false, clientTiming, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
+          persistActiveRun({ finishedAt: nowIso(), status: "blocked", title: "CP-SAT 실행 차단", reason, timing: clientTiming, counts: countSolverState(state) });
           return;
         }
+
+        const preflightStartedPerf = perfNow();
         const clientPreflight = localSolverPreflight();
+        clientTiming.preflightMs = Math.max(0, perfNow() - preflightStartedPerf);
         if ((clientPreflight.blockingCount || 0) > 0) {
           const blockers = blockingTimetablePreflightIssues(clientPreflight).slice(0, 8);
-          setStatus("bad", `<b>CP-SAT 실행 전 사전진단에서 차단되었습니다.</b><br>${escapeHtml(formatTimetablePreflightSummary(clientPreflight))}<br>${escapeHtml(blockers.map(issue => `${issue.title}: ${issue.detail}`).join(" / "))}`, 0);
+          const reason = blockers.map(issue => `${issue.title}: ${issue.detail}`).join(" / ");
+          clientTiming.clientTotalMs = Math.max(0, perfNow() - runStartedPerf);
+          setStatus("bad", `<b>CP-SAT 실행 전 사전진단에서 차단되었습니다.</b><br>${escapeHtml(formatTimetablePreflightSummary(clientPreflight))}<br>${escapeHtml(reason)}`, 0);
           summaryEl.className = "tt-cpsat-api-box bad";
           summaryEl.innerHTML = tableRows([
             ["상태", "CP-SAT 실행 차단"],
             ["브라우저 사전진단", formatTimetablePreflightSummary(clientPreflight)],
-            ["진단 시간", `${Number(clientPreflight.performance?.totalMs || 0).toFixed(1)}ms`],
+            ["진단 시간", formatCpSatDuration(clientTiming.preflightMs)],
             ["조치", "교사·교실·학급 ID, 가능시간, 고정배치 충돌을 수정하세요."],
           ], escapeHtml);
-          detailsEl.textContent = JSON.stringify({ kind: "client-preflight-blocked", clientPreflight }, null, 2);
+          detailsEl.textContent = JSON.stringify({ kind: "client-preflight-blocked", clientPreflight, clientTiming }, null, 2);
+          persistActiveRun({
+            finishedAt: nowIso(),
+            status: "blocked",
+            title: "사전진단 실행 차단",
+            reason,
+            timing: clientTiming,
+            counts: countSolverState(state),
+          });
           return;
         }
+
         setStatus("warn", `<b>CP-SAT 실행 요청 중</b><br>브라우저 사전진단 ${escapeHtml(formatTimetablePreflightSummary(clientPreflight))} · 제한 ${opt.timeLimitSeconds}초`, 10);
-        const start = await postJson(`${apiBase()}/solve/start`, { state, ...opt }, 30000);
-        const jobId = start?.jobId;
+        const requestStartedPerf = perfNow();
+        const startResponse = await postJson(`${apiBase()}/solve/start`, { state, ...opt }, 30000);
+        clientTiming.requestStartMs = Math.max(0, perfNow() - requestStartedPerf);
+        jobId = startResponse?.jobId;
         if (!jobId) throw new Error("jobId가 반환되지 않았습니다.");
+        persistActiveRun({ jobId, timing: clientTiming });
         setStatus("warn", `<b>CP-SAT 작업 시작됨</b><br>jobId: ${escapeHtml(jobId)}<br>서버가 새 배치를 계산 중입니다.`, 14);
+
+        const pollingStartedPerf = perfNow();
         let tick = 0;
         while (true) {
           await sleep(1000);
@@ -1796,9 +1977,18 @@ ${err?.message || err}
           const p = Math.min(92, 15 + Math.round((tick / Math.max(1, opt.timeLimitSeconds)) * 75));
           const job = await getJson(`${apiBase()}/solve/status/${encodeURIComponent(jobId)}`, 15000);
           setStatus("warn", `<b>${escapeHtml(solvePhaseLabel(job))}</b> · ${escapeHtml(job.message || job.state || "running")}<br>jobId: ${escapeHtml(jobId)}`, p);
-          detailsEl.textContent = JSON.stringify({ jobId, state: job.state, phase: job.phase, message: job.message }, null, 2);
+          detailsEl.textContent = JSON.stringify({ jobId, state: job.state, phase: job.phase, message: job.message, elapsed: formatCpSatDuration(perfNow() - pollingStartedPerf) }, null, 2);
+
           if (job.state === "done") {
+            clientTiming.pollingMs = Math.max(0, perfNow() - pollingStartedPerf);
+            const auditStartedPerf = perfNow();
             latestResult = decorateSolverResult(job.result || {}, clientPreflight);
+            clientTiming.resultAuditMs = Math.max(0, perfNow() - auditStartedPerf);
+            clientTiming.clientTotalMs = Math.max(0, perfNow() - runStartedPerf);
+            latestResult.clientTiming = { ...clientTiming };
+            latestResult.clientRunId = runId;
+            latestResult.clientJobId = jobId;
+
             const policy = resultApplyPolicy(latestResult);
             const issues = issueLines(latestResult, 4);
             const issueHtml = issues.length ? `<br><span style="font-size:11px;color:#64748b">${escapeHtml(issues.join(" / "))}</span>` : "";
@@ -1811,11 +2001,34 @@ ${err?.message || err}
             applyBtn.textContent = "4. 결과 적용";
             applyBtn.disabled = !policy.canApply;
             resultBtn.disabled = false;
+            persistActiveRun({
+              finishedAt: nowIso(),
+              status: policy.canApply ? "complete" : "partial",
+              title: truth.title || latestResult.status || "CP-SAT 완료",
+              reason: truth.reason || latestResult?.validation?.summary || policy.reason,
+              jobId,
+              serverVersion: latestResult.version || latestResult?.meta?.apiVersion || "",
+              quickComplete: opt.quickComplete,
+              timeLimitSeconds: opt.timeLimitSeconds,
+              workers: opt.workers,
+              timing: clientTiming,
+              serverTiming: latestResult.clientServerTiming || extractCpSatServerTiming(latestResult),
+              counts: latestResult.counts || {},
+              saveEstimate: latestResult.clientSaveEstimate || {},
+            });
             break;
           }
+
           if (["failed", "error"].includes(String(job.state))) {
+            clientTiming.pollingMs = Math.max(0, perfNow() - pollingStartedPerf);
             if (job.result && asArray(job.result.entries).length) {
+              const auditStartedPerf = perfNow();
               latestResult = decorateSolverResult(job.result || {}, clientPreflight);
+              clientTiming.resultAuditMs = Math.max(0, perfNow() - auditStartedPerf);
+              clientTiming.clientTotalMs = Math.max(0, perfNow() - runStartedPerf);
+              latestResult.clientTiming = { ...clientTiming };
+              latestResult.clientRunId = runId;
+              latestResult.clientJobId = jobId;
               const policy = resultApplyPolicy(latestResult);
               const truth = policy.audit || latestResult.clientResultAudit || {};
               setStatus(policy.level || "warn", `<b>${escapeHtml(truth.title || "CP-SAT 부분 성공")}</b><br>${escapeHtml(truth.reason || latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
@@ -1823,13 +2036,38 @@ ${err?.message || err}
               applyBtn.textContent = "4. 결과 적용";
               applyBtn.disabled = !policy.canApply;
               resultBtn.disabled = false;
+              persistActiveRun({
+                finishedAt: nowIso(),
+                status: policy.canApply ? "partial" : "failed",
+                title: truth.title || "CP-SAT 부분 성공",
+                reason: truth.reason || latestResult?.validation?.summary || job.message || policy.reason,
+                jobId,
+                serverVersion: latestResult.version || latestResult?.meta?.apiVersion || "",
+                timing: clientTiming,
+                serverTiming: latestResult.clientServerTiming || extractCpSatServerTiming(latestResult),
+                counts: latestResult.counts || {},
+                saveEstimate: latestResult.clientSaveEstimate || {},
+              });
               break;
             }
             throw new Error(job.message ? `${job.message} (서버가 적용 가능한 entries를 반환하지 않았습니다.)` : "CP-SAT 실행 실패: 서버가 적용 가능한 entries를 반환하지 않았습니다.");
           }
         }
       } catch (err) {
+        clientTiming.clientTotalMs = Math.max(0, perfNow() - runStartedPerf);
         setStatus("bad", `<b>CP-SAT 실행 실패</b><br>${escapeHtml(err?.message || err)}`, 0);
+        persistActiveRun({
+          finishedAt: nowIso(),
+          status: "failed",
+          title: "CP-SAT 실행 실패",
+          reason: cleanLocal(err?.message || err),
+          error: cleanLocal(err?.message || err),
+          jobId,
+          timing: clientTiming,
+          quickComplete: opt?.quickComplete !== false,
+          timeLimitSeconds: opt?.timeLimitSeconds || 0,
+          workers: opt?.workers || 0,
+        });
       } finally {
         if (solveSuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(solveSuspendToken, { flush: false });
         setBusy(false);
@@ -1844,11 +2082,55 @@ ${err?.message || err}
       }
       const assignCount = asArray(latestResult.entries).filter(e => e?.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
       const prefix = "검증을 통과한 CP-SAT 결과를 현재 시간표에 적용할까요?";
-      const warning = "";
-      const msg = `${prefix}\n\nentries: ${latestResult.entries.length}\n교실 배정 포함 entry: ${assignCount}\n검증: ${latestResult.validation?.summary || "-"}${warning}\n현재 시간표는 배치 보관에 자동 백업됩니다.`;
+      const saveEstimate = latestResult.clientSaveEstimate || saveEstimateForResult(latestResult);
+      const saveLine = saveEstimate
+        ? `예상 Firestore 변경: ${saveEstimate.dataOps}/${saveEstimate.dataOpLimit || 498}건 (${saveEstimate.withinLimit ? "저장 가능" : "한도 초과"})\n문서 ID: 재사용 ${saveEstimate.reused ?? "-"} / 신규 ${saveEstimate.newIds ?? "-"}`
+        : "예상 Firestore 변경: 계산되지 않음";
+      const msg = `${prefix}\n\nentries: ${latestResult.entries.length}\n교실 배정 포함 entry: ${assignCount}\n${saveLine}\n검증: ${latestResult.validation?.summary || "-"}\n현재 시간표는 배치 보관에 자동 백업됩니다.`;
       if (!confirm(msg)) return;
-      try { if (await applySolvedEntries(latestResult.entries, latestResult, apiBase())) overlay.remove(); }
-      catch (err) { alert(`적용 실패: ${err?.message || err}`); }
+      try {
+        const applied = await applySolvedEntries(latestResult.entries, latestResult, apiBase());
+        const applyTiming = latestResult.clientApplyTiming || {};
+        if (applied) {
+          persistActiveRun({
+            id: latestResult.clientRunId || activeRunRecord?.id,
+            appliedAt: nowIso(),
+            applied: true,
+            saved: true,
+            status: "applied",
+            title: "CP-SAT 적용·저장 완료",
+            reason: latestResult.validation?.summary || "검증 및 원자적 저장 완료",
+            timing: {
+              applyValidationMs: applyTiming.applyValidationMs,
+              applySaveMs: applyTiming.applySaveMs,
+              applyTotalMs: applyTiming.applyTotalMs,
+            },
+            saveEstimate: latestResult.clientSaveEstimate || saveEstimate || {},
+          });
+          overlay.remove();
+        } else if (applyTiming.error || applyTiming.saved === false) {
+          persistActiveRun({
+            id: latestResult.clientRunId || activeRunRecord?.id,
+            appliedAt: nowIso(),
+            applied: true,
+            saved: false,
+            status: "save-failed",
+            title: "CP-SAT 저장 실패 · 화면 복원",
+            reason: applyTiming.error || "원자적 저장 실패 후 적용 전 상태로 복원",
+            error: applyTiming.error || "",
+            timing: {
+              applyValidationMs: applyTiming.applyValidationMs,
+              applySaveMs: applyTiming.applySaveMs,
+              applyTotalMs: applyTiming.applyTotalMs,
+            },
+            saveEstimate: latestResult.clientSaveEstimate || saveEstimate || {},
+          });
+          renderRunHistory();
+        }
+      } catch (err) {
+        persistActiveRun({ status: "apply-failed", title: "CP-SAT 적용 실패", reason: cleanLocal(err?.message || err), error: cleanLocal(err?.message || err) });
+        alert(`적용 실패: ${err?.message || err}`);
+      }
     });
     $('[data-action="download-payload"]')?.addEventListener("click", async () => downloadJson(`his_solver_payload_${Date.now()}.json`, await solverState()));
     resultBtn?.addEventListener("click", () => {
