@@ -86,11 +86,16 @@ const cpSatSource = fs.readFileSync(new URL("../js/cp-sat-webapp-import.js", imp
 const timetableHtml = fs.readFileSync(new URL("../timetable.html", import.meta.url), "utf8");
 assert.match(autoAssignSource, /buildTimetablePreflightDiagnostics/);
 assert.match(autoAssignSource, /buildExactSolverCandidatePrecheck/);
+assert.match(autoAssignSource, /configuredRoomIdsForCardDuringAuto/);
+assert.match(autoAssignSource, /room-policy-excluded/);
+assert.match(autoAssignSource, /diagnostic-mismatch/);
 assert.match(autoAssignSource, /consumeExactSolverCandidateCache/);
 assert.match(autoAssignSource, /precheckCandidateCacheReused/);
 assert.match(autoAssignSource, /await openAutoAssignPrecheckDialog\(precheckReport, \{ allowProceed: false \}\)/);
 assert.match(cpSatSource, /function localSolverPreflight\(\)/);
 assert.match(cpSatSource, /CP-SAT 실행 전 사전진단에서 차단되었습니다/);
 assert.match(cpSatSource, /blockingTimetablePreflightIssues/);
-assert.match(timetableHtml, /2026-07-16-cpsat-preflight-r366/);
+assert.match(cpSatSource, /auditCpSatResult/);
+assert.match(cpSatSource, /cpSatResultStatusLabel/);
+assert.match(timetableHtml, /2026-07-16-cpsat-result-truth-r367/);
 console.log("TIMETABLE_PREFLIGHT_RUNTIME_WIRING_OK");

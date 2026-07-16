@@ -1,5 +1,6 @@
 import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-room-availability-separation-r355";
-import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-preflight-r366";
+import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
+import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=2026-07-16-cpsat-result-truth-r367";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -14,7 +15,7 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r343/HIS_CP_SAT_Local_Server_r343.zip";
 const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r343";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r366 CP-SAT API bridge";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r367 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -685,6 +686,10 @@ function makeSolverState(appState, live = {}) {
     source: CP_SAT_BRIDGE_SOURCE,
     data: deepClone(data),
   };
+  if (!wrapped.data.timetable.autoAssignMeta || typeof wrapped.data.timetable.autoAssignMeta !== "object") wrapped.data.timetable.autoAssignMeta = {};
+  wrapped.data.timetable.autoAssignMeta.cpSatScopeAudit = buildCpSatScopeAudit(wrapped, {
+    originalEntryCount: Array.isArray(live.entries) ? live.entries.length : asArray(appState?.timetable?.entries).length,
+  });
   return stripSolverOnlyState(wrapped);
 }
 function payloadFromWrappedState(state) { return state?.data || state?.normalized || state || {}; }
@@ -809,35 +814,52 @@ function engineApplyBlock(apiResult = {}) {
   }
   return { block: false, reason: "" };
 }
-function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount = 0) {
+function cpSatTruthAudit(apiResult = {}, normalizedEntries = [], scopeState = null) {
+  if (apiResult?.clientResultAudit && typeof apiResult.clientResultAudit === "object") return apiResult.clientResultAudit;
+  const scopeAudit = apiResult?.clientScopeAudit || apiResult?.meta?.clientScopeAudit || null;
+  return auditCpSatResult({
+    apiResult,
+    state: scopeState || {},
+    scopeAudit,
+    entries: normalizedEntries,
+    clientPreflight: apiResult?.clientPreflight || null,
+  });
+}
+
+function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount = 0, scopeState = null) {
   const engine = engineApplyBlock(apiResult);
-  if (engine.block) return { canApply: false, level: "bad", reason: engine.reason, soft: false };
+  if (engine.block) return { canApply: false, level: "bad", reason: engine.reason, soft: false, audit: cpSatTruthAudit(apiResult, normalizedEntries, scopeState) };
   const severe = severeCoverageFailure(apiResult, normalizedEntries, currentEntryCount);
-  if (severe.block) return { canApply: false, level: "bad", reason: severe.reason, soft: false };
-  const hard = hardValidationBlock(apiResult);
-  if (hard.block) return { canApply: false, level: "bad", reason: hard.reason, soft: false };
-  const validation = apiResult?.validation || {};
-  if (validation.ok !== true) {
-    return {
-      canApply: false,
-      level: "bad",
-      reason: softValidationSummary(apiResult) || validation.summary || "검증을 통과하지 못한 결과입니다.",
-      soft: false,
-    };
+  if (severe.block) return { canApply: false, level: "bad", reason: severe.reason, soft: false, audit: cpSatTruthAudit(apiResult, normalizedEntries, scopeState) };
+  const audit = cpSatTruthAudit(apiResult, normalizedEntries, scopeState);
+  if (audit.status === "failed") {
+    return { canApply: false, level: "bad", reason: audit.reason, soft: false, audit };
+  }
+  if (audit.status === "partial_success") {
+    return { canApply: false, level: "bad", reason: audit.reason, soft: false, audit };
   }
   if (!asArray(normalizedEntries).length) {
-    return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다.", soft: false };
+    return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다.", soft: false, audit };
   }
-  return { canApply: true, level: "ok", reason: "OR-Tools CP-SAT 검증 완료", soft: false };
+  return {
+    canApply: audit.canApply === true,
+    level: audit.status === "diagnostic_mismatch" ? "warn" : "ok",
+    reason: audit.reason,
+    soft: audit.status === "diagnostic_mismatch",
+    audit,
+  };
 }
 function solvePhaseLabel(apiResult = {}) {
   const phase = cleanLocal(apiResult?.phase || apiResult?.meta?.phase || "");
   const status = cleanLocal(apiResult?.status || apiResult?.state || "");
   if (phase === "solving") return "CP-SAT 실행 중";
-  if (phase === "solved" && apiResult?.validation?.ok === false) return "CP-SAT 부분 배치 완료";
-  if (phase === "solved") return "CP-SAT 완료";
+  const audit = cpSatTruthAudit(apiResult, normalizeEntryListForAudit(apiResult?.entries || []));
+  if (asArray(apiResult?.entries).length) return cpSatResultStatusLabel(audit);
   if (phase === "solve_failed" || /FAILED|ERROR|INVALID|UNKNOWN/.test(status)) return "CP-SAT 결과 없음";
   return status || "확인 필요";
+}
+function normalizeEntryListForAudit(list = []) {
+  return asArray(list).filter(entry => entry && typeof entry === "object");
 }
 function severeCoverageFailure(apiResult = {}, normalizedEntries = [], currentEntryCount = 0) {
   const counts = apiResult?.counts || {};
@@ -1154,7 +1176,7 @@ export function setupCpSatWebappImport(ctx = {}) {
   function resultApplyPolicy(apiResult = {}) {
     const normalized = normalizeEntryList(apiResult?.entries || []);
     if (!normalized.length) return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다." };
-    return applyPolicy(apiResult, normalized, asArray(entries?.()).length);
+    return applyPolicy(apiResult, normalized, asArray(entries?.()).length, apiResult?.clientSolverState || null);
   }
   function resultMayBeApplied(apiResult = {}) {
     return !!resultApplyPolicy(apiResult).canApply;
@@ -1265,6 +1287,8 @@ export function setupCpSatWebappImport(ctx = {}) {
       apiVersion: apiResult?.version || "",
       apiCounts: deepClone(apiResult?.counts || {}),
       apiValidationCounts: deepClone(validationCounts(apiResult)),
+      cpSatResultAudit: deepClone(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null)),
+      cpSatScopeAudit: deepClone(apiResult?.clientScopeAudit || null),
       backupVersionId: backup?.id || null,
     };
 
@@ -1333,7 +1357,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`CP-SAT API 결과 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r343\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r367\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1410,6 +1434,18 @@ export function setupCpSatWebappImport(ctx = {}) {
       });
       return latestState;
     }
+    function decorateSolverResult(raw = {}, clientPreflight = null) {
+      const scopeAudit = buildCpSatScopeAudit(latestState || {});
+      const entriesForAudit = normalizeEntryList(raw?.entries || []);
+      const decorated = { ...(raw || {}), clientPreflight, clientScopeAudit: scopeAudit };
+      decorated.clientResultAudit = auditCpSatResult({
+        apiResult: decorated,
+        scopeAudit,
+        entries: entriesForAudit,
+        clientPreflight,
+      });
+      return decorated;
+    }
     function localSolverPreflight() {
       const currentEntries = asArray(entries?.());
       const seedEntries = currentEntries.filter(entry => isSolverSeedEntryForPayload(entry, currentEntries.length));
@@ -1444,14 +1480,26 @@ export function setupCpSatWebappImport(ctx = {}) {
       const counts = data?.counts || {};
       const assignCount = asArray(data?.entries).filter(e => e?.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
       const privacy = data?.privacy?.solverPayload || privacyReport(latestState);
-      const policy = applyPolicy(data || {}, normalizeEntryList(data?.entries || []), asArray(entries?.()).length);
+      const normalizedResultEntries = normalizeEntryList(data?.entries || []);
+      const hasResultEntries = normalizedResultEntries.length > 0;
+      const policy = hasResultEntries
+        ? applyPolicy(data || {}, normalizedResultEntries, asArray(entries?.()).length, latestState)
+        : { canApply: false, level: validation.ok === false ? "warn" : "ok", reason: "실행 전 데이터 점검" };
       const issuePreview = issueLines(data, 5).join(" / ");
       const clientPreflight = data?.clientPreflight || null;
+      const audit = hasResultEntries
+        ? (policy.audit || cpSatTruthAudit(data || {}, normalizedResultEntries, latestState))
+        : { title: "실행 전 데이터 점검", reason: validation.summary || "입력 데이터 확인", scope: data?.clientScopeAudit || buildCpSatScopeAudit(latestState || {}) };
+      const scope = audit.scope || data?.clientScopeAudit || {};
       const rowData = [
         ["상태", data?.status || data?.state || (data?.ok ? "OK" : "확인 필요")],
+        ["최종 판정", `${audit.title || "확인 필요"} · ${audit.reason || "-"}`],
         ["브라우저 사전진단", clientPreflight ? formatTimetablePreflightSummary(clientPreflight) : "-"],
         ["검증", validation.summary || (validation.ok === true ? "정상" : "-")],
-        ["적용판정", policy.canApply ? `적용 가능 · ${policy.reason}` : `적용 차단 · ${policy.reason}`],
+        ["적용판정", hasResultEntries ? (policy.canApply ? `적용 가능 · ${policy.reason}` : `적용 차단 · ${policy.reason}`) : "-"],
+        ["입력 카드", `포함 ${scope.includedCardCount ?? "-"} / 제외 ${scope.excludedCardCount ?? 0} / 원본 ${scope.sourceCardCount ?? "-"}`],
+        ["기존 배치", `보존 seed ${scope.preservedSeedEntryCount ?? 0} / 재계산 제외 ${scope.droppedGeneratedEntryCount ?? 0}`],
+        ["학급칸 검증", `${audit.actualClassSlotCount ?? "-"}/${audit.expectedClassSlotCount ?? "-"}`],
         ["원인요약", issuePreview || "-"],
         ["카드", counts.cards ?? "-"],
         ["그룹카드", counts.groups ?? "-"],
@@ -1638,14 +1686,15 @@ export function setupCpSatWebappImport(ctx = {}) {
           setStatus("warn", `<b>${escapeHtml(solvePhaseLabel(job))}</b> · ${escapeHtml(job.message || job.state || "running")}<br>jobId: ${escapeHtml(jobId)}`, p);
           detailsEl.textContent = JSON.stringify({ jobId, state: job.state, phase: job.phase, message: job.message }, null, 2);
           if (job.state === "done") {
-            latestResult = { ...(job.result || {}), clientPreflight };
+            latestResult = decorateSolverResult(job.result || {}, clientPreflight);
             const policy = resultApplyPolicy(latestResult);
             const issues = issueLines(latestResult, 4);
             const issueHtml = issues.length ? `<br><span style="font-size:11px;color:#64748b">${escapeHtml(issues.join(" / "))}</span>` : "";
             const applyHtml = policy.canApply
               ? `<br><b>적용 가능:</b> ${escapeHtml(policy.reason)}`
               : `<br><b>적용 차단:</b> ${escapeHtml(policy.reason)} 결과 JSON은 저장할 수 있습니다.`;
-            setStatus(policy.level || "ok", `<b>${escapeHtml(solvePhaseLabel(latestResult))}</b><br>${escapeHtml(latestResult?.validation?.summary || latestResult?.status || "완료")}${applyHtml}${issueHtml}`, 100);
+            const truth = policy.audit || latestResult.clientResultAudit || {};
+            setStatus(policy.level || "ok", `<b>${escapeHtml(truth.title || solvePhaseLabel(latestResult))}</b><br>${escapeHtml(truth.reason || latestResult?.validation?.summary || latestResult?.status || "완료")}${applyHtml}${issueHtml}`, 100);
             renderApiSummary(latestResult, "solve");
             applyBtn.textContent = "4. 결과 적용";
             applyBtn.disabled = !policy.canApply;
@@ -1654,9 +1703,10 @@ export function setupCpSatWebappImport(ctx = {}) {
           }
           if (["failed", "error"].includes(String(job.state))) {
             if (job.result && asArray(job.result.entries).length) {
-              latestResult = { ...(job.result || {}), clientPreflight };
+              latestResult = decorateSolverResult(job.result || {}, clientPreflight);
               const policy = resultApplyPolicy(latestResult);
-              setStatus(policy.level || "warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
+              const truth = policy.audit || latestResult.clientResultAudit || {};
+              setStatus(policy.level || "warn", `<b>${escapeHtml(truth.title || "CP-SAT 부분 성공")}</b><br>${escapeHtml(truth.reason || latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
               renderApiSummary(latestResult, "solve-failed-with-result");
               applyBtn.textContent = "4. 결과 적용";
               applyBtn.disabled = !policy.canApply;

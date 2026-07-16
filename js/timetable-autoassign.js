@@ -7,9 +7,9 @@
 // shared occupancy logic without creating circular imports.
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
-import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-preflight-r366";
+import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-16-cpsat-preflight-r366";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-16-cpsat-result-truth-r367";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -128,27 +128,46 @@ export function createAutoAssignAll(deps) {
     return roomIds.length === 1 ? roomIds[0] : "";
   }
 
-  function fixedRoomForCardDuringAuto(card = {}, fallback = {}) {    if (!card && !fallback) return "";
-    const rule = normalizeRoomRuleForAuto(card?.roomRule || fallback.roomRule || "teacher");
-    if (rule === "none") return "";
-
-    // r115: 사용자/카드가 지정한 교실은 최상위 확정입니다.
-    // 교사 교실 고정이 있어도 지정교실을 절대 덮어쓰지 않습니다.
-    const explicit = cleanStr(card?.fixedRoomId || fallback.fixedRoomId || "");
-    if (explicit) return explicit;
-    const fallbackRule = normalizeRoomRuleForAuto(fallback.roomRule || "teacher");
-    if (fallback.roomPinned && fallbackRule === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
-    if (fallbackRule === "fixed" && fallback.roomId) return cleanStr(fallback.roomId);
-
-    if (rule === "homeroom") return homeroomRoomIdForAutoSource(card || {}, fallback || {});
-    if (rule === "autoRoom") return "";
-
-    // 교사 교실은 추천이 아니라 확정 제약입니다. 단, 지정교실보다 아래 순위입니다.
+  function configuredRoomIdsForCardDuringAuto(card = {}, fallback = {}) {
+    const rule = normalizeRoomRuleForAuto(card?.roomRule || fallback?.roomRule || "teacher");
+    if (rule === "none") return [];
+    const requiredCount = Math.max(
+      1,
+      Number(card?.requiredRoomCount || card?.multiRoomCount || card?.solverRequiredRoomCount || 1) || 1,
+      Number(fallback?.requiredRoomCount || fallback?.multiRoomCount || fallback?.solverRequiredRoomCount || 1) || 1
+    );
+    const fixedLike = uniqueRoomIds([
+      card?.fixedRoomId,
+      ...(Array.isArray(card?.fixedRoomIds) ? card.fixedRoomIds : []),
+      ...(Array.isArray(card?.manualRoomIds) ? card.manualRoomIds : []),
+      ...(Array.isArray(card?.requiredRoomIds) ? card.requiredRoomIds : []),
+      ...(Array.isArray(card?.solverFixedRoomIds) ? card.solverFixedRoomIds : []),
+      fallback?.fixedRoomId,
+      ...(Array.isArray(fallback?.fixedRoomIds) ? fallback.fixedRoomIds : []),
+      ...(Array.isArray(fallback?.manualRoomIds) ? fallback.manualRoomIds : []),
+      ...(Array.isArray(fallback?.requiredRoomIds) ? fallback.requiredRoomIds : []),
+      ...(Array.isArray(fallback?.solverFixedRoomIds) ? fallback.solverFixedRoomIds : []),
+    ]);
+    if (fixedLike.length) return fixedLike;
+    if (rule === "fixed" || requiredCount > 1) {
+      const explicit = uniqueRoomIds([
+        ...(Array.isArray(card?.roomIds) ? card.roomIds : []),
+        ...(Array.isArray(fallback?.roomIds) ? fallback.roomIds : []),
+        fallback?.roomId,
+      ]);
+      if (explicit.length) return explicit;
+    }
+    if (rule === "homeroom") {
+      const homeroom = homeroomRoomIdForAutoSource(card || {}, fallback || {});
+      return homeroom ? [homeroom] : [];
+    }
+    if (rule === "autoRoom") return [];
     const teacherRoom = uniqueTeacherRoomIdForNamesAuto(cardTeacherNamesForAuto(card || {}, fallback));
-    if (teacherRoom) return teacherRoom;
+    return teacherRoom ? [teacherRoom] : [];
+  }
 
-    // 교사 교실이 없으면 임의 추천/홈룸으로 내려가지 않습니다.
-    return "";
+  function fixedRoomForCardDuringAuto(card = {}, fallback = {}) {
+    return configuredRoomIdsForCardDuringAuto(card, fallback)[0] || "";
   }
 
   function fixedRoomForAutoData(data = {}) {
@@ -2649,18 +2668,20 @@ export function createAutoAssignAll(deps) {
     if (ids.length <= 1 && !entryData.groupId) return entryData;
 
     const assignments = { ...(entryData.roomAssignmentsByTtCardId || {}) };
+    const configuredExtraRooms = [];
     ids.forEach(id => {
       const card = getTtCardById(id);
       if (!card || !cardNeedsRoomForAuto(card, entryData)) { delete assignments[id]; return; }
 
       const rule = normalizeRoomRuleForAuto(card.roomRule || entryData.roomRule || "teacher");
-      const fixedRoomId = fixedRoomForCardDuringAuto(card, entryData);
-      if (fixedRoomId) {
-        assignments[id] = fixedRoomId;
+      const configuredRooms = configuredRoomIdsForCardDuringAuto(card, entryData);
+      if (configuredRooms.length) {
+        assignments[id] = configuredRooms[0];
+        configuredExtraRooms.push(...configuredRooms.slice(1));
         return;
       }
       if (rule === "autoRoom" || allowAutoRoomAssignment(options)) {
-        const taken = new Set(Object.values(assignments).map(cleanStr).filter(Boolean));
+        const taken = new Set([...Object.values(assignments), ...configuredExtraRooms].map(cleanStr).filter(Boolean));
         const autoRoomId = chooseAutoRoomIdForPlacement({ ...entryData, ttcardId: id, ttcardIds: [id] }, slot, placed, taken);
         if (autoRoomId) { assignments[id] = autoRoomId; return; }
       }
@@ -2668,8 +2689,8 @@ export function createAutoAssignAll(deps) {
     });
 
     const requiredRooms = Math.max(1, itemRequiredRoomCount(entryData));
-    const taken = new Set(Object.values(assignments).map(cleanStr).filter(Boolean));
-    const extraRooms = [];
+    const taken = new Set([...Object.values(assignments), ...configuredExtraRooms].map(cleanStr).filter(Boolean));
+    const extraRooms = [...new Set(configuredExtraRooms.map(cleanStr).filter(Boolean))];
     while (taken.size < requiredRooms) {
       const autoRoomId = chooseAutoRoomIdForPlacement(entryData, slot, placed, taken);
       if (!autoRoomId) break;
@@ -2695,9 +2716,22 @@ export function createAutoAssignAll(deps) {
     const rule = normalizeRoomRuleForAuto(entryData.roomRule || "teacher");
     if (rule === "none") return { ...entryData, roomId: null };
 
+    const singleCard = cardIds.length === 1 ? getTtCardById(cardIds[0]) : null;
+    const configuredRoomIds = singleCard ? configuredRoomIdsForCardDuringAuto(singleCard, entryData) : [];
+    if (configuredRoomIds.length) {
+      entryData.roomId = configuredRoomIds[0];
+      entryData.roomIds = uniqueRoomIds(configuredRoomIds);
+      entryData.requiredRoomCount = Math.max(itemRequiredRoomCount(entryData), configuredRoomIds.length);
+      entryData.multiRoomCount = entryData.requiredRoomCount;
+      entryData.roomAssignmentsByTtCardId = cardIds.length === 1 ? { ...(entryData.roomAssignmentsByTtCardId || {}), [cardIds[0]]: configuredRoomIds[0] } : entryData.roomAssignmentsByTtCardId;
+      entryData.roomRule = entryData.roomRule || "teacher";
+      return entryData;
+    }
+
     const fixedRoomId = fixedRoomForAutoData(entryData);
     if (fixedRoomId) {
       entryData.roomId = fixedRoomId;
+      entryData.roomIds = uniqueRoomIds([fixedRoomId]);
       entryData.roomRule = entryData.roomRule || "teacher";
       return entryData;
     }
@@ -5961,15 +5995,17 @@ export function createAutoAssignAll(deps) {
       currentAllowAutoRoomAssignment = options.allowAutoRoomAssignment === true;
       for (const block of blocks) {
         const candidateCount = freshDirectCandidateCount(block, baseSlots, [], strictOptions);
+        const roomRelaxedCandidateCount = candidateCount > 0
+          ? candidateCount
+          : freshDirectCandidateCount(block, baseSlots, [], { ...strictOptions, respectAssignedRoom: false });
         const cardIds = freshBlockCardIds(block);
         const cards = cardIds.map(id => getTtCardById(id)).filter(Boolean);
         const requiredRoomCount = Math.max(0, Number(blockRequiredRoomCount(block)) || 0);
-        const fixedRoomIds = cards
-          .map(card => fixedRoomForCardDuringAuto(card, {}))
-          .map(cleanStr)
-          .filter(Boolean);
+        const fixedRoomIds = cards.flatMap(card => configuredRoomIdsForCardDuringAuto(card, {})).map(cleanStr).filter(Boolean);
         const uniqueFixedRoomIds = [...new Set(fixedRoomIds)];
         const duplicateFixedRooms = fixedRoomIds.length > uniqueFixedRoomIds.length;
+        const structuralCandidateValues = cardIds.map(id => Number(options?.structuralCandidateByCardId?.get?.(id) ?? 0)).filter(Number.isFinite);
+        const structuralCandidateCount = structuralCandidateValues.length ? Math.min(...structuralCandidateValues) : 0;
         const componentTeacherCards = cards.filter(card => cardTeacherNamesForAuto(card).length).length;
         const teacherCount = freshBlockTeacherNames(block).length;
         rows.push({
@@ -5977,12 +6013,16 @@ export function createAutoAssignAll(deps) {
           name: freshBlockName(block),
           kind: block.kind,
           candidateCount,
+          roomRelaxedCandidateCount,
+          structuralCandidateCount,
+          candidateStatus: candidateCount > 0 ? "exact" : roomRelaxedCandidateCount > 0 ? "room-policy-excluded" : structuralCandidateCount > 0 ? "diagnostic-mismatch" : "blocked",
           cardIds,
           classCount: freshBlockAudienceKeys(block).length,
           teacherCount,
           componentTeacherCards,
           requiredRoomCount,
           fixedRoomCount: uniqueFixedRoomIds.length,
+          configuredRoomCount: uniqueFixedRoomIds.length,
           duplicateFixedRooms,
           durationPeriods: blockDurationPeriods(block),
         });
@@ -6031,7 +6071,7 @@ export function createAutoAssignAll(deps) {
     availableGrades = normalizeAutoActiveGrades(availableGrades);
     const report = {
       version: 2,
-      mode: "his-autoassign-precheck-r366",
+      mode: "his-autoassign-precheck-r367",
       createdAt: new Date().toISOString(),
       scopeGrades: activeGrades,
       counts: { ok: 0, warn: 0, error: 0, info: 0 },
@@ -6075,23 +6115,33 @@ export function createAutoAssignAll(deps) {
       });
     });
 
-    const exactCandidatePrecheck = buildExactSolverCandidatePrecheck(standalone, groupBlocks, protectedEntries, options);
+    const structuralCandidateByCardId = new Map((structuralPreflight.cardCandidates || []).map(row => [row.cardId, Number(row.candidateCount || 0)]));
+    const exactCandidatePrecheck = buildExactSolverCandidatePrecheck(standalone, groupBlocks, protectedEntries, { ...options, structuralCandidateByCardId });
     report.exactCandidatePrecheck = exactCandidatePrecheck;
-    const zeroCandidateBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateCount === 0);
+    const zeroCandidateBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateStatus === "blocked");
+    const roomPolicyExcludedBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateStatus === "room-policy-excluded");
+    const diagnosticMismatchBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateStatus === "diagnostic-mismatch");
     const tightCandidateBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateCount > 0 && row.candidateCount <= 2);
-    const duplicateRoomBlocks = exactCandidatePrecheck.rows.filter(row => row.requiredRoomCount > 1 && row.duplicateFixedRooms);
-    const roomCountBlocks = exactCandidatePrecheck.rows.filter(row => row.requiredRoomCount > row.fixedRoomCount && options?.allowAutoRoomAssignment !== true);
+    const duplicateRoomBlocks = exactCandidatePrecheck.rows.filter(row => row.requiredRoomCount > 1 && row.duplicateFixedRooms && row.configuredRoomCount < row.requiredRoomCount);
+    const roomCountBlocks = exactCandidatePrecheck.rows.filter(row => row.requiredRoomCount > row.configuredRoomCount && options?.allowAutoRoomAssignment !== true && row.roomRelaxedCandidateCount > 0);
     const teacherCountBlocks = exactCandidatePrecheck.rows.filter(row => row.kind !== "standalone" && row.componentTeacherCards > 1 && row.teacherCount < row.componentTeacherCards);
     if (zeroCandidateBlocks.length) {
       report.blockingCount += zeroCandidateBlocks.length;
-      addPrecheckItem(report, "배치 가능시간", "error", "실제 자동배치 후보 0칸", `${zeroCandidateBlocks.length}개 block · ${zeroCandidateBlocks.slice(0, 8).map(row => `${row.name}: 0칸`).join(" / ")}${zeroCandidateBlocks.length > 8 ? " …" : ""}`, { blocking: true, samples: zeroCandidateBlocks.slice(0, 20) });
-    } else {
+      addPrecheckItem(report, "배치 가능시간", "error", "확정 배치 불가 후보 0칸", `${zeroCandidateBlocks.length}개 block · ${zeroCandidateBlocks.slice(0, 8).map(row => `${row.name}: 0칸`).join(" / ")}${zeroCandidateBlocks.length > 8 ? " …" : ""}`, { blocking: true, samples: zeroCandidateBlocks.slice(0, 20) });
+    }
+    if (roomPolicyExcludedBlocks.length) {
+      addPrecheckItem(report, "배치 가능시간", "warn", "내장 자동배치 교실 정책으로 제외", `${roomPolicyExcludedBlocks.length}개 block은 시간 후보가 있지만 현재 '빈 교실 자동 배정' 옵션이 꺼져 있어 내장 자동배치 후보에서 제외됩니다. CP-SAT의 성공 여부와는 별개입니다. · ${roomPolicyExcludedBlocks.slice(0, 8).map(row => `${row.name}: 시간후보 ${row.roomRelaxedCandidateCount}칸`).join(" / ")}${roomPolicyExcludedBlocks.length > 8 ? " …" : ""}`, { samples: roomPolicyExcludedBlocks.slice(0, 20) });
+    }
+    if (diagnosticMismatchBlocks.length) {
+      addPrecheckItem(report, "배치 가능시간", "warn", "후보 계산기 판정 불일치", `${diagnosticMismatchBlocks.length}개 block은 기본 후보가 있으나 내장 엄격 후보 계산에서는 0칸입니다. 실행을 차단하지 않고 최종 결과 검증으로 판정합니다. · ${diagnosticMismatchBlocks.slice(0, 8).map(row => row.name).join(" / ")}${diagnosticMismatchBlocks.length > 8 ? " …" : ""}`, { samples: diagnosticMismatchBlocks.slice(0, 20), diagnosticMismatch: true });
+    }
+    if (!zeroCandidateBlocks.length && !roomPolicyExcludedBlocks.length && !diagnosticMismatchBlocks.length) {
       addPrecheckItem(report, "배치 가능시간", "ok", "실제 자동배치 후보", `${exactCandidatePrecheck.blockCount}개 block 모두 최소 1칸 이상의 엄격 후보가 있습니다.`);
     }
     if (tightCandidateBlocks.length) addPrecheckItem(report, "배치 가능시간", "warn", "후보가 1~2칸뿐인 수업", `${tightCandidateBlocks.length}개 block · ${tightCandidateBlocks.slice(0, 8).map(row => `${row.name}: ${row.candidateCount}칸`).join(" / ")}${tightCandidateBlocks.length > 8 ? " …" : ""}`);
     if (duplicateRoomBlocks.length) addPrecheckItem(report, "묶음수업", "error", "동시수업 고정교실 중복", `${duplicateRoomBlocks.length}개 block에서 필요한 교실 수보다 고정교실이 중복됩니다. · ${duplicateRoomBlocks.slice(0, 8).map(row => row.name).join(" / ")}`);
-    if (roomCountBlocks.length) addPrecheckItem(report, "묶음수업", "warn", "동시수업 교실 수 부족 가능성", `${roomCountBlocks.length}개 block · ${roomCountBlocks.slice(0, 8).map(row => `${row.name}: 필요 ${row.requiredRoomCount} / 고정·교사교실 ${row.fixedRoomCount}`).join(" / ")}${roomCountBlocks.length > 8 ? " …" : ""}`);
-    if (teacherCountBlocks.length) addPrecheckItem(report, "묶음수업", "warn", "동시수업 교사 수 확인", `${teacherCountBlocks.length}개 block에서 구성 카드 수보다 고유 교사가 적습니다. 의도적으로 한 교사가 여러 분반을 맡는 구조인지 확인하세요. · ${teacherCountBlocks.slice(0, 8).map(row => `${row.name}: 카드 ${row.componentTeacherCards} / 교사 ${row.teacherCount}`).join(" / ")}`);
+    if (roomCountBlocks.length) addPrecheckItem(report, "묶음수업", "warn", "동시수업 교실 수 부족 가능성", `${roomCountBlocks.length}개 block · ${roomCountBlocks.slice(0, 8).map(row => `${row.name}: 필요 ${row.requiredRoomCount} / 설정·교사교실 ${row.configuredRoomCount}`).join(" / ")}${roomCountBlocks.length > 8 ? " …" : ""}`);
+    if (teacherCountBlocks.length) addPrecheckItem(report, "묶음수업", "info", "동시수업 공유 교사 구조", `${teacherCountBlocks.length}개 block에서 같은 교사가 여러 구성 카드에 연결되어 있습니다. 엔진은 동일 그룹 안에서 이를 하나의 통합 수업으로 처리합니다. · ${teacherCountBlocks.slice(0, 8).map(row => `${row.name}: 카드 ${row.componentTeacherCards} / 교사 ${row.teacherCount}`).join(" / ")}`);
 
     addPrecheckItem(report, "대상 요약", targetCards.length ? "ok" : "error", "시간표 카드", `${targetCards.length}개 대상 / 전체 ${cards.length}개${manualCards.length ? ` · 수동카드 ${manualCards.length}개(제외 ${manualExcluded}개)` : ""} · 선택 학년: ${(activeGrades.length ? activeGrades : availableGrades).map(gradeDisplay).join(", ") || "없음"}`);
     addPrecheckItem(report, "대상 요약", targetSummary.totalSlots ? "ok" : "error", "자동배치 대상", `개별 ${targetSummary.standaloneSlots}시수 · 그룹 ${targetSummary.groupSlots}시수 · 합계 ${targetSummary.totalSlots}시수`);

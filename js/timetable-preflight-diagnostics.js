@@ -1,4 +1,4 @@
- // ================================================================
+// ================================================================
 // timetable-preflight-diagnostics.js · Fast client-side preflight
 // ---------------------------------------------------------------
 // Pure, side-effect-free structural checks shared by the built-in
@@ -266,8 +266,11 @@ function cardCandidateAnalysis(state, indexes, card, options = {}) {
   const classKeys = classKeysForObject(card);
   const teacherNames = teacherNamesForObject(card);
   const teacherIds = teacherIdsForObject(card);
+  const configuredRoomIds = roomIdsForObject(card).filter(id => indexes.roomById.has(id));
   const roomIds = resolveRoomsForCard(state, indexes, card);
   const requiredRoomCount = Math.max(0, Number(card.requiredRoomCount || card.multiRoomCount || card.solverRequiredRoomCount || (isRoomless(card) ? 0 : 1)) || 0);
+  const dynamicRoomEligible = requiredRoomCount > 0 && !roomIds.length && options.allowAutoRoomAssignment === true;
+  const roomSource = configuredRoomIds.length ? "configured" : roomIds.length ? "teacher-or-homeroom" : dynamicRoomEligible ? "dynamic" : isRoomless(card) ? "none" : "unresolved";
   const protectedEntries = options.protectedEntries;
   const protectedBySlot = options.protectedBySlot || new Map();
 
@@ -332,7 +335,10 @@ function cardCandidateAnalysis(state, indexes, card, options = {}) {
     candidateCount: candidates.length,
     candidateDayCount: new Set(candidates.map(slot => slot.day)).size,
     roomIds,
+    configuredRoomIds,
     requiredRoomCount,
+    dynamicRoomEligible,
+    roomSource,
     classKeys,
     teacherNames,
     reasonCounts: Object.fromEntries(reasonCounts),
@@ -432,7 +438,7 @@ function checkProtectedEntries(report, state, indexes, protectedEntries, periodC
   }
 }
 
-function checkGroups(report, indexes, options) {
+function checkGroups(report, state, indexes, options) {
   const missingRefs = [];
   const emptyGroups = [];
   const roomCollisions = [];
@@ -459,20 +465,21 @@ function checkGroups(report, indexes, options) {
       if (titles.length > 1) repeatedTeachers.push(`${name}: ${teacher}(${titles.length}개 카드)`);
     });
 
-    const fixedRooms = cards.flatMap(card => roomIdsForObject(card));
-    const duplicateRooms = duplicates(fixedRooms);
+    const configuredRooms = cards.flatMap(card => roomIdsForObject(card));
+    const duplicateRooms = duplicates(configuredRooms);
     if (duplicateRooms.length) roomCollisions.push(`${name}: ${duplicateRooms.map(([id, count]) => `${id}×${count}`).join(", ")}`);
     if (!options.allowAutoRoomAssignment) {
-      cards.filter(card => !isRoomless(card) && !roomIdsForObject(card).length).forEach(card => unresolvedRooms.push(`${name}: ${clean(card.subject || card.label || card.id)}`));
+      cards.filter(card => !isRoomless(card) && !resolveRoomsForCard(state, indexes, card).length)
+        .forEach(card => unresolvedRooms.push(`${name}: ${clean(card.subject || card.label || card.id)}`));
     }
   });
 
   if (missingRefs.length) addIssue(report, "error", "group-card-reference-missing", "묶음수업 카드 참조 오류", `${missingRefs.length}건 · ${missingRefs.slice(0, 8).join(" / ")}${missingRefs.length > 8 ? " …" : ""}`, { samples: missingRefs.slice(0, 20) });
   if (emptyGroups.length) addIssue(report, "warn", "group-empty", "빈 묶음수업", `${emptyGroups.length}개 · ${emptyGroups.slice(0, 8).join(" / ")}${emptyGroups.length > 8 ? " …" : ""}`, { samples: emptyGroups.slice(0, 20) }, { blocking: false });
-  if (roomCollisions.length) addIssue(report, "warn", "group-room-collision", "묶음수업 교실 중복 가능성", `${roomCollisions.length}개 그룹 · ${roomCollisions.slice(0, 6).join(" / ")}${roomCollisions.length > 6 ? " …" : ""}`, { samples: roomCollisions.slice(0, 20) }, { blocking: false });
+  if (roomCollisions.length) addIssue(report, "info", "group-shared-room", "묶음수업 공유 교실 구조", `${roomCollisions.length}개 그룹에서 동일 교실을 여러 구성 카드가 공유합니다. 동시수업을 한 공간에서 운영하는 의도된 구조일 수 있습니다. · ${roomCollisions.slice(0, 6).join(" / ")}${roomCollisions.length > 6 ? " …" : ""}`, { samples: roomCollisions.slice(0, 20) }, { blocking: false });
   if (unresolvedRooms.length) addIssue(report, "warn", "group-room-shortage", "묶음수업 교실 수 확인", `${unresolvedRooms.length}개 구성 카드에 고정/교사 교실이 없습니다. · ${unresolvedRooms.slice(0, 6).join(" / ")}${unresolvedRooms.length > 6 ? " …" : ""}`, { samples: unresolvedRooms.slice(0, 20) }, { blocking: false });
-  if (repeatedTeachers.length) addIssue(report, "warn", "group-teacher-repeated", "묶음수업 교사 수 확인", `${repeatedTeachers.length}개 교사 중복이 있습니다. 같은 교사가 여러 분반을 동시에 담당하는 의도인지 확인하세요. · ${repeatedTeachers.slice(0, 6).join(" / ")}${repeatedTeachers.length > 6 ? " …" : ""}`, { samples: repeatedTeachers.slice(0, 20) }, { blocking: false });
-  if (!missingRefs.length && !roomCollisions.length && !unresolvedRooms.length) addIssue(report, "info", "group-ok", "묶음수업 교사·교실 구조", `${indexes.groups.length}개 그룹의 필수 카드·교실 참조가 정상입니다.`, {}, { blocking: false });
+  if (repeatedTeachers.length) addIssue(report, "info", "group-shared-teacher", "묶음수업 공유 교사 구조", `${repeatedTeachers.length}개 교사가 같은 동시수업 그룹의 여러 카드에 연결되어 있습니다. 엔진은 이를 하나의 통합 block으로 처리합니다. · ${repeatedTeachers.slice(0, 6).join(" / ")}${repeatedTeachers.length > 6 ? " …" : ""}`, { samples: repeatedTeachers.slice(0, 20) }, { blocking: false });
+  if (!missingRefs.length && !unresolvedRooms.length) addIssue(report, "info", "group-ok", "묶음수업 교사·교실 구조", `${indexes.groups.length}개 그룹의 필수 카드·교실 참조가 정상입니다.`, {}, { blocking: false });
 }
 
 function checkCardFeasibility(report, state, indexes, options) {
@@ -489,7 +496,7 @@ function checkCardFeasibility(report, state, indexes, options) {
   const zero = analyses.filter(row => row.remainingCredits > 0 && row.candidateCount === 0);
   const shortage = analyses.filter(row => !groupedCardIds.has(row.cardId) && row.remainingCredits > 0 && row.candidateCount > 0 && row.candidateCount < row.remainingCredits);
   const dayShortage = analyses.filter(row => !groupedCardIds.has(row.cardId) && row.remainingCredits > 1 && row.remainingCredits <= 5 && row.candidateDayCount < row.remainingCredits);
-  const roomShortage = analyses.filter(row => row.requiredRoomCount > 0 && !options.allowAutoRoomAssignment && row.roomIds.length < row.requiredRoomCount);
+  const roomShortage = analyses.filter(row => row.requiredRoomCount > 0 && !row.dynamicRoomEligible && row.roomIds.length < row.requiredRoomCount);
 
   const rowText = row => `${row.title || row.cardId}: 남은 ${row.remainingCredits || 1} / 후보 ${row.candidateCount}칸(${row.candidateDayCount}일)`;
   if (zero.length) addIssue(report, "error", "card-zero-candidate", "배치 가능시간 0칸", `${zero.length}개 카드 · ${zero.slice(0, 8).map(rowText).join(" / ")}${zero.length > 8 ? " …" : ""}`, { samples: zero.slice(0, 20) });
@@ -513,7 +520,7 @@ export function buildTimetablePreflightDiagnostics(inputState = {}, options = {}
   const scopeSet = new Set(scopeGrades);
   const protectedEntries = asArray(options.protectedEntries ?? options.entries ?? []);
   const report = {
-    schemaVersion: "r366-timetable-preflight-v1",
+    schemaVersion: "r367-timetable-preflight-v2",
     generatedAt: new Date().toISOString(),
     scopeGrades,
     counts: { error: 0, warn: 0, info: 0 },
@@ -558,7 +565,7 @@ export function buildTimetablePreflightDiagnostics(inputState = {}, options = {}
   mark("identityMs", phaseStarted);
 
   phaseStarted = clock();
-  checkGroups(report, indexes, normalizedOptions);
+  checkGroups(report, state, indexes, normalizedOptions);
   mark("groupMs", phaseStarted);
 
   phaseStarted = clock();
