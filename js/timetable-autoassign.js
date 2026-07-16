@@ -7,8 +7,9 @@
 // shared occupancy logic without creating circular imports.
 
 import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
+import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-preflight-r366";
 
-globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-15-room-availability-separation-r355";
+globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-16-cpsat-preflight-r366";
 
 export function createAutoAssignAll(deps) {
   const {
@@ -36,6 +37,10 @@ export function createAutoAssignAll(deps) {
   // r138: 기본은 교사 교실/지정교실이 있는 카드만 배치합니다.
   // 사용자가 옵션을 켤 때만 빈 교실 자동 배정을 허용합니다.
   let currentAllowAutoRoomAssignment = false;
+  // r366: the exact candidate scan performed by the preflight is reused by
+  // the immediately following solver run, so the diagnostic does not duplicate
+  // the most expensive ordering pass.
+  let precheckCandidateCache = null;
 
   function getTeacherAssignedRoomIdForAuto(teacherName = "") {
     const teacher = cleanStr(teacherName);
@@ -5901,7 +5906,119 @@ export function createAutoAssignAll(deps) {
     return (cards || []).filter(card => set.has(card.gradeKey) || (card.gradeKeys || []).some(g => set.has(g)));
   }
 
+  function precheckClock() {
+    return globalThis.performance?.now?.() ?? Date.now();
+  }
+
+  function autoPrecheckFingerprint(standalone = [], groupBlocks = [], protectedEntries = [], options = {}) {
+    const cards = (ttDomain().ttcards || []).map(card => [
+      card.id, card.teacherId, card.teacherIds, card.teacherName, card.teachers,
+      card.classKeys, card.classLabels, card.roomRule, card.roomId, card.fixedRoomId,
+      card.manualRoomIds, card.requiredRoomCount, card.credits, card.allowedSlots, card.unavailableSlots,
+    ]);
+    const groups = (ttGroups() || []).map(group => [
+      group.id, group.groupType, group.isConcurrent, group.poolCardIds, group.excludedCardIds,
+      group.units, group.allowedSlots, group.unavailableSlots, group.durationPeriods,
+    ]);
+    const protectedShape = (protectedEntries || []).map(entry => [
+      entry.id, entry.day, entry.period, entry.ttcardId, entry.ttcardIds,
+      entry.teacherId, entry.teacherIds, entry.teacherName, entry.audienceClassKeys,
+      entry.roomId, entry.roomIds, entry.roomAssignmentsByTtCardId,
+    ]);
+    const raw = JSON.stringify({
+      periodCount: ttConfig()?.periodCount || 7,
+      selectedGrades: normalizeAutoActiveGrades(options.selectedGrades || []),
+      allowAutoRoomAssignment: options.allowAutoRoomAssignment === true,
+      runAttempts: options.runAttempts || "balanced",
+      standalone: (standalone || []).map(item => [autoItemKey(item), item.credits, item.durationPeriods]),
+      groupBlocks: (groupBlocks || []).map(block => [block?.group?.id, (block?.unitItems || []).map(item => [item?.id, item?.credits])]),
+      cards,
+      groups,
+      protectedShape,
+      teacherConstraints: constraints() || {},
+      rooms: (appState.rooms?.rooms || []).map(room => [room.id, room.teacherName, room.homeRoomClassId, room.unavailableSlots]),
+    });
+    return `${raw.length}:${freshStableHash(raw)}`;
+  }
+
+  function buildExactSolverCandidatePrecheck(standalone = [], groupBlocks = [], protectedEntries = [], options = {}) {
+    const started = precheckClock();
+    const baseSlots = freshBaseSlots();
+    const strictOptions = {
+      ...options,
+      respectSoftLimits: true,
+      respectUnavailable: true,
+      respectAssignedRoom: true,
+      engineProfile: autoEngineProfileForMode(options.runAttempts),
+    };
+    const { kept: blocks, skipped } = freshBuildBlocks(standalone, groupBlocks, protectedEntries);
+    const previousEntries = ttDomain().entries;
+    const previousAllowAutoRoomAssignment = currentAllowAutoRoomAssignment;
+    const rows = [];
+    try {
+      // Use the exact state that the solver will use after initialization.
+      ttDomain().entries = [...protectedEntries];
+      currentAllowAutoRoomAssignment = options.allowAutoRoomAssignment === true;
+      for (const block of blocks) {
+        const candidateCount = freshDirectCandidateCount(block, baseSlots, [], strictOptions);
+        const cardIds = freshBlockCardIds(block);
+        const cards = cardIds.map(id => getTtCardById(id)).filter(Boolean);
+        const requiredRoomCount = Math.max(0, Number(blockRequiredRoomCount(block)) || 0);
+        const fixedRoomIds = cards
+          .map(card => fixedRoomForCardDuringAuto(card, {}))
+          .map(cleanStr)
+          .filter(Boolean);
+        const uniqueFixedRoomIds = [...new Set(fixedRoomIds)];
+        const duplicateFixedRooms = fixedRoomIds.length > uniqueFixedRoomIds.length;
+        const componentTeacherCards = cards.filter(card => cardTeacherNamesForAuto(card).length).length;
+        const teacherCount = freshBlockTeacherNames(block).length;
+        rows.push({
+          key: block.key,
+          name: freshBlockName(block),
+          kind: block.kind,
+          candidateCount,
+          cardIds,
+          classCount: freshBlockAudienceKeys(block).length,
+          teacherCount,
+          componentTeacherCards,
+          requiredRoomCount,
+          fixedRoomCount: uniqueFixedRoomIds.length,
+          duplicateFixedRooms,
+          durationPeriods: blockDurationPeriods(block),
+        });
+      }
+    } finally {
+      ttDomain().entries = previousEntries;
+      currentAllowAutoRoomAssignment = previousAllowAutoRoomAssignment;
+    }
+    const fingerprint = autoPrecheckFingerprint(standalone, groupBlocks, protectedEntries, options);
+    precheckCandidateCache = {
+      fingerprint,
+      createdAt: Date.now(),
+      counts: new Map(rows.map(row => [row.key, row.candidateCount])),
+    };
+    return {
+      rows,
+      skippedCount: skipped.length,
+      blockCount: blocks.length,
+      baseSlotCount: baseSlots.length,
+      elapsedMs: Math.max(0, precheckClock() - started),
+      reusedBySolver: true,
+      fingerprint,
+    };
+  }
+
+  function consumeExactSolverCandidateCache(standalone = [], groupBlocks = [], protectedEntries = [], options = {}) {
+    const fingerprint = autoPrecheckFingerprint(standalone, groupBlocks, protectedEntries, options);
+    const cache = precheckCandidateCache;
+    precheckCandidateCache = null;
+    if (!cache || cache.fingerprint !== fingerprint) return null;
+    if (Date.now() - Number(cache.createdAt || 0) > 120000) return null;
+    return cache.counts instanceof Map ? cache.counts : null;
+  }
+
   function buildAutoAssignPrecheckReport(context = {}) {
+    const precheckStarted = precheckClock();
     let {
       standalone = [],
       groupBlocks = [],
@@ -5913,11 +6030,12 @@ export function createAutoAssignAll(deps) {
     activeGrades = normalizeAutoActiveGrades(activeGrades);
     availableGrades = normalizeAutoActiveGrades(availableGrades);
     const report = {
-      version: 1,
-      mode: "his-autoassign-precheck",
+      version: 2,
+      mode: "his-autoassign-precheck-r366",
       createdAt: new Date().toISOString(),
       scopeGrades: activeGrades,
       counts: { ok: 0, warn: 0, error: 0, info: 0 },
+      blockingCount: 0,
       items: []
     };
 
@@ -5932,6 +6050,48 @@ export function createAutoAssignAll(deps) {
     const placedCardIds = getPlacedCardIdsForPrecheck(existingEntries);
     const targetSummary = summarizeAutoTargetsForPrecheck(standalone, groupBlocks);
     const protectedSummary = protectedSlotSummary(protectedEntries);
+
+    const structuralPreflight = buildTimetablePreflightDiagnostics(appState, {
+      scopeGrades: activeGrades.length ? activeGrades : availableGrades,
+      protectedEntries,
+      periodCount: Number(ttConfig()?.periodCount || 7),
+      allowAutoRoomAssignment: options?.allowAutoRoomAssignment === true,
+    });
+    report.structuralPreflight = structuralPreflight;
+    report.blockingCount += Number(structuralPreflight.blockingCount || 0);
+    const sectionForStructuralIssue = issue => {
+      const code = String(issue?.code || "");
+      if (/^(teacher|room|class|card)-(?:id|name|teacher|class|room|fixed)/.test(code) || code === "identity-ok") return "데이터 식별자";
+      if (code.startsWith("group-")) return "묶음수업";
+      if (code.startsWith("protected-")) return "고정 배치 충돌";
+      if (/candidate|day-shortage|zero-candidate/.test(code)) return "배치 가능시간";
+      return "데이터 사전진단";
+    };
+    (structuralPreflight.issues || []).forEach(issue => {
+      const status = issue.level === "error" ? "error" : issue.level === "warn" ? "warn" : "info";
+      addPrecheckItem(report, sectionForStructuralIssue(issue), status, issue.title || issue.code || "사전진단", issue.detail || "", {
+        code: issue.code,
+        blocking: issue.blocking === true,
+      });
+    });
+
+    const exactCandidatePrecheck = buildExactSolverCandidatePrecheck(standalone, groupBlocks, protectedEntries, options);
+    report.exactCandidatePrecheck = exactCandidatePrecheck;
+    const zeroCandidateBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateCount === 0);
+    const tightCandidateBlocks = exactCandidatePrecheck.rows.filter(row => row.candidateCount > 0 && row.candidateCount <= 2);
+    const duplicateRoomBlocks = exactCandidatePrecheck.rows.filter(row => row.requiredRoomCount > 1 && row.duplicateFixedRooms);
+    const roomCountBlocks = exactCandidatePrecheck.rows.filter(row => row.requiredRoomCount > row.fixedRoomCount && options?.allowAutoRoomAssignment !== true);
+    const teacherCountBlocks = exactCandidatePrecheck.rows.filter(row => row.kind !== "standalone" && row.componentTeacherCards > 1 && row.teacherCount < row.componentTeacherCards);
+    if (zeroCandidateBlocks.length) {
+      report.blockingCount += zeroCandidateBlocks.length;
+      addPrecheckItem(report, "배치 가능시간", "error", "실제 자동배치 후보 0칸", `${zeroCandidateBlocks.length}개 block · ${zeroCandidateBlocks.slice(0, 8).map(row => `${row.name}: 0칸`).join(" / ")}${zeroCandidateBlocks.length > 8 ? " …" : ""}`, { blocking: true, samples: zeroCandidateBlocks.slice(0, 20) });
+    } else {
+      addPrecheckItem(report, "배치 가능시간", "ok", "실제 자동배치 후보", `${exactCandidatePrecheck.blockCount}개 block 모두 최소 1칸 이상의 엄격 후보가 있습니다.`);
+    }
+    if (tightCandidateBlocks.length) addPrecheckItem(report, "배치 가능시간", "warn", "후보가 1~2칸뿐인 수업", `${tightCandidateBlocks.length}개 block · ${tightCandidateBlocks.slice(0, 8).map(row => `${row.name}: ${row.candidateCount}칸`).join(" / ")}${tightCandidateBlocks.length > 8 ? " …" : ""}`);
+    if (duplicateRoomBlocks.length) addPrecheckItem(report, "묶음수업", "error", "동시수업 고정교실 중복", `${duplicateRoomBlocks.length}개 block에서 필요한 교실 수보다 고정교실이 중복됩니다. · ${duplicateRoomBlocks.slice(0, 8).map(row => row.name).join(" / ")}`);
+    if (roomCountBlocks.length) addPrecheckItem(report, "묶음수업", "warn", "동시수업 교실 수 부족 가능성", `${roomCountBlocks.length}개 block · ${roomCountBlocks.slice(0, 8).map(row => `${row.name}: 필요 ${row.requiredRoomCount} / 고정·교사교실 ${row.fixedRoomCount}`).join(" / ")}${roomCountBlocks.length > 8 ? " …" : ""}`);
+    if (teacherCountBlocks.length) addPrecheckItem(report, "묶음수업", "warn", "동시수업 교사 수 확인", `${teacherCountBlocks.length}개 block에서 구성 카드 수보다 고유 교사가 적습니다. 의도적으로 한 교사가 여러 분반을 맡는 구조인지 확인하세요. · ${teacherCountBlocks.slice(0, 8).map(row => `${row.name}: 카드 ${row.componentTeacherCards} / 교사 ${row.teacherCount}`).join(" / ")}`);
 
     addPrecheckItem(report, "대상 요약", targetCards.length ? "ok" : "error", "시간표 카드", `${targetCards.length}개 대상 / 전체 ${cards.length}개${manualCards.length ? ` · 수동카드 ${manualCards.length}개(제외 ${manualExcluded}개)` : ""} · 선택 학년: ${(activeGrades.length ? activeGrades : availableGrades).map(gradeDisplay).join(", ") || "없음"}`);
     addPrecheckItem(report, "대상 요약", targetSummary.totalSlots ? "ok" : "error", "자동배치 대상", `개별 ${targetSummary.standaloneSlots}시수 · 그룹 ${targetSummary.groupSlots}시수 · 합계 ${targetSummary.totalSlots}시수`);
@@ -6035,7 +6195,23 @@ export function createAutoAssignAll(deps) {
     const classIssues = postTargetClassHint.classSlots?.issues || [];
     addPrecheckItem(report, "현재 배치 참고", "info", "현재 학급별 점유", classIssues.length ? `${classIssues.length}개 학급이 현재 기준시수와 다릅니다. 자동배치 전 상태이므로 참고용입니다.` : "현재 배치 기준으로 모든 학급이 기준시수와 일치합니다.");
 
-    report.overall = report.counts.error ? "error" : report.counts.warn ? "warn" : "ok";
+    report.performance = {
+      structuralMs: Number(structuralPreflight.performance?.totalMs || 0),
+      exactCandidateMs: Number(exactCandidatePrecheck.elapsedMs || 0),
+      totalMs: Math.max(0, precheckClock() - precheckStarted),
+      candidateScanReusedBySolver: exactCandidatePrecheck.reusedBySolver === true,
+      blockCount: exactCandidatePrecheck.blockCount,
+      weeklySlotCount: exactCandidatePrecheck.baseSlotCount,
+    };
+    addPrecheckItem(
+      report,
+      "성능",
+      "info",
+      "사전진단 실행시간",
+      `${report.performance.totalMs < 1 ? "<1" : report.performance.totalMs.toFixed(report.performance.totalMs < 10 ? 1 : 0)}ms · 구조 ${report.performance.structuralMs.toFixed(report.performance.structuralMs < 10 ? 1 : 0)}ms · 실제 후보 ${report.performance.exactCandidateMs.toFixed(report.performance.exactCandidateMs < 10 ? 1 : 0)}ms · 후보 계산은 다음 자동배치에서 재사용`,
+      { performance: report.performance }
+    );
+    report.overall = report.blockingCount > 0 || report.counts.error ? "error" : report.counts.warn ? "warn" : "ok";
     return report;
   }
 
@@ -6062,7 +6238,7 @@ export function createAutoAssignAll(deps) {
         .tt-precheck-dialog{width:min(980px,calc(100vw - 32px));max-height:calc(100vh - 48px);background:#fff;border-radius:18px;box-shadow:0 28px 90px rgba(15,23,42,.34);overflow:hidden;display:flex;flex-direction:column;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
         .tt-precheck-header{padding:18px 22px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;gap:16px;align-items:flex-start;background:linear-gradient(135deg,#f8fafc,#eef6ff);}
         .tt-precheck-header h2{margin:0;font-size:20px;color:#0f172a}.tt-precheck-header p{margin:6px 0 0;color:#64748b;font-size:13px;line-height:1.45}
-        .tt-precheck-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:16px 22px 0;}
+        .tt-precheck-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;padding:16px 22px 0;}
         .tt-precheck-card{border:1px solid #e2e8f0;border-radius:14px;padding:12px;background:#fff}.tt-precheck-card strong{display:block;font-size:22px;line-height:1;color:#0f172a}.tt-precheck-card span{display:block;margin-top:6px;color:#64748b;font-size:12px;font-weight:800}.tt-precheck-card.overall.ok{background:#f0fdf4;border-color:#bbf7d0}.tt-precheck-card.overall.warn{background:#fffbeb;border-color:#fde68a}.tt-precheck-card.overall.error{background:#fef2f2;border-color:#fecaca}
         .tt-precheck-body{overflow:auto;padding:4px 22px 22px}.tt-precheck-section{border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;margin-top:12px;background:#fff}.tt-precheck-section h3{margin:0;padding:12px 14px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0f172a;display:flex;gap:8px;align-items:center}.tt-precheck-dot{width:10px;height:10px;border-radius:999px;background:#64748b}.tt-precheck-dot.ok{background:#16a34a}.tt-precheck-dot.warn{background:#f59e0b}.tt-precheck-dot.error{background:#dc2626}.tt-precheck-dot.info{background:#64748b}
         .tt-precheck-item{padding:11px 14px;border-bottom:1px solid #f1f5f9}.tt-precheck-item:last-child{border-bottom:0}.tt-precheck-item-head{display:flex;gap:8px;align-items:center;font-size:13px;color:#0f172a}.tt-precheck-badge{font-size:11px;border-radius:999px;padding:3px 7px;color:white;background:#64748b;min-width:36px;text-align:center}.tt-precheck-badge.ok{background:#16a34a}.tt-precheck-badge.warn{background:#f59e0b}.tt-precheck-badge.error{background:#dc2626}.tt-precheck-badge.info{background:#64748b}.tt-precheck-detail{margin-top:5px;color:#475569;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;}
@@ -6070,8 +6246,8 @@ export function createAutoAssignAll(deps) {
         @media(max-width:780px){.tt-precheck-header{flex-direction:column}.tt-precheck-actions{justify-content:flex-start}.tt-precheck-summary{grid-template-columns:repeat(2,minmax(0,1fr));}}
       </style>
       <div class="tt-precheck-dialog" role="dialog" aria-modal="true" aria-label="자동배치 사전 점검">
-        <div class="tt-precheck-header"><div><h2>🩺 자동배치 사전 점검</h2><p>${precheckEsc(new Date(report.createdAt).toLocaleString())} 기준 · ${overall === "ok" ? "자동배치를 시작해도 좋은 상태입니다." : overall === "warn" ? "주의 항목을 확인한 뒤 진행하세요." : "오류 항목을 먼저 수정하는 것이 안전합니다."}</p></div><div class="tt-precheck-actions"><button type="button" class="tt-precheck-btn" data-precheck-export>JSON 내보내기</button><button type="button" class="tt-precheck-btn" data-precheck-close>닫기</button>${allowProceed ? `<button type="button" class="tt-precheck-btn ${overall === "error" ? "danger" : "primary"}" data-precheck-proceed>${overall === "ok" ? "자동배치 시작" : "확인 후 계속"}</button>` : ""}</div></div>
-        <div class="tt-precheck-summary"><div class="tt-precheck-card overall ${overall}"><strong>${overall === "ok" ? "OK" : overall === "warn" ? "주의" : "오류"}</strong><span>종합 상태</span></div><div class="tt-precheck-card"><strong>${report.counts?.error || 0}</strong><span>오류</span></div><div class="tt-precheck-card"><strong>${report.counts?.warn || 0}</strong><span>주의</span></div><div class="tt-precheck-card"><strong>${report.counts?.ok || 0}</strong><span>정상</span></div><div class="tt-precheck-card"><strong>${report.counts?.info || 0}</strong><span>정보</span></div></div>
+        <div class="tt-precheck-header"><div><h2>🩺 자동배치 사전 점검</h2><p>${precheckEsc(new Date(report.createdAt).toLocaleString())} 기준 · ${report.blockingCount ? `실행 차단 항목 ${report.blockingCount}개를 먼저 수정하세요.` : overall === "ok" ? "자동배치를 시작해도 좋은 상태입니다." : overall === "warn" ? "주의 항목을 확인한 뒤 진행하세요." : "오류 항목을 먼저 수정하는 것이 안전합니다."}</p></div><div class="tt-precheck-actions"><button type="button" class="tt-precheck-btn" data-precheck-export>JSON 내보내기</button><button type="button" class="tt-precheck-btn" data-precheck-close>닫기</button>${allowProceed ? `<button type="button" class="tt-precheck-btn ${overall === "error" ? "danger" : "primary"}" data-precheck-proceed>${overall === "ok" ? "자동배치 시작" : "확인 후 계속"}</button>` : ""}</div></div>
+        <div class="tt-precheck-summary"><div class="tt-precheck-card overall ${overall}"><strong>${overall === "ok" ? "OK" : overall === "warn" ? "주의" : "오류"}</strong><span>종합 상태</span></div><div class="tt-precheck-card"><strong>${report.blockingCount || 0}</strong><span>실행 차단</span></div><div class="tt-precheck-card"><strong>${report.counts?.error || 0}</strong><span>오류</span></div><div class="tt-precheck-card"><strong>${report.counts?.warn || 0}</strong><span>주의</span></div><div class="tt-precheck-card"><strong>${report.counts?.ok || 0}</strong><span>정상</span></div><div class="tt-precheck-card"><strong>${Number(report.performance?.totalMs || 0) < 1 ? "<1" : Number(report.performance?.totalMs || 0).toFixed(0)}ms</strong><span>진단 시간</span></div></div>
         <div class="tt-precheck-body">${sections}</div>
       </div>`;
   }
@@ -6379,9 +6555,11 @@ export function createAutoAssignAll(deps) {
     return 2;
   }
 
-  function freshOrderBlocks(blocks = [], baseSlots = [], checkOptions = {}) {
+  function freshOrderBlocks(blocks = [], baseSlots = [], checkOptions = {}, cachedCandidateCounts = null) {
     return blocks.map((block, idx) => {
-      const candidateCount = freshDirectCandidateCount(block, baseSlots, [], checkOptions);
+      const candidateCount = cachedCandidateCounts instanceof Map && cachedCandidateCounts.has(block.key)
+        ? Number(cachedCandidateCounts.get(block.key) || 0)
+        : freshDirectCandidateCount(block, baseSlots, [], checkOptions);
       const tier = freshBlockPlacementTier(block);
       const sizeScore = blockClassCardSize(block);
       return { block, idx, tier, sizeScore, candidateCount, difficulty: freshBlockDifficulty(block, candidateCount) };
@@ -6866,7 +7044,8 @@ export function createAutoAssignAll(deps) {
       respectSoftLimits: false
     };
     const { kept: rawBlocks, skipped } = freshBuildBlocks(standalone, groupBlocks, protectedEntries);
-    const orderedBlocks = freshOrderBlocks(rawBlocks, baseSlots, strictOptions);
+    const cachedCandidateCounts = consumeExactSolverCandidateCache(standalone, groupBlocks, protectedEntries, options);
+    const orderedBlocks = freshOrderBlocks(rawBlocks, baseSlots, strictOptions, cachedCandidateCounts);
     const blockByKey = new Map(orderedBlocks.map(block => [block.key, block]));
     const blockByCardId = new Map();
     orderedBlocks.forEach(block => freshBlockCardIds(block).forEach(id => freshAddBlockToCardIndex(blockByCardId, id, block)));
@@ -6999,7 +7178,8 @@ export function createAutoAssignAll(deps) {
         coverageRepairCount: coverageRepair.repairedCount || 0,
         coverageRepairAttempts: coverageRepair.attempts || 0,
         coverageForcedCount: (coverageRepair.forcedEntries || []).length,
-        baseSlotCount: baseSlots.length
+        baseSlotCount: baseSlots.length,
+        precheckCandidateCacheReused: cachedCandidateCounts instanceof Map
       }
     };
   }
@@ -7057,14 +7237,19 @@ export function createAutoAssignAll(deps) {
     });
     const precheckCounts = precheckReport.counts || {};
     const precheckHasIssues = (precheckCounts.error || 0) || (precheckCounts.warn || 0);
+    const precheckMs = Number(precheckReport.performance?.totalMs || 0);
     addTimetableLog(
-      precheckHasIssues ? "warn" : "auto",
+      precheckReport.blockingCount ? "error" : precheckHasIssues ? "warn" : "auto",
       "자동배치 사전 점검",
-      `점검 오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 정보 ${precheckCounts.info || 0}개 · 정상 ${precheckCounts.ok || 0}개`
+      `실행차단 ${precheckReport.blockingCount || 0}개 · 오류 ${precheckCounts.error || 0}개 · 주의 ${precheckCounts.warn || 0}개 · 진단 ${precheckMs < 1 ? "<1" : precheckMs.toFixed(0)}ms · 후보 계산은 solver에서 재사용`
     );
-    if (!isFastCheckRun && (precheckCounts.error || 0) > 0) {
-      const proceedOnErrors = confirm(`자동배치 사전 점검에서 점검 오류 ${precheckCounts.error}개가 발견되었습니다.\n데이터/제약 조건 확인 항목입니다.\n\n그래도 새 자동배치 엔진을 실행할까요?`);
-      if (!proceedOnErrors) return;
+    if ((precheckReport.blockingCount || 0) > 0) {
+      await openAutoAssignPrecheckDialog(precheckReport, { allowProceed: false });
+      return;
+    }
+    if (!isFastCheckRun && precheckHasIssues) {
+      const proceedAfterReview = await openAutoAssignPrecheckDialog(precheckReport, { allowProceed: true });
+      if (!proceedAfterReview) return;
     }
 
     const modeText = options.placementMode === "keep" ? "현재 배치 유지 + 미배치만 배치" : "선택 범위 초기화 후 배치";

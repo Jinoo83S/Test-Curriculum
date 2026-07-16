@@ -1,4 +1,5 @@
 import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-room-availability-separation-r355";
+import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-preflight-r366";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -13,7 +14,7 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r343/HIS_CP_SAT_Local_Server_r343.zip";
 const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r343";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r343 CP-SAT API bridge";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r366 CP-SAT API bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -1409,6 +1410,21 @@ export function setupCpSatWebappImport(ctx = {}) {
       });
       return latestState;
     }
+    function localSolverPreflight() {
+      const currentEntries = asArray(entries?.());
+      const seedEntries = currentEntries.filter(entry => isSolverSeedEntryForPayload(entry, currentEntries.length));
+      const currentTimetable = ttDomain?.() || appState?.timetable || {};
+      const scopeGrades = unique(asArray(currentTimetable.ttcards || currentTimetable.ttCards || currentTimetable.cards).map(card => card?.gradeKey));
+      return buildTimetablePreflightDiagnostics({
+        ...appState,
+        timetable: { ...currentTimetable, entries: currentEntries },
+      }, {
+        scopeGrades,
+        protectedEntries: seedEntries,
+        periodCount: Number(ttConfig?.()?.periodCount || currentTimetable?.config?.periodCount || 7),
+        allowAutoRoomAssignment: true,
+      });
+    }
     function setStatus(cls, html, progress = null) {
       statusEl.className = `tt-cpsat-api-box ${cls}`;
       statusEl.innerHTML = html;
@@ -1430,8 +1446,10 @@ export function setupCpSatWebappImport(ctx = {}) {
       const privacy = data?.privacy?.solverPayload || privacyReport(latestState);
       const policy = applyPolicy(data || {}, normalizeEntryList(data?.entries || []), asArray(entries?.()).length);
       const issuePreview = issueLines(data, 5).join(" / ");
+      const clientPreflight = data?.clientPreflight || null;
       const rowData = [
         ["상태", data?.status || data?.state || (data?.ok ? "OK" : "확인 필요")],
+        ["브라우저 사전진단", clientPreflight ? formatTimetablePreflightSummary(clientPreflight) : "-"],
         ["검증", validation.summary || (validation.ok === true ? "정상" : "-")],
         ["적용판정", policy.canApply ? `적용 가능 · ${policy.reason}` : `적용 차단 · ${policy.reason}`],
         ["원인요약", issuePreview || "-"],
@@ -1505,12 +1523,27 @@ export function setupCpSatWebappImport(ctx = {}) {
           renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
           return;
         }
+        const clientPreflight = localSolverPreflight();
+        if ((clientPreflight.blockingCount || 0) > 0) {
+          const blockers = blockingTimetablePreflightIssues(clientPreflight).slice(0, 6);
+          setStatus("bad", `<b>브라우저 사전진단에서 실행 차단</b><br>${escapeHtml(formatTimetablePreflightSummary(clientPreflight))}<br>${escapeHtml(blockers.map(issue => `${issue.title}: ${issue.detail}`).join(" / "))}`, 0);
+          summaryEl.className = "tt-cpsat-api-box bad";
+          summaryEl.innerHTML = tableRows([
+            ["상태", "CP-SAT 전송 차단"],
+            ["브라우저 사전진단", formatTimetablePreflightSummary(clientPreflight)],
+            ["점검 복잡도", clientPreflight.performance?.complexity || "O(records + cards×slots)"],
+            ["조치", "차단 항목을 수정한 뒤 다시 점검하세요."],
+          ], escapeHtml);
+          detailsEl.textContent = JSON.stringify({ kind: "client-preflight-blocked", clientPreflight }, null, 2);
+          return;
+        }
+        setStatus(clientPreflight.counts?.warn ? "warn" : "info", `<b>브라우저 사전진단 완료</b><br>${escapeHtml(formatTimetablePreflightSummary(clientPreflight))}<br>서버 상세 점검을 계속합니다.`, 28);
 
         let analyzeError = null;
         try {
           const data = await postJson(`${apiBase()}/analyze`, { state }, 30000);
-          const body = data?.data || data;
-          setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b><br>${escapeHtml(body?.validation?.summary || "점검 완료")}<br><span style="font-size:11px;color:#64748b">이 검증은 현재 시간표 entries 기준입니다. 고정과목만 남은 초기화 상태에서는 부족이 나오는 것이 정상이며, CP-SAT 실행을 막지 않습니다.</span>`, 100);
+          const body = { ...(data?.data || data), clientPreflight };
+          setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>데이터 점검 완료</b><br>${escapeHtml(body?.validation?.summary || "점검 완료")}<br><span style="font-size:11px;color:#64748b">브라우저 사전진단 ${escapeHtml(formatTimetablePreflightSummary(clientPreflight))} · 이 검증은 현재 시간표 entries 기준입니다.</span>`, 100);
           renderApiSummary(body, "analyze");
           return;
         } catch (err) {
@@ -1526,6 +1559,7 @@ export function setupCpSatWebappImport(ctx = {}) {
           const privacy = privacyReport(state);
           const merged = {
             ...body,
+            clientPreflight,
             status: body?.status || "VALIDATE-FALLBACK",
             counts: body?.counts || countSolverState(state),
             privacy: body?.privacy || { solverPayload: privacy },
@@ -1576,7 +1610,21 @@ export function setupCpSatWebappImport(ctx = {}) {
           renderApiSummary({ ok: false, counts: countSolverState(state), validation: { ok: false, summary: "웹앱 데이터 없음" } }, "empty-state");
           return;
         }
-        setStatus("warn", `<b>CP-SAT 실행 요청 중</b><br>현재 entries 검증이 아니라 새 배치를 생성합니다. 제한 ${opt.timeLimitSeconds}초`, 10);
+        const clientPreflight = localSolverPreflight();
+        if ((clientPreflight.blockingCount || 0) > 0) {
+          const blockers = blockingTimetablePreflightIssues(clientPreflight).slice(0, 8);
+          setStatus("bad", `<b>CP-SAT 실행 전 사전진단에서 차단되었습니다.</b><br>${escapeHtml(formatTimetablePreflightSummary(clientPreflight))}<br>${escapeHtml(blockers.map(issue => `${issue.title}: ${issue.detail}`).join(" / "))}`, 0);
+          summaryEl.className = "tt-cpsat-api-box bad";
+          summaryEl.innerHTML = tableRows([
+            ["상태", "CP-SAT 실행 차단"],
+            ["브라우저 사전진단", formatTimetablePreflightSummary(clientPreflight)],
+            ["진단 시간", `${Number(clientPreflight.performance?.totalMs || 0).toFixed(1)}ms`],
+            ["조치", "교사·교실·학급 ID, 가능시간, 고정배치 충돌을 수정하세요."],
+          ], escapeHtml);
+          detailsEl.textContent = JSON.stringify({ kind: "client-preflight-blocked", clientPreflight }, null, 2);
+          return;
+        }
+        setStatus("warn", `<b>CP-SAT 실행 요청 중</b><br>브라우저 사전진단 ${escapeHtml(formatTimetablePreflightSummary(clientPreflight))} · 제한 ${opt.timeLimitSeconds}초`, 10);
         const start = await postJson(`${apiBase()}/solve/start`, { state, ...opt }, 30000);
         const jobId = start?.jobId;
         if (!jobId) throw new Error("jobId가 반환되지 않았습니다.");
@@ -1590,7 +1638,7 @@ export function setupCpSatWebappImport(ctx = {}) {
           setStatus("warn", `<b>${escapeHtml(solvePhaseLabel(job))}</b> · ${escapeHtml(job.message || job.state || "running")}<br>jobId: ${escapeHtml(jobId)}`, p);
           detailsEl.textContent = JSON.stringify({ jobId, state: job.state, phase: job.phase, message: job.message }, null, 2);
           if (job.state === "done") {
-            latestResult = job.result;
+            latestResult = { ...(job.result || {}), clientPreflight };
             const policy = resultApplyPolicy(latestResult);
             const issues = issueLines(latestResult, 4);
             const issueHtml = issues.length ? `<br><span style="font-size:11px;color:#64748b">${escapeHtml(issues.join(" / "))}</span>` : "";
@@ -1606,7 +1654,7 @@ export function setupCpSatWebappImport(ctx = {}) {
           }
           if (["failed", "error"].includes(String(job.state))) {
             if (job.result && asArray(job.result.entries).length) {
-              latestResult = job.result;
+              latestResult = { ...(job.result || {}), clientPreflight };
               const policy = resultApplyPolicy(latestResult);
               setStatus(policy.level || "warn", `<b>CP-SAT 부분 배치 완료</b><br>${escapeHtml(latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
               renderApiSummary(latestResult, "solve-failed-with-result");

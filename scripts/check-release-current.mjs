@@ -34,6 +34,9 @@ for (const rel of [
   "js/timetable-save-revision.js",
   "js/timetable-revision-history.js",
   "js/timetable-constraint-model.js",
+  "js/timetable-preflight-diagnostics.js",
+  "js/timetable-autoassign.js",
+  "js/cp-sat-webapp-import.js",
   "js/timetable.js",
   "timetable-revision-history.css",
   "timetable-print.css",
@@ -63,6 +66,9 @@ const timetable = read("js/timetable.js");
 const revisionModule = read("js/timetable-save-revision.js");
 const revisionUi = read("js/timetable-revision-history.js");
 const constraintModel = read("js/timetable-constraint-model.js");
+const preflightDiagnostics = read("js/timetable-preflight-diagnostics.js");
+const autoAssign = read("js/timetable-autoassign.js");
+const cpSatBridge = read("js/cp-sat-webapp-import.js");
 const revisionCss = read("timetable-revision-history.css");
 const printHtml = read("timetable-print.html");
 const printApp = read("js/timetable-print-app.js");
@@ -80,17 +86,25 @@ assert.match(revisionModule, /CompressionStream/);
 assert.match(revisionModule, /TIMETABLE_REVISION_MAX_PAYLOAD_BYTES/);
 assert.match(revisionUi, /복구 전 자동 백업/);
 assert.match(constraintModel, /export const CLASS_UNAVAILABLE_PREFIX/);
+assert.match(preflightDiagnostics, /r366-timetable-preflight-v1/);
+assert.match(preflightDiagnostics, /card-zero-candidate/);
+assert.match(preflightDiagnostics, /protected-teacher-conflict/);
+assert.match(autoAssign, /buildExactSolverCandidatePrecheck/);
+assert.match(autoAssign, /consumeExactSolverCandidateCache/);
+assert.match(autoAssign, /precheckCandidateCacheReused/);
+assert.match(cpSatBridge, /localSolverPreflight/);
+assert.match(cpSatBridge, /CP-SAT 실행 전 사전진단에서 차단되었습니다/);
 assert.match(timetable, /import \{ CLASS_UNAVAILABLE_PREFIX \} from "\.\/timetable-constraint-model\.js\?v=2026-07-15-timetable-loading-hotfix-r358"/);
 assert.match(revisionCss, /\.tt-revision-panel/);
 assert.doesNotMatch(html, /\.tt-revision-panel\s*\{/);
 assert.match(timetable, /ttFirestoreRevisionHistory/);
 assert.match(timetable, /createTimetableRevisionHistoryUi/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-15-timetable-loading-hotfix-r358"/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-16-cpsat-preflight-r366"/);
 assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355"/);
 assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
 assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-15-timetable-loading-hotfix-r358/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-15-print-usability-r365/);
+assert.match(version, /2026-07-16-cpsat-preflight-r366/);
 assert.match(printHtml, /<span class="badge">r365<\/span>/);
 assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
@@ -110,6 +124,14 @@ assert.equal(
   importMap.imports["./js/timetable.js?v=2026-07-15-room-availability-separation-r355"],
   "./js/timetable.js?v=2026-07-15-timetable-loading-hotfix-r358"
 );
+assert.equal(
+  importMap.imports["./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355"],
+  "./js/timetable-autoassign.js?v=2026-07-16-cpsat-preflight-r366"
+);
+assert.equal(
+  importMap.imports["./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355"],
+  "./js/cp-sat-webapp-import.js?v=2026-07-16-cpsat-preflight-r366"
+);
 
 const regressionTests = [
   "test-destructive-operation-guard.mjs",
@@ -126,6 +148,7 @@ const regressionTests = [
   "test-timetable-print-word-layout.mjs",
   "test-timetable-print-operational-data.mjs",
   "test-timetable-print-usability.mjs",
+  "test-timetable-preflight-diagnostics.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });
