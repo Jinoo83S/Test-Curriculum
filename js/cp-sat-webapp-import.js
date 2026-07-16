@@ -13,9 +13,10 @@ const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";
 const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r343/HIS_CP_SAT_Local_Server_r343.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r343";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r367 CP-SAT API bridge";
+const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r344/HIS_CP_SAT_Local_Server_r344.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r368";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r368 stable-save + fast-solve bridge";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -23,6 +24,93 @@ const deepClone = v => JSON.parse(JSON.stringify(v ?? null));
 const nowIso = () => { try { return new Date().toISOString(); } catch (_) { return String(Date.now()); } };
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const unique = list => [...new Set(asArray(list).map(cleanLocal).filter(Boolean))];
+
+function fnv1a32(text) {
+  let hash = 2166136261;
+  const source = String(text || "");
+  for (let i = 0; i < source.length; i += 1) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+function logicalEntryKey(entry = {}) {
+  const groupId = cleanLocal(entry.groupId);
+  const cardIds = unique([...(entry.ttcardIds || []), entry.ttcardId]).sort();
+  const templateIds = unique([...(entry.templateIds || []), entry.templateId]).sort();
+  const gradeKeys = unique([...(entry.gradeKeys || []), entry.gradeKey]).sort();
+  const spanTotal = Math.max(1, Number(entry.autoBlockSpanTotal || entry.durationPeriods || 1) || 1);
+  const spanIndex = Math.max(0, Number(entry.autoBlockSpanIndex || 0) || 0);
+  if (groupId) return `group:${groupId}:span:${spanIndex}/${spanTotal}`;
+  if (cardIds.length) return `cards:${cardIds.join("|")}:span:${spanIndex}/${spanTotal}`;
+  return `tpl:${templateIds.join("|")}:grade:${gradeKeys.join("|")}:sec:${Number(entry.sectionIdx || 0)}:span:${spanIndex}/${spanTotal}`;
+}
+
+function entrySlotKey(entry = {}) {
+  return `${Number(entry.day)}:${Number(entry.period)}`;
+}
+
+function stableGeneratedEntryId(logicalKey, ordinal, usedIds) {
+  const base = `cpsat_${fnv1a32(logicalKey)}_${String(Math.max(0, ordinal)).padStart(2, "0")}`;
+  let candidate = base;
+  let suffix = 1;
+  while (usedIds.has(candidate)) candidate = `${base}_${suffix++}`;
+  usedIds.add(candidate);
+  return candidate;
+}
+
+export function reconcileCpSatEntryIds(nextEntries = [], currentEntries = []) {
+  const next = deepClone(asArray(nextEntries));
+  const current = deepClone(asArray(currentEntries));
+  const oldByLogical = new Map();
+  const usedIds = new Set();
+  current.forEach(entry => {
+    const id = cleanLocal(entry?.id);
+    if (id) usedIds.add(id);
+    const key = logicalEntryKey(entry);
+    if (!oldByLogical.has(key)) oldByLogical.set(key, []);
+    oldByLogical.get(key).push(entry);
+  });
+  oldByLogical.forEach(list => list.sort((a, b) => entrySlotKey(a).localeCompare(entrySlotKey(b)) || cleanLocal(a.id).localeCompare(cleanLocal(b.id))));
+
+  const nextByLogical = new Map();
+  next.forEach(entry => {
+    const key = logicalEntryKey(entry);
+    if (!nextByLogical.has(key)) nextByLogical.set(key, []);
+    nextByLogical.get(key).push(entry);
+  });
+
+  let reused = 0;
+  let created = 0;
+  const assigned = new Set();
+  nextByLogical.forEach((list, key) => {
+    list.sort((a, b) => entrySlotKey(a).localeCompare(entrySlotKey(b)) || cleanLocal(a.id).localeCompare(cleanLocal(b.id)));
+    const oldList = oldByLogical.get(key) || [];
+    const oldBySlot = new Map();
+    oldList.forEach(old => {
+      const slot = entrySlotKey(old);
+      if (!oldBySlot.has(slot)) oldBySlot.set(slot, []);
+      oldBySlot.get(slot).push(old);
+    });
+    const remainingOld = [...oldList];
+    list.forEach((entry, index) => {
+      const slotQueue = oldBySlot.get(entrySlotKey(entry)) || [];
+      let matched = slotQueue.find(old => !assigned.has(cleanLocal(old.id))) || null;
+      if (!matched) matched = remainingOld.find(old => !assigned.has(cleanLocal(old.id))) || null;
+      if (matched && cleanLocal(matched.id)) {
+        entry.id = cleanLocal(matched.id);
+        assigned.add(entry.id);
+        reused += 1;
+      } else {
+        entry.id = stableGeneratedEntryId(key, index, usedIds);
+        assigned.add(entry.id);
+        created += 1;
+      }
+    });
+  });
+  return { entries: next, reused, created, total: next.length };
+}
 
 function normalizeApiBase(v) {
   const s = cleanLocal(v || API_DEFAULT).replace(/\/+$/, "");
@@ -1019,14 +1107,9 @@ async function persistCpSatTimetable({ domain, appStateRef, nextEntries, nextMet
     throw new Error("저장 함수가 연결되지 않았습니다. CP-SAT 결과를 화면에 넣었지만 저장을 확정할 수 없습니다.");
   }
 
-  // 1차 저장 후에도 구버전 normalizer/비동기 동기화가 entries 또는 meta를 건드릴 수 있어
-  // 동일 상태를 다시 주입하고 2차 저장으로 확정합니다.
+  // r368: 논리 수업별 기존 Firestore 문서 ID를 재사용하므로 한 번의
+  // 원자적 저장으로 확정할 수 있습니다. 동일 결과의 이중 저장은 하지 않습니다.
   await saveNow("timetable", { force: true, throwOnError: true });
-  syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, backup);
-  recomputeConflicts?.();
-  renderAll?.();
-  await saveNow("timetable", { force: true, throwOnError: true });
-  syncCpSatTimetableState(domain, appStateRef, nextEntries, nextMeta, backup);
   cpSatSaveVerification(domain, asArray(nextEntries).length);
 }
 
@@ -1238,8 +1321,11 @@ export function setupCpSatWebappImport(ctx = {}) {
     if (!canEdit?.()) { alert("편집 권한이 없습니다. 로그인/권한을 확인하세요."); return false; }
     const domain = ttDomain?.();
     if (!domain) { alert("시간표 데이터가 아직 로드되지 않았습니다."); return false; }
-    const nextEntries = normalizeEntryList(rawEntries);
-    if (!nextEntries.length) { alert("적용할 entries가 없습니다."); return false; }
+    const normalizedEntries = normalizeEntryList(rawEntries);
+    if (!normalizedEntries.length) { alert("적용할 entries가 없습니다."); return false; }
+    const currentEntriesBeforeApply = deepClone(asArray(entries?.()));
+    const idReconciliation = reconcileCpSatEntryIds(normalizedEntries, currentEntriesBeforeApply);
+    const nextEntries = idReconciliation.entries;
 
     const assignmentCount = nextEntries.filter(e => e.roomAssignmentsByTtCardId && Object.keys(e.roomAssignmentsByTtCardId).length).length;
     if (assignmentCount <= 0) {
@@ -1260,6 +1346,12 @@ export function setupCpSatWebappImport(ctx = {}) {
 
     const applySuspendToken = typeof suspendAutoSave === "function" ? suspendAutoSave("cp-sat-apply") : null;
     const summary = entriesSummary(nextEntries);
+    const rollbackState = {
+      entries: deepClone(asArray(domain.entries)),
+      autoAssignMeta: deepClone(domain.autoAssignMeta || {}),
+      savedSchedules: deepClone(asArray(domain.savedSchedules)),
+      bestAutoAssignSnapshot: deepClone(domain.bestAutoAssignSnapshot || null),
+    };
     const backup = makeBackupVersion(`CP-SAT API 적용 전 백업 ${new Date().toLocaleString("ko-KR")}`);
     captureTimetableUndo?.("CP-SAT API 결과 적용");
 
@@ -1290,6 +1382,7 @@ export function setupCpSatWebappImport(ctx = {}) {
       cpSatResultAudit: deepClone(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null)),
       cpSatScopeAudit: deepClone(apiResult?.clientScopeAudit || null),
       backupVersionId: backup?.id || null,
+      entryIdReconciliation: { reused: idReconciliation.reused, created: idReconciliation.created, total: idReconciliation.total },
     };
 
     let currentValidationBody = null;
@@ -1347,9 +1440,20 @@ export function setupCpSatWebappImport(ctx = {}) {
       });
     } catch (err) {
       console.error("CP-SAT 저장 실패", err);
+      syncCpSatTimetableState(domain, appState, rollbackState.entries, rollbackState.autoAssignMeta, null);
+      domain.savedSchedules = deepClone(rollbackState.savedSchedules);
+      domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
+      if (appState?.timetable && appState.timetable !== domain) {
+        appState.timetable.savedSchedules = deepClone(rollbackState.savedSchedules);
+        appState.timetable.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
+      }
       recomputeConflicts?.();
       renderAll?.();
-      alert(`CP-SAT 결과를 화면에는 반영했지만 저장 확인에 실패했습니다.\n\n${err?.message || err}\n\n페이지를 새로고침하지 말고 [저장]을 먼저 누른 뒤 진단 파일을 다시 확인하세요.`);
+      alert(`CP-SAT 결과 저장에 실패하여 화면도 적용 전 시간표로 복원했습니다.
+
+${err?.message || err}
+
+운영 시간표에는 변경이 저장되지 않았습니다.`);
       if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
       return false;
     }
@@ -1357,7 +1461,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n메타 source: cp-sat-webapp-r367\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r368\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1386,6 +1490,7 @@ export function setupCpSatWebappImport(ctx = {}) {
             <div class="tt-cpsat-api-field"><label>Workers</label><input id="ttCpSatApiWorkers" type="number" min="1" max="32" value="4"></div>
           </div>
           <div class="tt-cpsat-api-checkline">🔒 학생 객체는 전송하지 않습니다. 시간표 카드/배치 결과의 학생 필드도 제거하고, 학생 충돌은 과목카드 roster의 studentId만 사용합니다.</div>
+          <label class="tt-cpsat-api-checkline"><input id="ttCpSatQuickComplete" type="checkbox" checked> ⚡ 완전한 시간표를 찾으면 즉시 종료합니다. 추가 품질 최적화 90초를 생략하는 권장 모드입니다.</label>
           <div class="tt-cpsat-api-download-note">로컬 서버가 아직 없으면 <b>로컬 서버 다운로드</b>를 눌러 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요. 웹페이지가 자동 실행할 수는 없고, 실행은 Windows에서 직접 해야 합니다.</div>
           <div class="tt-cpsat-api-actions">
             <button type="button" data-action="download-local-server">로컬 서버 다운로드</button>
@@ -1412,6 +1517,10 @@ export function setupCpSatWebappImport(ctx = {}) {
     const progressEl = $("#ttCpSatApiProgress");
     const applyBtn = $('[data-action="apply"]');
     const resultBtn = $('[data-action="download-result"]');
+    try { $("#ttCpSatQuickComplete").checked = localStorage.getItem(QUICK_COMPLETE_KEY) !== "0"; } catch (_) {}
+    $("#ttCpSatQuickComplete")?.addEventListener("change", () => {
+      try { localStorage.setItem(QUICK_COMPLETE_KEY, $("#ttCpSatQuickComplete").checked ? "1" : "0"); } catch (_) {}
+    });
 
     function apiBase() {
       const base = normalizeApiBase($("#ttCpSatApiBase")?.value || API_DEFAULT);
@@ -1419,10 +1528,13 @@ export function setupCpSatWebappImport(ctx = {}) {
       return base;
     }
     function options() {
+      const quickComplete = $("#ttCpSatQuickComplete")?.checked !== false;
+      try { localStorage.setItem(QUICK_COMPLETE_KEY, quickComplete ? "1" : "0"); } catch (_) {}
       return {
         timeLimitSeconds: Math.max(1, Math.min(300, parseInt($("#ttCpSatApiTime")?.value || "120", 10) || 120)),
         workers: Math.max(1, Math.min(32, parseInt($("#ttCpSatApiWorkers")?.value || "4", 10) || 4)),
         preferCpSat: true,
+        quickComplete,
         returnFullState: false,
       };
     }
@@ -1525,11 +1637,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r343.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r344.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r343에 <code>HIS_CP_SAT_Local_Server_r343.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r344에 <code>HIS_CP_SAT_Local_Server_r344.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
 
