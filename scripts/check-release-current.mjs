@@ -113,7 +113,7 @@ assert.match(cpSatBridge, /최종 판정/);
 assert.match(cpSatBridge, /입력 카드/);
 assert.match(cpSatBridge, /reconcileCpSatEntryIds/);
 assert.match(cpSatBridge, /quickComplete/);
-assert.match(cpSatBridge, /HIS_CP_SAT_Local_Server_r347\.zip/);
+assert.match(cpSatBridge, /HIS_CP_SAT_Local_Server_r348\.zip/);
 assert.match(cpSatBridge, /최근 CP-SAT 실행 기록/);
 assert.match(cpSatBridge, /clientSaveEstimate/);
 assert.match(cpSatBridge, /clientApplyTiming/);
@@ -123,12 +123,12 @@ assert.match(revisionCss, /\.tt-revision-panel/);
 assert.doesNotMatch(html, /\.tt-revision-panel\s*\{/);
 assert.match(timetable, /ttFirestoreRevisionHistory/);
 assert.match(timetable, /createTimetableRevisionHistoryUi/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-20-cpsat-lateststate-scope-r373"/);
-assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-lateststate-scope-r373"/);
-assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-20-cpsat-lateststate-scope-r373/);
-assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-20-cpsat-lateststate-scope-r373/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-20-capacity-warning-allow-r374"/);
+assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-20-capacity-warning-allow-r374"/);
+assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-20-capacity-warning-allow-r374/);
+assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-20-capacity-warning-allow-r374/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-20-cpsat-lateststate-scope-r373/);
+assert.match(version, /2026-07-20-capacity-warning-allow-r374/);
 assert.match(printHtml, /<span class="badge">r365<\/span>/);
 assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
@@ -138,15 +138,15 @@ assert.ok(importMapMatch, "timetable import map missing");
 const importMap = JSON.parse(importMapMatch[1]);
 assert.equal(
   importMap.imports["./js/state.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/state.js?v=2026-07-20-cpsat-lateststate-scope-r373"
+  "./js/state.js?v=2026-07-20-capacity-warning-allow-r374"
 );
 assert.equal(
   importMap.imports["./js/version.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/version.js?v=2026-07-20-cpsat-lateststate-scope-r373"
+  "./js/version.js?v=2026-07-20-capacity-warning-allow-r374"
 );
 assert.equal(
   importMap.imports["./js/timetable.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/timetable.js?v=2026-07-20-cpsat-lateststate-scope-r373"
+  "./js/timetable.js?v=2026-07-20-capacity-warning-allow-r374"
 );
 assert.equal(
   importMap.imports["./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355"],
@@ -154,23 +154,27 @@ assert.equal(
 );
 assert.equal(
   importMap.imports["./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-lateststate-scope-r373"
+  "./js/cp-sat-webapp-import.js?v=2026-07-20-capacity-warning-allow-r374"
 );
 
 const releaseInfo = JSON.parse(read("release-version.json"));
-assert.equal(releaseInfo.release, "r373");
-assert.equal(releaseInfo.appVersion, "2026-07-20-cpsat-lateststate-scope-r373");
-assert.equal(releaseInfo.serverRequired, "2026-07-20-room-availability-enforcement-r347");
-assert.match(html, /data-his-release-badge="1">r373<\/span>/);
-assert.match(html, /HIS_RELEASE_BUILD = "r373-cpsat-lateststate-scope-20260720"/);
+assert.equal(releaseInfo.release, "r374");
+assert.equal(releaseInfo.appVersion, "2026-07-20-capacity-warning-allow-r374");
+assert.equal(releaseInfo.serverRequired, "2026-07-20-aggregate-capacity-warning-r348");
+assert.match(html, /data-his-release-badge="1">r374<\/span>/);
+assert.match(html, /HIS_RELEASE_BUILD = "r374-capacity-warning-allow-20260720"/);
 assert.match(html, /Cache-Control/);
 assert.ok(html.includes("await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`)"));
 assert.ok(html.includes("await import(`./js/timetable.js?v=${encodeURIComponent(expectedVersion)}`)"));
 assert.match(timetable, /\.\/version\.js\?v=2026-07-20-initial-load-conflict-hotfix-r371/);
 assert.match(timetable, /\.\/app-health-check\.js\?v=2026-07-20-initial-load-conflict-hotfix-r371/);
-assert.match(cpSatBridge, /HIS_CP_SAT_BRIDGE_RELEASE = "r373"/);
-assert.match(cpSatBridge, /HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r347\.zip"/);
-assert.match(cpSatBridge, /EXPECTED_SERVER_VERSION = "2026-07-20-room-availability-enforcement-r347"/);
+assert.match(cpSatBridge, /HIS_CP_SAT_BRIDGE_RELEASE = "r374"/);
+assert.match(cpSatBridge, /HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348\.zip"/);
+assert.match(cpSatBridge, /EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348"/);
+assert.match(cpSatBridge, /function finalCapacityAudit\(/);
+assert.match(cpSatBridge, /warning-apply-allowed/);
+assert.match(cpSatBridge, /교실 수용인원 초과 경고/);
+assert.doesNotMatch(cpSatBridge, /HIS_CP_SAT_Local_Server_r347\.zip/);
 assert.match(cpSatBridge, /function finalRoomAvailabilityAudit/);
 assert.match(cpSatBridge, /clientFinalConstraintAudit/);
 assert.match(cpSatBridge, /교실 불가시간 위반/);
@@ -178,7 +182,7 @@ for (const forbidden of ["timetable-r370.html", "js/version-r370.js", "js/timeta
   assert.ok(!exists(forbidden), `${forbidden}: versioned filename must not exist`);
 }
 for (const navPage of ["index.html", "prework.html", "results.html", "roster.html", "setup.html", "timetable-print.html"]) {
-  assert.match(read(navPage), /timetable\.html\?release=r373-cpsat-lateststate-scope-20260720/, `${navPage}: r372 cache-busted timetable link missing`);
+  assert.match(read(navPage), /timetable\.html\?release=r374-capacity-warning-allow-20260720/, `${navPage}: r374 cache-busted timetable link missing`);
 }
 for (const rel of ["timetable.html", "js/version.js", "js/cp-sat-webapp-import.js"]) {
   assert.doesNotMatch(read(rel), /r369/, `${rel}: runtime r369 marker remains`);
@@ -206,7 +210,7 @@ const regressionTests = [
   "test-initial-load-constraint-hotfix.mjs",
   "test-cpsat-run-history.mjs",
   "test-final-room-availability-audit-r372.mjs",
-  "test-cpsat-lateststate-scope-r373.mjs",
+  "test-cpsat-capacity-warning-r374.mjs",
 ];
 for (const filename of regressionTests) {
   const test = spawnSync(process.execPath, [path.join(here, filename)], { encoding: "utf8" });

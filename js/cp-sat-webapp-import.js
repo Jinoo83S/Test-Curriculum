@@ -15,13 +15,13 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r347/HIS_CP_SAT_Local_Server_r347.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r373";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r373 latestState scope hotfix bridge";
-const EXPECTED_SERVER_VERSION = "2026-07-20-room-availability-enforcement-r347";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r348/HIS_CP_SAT_Local_Server_r348.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r374";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r374 aggregate capacity warning bridge";
+const EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r373";
-globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r347.zip";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r374";
+globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -852,7 +852,7 @@ function softValidationSummary(apiResult = {}) {
   const shortage = Number(vc.shortageCount || 0);
   const capacity = Number(vc.capacityWarningCount || 0);
   if (shortage > 0) parts.push(`미배치 ${shortage}개`);
-  if (capacity > 0) parts.push(`수용인원 확인 ${capacity}건`);
+  if (capacity > 0) parts.push(`수용인원 경고 ${capacity}건`);
   return parts.join(" · ");
 }
 function issueLines(apiResult = {}, limit = 8) {
@@ -864,9 +864,12 @@ function issueLines(apiResult = {}, limit = 8) {
     if (type === "shortages" && Array.isArray(value)) {
       const [cardId, need, got] = value;
       lines.push(`미배치: ${cardId} · 필요 ${need}, 배치 ${got}`);
+    } else if ((type === "capacityViolations" || type === "capacityWarnings") && value && typeof value === "object" && !Array.isArray(value)) {
+      const group = asArray(value.groupNames).join(", ") || asArray(value.subjects).join(", ") || "묶음수업";
+      lines.push(`수용인원 경고: ${group} · ${value.studentCount}/${value.capacity}명 · ${value.roomName || value.roomId} · ${Number(value.day) + 1}일차 ${Number(value.period) + 1}교시`);
     } else if ((type === "capacityViolations" || type === "capacityWarnings") && Array.isArray(value)) {
       const [cardId, roomId, students, capacity] = value;
-      lines.push(`수용인원 확인: ${cardId} · ${students}/${capacity} · ${roomId}`);
+      lines.push(`수용인원 경고: ${cardId} · ${students}/${capacity}명 · ${roomId}`);
     } else if (type || value != null) {
       lines.push(`${type || "확인"}: ${Array.isArray(value) ? value.join(" / ") : JSON.stringify(value)}`);
     }
@@ -945,9 +948,116 @@ function finalRoomAvailabilityAudit(scopeState = null, entries = []) {
     });
   });
   return {
-    schemaVersion: "r373-final-room-availability-audit-v1",
+    schemaVersion: "r374-final-room-availability-audit-v1",
     blockingCount: details.length,
     ok: details.length === 0,
+    details: details.slice(0, 100),
+  };
+}
+
+export function finalCapacityAudit(scopeState = null, entries = []) {
+  const payload = payloadFromWrappedState(scopeState || {});
+  const cards = asArray(payload?.timetable?.ttcards || payload?.timetable?.ttCards || payload?.timetable?.cards);
+  const cardById = new Map(cards.map(card => [cleanLocal(card?.id), card]).filter(([id]) => id));
+  const rooms = asArray(payload?.rooms?.rooms);
+  const roomById = new Map(rooms.map(room => [cleanLocal(room?.id), room]).filter(([id]) => id));
+  const classes = asArray(payload?.classes?.classes);
+  const classIdToKey = new Map();
+  const classCountByKey = new Map();
+  classes.forEach(cls => {
+    const gradeNo = Number(String(cls?.grade || "").replace(/[^0-9]/g, ""));
+    const key = gradeNo && cleanLocal(cls?.name) ? `${gradeNo}:${cleanLocal(cls.name)}` : "";
+    if (!key) return;
+    if (cleanLocal(cls?.id)) classIdToKey.set(cleanLocal(cls.id), key);
+    classCountByKey.set(key, Math.max(0, Number(cls?.studentCount || asArray(cls?.students).length || 0) || 0));
+  });
+  const rosterStore = payload?.rosters?.rosters && typeof payload.rosters.rosters === "object" ? payload.rosters.rosters : {};
+  const studentsForCard = card => {
+    const direct = new Set(asArray(card?.studentKeys).map(cleanLocal).filter(Boolean));
+    const rows = asArray(rosterStore?.[cleanLocal(card?.templateId)]);
+    const sectionIdx = Number(card?.sectionIdx || 0);
+    const wanted = new Set(asArray(card?.classKeys).map(cleanLocal).filter(Boolean));
+    rows.forEach(row => {
+      if (Number(row?.sectionIdx || 0) !== sectionIdx) return;
+      const classKey = classIdToKey.get(cleanLocal(row?.classId)) || "";
+      if (wanted.size && !wanted.has(classKey)) return;
+      const sid = cleanLocal(row?.studentId);
+      if (sid) direct.add(sid);
+    });
+    return direct;
+  };
+  const buckets = new Map();
+  asArray(entries).forEach(entry => {
+    const day = Number(entry?.day);
+    const period = Number(entry?.period);
+    if (!Number.isInteger(day) || !Number.isInteger(period)) return;
+    const ids = unique([...(entry?.ttcardIds || []), entry?.ttcardId]);
+    const assignments = entry?.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object" ? entry.roomAssignmentsByTtCardId : {};
+    ids.forEach(cid => {
+      const card = cardById.get(cid);
+      if (!card) return;
+      const roomId = cleanLocal(assignments[cid] || (ids.length === 1 ? entry?.roomId : "") || (asArray(entry?.roomIds).length === 1 ? entry.roomIds[0] : ""));
+      if (!roomId) return;
+      const key = `${roomId}|${day}:${period}`;
+      if (!buckets.has(key)) buckets.set(key, {
+        roomId, day, period, entryIds: new Set(), groupIds: new Set(), groupNames: new Set(),
+        cardIds: new Set(), subjects: new Set(), teachers: new Set(), classKeys: new Set(),
+        studentKeys: new Set(), coveredClassKeys: new Set(), fallbackClassKeys: new Set(), fallbackDirectCount: 0,
+      });
+      const bucket = buckets.get(key);
+      if (cleanLocal(entry?.id)) bucket.entryIds.add(cleanLocal(entry.id));
+      if (cleanLocal(entry?.groupId)) bucket.groupIds.add(cleanLocal(entry.groupId));
+      if (cleanLocal(entry?.groupName)) bucket.groupNames.add(cleanLocal(entry.groupName));
+      bucket.cardIds.add(cid);
+      if (cleanLocal(card?.subject || card?.label)) bucket.subjects.add(cleanLocal(card.subject || card.label));
+      normalizeTeacherListForPayload([...(card?.teachers || []), card?.teacherName], new Set()).forEach(name => bucket.teachers.add(name));
+      asArray(card?.classKeys).map(cleanLocal).filter(Boolean).forEach(k => bucket.classKeys.add(k));
+      const students = studentsForCard(card);
+      if (students.size) {
+        students.forEach(id => bucket.studentKeys.add(id));
+        asArray(card?.classKeys).map(cleanLocal).filter(Boolean).forEach(k => bucket.coveredClassKeys.add(k));
+      } else if (asArray(card?.classKeys).length) {
+        asArray(card.classKeys).map(cleanLocal).filter(Boolean).forEach(k => bucket.fallbackClassKeys.add(k));
+      } else {
+        bucket.fallbackDirectCount += Math.max(0, Number(card?.studentCount || 0) || 0);
+      }
+    });
+  });
+  const details = [];
+  buckets.forEach(bucket => {
+    const room = roomById.get(bucket.roomId) || {};
+    const capacity = Math.max(0, Number(room?.capacity || 0) || 0);
+    if (!capacity) return;
+    const fallbackClasses = [...bucket.fallbackClassKeys].filter(key => !bucket.coveredClassKeys.has(key));
+    const studentCount = bucket.studentKeys.size
+      + fallbackClasses.reduce((sum, key) => sum + (classCountByKey.get(key) || 0), 0)
+      + bucket.fallbackDirectCount;
+    if (studentCount <= capacity) return;
+    details.push({
+      roomId: bucket.roomId,
+      roomName: cleanLocal(room?.name || room?.label || bucket.roomId),
+      day: bucket.day,
+      period: bucket.period,
+      studentCount,
+      capacity,
+      overBy: studentCount - capacity,
+      entryIds: [...bucket.entryIds].sort(),
+      groupIds: [...bucket.groupIds].sort(),
+      groupNames: [...bucket.groupNames].sort(),
+      cardIds: [...bucket.cardIds].sort(),
+      subjects: [...bucket.subjects].sort(),
+      teachers: [...bucket.teachers].sort(),
+      classKeys: [...bucket.classKeys].sort(),
+      countMode: "unique-students-plus-class-fallback",
+      policy: "warning-apply-allowed",
+    });
+  });
+  return {
+    schemaVersion: "r374-final-aggregate-capacity-audit-v1",
+    warningCount: details.length,
+    blockingCount: 0,
+    ok: true,
+    policy: "warning-apply-allowed",
     details: details.slice(0, 100),
   };
 }
@@ -1007,12 +1117,20 @@ function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount =
   if (!asArray(normalizedEntries).length) {
     return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다.", soft: false, audit };
   }
+  const capacityAudit = apiResult?.clientCapacityAudit || finalCapacityAudit(scopeState, normalizedEntries);
+  const serverCapacityCount = Number(validationCounts(apiResult).capacityWarningCount || 0);
+  const capacityWarningCount = Math.max(serverCapacityCount, Number(capacityAudit?.warningCount || 0));
+  const hasCapacityWarning = capacityWarningCount > 0;
   return {
     canApply: audit.canApply === true,
-    level: audit.status === "diagnostic_mismatch" ? "warn" : "ok",
-    reason: audit.reason,
-    soft: audit.status === "diagnostic_mismatch",
+    level: hasCapacityWarning || audit.status === "diagnostic_mismatch" ? "warn" : "ok",
+    reason: hasCapacityWarning
+      ? `${audit.reason} · 교실 수용인원 경고 ${capacityWarningCount}건(확인 후 적용 허용)`
+      : audit.reason,
+    soft: hasCapacityWarning || audit.status === "diagnostic_mismatch",
     audit,
+    capacityAudit,
+    capacityWarningCount,
   };
 }
 function solvePhaseLabel(apiResult = {}) {
@@ -1453,6 +1571,16 @@ export function setupCpSatWebappImport(ctx = {}) {
       alert(`이 CP-SAT 결과는 적용하지 않습니다.\n\n${policy.reason}\n\n${validation.summary || "검증 필요"}\n\n${issueText(apiResult)}\n\n[결과 JSON 저장]으로 진단 파일만 보관하세요.`);
       return false;
     }
+    if ((policy.capacityWarningCount || 0) > 0) {
+      const warnings = asArray(policy.capacityAudit?.details);
+      const preview = warnings.slice(0, 6).map(item => {
+        const dayNames = ["월", "화", "수", "목", "금"];
+        const group = asArray(item.groupNames).join(", ") || asArray(item.subjects).join(", ") || "묶음수업";
+        return `- ${dayNames[Number(item.day)] || `${Number(item.day) + 1}일차`} ${Number(item.period) + 1}교시 · ${group} · ${item.roomName || item.roomId} · ${item.studentCount}/${item.capacity}명(초과 ${item.overBy})`;
+      }).join("\n");
+      const proceed = confirm(`교실 수용인원 초과 경고 ${policy.capacityWarningCount}건이 있습니다.\n\n${preview}${warnings.length > 6 ? `\n- 그 외 ${warnings.length - 6}건` : ""}\n\n수용인원 경고는 적용을 차단하지 않습니다. 확인 후 이 결과를 적용하시겠습니까?`);
+      if (!proceed) return false;
+    }
 
     const applySuspendToken = typeof suspendAutoSave === "function" ? suspendAutoSave("cp-sat-apply") : null;
     const summary = entriesSummary(nextEntries);
@@ -1476,6 +1604,9 @@ export function setupCpSatWebappImport(ctx = {}) {
       cpSatServerValidationOk: validation.ok !== false,
       cpSatServerValidationSummary: validation.summary || "",
       cpSatIssueText: issueText(apiResult, 20),
+      cpSatCapacityPolicy: "warning-apply-allowed",
+      cpSatCapacityWarningCount: Number(policy.capacityWarningCount || 0),
+      cpSatCapacityWarnings: asArray(policy.capacityAudit?.details).slice(0, 50),
       strictValidationRequired: true,
       strictValidationMode: "runtime-recomputed-teacher-room-class",
       strictValidationNotice: "정상 여부는 저장된 CP-SAT 메타가 아니라 현재 화면의 실시간 교사/교실/학급 충돌 검토 결과만 기준으로 판단합니다.",
@@ -1594,7 +1725,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r373\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r374\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1755,6 +1886,7 @@ ${err?.message || err}
         clientPreflight,
       });
       decorated.clientFinalConstraintAudit = finalRoomAvailabilityAudit(latestState || {}, entriesForAudit);
+      decorated.clientCapacityAudit = finalCapacityAudit(latestState || {}, entriesForAudit);
       if ((decorated.clientFinalConstraintAudit.blockingCount || 0) > 0) {
         const first = decorated.clientFinalConstraintAudit.details?.[0] || {};
         const reason = `교실 불가시간 위반 ${decorated.clientFinalConstraintAudit.blockingCount}건 · ${first.roomName || first.roomId || "교실"}`;
@@ -1818,6 +1950,7 @@ ${err?.message || err}
         ["최종 판정", `${audit.title || "확인 필요"} · ${audit.reason || "-"}`],
         ["브라우저 사전진단", clientPreflight ? formatTimetablePreflightSummary(clientPreflight) : "-"],
         ["검증", validation.summary || (validation.ok === true ? "정상" : "-")],
+        ["수용인원 경고", hasResultEntries ? `${policy.capacityWarningCount || 0}건 · ${(policy.capacityWarningCount || 0) > 0 ? "확인 후 적용 허용" : "없음"}` : "-"],
         ["적용판정", hasResultEntries ? (policy.canApply ? `적용 가능 · ${policy.reason}` : `적용 차단 · ${policy.reason}`) : "-"],
         ["입력 카드", `포함 ${scope.includedCardCount ?? "-"} / 제외 ${scope.excludedCardCount ?? 0} / 원본 ${scope.sourceCardCount ?? "-"}`],
         ["기존 배치", `보존 seed ${scope.preservedSeedEntryCount ?? 0} / 재계산 제외 ${scope.droppedGeneratedEntryCount ?? 0}`],
@@ -1855,11 +1988,11 @@ ${err?.message || err}
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r347.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r348.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r347에 <code>HIS_CP_SAT_Local_Server_r347.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r348에 <code>HIS_CP_SAT_Local_Server_r348.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
 
@@ -1884,7 +2017,7 @@ ${err?.message || err}
         const ortools = cleanLocal(body?.ortools || "not-installed");
         const ready = body?.solverReady === true || (ortools && ortools !== "not-installed");
         if (!versionCheck.ok) {
-          setStatus("bad", `<b>서버 교체 필요</b><br>${escapeHtml(versionCheck.message)}<br>로컬 서버 r347을 새 폴더에 압축 해제해 실행하세요.`, 0);
+          setStatus("bad", `<b>서버 교체 필요</b><br>${escapeHtml(versionCheck.message)}<br>로컬 서버 r348을 새 폴더에 압축 해제해 실행하세요.`, 0);
         } else if (!ready) {
           setStatus("bad", `<b>서버는 실행 중이지만 OR-Tools가 없습니다.</b><br>GREEDY 진단 결과는 시간표에 적용할 수 없습니다. requirements.txt 설치를 완료한 뒤 다시 확인하세요.`, 0);
         } else {
@@ -2010,7 +2143,7 @@ ${err?.message || err}
         const healthResponse = await getJson(`${apiBase()}/health`, 10000);
         clientTiming.serverHealthMs = Math.max(0, perfNow() - healthStartedPerf);
         const versionCheck = cpSatServerVersionCheck(healthResponse?.data || healthResponse);
-        if (!versionCheck.ok) throw new Error(`${versionCheck.message}. HIS_CP_SAT_Local_Server_r347.zip으로 교체하세요.`);
+        if (!versionCheck.ok) throw new Error(`${versionCheck.message}. HIS_CP_SAT_Local_Server_r348.zip으로 교체하세요.`);
 
         const payloadStartedPerf = perfNow();
         const state = await solverState();

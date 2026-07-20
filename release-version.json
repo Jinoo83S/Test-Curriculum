@@ -1,6 +1,7 @@
 {
-  "release": "r373",
-  "appVersion": "2026-07-20-cpsat-lateststate-scope-r373",
-  "build": "r373-cpsat-lateststate-scope-20260720",
-  "serverRequired": "2026-07-20-room-availability-enforcement-r347"
+  "release": "r374",
+  "appVersion": "2026-07-20-capacity-warning-allow-r374",
+  "build": "r374-capacity-warning-allow-20260720",
+  "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
+  "capacityPolicy": "warning-apply-allowed"
 }
