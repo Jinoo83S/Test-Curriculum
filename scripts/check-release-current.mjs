@@ -112,7 +112,7 @@ assert.match(cpSatBridge, /최종 판정/);
 assert.match(cpSatBridge, /입력 카드/);
 assert.match(cpSatBridge, /reconcileCpSatEntryIds/);
 assert.match(cpSatBridge, /quickComplete/);
-assert.match(cpSatBridge, /HIS_CP_SAT_Local_Server_r345\.zip/);
+assert.match(cpSatBridge, /HIS_CP_SAT_Local_Server_r346\.zip/);
 assert.match(cpSatBridge, /최근 CP-SAT 실행 기록/);
 assert.match(cpSatBridge, /clientSaveEstimate/);
 assert.match(cpSatBridge, /clientApplyTiming/);
@@ -122,12 +122,12 @@ assert.match(revisionCss, /\.tt-revision-panel/);
 assert.doesNotMatch(html, /\.tt-revision-panel\s*\{/);
 assert.match(timetable, /ttFirestoreRevisionHistory/);
 assert.match(timetable, /createTimetableRevisionHistoryUi/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-16-cpsat-run-analysis-r369"/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-16-cpsat-server-hotfix-r370"/);
 assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355"/);
 assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
 assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-15-timetable-loading-hotfix-r358/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-16-cpsat-run-analysis-r369/);
+assert.match(version, /2026-07-16-cpsat-server-hotfix-r370/);
 assert.match(printHtml, /<span class="badge">r365<\/span>/);
 assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
@@ -153,7 +153,7 @@ assert.equal(
 );
 assert.equal(
   importMap.imports["./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/cp-sat-webapp-import.js?v=2026-07-16-cpsat-run-analysis-r369"
+  "./js/cp-sat-webapp-import.js?v=2026-07-16-cpsat-server-hotfix-r370"
 );
 
 const regressionTests = [
