@@ -1952,20 +1952,20 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-16-cpsat-server-hotfix-r370";
-// 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// 변경되지 않은 모듈은 기존 캐시 URL을 유지하고, r358에서 실제 변경된
-// timetable/version 모듈만 새 URL에 연결합니다. state는 검증된 r357을 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355";
+window.HIS_APP_VERSION = "2026-07-20-cpsat-server-hotfix-r370";
+// r370 재배포 확인용: 사용자 표시 버전과 런타임 자산 버전을 함께 갱신하여
+// GitHub Pages·브라우저에 남은 r369 모듈 캐시를 강제로 우회합니다.
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-server-hotfix-r370";
+console.info("[HIS release:r370] 2026-07-20 corrected deployment loaded");
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-15-timetable-loading-hotfix-r358",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-20-cpsat-server-hotfix-r370",
   "./js/state.js":"./js/state.js?v=2026-07-15-timetable-revision-restore-r357",
   "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-15-timetable-revision-restore-r357",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-15-timetable-loading-hotfix-r358",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-20-cpsat-server-hotfix-r370",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-16-cpsat-result-truth-r367",
-  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-16-cpsat-server-hotfix-r370"
+  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-server-hotfix-r370"
 }}
 </script>
 <script type="module">
