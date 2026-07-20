@@ -9,7 +9,7 @@ import {
   getFirestoreUsageStats,
 } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { APP_VERSION, versioned } from "./version.js?v=2026-07-20-cpsat-server-r370-standard-final2";
+import { APP_VERSION, versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { inspectRoomAvailabilitySeparation } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 

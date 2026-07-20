@@ -1,7 +1,7 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-15-room-availability-separation-r355";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
 import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=2026-07-16-cpsat-result-truth-r367";
-import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-20-cpsat-server-r370-standard-final2";
+import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
@@ -16,10 +16,10 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r346/HIS_CP_SAT_Local_Server_r346.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r370";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r370 standard-filename server-hotfix bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r371";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r371 initial-load/conflict hotfix bridge";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r370";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r371";
 globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r346.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -1521,7 +1521,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r370\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r371\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 

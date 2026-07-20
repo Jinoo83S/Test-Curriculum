@@ -249,6 +249,12 @@ function resolvedRoomsForCard(state, card = {}) {
     const room = roomForTeacher(state, t);
     if (room) rooms.push(room);
   });
+  // r371: 교사 전담교실이 없는 일반 카드도 단일 학급 홈룸으로 배치할 수 있습니다.
+  // 이를 미해결 교실로 경고하면 성품과 공동체처럼 정상 배치 가능한 카드가 오탐됩니다.
+  if (!rooms.length) {
+    const home = homeRoomForCard(state, card);
+    if (home) rooms.push(home);
+  }
   const ids = unique(rooms.map(r => r.id));
   return ids.map(id => rooms.find(r => r.id === id)).filter(Boolean);
 }
@@ -269,6 +275,11 @@ function buildCardConstraint(state, card = {}) {
     classLabels: classLabelsForCard(card),
     teachers: teacherNames,
     teacherMode: clean(card.teacherMode),
+    category: clean(card.category),
+    track: clean(card.track),
+    group: clean(card.group),
+    isWholeGrade: card.isWholeGrade === true,
+    isManual,
     roomRule: clean(card.roomRule) || "teacher",
     fixedRoomId: clean(card.fixedRoomId),
     resolvedRoomIds: rooms.map(r => r.id),
@@ -349,6 +360,12 @@ function buildTeacherConstraint(state, teacher = {}) {
   };
 }
 function pushIssue(issues, level, code, message, data = {}) { issues.push({ level, code, message, ...data }); }
+function isIntentionalTeacherlessActivity(card = {}) {
+  const text = [card.title, card.category, card.track, card.group].map(clean).filter(Boolean).join(" ");
+  const activity = /(자율\s*활동|동아리\s*활동|self[-\s]*regulated\s*activity|club\s*activity)/i.test(text);
+  const creativeActivity = /(창체|자율|동아리)/i.test([card.category, card.group, card.track].map(clean).join(" "));
+  return activity && (creativeActivity || card.isWholeGrade === true);
+}
 function slotSetKey(s) { return `${s.day}:${s.period}`; }
 // r205: 카드 가능시간과, 그 카드가 실제로 배정될 수 있는 모든 교실의 사용가능시간이
 // 전혀 겹치지 않으면 CP-SAT/자동배치가 그 카드를 절대 배치할 수 없습니다.
@@ -374,7 +391,13 @@ function buildIssues(model) {
   const roomById = new Map(model.rooms.map(r => [r.id, r]));
   model.cards.forEach(card => {
     if (!["ok", "manual"].includes(card.curriculumSource.status)) pushIssue(issues, "hard", `card-${card.curriculumSource.status}`, `${card.title}: 커리큘럼→템플릿→카드 원본 연결 확인 필요`, { cardId: card.id });
-    if (!card.teachers.length && card.teacherMode !== "none" && card.roomRule !== "none") pushIssue(issues, "hard", "card-missing-teacher", `${card.title}: 교사가 없습니다.`, { cardId: card.id });
+    if (!card.teachers.length && card.teacherMode !== "none" && card.roomRule !== "none") {
+      if (isIntentionalTeacherlessActivity(card)) {
+        pushIssue(issues, "info", "card-intentional-teacherless", `${card.title}: 자율·동아리 운영 카드로 교사 없음이 허용됩니다.`, { cardId: card.id });
+      } else {
+        pushIssue(issues, "hard", "card-missing-teacher", `${card.title}: 교사가 없습니다.`, { cardId: card.id });
+      }
+    }
     if (card.roomRule === "fixed" && !card.fixedRoomId) pushIssue(issues, "hard", "card-fixed-room-missing", `${card.title}: 고정교실 규칙인데 교실이 없습니다.`, { cardId: card.id });
     if (card.roomRule !== "none" && !card.resolvedRoomIds.length) pushIssue(issues, "warn", "card-room-unresolved", `${card.title}: 교실 규칙을 실제 교실로 해석하지 못했습니다.`, { cardId: card.id });
     const blockedRooms = cardRoomTimeConflict(card, roomById);

@@ -19,7 +19,7 @@ assert.match(
 );
 assert.match(
   timetable,
-  /import\s*\{\s*CLASS_UNAVAILABLE_PREFIX\s*\}\s*from\s*["']\.\/timetable-constraint-model\.js\?v=2026-07-15-timetable-loading-hotfix-r358["']/,
+  /import\s*\{\s*CLASS_UNAVAILABLE_PREFIX\s*\}\s*from\s*["']\.\/timetable-constraint-model\.js\?v=2026-07-20-initial-load-conflict-hotfix-r371["']/,
   "timetable.js must import CLASS_UNAVAILABLE_PREFIX"
 );
 

@@ -2270,8 +2270,11 @@ function _checkAllLoaded() {
   const allLoaded = [..._subscribedDomains].every(d => initialLoad[d]);
   if (allLoaded) {
     _pendingInitialRender = false;
-    synchronizeRoomAvailabilityState({ persist: canEdit(), reason: "initial-load" });
-    synchronizeTeacherIdentityState({ persist: canEdit(), reason: "initial-load" });
+    // r371: 초기 로드는 사용자 편집이 아닙니다. 구형 필드 보정은 메모리에서만 수행하고
+    // dirtyDomains/scheduleSave를 만들지 않습니다. 이후 사용자가 실제로 편집하거나 저장하면
+    // 이미 보정된 현재 appState가 함께 저장됩니다.
+    synchronizeRoomAvailabilityState({ persist: false, reason: "initial-load" });
+    synchronizeTeacherIdentityState({ persist: false, reason: "initial-load" });
     _onUpdate("all"); // 전체 로드 완료 — 1회 render
   }
 }
