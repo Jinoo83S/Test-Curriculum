@@ -1,0 +1,6 @@
+{
+  "release": "r370",
+  "appVersion": "2026-07-20-cpsat-server-r370-final",
+  "build": "r370-final-20260720",
+  "serverRequired": "2026-07-16-timing-nameerror-hotfix-r346"
+}
