@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const read = rel => fs.readFileSync(path.join(root, rel), "utf8");
+const exists = rel => fs.existsSync(path.join(root, rel));
 
 const sourceFiles = [];
 function walk(dir) {
@@ -122,12 +123,12 @@ assert.match(revisionCss, /\.tt-revision-panel/);
 assert.doesNotMatch(html, /\.tt-revision-panel\s*\{/);
 assert.match(timetable, /ttFirestoreRevisionHistory/);
 assert.match(timetable, /createTimetableRevisionHistoryUi/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-20-cpsat-server-r370-final"/);
-assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-server-r370-final"/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-20-cpsat-server-r370-standard-final2"/);
+assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-server-r370-standard-final2"/);
 assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-15-timetable-revision-restore-r357/);
-assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-20-cpsat-server-r370-final/);
+assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-20-cpsat-server-r370-standard-final2/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-20-cpsat-server-r370-final/);
+assert.match(version, /2026-07-20-cpsat-server-r370-standard-final2/);
 assert.match(printHtml, /<span class="badge">r365<\/span>/);
 assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
@@ -141,11 +142,11 @@ assert.equal(
 );
 assert.equal(
   importMap.imports["./js/version.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/version.js?v=2026-07-20-cpsat-server-r370-final"
+  "./js/version.js?v=2026-07-20-cpsat-server-r370-standard-final2"
 );
 assert.equal(
   importMap.imports["./js/timetable.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/timetable.js?v=2026-07-20-cpsat-server-r370-final"
+  "./js/timetable.js?v=2026-07-20-cpsat-server-r370-standard-final2"
 );
 assert.equal(
   importMap.imports["./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355"],
@@ -153,17 +154,26 @@ assert.equal(
 );
 assert.equal(
   importMap.imports["./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-server-r370-final"
+  "./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-server-r370-standard-final2"
 );
 
 const releaseInfo = JSON.parse(read("release-version.json"));
 assert.equal(releaseInfo.release, "r370");
-assert.equal(releaseInfo.appVersion, "2026-07-20-cpsat-server-r370-final");
+assert.equal(releaseInfo.appVersion, "2026-07-20-cpsat-server-r370-standard-final2");
 assert.match(html, /data-his-release-badge="1">r370<\/span>/);
-assert.match(html, /HIS_RELEASE_BUILD = "r370-final-20260720"/);
+assert.match(html, /HIS_RELEASE_BUILD = "r370-standard-final2-20260720"/);
 assert.match(html, /Cache-Control/);
+assert.ok(html.includes("await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`)"));
+assert.ok(html.includes("await import(`./js/timetable.js?v=${encodeURIComponent(expectedVersion)}`)"));
+assert.match(timetable, /\.\/version\.js\?v=2026-07-20-cpsat-server-r370-standard-final2/);
+assert.match(timetable, /\.\/app-health-check\.js\?v=2026-07-20-cpsat-server-r370-standard-final2/);
+assert.match(cpSatBridge, /HIS_CP_SAT_BRIDGE_RELEASE = "r370"/);
+assert.match(cpSatBridge, /HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r346\.zip"/);
+for (const forbidden of ["timetable-r370.html", "js/version-r370.js", "js/timetable-r370.js", "js/app-health-check-r370.js", "js/cp-sat-webapp-import-r370.js", "js/timetable-cpsat-run-history-r370.js"]) {
+  assert.ok(!exists(forbidden), `${forbidden}: versioned filename must not exist`);
+}
 for (const navPage of ["index.html", "prework.html", "results.html", "roster.html", "setup.html", "timetable-print.html"]) {
-  assert.match(read(navPage), /timetable\.html\?release=r370-final-20260720/, `${navPage}: r370 cache-busted timetable link missing`);
+  assert.match(read(navPage), /timetable\.html\?release=r370-standard-final2-20260720/, `${navPage}: r370 cache-busted timetable link missing`);
 }
 for (const rel of ["timetable.html", "js/version.js", "js/cp-sat-webapp-import.js"]) {
   assert.doesNotMatch(read(rel), /r369/, `${rel}: runtime r369 marker remains`);

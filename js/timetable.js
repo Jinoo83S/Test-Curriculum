@@ -10,9 +10,9 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot,
          listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { versioned } from "./version.js?v=2026-07-15-room-availability-separation-r355";
+import { versioned } from "./version.js?v=2026-07-20-cpsat-server-r370-standard-final2";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-room-availability-separation-r355";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-20-cpsat-server-r370-standard-final2";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
@@ -62,6 +62,9 @@ const [
     return {};
   }),
 ]);
+
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r370";
+console.info("[HIS runtime:r370] standard filename modules loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
