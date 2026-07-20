@@ -15,12 +15,13 @@ const CP_SAT_API_STYLE_ID = "ttCpSatApiStyle";
 const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
-const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r346/HIS_CP_SAT_Local_Server_r346.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r371";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r371 initial-load/conflict hotfix bridge";
+const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r347/HIS_CP_SAT_Local_Server_r347.zip";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r372";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r372 room-availability enforcement bridge";
+const EXPECTED_SERVER_VERSION = "2026-07-20-room-availability-enforcement-r347";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r371";
-globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r346.zip";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r372";
+globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r347.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
 const cleanLocal = v => String(v ?? "").trim();
@@ -889,7 +890,73 @@ function solverEngineLabel(apiResult = {}) {
     ""
   );
 }
+function cpSatServerVersion(value = {}) {
+  return cleanLocal(value?.version || value?.data?.version || value?.meta?.apiVersion || "");
+}
+function cpSatServerVersionCheck(value = {}) {
+  const actual = cpSatServerVersion(value);
+  return {
+    ok: actual === EXPECTED_SERVER_VERSION,
+    actual,
+    expected: EXPECTED_SERVER_VERSION,
+    message: actual === EXPECTED_SERVER_VERSION
+      ? ""
+      : `CP-SAT 서버 버전이 맞지 않습니다. 현재 ${actual || "확인 불가"}, 필요 ${EXPECTED_SERVER_VERSION}`,
+  };
+}
+function finalRoomAvailabilityAudit(scopeState = null, entries = []) {
+  const payload = payloadFromWrappedState(scopeState || {});
+  const rooms = asArray(payload?.rooms?.rooms);
+  const roomById = new Map(rooms.map(room => [cleanLocal(room?.id), room]).filter(([id]) => id));
+  const blockedByRoom = new Map();
+  rooms.forEach(room => {
+    const id = cleanLocal(room?.id);
+    if (!id) return;
+    const slots = new Set(asArray(room?.unavailableSlots).map(slot => `${Number(slot?.day)}:${Number(slot?.period)}`));
+    if (slots.size) blockedByRoom.set(id, slots);
+  });
+  const details = [];
+  const seen = new Set();
+  asArray(entries).forEach(entry => {
+    if (!entry || entry.pinned === true) return;
+    const day = Number(entry.day);
+    const period = Number(entry.period);
+    if (!Number.isInteger(day) || !Number.isInteger(period)) return;
+    const assigned = unique([
+      ...Object.values(entry.roomAssignmentsByTtCardId && typeof entry.roomAssignmentsByTtCardId === "object" ? entry.roomAssignmentsByTtCardId : {}),
+      entry.roomId,
+      ...(!entry.roomId && !Object.keys(entry.roomAssignmentsByTtCardId || {}).length ? asArray(entry.roomIds) : []),
+    ]);
+    assigned.forEach(roomId => {
+      if (!blockedByRoom.get(roomId)?.has(`${day}:${period}`)) return;
+      const key = `${cleanLocal(entry.id)}|${roomId}|${day}:${period}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      details.push({
+        code: "room-unavailable",
+        entryId: cleanLocal(entry.id),
+        roomId,
+        roomName: cleanLocal(roomById.get(roomId)?.name || roomId),
+        day,
+        period,
+        groupName: cleanLocal(entry.groupName),
+        ttcardIds: unique([...(entry.ttcardIds || []), entry.ttcardId]),
+      });
+    });
+  });
+  return {
+    schemaVersion: "r372-final-room-availability-audit-v1",
+    blockingCount: details.length,
+    ok: details.length === 0,
+    details: details.slice(0, 100),
+  };
+}
+
 function engineApplyBlock(apiResult = {}) {
+  const versionCheck = cpSatServerVersionCheck(apiResult);
+  if (!versionCheck.ok) {
+    return { block: true, reason: versionCheck.message };
+  }
   if (apiResult?.applyAllowed === false || apiResult?.meta?.applyAllowed === false) {
     return {
       block: true,
@@ -922,6 +989,12 @@ function cpSatTruthAudit(apiResult = {}, normalizedEntries = [], scopeState = nu
 function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount = 0, scopeState = null) {
   const engine = engineApplyBlock(apiResult);
   if (engine.block) return { canApply: false, level: "bad", reason: engine.reason, soft: false, audit: cpSatTruthAudit(apiResult, normalizedEntries, scopeState) };
+  const finalConstraintAudit = apiResult?.clientFinalConstraintAudit || finalRoomAvailabilityAudit(scopeState, normalizedEntries);
+  if ((finalConstraintAudit?.blockingCount || 0) > 0) {
+    const first = finalConstraintAudit.details?.[0] || {};
+    const reason = `최종 결과가 교실 불가시간을 ${finalConstraintAudit.blockingCount}건 위반했습니다. ${first.roomName || first.roomId || "교실"} · ${Number(first.day) + 1}일차 ${Number(first.period) + 1}교시`;
+    return { canApply: false, level: "bad", reason, soft: false, audit: { ...cpSatTruthAudit(apiResult, normalizedEntries, scopeState), status: "failed", title: "CP-SAT 제한 위반", reason, canApply: false }, finalConstraintAudit };
+  }
   const severe = severeCoverageFailure(apiResult, normalizedEntries, currentEntryCount);
   if (severe.block) return { canApply: false, level: "bad", reason: severe.reason, soft: false, audit: cpSatTruthAudit(apiResult, normalizedEntries, scopeState) };
   const audit = cpSatTruthAudit(apiResult, normalizedEntries, scopeState);
@@ -1266,7 +1339,7 @@ export function setupCpSatWebappImport(ctx = {}) {
   function resultApplyPolicy(apiResult = {}) {
     const normalized = normalizeEntryList(apiResult?.entries || []);
     if (!normalized.length) return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다." };
-    return applyPolicy(apiResult, normalized, asArray(entries?.()).length, apiResult?.clientSolverState || null);
+    return applyPolicy(apiResult, normalized, asArray(entries?.()).length, latestState || null);
   }
   function resultMayBeApplied(apiResult = {}) {
     return !!resultApplyPolicy(apiResult).canApply;
@@ -1521,7 +1594,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r371\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r372\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1681,6 +1754,12 @@ ${err?.message || err}
         entries: entriesForAudit,
         clientPreflight,
       });
+      decorated.clientFinalConstraintAudit = finalRoomAvailabilityAudit(latestState || {}, entriesForAudit);
+      if ((decorated.clientFinalConstraintAudit.blockingCount || 0) > 0) {
+        const first = decorated.clientFinalConstraintAudit.details?.[0] || {};
+        const reason = `교실 불가시간 위반 ${decorated.clientFinalConstraintAudit.blockingCount}건 · ${first.roomName || first.roomId || "교실"}`;
+        decorated.clientResultAudit = { ...decorated.clientResultAudit, status: "failed", title: "CP-SAT 제한 위반", reason, canApply: false, hardIssueCount: (decorated.clientResultAudit?.hardIssueCount || 0) + decorated.clientFinalConstraintAudit.blockingCount };
+      }
       decorated.clientSaveEstimate = saveEstimateForResult(decorated);
       decorated.clientServerTiming = extractCpSatServerTiming(decorated);
       return decorated;
@@ -1776,11 +1855,11 @@ ${err?.message || err}
       a.href = LOCAL_SERVER_RELEASE_URL;
       a.target = "_blank";
       a.rel = "noopener";
-      a.download = "HIS_CP_SAT_Local_Server_r346.zip";
+      a.download = "HIS_CP_SAT_Local_Server_r347.zip";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r346에 <code>HIS_CP_SAT_Local_Server_r346.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
+      setStatus("info", `<b>다운로드를 시작했습니다.</b><br>GitHub Release에서 파일을 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요.<br><br>주소가 열리지 않으면 GitHub Release r347에 <code>HIS_CP_SAT_Local_Server_r347.zip</code> 파일이 아직 업로드되지 않은 상태입니다.`, 0);
     });
 
 
@@ -1801,9 +1880,12 @@ ${err?.message || err}
         setBusy(true); setStatus("warn", "서버 확인 중...", 10);
         const data = await getJson(`${apiBase()}/health`, 10000);
         const body = data?.data || data;
+        const versionCheck = cpSatServerVersionCheck(body);
         const ortools = cleanLocal(body?.ortools || "not-installed");
         const ready = body?.solverReady === true || (ortools && ortools !== "not-installed");
-        if (!ready) {
+        if (!versionCheck.ok) {
+          setStatus("bad", `<b>서버 교체 필요</b><br>${escapeHtml(versionCheck.message)}<br>로컬 서버 r347을 새 폴더에 압축 해제해 실행하세요.`, 0);
+        } else if (!ready) {
           setStatus("bad", `<b>서버는 실행 중이지만 OR-Tools가 없습니다.</b><br>GREEDY 진단 결과는 시간표에 적용할 수 없습니다. requirements.txt 설치를 완료한 뒤 다시 확인하세요.`, 0);
         } else {
           setStatus("ok", `<b>서버 정상</b> · OR-Tools ${escapeHtml(ortools)}`, 100);
@@ -1923,6 +2005,12 @@ ${err?.message || err}
           timeLimitSeconds: opt.timeLimitSeconds,
           workers: opt.workers,
         });
+
+        const healthStartedPerf = perfNow();
+        const healthResponse = await getJson(`${apiBase()}/health`, 10000);
+        clientTiming.serverHealthMs = Math.max(0, perfNow() - healthStartedPerf);
+        const versionCheck = cpSatServerVersionCheck(healthResponse?.data || healthResponse);
+        if (!versionCheck.ok) throw new Error(`${versionCheck.message}. HIS_CP_SAT_Local_Server_r347.zip으로 교체하세요.`);
 
         const payloadStartedPerf = perfNow();
         const state = await solverState();

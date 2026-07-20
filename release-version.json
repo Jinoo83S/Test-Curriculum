@@ -1,6 +1,6 @@
 {
-  "release": "r371",
-  "appVersion": "2026-07-20-initial-load-conflict-hotfix-r371",
-  "build": "r371-initial-load-conflict-hotfix-20260720",
-  "serverRequired": "2026-07-16-timing-nameerror-hotfix-r346"
+  "release": "r372",
+  "appVersion": "2026-07-20-room-availability-enforcement-r372",
+  "build": "r372-room-availability-enforcement-20260720",
+  "serverRequired": "2026-07-20-room-availability-enforcement-r347"
 }

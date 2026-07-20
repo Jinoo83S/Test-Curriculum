@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<meta name="his-release" content="r371-initial-load-conflict-hotfix"/>
-<title>HIS 시간표 · r371</title>
+<meta name="his-release" content="r372-room-availability-enforcement"/>
+<title>HIS 시간표 · r372</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1884,7 +1884,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r371</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r372</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1956,47 +1956,47 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-20-initial-load-conflict-hotfix-r371";
+window.HIS_APP_VERSION = "2026-07-20-room-availability-enforcement-r372";
 // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// r371은 초기 로드 저장대기와 진단 오탐을 수정하므로 state·시간표·CP-SAT 진단 모듈을
+// r372은 교실 불가시간 제한을 CP-SAT 모델과 최종 검증까지 강제하므로 관련 런타임 모듈을
 // 하나의 런타임 버전으로 연결합니다. 파일명은 기존 표준 파일명을 그대로 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-20-initial-load-conflict-hotfix-r371";
-window.HIS_RELEASE = "r371";
-window.HIS_RELEASE_BUILD = "r371-initial-load-conflict-hotfix-20260720";
-document.documentElement.dataset.hisRelease = "r371";
-console.info("[HIS release:r371] initial-load/conflict hotfix loaded");
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-20-room-availability-enforcement-r372";
+window.HIS_RELEASE = "r372";
+window.HIS_RELEASE_BUILD = "r372-room-availability-enforcement-20260720";
+document.documentElement.dataset.hisRelease = "r372";
+console.info("[HIS release:r372] room-availability enforcement loaded");
 window.addEventListener("DOMContentLoaded", function(){
-  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r371"; });
+  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r372"; });
 });
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-20-initial-load-conflict-hotfix-r371",
-  "./js/state.js":"./js/state.js?v=2026-07-20-initial-load-conflict-hotfix-r371",
-  "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-20-initial-load-conflict-hotfix-r371",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-20-initial-load-conflict-hotfix-r371",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-20-room-availability-enforcement-r372",
+  "./js/state.js":"./js/state.js?v=2026-07-20-room-availability-enforcement-r372",
+  "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-20-room-availability-enforcement-r372",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-20-room-availability-enforcement-r372",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-16-cpsat-result-truth-r367",
-  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-20-initial-load-conflict-hotfix-r371"
+  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-20-room-availability-enforcement-r372"
 }}
 </script>
 <script type="module">
-  const expectedVersion = "2026-07-20-initial-load-conflict-hotfix-r371";
-  const expectedServerFile = "HIS_CP_SAT_Local_Server_r346.zip";
+  const expectedVersion = "2026-07-20-room-availability-enforcement-r372";
+  const expectedServerFile = "HIS_CP_SAT_Local_Server_r347.zip";
   try {
     const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`);
     if (versionModule.APP_VERSION !== expectedVersion) {
       throw new Error(`version.js 불일치: ${versionModule.APP_VERSION}`);
     }
     await import(`./js/timetable.js?v=${encodeURIComponent(expectedVersion)}`);
-    if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r371" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
+    if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r372" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
       throw new Error(`CP-SAT 브리지 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE || "미확인"}`);
     }
-    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r371"; });
-    document.documentElement.dataset.hisRuntimeVerified = "r371";
-    console.info("[HIS release:r371] standard filenames verified · initial load clean · server r346");
+    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r372"; });
+    document.documentElement.dataset.hisRuntimeVerified = "r372";
+    console.info("[HIS release:r372] standard filenames verified · room availability enforced · server r347");
   } catch (error) {
-    console.error("[HIS release:r371] runtime verification failed", error);
-    const message = `r371 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
+    console.error("[HIS release:r372] runtime verification failed", error);
+    const message = `r372 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
     box.textContent = message;
