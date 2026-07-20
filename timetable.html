@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>HIS 시간표</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+<meta http-equiv="Pragma" content="no-cache"/>
+<meta http-equiv="Expires" content="0"/>
+<meta name="his-release" content="r370-final"/>
+<title>HIS 시간표 · r370</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1880,7 +1884,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge">r370</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r370</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1952,20 +1956,27 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-20-cpsat-server-hotfix-r370";
-// r370 재배포 확인용: 사용자 표시 버전과 런타임 자산 버전을 함께 갱신하여
-// GitHub Pages·브라우저에 남은 r369 모듈 캐시를 강제로 우회합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-server-hotfix-r370";
-console.info("[HIS release:r370] 2026-07-20 corrected deployment loaded");
+window.HIS_APP_VERSION = "2026-07-20-cpsat-server-r370-final";
+// 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
+// 변경되지 않은 모듈은 기존 캐시 URL을 유지하고, r358에서 실제 변경된
+// timetable/version 모듈만 새 URL에 연결합니다. state는 검증된 r357을 유지합니다.
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-server-r370-final";
+window.HIS_RELEASE = "r370";
+window.HIS_RELEASE_BUILD = "r370-final-20260720";
+document.documentElement.dataset.hisRelease = "r370";
+console.info("[HIS release:r370] final build 2026-07-20 loaded");
+window.addEventListener("DOMContentLoaded", function(){
+  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r370"; });
+});
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-20-cpsat-server-hotfix-r370",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-20-cpsat-server-r370-final",
   "./js/state.js":"./js/state.js?v=2026-07-15-timetable-revision-restore-r357",
   "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-15-timetable-revision-restore-r357",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-20-cpsat-server-hotfix-r370",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-20-cpsat-server-r370-final",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-16-cpsat-result-truth-r367",
-  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-server-hotfix-r370"
+  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-server-r370-final"
 }}
 </script>
 <script type="module">
