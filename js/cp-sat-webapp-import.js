@@ -16,11 +16,11 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r347/HIS_CP_SAT_Local_Server_r347.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r372";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r372 room-availability enforcement bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r373";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r373 latestState scope hotfix bridge";
 const EXPECTED_SERVER_VERSION = "2026-07-20-room-availability-enforcement-r347";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r372";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r373";
 globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r347.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -945,7 +945,7 @@ function finalRoomAvailabilityAudit(scopeState = null, entries = []) {
     });
   });
   return {
-    schemaVersion: "r372-final-room-availability-audit-v1",
+    schemaVersion: "r373-final-room-availability-audit-v1",
     blockingCount: details.length,
     ok: details.length === 0,
     details: details.slice(0, 100),
@@ -1336,13 +1336,13 @@ export function setupCpSatWebappImport(ctx = {}) {
   function normalizeEntryList(list) {
     return asArray(list).map(normalizeSolvedEntry).filter(e => e && typeof e === "object" && (e.templateId || asArray(e.templateIds).length));
   }
-  function resultApplyPolicy(apiResult = {}) {
+  function resultApplyPolicy(apiResult = {}, scopeState = null) {
     const normalized = normalizeEntryList(apiResult?.entries || []);
     if (!normalized.length) return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다." };
-    return applyPolicy(apiResult, normalized, asArray(entries?.()).length, latestState || null);
+    return applyPolicy(apiResult, normalized, asArray(entries?.()).length, scopeState || null);
   }
-  function resultMayBeApplied(apiResult = {}) {
-    return !!resultApplyPolicy(apiResult).canApply;
+  function resultMayBeApplied(apiResult = {}, scopeState = null) {
+    return !!resultApplyPolicy(apiResult, scopeState).canApply;
   }
   function saveEstimateForResult(apiResult = {}) {
     const currentEntries = deepClone(asArray(entries?.()));
@@ -1594,7 +1594,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r372\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r373\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1788,7 +1788,7 @@ ${err?.message || err}
       running = isBusy;
       overlay.querySelectorAll("button").forEach(btn => {
         if (btn.dataset.action === "close") return;
-        if (btn.dataset.action === "apply") btn.disabled = isBusy || !resultMayBeApplied(latestResult);
+        if (btn.dataset.action === "apply") btn.disabled = isBusy || !resultMayBeApplied(latestResult, latestState);
         else if (btn.dataset.action === "download-result") btn.disabled = isBusy || !latestResult;
         else btn.disabled = isBusy;
       });
@@ -2080,7 +2080,7 @@ ${err?.message || err}
             latestResult.clientRunId = runId;
             latestResult.clientJobId = jobId;
 
-            const policy = resultApplyPolicy(latestResult);
+            const policy = resultApplyPolicy(latestResult, latestState);
             const issues = issueLines(latestResult, 4);
             const issueHtml = issues.length ? `<br><span style="font-size:11px;color:#64748b">${escapeHtml(issues.join(" / "))}</span>` : "";
             const applyHtml = policy.canApply
@@ -2120,7 +2120,7 @@ ${err?.message || err}
               latestResult.clientTiming = { ...clientTiming };
               latestResult.clientRunId = runId;
               latestResult.clientJobId = jobId;
-              const policy = resultApplyPolicy(latestResult);
+              const policy = resultApplyPolicy(latestResult, latestState);
               const truth = policy.audit || latestResult.clientResultAudit || {};
               setStatus(policy.level || "warn", `<b>${escapeHtml(truth.title || "CP-SAT 부분 성공")}</b><br>${escapeHtml(truth.reason || latestResult?.validation?.summary || job.message || "검증 필요")}<br>${policy.canApply ? `<b>적용 가능:</b> ${escapeHtml(policy.reason)}` : `<b>적용 차단:</b> ${escapeHtml(policy.reason)}`}<br><span style="font-size:11px;color:#64748b">${escapeHtml(issueLines(latestResult, 4).join(" / "))}</span>`, 100);
               renderApiSummary(latestResult, "solve-failed-with-result");
@@ -2166,7 +2166,7 @@ ${err?.message || err}
     });
     applyBtn?.addEventListener("click", async () => {
       if (!latestResult?.entries?.length) { alert("적용할 결과가 없습니다."); return; }
-      const policy = resultApplyPolicy(latestResult);
+      const policy = resultApplyPolicy(latestResult, latestState);
       if (!policy.canApply) {
         alert(`이 결과는 적용할 수 없습니다.\n\n${policy.reason}\n\n${issueText(latestResult)}`);
         return;

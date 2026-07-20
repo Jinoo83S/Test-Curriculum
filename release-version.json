@@ -1,6 +1,6 @@
 {
-  "release": "r372",
-  "appVersion": "2026-07-20-room-availability-enforcement-r372",
-  "build": "r372-room-availability-enforcement-20260720",
+  "release": "r373",
+  "appVersion": "2026-07-20-cpsat-lateststate-scope-r373",
+  "build": "r373-cpsat-lateststate-scope-20260720",
   "serverRequired": "2026-07-20-room-availability-enforcement-r347"
 }
