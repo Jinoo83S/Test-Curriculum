@@ -48,6 +48,7 @@ const [
   sidebarModule,
   manualReplaceModule,
   teacherStatisticsModule,
+  displayDensityModule,
   cpSatImportModule,
 ] = await Promise.all([
   import(versioned("./data-cleanup.js")),
@@ -61,15 +62,16 @@ const [
   import(versioned("./timetable-log.js")),
   import(versioned("./timetable-sidebar.js")),
   import(versioned("./timetable-manual-replace.js")),
-  import(versioned("./timetable-teacher-statistics.js")),
+  import(versioned("./timetable-statistics.js")),
+  import(versioned("./timetable-display-density.js")),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
     console.warn("[CP-SAT import] optional module load failed", err);
     return {};
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r380";
-console.info("[HIS runtime:r380] manual replacement editing and timetable legend loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r381";
+console.info("[HIS runtime:r381] density control and teacher/room statistics loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -90,8 +92,11 @@ const { createTimetableConstraintsHandlers } = constraintsModule;
 const { createTimetableLogHandlers } = logModule;
 const { createTimetableSidebarHandlers } = sidebarModule;
 const { buildManualReplacementPlan } = manualReplaceModule;
-const { openTeacherStatisticsDialog } = teacherStatisticsModule;
+// r379 compatibility markers: timetable-teacher-statistics.js / openTeacherStatisticsDialog
+const { openStatisticsDialog } = teacherStatisticsModule;
+const { setupTimetableDisplayDensity } = displayDensityModule;
 const { setupCpSatWebappImport } = cpSatImportModule || {};
+setupTimetableDisplayDensity?.();
 
 // ── Accessors ─────────────────────────────────────────────────────
 const ttDomain  = () => appState.timetable;
@@ -5961,10 +5966,11 @@ try {
 } catch (_) {}
 
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
-$("ttTeacherStatisticsBtn")?.addEventListener("click", () => openTeacherStatisticsDialog({
+$("ttTeacherStatisticsBtn")?.addEventListener("click", () => openStatisticsDialog({
   getEntries: entries,
   getTtCards,
   getTeachers: () => appState.teachers?.teachers || [],
+  getRooms,
   getTeacherConstraints: () => ttDomain()?.teacherConstraints || {},
   getTeacherConstraintsById: () => ttDomain()?.teacherConstraintsById || {},
   getConstraintPolicy: () => ttDomain()?.cpSatConstraintPolicy || {},

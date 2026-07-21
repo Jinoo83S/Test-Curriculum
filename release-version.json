@@ -1,7 +1,7 @@
 {
-  "release": "r380",
-  "appVersion": "2026-07-21-manual-replace-legend-r380",
-  "build": "r380-manual-replace-legend-20260721",
+  "release": "r381",
+  "appVersion": "2026-07-21-density-room-statistics-r381",
+  "build": "r381-density-room-statistics-20260721",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "hard-soft-off-by-school-year",
   "validationPolicy": "full-applied-entries-and-constraint-policy-audit",
@@ -13,5 +13,9 @@
   "teacherStatisticsPolicy": "teacher-id-day-period-deduplicated",
   "manualEditPolicy": "replace-occupied-class-slot-on-entry-drag",
   "manualEditPinnedPolicy": "block-replacement-until-unpinned",
-  "allViewLegend": "red-conflict-yellow-pinned"
+  "allViewLegend": "red-conflict-yellow-pinned",
+  "statisticsSchema": "r381-teacher-room-statistics-v1",
+  "roomStatisticsSchema": "r381-room-statistics-v1",
+  "roomStatisticsPolicy": "room-id-day-period-deduplicated-responsible-fixed-homeroom-other",
+  "displayDensityPolicy": "compact-normal-wide-and-55-115-row-height-slider-local-persistence"
 }

@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<meta name="his-release" content="r378-cpsat-constraint-policy"/>
-<title>HIS 시간표 · r378</title>
+<meta name="his-release" content="r381-density-room-statistics"/>
+<title>HIS 시간표 · r381</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1876,6 +1876,16 @@ body.tt-bottom-is-open #ttGrid{
   overflow:auto!important;
 }
 
+/* r381 · 안3 표시 밀도/행높이 조절 */
+.tt-density-controls{display:flex;align-items:center;gap:4px;height:30px;padding:2px 7px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;white-space:nowrap;color:#334155;font-size:11px;font-weight:800}
+.tt-density-controls .tt-density-label{margin-right:2px;color:#475569}
+.tt-density-controls button{height:24px!important;min-width:38px!important;padding:0 7px!important;border:1px solid transparent!important;border-radius:7px!important;background:#f1f5f9!important;color:#475569!important;font-size:10px!important;font-weight:800!important}
+.tt-density-controls button.active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
+.tt-density-controls .tt-density-divider{width:1px;height:18px;background:#cbd5e1;margin:0 3px}
+.tt-density-controls input[type=range]{width:92px;height:20px;margin:0;padding:0;accent-color:#2563eb}
+.tt-density-controls output{min-width:34px;color:#1d4ed8;font-variant-numeric:tabular-nums}
+@media(max-width:1250px){.tt-density-controls .tt-density-label,.tt-density-controls label,.tt-density-controls .tt-density-divider{display:none}.tt-density-controls input[type=range]{width:68px}}
+
 
 
 
@@ -1884,7 +1894,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r380</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r381</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1898,7 +1908,7 @@ body.tt-bottom-is-open #ttGrid{
     <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
     <button id="ttAutoPrecheckBtn" class="tt-precheck-btn" type="button">🩺 사전 점검</button>
     <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
-    <button id="ttTeacherStatisticsBtn" class="tt-version-btn" type="button">📈 교사 통계</button>
+    <button id="ttTeacherStatisticsBtn" class="tt-version-btn" type="button">📈 통계</button>
     <button id="ttScheduleVersionsBtn" class="tt-version-btn" type="button">🗃 저장/복구</button>
     <button id="ttSaveBtn" class="tt-save-btn">💾 저장</button>
   </div>
@@ -1924,6 +1934,16 @@ body.tt-bottom-is-open #ttGrid{
 
   <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
   <div class="tt-toolbar-right">
+    <div id="ttDisplayDensityControls" class="tt-density-controls" aria-label="시간표 표시 밀도와 행높이">
+      <span class="tt-density-label">표시 밀도</span>
+      <button type="button" data-density="compact">좁게</button>
+      <button type="button" data-density="normal">보통</button>
+      <button type="button" data-density="wide">넓게</button>
+      <span class="tt-density-divider"></span>
+      <label for="ttRowHeightSlider">행높이</label>
+      <input id="ttRowHeightSlider" data-role="row-slider" type="range" min="55" max="115" step="5" value="85">
+      <output data-role="row-value">85%</output>
+    </div>
     <button id="ttToggleBottom" class="tt-bottom-toggle-btn" type="button" title="하단 패널 숨기기/보이기">
       <span id="ttToggleIcon">▾</span> 작업 패널
     </button>
@@ -1957,31 +1977,31 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-21-manual-replace-legend-r380";
+window.HIS_APP_VERSION = "2026-07-21-density-room-statistics-r381";
 // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// r380은 수동 카드 이동 시 대상 칸 교체와 붉은/노란 테두리 범례를 제공합니다.
+// r381은 표시 밀도/행높이 조절과 교사·교실 통계를 제공합니다.
 // 파일명은 기존 표준 파일명을 그대로 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-21-manual-replace-legend-r380";
-window.HIS_RELEASE = "r380";
-window.HIS_RELEASE_BUILD = "r380-manual-replace-legend-20260721";
-document.documentElement.dataset.hisRelease = "r380";
-console.info("[HIS release:r380] manual replacement editing and border legend loaded");
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-21-density-room-statistics-r381";
+window.HIS_RELEASE = "r381";
+window.HIS_RELEASE_BUILD = "r381-density-room-statistics-20260721";
+document.documentElement.dataset.hisRelease = "r381";
+console.info("[HIS release:r381] display density and teacher/room statistics loaded");
 window.addEventListener("DOMContentLoaded", function(){
-  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r380"; });
+  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r381"; });
 });
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-21-manual-replace-legend-r380",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-21-density-room-statistics-r381",
   "./js/state.js":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
   "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-21-manual-replace-legend-r380",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-21-density-room-statistics-r381",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-21-cpsat-constraint-policy-r378",
   "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-21-cpsat-constraint-policy-r378"
 }}
 </script>
 <script type="module">
-  const expectedVersion = "2026-07-21-manual-replace-legend-r380";
+  const expectedVersion = "2026-07-21-density-room-statistics-r381";
   const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
   try {
     const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`);
@@ -1992,12 +2012,12 @@ window.addEventListener("DOMContentLoaded", function(){
     if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r378" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
       throw new Error(`CP-SAT 브리지 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE || "미확인"}`);
     }
-    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r380"; });
-    document.documentElement.dataset.hisRuntimeVerified = "r380";
-    console.info("[HIS release:r380] standard filenames verified · manual replacement · legend · teacher statistics · CP-SAT bridge r378 · server r348");
+    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r381"; });
+    document.documentElement.dataset.hisRuntimeVerified = "r381";
+    console.info("[HIS release:r381] display density · teacher/room statistics · manual replacement · CP-SAT bridge r378 · server r348");
   } catch (error) {
-    console.error("[HIS release:r380] runtime verification failed", error);
-    const message = `r380 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
+    console.error("[HIS release:r381] runtime verification failed", error);
+    const message = `r381 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
     box.textContent = message;
@@ -2644,7 +2664,15 @@ body.tt-single-scroll-layout-r181.tt-bottom-is-collapsed #ttGrid{
     const rows = table?.tBodies?.[0]?.rows ? Array.from(table.tBodies[0].rows) : [];
     const rowCount = Math.max(1, rows.length || Number(root.style.getPropertyValue("--num-rows")) || 15);
     const theadH = Math.ceil(table?.tHead?.getBoundingClientRect().height || 42);
-    const rowH = Math.max(18, Math.floor((available - theadH - 2) / rowCount));
+    const naturalRowH = Math.max(18, Math.floor((available - theadH - 2) / rowCount));
+    let rowScale = 85;
+    try {
+      const savedDensity = JSON.parse(localStorage.getItem("his_timetable_display_density_r381") || "{}");
+      rowScale = Number.parseInt(savedDensity.scale || 85, 10);
+    } catch (_) { rowScale = 85; }
+    if (!Number.isFinite(rowScale)) rowScale = 85;
+    rowScale = Math.max(55, Math.min(115, rowScale));
+    const rowH = Math.max(14, Math.round(naturalRowH * rowScale / 100));
     const rowPx = `${rowH}px`;
     root.style.setProperty("--tt-layout-row-h", rowPx);
     root.style.setProperty("--tt-all-row-height", rowPx);
