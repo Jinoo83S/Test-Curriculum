@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import assert from "node:assert/strict";
-import { repairContinuousSpanMetadata } from "../js/cp-sat-webapp-import.js";
+import { repairContinuousSpanMetadata, selectSolverEntriesForPayload } from "../js/cp-sat-webapp-import.js";
 import { auditPersistedTimetable, timetableAssignmentSignatures } from "../js/timetable-persistence-audit.js";
 
 const stateSource = fs.readFileSync(new URL("../js/state.js", import.meta.url), "utf8");
@@ -17,8 +17,10 @@ assert.match(bridgeSource, /현재 시간표 메타 보정/);
 assert.match(bridgeSource, /cp-sat-meta-repair/);
 assert.match(bridgeSource, /repairContinuousSpanMetadata/);
 assert.match(bridgeSource, /verifyPersistedTimetableState/);
-assert.match(bridgeSource, /cp-sat-webapp-r375/);
-assert.doesNotMatch(bridgeSource, /메타 source: cp-sat-webapp-r374/);
+assert.match(bridgeSource, /cp-sat-webapp-r376/);
+assert.doesNotMatch(bridgeSource, /메타 source: cp-sat-webapp-r375/);
+assert.match(bridgeSource, /preserveAllEntries: true/);
+assert.equal((bridgeSource.match(/revisionReason: "cp-sat-readback-audit"/g) || []).length, 2);
 
 const spanInput = [
   { id: "a", day: 0, period: 1, groupId: "g", durationPeriods: 2, ttcardIds: ["c1"], roomAssignmentsByTtCardId: { c1: "r1" } },
@@ -35,7 +37,7 @@ const expectedEntries = [
   { id: "e2", day: 1, period: 2, ttcardId: "c3", roomId: "r2" },
 ];
 const expectedMeta = {
-  source: "cp-sat-webapp-r375",
+  source: "cp-sat-webapp-r376",
   importedEntryCount: 2,
   cpSatCapacityWarningCount: 1,
 };
@@ -56,4 +58,12 @@ assert.equal(missingMetaAudit.assignmentsMatch, true);
 assert.equal(missingMetaAudit.metaSourceMatch, false);
 assert.equal(missingMetaAudit.capacityMatch, false);
 
-console.log("CPSAT_METADATA_PERSISTENCE_R375_OK", audit.expectedEntryCount, audit.expectedAssignmentCount);
+const seedEntries = Array.from({ length: 11 }, (_, index) => ({ id: `e${index}`, pinned: index === 0 }));
+const seedTimetable = {};
+const solveEntries = selectSolverEntriesForPayload(seedEntries, seedTimetable);
+const validationEntries = selectSolverEntriesForPayload(seedEntries, {}, { preserveAllEntries: true });
+assert.equal(solveEntries.length, 1, "solve payload must retain only pinned seed entries");
+assert.equal(validationEntries.length, 11, "post-apply validation must retain all applied entries");
+assert.notEqual(validationEntries, seedEntries, "full validation entries must be cloned");
+
+console.log("CPSAT_VALIDATION_READBACK_R376_OK", audit.expectedEntryCount, audit.expectedAssignmentCount, validationEntries.length);

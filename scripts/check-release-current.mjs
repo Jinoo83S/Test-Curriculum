@@ -135,12 +135,12 @@ assert.match(revisionCss, /\.tt-revision-panel/);
 assert.doesNotMatch(html, /\.tt-revision-panel\s*\{/);
 assert.match(timetable, /ttFirestoreRevisionHistory/);
 assert.match(timetable, /createTimetableRevisionHistoryUi/);
-assert.match(html, /HIS_APP_VERSION = "2026-07-20-cpsat-meta-persistence-r375"/);
-assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-meta-persistence-r375"/);
-assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-20-cpsat-meta-persistence-r375/);
-assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-20-cpsat-meta-persistence-r375/);
+assert.match(html, /HIS_APP_VERSION = "2026-07-21-cpsat-validation-readback-r376"/);
+assert.match(html, /HIS_RUNTIME_ASSET_VERSION = "2026-07-21-cpsat-validation-readback-r376"/);
+assert.match(html, /state\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/state\.js\?v=2026-07-21-cpsat-validation-readback-r376/);
+assert.match(html, /timetable\.js\?v=2026-07-15-room-availability-separation-r355":"\.\/js\/timetable\.js\?v=2026-07-21-cpsat-validation-readback-r376/);
 assert.match(version, /HIS_RUNTIME_ASSET_VERSION/);
-assert.match(version, /2026-07-20-cpsat-meta-persistence-r375/);
+assert.match(version, /2026-07-21-cpsat-validation-readback-r376/);
 assert.match(printHtml, /<span class="badge">r365<\/span>/);
 assert.match(printHtml, /timetable-print-app\.js\?v=2026-07-15-print-usability-r365/);
 assert.match(printApp, /const VERSION = "2026-07-15-print-usability-r365"/);
@@ -150,15 +150,15 @@ assert.ok(importMapMatch, "timetable import map missing");
 const importMap = JSON.parse(importMapMatch[1]);
 assert.equal(
   importMap.imports["./js/state.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/state.js?v=2026-07-20-cpsat-meta-persistence-r375"
+  "./js/state.js?v=2026-07-21-cpsat-validation-readback-r376"
 );
 assert.equal(
   importMap.imports["./js/version.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/version.js?v=2026-07-20-cpsat-meta-persistence-r375"
+  "./js/version.js?v=2026-07-21-cpsat-validation-readback-r376"
 );
 assert.equal(
   importMap.imports["./js/timetable.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/timetable.js?v=2026-07-20-cpsat-meta-persistence-r375"
+  "./js/timetable.js?v=2026-07-21-cpsat-validation-readback-r376"
 );
 assert.equal(
   importMap.imports["./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355"],
@@ -166,23 +166,26 @@ assert.equal(
 );
 assert.equal(
   importMap.imports["./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355"],
-  "./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-meta-persistence-r375"
+  "./js/cp-sat-webapp-import.js?v=2026-07-21-cpsat-validation-readback-r376"
 );
 
 const releaseInfo = JSON.parse(read("release-version.json"));
-assert.equal(releaseInfo.release, "r375");
-assert.equal(releaseInfo.appVersion, "2026-07-20-cpsat-meta-persistence-r375");
+assert.equal(releaseInfo.release, "r376");
+assert.equal(releaseInfo.appVersion, "2026-07-21-cpsat-validation-readback-r376");
 assert.equal(releaseInfo.serverRequired, "2026-07-20-aggregate-capacity-warning-r348");
-assert.equal(releaseInfo.metadataPolicy, "persist-and-firestore-readback");
-assert.match(html, /data-his-release-badge="1">r375<\/span>/);
-assert.match(html, /HIS_RELEASE_BUILD = "r375-cpsat-meta-persistence-20260720"/);
+assert.equal(releaseInfo.metadataPolicy, "persist-readback-audit");
+assert.equal(releaseInfo.validationPolicy, "full-applied-entries");
+assert.match(html, /data-his-release-badge="1">r376<\/span>/);
+assert.match(html, /HIS_RELEASE_BUILD = "r376-cpsat-validation-readback-20260721"/);
 assert.match(html, /Cache-Control/);
 assert.ok(html.includes("await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`)"));
 assert.ok(html.includes("await import(`./js/timetable.js?v=${encodeURIComponent(expectedVersion)}`)"));
 assert.match(timetable, /\.\/version\.js\?v=2026-07-20-initial-load-conflict-hotfix-r371/);
 assert.match(timetable, /\.\/app-health-check\.js\?v=2026-07-20-initial-load-conflict-hotfix-r371/);
-assert.match(cpSatBridge, /HIS_CP_SAT_BRIDGE_RELEASE = "r375"/);
-assert.match(cpSatBridge, /cp-sat-webapp-r375/);
+assert.match(cpSatBridge, /HIS_CP_SAT_BRIDGE_RELEASE = "r376"/);
+assert.match(cpSatBridge, /cp-sat-webapp-r376/);
+assert.match(cpSatBridge, /preserveAllEntries: true/);
+assert.equal((cpSatBridge.match(/revisionReason: "cp-sat-readback-audit"/g) || []).length, 2);
 assert.match(cpSatBridge, /HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348\.zip"/);
 assert.match(cpSatBridge, /EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348"/);
 assert.match(cpSatBridge, /function finalCapacityAudit\(/);
@@ -197,7 +200,7 @@ for (const forbidden of ["timetable-r370.html", "js/version-r370.js", "js/timeta
   assert.ok(!exists(forbidden), `${forbidden}: versioned filename must not exist`);
 }
 for (const navPage of ["index.html", "prework.html", "results.html", "roster.html", "setup.html", "timetable-print.html"]) {
-  assert.match(read(navPage), /timetable\.html\?release=r375-cpsat-meta-persistence-20260720/, `${navPage}: r375 cache-busted timetable link missing`);
+  assert.match(read(navPage), /timetable\.html\?release=r376-cpsat-validation-readback-20260721/, `${navPage}: r376 cache-busted timetable link missing`);
 }
 for (const rel of ["timetable.html", "js/version.js", "js/cp-sat-webapp-import.js"]) {
   assert.doesNotMatch(read(rel), /r369/, `${rel}: runtime r369 marker remains`);
@@ -226,6 +229,7 @@ const regressionTests = [
   "test-cpsat-run-history.mjs",
   "test-final-room-availability-audit-r372.mjs",
   "test-cpsat-capacity-warning-r374.mjs",
+  "test-cpsat-lateststate-scope-r373.mjs",
   "test-cpsat-metadata-persistence-r375.mjs",
 ];
 for (const filename of regressionTests) {

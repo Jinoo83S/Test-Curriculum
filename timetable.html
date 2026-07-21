@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<meta name="his-release" content="r375-cpsat-meta-persistence"/>
-<title>HIS 시간표 · r375</title>
+<meta name="his-release" content="r376-cpsat-validation-readback"/>
+<title>HIS 시간표 · r376</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1884,7 +1884,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r375</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r376</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1956,31 +1956,31 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-20-cpsat-meta-persistence-r375";
+window.HIS_APP_VERSION = "2026-07-21-cpsat-validation-readback-r376";
 // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// r375는 CP-SAT 메타데이터·연속블록 정보를 보존하고 Firestore 저장 직후 재조회 검증을 수행합니다.
+// r376은 적용 결과 전체 entries를 재검증하고 Firestore 재조회 결과를 메타에 저장합니다.
 // 파일명은 기존 표준 파일명을 그대로 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-20-cpsat-meta-persistence-r375";
-window.HIS_RELEASE = "r375";
-window.HIS_RELEASE_BUILD = "r375-cpsat-meta-persistence-20260720";
-document.documentElement.dataset.hisRelease = "r375";
-console.info("[HIS release:r375] CP-SAT metadata persistence/read-back loaded");
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-21-cpsat-validation-readback-r376";
+window.HIS_RELEASE = "r376";
+window.HIS_RELEASE_BUILD = "r376-cpsat-validation-readback-20260721";
+document.documentElement.dataset.hisRelease = "r376";
+console.info("[HIS release:r376] CP-SAT full-entry validation/read-back loaded");
 window.addEventListener("DOMContentLoaded", function(){
-  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r375"; });
+  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r376"; });
 });
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-20-cpsat-meta-persistence-r375",
-  "./js/state.js":"./js/state.js?v=2026-07-20-cpsat-meta-persistence-r375",
-  "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-20-cpsat-meta-persistence-r375",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-20-cpsat-meta-persistence-r375",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-21-cpsat-validation-readback-r376",
+  "./js/state.js":"./js/state.js?v=2026-07-21-cpsat-validation-readback-r376",
+  "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-21-cpsat-validation-readback-r376",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-21-cpsat-validation-readback-r376",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-16-cpsat-result-truth-r367",
-  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-20-cpsat-meta-persistence-r375"
+  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-21-cpsat-validation-readback-r376"
 }}
 </script>
 <script type="module">
-  const expectedVersion = "2026-07-20-cpsat-meta-persistence-r375";
+  const expectedVersion = "2026-07-21-cpsat-validation-readback-r376";
   const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
   try {
     const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`);
@@ -1988,15 +1988,15 @@ window.addEventListener("DOMContentLoaded", function(){
       throw new Error(`version.js 불일치: ${versionModule.APP_VERSION}`);
     }
     await import(`./js/timetable.js?v=${encodeURIComponent(expectedVersion)}`);
-    if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r375" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
+    if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r376" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
       throw new Error(`CP-SAT 브리지 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE || "미확인"}`);
     }
-    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r375"; });
-    document.documentElement.dataset.hisRuntimeVerified = "r375";
-    console.info("[HIS release:r375] standard filenames verified · metadata persistence/read-back · server r348");
+    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r376"; });
+    document.documentElement.dataset.hisRuntimeVerified = "r376";
+    console.info("[HIS release:r376] standard filenames verified · full-entry validation/read-back persistence · server r348");
   } catch (error) {
-    console.error("[HIS release:r375] runtime verification failed", error);
-    const message = `r375 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
+    console.error("[HIS release:r376] runtime verification failed", error);
+    const message = `r376 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
     box.textContent = message;

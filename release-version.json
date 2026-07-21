@@ -1,8 +1,9 @@
 {
-  "release": "r375",
-  "appVersion": "2026-07-20-cpsat-meta-persistence-r375",
-  "build": "r375-cpsat-meta-persistence-20260720",
+  "release": "r376",
+  "appVersion": "2026-07-21-cpsat-validation-readback-r376",
+  "build": "r376-cpsat-validation-readback-20260721",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "warning-apply-allowed",
-  "metadataPolicy": "persist-and-firestore-readback"
+  "validationPolicy": "full-applied-entries",
+  "metadataPolicy": "persist-readback-audit"
 }

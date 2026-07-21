@@ -4,7 +4,7 @@ import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "
 import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r204: CP-SAT 적용 후 현재 entries 재검증 및 autoAssignMeta 동기화.
+// r376: CP-SAT 적용 후 전체 entries 재검증 및 Firestore read-back 메타 저장.
 // ================================================================
 
 import { migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
@@ -16,11 +16,11 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r348/HIS_CP_SAT_Local_Server_r348.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r375";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r375 metadata persistence/read-back bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r376";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r376 full-entry validation/read-back bridge";
 const EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r375";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r376";
 globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -682,6 +682,13 @@ function filterSolverSeedEntriesForPayload(entries = [], tt = {}) {
   };
   return kept;
 }
+
+export function selectSolverEntriesForPayload(entries = [], tt = {}, options = {}) {
+  // 자동배치 실행은 고정/보호 seed만 전송하지만, 적용 후 현재 시간표 검증은
+  // 새 결과 전체를 전송해야 카드 시수·묶음수업 배치 수를 정확히 계산할 수 있습니다.
+  if (options?.preserveAllEntries === true) return deepClone(asArray(entries));
+  return filterSolverSeedEntriesForPayload(entries, tt);
+}
 function isManualEntryRoomOverrideForPayload(entry = {}, explicitRoomId = "") {
   const roomId = cleanLocal(explicitRoomId);
   if (!roomId) return false;
@@ -750,15 +757,15 @@ function normalizeEntryRoomsFromCardRulesForPayload(data = {}) {
   });
   return data;
 }
-function makeSolverState(appState, live = {}) {
+function makeSolverState(appState, live = {}, options = {}) {
   // r182: CP-SAT에는 화면에 실제로 렌더링 중인 현재 entries()를 전송해야 합니다.
   // appState.timetable.entries가 저장/동기화 지연으로 4개처럼 오래된 값을 가질 수 있어서,
   // ttDomain() + entries()를 우선 사용해 visible timetable과 solver payload를 일치시킵니다.
   const liveTimetable = applyManualCardExclusionToPayloadTimetable(deepClone(live.timetable || appState?.timetable || {}));
   if (Array.isArray(live.entries)) {
-    // r219: 이전 자동배치 결과 entry는 CP-SAT 입력(seed)으로 보내지 않습니다.
-    // 명시적으로 고정/잠금된 시간표 seed만 보내고, 일반 배치는 cards/groups에서 새로 생성합니다.
-    liveTimetable.entries = filterSolverSeedEntriesForPayload(deepClone(live.entries), liveTimetable);
+    // 자동배치 실행에서는 고정/잠금 seed만 사용합니다. 단, 적용 후 /validate는
+    // preserveAllEntries 옵션으로 새 시간표 전체를 전달합니다.
+    liveTimetable.entries = selectSolverEntriesForPayload(live.entries, liveTimetable, options);
   }
   const data = normalizeEntryRoomsFromCardRulesForPayload({
     curriculum: appState?.curriculum || {},
@@ -1623,7 +1630,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     const timetable = deepClone(domain || {});
     const useEntries = entryList == null ? asArray(entries?.()) : asArray(entryList);
     timetable.entries = deepClone(useEntries);
-    return makeSolverState(appState, { timetable, entries: useEntries });
+    return makeSolverState(appState, { timetable, entries: useEntries }, { preserveAllEntries: true });
   }
 
   async function validateCurrentEntriesViaApi(base, entryList = null, timeoutMs = 45000) {
@@ -1670,6 +1677,15 @@ export function setupCpSatWebappImport(ctx = {}) {
       nextMeta.persistenceReadbackAudit = deepClone(persistenceAudit);
       syncCpSatTimetableState(domain, appState, currentEntries, nextMeta, null);
       if (!persistenceAudit.ok) throw new Error(persistenceAudit.summary || "Firestore 재조회 검증에 실패했습니다.");
+      // 재조회 결과는 첫 저장 뒤에 생성되므로 메타 문서에 한 번 더 기록합니다.
+      // entries/cards는 fingerprint가 같아 다시 쓰지 않고 meta+revision만 저장됩니다.
+      await saveNow("timetable", {
+        force: true,
+        throwOnError: true,
+        revisionReason: "cp-sat-readback-audit",
+        revisionLabel: "CP-SAT 저장 재조회 검증 기록",
+      });
+      cpSatSaveVerification(domain, currentEntries.length);
     }
     return { meta: nextMeta, validation: validationBody, persistenceAudit, spanRepair };
   }
@@ -1840,6 +1856,15 @@ export function setupCpSatWebappImport(ctx = {}) {
           verificationError.code = "cpsat-persistence-verification-failed";
           throw verificationError;
         }
+        // 첫 원자 저장을 재조회한 결과를 autoAssignMeta에 실제 보존합니다.
+        // 변경된 entry/card가 없으므로 두 번째 원자 저장은 meta+revision만 기록합니다.
+        await saveNow("timetable", {
+          force: true,
+          throwOnError: true,
+          revisionReason: "cp-sat-readback-audit",
+          revisionLabel: "CP-SAT 저장 재조회 검증 기록",
+        });
+        cpSatSaveVerification(domain, nextEntries.length);
       }
     } catch (err) {
       applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
@@ -1900,7 +1925,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r375\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r376\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
