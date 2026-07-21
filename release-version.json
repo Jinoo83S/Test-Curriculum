@@ -1,7 +1,7 @@
 {
-  "release": "r379",
-  "appVersion": "2026-07-21-teacher-statistics-r379",
-  "build": "r379-teacher-statistics-20260721",
+  "release": "r380",
+  "appVersion": "2026-07-21-manual-replace-legend-r380",
+  "build": "r380-manual-replace-legend-20260721",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "hard-soft-off-by-school-year",
   "validationPolicy": "full-applied-entries-and-constraint-policy-audit",
@@ -10,5 +10,8 @@
   "constraintPolicySchema": "r378-cpsat-constraint-policy-v1",
   "serverPolicyBridge": "r348-compatible-teacher-hard-relaxation-and-client-policy-audit",
   "teacherStatisticsSchema": "r379-teacher-statistics-v1",
-  "teacherStatisticsPolicy": "teacher-id-day-period-deduplicated"
+  "teacherStatisticsPolicy": "teacher-id-day-period-deduplicated",
+  "manualEditPolicy": "replace-occupied-class-slot-on-entry-drag",
+  "manualEditPinnedPolicy": "block-replacement-until-unpinned",
+  "allViewLegend": "red-conflict-yellow-pinned"
 }

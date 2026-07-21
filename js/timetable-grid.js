@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-grid.js · Timetable Grid Rendering
-// r202: group-card visual shape fixed; no auto row/column span changes.
+// r380: manual replacement drag + visible red/yellow border legend.
 // ================================================================
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { sectionLabel, gradeDisplay } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
@@ -55,7 +55,13 @@ function injectAllSummaryStyles() {
     .tt-all-view-toolbar-title{font-size:11px;font-weight:900;color:#334155;white-space:nowrap;}
     .tt-all-view-mode-btn{height:24px;min-height:24px;padding:0 9px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#475569;font-size:11px;font-weight:900;cursor:pointer;line-height:1;}
     .tt-all-view-mode-btn.active{background:#2563eb;border-color:#2563eb;color:#fff;box-shadow:0 2px 6px rgba(37,99,235,.22);}
+    .tt-all-view-legend{margin-left:4px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;}
+    .tt-all-view-legend-item{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 7px;border:1px solid #e2e8f0;border-radius:999px;background:#fff;color:#475569;font-size:10px;font-weight:850;white-space:nowrap;}
+    .tt-all-view-legend-swatch{display:inline-block;width:11px;height:11px;border-radius:3px;background:#fff;box-sizing:border-box;}
+    .tt-all-view-legend-swatch.conflict{border:2px solid #ef4444;}
+    .tt-all-view-legend-swatch.pinned{border:2px solid #f59e0b;}
     .tt-all-view-help{margin-left:auto;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    @media(max-width:1100px){.tt-all-view-help{display:none}.tt-all-view-toolbar{flex-wrap:wrap}.tt-all-view-legend{margin-left:0;}}
     .tt-all-class-table.tt-all-summary-table{flex:1 1 auto;height:auto!important;min-height:0;}
     .tt-all-summary-cell-wrap{height:100%;width:100%;display:flex;align-items:stretch;gap:1px;min-width:0;overflow:hidden;}
     .tt-all-summary-card{position:relative;width:100%;height:100%;min-width:0;border-radius:4px;border:1px solid rgba(15,23,42,.12);border-left:3px solid var(--tt-sum-border,#2563eb);background:var(--tt-sum-bg,#eff6ff);color:var(--tt-sum-text,#1e3a8a);box-sizing:border-box;padding:2px 4px;cursor:pointer;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;overflow:hidden;line-height:1.05;}
@@ -153,9 +159,28 @@ function makeAllViewToolbar(wrap) {
     });
     toolbar.appendChild(btn);
   });
+  const legend = document.createElement("div");
+  legend.className = "tt-all-view-legend";
+  const legendItems = [
+    ["conflict", "붉은 테두리: 충돌·제한 위반"],
+    ["pinned", "노란 테두리: 고정 수업(이동 불가)"],
+  ];
+  legendItems.forEach(([type, label]) => {
+    const item = document.createElement("span");
+    item.className = "tt-all-view-legend-item";
+    item.title = label;
+    const swatch = document.createElement("i");
+    swatch.className = `tt-all-view-legend-swatch ${type}`;
+    const text = document.createElement("span");
+    text.textContent = label;
+    item.append(swatch, text);
+    legend.appendChild(item);
+  });
+  toolbar.appendChild(legend);
+
   const help = document.createElement("span");
   help.className = "tt-all-view-help";
-  help.textContent = "전체카드를 클릭하면 포함 과목·교사·교실을 확인합니다.";
+  help.textContent = "카드 이동 시 대상 칸의 기존 수업은 시간표에서 빠지고 이동 카드가 대체합니다.";
   toolbar.appendChild(help);
   return toolbar;
 }

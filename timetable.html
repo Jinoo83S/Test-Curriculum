@@ -1884,7 +1884,7 @@ body.tt-bottom-is-open #ttGrid{
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r379</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r380</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1957,31 +1957,31 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-21-teacher-statistics-r379";
+window.HIS_APP_VERSION = "2026-07-21-manual-replace-legend-r380";
 // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// r379는 교사별 실제 점유 시수와 요일별 최대 연속수업 통계를 제공합니다.
+// r380은 수동 카드 이동 시 대상 칸 교체와 붉은/노란 테두리 범례를 제공합니다.
 // 파일명은 기존 표준 파일명을 그대로 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-21-teacher-statistics-r379";
-window.HIS_RELEASE = "r379";
-window.HIS_RELEASE_BUILD = "r379-teacher-statistics-20260721";
-document.documentElement.dataset.hisRelease = "r379";
-console.info("[HIS release:r379] teacher statistics loaded");
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-21-manual-replace-legend-r380";
+window.HIS_RELEASE = "r380";
+window.HIS_RELEASE_BUILD = "r380-manual-replace-legend-20260721";
+document.documentElement.dataset.hisRelease = "r380";
+console.info("[HIS release:r380] manual replacement editing and border legend loaded");
 window.addEventListener("DOMContentLoaded", function(){
-  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r379"; });
+  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r380"; });
 });
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-21-teacher-statistics-r379",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-21-manual-replace-legend-r380",
   "./js/state.js":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
   "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-21-teacher-statistics-r379",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-21-manual-replace-legend-r380",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-21-cpsat-constraint-policy-r378",
   "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-21-cpsat-constraint-policy-r378"
 }}
 </script>
 <script type="module">
-  const expectedVersion = "2026-07-21-teacher-statistics-r379";
+  const expectedVersion = "2026-07-21-manual-replace-legend-r380";
   const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
   try {
     const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`);
@@ -1992,12 +1992,12 @@ window.addEventListener("DOMContentLoaded", function(){
     if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r378" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
       throw new Error(`CP-SAT 브리지 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE || "미확인"}`);
     }
-    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r379"; });
-    document.documentElement.dataset.hisRuntimeVerified = "r379";
-    console.info("[HIS release:r379] standard filenames verified · teacher statistics · CP-SAT bridge r378 · server r348");
+    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r380"; });
+    document.documentElement.dataset.hisRuntimeVerified = "r380";
+    console.info("[HIS release:r380] standard filenames verified · manual replacement · legend · teacher statistics · CP-SAT bridge r378 · server r348");
   } catch (error) {
-    console.error("[HIS release:r379] runtime verification failed", error);
-    const message = `r379 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
+    console.error("[HIS release:r380] runtime verification failed", error);
+    const message = `r380 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
     box.textContent = message;

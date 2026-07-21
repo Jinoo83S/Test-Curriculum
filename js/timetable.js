@@ -46,6 +46,7 @@ const [
   constraintsModule,
   logModule,
   sidebarModule,
+  manualReplaceModule,
   teacherStatisticsModule,
   cpSatImportModule,
 ] = await Promise.all([
@@ -59,6 +60,7 @@ const [
   import(versioned("./timetable-constraints.js")),
   import(versioned("./timetable-log.js")),
   import(versioned("./timetable-sidebar.js")),
+  import(versioned("./timetable-manual-replace.js")),
   import(versioned("./timetable-teacher-statistics.js")),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
     console.warn("[CP-SAT import] optional module load failed", err);
@@ -66,8 +68,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r379";
-console.info("[HIS runtime:r379] teacher statistics and CP-SAT constraint policy loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r380";
+console.info("[HIS runtime:r380] manual replacement editing and timetable legend loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -87,6 +89,7 @@ const { createTimetableDetailHandlers } = detailModule;
 const { createTimetableConstraintsHandlers } = constraintsModule;
 const { createTimetableLogHandlers } = logModule;
 const { createTimetableSidebarHandlers } = sidebarModule;
+const { buildManualReplacementPlan } = manualReplaceModule;
 const { openTeacherStatisticsDialog } = teacherStatisticsModule;
 const { setupCpSatWebappImport } = cpSatImportModule || {};
 
@@ -4942,24 +4945,106 @@ function entryMoveUnitKeyForDrag(entry = {}) {
   return "";
 }
 
+function manualOccurrenceSignature(entry = {}) {
+  const moveKey = entryMoveUnitKeyForDrag(entry);
+  if (moveKey) return moveKey;
+  const cardIds = getSameSlotCardIds(entry).sort();
+  if (cardIds.length) return `cards:${cardIds.join("+")}`;
+  return `entry:${clean(entry.id)}`;
+}
+
+function manualReplacementOccupancy(entry = {}) {
+  const occupancy = audienceForPlacement(entry);
+  occupancy.roomIds = new Set(effectiveRoomIdsForEntry(entry));
+  return occupancy;
+}
+
+function manualOccurrenceEntries(anchor = {}) {
+  const source = entries();
+  const signature = manualOccurrenceSignature(anchor);
+  const spanTotal = Math.max(1, Number(anchor.autoBlockSpanTotal || anchor.durationPeriods || anchor.continuousPeriods || 1) || 1);
+  const spanIndex = Math.max(0, Number(anchor.autoBlockSpanIndex || 0) || 0);
+  const basePeriod = Number(anchor.period) - spanIndex;
+
+  if (spanTotal > 1 && Number.isInteger(basePeriod)) {
+    const spanMembers = source.filter(item => {
+      if (Number(item.day) !== Number(anchor.day)) return false;
+      if (manualOccurrenceSignature(item) !== signature) return false;
+      const itemPeriod = Number(item.period);
+      return Number.isInteger(itemPeriod) && itemPeriod >= basePeriod && itemPeriod < basePeriod + spanTotal;
+    });
+    if (spanMembers.length) return spanMembers.sort((a, b) => Number(a.period) - Number(b.period));
+  }
+
+  const sameSlotMembers = source.filter(item =>
+    Number(item.day) === Number(anchor.day)
+    && Number(item.period) === Number(anchor.period)
+    && manualOccurrenceSignature(item) === signature
+  );
+  return sameSlotMembers.length ? sameSlotMembers : [anchor];
+}
+
 function moveEntry(entryId, day, period) {
-  if (!canEdit()) return;
-  const e = entries().find(x => x.id === entryId); if (!e || e.pinned) return;
-  if (e.day === day && e.period === period) return;
+  if (!canEdit()) return false;
+  const e = entries().find(x => x.id === entryId);
+  if (!e || e.pinned) return false;
 
-  const fromDay = e.day;
-  const fromPeriod = e.period;
-  const moveKey = entryMoveUnitKeyForDrag(e);
-  const linkedEntries = moveKey
-    ? entries().filter(x => x.day === fromDay && x.period === fromPeriod && entryMoveUnitKeyForDrag(x) === moveKey)
-    : [e];
-  if (!linkedEntries.length || linkedEntries.some(x => x.pinned)) return;
+  const linkedEntries = manualOccurrenceEntries(e);
+  if (!linkedEntries.length || linkedEntries.some(item => item.pinned)) return false;
 
-  // 그룹카드는 시각적으로도 계산상으로도 하나의 큰 카드처럼 움직입니다.
-  // 같은 시간대의 동일 group/unit/autoBlockKey 엔트리는 일부만 이동하지 않고 함께 이동합니다.
-  captureTimetableUndo(linkedEntries.length > 1 ? "그룹카드 이동" : "수업 이동");
-  linkedEntries.forEach(item => { item.day = day; item.period = period; });
+  const firstPeriod = Math.min(...linkedEntries.map(item => Number(item.period)).filter(Number.isFinite));
+  const targetPlacements = linkedEntries.map(item => {
+    const offset = Number(item.period) - firstPeriod;
+    const occupancy = manualReplacementOccupancy(item);
+    return {
+      entryId: item.id,
+      day,
+      period: Number(period) + offset,
+      classKeys: [...(occupancy.classKeys || new Set())],
+      roomIds: effectiveRoomIdsForEntry(item),
+    };
+  });
+
+  const periodCount = Math.max(1, Number(ttConfig()?.periodCount || 7) || 7);
+  if (targetPlacements.some(slot => slot.period < 0 || slot.period >= periodCount)) {
+    alert(`연속수업을 배치할 공간이 부족합니다. ${periodCount}교시 범위 안으로 이동해 주세요.`);
+    return false;
+  }
+
+  const isSamePlacement = linkedEntries.every((item, index) =>
+    Number(item.day) === Number(targetPlacements[index]?.day)
+    && Number(item.period) === Number(targetPlacements[index]?.period)
+  );
+  if (isSamePlacement) return false;
+
+  const plan = buildManualReplacementPlan({
+    entries: entries(),
+    movingEntryIds: linkedEntries.map(item => item.id),
+    targetPlacements,
+    getOccupancy: item => manualReplacementOccupancy(item),
+    getOccurrenceEntries: item => manualOccurrenceEntries(item),
+  });
+
+  if (plan.blocked) {
+    const names = localUniqueStrings((plan.pinnedEntries || []).map(item => entryTitle(item))).slice(0, 5).join(", ");
+    alert(`이동할 칸에 고정 수업이 있습니다.${names ? `\n\n${names}` : ""}\n\n노란 테두리의 고정 수업은 먼저 고정을 해제해야 교체할 수 있습니다.`);
+    return false;
+  }
+
+  const displacedIds = new Set(plan.displacementIds || []);
+  captureTimetableUndo(displacedIds.size ? "수업 교체 이동" : (linkedEntries.length > 1 ? "그룹카드 이동" : "수업 이동"));
+
+  if (displacedIds.size) {
+    ttDomain().entries = entries().filter(item => !displacedIds.has(item.id));
+  }
+
+  linkedEntries.forEach((item, index) => {
+    const target = targetPlacements[index];
+    item.day = target.day;
+    item.period = target.period;
+  });
   scheduleSave("timetable");
+  return true;
 }
 
 function handleDrop(data, day, period) {
@@ -4967,8 +5052,11 @@ function handleDrop(data, day, period) {
 
   // 1. Move existing entry
   if (data.kind === "entry" && data.entryId) {
-    moveEntry(data.entryId, day, period);
-    recomputeConflicts(); renderAll(); return;
+    if (moveEntry(data.entryId, day, period)) {
+      recomputeConflicts();
+      renderAll();
+    }
+    return;
   }
 
   const sectionIdx = data.sectionIdx ?? 0;
