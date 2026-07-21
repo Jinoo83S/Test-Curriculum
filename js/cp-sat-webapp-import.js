@@ -1,10 +1,11 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+ import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
 import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=2026-07-16-cpsat-result-truth-r367";
 import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+import { encodeTimetableRevisionSnapshot } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r376: CP-SAT 적용 후 전체 entries 재검증 및 Firestore read-back 메타 저장.
+// r377: CP-SAT 최고 결과를 source signature + gzip entry snapshot으로 Firestore에 보존.
 // ================================================================
 
 import { migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
@@ -16,11 +17,11 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r348/HIS_CP_SAT_Local_Server_r348.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r376";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r376 full-entry validation/read-back bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r377";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r377 compressed best-snapshot bridge";
 const EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r376";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r377";
 globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -64,6 +65,75 @@ function stableGeneratedEntryId(logicalKey, ordinal, usedIds) {
   while (usedIds.has(candidate)) candidate = `${base}_${suffix++}`;
   usedIds.add(candidate);
   return candidate;
+}
+
+export async function buildCpSatBestSnapshot({
+  entries = [],
+  meta = {},
+  summary = {},
+  uidFactory = null,
+  autoSourceSignature = "",
+  activeSchoolYear = "",
+  periodCount = 7,
+} = {}) {
+  const snapshotEntries = deepClone(asArray(entries));
+  if (!snapshotEntries.length) return null;
+  const signature = cleanLocal(autoSourceSignature);
+  if (!signature) return null;
+  const counts = meta?.currentValidationCounts && typeof meta.currentValidationCounts === "object"
+    ? meta.currentValidationCounts
+    : {};
+  const shortageCount = Number(counts.shortageCount || 0) || 0;
+  const overageCount = Number(counts.overageCount || 0) || 0;
+  const validationIssueCount = shortageCount + overageCount
+    + (Number(counts.teacherConflictCount || 0) || 0)
+    + (Number(counts.studentConflictCount || 0) || 0)
+    + (Number(counts.roomConflictCount || 0) || 0)
+    + (Number(counts.classConflictCount || 0) || 0)
+    + (Number(counts.timeViolationCount || 0) || 0);
+  const sourceSummary = `CP-SAT ${snapshotEntries.length}개 entry · 현재 카드/그룹 구성`;
+  const snapshotMeta = {
+    ...deepClone(meta || {}),
+    schemaVersion: cleanLocal(meta?.schemaVersion) || "r377-cpsat-best-meta-v1",
+    autoSourceSignature: signature,
+    autoSourceSummary: cleanLocal(meta?.autoSourceSummary) || sourceSummary,
+    metricCompleteness: "complete",
+    metricSource: cleanLocal(meta?.metricSource) || "currentEntriesRevalidatedAfterCpSatApi",
+    ok: meta?.currentValidationOk !== false && validationIssueCount === 0,
+    placedEntryCount: snapshotEntries.length,
+    failedCount: shortageCount,
+    failedUnitCount: shortageCount,
+    classIssueCount: shortageCount + overageCount,
+    classSlotIssueCount: shortageCount + overageCount,
+    cardCoverageIssueCount: shortageCount + overageCount,
+    groupCoverageIssueCount: 0,
+    cardShortageSlots: shortageCount,
+  };
+  const createdAt = nowIso();
+  const entrySnapshot = await encodeTimetableRevisionSnapshot({
+    schoolYear: cleanLocal(activeSchoolYear),
+    createdAt,
+    timetable: { entries: snapshotEntries, ttcards: [], ttcardGroups: [] },
+  });
+  return {
+    id: typeof uidFactory === "function" ? uidFactory("cpsat-best") : `cpsat-best-${Date.now()}`,
+    name: "CP-SAT 적용 결과",
+    note: `자동 생성된 CP-SAT 최고 결과입니다. / 검증: ${cleanLocal(snapshotMeta.validationSummary || snapshotMeta.currentValidationSummary || "검증 완료")}`,
+    source: "autoassign-best",
+    generatorSource: CP_SAT_WEBAPP_SOURCE,
+    createdAt,
+    updatedAt: createdAt,
+    periodCount: Math.max(1, Number(periodCount || 7) || 7),
+    entryCount: snapshotEntries.length,
+    classSlotCount: Number(summary?.classSlotCount || 0) || 0,
+    autoSnapshot: true,
+    snapshotKind: "result",
+    autoSourceSignature: signature,
+    autoSourceSummary: snapshotMeta.autoSourceSummary,
+    autoAssignMeta: snapshotMeta,
+    entrySnapshot,
+    entries: snapshotEntries,
+  };
 }
 
 export function reconcileCpSatEntryIds(nextEntries = [], currentEntries = []) {
@@ -1473,6 +1543,8 @@ export function setupCpSatWebappImport(ctx = {}) {
     isAutoSaveSuspended = null,
     prepareSolverState = null,
     verifyPersistedTimetableState = null,
+    buildAutoSourceSignature = null,
+    activeSchoolYear = "",
   } = ctx;
 
   ensureStyle();
@@ -1819,17 +1891,39 @@ export function setupCpSatWebappImport(ctx = {}) {
       }
     }
 
-    domain.bestAutoAssignSnapshot = {
-      id: uid ? uid("cpsat") : `cpsat-${Date.now()}`,
-      name: "CP-SAT 적용 결과",
-      source: CP_SAT_WEBAPP_SOURCE,
-      createdAt: nowIso(),
-      entryCount: nextEntries.length,
-      classSlotCount: summary.classSlotCount,
-      validationSummary: nextMeta.currentValidationSummary || validation.summary || "",
-      entries: deepClone(nextEntries),
-      meta: deepClone(nextMeta),
-    };
+    let currentAutoSourceSignature = "";
+    try {
+      currentAutoSourceSignature = typeof buildAutoSourceSignature === "function"
+        ? cleanLocal(buildAutoSourceSignature())
+        : "";
+    } catch (signatureError) {
+      console.warn("CP-SAT 최고 결과 source signature 생성 생략", signatureError);
+    }
+    if (currentAutoSourceSignature) {
+      nextMeta = {
+        ...nextMeta,
+        autoSourceSignature: currentAutoSourceSignature,
+        autoSourceSummary: `CP-SAT ${nextEntries.length}개 entry · 현재 카드/그룹 구성`,
+      };
+    }
+
+    try {
+      const cpSatBestSnapshot = await buildCpSatBestSnapshot({
+        entries: nextEntries,
+        meta: nextMeta,
+        summary,
+        uidFactory: uid,
+        autoSourceSignature: currentAutoSourceSignature,
+        activeSchoolYear,
+        periodCount: ttConfig?.()?.periodCount || domain?.config?.periodCount || 7,
+      });
+      domain.bestAutoAssignSnapshot = cpSatBestSnapshot || deepClone(rollbackState.bestAutoAssignSnapshot);
+    } catch (snapshotError) {
+      // 최고 결과 보관 실패가 실제 시간표 적용과 저장을 막아서는 안 됩니다.
+      console.warn("CP-SAT 최고 결과 압축 보관 생략", snapshotError);
+      domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
+    }
+    if (appState?.timetable) appState.timetable.bestAutoAssignSnapshot = deepClone(domain.bestAutoAssignSnapshot);
 
     const saveStartedPerf = perfNow();
     let saveCommitted = false;
@@ -1925,7 +2019,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r376\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r377\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 

@@ -7627,5 +7627,8 @@ export function createAutoAssignAll(deps) {
 
 
   autoAssignAll.openPrecheck = openAutoAssignPrecheckOnly;
+  // r377: CP-SAT 결과도 일반 자동배치와 동일한 카드/그룹 source signature를 사용해야
+  // 새로고침 후 bestAutoAssignSnapshot이 현재 데이터와 같은 결과로 인정됩니다.
+  autoAssignAll.getCurrentSourceSignature = buildCurrentAutoSourceSignature;
   return autoAssignAll;
 }

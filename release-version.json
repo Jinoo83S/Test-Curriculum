@@ -1,9 +1,10 @@
 {
-  "release": "r376",
-  "appVersion": "2026-07-21-cpsat-validation-readback-r376",
-  "build": "r376-cpsat-validation-readback-20260721",
+  "release": "r377",
+  "appVersion": "2026-07-21-cpsat-best-snapshot-r377",
+  "build": "r377-cpsat-best-snapshot-20260721",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "warning-apply-allowed",
   "validationPolicy": "full-applied-entries",
-  "metadataPolicy": "persist-readback-audit"
+  "metadataPolicy": "persist-readback-and-compressed-best-snapshot",
+  "snapshotPolicy": "keep-before-backup-and-gzip-best-result"
 }

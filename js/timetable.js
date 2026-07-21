@@ -5891,7 +5891,9 @@ setupCpSatWebappImport?.({
   resumeAutoSave,
   isAutoSaveSuspended,
   prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat"),
-  verifyPersistedTimetableState
+  verifyPersistedTimetableState,
+  buildAutoSourceSignature: () => autoAssignAll.getCurrentSourceSignature?.() || "",
+  activeSchoolYear: ACTIVE_SCHOOL_YEAR
 });
 
 // Expose schedule control callbacks to inline HTML script

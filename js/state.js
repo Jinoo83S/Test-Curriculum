@@ -1217,8 +1217,10 @@ function compactCpSatAutoAssignMetaForStorage(meta = {}) {
   const entryCount = Number(meta.importedEntryCount || meta.currentEntryCount || meta.actualEntryCount || meta.placedEntryCount || 0) || 0;
   const classSlotCount = Number(meta.importedClassSlotCount || meta.currentClassSlotCount || 0) || 0;
   return {
-    schemaVersion: clean(meta.schemaVersion) || "r375-cpsat-meta-v1",
+    schemaVersion: clean(meta.schemaVersion) || "r377-cpsat-meta-v2",
     source: clean(meta.source),
+    autoSourceSignature: compactAutoSourceSignature(meta.autoSourceSignature || meta.sourceSignature),
+    autoSourceSummary: clean(meta.autoSourceSummary),
     metricSource: clean(meta.metricSource) || "currentEntriesRevalidatedAfterCpSatApi",
     metricCompleteness: "complete",
     metaSyncSource: clean(meta.metaSyncSource),
@@ -1280,9 +1282,11 @@ function compactCpSatAutoAssignMetaForStorage(meta = {}) {
     failedCount: Number(meta.failedCount || 0) || 0,
     failedUnitCount: Number(meta.failedUnitCount || 0) || 0,
     failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,
-    classIssueCount: Number(meta.classIssueCount || 0) || 0,
+    classIssueCount: Number(meta.classIssueCount || meta.classSlotIssueCount || 0) || 0,
+    classSlotIssueCount: Number(meta.classSlotIssueCount || meta.classIssueCount || 0) || 0,
     cardCoverageIssueCount: Number(meta.cardCoverageIssueCount || 0) || 0,
     groupCoverageIssueCount: Number(meta.groupCoverageIssueCount || 0) || 0,
+    cardShortageSlots: Number(meta.cardShortageSlots || 0) || 0,
     scheduleConditions: normalizeScheduleConditionStore(meta.scheduleConditions),
     manualCardExcludedIds: Array.isArray(meta.manualCardExcludedIds) ? meta.manualCardExcludedIds.slice(0, 500).map(clean).filter(Boolean) : [],
     manualCardExclusionMode: clean(meta.manualCardExclusionMode),
@@ -1533,6 +1537,44 @@ function jsonByteSize(value) {
   }
 }
 
+function compactBestEntrySnapshotForStorage(value = null) {
+  if (!value || typeof value !== "object") return null;
+  const encoding = clean(value.encoding);
+  const payload = clean(value.payload);
+  if (encoding !== "gzip-base64" || !payload) return null;
+  return {
+    schemaVersion: Number(value.schemaVersion || 1) || 1,
+    encoding,
+    payload,
+    payloadBytes: Number(value.payloadBytes || 0) || 0,
+    compressedBytes: Number(value.compressedBytes || 0) || 0,
+    jsonBytes: Number(value.jsonBytes || 0) || 0,
+    checksum: clean(value.checksum),
+    counts: value.counts && typeof value.counts === "object" ? { ...value.counts } : {},
+  };
+}
+
+export async function materializeStoredBestAutoAssignSnapshot(item = null) {
+  if (!item || typeof item !== "object") return item;
+  if (Array.isArray(item.entries) && item.entries.length) return item;
+  const entrySnapshot = compactBestEntrySnapshotForStorage(item.entrySnapshot);
+  if (!entrySnapshot) return item;
+  try {
+    const envelope = await decodeTimetableRevisionSnapshot(entrySnapshot);
+    const decodedEntries = Array.isArray(envelope?.timetable?.entries) ? envelope.timetable.entries : [];
+    if (!decodedEntries.length) return item;
+    const expectedCount = Number(item.entryCount || entrySnapshot.counts?.entries || 0) || 0;
+    if (expectedCount && decodedEntries.length !== expectedCount) {
+      console.warn("bestAutoAssignSnapshot 압축 entry 수가 메타와 다릅니다.", { expectedCount, decodedCount: decodedEntries.length });
+      return item;
+    }
+    return { ...item, entrySnapshot, entries: decodedEntries };
+  } catch (error) {
+    console.warn("bestAutoAssignSnapshot 압축 해제 실패", error);
+    return item;
+  }
+}
+
 function compactAutoAssignMetaForMetaDoc(meta = null) {
   const compact = compactAutoAssignMetaForStorage(meta);
   if (!compact) return null;
@@ -1634,6 +1676,7 @@ function compactSavedScheduleForMetaDoc(version = {}) {
       metricSource: clean(compactMeta.metricSource)
     } : null,
     cardGenerationMeta: version.cardGenerationMeta && typeof version.cardGenerationMeta === "object" ? safeJsonClone(version.cardGenerationMeta) : null,
+    entrySnapshot: compactBestEntrySnapshotForStorage(version.entrySnapshot),
     entries: Array.isArray(version.entries) ? version.entries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter) : []
   };
 }
@@ -1693,8 +1736,23 @@ function buildTimetableMetaStorageDoc(normalized = {}) {
 
   const best = n.bestAutoAssignSnapshot || null;
   if (best && Array.isArray(best.entries) && best.entries.length && !selected.some(v => v.id === best.id)) {
-    const trial = { ...base, bestAutoAssignSnapshot: best };
-    if (jsonByteSize(trial) <= TIMETABLE_META_FIRESTORE_SAFE_BYTES) base.bestAutoAssignSnapshot = best;
+    const compactBest = compactSavedScheduleForMetaDoc(best);
+    const fullTrial = { ...base, bestAutoAssignSnapshot: compactBest };
+    if (jsonByteSize(fullTrial) <= TIMETABLE_META_FIRESTORE_SAFE_BYTES) {
+      base.bestAutoAssignSnapshot = compactBest;
+    } else {
+      // r377: 적용 전 백업과 최고 결과가 각각 수백 KB이므로 둘을 일반 JSON으로
+      // timetableMeta 한 문서에 함께 넣을 수 없습니다. 최고 결과 entries만 gzip payload로
+      // 보관하고, 로딩 시 다시 materialize하여 백업과 최고 결과를 모두 유지합니다.
+      const entrySnapshot = compactBestEntrySnapshotForStorage(compactBest.entrySnapshot);
+      if (entrySnapshot) {
+        const compressedBest = { ...compactBest, entries: [], entrySnapshot, entryStorage: "gzip-base64-r377" };
+        const compressedTrial = { ...base, bestAutoAssignSnapshot: compressedBest };
+        if (jsonByteSize(compressedTrial) <= TIMETABLE_META_FIRESTORE_SAFE_BYTES) {
+          base.bestAutoAssignSnapshot = compressedBest;
+        }
+      }
+    }
   }
 
   return base;
@@ -1720,6 +1778,7 @@ function normalizeSavedTimetableVersion(item = {}) {
     autoSourceSummary: savedAutoSourceSummary(item),
     autoAssignMeta: compactAutoAssignMetaForStorage(item.autoAssignMeta),
     cardGenerationMeta: item.cardGenerationMeta && typeof item.cardGenerationMeta === "object" ? JSON.parse(JSON.stringify(item.cardGenerationMeta)) : null,
+    entrySnapshot: compactBestEntrySnapshotForStorage(item.entrySnapshot),
     entries,
   };
 }
@@ -2202,7 +2261,7 @@ async function readDiagnosticCollection(label, collRef) {
   }
 }
 
-function buildNormalizedDiagnostic(raw) {
+async function buildNormalizedDiagnostic(raw) {
   const boards = raw?.boards || {};
   const split = raw?.split || {};
   const splitClassDocs = split.classes?.docs || [];
@@ -2230,7 +2289,7 @@ function buildNormalizedDiagnostic(raw) {
     cardGenerationMeta: splitMetaDoc?.data?.cardGenerationMeta || null,
     scheduleConditions: splitMetaDoc?.data?.scheduleConditions || splitMetaDoc?.data?.autoAssignMeta?.scheduleConditions || null,
     autoAssignMeta: splitMetaDoc?.data?.autoAssignMeta || null,
-    bestAutoAssignSnapshot: splitMetaDoc?.data?.bestAutoAssignSnapshot || null,
+    bestAutoAssignSnapshot: await materializeStoredBestAutoAssignSnapshot(splitMetaDoc?.data?.bestAutoAssignSnapshot || null),
     entries: splitEntryDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
     ttcards: splitTtCardDocs.map(d => ({ id: d.id, ...(d.data || {}) })),
   };
@@ -2324,7 +2383,7 @@ export async function exportFirestoreDiagnosticSnapshot() {
     }
   };
 
-  const normalized = buildNormalizedDiagnostic(raw);
+  const normalized = await buildNormalizedDiagnostic(raw);
   return {
     version: 1,
     mode: "his-firestore-diagnostic",
@@ -3482,7 +3541,7 @@ async function applyTimetableSplitIfReady() {
     cardGenerationMeta: timetableSplitCache.meta?.cardGenerationMeta || null,
     scheduleConditions: timetableSplitCache.meta?.scheduleConditions || timetableSplitCache.meta?.autoAssignMeta?.scheduleConditions || null,
     autoAssignMeta: timetableSplitCache.meta?.autoAssignMeta || null,
-    bestAutoAssignSnapshot: timetableSplitCache.meta?.bestAutoAssignSnapshot || null,
+    bestAutoAssignSnapshot: await materializeStoredBestAutoAssignSnapshot(timetableSplitCache.meta?.bestAutoAssignSnapshot || null),
     entries: timetableSplitCache.entries,
     ttcards: timetableSplitCache.ttcards,
   };
