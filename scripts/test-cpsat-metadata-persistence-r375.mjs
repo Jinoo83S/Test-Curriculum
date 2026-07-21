@@ -1,4 +1,4 @@
- import fs from "node:fs";
+import fs from "node:fs";
 import assert from "node:assert/strict";
 import { repairContinuousSpanMetadata } from "../js/cp-sat-webapp-import.js";
 import { auditPersistedTimetable, timetableAssignmentSignatures } from "../js/timetable-persistence-audit.js";

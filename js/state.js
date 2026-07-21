@@ -1,4 +1,4 @@
- // ================================================================
+// ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
 import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
