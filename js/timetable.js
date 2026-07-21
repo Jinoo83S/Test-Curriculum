@@ -8,7 +8,8 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot,
-         listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+         listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation,
+         verifyPersistedTimetableState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
@@ -63,8 +64,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r371";
-console.info("[HIS runtime:r371] initial-load/conflict hotfix loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r375";
+console.info("[HIS runtime:r375] CP-SAT metadata persistence and Firestore read-back loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -5889,7 +5890,8 @@ setupCpSatWebappImport?.({
   suspendAutoSave,
   resumeAutoSave,
   isAutoSaveSuspended,
-  prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat")
+  prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat"),
+  verifyPersistedTimetableState
 });
 
 // Expose schedule control callbacks to inline HTML script

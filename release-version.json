@@ -1,7 +1,8 @@
 {
-  "release": "r374",
-  "appVersion": "2026-07-20-capacity-warning-allow-r374",
-  "build": "r374-capacity-warning-allow-20260720",
+  "release": "r375",
+  "appVersion": "2026-07-20-cpsat-meta-persistence-r375",
+  "build": "r375-cpsat-meta-persistence-20260720",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
-  "capacityPolicy": "warning-apply-allowed"
+  "capacityPolicy": "warning-apply-allowed",
+  "metadataPolicy": "persist-and-firestore-readback"
 }

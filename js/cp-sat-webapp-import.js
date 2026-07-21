@@ -16,11 +16,11 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r348/HIS_CP_SAT_Local_Server_r348.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r374";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r374 aggregate capacity warning bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r375";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r375 metadata persistence/read-back bridge";
 const EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r374";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r375";
 globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -1188,14 +1188,33 @@ function isGroupedSolvedEntry(entry = {}) {
 const STALE_AUTO_ASSIGN_META_KEYS = [
   "validationSummary", "ok", "validatorOk", "validationOk",
   "conflictSummary", "conflictStatus", "legacyValidationSummary",
-  "failedDiagnostics", "failedCount", "failedUnitCount", "failedOccurrenceCount",
+  "failedDiagnostics", "failedReasonSummary", "failedCount", "failedUnitCount", "failedOccurrenceCount",
   "classIssueCount", "cardCoverageIssueCount", "groupCoverageIssueCount",
   "actualEntryCount", "currentEntryCount", "placedEntryCount", "currentClassSlotCount",
   "currentValidationAt", "currentValidationOk", "currentValidationSummary", "currentValidationCounts",
-  "currentValidationDetails", "currentValidationStatus", "currentValidationIssueText"
+  "currentValidationDetails", "currentValidationStatus", "currentValidationIssueText",
+  "residualPuzzleReport", "acceptedMetrics", "baselineMetrics", "currentBeforeMetrics", "finalMetrics",
+  "qualityGate", "rejectedByQualityGate", "rejectReason", "qualityBaselineSource",
+  "qualityBaselineSnapshotName", "qualityBaselineValidationSummary", "stageName", "stageLabel",
+  "selectedAcceptedLabel", "autoSourceSignature", "autoSourceSummary", "activeGrades", "selectedGrades",
+  "experimentalResidualRepairEnabled", "experimentalResidualRepairSkipped", "experimentalResidualRepairSkipReason"
 ];
+function isCpSatMetaForCarryForward(meta = {}) {
+  return meta?.cpSatApplied === true || /^cp-sat-webapp-r\d+/i.test(cleanLocal(meta?.source)) || !!cleanLocal(meta?.apiVersion);
+}
+function cpSatCarryForwardBase(meta = {}) {
+  if (isCpSatMetaForCarryForward(meta)) return { ...meta };
+  const next = {};
+  for (const key of [
+    "scheduleConditions", "manualCardExcludedIds", "manualCardExclusionMode",
+    "cpSatFixedRoomPreflight", "cpSatScheduleConditionPreflight", "cpSatEntrySeedPreflight", "cpSatScopeAudit"
+  ]) {
+    if (meta && Object.prototype.hasOwnProperty.call(meta, key)) next[key] = deepClone(meta[key]);
+  }
+  return next;
+}
 function dropStaleAutoAssignMetaFields(meta = {}) {
-  const next = { ...(meta && typeof meta === "object" ? meta : {}) };
+  const next = cpSatCarryForwardBase(meta && typeof meta === "object" ? meta : {});
   STALE_AUTO_ASSIGN_META_KEYS.forEach(key => { if (Object.prototype.hasOwnProperty.call(next, key)) delete next[key]; });
   return next;
 }
@@ -1205,6 +1224,84 @@ function validationHardIssueCount(counts = {}) {
     "roomConflictCount", "classConflictCount", "timeViolationCount"
   ].map(k => Number(counts[k] || 0)).reduce((a, b) => a + b, 0);
 }
+function capacityWarningsFromValidationBody(validationBody = {}) {
+  return asArray(validationBody?.validation?.details)
+    .filter(item => /capacityWarnings|capacityViolations/i.test(cleanLocal(item?.type)))
+    .map(item => item?.value && typeof item.value === "object" ? item.value : item)
+    .filter(item => item && typeof item === "object")
+    .map(item => ({
+      roomId: cleanLocal(item.roomId),
+      roomName: cleanLocal(item.roomName),
+      day: Number(item.day),
+      period: Number(item.period),
+      studentCount: Number(item.studentCount || 0) || 0,
+      capacity: Number(item.capacity || 0) || 0,
+      overBy: Number(item.overBy || 0) || 0,
+      entryIds: unique(item.entryIds || []),
+      groupIds: unique(item.groupIds || []),
+      groupNames: unique(item.groupNames || []),
+      cardIds: unique(item.cardIds || []),
+      subjects: unique(item.subjects || []),
+      teachers: unique(item.teachers || []),
+      classKeys: unique(item.classKeys || []),
+      countMode: cleanLocal(item.countMode),
+      policy: cleanLocal(item.policy) || "warning-apply-allowed",
+    }));
+}
+
+function logicalSpanKey(entry = {}) {
+  const groupId = cleanLocal(entry.groupId);
+  if (groupId) return `group:${groupId}`;
+  const cardIds = unique([...(entry.ttcardIds || []), entry.ttcardId]).sort();
+  if (cardIds.length) return `cards:${cardIds.join("|")}`;
+  const templateIds = unique([...(entry.templateIds || []), entry.templateId]).sort();
+  const gradeKeys = unique([...(entry.gradeKeys || []), entry.gradeKey]).sort();
+  return `tpl:${templateIds.join("|")}:grade:${gradeKeys.join("|")}:sec:${Number(entry.sectionIdx || 0)}`;
+}
+
+export function repairContinuousSpanMetadata(entryList = []) {
+  const repaired = deepClone(asArray(entryList));
+  const groups = new Map();
+  repaired.forEach((entry, index) => {
+    const total = Math.max(1, Number(entry?.autoBlockSpanTotal || entry?.durationPeriods || entry?.continuousPeriods || 1) || 1);
+    if (total <= 1) return;
+    const day = Number(entry?.day);
+    const period = Number(entry?.period);
+    if (!Number.isInteger(day) || !Number.isInteger(period)) return;
+    const key = `${logicalSpanKey(entry)}@${day}:total:${total}`;
+    if (!groups.has(key)) groups.set(key, { total, rows: [] });
+    groups.get(key).rows.push({ entry, index, period });
+  });
+  let changedEntryCount = 0;
+  let blockCount = 0;
+  groups.forEach(({ total, rows }) => {
+    rows.sort((a, b) => a.period - b.period || a.index - b.index);
+    let run = [];
+    const flush = () => {
+      if (!run.length) return;
+      for (let offset = 0; offset < run.length; offset += total) {
+        const block = run.slice(offset, offset + total);
+        if (block.length !== total) continue;
+        blockCount += 1;
+        block.forEach((row, spanIndex) => {
+          if (Number(row.entry.autoBlockSpanTotal || 0) !== total || Number(row.entry.autoBlockSpanIndex || -1) !== spanIndex) {
+            row.entry.autoBlockSpanTotal = total;
+            row.entry.autoBlockSpanIndex = spanIndex;
+            changedEntryCount += 1;
+          }
+        });
+      }
+      run = [];
+    };
+    rows.forEach(row => {
+      if (run.length && row.period !== run[run.length - 1].period + 1) flush();
+      run.push(row);
+    });
+    flush();
+  });
+  return { entries: repaired, changedEntryCount, blockCount };
+}
+
 function buildCurrentValidationMeta(previousMeta = {}, validationBody = {}, entryList = [], sourceNote = "") {
   const base = dropStaleAutoAssignMetaFields(previousMeta);
   const validation = validationBody?.validation || {};
@@ -1217,6 +1314,9 @@ function buildCurrentValidationMeta(previousMeta = {}, validationBody = {}, entr
   const ok = validation.ok !== false;
   const summaryText = validation.summary || (ok ? "현재 시간표 검증 정상" : "현재 시간표 검증 필요");
   const details = asArray(validation.details).slice(0, 50);
+  const capacityWarnings = capacityWarningsFromValidationBody(validationBody);
+  const capacityWarningCount = Math.max(Number(counts.capacityWarningCount || 0), capacityWarnings.length);
+  const blockingDetails = details.filter(item => !/capacityWarnings|capacityViolations/i.test(cleanLocal(item?.type)));
   return {
     ...base,
     source: CP_SAT_WEBAPP_SOURCE,
@@ -1240,6 +1340,17 @@ function buildCurrentValidationMeta(previousMeta = {}, validationBody = {}, entr
     cpSatServerValidationOk: ok,
     cpSatServerValidationSummary: summaryText,
     cpSatIssueText: issueText(validationBody, 20),
+    cpSatCapacityPolicy: "warning-apply-allowed",
+    cpSatCapacityWarningCount: capacityWarningCount,
+    cpSatCapacityWarnings: deepClone(capacityWarnings),
+    clientCapacityAudit: {
+      schemaVersion: "r375-capacity-audit-v1",
+      warningCount: capacityWarningCount,
+      blockingCount: 0,
+      ok: true,
+      policy: "warning-apply-allowed",
+      details: deepClone(capacityWarnings),
+    },
     actualEntryCount: entryCount,
     currentEntryCount: entryCount,
     placedEntryCount: entryCount,
@@ -1249,7 +1360,7 @@ function buildCurrentValidationMeta(previousMeta = {}, validationBody = {}, entr
     currentEntrySummary: deepClone(summary),
     apiValidationCounts: deepClone(counts),
     apiCounts: deepClone(validationBody?.counts || {}),
-    failedDiagnostics: deepClone(details),
+    failedDiagnostics: deepClone(blockingDetails),
     failedCount: shortage + overage + hard,
     failedUnitCount: shortage + overage,
     failedOccurrenceCount: shortage + overage,
@@ -1354,6 +1465,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     resumeAutoSave = null,
     isAutoSaveSuspended = null,
     prepareSolverState = null,
+    verifyPersistedTimetableState = null,
   } = ctx;
 
   ensureStyle();
@@ -1446,6 +1558,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       normalized.roomPinned = !!(raw.roomPinned ?? normalized.roomPinned);
     }
     normalized.pinned = !!(raw.pinned ?? normalized.pinned);
+    const rawSpanTotal = Math.max(1, Number(raw.autoBlockSpanTotal || raw.durationPeriods || raw.continuousPeriods || 1) || 1);
+    if (rawSpanTotal > 1) {
+      normalized.autoBlockSpanTotal = rawSpanTotal;
+      normalized.autoBlockSpanIndex = Math.max(0, Math.min(rawSpanTotal - 1, Number(raw.autoBlockSpanIndex || 0) || 0));
+    }
     delete normalized.audienceStudentKeys;
     delete normalized.studentKeys;
     return normalized;
@@ -1525,16 +1642,36 @@ export function setupCpSatWebappImport(ctx = {}) {
     const domain = ttDomain?.();
     if (!domain) { alert("시간표 데이터가 아직 로드되지 않았습니다."); return false; }
     if (typeof saveNow !== "function") { alert("저장 함수가 연결되지 않았습니다. 현재검증 메타를 저장할 수 없습니다."); return false; }
-    const currentEntries = deepClone(asArray(entries?.()));
+    const spanRepair = repairContinuousSpanMetadata(deepClone(asArray(entries?.())));
+    const currentEntries = spanRepair.entries;
     const validationBody = await validateCurrentEntriesViaApi(base, currentEntries);
     const nextMeta = buildCurrentValidationMeta(domain.autoAssignMeta || {}, validationBody, currentEntries, reason);
+    nextMeta.spanMetadataRepair = {
+      schemaVersion: "r375-span-repair-v1",
+      changedEntryCount: spanRepair.changedEntryCount,
+      blockCount: spanRepair.blockCount,
+      repairedAt: nowIso(),
+    };
+    nextMeta.persistenceExpectedAudit = {
+      schemaVersion: "r375-persistence-expected-v1",
+      expectedEntryCount: currentEntries.length,
+      expectedAssignmentCount: currentEntries.reduce((sum, entry) => sum + unique([...(entry.ttcardIds || []), entry.ttcardId]).length, 0),
+      expectedCapacityWarningCount: Number(nextMeta.cpSatCapacityWarningCount || 0),
+    };
     syncCpSatTimetableState(domain, appState, currentEntries, nextMeta, null);
     recomputeConflicts?.();
     renderAll?.();
-    await saveNow("timetable", { force: true, throwOnError: true });
+    await saveNow("timetable", { force: true, throwOnError: true, revisionReason: "cp-sat-meta-repair", revisionLabel: "CP-SAT 메타 보정" });
     syncCpSatTimetableState(domain, appState, currentEntries, nextMeta, null);
     cpSatSaveVerification(domain, currentEntries.length);
-    return { meta: nextMeta, validation: validationBody };
+    let persistenceAudit = null;
+    if (typeof verifyPersistedTimetableState === "function") {
+      persistenceAudit = await verifyPersistedTimetableState({ expectedEntries: currentEntries, expectedMeta: nextMeta });
+      nextMeta.persistenceReadbackAudit = deepClone(persistenceAudit);
+      syncCpSatTimetableState(domain, appState, currentEntries, nextMeta, null);
+      if (!persistenceAudit.ok) throw new Error(persistenceAudit.summary || "Firestore 재조회 검증에 실패했습니다.");
+    }
+    return { meta: nextMeta, validation: validationBody, persistenceAudit, spanRepair };
   }
 
   async function applySolvedEntries(rawEntries, apiResult, validateBase = "") {
@@ -1607,6 +1744,13 @@ export function setupCpSatWebappImport(ctx = {}) {
       cpSatCapacityPolicy: "warning-apply-allowed",
       cpSatCapacityWarningCount: Number(policy.capacityWarningCount || 0),
       cpSatCapacityWarnings: asArray(policy.capacityAudit?.details).slice(0, 50),
+      clientCapacityAudit: deepClone(policy.capacityAudit || null),
+      persistenceExpectedAudit: {
+        schemaVersion: "r375-persistence-expected-v1",
+        expectedEntryCount: nextEntries.length,
+        expectedAssignmentCount: nextEntries.reduce((sum, entry) => sum + unique([...(entry.ttcardIds || []), entry.ttcardId]).length, 0),
+        expectedCapacityWarningCount: Number(policy.capacityWarningCount || 0),
+      },
       strictValidationRequired: true,
       strictValidationMode: "runtime-recomputed-teacher-room-class",
       strictValidationNotice: "정상 여부는 저장된 CP-SAT 메타가 아니라 현재 화면의 실시간 교사/교실/학급 충돌 검토 결과만 기준으로 판단합니다.",
@@ -1672,6 +1816,8 @@ export function setupCpSatWebappImport(ctx = {}) {
     };
 
     const saveStartedPerf = perfNow();
+    let saveCommitted = false;
+    let persistenceAudit = null;
     try {
       await persistCpSatTimetable({
         domain,
@@ -1683,6 +1829,18 @@ export function setupCpSatWebappImport(ctx = {}) {
         recomputeConflicts,
         renderAll,
       });
+      saveCommitted = true;
+      if (typeof verifyPersistedTimetableState === "function") {
+        persistenceAudit = await verifyPersistedTimetableState({ expectedEntries: nextEntries, expectedMeta: nextMeta });
+        nextMeta.persistenceReadbackAudit = deepClone(persistenceAudit);
+        syncCpSatTimetableState(domain, appState, nextEntries, nextMeta, null);
+        if (apiResult && typeof apiResult === "object") apiResult.clientPersistenceAudit = deepClone(persistenceAudit);
+        if (!persistenceAudit.ok) {
+          const verificationError = new Error(persistenceAudit.summary || "Firestore 재조회 검증에 실패했습니다.");
+          verificationError.code = "cpsat-persistence-verification-failed";
+          throw verificationError;
+        }
+      }
     } catch (err) {
       applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
       if (apiResult && typeof apiResult === "object") {
@@ -1690,11 +1848,26 @@ export function setupCpSatWebappImport(ctx = {}) {
           applyValidationMs,
           applySaveMs,
           applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
-          saved: false,
+          saved: saveCommitted,
+          persistenceVerified: saveCommitted ? false : null,
           error: cleanLocal(err?.message || err),
         };
       }
-      console.error("CP-SAT 저장 실패", err);
+      console.error("CP-SAT 저장/검증 실패", err);
+      if (saveCommitted) {
+        // Firestore 원자 저장은 완료됐지만 재조회 검증이 불일치한 경우입니다.
+        // 이미 저장된 새 시간표를 화면에서 과거 상태로 되돌리면 서버/화면이 달라지므로 유지합니다.
+        syncCpSatTimetableState(domain, appState, nextEntries, nextMeta, null);
+        recomputeConflicts?.();
+        renderAll?.();
+        alert(`CP-SAT 결과는 Firestore에 저장됐지만 저장 직후 재조회 검증에서 불일치가 발견됐습니다.
+
+${err?.message || err}
+
+현재 화면은 저장된 새 시간표를 유지합니다. 진단 JSON을 내려받아 확인해 주세요.`);
+        if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
+        return false;
+      }
       syncCpSatTimetableState(domain, appState, rollbackState.entries, rollbackState.autoAssignMeta, null);
       domain.savedSchedules = deepClone(rollbackState.savedSchedules);
       domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
@@ -1720,12 +1893,14 @@ ${err?.message || err}
         applySaveMs,
         applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
         saved: true,
+        persistenceVerified: persistenceAudit?.ok !== false,
+        persistenceAudit: persistenceAudit ? deepClone(persistenceAudit) : null,
       };
     }
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r374\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r375\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -1764,7 +1939,7 @@ ${err?.message || err}
             <button type="button" class="good" data-action="apply" disabled>4. 결과 적용</button>
             <button type="button" data-action="download-payload">전송 JSON 저장</button>
             <button type="button" data-action="download-result" disabled>결과 JSON 저장</button>
-            <button type="button" data-action="refresh-current-meta">현재검증 메타갱신</button>
+            <button type="button" data-action="refresh-current-meta">현재 시간표 메타 보정</button>
           </div>
           <div id="ttCpSatApiStatus" class="tt-cpsat-api-box warn">대기 중입니다. 서버 확인부터 눌러 주세요.</div>
           <div class="tt-cpsat-api-progress"><span id="ttCpSatApiProgress"></span></div>
@@ -2001,10 +2176,10 @@ ${err?.message || err}
         setBusy(true); setStatus("warn", "현재 시간표 entries를 재검증하고 autoAssignMeta를 갱신 중...", 20);
         const result = await refreshCurrentValidationMeta(apiBase(), "manual-current-validation-refresh");
         const body = result?.validation || {};
-        setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>현재검증 메타 갱신 완료</b><br>${escapeHtml(body?.validation?.summary || "현재검증 완료")}<br><span style="font-size:11px;color:#64748b">현재 entries ${asArray(entries?.()).length}개 기준으로 autoAssignMeta를 저장했습니다.</span>`, 100);
+        setStatus(body?.validation?.ok === false ? "warn" : "ok", `<b>현재 시간표 메타 보정 완료</b><br>${escapeHtml(body?.validation?.summary || "현재검증 완료")}<br><span style="font-size:11px;color:#64748b">현재 entries ${asArray(entries?.()).length}개 · 연속블록 ${result?.spanRepair?.changedEntryCount || 0}개 entry 보정 · ${escapeHtml(result?.persistenceAudit?.summary || "Firestore 재조회 생략")}</span>`, 100);
         renderApiSummary(body, "refresh-current-meta");
       } catch (err) {
-        setStatus("bad", `<b>현재검증 메타 갱신 실패</b><br>${escapeHtml(err?.message || err)}<br><br>r343 로컬 서버가 실행 중인지 확인하세요.`, 0);
+        setStatus("bad", `<b>현재 시간표 메타 보정 실패</b><br>${escapeHtml(err?.message || err)}<br><br>r348 로컬 서버가 실행 중인지 확인하세요.`, 0);
       } finally { setBusy(false); }
     });
 

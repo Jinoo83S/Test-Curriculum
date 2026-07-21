@@ -1,4 +1,4 @@
-// ================================================================
+ // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
 import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
@@ -9,6 +9,7 @@ import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalSt
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, encodeTimetableRevisionSnapshot, decodeTimetableRevisionSnapshot, isRestorableTimetableRevision, TIMETABLE_REVISION_SCHEMA_VERSION, TIMETABLE_REVISION_HISTORY_SLOTS } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
+import { auditPersistedTimetable } from "./timetable-persistence-audit.js?v=2026-07-20-cpsat-meta-persistence-r375";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -946,6 +947,13 @@ export function normalizeTimetableEntry(e = {}) {
     roomAssignmentsByTtCardId,
     // r226: CP-SAT 결과/수동 다중교실의 실제 예약 교실을 entry에도 보존합니다.
     ...normalizeScheduleConditionFields(e),
+    ...(Math.max(1, Number(e.autoBlockSpanTotal || 1) || 1) > 1 ? {
+      autoBlockSpanTotal: Math.max(1, Number(e.autoBlockSpanTotal || e.durationPeriods || e.continuousPeriods || 1) || 1),
+      autoBlockSpanIndex: Math.max(0, Math.min(
+        Math.max(1, Number(e.autoBlockSpanTotal || e.durationPeriods || e.continuousPeriods || 1) || 1) - 1,
+        Number(e.autoBlockSpanIndex || 0) || 0
+      )),
+    } : {}),
     pinned:      !!e.pinned,
   };
 }
@@ -1151,8 +1159,139 @@ function savedAutoSourceSummary(v = {}) {
   return clean(v.autoSourceSummary || v.autoAssignMeta?.autoSourceSummary);
 }
 
+function compactCpSatCapacityWarningForStorage(item = {}) {
+  const value = item && typeof item === "object" && item.value && typeof item.value === "object" ? item.value : item;
+  return {
+    roomId: clean(value?.roomId),
+    roomName: clean(value?.roomName),
+    day: Number(value?.day),
+    period: Number(value?.period),
+    studentCount: Number(value?.studentCount || 0) || 0,
+    capacity: Number(value?.capacity || 0) || 0,
+    overBy: Number(value?.overBy || 0) || 0,
+    entryIds: Array.isArray(value?.entryIds) ? value.entryIds.slice(0, 12).map(clean).filter(Boolean) : [],
+    groupIds: Array.isArray(value?.groupIds) ? value.groupIds.slice(0, 12).map(clean).filter(Boolean) : [],
+    groupNames: Array.isArray(value?.groupNames) ? value.groupNames.slice(0, 12).map(clean).filter(Boolean) : [],
+    cardIds: Array.isArray(value?.cardIds) ? value.cardIds.slice(0, 20).map(clean).filter(Boolean) : [],
+    subjects: Array.isArray(value?.subjects) ? value.subjects.slice(0, 20).map(clean).filter(Boolean) : [],
+    teachers: Array.isArray(value?.teachers) ? value.teachers.slice(0, 20).map(clean).filter(Boolean) : [],
+    classKeys: Array.isArray(value?.classKeys) ? value.classKeys.slice(0, 20).map(clean).filter(Boolean) : [],
+    countMode: clean(value?.countMode),
+    policy: clean(value?.policy) || "warning-apply-allowed",
+  };
+}
+
+function compactCpSatAuditForStorage(value = null) {
+  if (!value || typeof value !== "object") return null;
+  const copy = safeJsonClone(value);
+  if (Array.isArray(copy.details)) copy.details = copy.details.slice(0, 50).map(compactCpSatCapacityWarningForStorage);
+  if (Array.isArray(copy.missingAssignments)) copy.missingAssignments = copy.missingAssignments.slice(0, 20).map(clean);
+  if (Array.isArray(copy.extraAssignments)) copy.extraAssignments = copy.extraAssignments.slice(0, 20).map(clean);
+  return copy;
+}
+
+function isCpSatAutoAssignMeta(meta = {}) {
+  return meta?.cpSatApplied === true || /^cp-sat-webapp-r\d+/i.test(clean(meta?.source)) || !!clean(meta?.apiVersion);
+}
+
+function compactCpSatAutoAssignMetaForStorage(meta = {}) {
+  const warnings = Array.isArray(meta.cpSatCapacityWarnings)
+    ? meta.cpSatCapacityWarnings.slice(0, 50).map(compactCpSatCapacityWarningForStorage)
+    : [];
+  const currentDetails = Array.isArray(meta.currentValidationDetails)
+    ? meta.currentValidationDetails.slice(0, 50).map(row => safeJsonClone(row)).filter(Boolean)
+    : [];
+  const blockingDiagnostics = Array.isArray(meta.failedDiagnostics)
+    ? meta.failedDiagnostics.slice(0, TIMETABLE_META_DIAGNOSTIC_LIMIT).map(row => safeJsonClone(row)).filter(row => {
+        if (!row || typeof row !== "object") return false;
+        const type = clean(row.type);
+        if (/capacity/i.test(type)) return false;
+        return Object.values(row).some(value => {
+          if (Array.isArray(value)) return value.length > 0;
+          if (value && typeof value === "object") return Object.keys(value).length > 0;
+          return clean(value) !== "" && Number(value) !== 0;
+        });
+      })
+    : [];
+  const warningCount = Math.max(Number(meta.cpSatCapacityWarningCount || 0) || 0, warnings.length);
+  const entryCount = Number(meta.importedEntryCount || meta.currentEntryCount || meta.actualEntryCount || meta.placedEntryCount || 0) || 0;
+  const classSlotCount = Number(meta.importedClassSlotCount || meta.currentClassSlotCount || 0) || 0;
+  return {
+    schemaVersion: clean(meta.schemaVersion) || "r375-cpsat-meta-v1",
+    source: clean(meta.source),
+    metricSource: clean(meta.metricSource) || "currentEntriesRevalidatedAfterCpSatApi",
+    metricCompleteness: "complete",
+    metaSyncSource: clean(meta.metaSyncSource),
+    cpSatApplied: true,
+    cpSatApplyStatus: clean(meta.cpSatApplyStatus),
+    cpSatServerValidationOk: meta.cpSatServerValidationOk !== false,
+    cpSatServerValidationSummary: clean(meta.cpSatServerValidationSummary),
+    cpSatIssueText: clean(meta.cpSatIssueText),
+    cpSatCapacityPolicy: clean(meta.cpSatCapacityPolicy) || "warning-apply-allowed",
+    cpSatCapacityWarningCount: warningCount,
+    cpSatCapacityWarnings: warnings,
+    clientCapacityAudit: compactCpSatAuditForStorage(meta.clientCapacityAudit || {
+      schemaVersion: "r375-capacity-audit-v1",
+      warningCount,
+      blockingCount: 0,
+      ok: true,
+      policy: "warning-apply-allowed",
+      details: warnings,
+    }),
+    strictValidationRequired: meta.strictValidationRequired !== false,
+    strictValidationMode: clean(meta.strictValidationMode),
+    strictValidationNotice: clean(meta.strictValidationNotice),
+    currentValidationAt: clean(meta.currentValidationAt),
+    currentValidationStatus: clean(meta.currentValidationStatus),
+    currentValidationOk: meta.currentValidationOk !== false,
+    currentValidationSummary: clean(meta.currentValidationSummary),
+    currentValidationCounts: meta.currentValidationCounts && typeof meta.currentValidationCounts === "object" ? safeJsonClone(meta.currentValidationCounts) : {},
+    currentValidationDetails: currentDetails,
+    currentValidationIssueText: clean(meta.currentValidationIssueText),
+    validationSummary: clean(meta.validationSummary || meta.currentValidationSummary || meta.cpSatServerValidationSummary),
+    ok: meta.ok !== false,
+    validatorOk: meta.validatorOk !== false,
+    validationOk: meta.validationOk !== false,
+    actualEntryCount: entryCount,
+    currentEntryCount: entryCount,
+    placedEntryCount: entryCount,
+    importedEntryCount: entryCount,
+    currentClassSlotCount: classSlotCount,
+    importedClassSlotCount: classSlotCount,
+    currentEntrySummary: meta.currentEntrySummary && typeof meta.currentEntrySummary === "object" ? safeJsonClone(meta.currentEntrySummary) : null,
+    importedRoomAssignmentEntryCount: Number(meta.importedRoomAssignmentEntryCount || 0) || 0,
+    importedAt: clean(meta.importedAt),
+    generatedAt: clean(meta.generatedAt) || clean(meta.currentValidationAt),
+    apiElapsedSeconds: Number.isFinite(Number(meta.apiElapsedSeconds)) ? Number(meta.apiElapsedSeconds) : null,
+    apiStatus: clean(meta.apiStatus),
+    apiVersion: clean(meta.apiVersion),
+    apiCounts: meta.apiCounts && typeof meta.apiCounts === "object" ? safeJsonClone(meta.apiCounts) : {},
+    apiValidationCounts: meta.apiValidationCounts && typeof meta.apiValidationCounts === "object" ? safeJsonClone(meta.apiValidationCounts) : {},
+    rawCpSatServerValidationSummary: clean(meta.rawCpSatServerValidationSummary),
+    rawCpSatServerValidationCounts: meta.rawCpSatServerValidationCounts && typeof meta.rawCpSatServerValidationCounts === "object" ? safeJsonClone(meta.rawCpSatServerValidationCounts) : {},
+    rawCpSatIssueText: clean(meta.rawCpSatIssueText),
+    cpSatResultAudit: compactCpSatAuditForStorage(meta.cpSatResultAudit),
+    cpSatScopeAudit: compactCpSatAuditForStorage(meta.cpSatScopeAudit),
+    persistenceExpectedAudit: compactCpSatAuditForStorage(meta.persistenceExpectedAudit),
+    persistenceReadbackAudit: compactCpSatAuditForStorage(meta.persistenceReadbackAudit),
+    backupVersionId: clean(meta.backupVersionId) || null,
+    entryIdReconciliation: meta.entryIdReconciliation && typeof meta.entryIdReconciliation === "object" ? safeJsonClone(meta.entryIdReconciliation) : null,
+    failedDiagnostics: blockingDiagnostics,
+    failedCount: Number(meta.failedCount || 0) || 0,
+    failedUnitCount: Number(meta.failedUnitCount || 0) || 0,
+    failedOccurrenceCount: Number(meta.failedOccurrenceCount || 0) || 0,
+    classIssueCount: Number(meta.classIssueCount || 0) || 0,
+    cardCoverageIssueCount: Number(meta.cardCoverageIssueCount || 0) || 0,
+    groupCoverageIssueCount: Number(meta.groupCoverageIssueCount || 0) || 0,
+    scheduleConditions: normalizeScheduleConditionStore(meta.scheduleConditions),
+    manualCardExcludedIds: Array.isArray(meta.manualCardExcludedIds) ? meta.manualCardExcludedIds.slice(0, 500).map(clean).filter(Boolean) : [],
+    manualCardExclusionMode: clean(meta.manualCardExclusionMode),
+  };
+}
+
 function compactAutoAssignMetaForStorage(meta = null) {
   if (!meta || typeof meta !== "object") return null;
+  if (isCpSatAutoAssignMeta(meta)) return compactCpSatAutoAssignMetaForStorage(meta);
   const cloneMetric = value => (value && typeof value === "object") ? safeJsonClone(value) : null;
   const hasFinalMetrics = !!(meta.finalMetrics && typeof meta.finalMetrics === "object");
   const final = meta.finalMetrics || {};
@@ -1398,6 +1537,22 @@ function compactAutoAssignMetaForMetaDoc(meta = null) {
   const compact = compactAutoAssignMetaForStorage(meta);
   if (!compact) return null;
   if (jsonByteSize(compact) <= 140000) return compact;
+  if (isCpSatAutoAssignMeta(compact)) {
+    const warnings = Array.isArray(compact.cpSatCapacityWarnings) ? compact.cpSatCapacityWarnings.slice(0, 20) : [];
+    return {
+      ...compact,
+      currentValidationDetails: [],
+      cpSatCapacityWarnings: warnings,
+      clientCapacityAudit: compact.clientCapacityAudit && typeof compact.clientCapacityAudit === "object"
+        ? { ...compact.clientCapacityAudit, details: warnings }
+        : null,
+      cpSatResultAudit: null,
+      cpSatScopeAudit: null,
+      persistenceReadbackAudit: compact.persistenceReadbackAudit && typeof compact.persistenceReadbackAudit === "object"
+        ? { ...compact.persistenceReadbackAudit, missingAssignments: [], extraAssignments: [] }
+        : null,
+    };
+  }
   return {
     schemaVersion: clean(compact.schemaVersion),
     generatedAt: clean(compact.generatedAt),
@@ -2743,6 +2898,50 @@ async function saveSplitDomain(domain, options = {}) {
 
     console.info(`[Firestore save] timetable atomic revision committed: ${revisionId}`, summary);
   }
+}
+
+export async function verifyPersistedTimetableState({ expectedEntries = [], expectedMeta = {} } = {}) {
+  const normalizedExpectedEntries = Array.isArray(expectedEntries)
+    ? expectedEntries.map(normalizeTimetableEntry).filter(validatorSafeEntryFilter)
+    : [];
+  const normalizedExpectedMeta = compactAutoAssignMetaForStorage(expectedMeta) || {};
+
+  if (LOCAL_DEV_MODE) {
+    const persisted = normalizeTimetableDomain(appState.timetable || {});
+    return {
+      ...auditPersistedTimetable({
+        expectedEntries: normalizedExpectedEntries,
+        persistedEntries: persisted.entries,
+        expectedMeta: normalizedExpectedMeta,
+        persistedMeta: persisted.autoAssignMeta || {},
+      }),
+      storageMode: "local-dev",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  const [entrySnap, metaSnap] = await Promise.all([
+    getDocs(splitRefs.timetableEntries),
+    getDoc(splitRefs.timetableMeta),
+  ]);
+  recordFirestoreUsage("reads", Math.max(1, entrySnap.size || 0), `CP-SAT read-back: ${storageLabel.timetableEntries}`, { operation: "getDocs" });
+  recordFirestoreUsage("reads", 1, `CP-SAT read-back: ${storageLabel.timetableMeta}`, { operation: "getDoc" });
+  const persistedEntries = entrySnap.docs
+    .map(item => normalizeTimetableEntry(withoutFirestoreMeta(item.data())))
+    .filter(validatorSafeEntryFilter);
+  const persistedMetaDoc = metaSnap.exists() ? withoutFirestoreMeta(metaSnap.data()) : {};
+  const persistedMeta = compactAutoAssignMetaForStorage(persistedMetaDoc?.autoAssignMeta) || {};
+  return {
+    ...auditPersistedTimetable({
+      expectedEntries: normalizedExpectedEntries,
+      persistedEntries,
+      expectedMeta: normalizedExpectedMeta,
+      persistedMeta,
+    }),
+    storageMode: "firestore-split",
+    checkedAt: new Date().toISOString(),
+    metaExists: metaSnap.exists(),
+  };
 }
 
 function revisionListItem(record = {}, slotDocId = "") {
