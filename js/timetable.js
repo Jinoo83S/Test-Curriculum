@@ -46,6 +46,7 @@ const [
   constraintsModule,
   logModule,
   sidebarModule,
+  teacherStatisticsModule,
   cpSatImportModule,
 ] = await Promise.all([
   import(versioned("./data-cleanup.js")),
@@ -58,14 +59,15 @@ const [
   import(versioned("./timetable-constraints.js")),
   import(versioned("./timetable-log.js")),
   import(versioned("./timetable-sidebar.js")),
+  import(versioned("./timetable-teacher-statistics.js")),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
     console.warn("[CP-SAT import] optional module load failed", err);
     return {};
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r378";
-console.info("[HIS runtime:r378] CP-SAT constraint policy and persistence loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r379";
+console.info("[HIS runtime:r379] teacher statistics and CP-SAT constraint policy loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -85,6 +87,7 @@ const { createTimetableDetailHandlers } = detailModule;
 const { createTimetableConstraintsHandlers } = constraintsModule;
 const { createTimetableLogHandlers } = logModule;
 const { createTimetableSidebarHandlers } = sidebarModule;
+const { openTeacherStatisticsDialog } = teacherStatisticsModule;
 const { setupCpSatWebappImport } = cpSatImportModule || {};
 
 // ── Accessors ─────────────────────────────────────────────────────
@@ -5870,6 +5873,15 @@ try {
 } catch (_) {}
 
 $("ttScheduleVersionsBtn")?.addEventListener("click", () => openScheduleVersionManager());
+$("ttTeacherStatisticsBtn")?.addEventListener("click", () => openTeacherStatisticsDialog({
+  getEntries: entries,
+  getTtCards,
+  getTeachers: () => appState.teachers?.teachers || [],
+  getTeacherConstraints: () => ttDomain()?.teacherConstraints || {},
+  getTeacherConstraintsById: () => ttDomain()?.teacherConstraintsById || {},
+  getConstraintPolicy: () => ttDomain()?.cpSatConstraintPolicy || {},
+  getPeriodCount: () => ttConfig()?.periodCount || 7,
+}));
 $("ttScheduleConditionGlobalBtn")?.addEventListener("click", () => openScheduleConditionPopup());
 $("ttManualCardVaultGlobalBtn")?.addEventListener("click", () => openManualCardVaultPopup());
 
