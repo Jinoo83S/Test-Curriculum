@@ -64,8 +64,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r375";
-console.info("[HIS runtime:r375] CP-SAT metadata persistence and Firestore read-back loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r378";
+console.info("[HIS runtime:r378] CP-SAT constraint policy and persistence loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;

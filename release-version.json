@@ -1,10 +1,12 @@
 {
-  "release": "r377",
-  "appVersion": "2026-07-21-cpsat-best-snapshot-r377",
-  "build": "r377-cpsat-best-snapshot-20260721",
+  "release": "r378",
+  "appVersion": "2026-07-21-cpsat-constraint-policy-r378",
+  "build": "r378-cpsat-constraint-policy-20260721",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
-  "capacityPolicy": "warning-apply-allowed",
-  "validationPolicy": "full-applied-entries",
-  "metadataPolicy": "persist-readback-and-compressed-best-snapshot",
-  "snapshotPolicy": "keep-before-backup-and-gzip-best-result"
+  "capacityPolicy": "hard-soft-off-by-school-year",
+  "validationPolicy": "full-applied-entries-and-constraint-policy-audit",
+  "metadataPolicy": "persist-readback-compressed-best-and-constraint-policy",
+  "snapshotPolicy": "keep-before-backup-and-gzip-best-result",
+  "constraintPolicySchema": "r378-cpsat-constraint-policy-v1",
+  "serverPolicyBridge": "r348-compatible-teacher-hard-relaxation-and-client-policy-audit"
 }

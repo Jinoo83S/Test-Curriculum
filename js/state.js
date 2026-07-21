@@ -10,6 +10,7 @@ import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=20
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
 import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, encodeTimetableRevisionSnapshot, decodeTimetableRevisionSnapshot, isRestorableTimetableRevision, TIMETABLE_REVISION_SCHEMA_VERSION, TIMETABLE_REVISION_HISTORY_SLOTS } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
 import { auditPersistedTimetable } from "./timetable-persistence-audit.js?v=2026-07-20-cpsat-meta-persistence-r375";
+import { normalizeCpSatConstraintPolicy } from "./cp-sat-constraint-policy.js?v=2026-07-21-cpsat-policy-r378";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -1190,6 +1191,32 @@ function compactCpSatAuditForStorage(value = null) {
   return copy;
 }
 
+function compactCpSatConstraintPolicyAuditForStorage(value = null) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    schemaVersion: clean(value.schemaVersion || "r378-cpsat-policy-audit-v1"),
+    policy: normalizeCpSatConstraintPolicy(value.policy || {}),
+    ok: value.ok !== false,
+    canApply: value.canApply !== false,
+    hardIssueCount: Number(value.hardIssueCount || 0) || 0,
+    softViolationCount: Number(value.softViolationCount || 0) || 0,
+    softPenalty: Number(value.softPenalty || 0) || 0,
+    ruleCounts: value.ruleCounts && typeof value.ruleCounts === "object" ? safeJsonClone(value.ruleCounts) : {},
+    summary: clean(value.summary),
+    details: Array.isArray(value.details) ? value.details.slice(0, 50).map(item => ({
+      ruleKey: clean(item?.ruleKey),
+      mode: clean(item?.mode),
+      message: clean(item?.message),
+      amount: Number(item?.amount || 0) || 0,
+      teacherKey: clean(item?.teacherKey),
+      classKey: clean(item?.classKey),
+      roomId: clean(item?.roomId),
+      day: Number.isFinite(Number(item?.day)) ? Number(item.day) : null,
+      period: Number.isFinite(Number(item?.period)) ? Number(item.period) : null,
+    })) : [],
+  };
+}
+
 function isCpSatAutoAssignMeta(meta = {}) {
   return meta?.cpSatApplied === true || /^cp-sat-webapp-r\d+/i.test(clean(meta?.source)) || !!clean(meta?.apiVersion);
 }
@@ -1229,7 +1256,11 @@ function compactCpSatAutoAssignMetaForStorage(meta = {}) {
     cpSatServerValidationOk: meta.cpSatServerValidationOk !== false,
     cpSatServerValidationSummary: clean(meta.cpSatServerValidationSummary),
     cpSatIssueText: clean(meta.cpSatIssueText),
-    cpSatCapacityPolicy: clean(meta.cpSatCapacityPolicy) || "warning-apply-allowed",
+    cpSatConstraintPolicy: normalizeCpSatConstraintPolicy(meta.cpSatConstraintPolicy || {}),
+    cpSatConstraintPolicySummary: clean(meta.cpSatConstraintPolicySummary),
+    cpSatConstraintPolicyAudit: compactCpSatConstraintPolicyAuditForStorage(meta.cpSatConstraintPolicyAudit),
+    cpSatSoftPenalty: Number(meta.cpSatSoftPenalty || meta.cpSatConstraintPolicyAudit?.softPenalty || 0) || 0,
+    cpSatCapacityPolicy: clean(meta.cpSatCapacityPolicy) || "soft-warning-apply-allowed",
     cpSatCapacityWarningCount: warningCount,
     cpSatCapacityWarnings: warnings,
     clientCapacityAudit: compactCpSatAuditForStorage(meta.clientCapacityAudit || {
@@ -1717,6 +1748,7 @@ function buildTimetableMetaStorageDoc(normalized = {}) {
     teacherConstraintsById: n.teacherConstraintsById || {},
     roomAvailabilityOrphans: n.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: n.ttcardTeacherOptions || {},
+    cpSatConstraintPolicy: normalizeCpSatConstraintPolicy(n.cpSatConstraintPolicy || {}),
     ttcardGroups: n.ttcardGroups || [],
     savedSchedules: [],
     cardGenerationMeta: n.cardGenerationMeta || null,
@@ -2019,7 +2051,9 @@ function normalizeTimetableDomain(raw = {}) {
     scheduleConditions: normalizeScheduleConditionStore(raw.scheduleConditions) || normalizeScheduleConditionStore(syncedAutoMetaRefs.meta?.scheduleConditions),
     // 시간표 카드 생성 시 담당교사가 비어 있는 과목 처리 기준입니다.
     // homeroom: 대상 반 담임 배정 / representative: 지정 대표 교사 배정 / none: 교사 없음 허용
-    ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {})
+    ttcardTeacherOptions: normalizeTtCardTeacherOptions(raw.ttcardTeacherOptions || raw.cardTeacherOptions || {}),
+    // r378: 학년도별 CP-SAT 강제/유연/해제 정책입니다.
+    cpSatConstraintPolicy: normalizeCpSatConstraintPolicy(raw.cpSatConstraintPolicy || raw.constraintPolicy || {})
   };
 }
 
@@ -2284,6 +2318,7 @@ async function buildNormalizedDiagnostic(raw) {
     teacherConstraintsById: splitMetaDoc?.data?.teacherConstraintsById || {},
     roomAvailabilityOrphans: splitMetaDoc?.data?.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: splitMetaDoc?.data?.ttcardTeacherOptions || {},
+    cpSatConstraintPolicy: splitMetaDoc?.data?.cpSatConstraintPolicy || {},
     ttcardGroups: splitMetaDoc?.data?.ttcardGroups || splitMetaDoc?.data?.templateGroups || [],
     savedSchedules: splitMetaDoc?.data?.savedSchedules || [],
     cardGenerationMeta: splitMetaDoc?.data?.cardGenerationMeta || null,
@@ -3536,6 +3571,7 @@ async function applyTimetableSplitIfReady() {
     teacherConstraintsById: timetableSplitCache.meta?.teacherConstraintsById || {},
     roomAvailabilityOrphans: timetableSplitCache.meta?.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: timetableSplitCache.meta?.ttcardTeacherOptions || {},
+    cpSatConstraintPolicy: timetableSplitCache.meta?.cpSatConstraintPolicy || {},
     ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
     savedSchedules: timetableSplitCache.meta?.savedSchedules || [],
     cardGenerationMeta: timetableSplitCache.meta?.cardGenerationMeta || null,

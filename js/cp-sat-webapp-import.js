@@ -1,11 +1,17 @@
- import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
 import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=2026-07-16-cpsat-result-truth-r367";
 import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { encodeTimetableRevisionSnapshot } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
+import {
+  CP_SAT_LOCKED_RULES, CP_SAT_EDITABLE_RULES,
+  defaultCpSatConstraintPolicy, normalizeCpSatConstraintPolicy,
+  cpSatConstraintPolicySummary, hasActiveSoftCpSatPolicy,
+  applyCpSatConstraintPolicyToPayload, auditCpSatConstraintPolicy,
+} from "./cp-sat-constraint-policy.js?v=2026-07-21-cpsat-policy-r378";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
-// r377: CP-SAT 최고 결과를 source signature + gzip entry snapshot으로 Firestore에 보존.
+// r378: 연도별 강제/유연/해제 정책을 payload·검증·Firestore에 연결.
 // ================================================================
 
 import { migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
@@ -17,11 +23,11 @@ const API_URL_KEY = "his_cp_sat_api_base_v1";
 const API_DEFAULT = "http://127.0.0.1:7860";
 const QUICK_COMPLETE_KEY = "his_cp_sat_quick_complete_v1";
 const LOCAL_SERVER_RELEASE_URL = "https://github.com/jinoo83s/Test-Curriculum/releases/download/r348/HIS_CP_SAT_Local_Server_r348.zip";
-const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r377";
-const CP_SAT_BRIDGE_SOURCE = "HIS webapp r377 compressed best-snapshot bridge";
+const CP_SAT_WEBAPP_SOURCE = "cp-sat-webapp-r378";
+const CP_SAT_BRIDGE_SOURCE = "HIS webapp r378 constraint-policy bridge";
 const EXPECTED_SERVER_VERSION = "2026-07-20-aggregate-capacity-warning-r348";
 
-globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r377";
+globalThis.HIS_CP_SAT_BRIDGE_RELEASE = "r378";
 globalThis.HIS_CP_SAT_SERVER_FILE = "HIS_CP_SAT_Local_Server_r348.zip";
 
 const asArray = v => Array.isArray(v) ? v : [];
@@ -849,12 +855,22 @@ function makeSolverState(appState, live = {}, options = {}) {
   // 서버 전송본에서도 구버전 의사 교사 키를 교실 도메인으로 이관해
   // 교사 조건과 교실 불가시간이 섞이지 않도록 보장합니다.
   migrateLegacyRoomAvailability(data.rooms, data.timetable);
+  const constraintPolicy = normalizeCpSatConstraintPolicy(
+    liveTimetable.cpSatConstraintPolicy || appState?.timetable?.cpSatConstraintPolicy || {}
+  );
+  const policyApplied = applyCpSatConstraintPolicyToPayload(data, constraintPolicy);
   data.constraintDetection = buildSolverConstraintSummary(data);
   const wrapped = {
     version: 1,
     mode: "his-webapp-live-state-for-cp-sat",
     exportedAt: nowIso(),
     source: CP_SAT_BRIDGE_SOURCE,
+    solverPolicy: deepClone(policyApplied.policy),
+    solverPolicyBridge: {
+      schemaVersion: "r378-cpsat-policy-request-v1",
+      relaxedTeacherFields: deepClone(policyApplied.relaxedFields || []),
+      summary: cpSatConstraintPolicySummary(policyApplied.policy),
+    },
     data: deepClone(data),
   };
   if (!wrapped.data.timetable.autoAssignMeta || typeof wrapped.data.timetable.autoAssignMeta !== "object") wrapped.data.timetable.autoAssignMeta = {};
@@ -1195,18 +1211,42 @@ function applyPolicy(apiResult = {}, normalizedEntries = [], currentEntryCount =
     return { canApply: false, level: "bad", reason: "적용할 entries가 없습니다.", soft: false, audit };
   }
   const capacityAudit = apiResult?.clientCapacityAudit || finalCapacityAudit(scopeState, normalizedEntries);
+  const constraintPolicyAudit = apiResult?.clientConstraintPolicyAudit || auditCpSatConstraintPolicy({
+    state: scopeState || {},
+    entries: normalizedEntries,
+    policy: scopeState?.solverPolicy || payloadFromWrappedState(scopeState || {})?.timetable?.cpSatConstraintPolicy || {},
+    capacityAudit,
+  });
+  if ((constraintPolicyAudit?.hardIssueCount || 0) > 0) {
+    const first = constraintPolicyAudit.details?.find(item => item.mode === "hard") || constraintPolicyAudit.details?.[0] || {};
+    const reason = `선택한 강제 제한을 ${constraintPolicyAudit.hardIssueCount}건 위반했습니다. ${first.message || constraintPolicyAudit.summary || "정책을 확인하세요."}`;
+    return {
+      canApply: false,
+      level: "bad",
+      reason,
+      soft: false,
+      audit: { ...audit, status: "failed", title: "CP-SAT 정책 위반", reason, canApply: false },
+      capacityAudit,
+      constraintPolicyAudit,
+      capacityWarningCount: Number(capacityAudit?.warningCount || 0),
+    };
+  }
   const serverCapacityCount = Number(validationCounts(apiResult).capacityWarningCount || 0);
   const capacityWarningCount = Math.max(serverCapacityCount, Number(capacityAudit?.warningCount || 0));
-  const hasCapacityWarning = capacityWarningCount > 0;
+  const roomCapacityMode = constraintPolicyAudit?.policy?.rules?.roomCapacity?.mode || "soft";
+  const hasCapacityWarning = roomCapacityMode !== "off" && capacityWarningCount > 0;
+  const hasSoftPolicyWarning = (constraintPolicyAudit?.softViolationCount || 0) > 0;
+  const policySuffix = hasSoftPolicyWarning
+    ? ` · 유연 제한 ${constraintPolicyAudit.softViolationCount}건(벌점 ${constraintPolicyAudit.softPenalty})`
+    : "";
   return {
     canApply: audit.canApply === true,
-    level: hasCapacityWarning || audit.status === "diagnostic_mismatch" ? "warn" : "ok",
-    reason: hasCapacityWarning
-      ? `${audit.reason} · 교실 수용인원 경고 ${capacityWarningCount}건(확인 후 적용 허용)`
-      : audit.reason,
-    soft: hasCapacityWarning || audit.status === "diagnostic_mismatch",
+    level: hasCapacityWarning || hasSoftPolicyWarning || audit.status === "diagnostic_mismatch" ? "warn" : "ok",
+    reason: `${hasCapacityWarning ? `${audit.reason} · 교실 수용인원 경고 ${capacityWarningCount}건` : audit.reason}${policySuffix}`,
+    soft: hasCapacityWarning || hasSoftPolicyWarning || audit.status === "diagnostic_mismatch",
     audit,
     capacityAudit,
+    constraintPolicyAudit,
     capacityWarningCount,
   };
 }
@@ -1516,6 +1556,7 @@ function ensureStyle() {
     .tt-cpsat-api-download-note{margin-top:10px;padding:10px 12px;border:1px dashed #94a3b8;border-radius:10px;background:#f8fafc;color:#334155;font-size:12px;line-height:1.55}.tt-cpsat-api-download-note code{font-weight:800;color:#0f172a}
     .tt-cpsat-history{margin-top:12px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;overflow:hidden}.tt-cpsat-history>summary{cursor:pointer;padding:10px 12px;background:#f8fafc;font-size:12px;font-weight:900;color:#334155}.tt-cpsat-history-tools{display:flex;justify-content:flex-end;padding:8px 10px;border-top:1px solid #e2e8f0}.tt-cpsat-history-tools button{padding:5px 9px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;color:#475569;font-size:11px;font-weight:800;cursor:pointer}
     .tt-cpsat-history-list{display:grid;gap:8px;padding:10px}.tt-cpsat-history-empty{padding:16px;text-align:center;color:#64748b;font-size:12px}.tt-cpsat-history-row{border:1px solid #e2e8f0;border-radius:9px;padding:9px;background:#fff}.tt-cpsat-history-row.ok{border-left:4px solid #16a34a}.tt-cpsat-history-row.warn{border-left:4px solid #f59e0b}.tt-cpsat-history-row.bad{border-left:4px solid #dc2626}.tt-cpsat-history-title{display:flex;justify-content:space-between;gap:12px;font-size:12px;font-weight:900;color:#0f172a}.tt-cpsat-history-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.tt-cpsat-history-meta span{background:#f1f5f9;border-radius:999px;padding:3px 7px;font-size:10px;color:#475569}.tt-cpsat-history-reason{margin-top:6px;font-size:11px;line-height:1.45;color:#64748b}
+    .tt-cpsat-policy{margin-top:10px;border:1px solid #cbd5e1;border-radius:10px;background:#fff;overflow:hidden}.tt-cpsat-policy>summary{cursor:pointer;padding:10px 12px;background:#f8fafc;font-size:12px;font-weight:900;color:#0f172a}.tt-cpsat-policy-body{padding:10px 12px}.tt-cpsat-policy-note{font-size:11px;line-height:1.5;color:#64748b;margin-bottom:8px}.tt-cpsat-policy-locked{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}.tt-cpsat-policy-locked span{font-size:10px;padding:3px 7px;border-radius:999px;background:#e2e8f0;color:#334155;font-weight:800}.tt-cpsat-policy-grid{display:grid;grid-template-columns:minmax(190px,1fr) 110px 100px 100px;gap:6px;align-items:center}.tt-cpsat-policy-grid>div{min-height:34px;display:flex;align-items:center}.tt-cpsat-policy-grid .head{font-size:10px;font-weight:900;color:#64748b;background:#f8fafc;padding:5px 7px;border-radius:6px}.tt-cpsat-policy-label{display:block}.tt-cpsat-policy-label b{display:block;font-size:12px}.tt-cpsat-policy-label small{display:block;color:#64748b;font-size:10px;line-height:1.35}.tt-cpsat-policy select,.tt-cpsat-policy input[type=number]{width:100%;height:30px;border:1px solid #cbd5e1;border-radius:7px;padding:3px 6px;background:#fff;font-size:11px}.tt-cpsat-policy-actions{display:flex;justify-content:flex-end;gap:7px;margin-top:10px}.tt-cpsat-policy-actions button{padding:6px 9px;border:1px solid #94a3b8;border-radius:7px;background:#fff;font-size:11px;font-weight:800;cursor:pointer}.tt-cpsat-policy-actions .primary{background:#2563eb;color:#fff;border-color:#2563eb}@media(max-width:720px){.tt-cpsat-policy-grid{grid-template-columns:1fr 100px}.tt-cpsat-policy-grid .priority-col,.tt-cpsat-policy-grid .value-col{display:none}}
   `;
   document.head.appendChild(style);
 }
@@ -1796,14 +1837,15 @@ export function setupCpSatWebappImport(ctx = {}) {
       alert(`이 CP-SAT 결과는 적용하지 않습니다.\n\n${policy.reason}\n\n${validation.summary || "검증 필요"}\n\n${issueText(apiResult)}\n\n[결과 JSON 저장]으로 진단 파일만 보관하세요.`);
       return false;
     }
-    if ((policy.capacityWarningCount || 0) > 0) {
+    const capacityPolicyMode = policy.constraintPolicyAudit?.policy?.rules?.roomCapacity?.mode || "soft";
+    if (capacityPolicyMode === "soft" && (policy.capacityWarningCount || 0) > 0) {
       const warnings = asArray(policy.capacityAudit?.details);
       const preview = warnings.slice(0, 6).map(item => {
         const dayNames = ["월", "화", "수", "목", "금"];
         const group = asArray(item.groupNames).join(", ") || asArray(item.subjects).join(", ") || "묶음수업";
         return `- ${dayNames[Number(item.day)] || `${Number(item.day) + 1}일차`} ${Number(item.period) + 1}교시 · ${group} · ${item.roomName || item.roomId} · ${item.studentCount}/${item.capacity}명(초과 ${item.overBy})`;
       }).join("\n");
-      const proceed = confirm(`교실 수용인원 초과 경고 ${policy.capacityWarningCount}건이 있습니다.\n\n${preview}${warnings.length > 6 ? `\n- 그 외 ${warnings.length - 6}건` : ""}\n\n수용인원 경고는 적용을 차단하지 않습니다. 확인 후 이 결과를 적용하시겠습니까?`);
+      const proceed = confirm(`교실 수용인원 유연 제한 위반 ${policy.capacityWarningCount}건이 있습니다.\n\n${preview}${warnings.length > 6 ? `\n- 그 외 ${warnings.length - 6}건` : ""}\n\n현재 정책은 유연이므로 적용을 차단하지 않습니다. 확인 후 이 결과를 적용하시겠습니까?`);
       if (!proceed) return false;
     }
 
@@ -1829,7 +1871,11 @@ export function setupCpSatWebappImport(ctx = {}) {
       cpSatServerValidationOk: validation.ok !== false,
       cpSatServerValidationSummary: validation.summary || "",
       cpSatIssueText: issueText(apiResult, 20),
-      cpSatCapacityPolicy: "warning-apply-allowed",
+      cpSatConstraintPolicy: deepClone(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+      cpSatConstraintPolicySummary: cpSatConstraintPolicySummary(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+      cpSatConstraintPolicyAudit: deepClone(policy.constraintPolicyAudit || apiResult?.clientConstraintPolicyAudit || null),
+      cpSatSoftPenalty: Number(policy.constraintPolicyAudit?.softPenalty || apiResult?.clientConstraintPolicyAudit?.softPenalty || 0) || 0,
+      cpSatCapacityPolicy: capacityPolicyMode === "hard" ? "hard-block" : (capacityPolicyMode === "off" ? "off" : "soft-warning-apply-allowed"),
       cpSatCapacityWarningCount: Number(policy.capacityWarningCount || 0),
       cpSatCapacityWarnings: asArray(policy.capacityAudit?.details).slice(0, 50),
       clientCapacityAudit: deepClone(policy.capacityAudit || null),
@@ -1875,6 +1921,11 @@ export function setupCpSatWebappImport(ctx = {}) {
           apiVersion: apiResult?.version || "",
           apiCounts: deepClone(apiResult?.counts || currentValidationBody?.counts || {}),
           backupVersionId: backup?.id || null,
+          cpSatConstraintPolicy: deepClone(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+          cpSatConstraintPolicySummary: cpSatConstraintPolicySummary(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+          cpSatConstraintPolicyAudit: deepClone(policy.constraintPolicyAudit || apiResult?.clientConstraintPolicyAudit || null),
+          cpSatSoftPenalty: Number(policy.constraintPolicyAudit?.softPenalty || apiResult?.clientConstraintPolicyAudit?.softPenalty || 0) || 0,
+          cpSatCapacityPolicy: capacityPolicyMode === "hard" ? "hard-block" : (capacityPolicyMode === "off" ? "off" : "soft-warning-apply-allowed"),
         };
       } catch (err) {
         console.warn("CP-SAT 적용 후 현재검증 실패", err);
@@ -2019,7 +2070,7 @@ ${err?.message || err}
     if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
     setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r377\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
+    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r378\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
     return true;
   }
 
@@ -2028,6 +2079,21 @@ ${err?.message || err}
     let latestResult = null;
     let latestState = null;
     let running = false;
+    let policyState = normalizeCpSatConstraintPolicy(ttDomain?.()?.cpSatConstraintPolicy || appState?.timetable?.cpSatConstraintPolicy || {});
+    const modeLabel = mode => ({ hard: "강제", soft: "유연", off: "사용 안 함" }[mode] || mode);
+    const priorityLabel = priority => ({ high: "높음", medium: "보통", low: "낮음" }[priority] || priority);
+    const optionHtml = (values, selected, labeler) => values.map(value => `<option value="${escapeHtml(value)}"${value === selected ? " selected" : ""}>${escapeHtml(labeler(value))}</option>`).join("");
+    const lockedPolicyHtml = CP_SAT_LOCKED_RULES.map(rule => `<span title="${escapeHtml(rule.description)}">🔒 ${escapeHtml(rule.label)}</span>`).join("");
+    const editablePolicyHtml = CP_SAT_EDITABLE_RULES.map(rule => {
+      const saved = policyState.rules?.[rule.key] || {};
+      const valueInput = rule.valueKey
+        ? `<input type="number" data-policy-value="${escapeHtml(rule.key)}" data-value-key="${escapeHtml(rule.valueKey)}" min="${Number(rule.min ?? 0)}" max="${Number(rule.max ?? 99)}" value="${Number(saved[rule.valueKey] ?? 0)}" title="${escapeHtml(rule.valueLabel || "값")}">`
+        : `<span style="color:#94a3b8;font-size:11px">-</span>`;
+      return `<div class="tt-cpsat-policy-label"><span><b>${escapeHtml(rule.label)}</b><small>${escapeHtml(rule.description)}</small></span></div>
+        <div><select data-policy-mode="${escapeHtml(rule.key)}">${optionHtml(rule.allowedModes, saved.mode, modeLabel)}</select></div>
+        <div class="priority-col"><select data-policy-priority="${escapeHtml(rule.key)}">${optionHtml(["high", "medium", "low"], saved.priority, priorityLabel)}</select></div>
+        <div class="value-col">${valueInput}</div>`;
+    }).join("");
 
     const overlay = document.createElement("div");
     overlay.id = CP_SAT_API_UI_ID;
@@ -2048,8 +2114,23 @@ ${err?.message || err}
             <div class="tt-cpsat-api-field"><label>Workers</label><input id="ttCpSatApiWorkers" type="number" min="1" max="32" value="4"></div>
           </div>
           <div class="tt-cpsat-api-checkline">🔒 학생 객체는 전송하지 않습니다. 시간표 카드/배치 결과의 학생 필드도 제거하고, 학생 충돌은 과목카드 roster의 studentId만 사용합니다.</div>
-          <label class="tt-cpsat-api-checkline"><input id="ttCpSatQuickComplete" type="checkbox" checked> ⚡ 완전한 시간표를 찾으면 즉시 종료합니다. 추가 품질 최적화 90초를 생략하는 권장 모드입니다.</label>
-          <div class="tt-cpsat-api-download-note">로컬 서버가 아직 없으면 <b>로컬 서버 다운로드</b>를 눌러 받은 뒤 압축을 풀고 <code>START_CP_SAT_LOCAL_SERVER.bat</code>를 실행하세요. 웹페이지가 자동 실행할 수는 없고, 실행은 Windows에서 직접 해야 합니다.</div>
+          <label class="tt-cpsat-api-checkline"><input id="ttCpSatQuickComplete" type="checkbox" checked> ⚡ 완전한 시간표를 찾으면 즉시 종료합니다. 유연 제한이 켜져 있으면 실행 시 자동으로 품질 최적화 모드가 적용됩니다.</label>
+          <details class="tt-cpsat-policy" open>
+            <summary>제한사항 설정 · <span data-policy-summary>${escapeHtml(cpSatConstraintPolicySummary(policyState))}</span></summary>
+            <div class="tt-cpsat-policy-body">
+              <div class="tt-cpsat-policy-note">무결성 제한은 항상 강제로 잠깁니다. 교사 최대시수는 강제일 때 r348 solver 입력에 유지하고, 유연/사용 안 함일 때 hard 제한에서 완화합니다. 수용인원·동일과목 등은 결과 정책 감사와 적용 차단/경고에 반영됩니다.</div>
+              <div class="tt-cpsat-policy-locked">${lockedPolicyHtml}</div>
+              <div class="tt-cpsat-policy-grid">
+                <div class="head">운영 제한</div><div class="head">모드</div><div class="head priority-col">우선순위</div><div class="head value-col">기준값</div>
+                ${editablePolicyHtml}
+              </div>
+              <div class="tt-cpsat-policy-actions">
+                <button type="button" data-action="reset-policy">기본값 복원</button>
+                <button type="button" class="primary" data-action="save-policy">이 학년도에 저장</button>
+              </div>
+            </div>
+          </details>
+          <div class="tt-cpsat-api-download-note">현재 웹앱은 r348 서버와 호환됩니다. 정책 객체를 요청에 포함하고, 유연 제한이 있으면 2단계 품질 탐색을 요청합니다. r348이 직접 모델링하는 교사 최대시수 외 정책은 브라우저가 결과를 재감사하여 강제 위반을 차단하고 유연 위반 벌점을 기록합니다.</div>
           <div class="tt-cpsat-api-actions">
             <button type="button" data-action="download-local-server">로컬 서버 다운로드</button>
             <button type="button" data-action="health">1. 서버 확인</button>
@@ -2082,6 +2163,80 @@ ${err?.message || err}
     const resultBtn = $('[data-action="download-result"]');
     const runHistoryEl = $("#ttCpSatRunHistory");
     let activeRunRecord = null;
+
+    function readPolicyEditor() {
+      const draft = normalizeCpSatConstraintPolicy(policyState);
+      CP_SAT_EDITABLE_RULES.forEach(rule => {
+        const mode = cleanLocal($(`[data-policy-mode="${rule.key}"]`)?.value || draft.rules[rule.key]?.mode);
+        const priority = cleanLocal($(`[data-policy-priority="${rule.key}"]`)?.value || draft.rules[rule.key]?.priority);
+        const next = { ...(draft.rules[rule.key] || {}), mode, priority };
+        if (rule.valueKey) {
+          const input = $(`[data-policy-value="${rule.key}"]`);
+          next[rule.valueKey] = Math.max(Number(rule.min ?? 0), Math.min(Number(rule.max ?? 99), parseInt(input?.value || "0", 10) || 0));
+        }
+        draft.rules[rule.key] = next;
+      });
+      return normalizeCpSatConstraintPolicy(draft);
+    }
+
+    function syncPolicyEditor(nextPolicy) {
+      policyState = normalizeCpSatConstraintPolicy(nextPolicy);
+      CP_SAT_EDITABLE_RULES.forEach(rule => {
+        const saved = policyState.rules[rule.key] || {};
+        const modeEl = $(`[data-policy-mode="${rule.key}"]`);
+        const priorityEl = $(`[data-policy-priority="${rule.key}"]`);
+        const valueEl = $(`[data-policy-value="${rule.key}"]`);
+        if (modeEl) modeEl.value = saved.mode;
+        if (priorityEl) {
+          priorityEl.value = saved.priority;
+          priorityEl.disabled = saved.mode !== "soft";
+        }
+        if (valueEl) {
+          valueEl.value = String(saved[rule.valueKey] ?? 0);
+          valueEl.disabled = saved.mode === "off";
+        }
+      });
+      const summary = $("[data-policy-summary]");
+      if (summary) summary.textContent = cpSatConstraintPolicySummary(policyState);
+    }
+
+    overlay.querySelectorAll("[data-policy-mode],[data-policy-priority],[data-policy-value]").forEach(control => {
+      control.addEventListener("change", () => syncPolicyEditor(readPolicyEditor()));
+    });
+    syncPolicyEditor(policyState);
+
+    $('[data-action="reset-policy"]')?.addEventListener("click", () => {
+      if (!confirm("CP-SAT 제한사항을 r378 기본값으로 되돌릴까요? 저장 버튼을 눌러야 Firestore에 반영됩니다.")) return;
+      syncPolicyEditor(defaultCpSatConstraintPolicy());
+    });
+    $('[data-action="save-policy"]')?.addEventListener("click", async () => {
+      if (typeof canEdit === "function" && !canEdit()) {
+        alert("편집 권한이 없습니다.");
+        return;
+      }
+      const domain = ttDomain?.() || appState?.timetable;
+      if (!domain) {
+        alert("시간표 도메인이 아직 준비되지 않았습니다.");
+        return;
+      }
+      const next = readPolicyEditor();
+      next.updatedAt = nowIso();
+      next.source = "user-r378";
+      domain.cpSatConstraintPolicy = deepClone(next);
+      if (appState?.timetable && appState.timetable !== domain) appState.timetable.cpSatConstraintPolicy = deepClone(next);
+      policyState = next;
+      syncPolicyEditor(next);
+      try {
+        if (typeof saveNow !== "function") throw new Error("저장 함수가 연결되지 않았습니다.");
+        await saveNow("timetable", { force: true, throwOnError: true });
+        alert(`CP-SAT 제한사항을 ${activeSchoolYear || "현재"}학년도에 저장했습니다.
+${cpSatConstraintPolicySummary(next)}`);
+      } catch (error) {
+        alert(`제한사항 저장에 실패했습니다.
+${error?.message || error}`);
+      }
+    });
+
     try { $("#ttCpSatQuickComplete").checked = localStorage.getItem(QUICK_COMPLETE_KEY) !== "0"; } catch (_) {}
     $("#ttCpSatQuickComplete")?.addEventListener("change", () => {
       try { localStorage.setItem(QUICK_COMPLETE_KEY, $("#ttCpSatQuickComplete").checked ? "1" : "0"); } catch (_) {}
@@ -2101,7 +2256,12 @@ ${err?.message || err}
       return base;
     }
     function options() {
-      const quickComplete = $("#ttCpSatQuickComplete")?.checked !== false;
+      policyState = readPolicyEditor();
+      const requestedQuickComplete = $("#ttCpSatQuickComplete")?.checked !== false;
+      const quickComplete = requestedQuickComplete && !hasActiveSoftCpSatPolicy(policyState);
+      if (requestedQuickComplete && !quickComplete && $("#ttCpSatQuickComplete")) {
+        $("#ttCpSatQuickComplete").checked = false;
+      }
       try { localStorage.setItem(QUICK_COMPLETE_KEY, quickComplete ? "1" : "0"); } catch (_) {}
       return {
         timeLimitSeconds: Math.max(1, Math.min(300, parseInt($("#ttCpSatApiTime")?.value || "120", 10) || 120)),
@@ -2109,6 +2269,8 @@ ${err?.message || err}
         preferCpSat: true,
         quickComplete,
         returnFullState: false,
+        constraintPolicy: deepClone(policyState),
+        constraintPolicySummary: cpSatConstraintPolicySummary(policyState),
       };
     }
     function formatHistoryTime(value) {
@@ -2131,6 +2293,7 @@ ${err?.message || err}
         const estimate = record.saveEstimate || {};
         const badges = [
           record.quickComplete ? "빠른 완전해" : "품질 최적화",
+          record.constraintPolicySummary || "",
           timing.clientTotalMs != null ? `브라우저 ${formatCpSatDuration(timing.clientTotalMs)}` : "",
           server.solveMs != null ? `Solver ${formatCpSatDuration(server.solveMs)}` : "",
           server.phase1Ms != null ? `1단계 ${formatCpSatDuration(server.phase1Ms)}` : "",
@@ -2163,8 +2326,10 @@ ${err?.message || err}
 
     async function solverState() {
       if (typeof prepareSolverState === "function") await prepareSolverState();
+      policyState = readPolicyEditor();
+      const currentTimetable = ttDomain?.() || appState?.timetable || {};
       latestState = makeSolverState(appState, {
-        timetable: ttDomain?.() || appState?.timetable || {},
+        timetable: { ...currentTimetable, cpSatConstraintPolicy: deepClone(policyState) },
         entries: asArray(entries?.()),
       });
       return latestState;
@@ -2181,10 +2346,29 @@ ${err?.message || err}
       });
       decorated.clientFinalConstraintAudit = finalRoomAvailabilityAudit(latestState || {}, entriesForAudit);
       decorated.clientCapacityAudit = finalCapacityAudit(latestState || {}, entriesForAudit);
+      decorated.clientConstraintPolicy = deepClone(latestState?.solverPolicy || payloadFromWrappedState(latestState || {})?.timetable?.cpSatConstraintPolicy || {});
+      decorated.clientConstraintPolicyAudit = auditCpSatConstraintPolicy({
+        state: latestState || {},
+        entries: entriesForAudit,
+        policy: decorated.clientConstraintPolicy,
+        capacityAudit: decorated.clientCapacityAudit,
+      });
       if ((decorated.clientFinalConstraintAudit.blockingCount || 0) > 0) {
         const first = decorated.clientFinalConstraintAudit.details?.[0] || {};
         const reason = `교실 불가시간 위반 ${decorated.clientFinalConstraintAudit.blockingCount}건 · ${first.roomName || first.roomId || "교실"}`;
         decorated.clientResultAudit = { ...decorated.clientResultAudit, status: "failed", title: "CP-SAT 제한 위반", reason, canApply: false, hardIssueCount: (decorated.clientResultAudit?.hardIssueCount || 0) + decorated.clientFinalConstraintAudit.blockingCount };
+      }
+      if ((decorated.clientConstraintPolicyAudit?.hardIssueCount || 0) > 0) {
+        const first = decorated.clientConstraintPolicyAudit.details?.find(item => item.mode === "hard") || {};
+        const reason = `선택한 강제 제한 위반 ${decorated.clientConstraintPolicyAudit.hardIssueCount}건 · ${first.message || "정책 설정을 확인하세요."}`;
+        decorated.clientResultAudit = {
+          ...decorated.clientResultAudit,
+          status: "failed",
+          title: "CP-SAT 정책 위반",
+          reason,
+          canApply: false,
+          hardIssueCount: (decorated.clientResultAudit?.hardIssueCount || 0) + decorated.clientConstraintPolicyAudit.hardIssueCount,
+        };
       }
       decorated.clientSaveEstimate = saveEstimateForResult(decorated);
       decorated.clientServerTiming = extractCpSatServerTiming(decorated);
@@ -2239,12 +2423,18 @@ ${err?.message || err}
       const clientTiming = data?.clientTiming || {};
       const applyTiming = data?.clientApplyTiming || {};
       const saveEstimate = data?.clientSaveEstimate || (hasResultEntries ? saveEstimateForResult(data) : null);
+      const policyAudit = policy.constraintPolicyAudit || data?.clientConstraintPolicyAudit || null;
+      const activePolicy = policyAudit?.policy || data?.clientConstraintPolicy || latestState?.solverPolicy || policyState;
+      const capacityMode = activePolicy?.rules?.roomCapacity?.mode || "soft";
+      const capacityModeText = capacityMode === "hard" ? "강제" : (capacityMode === "off" ? "사용 안 함" : "유연");
       const rowData = [
         ["상태", data?.status || data?.state || (data?.ok ? "OK" : "확인 필요")],
         ["최종 판정", `${audit.title || "확인 필요"} · ${audit.reason || "-"}`],
         ["브라우저 사전진단", clientPreflight ? formatTimetablePreflightSummary(clientPreflight) : "-"],
         ["검증", validation.summary || (validation.ok === true ? "정상" : "-")],
-        ["수용인원 경고", hasResultEntries ? `${policy.capacityWarningCount || 0}건 · ${(policy.capacityWarningCount || 0) > 0 ? "확인 후 적용 허용" : "없음"}` : "-"],
+        ["제한 정책", cpSatConstraintPolicySummary(activePolicy)],
+        ["정책 감사", policyAudit ? policyAudit.summary : "실행 결과에서 계산"],
+        ["수용인원", hasResultEntries ? `${capacityModeText} · ${policy.capacityWarningCount || 0}건${capacityMode === "soft" && (policy.capacityWarningCount || 0) > 0 ? " · 확인 후 적용" : ""}` : `${capacityModeText}`],
         ["적용판정", hasResultEntries ? (policy.canApply ? `적용 가능 · ${policy.reason}` : `적용 차단 · ${policy.reason}`) : "-"],
         ["입력 카드", `포함 ${scope.includedCardCount ?? "-"} / 제외 ${scope.excludedCardCount ?? 0} / 원본 ${scope.sourceCardCount ?? "-"}`],
         ["기존 배치", `보존 seed ${scope.preservedSeedEntryCount ?? 0} / 재계산 제외 ${scope.droppedGeneratedEntryCount ?? 0}`],
@@ -2431,6 +2621,7 @@ ${err?.message || err}
           quickComplete: opt.quickComplete,
           timeLimitSeconds: opt.timeLimitSeconds,
           workers: opt.workers,
+          constraintPolicySummary: opt.constraintPolicySummary,
         });
 
         const healthStartedPerf = perfNow();
@@ -2529,6 +2720,7 @@ ${err?.message || err}
               quickComplete: opt.quickComplete,
               timeLimitSeconds: opt.timeLimitSeconds,
               workers: opt.workers,
+              constraintPolicySummary: opt.constraintPolicySummary,
               timing: clientTiming,
               serverTiming: latestResult.clientServerTiming || extractCpSatServerTiming(latestResult),
               counts: latestResult.counts || {},
@@ -2561,6 +2753,7 @@ ${err?.message || err}
                 reason: truth.reason || latestResult?.validation?.summary || job.message || policy.reason,
                 jobId,
                 serverVersion: latestResult.version || latestResult?.meta?.apiVersion || "",
+                constraintPolicySummary: opt?.constraintPolicySummary || cpSatConstraintPolicySummary(policyState),
                 timing: clientTiming,
                 serverTiming: latestResult.clientServerTiming || extractCpSatServerTiming(latestResult),
                 counts: latestResult.counts || {},
@@ -2585,6 +2778,7 @@ ${err?.message || err}
           quickComplete: opt?.quickComplete !== false,
           timeLimitSeconds: opt?.timeLimitSeconds || 0,
           workers: opt?.workers || 0,
+          constraintPolicySummary: opt?.constraintPolicySummary || cpSatConstraintPolicySummary(policyState),
         });
       } finally {
         if (solveSuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(solveSuspendToken, { flush: false });
