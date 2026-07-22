@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r382";
-console.info("[HIS runtime:r382] bottom panel vertical-scroll layout and statistics loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-3";
+console.info("[HIS runtime:r387-3] card-move duplicate conflict recompute removed");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -5052,14 +5052,24 @@ function moveEntry(entryId, day, period) {
   return true;
 }
 
+function finishCardMoveRender(label, startedAt = performance.now()) {
+  const renderStartedAt = performance.now();
+  // renderAll() 내부에서 recomputeConflicts()를 정확히 한 번 실행합니다.
+  // 드롭 경로에서 먼저 recomputeConflicts()를 호출하면 동일한 충돌 검사를 두 번 수행하게 됩니다.
+  renderAll();
+  try {
+    console.info(`[card-move:r387-3] kind=${label} renderAll=1 conflictRecompute=1 elapsed=${Math.round(performance.now()-startedAt)}ms render=${Math.round(performance.now()-renderStartedAt)}ms entries=${entries().length}`);
+  } catch (_) {}
+}
+
 function handleDrop(data, day, period) {
   if (!data || !canEdit()) return;
+  const moveStartedAt = performance.now();
 
   // 1. Move existing entry
   if (data.kind === "entry" && data.entryId) {
     if (moveEntry(data.entryId, day, period)) {
-      recomputeConflicts();
-      renderAll();
+      finishCardMoveRender("entry", moveStartedAt);
     }
     return;
   }
@@ -5069,7 +5079,7 @@ function handleDrop(data, day, period) {
   // 2. Whole group drop: place all 구성 카드 in the same slot while preserving each card's grade/section.
   if (data.kind === "group" && data.groupId) {
     if (placeGroupAt(data.groupId, day, period)) {
-      recomputeConflicts(); renderAll();
+      finishCardMoveRender("group", moveStartedAt);
     }
     return;
   }
@@ -5083,7 +5093,7 @@ function handleDrop(data, day, period) {
       const entryData = buildEntryDataFromTtCards(ttcards, { day, period, groupId: grp.id, unitId: unit.id, groupName: grp.name || "" });
       if (entryData) {
         addEntry(entryData);
-        recomputeConflicts(); renderAll(); return;
+        finishCardMoveRender("unit", moveStartedAt); return;
       }
     }
   }
@@ -5098,7 +5108,7 @@ function handleDrop(data, day, period) {
         const grp = data.groupId ? (appState.timetable?.ttcardGroups || []).find(g => g.id === data.groupId) : null;
         applyScheduleConditionsToPlacementData(entryData, [card], grp);
         addEntry(entryData);
-        recomputeConflicts(); renderAll(); return;
+        finishCardMoveRender("ttcard", moveStartedAt); return;
       }
     }
   }
@@ -5124,7 +5134,7 @@ function handleDrop(data, day, period) {
     const teacherName = getTeachersForTemplate(templateId)[0] || "";
     addEntry({ day, period, templateId, sectionIdx, teacherName, roomId: null, gradeKey: resolvedGrade });
   }
-  recomputeConflicts(); renderAll();
+  finishCardMoveRender("legacy", moveStartedAt);
 }
 
 
@@ -6019,7 +6029,9 @@ window._ttRenderGrid = () => renderGrid();
       e.preventDefault(); e.stopPropagation(); bottomBar.style.outline = "";
       const current = dragData || readDragDataFromEvent(e);
       if (current?.kind === "entry" && canEdit()) {
-        removeEntry(current.entryId); dragData = null; recomputeConflicts(); renderAll();
+        const moveStartedAt = performance.now();
+        removeEntry(current.entryId); dragData = null;
+        finishCardMoveRender("remove-to-bottom", moveStartedAt);
       }
     });
   }
