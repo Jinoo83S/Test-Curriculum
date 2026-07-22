@@ -1,7 +1,7 @@
 {
-  "release": "r381",
-  "appVersion": "2026-07-21-density-room-statistics-r381",
-  "build": "r381-density-room-statistics-20260721",
+  "release": "r382",
+  "appVersion": "2026-07-22-bottom-panel-vertical-scroll-r382",
+  "build": "r382-bottom-panel-vertical-scroll-20260722",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "hard-soft-off-by-school-year",
   "validationPolicy": "full-applied-entries-and-constraint-policy-audit",
@@ -17,5 +17,8 @@
   "statisticsSchema": "r381-teacher-room-statistics-v1",
   "roomStatisticsSchema": "r381-room-statistics-v1",
   "roomStatisticsPolicy": "room-id-day-period-deduplicated-responsible-fixed-homeroom-other",
-  "displayDensityPolicy": "compact-normal-wide-and-55-115-row-height-slider-local-persistence"
+  "displayDensityPolicy": "compact-normal-wide-and-55-115-row-height-slider-local-persistence",
+  "bottomPanelLayout": "r382-three-column-category-action-filter-subjects",
+  "subjectCardScroll": "vertical-internal-scroll-no-more-button",
+  "subjectCardDesign": "preserve-existing-card-rendering"
 }

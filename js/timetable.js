@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r381";
-console.info("[HIS runtime:r381] density control and teacher/room statistics loaded");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r382";
+console.info("[HIS runtime:r382] bottom panel vertical-scroll layout and statistics loaded");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
