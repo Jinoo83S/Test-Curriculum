@@ -1890,11 +1890,44 @@ body.tt-bottom-is-open #ttGrid{
 
 
 </style>
+
+<style id="tt-bottom-panel-r384-style">
+/* r384: 현재 tt-card-toolbar DOM에 맞춘 최종 배치 */
+#ttBottom{--tt-r382-category-w:120px;--tt-r382-action-w:128px}
+#ttBottomActions .tt-r382-action-list{display:none!important}
+#ttBottomActions .tt-r384-action-list{display:flex;flex-direction:column;gap:4px}
+#ttBottomActions .tt-r384-action-list > *,
+#ttBottomActions .tt-r384-action-list button,
+#ttBottomActions .tt-r384-action-list select{
+  width:100%!important;max-width:100%!important;min-width:0!important;
+  min-height:27px!important;height:27px!important;margin:0!important;
+  padding:3px 7px!important;box-sizing:border-box!important;
+  border:1px solid #dbe3ee!important;border-radius:7px!important;
+  background:#fff!important;color:#334155!important;font-size:11px!important;font-weight:800!important;
+}
+#ttBottomActions .tt-r384-action-list button{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:5px!important}
+#ttBottomActions .tt-r384-action-list > div{height:auto!important;display:flex!important;flex-direction:column!important;gap:4px!important;padding:0!important;border:0!important;background:transparent!important}
+#ttSubjectsContent > .tt-r384-subject-layout{
+  display:grid!important;grid-template-columns:116px minmax(0,1fr)!important;gap:9px!important;
+  width:100%!important;height:100%!important;min-height:0!important;
+}
+#ttSubjectsContent .tt-r384-filter-rail{min-width:0;min-height:0;overflow-y:auto;padding-right:8px;border-right:1px solid #e2e8f0}
+#ttSubjectsContent .tt-r384-filter-rail::before{content:"필터";display:block;margin:0 0 6px;color:#334155;font-size:11px;font-weight:900}
+#ttSubjectsContent .tt-r384-filter-list{display:flex;flex-direction:column;gap:4px;align-items:stretch}
+#ttSubjectsContent .tt-r384-filter-list > *{width:100%!important;max-width:100%!important;display:flex!important;flex-wrap:wrap!important;gap:4px!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important}
+#ttSubjectsContent .tt-r384-filter-list button{min-width:28px!important;height:26px!important;margin:0!important;padding:2px 6px!important;border:1px solid #dbe3ee!important;border-radius:7px!important;background:#fff!important;font-size:11px!important;font-weight:800!important}
+#ttSubjectsContent .tt-r384-card-pane{min-width:0;min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden}
+#ttSubjectsContent .tt-r384-card-title{flex:0 0 auto;margin:0 0 6px;color:#334155;font-size:11px;font-weight:900}
+#ttSubjectsContent .tt-r384-card-scroll{flex:1 1 auto;min-height:0;overflow-y:auto!important;overflow-x:hidden!important;padding:1px 6px 8px 1px;scrollbar-gutter:stable;overscroll-behavior:contain}
+#ttSubjectsContent .tt-r384-card-scroll > *{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))!important;align-content:start!important;gap:6px!important;width:100%!important;min-width:0!important;overflow:visible!important}
+#ttSubjectsContent .tt-r384-card-scroll .tt-subject-card{width:auto!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important}
+#ttSubjectsContent > .tt-card-toolbar{display:none!important}
+</style>
 </head>
 <body>
 <header class="tt-topbar">
   <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r383</span></h1>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r384</span></h1>
   <div class="tt-topbar-right">
     <div class="tt-mode-switch" aria-label="개발 모드 전환">
       <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
@@ -1977,31 +2010,31 @@ body.tt-bottom-is-open #ttGrid{
 </div>
 
 <script>
-window.HIS_APP_VERSION = "2026-07-22-bottom-panel-control-placement-r383";
+window.HIS_APP_VERSION = "2026-07-22-bottom-panel-actual-toolbar-r384";
 // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
 // r381은 표시 밀도/행높이 조절과 교사·교실 통계를 제공합니다.
 // 파일명은 기존 표준 파일명을 그대로 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-22-bottom-panel-control-placement-r383";
-window.HIS_RELEASE = "r383";
-window.HIS_RELEASE_BUILD = "r383-bottom-panel-control-placement-20260722";
-document.documentElement.dataset.hisRelease = "r383";
-console.info("[HIS release:r381] display density and teacher/room statistics loaded");
+window.HIS_RUNTIME_ASSET_VERSION = "2026-07-22-bottom-panel-actual-toolbar-r384";
+window.HIS_RELEASE = "r384";
+window.HIS_RELEASE_BUILD = "r384-bottom-panel-actual-toolbar-20260722";
+document.documentElement.dataset.hisRelease = "r384";
+console.info("[HIS release:r384] display density and teacher/room statistics loaded");
 window.addEventListener("DOMContentLoaded", function(){
-  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r381"; });
+  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r384"; });
 });
 </script>
 <script type="importmap">
 {"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-22-bottom-panel-control-placement-r383",
+  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-22-bottom-panel-actual-toolbar-r384",
   "./js/state.js":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
   "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-22-bottom-panel-control-placement-r383",
+  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-22-bottom-panel-actual-toolbar-r384",
   "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-21-cpsat-constraint-policy-r378",
   "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-21-cpsat-constraint-policy-r378"
 }}
 </script>
 <script type="module">
-  const expectedVersion = "2026-07-22-bottom-panel-control-placement-r383";
+  const expectedVersion = "2026-07-22-bottom-panel-actual-toolbar-r384";
   const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
   try {
     const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`);
@@ -2012,11 +2045,11 @@ window.addEventListener("DOMContentLoaded", function(){
     if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r378" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
       throw new Error(`CP-SAT 브리지 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE || "미확인"}`);
     }
-    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r381"; });
+    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r384"; });
     document.documentElement.dataset.hisRuntimeVerified = "r381";
-    console.info("[HIS release:r381] display density · teacher/room statistics · manual replacement · CP-SAT bridge r378 · server r348");
+    console.info("[HIS release:r384] display density · teacher/room statistics · manual replacement · CP-SAT bridge r378 · server r348");
   } catch (error) {
-    console.error("[HIS release:r381] runtime verification failed", error);
+    console.error("[HIS release:r384] runtime verification failed", error);
     const message = `r381 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
     const box = document.createElement("div");
     box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
@@ -3009,140 +3042,119 @@ body.tt-single-scroll-layout-r181.tt-bottom-is-collapsed #ttGrid{
 
 
 <script>
-/* ── r383: 중첩된 상단 컨트롤까지 작업/필터 열로 정확히 재배치 ── */
+/* ── r384: 실제 tt-card-toolbar 구조 기준 하단 3열 재배치 ── */
 (function(){
-  const ACTION_RX = /(불러오기|갱신|새로고침|수동\s*가능|사전\s*진단|커리큘럼\s*대조|커리큘럼\s*배포|팝업|정렬|가나다)/;
-  const FILTER_RX = /^(전체|7|8|9|10|11|12|A|B|C|7학년|8학년|9학년|10학년|11학년|12학년)$/;
   let queued = false;
   let applying = false;
+  let observer = null;
 
-  function textOf(el){
-    return String(el?.textContent || el?.value || el?.getAttribute?.('aria-label') || '')
-      .replace(/\s+/g,' ').trim();
-  }
-  function ensureBottomColumns(){
+  function ensureActionColumn(){
     const scroll = document.querySelector('#ttBottom .tt-bottom-scroll');
-    const content = document.getElementById('ttSubjectsContent')?.parentElement;
+    const content = document.querySelector('#ttBottom .tt-bottom-content');
     if (!scroll || !content) return null;
     let actions = document.getElementById('ttBottomActions');
     if (!actions){
       actions = document.createElement('aside');
       actions.id = 'ttBottomActions';
       actions.setAttribute('aria-label','작업');
-      actions.innerHTML = '<div class="tt-r382-action-list"></div>';
+      actions.innerHTML = '<div class="tt-r384-action-list"></div>';
       scroll.insertBefore(actions, content);
     }
-    return actions.querySelector('.tt-r382-action-list');
+    return actions.querySelector('.tt-r384-action-list');
   }
-  function isActionControl(el){
-    if (!(el instanceof HTMLElement)) return false;
-    const txt = textOf(el);
-    const sig = `${el.id || ''} ${typeof el.className === 'string' ? el.className : ''} ${el.getAttribute('title') || ''}`;
-    return ACTION_RX.test(txt) || /reload|refresh|diagnos|deploy|curriculum|sort|popup/i.test(sig);
-  }
-  function isFilterControl(el){
-    if (!(el instanceof HTMLElement)) return false;
-    if (el.matches('.tt-sc-grade-sel,[data-grade],[data-section],[data-class],select[id*="Grade" i],select[id*="grade" i]')) return true;
-    const txt = textOf(el);
-    const sig = `${el.id || ''} ${typeof el.className === 'string' ? el.className : ''}`;
-    return FILTER_RX.test(txt) || /grade|section|class-filter|quick-filter/i.test(sig);
-  }
-  function cleanupHeader(header){
-    if (!header) return;
-    // 이동 후 비어 있는 래퍼만 정리합니다. 과목 카드 데이터/이벤트 노드는 건드리지 않습니다.
-    [...header.querySelectorAll('div,span,label')].reverse().forEach(el => {
-      if (el.children.length === 0 && !textOf(el)) el.remove();
-    });
-    const remainingControls = header.querySelector('button,select,input');
-    header.style.display = remainingControls ? 'flex' : 'none';
-  }
-  function moveControls(header, actionList, filterList){
-    if (!header) return;
-    const controls = [...header.querySelectorAll('button,select,input[type="button"],input[type="checkbox"],input[type="radio"]')];
-    controls.forEach(control => {
-      if (isActionControl(control)) {
-        actionList.appendChild(control);
-      } else if (isFilterControl(control)) {
-        filterList.appendChild(control);
-      }
-    });
 
-    // 버튼이 아닌 정렬 묶음이나 학년 필터 묶음도 처리합니다.
-    [...header.querySelectorAll('[class],[id]')].forEach(node => {
-      if (!(node instanceof HTMLElement) || !header.contains(node)) return;
-      if (node.querySelector('.tt-subject-card,.tt-sc-cards')) return;
-      const txt = textOf(node);
-      const sig = `${node.id || ''} ${typeof node.className === 'string' ? node.className : ''}`;
-      if ((ACTION_RX.test(txt) || /sort/i.test(sig)) && node.querySelector('select') && !actionList.contains(node)) {
-        actionList.appendChild(node);
-      } else if ((/학년|반별|빠른\s*필터/.test(txt) || /grade|section|filter/i.test(sig)) && node.querySelector('button,[data-grade],[data-section]') && !filterList.contains(node)) {
-        filterList.appendChild(node);
-      }
-    });
-    cleanupHeader(header);
+  function ensureSubjectLayout(panel){
+    let layout = panel.querySelector(':scope > .tt-r384-subject-layout');
+    if (!layout){
+      layout = document.createElement('div');
+      layout.className = 'tt-r384-subject-layout';
+      layout.innerHTML = '<aside class="tt-r384-filter-rail"><div class="tt-r384-filter-list"></div></aside><section class="tt-r384-card-pane"><div class="tt-r384-card-title">과목 카드</div><div class="tt-r384-card-scroll"></div></section>';
+      panel.appendChild(layout);
+    }
+    return layout;
   }
+
+  function findCardContainer(panel){
+    const direct = panel.querySelector('.tt-sc-cards,.tt-subject-card-grid,.tt-card-grid,.tt-subject-cards');
+    if (direct) return direct;
+    const card = panel.querySelector('.tt-subject-card');
+    if (!card) return null;
+    let node = card.parentElement;
+    while (node && node !== panel){
+      const count = node.querySelectorAll(':scope > .tt-subject-card').length;
+      if (count >= 1) return node;
+      node = node.parentElement;
+    }
+    return card.parentElement;
+  }
+
+  function classifyToolbarChildren(toolbar){
+    const children = [...toolbar.children];
+    const actions = toolbar.querySelector(':scope > .tt-card-toolbar-actions') || children[0] || null;
+    const remaining = children.filter(el => el !== actions);
+    const sort = remaining.find(el => el.querySelector('select') || /정렬|가나다/.test(el.textContent || '')) || remaining[0] || null;
+    const filter = remaining.find(el => el !== sort && (el.querySelector('button') || /학년|반|전체/.test(el.textContent || ''))) || remaining.find(el => el !== sort) || null;
+    return { actions, sort, filter };
+  }
+
   function rebuild(){
     if (applying) return;
     applying = true;
     try{
       const panel = document.getElementById('ttSubjectsContent');
-      const actionList = ensureBottomColumns();
+      const actionList = ensureActionColumn();
       if (!panel || !actionList) return;
-      const cards = panel.querySelector('.tt-sc-cards');
-      if (!cards) return;
-      const header = panel.querySelector('.tt-sc-header');
 
-      let layout = panel.querySelector(':scope > .tt-r382-subject-layout');
-      if (!layout){
-        layout = document.createElement('div');
-        layout.className = 'tt-r382-subject-layout';
-        layout.innerHTML = '<aside class="tt-r382-filter-rail"><div class="tt-r382-filter-list"></div></aside><section class="tt-r382-card-pane"><div class="tt-r382-card-title">과목 카드</div><div class="tt-r382-card-scroll"></div></section>';
-        panel.appendChild(layout);
+      const toolbar = panel.querySelector(':scope > .tt-card-toolbar, .tt-card-toolbar');
+      const cards = findCardContainer(panel);
+      if (!toolbar || !cards) return;
+
+      const layout = ensureSubjectLayout(panel);
+      const filterList = layout.querySelector('.tt-r384-filter-list');
+      const cardScroll = layout.querySelector('.tt-r384-card-scroll');
+      const parts = classifyToolbarChildren(toolbar);
+
+      // 렌더마다 생성되는 새 컨트롤로 교체해 오래된 이벤트 핸들러를 남기지 않습니다.
+      actionList.replaceChildren();
+      filterList.replaceChildren();
+
+      if (parts.actions){
+        [...parts.actions.children].forEach(el => actionList.appendChild(el));
+        parts.actions.remove();
       }
-      const filterList = layout.querySelector('.tt-r382-filter-list');
-      const cardScroll = layout.querySelector('.tt-r382-card-scroll');
-
-      // 이미 이동된 실제 컨트롤을 보존하면서 새로 렌더된 컨트롤만 추가합니다.
-      if (header) {
-        header.classList.add('tt-r382-header-rest');
-        moveControls(header, actionList, filterList);
-      }
-
-      // 기존 코드가 별도 학년 필터를 만든 경우 직접 이동합니다.
-      [...panel.querySelectorAll('.tt-sc-grade-sel')].forEach(el => {
-        if (!filterList.contains(el)) filterList.appendChild(el);
-      });
+      if (parts.sort) actionList.appendChild(parts.sort);
+      if (parts.filter) filterList.appendChild(parts.filter);
 
       if (cards.parentElement !== cardScroll) cardScroll.appendChild(cards);
-
-      // 잘못 남아 있던 안내문은 제거합니다.
-      [...actionList.querySelectorAll('.tt-r382-action-control')].forEach(el => el.remove());
-      if (!actionList.querySelector('button,select,input')) {
-        const hint = document.createElement('div');
-        hint.className = 'tt-r382-action-control';
-        hint.textContent = '작업 도구 준비 중';
-        actionList.appendChild(hint);
-      }
-    } finally { applying = false; }
+      toolbar.remove();
+      panel.querySelectorAll(':scope > .tt-r382-subject-layout').forEach(el => el.remove());
+    } finally {
+      applying = false;
+    }
   }
+
   function queue(){
     if (queued || applying) return;
     queued = true;
-    requestAnimationFrame(() => { queued = false; rebuild(); });
+    requestAnimationFrame(function(){ queued = false; rebuild(); });
   }
-  document.addEventListener('DOMContentLoaded', () => {
-    queue();
+
+  function start(){
     const panel = document.getElementById('ttSubjectsContent');
-    if (panel) new MutationObserver(queue).observe(panel,{childList:true,subtree:true});
-    document.querySelectorAll('.tt-bottom-tab-btn').forEach(btn => btn.addEventListener('click', () => {
-      const actions = document.getElementById('ttBottomActions');
-      if (actions) actions.style.display = btn.dataset.tab === 'subjects' ? '' : 'none';
-      if (btn.dataset.tab === 'subjects') queue();
-    }));
-    [40,120,300,700,1400,2400].forEach(ms => setTimeout(queue,ms));
-  });
+    if (!panel) return;
+    observer?.disconnect();
+    observer = new MutationObserver(queue);
+    observer.observe(panel,{childList:true,subtree:true});
+    queue();
+    [50,150,350,800,1500,2600].forEach(ms => setTimeout(queue,ms));
+  }
+
+  document.addEventListener('DOMContentLoaded', start);
   window.addEventListener('his:timetable-rendered', queue);
-  window.HIS_REBUILD_BOTTOM_PANEL_R383 = queue;
+  document.addEventListener('click', function(ev){
+    if (ev.target.closest('.tt-bottom-tab-btn,[data-tab="subjects"]')) setTimeout(queue,0);
+  }, true);
+  window.HIS_REBUILD_BOTTOM_PANEL_R384 = queue;
 })();
 </script>
 
