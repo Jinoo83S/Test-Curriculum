@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-5";
-console.info("[HIS runtime:r387-5] card-move duplicate conflict recompute removed");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-6";
+console.info("[HIS runtime:r387-6] card-move duplicate conflict recompute removed");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -122,7 +122,7 @@ const DRAG_PREVIEW_FRAME_BUDGET_MS = 7;
 const DRAG_PREVIEW_MAX_VISIBLE_CELLS = 180;
 
 
-// r387-5: drag/drop path diagnostics and stale drag-state recovery.
+// r387-6: drag/drop path diagnostics and stale drag-state recovery.
 let dragTraceSeq = 0;
 let activeDragTrace = null;
 let lastDragOverLogAt = 0;
@@ -147,7 +147,7 @@ function beginDragTrace(data, source = "unknown") {
     saveScheduled: false,
   };
   activeDragTrace = trace;
-  try { console.info(`[drag-path:r387-5] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-6] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
   return trace;
 }
 
@@ -158,7 +158,7 @@ function noteDragOverTrace(target = "grid") {
   const now = performance.now();
   if (now - lastDragOverLogAt < 600) return;
   lastDragOverLogAt = now;
-  try { console.info(`[drag-path:r387-5] #${trace.id} dragover target=${target}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-6] #${trace.id} dragover target=${target}`); } catch (_) {}
 }
 
 function noteDropTrace(data, day = null, period = null, target = "grid") {
@@ -167,7 +167,7 @@ function noteDropTrace(data, day = null, period = null, target = "grid") {
   trace.dropSeen = true;
   try {
     const slot = Number.isInteger(Number(day)) && Number.isInteger(Number(period)) ? ` day=${day} period=${period}` : "";
-    console.info(`[drag-path:r387-5] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
+    console.info(`[drag-path:r387-6] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
   } catch (_) {}
   return trace;
 }
@@ -176,7 +176,7 @@ function noteDragSaveScheduled(reason = "timetable") {
   const trace = activeDragTrace;
   if (!trace) return;
   trace.saveScheduled = true;
-  try { console.info(`[drag-path:r387-5] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-6] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
 }
 
 function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
@@ -193,7 +193,7 @@ function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
     if (trace) {
       const elapsed = Math.round(performance.now() - trace.startedAt);
       try {
-        console.info(`[drag-path:r387-5] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
+        console.info(`[drag-path:r387-6] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
       } catch (_) {}
     }
     activeDragTrace = null;
@@ -5201,23 +5201,35 @@ function renderVisibleBottomPanelAfterCardMove(label, startedAt) {
     } else if (isVisible(logsEl)) { panel = "logs"; renderLogPanel(); }
 
     try {
-      console.info(`[card-move-panel:r387-5] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+      console.info(`[card-move-panel:r387-6] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
     } catch (_) {}
   }, 0);
 }
 
 function finishCardMoveRender(label, startedAt = performance.now()) {
   const renderStartedAt = performance.now();
-  // 카드 이동 직후에는 격자와 충돌 표시만 즉시 갱신합니다.
-  // 하단 패널은 다음 작업 큐에서 현재 열린 탭 하나만 다시 그립니다.
+  // r387-6: 동작은 그대로 유지하고 카드 이동 지연을 단계별로 계측합니다.
+  // 측정 결과를 확인한 뒤 가장 느린 한 단계만 다음 패치에서 최적화합니다.
+  const conflictStartedAt = performance.now();
   recomputeConflicts();
+  const conflictMs = Math.round(performance.now() - conflictStartedAt);
+
+  const metaStartedAt = performance.now();
   refreshStrictRuntimeSummaryMeta({ persist: false });
+  const runtimeMetaMs = Math.round(performance.now() - metaStartedAt);
+
+  const gridStartedAt = performance.now();
   renderGrid();
+  const gridMs = Math.round(performance.now() - gridStartedAt);
+
+  const barStartedAt = performance.now();
   renderConflictBar();
+  const conflictBarMs = Math.round(performance.now() - barStartedAt);
+
   const immediateMs = Math.round(performance.now() - renderStartedAt);
   renderVisibleBottomPanelAfterCardMove(label, startedAt);
   try {
-    console.info(`[card-move:r387-5] kind=${label} renderAll=0 conflictRecompute=1 immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
+    console.info(`[card-move:r387-6] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=${runtimeMetaMs}ms grid=${gridMs}ms conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
   } catch (_) {}
 }
 
