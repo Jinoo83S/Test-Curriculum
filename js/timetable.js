@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-12";
-console.info("[HIS runtime:r387-12] card-move duplicate conflict recompute removed");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-13";
+console.info("[HIS runtime:r387-13] card-move duplicate conflict recompute removed");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -147,7 +147,7 @@ function beginDragTrace(data, source = "unknown") {
     saveScheduled: false,
   };
   activeDragTrace = trace;
-  try { console.info(`[drag-path:r387-12] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-13] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
   return trace;
 }
 
@@ -158,7 +158,7 @@ function noteDragOverTrace(target = "grid") {
   const now = performance.now();
   if (now - lastDragOverLogAt < 600) return;
   lastDragOverLogAt = now;
-  try { console.info(`[drag-path:r387-12] #${trace.id} dragover target=${target}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-13] #${trace.id} dragover target=${target}`); } catch (_) {}
 }
 
 function noteDropTrace(data, day = null, period = null, target = "grid") {
@@ -167,7 +167,7 @@ function noteDropTrace(data, day = null, period = null, target = "grid") {
   trace.dropSeen = true;
   try {
     const slot = Number.isInteger(Number(day)) && Number.isInteger(Number(period)) ? ` day=${day} period=${period}` : "";
-    console.info(`[drag-path:r387-12] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
+    console.info(`[drag-path:r387-13] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
   } catch (_) {}
   return trace;
 }
@@ -176,7 +176,7 @@ function noteDragSaveScheduled(reason = "timetable") {
   const trace = activeDragTrace;
   if (!trace) return;
   trace.saveScheduled = true;
-  try { console.info(`[drag-path:r387-12] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-13] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
 }
 
 function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
@@ -195,7 +195,7 @@ function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
     if (trace) {
       const elapsed = Math.round(performance.now() - trace.startedAt);
       try {
-        console.info(`[drag-path:r387-12] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
+        console.info(`[drag-path:r387-13] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
       } catch (_) {}
     }
     activeDragTrace = null;
@@ -3515,7 +3515,7 @@ function addEntry(data, options = {}) {
     });
 
     if (plan.blocked) {
-      try { console.info(`[manual-replace:r387-12] kind=add replaced=0 blocked=fixed target=${e.day}:${e.period}`); } catch (_) {}
+      try { console.info(`[manual-replace:r387-13] kind=add replaced=0 blocked=fixed target=${e.day}:${e.period}`); } catch (_) {}
       const names = localUniqueStrings((plan.pinnedEntries || []).map(item => entryTitle(item))).slice(0, 5).join(", ");
       alert(`배치할 칸에 고정 수업이 있습니다.${names ? `\n\n${names}` : ""}\n\n노란 테두리의 고정 수업은 먼저 고정을 해제해야 교체할 수 있습니다.`);
       return null;
@@ -3526,7 +3526,7 @@ function addEntry(data, options = {}) {
   // 수동 드래그 배치는 대상 학급 칸의 기존 일반 수업을 교체한 뒤 배치합니다.
   // 교사/교실/불가시간 충돌은 이후 recomputeConflicts()에서 그대로 표시합니다.
   try {
-    console.info(`[manual-replace:r387-12] kind=add replaced=${displacementIds.size} blocked=0 target=${e.day}:${e.period}`);
+    console.info(`[manual-replace:r387-13] kind=add replaced=${displacementIds.size} blocked=0 target=${e.day}:${e.period}`);
   } catch (_) {}
   captureTimetableUndo(displacementIds.size ? "수업 교체 추가" : "수업 추가");
   if (displacementIds.size) {
@@ -3893,7 +3893,7 @@ globalThis.HIS_listMultiTeacherCards = function () {
 };
 
 function recomputeConflicts() {
-  // r387-12: detectConflicts 내부의 카드쌍 비교에서 동일 entry resolver가 반복 호출됩니다.
+  // r387-13: detectConflicts 내부의 카드쌍 비교에서 동일 entry resolver가 반복 호출됩니다.
   // 충돌 규칙은 그대로 유지하고, 이번 1회 계산 동안 entry별 해석 결과만 재사용합니다.
   const makeEntryMemo = resolver => {
     const weak = new WeakMap();
@@ -5335,7 +5335,7 @@ function moveEntry(entryId, day, period) {
   });
 
   if (plan.blocked) {
-    try { console.info(`[manual-replace:r387-12] kind=move replaced=0 blocked=fixed target=${day}:${period}`); } catch (_) {}
+    try { console.info(`[manual-replace:r387-13] kind=move replaced=0 blocked=fixed target=${day}:${period}`); } catch (_) {}
     const names = localUniqueStrings((plan.pinnedEntries || []).map(item => entryTitle(item))).slice(0, 5).join(", ");
     alert(`이동할 칸에 고정 수업이 있습니다.${names ? `\n\n${names}` : ""}\n\n노란 테두리의 고정 수업은 먼저 고정을 해제해야 교체할 수 있습니다.`);
     return false;
@@ -5356,7 +5356,7 @@ function moveEntry(entryId, day, period) {
     item.period = target.period;
   });
   try {
-    console.info(`[manual-replace:r387-12] kind=move replaced=${displacedIds.size} blocked=0 target=${day}:${period} moved=${linkedEntries.length}`);
+    console.info(`[manual-replace:r387-13] kind=move replaced=${displacedIds.size} blocked=0 target=${day}:${period} moved=${linkedEntries.length}`);
   } catch (_) {}
   scheduleSave("timetable");
   noteDragSaveScheduled("timetable");
@@ -5397,7 +5397,7 @@ function renderVisibleBottomPanelAfterCardMove(label, startedAt) {
     } else if (isVisible(logsEl)) { panel = "logs"; renderLogPanel(); }
 
     try {
-      console.info(`[card-move-panel:r387-12] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+      console.info(`[card-move-panel:r387-13] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
     } catch (_) {}
   }, 0);
 }
@@ -5411,7 +5411,7 @@ function scheduleRuntimeMetaAfterCardMove(label, startedAt) {
     const metaStartedAt = performance.now();
     refreshStrictRuntimeSummaryMeta({ persist: false });
     try {
-      console.info(`[card-move-meta:r387-12] kind=${label} runtimeMeta=${Math.round(performance.now()-metaStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+      console.info(`[card-move-meta:r387-13] kind=${label} runtimeMeta=${Math.round(performance.now()-metaStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
     } catch (_) {}
   }, 0);
 }
@@ -5423,11 +5423,12 @@ function finishCardMoveRender(label, startedAt = performance.now()) {
   const conflictMs = Math.round(performance.now() - conflictStartedAt);
 
   const gridStartedAt = performance.now();
-  const partialEligible = ["entry", "ttcard", "remove-to-bottom"].includes(label);
-  const partialGrid = partialEligible && renderAffectedGridCells();
-  if (!partialGrid) renderGrid();
+  // r387-13: 부분 셀 재생성 후 화면 카드와 entries 상태가 어긋나는 사례가 확인되어
+  // 데이터 정합성이 검증된 전체 격자 렌더로 임시 복귀한다.
+  // 충돌 계산 캐시와 runtimeMeta 지연 최적화는 그대로 유지한다.
+  renderGrid();
   const gridMs = Math.round(performance.now() - gridStartedAt);
-  const gridMode = partialGrid ? (currentView === "all" ? "partial-all" : "partial") : "full";
+  const gridMode = "full-integrity";
 
   const barStartedAt = performance.now();
   renderConflictBar();
@@ -5437,7 +5438,7 @@ function finishCardMoveRender(label, startedAt = performance.now()) {
   renderVisibleBottomPanelAfterCardMove(label, startedAt);
   scheduleRuntimeMetaAfterCardMove(label, startedAt);
   try {
-    console.info(`[card-move:r387-12] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=deferred grid=${gridMs}ms gridMode=${gridMode} conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
+    console.info(`[card-move:r387-13] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=deferred grid=${gridMs}ms gridMode=${gridMode} conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
   } catch (_) {}
 }
 
@@ -6194,7 +6195,7 @@ function markDragPreviewCell(cell, data) {
   const { candidates, excludeIds } = buildDragPreviewCandidates(data, day, period, patch);
   if (!candidates.length) return;
 
-  // r387-12: 실제 수동배치와 동일하게 교체 예정 카드는 충돌 미리보기에서 제외합니다.
+  // r387-13: 실제 수동배치와 동일하게 교체 예정 카드는 충돌 미리보기에서 제외합니다.
   // 고정수업은 replacementPlan.blocked 상태로 유지하여 계속 빨간색으로 표시합니다.
   const replacementPlan = buildDragPreviewReplacementPlan(candidates, excludeIds);
   const previewExcludeIds = replacementPlan?.blocked
