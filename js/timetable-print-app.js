@@ -24,7 +24,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-15-print-usability-r365";
+const VERSION = "2026-07-23-overview-rows-r366";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -148,10 +148,30 @@ function enforceFormatAvailability() {
     formatEl.value = "pdf";
   }
 }
+function overviewRowsSelectable() {
+  return layoutMode() === "overview" && (targetType() === "teacher" || targetType() === "room");
+}
+function normalizeOverviewRowsValue(value="auto") {
+  const raw = clean(value);
+  if (raw === "auto") return "auto";
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 6 && n <= 12 ? String(n) : "auto";
+}
+function updateOverviewRowsAvailability() {
+  const field = $("overviewRowsField");
+  const select = $("overviewRowsPerPage");
+  const enabled = overviewRowsSelectable();
+  if (field) field.classList.toggle("hidden", !enabled);
+  if (select) {
+    select.disabled = !enabled;
+    select.title = enabled ? "교사·교실 전체 출력의 한 페이지 최대 행 수입니다." : "";
+  }
+}
 function updateProfileStatus() {
   // r286: 좌측 출력종류 패널의 프로필 설명 문구는 표시하지 않습니다.
   enforcePaperAvailability();
   enforceFormatAvailability();
+  updateOverviewRowsAvailability();
 }
 
 const $ = id => document.getElementById(id);
@@ -333,7 +353,7 @@ function lastProfileKey() {
 function defaultFieldSettings() { return Object.fromEntries(FIELD_DEFS.map(f=>[f.key,{enabled:f.enabled,bold:f.bold,pos:f.pos,font:"normal",fontPx:""}])); }
 function normalizeFields(raw) { const base=defaultFieldSettings(); if (raw && typeof raw === "object") FIELD_DEFS.forEach(f=>{ base[f.key]={...base[f.key], ...(raw[f.key]||{})}; }); return base; }
 function normalizeSplitFields(raw, fallbackFields=null) { const fallback=normalizeFields(fallbackFields); const out={}; [1,2,3,4].forEach(n=>{ const k=String(n); out[k]=normalizeFields(raw?.[k] || fallback); }); return out; }
-function defaultSettings() { return { targetType:"class", layoutMode:"individual", semester:"1", format:"pdf", paper:"a4-landscape", fontMode:"system", previewMode:"sample", headerLeft:"", headerRight:"", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
+function defaultSettings() { return { targetType:"class", layoutMode:"individual", semester:"1", format:"pdf", paper:"a4-landscape", overviewRowsPerPage:"auto", fontMode:"system", previewMode:"sample", headerLeft:"", headerRight:"", cellLayout:"auto", applyMode:"card", fontScale:"normal", ellipsisMode:false, scope:"all", selectedScopeKeys:[], specialSubjects:["CA","SA"], splitStyles: structuredClone(SPLIT_DEFAULTS), splitDirections:{"2":"cols","3":"grid","4":"grid"}, fields:defaultFieldSettings(), splitFields:normalizeSplitFields(null) }; }
 function formatFromPaper(paper="a4-landscape") { return clean(paper).includes("portrait") ? "portrait" : "landscape"; }
 function normalizeOrientationForProfile(fmt="pdf", ori="landscape", t="class", m="individual") {
   const f = clean(fmt || "pdf");
@@ -551,7 +571,7 @@ function syncActiveStyleDraft() {
     clip
   };
 }
-function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), semester:selectedSemester(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
+function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), semester:selectedSemester(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), overviewRowsPerPage:normalizeOverviewRowsValue($("overviewRowsPerPage")?.value || "auto"), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
 function normalizeFirestoreDesignerPayload(payload) {
   const profiles = payload?.profiles && typeof payload.profiles === "object" ? payload.profiles : (payload?.store && typeof payload.store === "object" ? payload.store : {});
   return { profiles, lastProfile: clean(payload?.lastProfile || payload?.activeProfile || "") };
@@ -642,7 +662,7 @@ async function saveDesignerSettingsToFirestore(store, activeProfile, activeSetti
   firestoreSettingsLoaded = true;
   return { saved: true };
 }
-function saveSettings() { if (applying) return; normalizeLocalDesignerStorage(); syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, semester:s.semester, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
+function saveSettings() { if (applying) return; normalizeLocalDesignerStorage(); syncActiveFieldDraft(); const store=readStore(); const key=canonicalProfileKey(profileKey()); const s=collectSettings(); const saved={ targetType:s.targetType, layoutMode:s.layoutMode, semester:s.semester, format:s.format, paper:normalizedPaperValue(s.paper, currentOfficeProfile(), s.format), overviewRowsPerPage:normalizeOverviewRowsValue(s.overviewRowsPerPage), orientation:printOrientationForFormat(), outputProfile:currentOfficeProfile(), printProfile:key, fontMode:s.fontMode, previewMode:s.previewMode, headerLeft:s.headerLeft, headerRight:s.headerRight, cellLayout:"auto", applyMode:s.applyMode, fontScale:s.fontScale, ellipsisMode:!!s.ellipsisMode, specialSubjects:s.specialSubjects, splitStyles:s.splitStyles, splitDirections:s.splitDirections, fields:s.fields, splitFields:s.splitFields }; store[key]=saved; writeStore(store); localStorage.setItem(LAST_KEY, key); showSaved(); markSaved(LOCAL_DEV_MODE ? "로컬 저장됨" : "로컬 저장됨"); updateProfileStatus(); renderPreview(); saveDesignerSettingsToFirestore(store,key,saved).then(result=>{ if(result?.saved) markSaved("Firestore 저장됨"); }).catch(e=>{ console.warn("Firestore 출력 디자이너 설정 저장 실패", e); markDirty("로컬 저장됨 · Firestore 실패"); }); }
 function showSaved() { markCardApplied(); }
 function applySettings(settings, keepMain=false, preserveScope=false) {
   applying=true;
@@ -659,6 +679,8 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   const nextPaper = normalizedPaperValue(s.paper || "a4-landscape", currentOfficeProfile(), format());
   $("paper").value = nextPaper;
   applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus();
+  if ($("overviewRowsPerPage")) $("overviewRowsPerPage").value=normalizeOverviewRowsValue(s.overviewRowsPerPage || "auto");
+  updateOverviewRowsAvailability();
   if ($("fontMode")) $("fontMode").value=s.fontMode || "system";
   applyFontMode(s.fontMode || "system");
   if($("semester")) $("semester").value = readRememberedSemester(s.semester) || normalizePrintSemester(s.semester || "1");
@@ -1094,6 +1116,10 @@ function overviewRowsPerPage() {
   // r286: 학급 전체 가로 출력은 10~12학년 9개 학급까지 한 장에 담도록 조정합니다.
   // 전체-세로 출력은 UI에서 제외되지만, 예외 상태 방어값은 유지합니다.
   if (targetType() === "class") return paper === "a4-portrait" ? 4 : 9;
+  if (overviewRowsSelectable()) {
+    const selected = normalizeOverviewRowsValue($("overviewRowsPerPage")?.value || "auto");
+    if (selected !== "auto") return Number(selected);
+  }
   return paper === "a4-portrait" ? 8 : 10;
 }
 function overviewFullPages(ents) {
@@ -2711,6 +2737,12 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    restoreScopeState(scopeMemory[currentScopeType]);
    markDirty("학기 변경됨 · 설정 저장 가능");
    scheduleHeavyRender(`${selectedSemesterLabel()} 시간표를 다시 그리는 중입니다…`, 30);
+   return;
+ }
+ if (e.target.id === "overviewRowsPerPage") {
+   e.target.value = normalizeOverviewRowsValue(e.target.value);
+   markDirty("페이지당 행 수 변경됨 · 설정 저장 가능");
+   scheduleHeavyRender("페이지당 행 수를 적용하는 중입니다…", 30);
    return;
  }
  if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.id === "ellipsisMode") { document.body.classList.toggle("ellipsis-enabled", !!e.target.checked); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("excelDbBtn")?.addEventListener("click",downloadExcelDatabase); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
