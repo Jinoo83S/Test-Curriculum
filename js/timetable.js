@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-7";
-console.info("[HIS runtime:r387-7] card-move duplicate conflict recompute removed");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-8";
+console.info("[HIS runtime:r387-8] card-move duplicate conflict recompute removed");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -147,7 +147,7 @@ function beginDragTrace(data, source = "unknown") {
     saveScheduled: false,
   };
   activeDragTrace = trace;
-  try { console.info(`[drag-path:r387-7] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-8] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
   return trace;
 }
 
@@ -158,7 +158,7 @@ function noteDragOverTrace(target = "grid") {
   const now = performance.now();
   if (now - lastDragOverLogAt < 600) return;
   lastDragOverLogAt = now;
-  try { console.info(`[drag-path:r387-7] #${trace.id} dragover target=${target}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-8] #${trace.id} dragover target=${target}`); } catch (_) {}
 }
 
 function noteDropTrace(data, day = null, period = null, target = "grid") {
@@ -167,7 +167,7 @@ function noteDropTrace(data, day = null, period = null, target = "grid") {
   trace.dropSeen = true;
   try {
     const slot = Number.isInteger(Number(day)) && Number.isInteger(Number(period)) ? ` day=${day} period=${period}` : "";
-    console.info(`[drag-path:r387-7] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
+    console.info(`[drag-path:r387-8] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
   } catch (_) {}
   return trace;
 }
@@ -176,7 +176,7 @@ function noteDragSaveScheduled(reason = "timetable") {
   const trace = activeDragTrace;
   if (!trace) return;
   trace.saveScheduled = true;
-  try { console.info(`[drag-path:r387-7] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-8] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
 }
 
 function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
@@ -193,7 +193,7 @@ function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
     if (trace) {
       const elapsed = Math.round(performance.now() - trace.startedAt);
       try {
-        console.info(`[drag-path:r387-7] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
+        console.info(`[drag-path:r387-8] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
       } catch (_) {}
     }
     activeDragTrace = null;
@@ -3482,7 +3482,7 @@ function hasSameCardInSameSlot(candidate = {}) {
   });
 }
 
-function addEntry(data) {
+function addEntry(data, options = {}) {
   if (!canEdit()) return null;
   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
@@ -3492,11 +3492,43 @@ function addEntry(data) {
     return null;
   }
 
-  // 수동 드래그 배치는 충돌이 있어도 먼저 허용합니다.
-  // 이후 recomputeConflicts()에서 교사/교실/학급/동시배정/제약 충돌을 색상 배지로 표시합니다.
-  // 자동배치는 기존처럼 배치 가능 여부를 사전에 검사합니다.
-  captureTimetableUndo("수업 추가");
-  entries().push(e); scheduleSave("timetable"); noteDragSaveScheduled("timetable"); return e;
+  const manualReplace = !!options.manualReplace;
+  let displacementIds = new Set();
+
+  if (manualReplace) {
+    const occupancy = manualReplacementOccupancy(e);
+    const plan = buildManualReplacementPlan({
+      entries: entries(),
+      movingEntryIds: [],
+      targetPlacements: [{
+        entryId: e.id,
+        day: e.day,
+        period: e.period,
+        classKeys: [...(occupancy.classKeys || new Set())],
+        roomIds: effectiveRoomIdsForEntry(e),
+      }],
+      getOccupancy: item => manualReplacementOccupancy(item),
+      getOccurrenceEntries: item => manualOccurrenceEntries(item),
+    });
+
+    if (plan.blocked) {
+      const names = localUniqueStrings((plan.pinnedEntries || []).map(item => entryTitle(item))).slice(0, 5).join(", ");
+      alert(`배치할 칸에 고정 수업이 있습니다.${names ? `\n\n${names}` : ""}\n\n노란 테두리의 고정 수업은 먼저 고정을 해제해야 교체할 수 있습니다.`);
+      return null;
+    }
+    displacementIds = new Set(plan.displacementIds || []);
+  }
+
+  // 수동 드래그 배치는 대상 학급 칸의 기존 일반 수업을 교체한 뒤 배치합니다.
+  // 교사/교실/불가시간 충돌은 이후 recomputeConflicts()에서 그대로 표시합니다.
+  captureTimetableUndo(displacementIds.size ? "수업 교체 추가" : "수업 추가");
+  if (displacementIds.size) {
+    ttDomain().entries = entries().filter(item => !displacementIds.has(item.id));
+  }
+  entries().push(e);
+  scheduleSave("timetable");
+  noteDragSaveScheduled("timetable");
+  return e;
 }
 function removeEntry(id) {
   if (!canEdit()) return;
@@ -3630,7 +3662,7 @@ function placeGroupAt(groupId, day, period) {
   const data = buildEntryDataFromTtCards(cards, { day, period, groupId: grp.id, groupName: grp.name || "" });
   if (!data) return false;
   applyScheduleConditionsToPlacementData(data, cards, grp);
-  return !!addEntry(data);
+  return !!addEntry(data, { manualReplace: true });
 }
 
 // ── Unit helpers ──────────────────────────────────────────────────
@@ -3849,7 +3881,7 @@ globalThis.HIS_listMultiTeacherCards = function () {
 };
 
 function recomputeConflicts() {
-  // r387-7: detectConflicts 내부의 카드쌍 비교에서 동일 entry resolver가 반복 호출됩니다.
+  // r387-8: detectConflicts 내부의 카드쌍 비교에서 동일 entry resolver가 반복 호출됩니다.
   // 충돌 규칙은 그대로 유지하고, 이번 1회 계산 동안 entry별 해석 결과만 재사용합니다.
   const makeEntryMemo = resolver => {
     const weak = new WeakMap();
@@ -5230,22 +5262,30 @@ function renderVisibleBottomPanelAfterCardMove(label, startedAt) {
     } else if (isVisible(logsEl)) { panel = "logs"; renderLogPanel(); }
 
     try {
-      console.info(`[card-move-panel:r387-7] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+      console.info(`[card-move-panel:r387-8] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+    } catch (_) {}
+  }, 0);
+}
+
+let cardMoveRuntimeMetaTimer = null;
+
+function scheduleRuntimeMetaAfterCardMove(label, startedAt) {
+  clearTimeout(cardMoveRuntimeMetaTimer);
+  cardMoveRuntimeMetaTimer = setTimeout(() => {
+    cardMoveRuntimeMetaTimer = null;
+    const metaStartedAt = performance.now();
+    refreshStrictRuntimeSummaryMeta({ persist: false });
+    try {
+      console.info(`[card-move-meta:r387-8] kind=${label} runtimeMeta=${Math.round(performance.now()-metaStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
     } catch (_) {}
   }, 0);
 }
 
 function finishCardMoveRender(label, startedAt = performance.now()) {
   const renderStartedAt = performance.now();
-  // r387-6: 동작은 그대로 유지하고 카드 이동 지연을 단계별로 계측합니다.
-  // 측정 결과를 확인한 뒤 가장 느린 한 단계만 다음 패치에서 최적화합니다.
   const conflictStartedAt = performance.now();
   recomputeConflicts();
   const conflictMs = Math.round(performance.now() - conflictStartedAt);
-
-  const metaStartedAt = performance.now();
-  refreshStrictRuntimeSummaryMeta({ persist: false });
-  const runtimeMetaMs = Math.round(performance.now() - metaStartedAt);
 
   const gridStartedAt = performance.now();
   renderGrid();
@@ -5257,8 +5297,9 @@ function finishCardMoveRender(label, startedAt = performance.now()) {
 
   const immediateMs = Math.round(performance.now() - renderStartedAt);
   renderVisibleBottomPanelAfterCardMove(label, startedAt);
+  scheduleRuntimeMetaAfterCardMove(label, startedAt);
   try {
-    console.info(`[card-move:r387-7] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=${runtimeMetaMs}ms grid=${gridMs}ms conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
+    console.info(`[card-move:r387-8] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=deferred grid=${gridMs}ms conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
   } catch (_) {}
 }
 
@@ -5293,7 +5334,7 @@ function handleDrop(data, day, period) {
       const ttcards = (unit.ttcardIds || []).map(id => getTtCardById(id)).filter(Boolean).filter(isTtCardIncludedInAutoAssign);
       const entryData = buildEntryDataFromTtCards(ttcards, { day, period, groupId: grp.id, unitId: unit.id, groupName: grp.name || "" });
       if (entryData) {
-        addEntry(entryData);
+        addEntry(entryData, { manualReplace: true });
         finishCardMoveRender("unit", moveStartedAt); return;
       }
     }
@@ -5308,7 +5349,7 @@ function handleDrop(data, day, period) {
       if (entryData) {
         const grp = data.groupId ? (appState.timetable?.ttcardGroups || []).find(g => g.id === data.groupId) : null;
         applyScheduleConditionsToPlacementData(entryData, [card], grp);
-        addEntry(entryData);
+        addEntry(entryData, { manualReplace: true });
         finishCardMoveRender("ttcard", moveStartedAt); return;
       }
     }
@@ -5330,10 +5371,10 @@ function handleDrop(data, day, period) {
       templateId: unit.templateIds[0] || templateId,
       gradeKey: gradeKeys[0] || resolvedGrade,
       teacherName: teachers, roomId: null
-    });
+    }, { manualReplace: true });
   } else {
     const teacherName = getTeachersForTemplate(templateId)[0] || "";
-    addEntry({ day, period, templateId, sectionIdx, teacherName, roomId: null, gradeKey: resolvedGrade });
+    addEntry({ day, period, templateId, sectionIdx, teacherName, roomId: null, gradeKey: resolvedGrade }, { manualReplace: true });
   }
   finishCardMoveRender("legacy", moveStartedAt);
 }
@@ -6234,7 +6275,6 @@ window._ttRenderGrid = () => renderGrid();
       if (current?.kind === "entry" && canEdit()) {
         const moveStartedAt = performance.now();
         removeEntry(current.entryId);
-        noteDragSaveScheduled("timetable");
         finishCardMoveRender("remove-to-bottom", moveStartedAt);
         clearAppDragState("bottom-drop", { delay: 0 });
       }
