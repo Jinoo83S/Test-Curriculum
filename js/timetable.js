@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-3";
-console.info("[HIS runtime:r387-3] card-move duplicate conflict recompute removed");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-4";
+console.info("[HIS runtime:r387-4] card-move duplicate conflict recompute removed");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -120,6 +120,118 @@ let dragPreviewToken = 0;
 const TT_DRAG_MIME = "application/x-his-timetable-drag";
 const DRAG_PREVIEW_FRAME_BUDGET_MS = 7;
 const DRAG_PREVIEW_MAX_VISIBLE_CELLS = 180;
+
+
+// r387-4: drag/drop path diagnostics and stale drag-state recovery.
+let dragTraceSeq = 0;
+let activeDragTrace = null;
+let lastDragOverLogAt = 0;
+
+function dragTraceKind(data = dragData) {
+  if (!data || typeof data !== "object") return "unknown";
+  if (data.kind) return String(data.kind);
+  if (data.ttcardId) return "ttcard";
+  if (data.unitId) return "unit";
+  if (data.groupId) return "group";
+  return "unknown";
+}
+
+function beginDragTrace(data, source = "unknown") {
+  const trace = {
+    id: ++dragTraceSeq,
+    source,
+    kind: dragTraceKind(data),
+    startedAt: performance.now(),
+    dragOverSeen: false,
+    dropSeen: false,
+    saveScheduled: false,
+  };
+  activeDragTrace = trace;
+  try { console.info(`[drag-path:r387-4] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
+  return trace;
+}
+
+function noteDragOverTrace(target = "grid") {
+  const trace = activeDragTrace;
+  if (!trace) return;
+  trace.dragOverSeen = true;
+  const now = performance.now();
+  if (now - lastDragOverLogAt < 600) return;
+  lastDragOverLogAt = now;
+  try { console.info(`[drag-path:r387-4] #${trace.id} dragover target=${target}`); } catch (_) {}
+}
+
+function noteDropTrace(data, day = null, period = null, target = "grid") {
+  let trace = activeDragTrace;
+  if (!trace) trace = beginDragTrace(data, "drop-recovered");
+  trace.dropSeen = true;
+  try {
+    const slot = Number.isInteger(Number(day)) && Number.isInteger(Number(period)) ? ` day=${day} period=${period}` : "";
+    console.info(`[drag-path:r387-4] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
+  } catch (_) {}
+  return trace;
+}
+
+function noteDragSaveScheduled(reason = "timetable") {
+  const trace = activeDragTrace;
+  if (!trace) return;
+  trace.saveScheduled = true;
+  try { console.info(`[drag-path:r387-4] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
+}
+
+function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
+  const run = () => {
+    const trace = activeDragTrace;
+    dragData = null;
+    clearDragHighlight();
+    document.querySelectorAll(".tt-dragging").forEach(el => el.classList.remove("tt-dragging"));
+    document.querySelectorAll(".tt-drop-target,.tt-drop-valid,.tt-drop-invalid").forEach(el => {
+      el.classList.remove("tt-drop-target", "tt-drop-valid", "tt-drop-invalid");
+    });
+    const bottom = document.getElementById("ttBottom");
+    if (bottom) bottom.style.outline = "";
+    if (trace) {
+      const elapsed = Math.round(performance.now() - trace.startedAt);
+      try {
+        console.info(`[drag-path:r387-4] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
+      } catch (_) {}
+    }
+    activeDragTrace = null;
+  };
+  if (delay > 0) window.setTimeout(run, delay); else run();
+}
+
+function setAppDragData(value, source = "module") {
+  dragData = value;
+  if (value) {
+    applyDragHighlight(value);
+    if (!activeDragTrace) beginDragTrace(value, source);
+  } else {
+    clearDragHighlight();
+  }
+}
+
+function installGlobalDragRecovery() {
+  if (document.documentElement.dataset.ttDragRecoveryR3874 === "1") return;
+  document.documentElement.dataset.ttDragRecoveryR3874 = "1";
+  document.addEventListener("dragover", ev => {
+    if (!activeDragTrace && !dragData) return;
+    const target = ev.target?.closest?.("#ttBottom") ? "bottom" : ev.target?.closest?.(".tt-cell,.tt-grid-cell,[data-day][data-period]") ? "grid" : "page";
+    noteDragOverTrace(target);
+  }, true);
+  document.addEventListener("drop", ev => {
+    if (!activeDragTrace && !dragData) return;
+    // Allow the concrete drop handler to read dragData first, then clear stale state.
+    clearAppDragState("document-drop", { delay: 80 });
+  }, true);
+  document.addEventListener("dragend", () => clearAppDragState("document-dragend", { delay: 0 }), true);
+  window.addEventListener("blur", () => {
+    if (activeDragTrace || dragData) clearAppDragState("window-blur", { delay: 0 });
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden && (activeDragTrace || dragData)) clearAppDragState("document-hidden", { delay: 0 });
+  });
+}
 
 // 시간표 카드 갱신/불러오기는 curriculum + templates + rosters 원본이 모두 필요합니다.
 // state.js의 TIMETABLE_CORE_DOMAINS가 가볍게 유지되어 있어도, 시간표 페이지에서는
@@ -2538,6 +2650,7 @@ function applyHomeroomRuleToEntryBlock(entry) {
     ttDomain().entries = next;
   }
   scheduleSave("timetable");
+  noteDragSaveScheduled("timetable");
   return true;
 }
 
@@ -3877,7 +3990,7 @@ function renderGrid() {
     periods: ttConfig().periodLabels,
     entries: entries(),
     getDragData: () => dragData,
-    setDragData: value => { dragData = value; if (value) applyDragHighlight(value); else clearDragHighlight(); },
+    setDragData: value => setAppDragData(value, "grid-module"),
     handleDrop,
     updatePeriodLabel,
     buildEntryCard,
@@ -4926,11 +5039,12 @@ function buildEntryCard(entry, opts = {}) {
   card.addEventListener("dragstart", ev => {
     if (!canEdit() || entry.pinned || ev.target.closest("select,button")) { ev.preventDefault(); return; }
     dragData = { kind: "entry", entryId: entry.id, teacherName: entry.teacherName, gradeKey: entry.gradeKey, sectionIdx: entry.sectionIdx ?? 0 };
+    beginDragTrace(dragData, "grid-entry");
     writeDragDataToEvent(ev, dragData, "move");
     applyDragHighlight(dragData);
     card.classList.add("tt-dragging");
   });
-  card.addEventListener("dragend", () => { dragData = null; card.classList.remove("tt-dragging"); clearDragHighlight(); });
+  card.addEventListener("dragend", () => { card.classList.remove("tt-dragging"); clearAppDragState("entry-dragend"); });
 
   return card;
 }
@@ -5058,12 +5172,13 @@ function finishCardMoveRender(label, startedAt = performance.now()) {
   // 드롭 경로에서 먼저 recomputeConflicts()를 호출하면 동일한 충돌 검사를 두 번 수행하게 됩니다.
   renderAll();
   try {
-    console.info(`[card-move:r387-3] kind=${label} renderAll=1 conflictRecompute=1 elapsed=${Math.round(performance.now()-startedAt)}ms render=${Math.round(performance.now()-renderStartedAt)}ms entries=${entries().length}`);
+    console.info(`[card-move:r387-4] kind=${label} renderAll=1 conflictRecompute=1 elapsed=${Math.round(performance.now()-startedAt)}ms render=${Math.round(performance.now()-renderStartedAt)}ms entries=${entries().length}`);
   } catch (_) {}
 }
 
 function handleDrop(data, day, period) {
   if (!data || !canEdit()) return;
+  noteDropTrace(data, day, period, "grid");
   const moveStartedAt = performance.now();
 
   // 1. Move existing entry
@@ -5150,7 +5265,7 @@ const ttSidebarHandlers = createTimetableSidebarHandlers({
   getGradeColor, gradeDisplay, sectionLabel,
   showSidebarCardDetail, showEntryDetailByUnit,
   renderAll: () => renderAll(),
-  setDragData: value => { dragData = value; if (value) applyDragHighlight(value); else clearDragHighlight(); },
+  setDragData: value => setAppDragData(value, "grid-module"),
   scheduleSave,
   saveNow,
 });
@@ -6022,18 +6137,22 @@ window._ttRenderGrid = () => renderGrid();
   if (bottomBar) {
     bottomBar.addEventListener("dragover", e => {
       const current = dragData || readDragDataFromEvent(e);
-      if (current?.kind === "entry") { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; bottomBar.style.outline = "3px dashed #ef4444"; }
+      if (current?.kind === "entry") { e.preventDefault(); noteDragOverTrace("bottom"); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; bottomBar.style.outline = "3px dashed #ef4444"; }
     });
     bottomBar.addEventListener("dragleave", () => { bottomBar.style.outline = ""; });
     bottomBar.addEventListener("drop", e => {
       e.preventDefault(); e.stopPropagation(); bottomBar.style.outline = "";
       const current = dragData || readDragDataFromEvent(e);
+      if (current) noteDropTrace(current, null, null, "bottom");
       if (current?.kind === "entry" && canEdit()) {
         const moveStartedAt = performance.now();
-        removeEntry(current.entryId); dragData = null;
+        removeEntry(current.entryId);
+        noteDragSaveScheduled("timetable");
         finishCardMoveRender("remove-to-bottom", moveStartedAt);
+        clearAppDragState("bottom-drop", { delay: 0 });
       }
     });
   }
 installTimetableScrollIsolation();
+installGlobalDragRecovery();
 renderAll();
