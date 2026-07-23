@@ -70,8 +70,8 @@ const [
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-11";
-console.info("[HIS runtime:r387-11] card-move duplicate conflict recompute removed");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-12";
+console.info("[HIS runtime:r387-12] card-move duplicate conflict recompute removed");
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;
@@ -147,7 +147,7 @@ function beginDragTrace(data, source = "unknown") {
     saveScheduled: false,
   };
   activeDragTrace = trace;
-  try { console.info(`[drag-path:r387-11] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-12] #${trace.id} dragstart source=${source} kind=${trace.kind}`); } catch (_) {}
   return trace;
 }
 
@@ -158,7 +158,7 @@ function noteDragOverTrace(target = "grid") {
   const now = performance.now();
   if (now - lastDragOverLogAt < 600) return;
   lastDragOverLogAt = now;
-  try { console.info(`[drag-path:r387-11] #${trace.id} dragover target=${target}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-12] #${trace.id} dragover target=${target}`); } catch (_) {}
 }
 
 function noteDropTrace(data, day = null, period = null, target = "grid") {
@@ -167,7 +167,7 @@ function noteDropTrace(data, day = null, period = null, target = "grid") {
   trace.dropSeen = true;
   try {
     const slot = Number.isInteger(Number(day)) && Number.isInteger(Number(period)) ? ` day=${day} period=${period}` : "";
-    console.info(`[drag-path:r387-11] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
+    console.info(`[drag-path:r387-12] #${trace.id} drop target=${target} kind=${dragTraceKind(data)}${slot}`);
   } catch (_) {}
   return trace;
 }
@@ -176,7 +176,7 @@ function noteDragSaveScheduled(reason = "timetable") {
   const trace = activeDragTrace;
   if (!trace) return;
   trace.saveScheduled = true;
-  try { console.info(`[drag-path:r387-11] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
+  try { console.info(`[drag-path:r387-12] #${trace.id} save-scheduled domain=${reason}`); } catch (_) {}
 }
 
 function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
@@ -195,7 +195,7 @@ function clearAppDragState(reason = "clear", { delay = 0 } = {}) {
     if (trace) {
       const elapsed = Math.round(performance.now() - trace.startedAt);
       try {
-        console.info(`[drag-path:r387-11] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
+        console.info(`[drag-path:r387-12] #${trace.id} end reason=${reason} dragover=${trace.dragOverSeen?1:0} drop=${trace.dropSeen?1:0} save=${trace.saveScheduled?1:0} elapsed=${elapsed}ms`);
       } catch (_) {}
     }
     activeDragTrace = null;
@@ -3515,7 +3515,7 @@ function addEntry(data, options = {}) {
     });
 
     if (plan.blocked) {
-      try { console.info(`[manual-replace:r387-11] kind=add replaced=0 blocked=fixed target=${e.day}:${e.period}`); } catch (_) {}
+      try { console.info(`[manual-replace:r387-12] kind=add replaced=0 blocked=fixed target=${e.day}:${e.period}`); } catch (_) {}
       const names = localUniqueStrings((plan.pinnedEntries || []).map(item => entryTitle(item))).slice(0, 5).join(", ");
       alert(`배치할 칸에 고정 수업이 있습니다.${names ? `\n\n${names}` : ""}\n\n노란 테두리의 고정 수업은 먼저 고정을 해제해야 교체할 수 있습니다.`);
       return null;
@@ -3526,14 +3526,14 @@ function addEntry(data, options = {}) {
   // 수동 드래그 배치는 대상 학급 칸의 기존 일반 수업을 교체한 뒤 배치합니다.
   // 교사/교실/불가시간 충돌은 이후 recomputeConflicts()에서 그대로 표시합니다.
   try {
-    console.info(`[manual-replace:r387-11] kind=add replaced=${displacementIds.size} blocked=0 target=${e.day}:${e.period}`);
+    console.info(`[manual-replace:r387-12] kind=add replaced=${displacementIds.size} blocked=0 target=${e.day}:${e.period}`);
   } catch (_) {}
   captureTimetableUndo(displacementIds.size ? "수업 교체 추가" : "수업 추가");
   if (displacementIds.size) {
-    entries().filter(item => displacementIds.has(item.id)).forEach(item => markCardMoveAffectedSlot(item.day, item.period));
+    entries().filter(item => displacementIds.has(item.id)).forEach(item => markCardMoveAffectedEntry(item));
     ttDomain().entries = entries().filter(item => !displacementIds.has(item.id));
   }
-  markCardMoveAffectedSlot(e.day, e.period);
+  markCardMoveAffectedEntry(e);
   entries().push(e);
   scheduleSave("timetable");
   noteDragSaveScheduled("timetable");
@@ -3543,7 +3543,7 @@ function removeEntry(id) {
   if (!canEdit()) return;
   resetCardMoveRenderScope();
   const removing = entries().find(e => e.id === id);
-  if (removing) markCardMoveAffectedSlot(removing.day, removing.period);
+  if (removing) markCardMoveAffectedEntry(removing);
   captureTimetableUndo("수업 삭제");
   ttDomain().entries = entries().filter(e => e.id !== id);
   scheduleSave("timetable");
@@ -3893,7 +3893,7 @@ globalThis.HIS_listMultiTeacherCards = function () {
 };
 
 function recomputeConflicts() {
-  // r387-11: detectConflicts 내부의 카드쌍 비교에서 동일 entry resolver가 반복 호출됩니다.
+  // r387-12: detectConflicts 내부의 카드쌍 비교에서 동일 entry resolver가 반복 호출됩니다.
   // 충돌 규칙은 그대로 유지하고, 이번 1회 계산 동안 entry별 해석 결과만 재사용합니다.
   const makeEntryMemo = resolver => {
     const weak = new WeakMap();
@@ -5179,6 +5179,7 @@ function manualOccurrenceEntries(anchor = {}) {
 
 
 const cardMoveAffectedSlots = new Set();
+const cardMoveAffectedClassCells = new Set();
 let cardMoveRequiresFullGrid = false;
 
 function markCardMoveAffectedSlot(day, period) {
@@ -5188,8 +5189,39 @@ function markCardMoveAffectedSlot(day, period) {
   cardMoveAffectedSlots.add(`${d}:${p}`);
 }
 
+function markCardMoveAffectedClassCell(day, period, gradeKey, sectionIdx) {
+  const d = Number(day);
+  const p = Number(period);
+  const g = clean(gradeKey);
+  const s = Number.parseInt(sectionIdx, 10);
+  if (!Number.isInteger(d) || !Number.isInteger(p) || !g || !Number.isInteger(s)) return;
+  cardMoveAffectedClassCells.add(`${d}:${p}:${g}:${s}`);
+}
+
+function markCardMoveAffectedEntry(entry, day = entry?.day, period = entry?.period) {
+  if (!entry) return;
+  markCardMoveAffectedSlot(day, period);
+  const seen = new Set();
+  try {
+    const occupancy = audienceForPlacement(entry);
+    [...(occupancy?.classKeys || new Set())].forEach(key => {
+      const info = classInfoFromAudienceClassKey(key);
+      if (!info.gradeKey || !Number.isInteger(info.sectionIdx)) return;
+      const sig = `${info.gradeKey}:${info.sectionIdx}`;
+      if (seen.has(sig)) return;
+      seen.add(sig);
+      markCardMoveAffectedClassCell(day, period, info.gradeKey, info.sectionIdx);
+    });
+  } catch (_) {}
+  if (!seen.size) {
+    const grades = entryGradeKeys(entry).length ? entryGradeKeys(entry) : [entry.gradeKey].filter(Boolean);
+    grades.forEach(gradeKey => markCardMoveAffectedClassCell(day, period, gradeKey, entry.sectionIdx ?? 0));
+  }
+}
+
 function resetCardMoveRenderScope() {
   cardMoveAffectedSlots.clear();
+  cardMoveAffectedClassCells.clear();
   cardMoveRequiresFullGrid = false;
 }
 
@@ -5202,7 +5234,7 @@ function entryMatchesPartialGridCell(entry, cell) {
   if (Number(entry.day) !== Number(cell.dataset.day) || Number(entry.period) !== Number(cell.dataset.period)) return false;
 
   if (currentView === "grade") return entryHasGrade(entry, currentGrade);
-  if (currentView === "class") {
+  if (["class", "all"].includes(currentView)) {
     const gradeKey = cell.dataset.gradeKey || currentGrade || entry.gradeKey || "";
     const sectionIdx = Number.parseInt(cell.dataset.sectionIdx || "0", 10) || 0;
     return entryMatchesClass(entry, { gradeKey, sectionIdx });
@@ -5210,31 +5242,51 @@ function entryMatchesPartialGridCell(entry, cell) {
   return false;
 }
 
+function rebuildPartialGridCell(cell) {
+  const slotEntries = entries().filter(entry => entryMatchesPartialGridCell(entry, cell));
+  cell.replaceChildren();
+  if (!slotEntries.length) {
+    const placeholder = document.createElement("div");
+    placeholder.className = "tt-cell-ph";
+    cell.appendChild(placeholder);
+    return;
+  }
+
+  if (currentView === "all") {
+    const holder = document.createElement("div");
+    holder.className = "tt-cell-card-grid";
+    holder.style.height = "100%";
+    holder.style.setProperty("--tt-auto-cols", String(slotEntries.length || 1));
+    slotEntries.forEach(entry => holder.appendChild(buildEntryCard(entry, { compact: true })));
+    cell.appendChild(holder);
+    return;
+  }
+
+  slotEntries.forEach(entry => {
+    const card = buildEntryCard(entry, { compact: true });
+    card.style.cssText += ";flex-shrink:0;width:100%";
+    cell.appendChild(card);
+  });
+}
+
 function renderAffectedGridCells() {
-  if (cardMoveRequiresFullGrid || !["grade", "class"].includes(currentView)) return false;
+  if (cardMoveRequiresFullGrid || !["grade", "class", "all"].includes(currentView)) return false;
   if (!cardMoveAffectedSlots.size || cardMoveAffectedSlots.size > 6) return false;
 
   const grid = ttGrid();
   if (!grid) return false;
-  const cells = [...grid.querySelectorAll('.tt-cell[data-day][data-period]')]
+  let cells = [...grid.querySelectorAll('.tt-cell[data-day][data-period]')]
     .filter(cell => cardMoveAffectedSlots.has(`${Number(cell.dataset.day)}:${Number(cell.dataset.period)}`));
+
+  if (currentView === "all") {
+    if (!cardMoveAffectedClassCells.size || cardMoveAffectedClassCells.size > 12) return false;
+    cells = cells.filter(cell => cardMoveAffectedClassCells.has(
+      `${Number(cell.dataset.day)}:${Number(cell.dataset.period)}:${clean(cell.dataset.gradeKey)}:${Number.parseInt(cell.dataset.sectionIdx || "0", 10) || 0}`
+    ));
+  }
   if (!cells.length) return false;
 
-  cells.forEach(cell => {
-    const slotEntries = entries().filter(entry => entryMatchesPartialGridCell(entry, cell));
-    cell.replaceChildren();
-    if (slotEntries.length) {
-      slotEntries.forEach(entry => {
-        const card = buildEntryCard(entry, { compact: true });
-        card.style.cssText += ';flex-shrink:0;width:100%';
-        cell.appendChild(card);
-      });
-    } else {
-      const placeholder = document.createElement('div');
-      placeholder.className = 'tt-cell-ph';
-      cell.appendChild(placeholder);
-    }
-  });
+  cells.forEach(rebuildPartialGridCell);
   return true;
 }
 
@@ -5245,7 +5297,7 @@ function moveEntry(entryId, day, period) {
 
   const linkedEntries = manualOccurrenceEntries(e);
   resetCardMoveRenderScope();
-  linkedEntries.forEach(item => markCardMoveAffectedSlot(item.day, item.period));
+  linkedEntries.forEach(item => markCardMoveAffectedEntry(item));
   if (!linkedEntries.length || linkedEntries.some(item => item.pinned)) return false;
   if (linkedEntries.length !== 1) markCardMoveComplex();
 
@@ -5283,7 +5335,7 @@ function moveEntry(entryId, day, period) {
   });
 
   if (plan.blocked) {
-    try { console.info(`[manual-replace:r387-11] kind=move replaced=0 blocked=fixed target=${day}:${period}`); } catch (_) {}
+    try { console.info(`[manual-replace:r387-12] kind=move replaced=0 blocked=fixed target=${day}:${period}`); } catch (_) {}
     const names = localUniqueStrings((plan.pinnedEntries || []).map(item => entryTitle(item))).slice(0, 5).join(", ");
     alert(`이동할 칸에 고정 수업이 있습니다.${names ? `\n\n${names}` : ""}\n\n노란 테두리의 고정 수업은 먼저 고정을 해제해야 교체할 수 있습니다.`);
     return false;
@@ -5293,18 +5345,18 @@ function moveEntry(entryId, day, period) {
   captureTimetableUndo(displacedIds.size ? "수업 교체 이동" : (linkedEntries.length > 1 ? "그룹카드 이동" : "수업 이동"));
 
   if (displacedIds.size) {
-    entries().filter(item => displacedIds.has(item.id)).forEach(item => markCardMoveAffectedSlot(item.day, item.period));
+    entries().filter(item => displacedIds.has(item.id)).forEach(item => markCardMoveAffectedEntry(item));
     ttDomain().entries = entries().filter(item => !displacedIds.has(item.id));
   }
 
-  targetPlacements.forEach(slot => markCardMoveAffectedSlot(slot.day, slot.period));
+  linkedEntries.forEach((item, index) => markCardMoveAffectedEntry(item, targetPlacements[index]?.day, targetPlacements[index]?.period));
   linkedEntries.forEach((item, index) => {
     const target = targetPlacements[index];
     item.day = target.day;
     item.period = target.period;
   });
   try {
-    console.info(`[manual-replace:r387-11] kind=move replaced=${displacedIds.size} blocked=0 target=${day}:${period} moved=${linkedEntries.length}`);
+    console.info(`[manual-replace:r387-12] kind=move replaced=${displacedIds.size} blocked=0 target=${day}:${period} moved=${linkedEntries.length}`);
   } catch (_) {}
   scheduleSave("timetable");
   noteDragSaveScheduled("timetable");
@@ -5345,7 +5397,7 @@ function renderVisibleBottomPanelAfterCardMove(label, startedAt) {
     } else if (isVisible(logsEl)) { panel = "logs"; renderLogPanel(); }
 
     try {
-      console.info(`[card-move-panel:r387-11] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+      console.info(`[card-move-panel:r387-12] kind=${label} panel=${panel} elapsed=${Math.round(performance.now()-panelStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
     } catch (_) {}
   }, 0);
 }
@@ -5359,7 +5411,7 @@ function scheduleRuntimeMetaAfterCardMove(label, startedAt) {
     const metaStartedAt = performance.now();
     refreshStrictRuntimeSummaryMeta({ persist: false });
     try {
-      console.info(`[card-move-meta:r387-11] kind=${label} runtimeMeta=${Math.round(performance.now()-metaStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
+      console.info(`[card-move-meta:r387-12] kind=${label} runtimeMeta=${Math.round(performance.now()-metaStartedAt)}ms total=${Math.round(performance.now()-startedAt)}ms`);
     } catch (_) {}
   }, 0);
 }
@@ -5375,7 +5427,7 @@ function finishCardMoveRender(label, startedAt = performance.now()) {
   const partialGrid = partialEligible && renderAffectedGridCells();
   if (!partialGrid) renderGrid();
   const gridMs = Math.round(performance.now() - gridStartedAt);
-  const gridMode = partialGrid ? "partial" : "full";
+  const gridMode = partialGrid ? (currentView === "all" ? "partial-all" : "partial") : "full";
 
   const barStartedAt = performance.now();
   renderConflictBar();
@@ -5385,7 +5437,7 @@ function finishCardMoveRender(label, startedAt = performance.now()) {
   renderVisibleBottomPanelAfterCardMove(label, startedAt);
   scheduleRuntimeMetaAfterCardMove(label, startedAt);
   try {
-    console.info(`[card-move:r387-11] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=deferred grid=${gridMs}ms gridMode=${gridMode} conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
+    console.info(`[card-move:r387-12] kind=${label} renderAll=0 conflictRecompute=1 conflicts=${conflictMs}ms runtimeMeta=deferred grid=${gridMs}ms gridMode=${gridMode} conflictBar=${conflictBarMs}ms immediate=${immediateMs}ms elapsed=${Math.round(performance.now()-startedAt)}ms entries=${entries().length}`);
   } catch (_) {}
 }
 
@@ -6142,7 +6194,7 @@ function markDragPreviewCell(cell, data) {
   const { candidates, excludeIds } = buildDragPreviewCandidates(data, day, period, patch);
   if (!candidates.length) return;
 
-  // r387-11: 실제 수동배치와 동일하게 교체 예정 카드는 충돌 미리보기에서 제외합니다.
+  // r387-12: 실제 수동배치와 동일하게 교체 예정 카드는 충돌 미리보기에서 제외합니다.
   // 고정수업은 replacementPlan.blocked 상태로 유지하여 계속 빨간색으로 표시합니다.
   const replacementPlan = buildDragPreviewReplacementPlan(candidates, excludeIds);
   const previewExcludeIds = replacementPlan?.blocked
