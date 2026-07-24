@@ -1,0 +1,129 @@
+diff --git a/js/timetable.js b/js/timetable.js
+index f0bdf56..ba5c2da 100644
+--- a/js/timetable.js
++++ b/js/timetable.js
+@@ -49,6 +49,7 @@ const [
+   manualReplaceModule,
+   teacherStatisticsModule,
+   displayDensityModule,
++  teacherEventsModule,
+   cpSatImportModule,
+ ] = await Promise.all([
+   import(versioned("./data-cleanup.js")),
+@@ -64,6 +65,7 @@ const [
+   import(versioned("./timetable-manual-replace.js")),
+   import(versioned("./timetable-statistics.js")),
+   import(versioned("./timetable-display-density.js")),
++  import(versioned("./timetable-teacher-events.js")),
+   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
+     console.warn("[CP-SAT import] optional module load failed", err);
+     return {};
+@@ -95,6 +97,13 @@ const { buildManualReplacementPlan } = manualReplaceModule;
+ // r379 compatibility markers: timetable-teacher-statistics.js / openTeacherStatisticsDialog
+ const { openStatisticsDialog } = teacherStatisticsModule;
+ const { setupTimetableDisplayDensity } = displayDensityModule;
++const {
++  createTeacherEventsManager,
++  buildEffectiveTeacherConstraints,
++  findTeacherEventBlockers,
++  resolveTeacherEventNames,
++  teacherEventSlots,
++} = teacherEventsModule;
+ const { setupCpSatWebappImport } = cpSatImportModule || {};
+ setupTimetableDisplayDensity?.();
+ 
+@@ -103,6 +112,13 @@ const ttDomain  = () => appState.timetable;
+ const entries   = () => ttDomain().entries;
+ const ttConfig  = () => ttDomain().config;
+ const constraints = () => ttDomain().teacherConstraints;
++const teacherEvents = () => ttDomain().teacherEvents || [];
++const effectiveConstraints = () => buildEffectiveTeacherConstraints(
++  constraints() || {},
++  teacherEvents(),
++  appState.teachers?.teachers || [],
++  ttConfig()?.periodCount || 7,
++);
+ 
+ // ── Module state ──────────────────────────────────────────────────
+ let currentView    = "all";
+@@ -277,6 +293,7 @@ let constraintMap  = new Map();
+ 
+ // ── Split module APIs ───────────────────────────────────────────
+ let constraintsPanelApi = null;
++let teacherEventsManagerApi = null;
+ let addTimetableLog = () => {};
+ let setLastAutoAssignReport = () => {};
+ let getConflictCounts = () => ({ counts: {}, totalAffected: 0 });
+@@ -670,6 +687,7 @@ const undoHandlers = createTimetableUndoHandlers({
+     config: ttDomain().config || {},
+     teacherConstraints: ttDomain().teacherConstraints || {},
+     teacherConstraintsById: ttDomain().teacherConstraintsById || {},
++    teacherEvents: ttDomain().teacherEvents || [],
+     roomAvailability: getRooms().map(room => ({
+       id: room.id,
+       unavailableSlots: normalizeRoomUnavailableSlots(room.unavailableSlots),
+@@ -680,6 +698,7 @@ const undoHandlers = createTimetableUndoHandlers({
+     ttDomain().config = snapshot.config || ttDomain().config || {};
+     ttDomain().teacherConstraints = snapshot.teacherConstraints || {};
+     ttDomain().teacherConstraintsById = snapshot.teacherConstraintsById || {};
++    ttDomain().teacherEvents = snapshot.teacherEvents || [];
+     const availabilityById = new Map((snapshot.roomAvailability || []).map(row => [clean(row?.id), normalizeRoomUnavailableSlots(row?.unavailableSlots)]));
+     getRooms().forEach(room => {
+       if (availabilityById.has(clean(room?.id))) room.unavailableSlots = availabilityById.get(clean(room.id));
+@@ -696,6 +715,24 @@ captureTimetableUndo = undoHandlers.captureTimetableUndo;
+ undoLastTimetableEdit = undoHandlers.undoLastTimetableEdit;
+ undoHandlers.installUndoShortcut();
+ 
++teacherEventsManagerApi = createTeacherEventsManager({
++  ttDomain,
++  getTeachers: () => {
++    const registered = appState.teachers?.teachers || [];
++    if (registered.length) return registered;
++    return getAllTimetableTeachers().map(name => ({ id: "", name }));
++  },
++  getPeriodCount: () => ttConfig()?.periodCount || 7,
++  getEntries: entries,
++  getEntryTeachers: entryTeachers,
++  canEdit,
++  uid,
++  captureTimetableUndo: (...args) => captureTimetableUndo(...args),
++  scheduleSave,
++  recomputeConflicts,
++  renderAll: () => renderAll(),
++});
++
+ // ── Conflict display helpers ───────────────────────────────────
+ function applyConflictVisuals(card, conflictTypes, conflicts) {
+   applyConflictVisualsBase(card, conflictTypes, conflicts, getConflictLabel);
+@@ -3360,7 +3397,11 @@ function getRelatedConflictEntries(entry, type) {
+ function getConstraintConflictMessage(type, entry) {
+   const teachers = entryTeachers(entry).join(", ") || "담당 교사";
+   if (type === "roomMissing") return "이 수업 또는 그룹 구성 과목 중 교실이 배정되지 않은 항목이 있습니다. 상세보기에서 구성 과목별 교실을 지정해 주세요.";
+-  if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
++  if (type === "unavailable") {
++    const blockers = teacherEventBlockersForEntryAt(entry, entry.day, entry.period);
++    if (blockers.length) return `${teachers} 선생님의 교사 일정(${[...new Set(blockers.map(item => item.title))].join(", ")}) 시간입니다.`;
++    return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
++  }
+   if (type === "cardUnavailable") return `이 과목카드는 현재 교시에 배정할 수 없는 시간으로 설정되어 있습니다.`;
+   if (type === "classUnavailable") return `이 반은 현재 교시에 수업할 수 없는 시간으로 설정되어 있습니다.`;
+   if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
+@@ -3484,11 +3525,36 @@ function hasSameCardInSameSlot(candidate = {}) {
+   });
+ }
+ 
++function teacherEventBlockersForEntryAt(entry = {}, day = entry.day, period = entry.period) {
++  return findTeacherEventBlockers({
++    teacherNames: entryTeachers(entry),
++    day,
++    period,
++    teacherEvents: teacherEvents(),
++    teachers: appState.teachers?.teachers || [],
++    periodCount: ttConfig()?.periodCount || 7,
++  });
++}
++
++function allowPlacementOutsideTeacherEvents(entry = {}, day = entry.day, period = entry.period, options = {}) {
++  const blockers = teacherEventBlockersForEntryAt(entry, day, period);
++  if (!blockers.length) return true;
++  if (options.silent) return false;
