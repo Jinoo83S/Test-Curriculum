@@ -24,7 +24,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-23-overview-rows-r366";
+const VERSION = "2026-07-23-overview-rows-r367";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -148,30 +148,10 @@ function enforceFormatAvailability() {
     formatEl.value = "pdf";
   }
 }
-function overviewRowsSelectable() {
-  return layoutMode() === "overview" && (targetType() === "teacher" || targetType() === "room");
-}
-function normalizeOverviewRowsValue(value="auto") {
-  const raw = clean(value);
-  if (raw === "auto") return "auto";
-  const n = Number(raw);
-  return Number.isInteger(n) && n >= 6 && n <= 12 ? String(n) : "auto";
-}
-function updateOverviewRowsAvailability() {
-  const field = $("overviewRowsField");
-  const select = $("overviewRowsPerPage");
-  const enabled = overviewRowsSelectable();
-  if (field) field.classList.toggle("hidden", !enabled);
-  if (select) {
-    select.disabled = !enabled;
-    select.title = enabled ? "교사·교실 전체 출력의 한 페이지 최대 행 수입니다." : "";
-  }
-}
 function updateProfileStatus() {
   // r286: 좌측 출력종류 패널의 프로필 설명 문구는 표시하지 않습니다.
   enforcePaperAvailability();
   enforceFormatAvailability();
-  updateOverviewRowsAvailability();
 }
 
 const $ = id => document.getElementById(id);
@@ -190,6 +170,8 @@ let scopeMemory = {};
 let currentScopeType = "class";
 let printTemplateMapSource = null;
 let printTemplateMapCache = new Map();
+// r367: 교사/교실 전체의 페이지당 행 수는 저장 전에도 프로필별로 유지합니다.
+const overviewRowsDraftByProfile = new Map();
 
 function gradeNo(value="") { const m = clean(value).match(/\d{1,2}/); return m ? Number(m[0]) : 0; }
 function classLabel(cls) { const g = gradeNo(cls.gradeKey || cls.grade); const n = clean(cls.name || cls.section || cls.label).replace(/^\d+/, ""); return g && n ? `${g}${n}` : clean(cls.label || cls.name || cls.id); }
@@ -318,6 +300,36 @@ function syncOutputKindToHidden(value=outputKindValue()) { const p=parseOutputKi
 function setOutputKind(type, mode="individual") { const t=type || "class"; const m=t === "student" ? "individual" : (mode || "individual"); const v=`${t}:${m}`; if ($("outputKind")) $("outputKind").value=v; syncOutputKindToHidden(v); }
 function targetType() { return parseOutputKind().type; }
 function layoutMode() { return parseOutputKind().mode; }
+function isOverviewRowsControlProfile() {
+  return layoutMode() === "overview" && (targetType() === "teacher" || targetType() === "room");
+}
+function normalizeOverviewRowsValue(value="auto") {
+  const raw = clean(value || "auto").toLowerCase();
+  if (raw === "auto") return "auto";
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 6 && n <= 12 ? String(n) : "auto";
+}
+function overviewRowsProfileKey() { return canonicalProfileKey(profileKey()); }
+function overviewRowsValueFromUi() { return normalizeOverviewRowsValue($("overviewRowsPerPage")?.value || "auto"); }
+function rememberOverviewRowsDraft(value=overviewRowsValueFromUi()) {
+  if (!isOverviewRowsControlProfile()) return "auto";
+  const normalized = normalizeOverviewRowsValue(value);
+  overviewRowsDraftByProfile.set(overviewRowsProfileKey(), normalized);
+  return normalized;
+}
+function overviewRowsDraftValue(fallback="auto") {
+  if (!isOverviewRowsControlProfile()) return "auto";
+  const key = overviewRowsProfileKey();
+  return normalizeOverviewRowsValue(overviewRowsDraftByProfile.has(key) ? overviewRowsDraftByProfile.get(key) : fallback);
+}
+function updateOverviewRowsControl() {
+  const field = $("overviewRowsField");
+  const select = $("overviewRowsPerPage");
+  const visible = isOverviewRowsControlProfile();
+  if (field) field.classList.toggle("hidden", !visible);
+  if (select) select.disabled = !visible;
+  if (visible && select) select.value = overviewRowsDraftValue(select.value || "auto");
+}
 function format() {
   const el = $("format");
   if (!el) return "pdf";
@@ -571,7 +583,7 @@ function syncActiveStyleDraft() {
     clip
   };
 }
-function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), semester:selectedSemester(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), overviewRowsPerPage:normalizeOverviewRowsValue($("overviewRowsPerPage")?.value || "auto"), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
+function collectSettings() { if (!applying) { syncActiveFieldDraft(); syncActiveStyleDraft(); } const splitFields=normalizeSplitFields(splitFieldDraft); const fields=splitFields[String(activeSplitTab||"1")] || normalizeFields(null); return { targetType:targetType(), layoutMode:layoutMode(), semester:selectedSemester(), format:format(), paper:normalizedPaperValue($("paper").value, currentOfficeProfile(), format()), overviewRowsPerPage:overviewRowsDraftValue(overviewRowsValueFromUi()), fontMode:$("fontMode")?.value || "system", previewMode:$("previewMode")?.value || "sample", headerLeft:clean($("headerLeft")?.value || ""), headerRight:clean($("headerRight")?.value || ""), cellLayout:"auto", applyMode:$("applyMode").value, fontScale:$("fontScale")?.value || "normal", ellipsisMode:!!$("ellipsisMode")?.checked, scope:currentScopeMode(), selectedScopeKeys:selectedScopeKeys(), specialSubjects:[...document.querySelectorAll("[data-special-subject]:checked")].map(el=>el.dataset.specialSubject).concat($("specialShowRoom")?.checked?["__showRoom"]:[]).concat($("specialShowClass")?.checked?["__showClass"]:[]), splitStyles: splitStylesFromDom(), splitDirections: splitDirectionsFromDom(), fields, splitFields }; }
 function normalizeFirestoreDesignerPayload(payload) {
   const profiles = payload?.profiles && typeof payload.profiles === "object" ? payload.profiles : (payload?.store && typeof payload.store === "object" ? payload.store : {});
   return { profiles, lastProfile: clean(payload?.lastProfile || payload?.activeProfile || "") };
@@ -679,8 +691,14 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   const nextPaper = normalizedPaperValue(s.paper || "a4-landscape", currentOfficeProfile(), format());
   $("paper").value = nextPaper;
   applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus();
-  if ($("overviewRowsPerPage")) $("overviewRowsPerPage").value=normalizeOverviewRowsValue(s.overviewRowsPerPage || "auto");
-  updateOverviewRowsAvailability();
+  const rowsSelect = $("overviewRowsPerPage");
+  if (isOverviewRowsControlProfile()) {
+    const key = overviewRowsProfileKey();
+    const savedRows = normalizeOverviewRowsValue(s.overviewRowsPerPage || "auto");
+    if (!overviewRowsDraftByProfile.has(key)) overviewRowsDraftByProfile.set(key, savedRows);
+    if (rowsSelect) rowsSelect.value = overviewRowsDraftValue(savedRows);
+  } else if (rowsSelect) rowsSelect.value = "auto";
+  updateOverviewRowsControl();
   if ($("fontMode")) $("fontMode").value=s.fontMode || "system";
   applyFontMode(s.fontMode || "system");
   if($("semester")) $("semester").value = readRememberedSemester(s.semester) || normalizePrintSemester(s.semester || "1");
@@ -706,7 +724,7 @@ function applySettings(settings, keepMain=false, preserveScope=false) {
   updateFieldFontInputState();
   applying=false;
 }
-function switchProfile() { showRenderOverlay("출력 대상을 바꾸는 중입니다…"); setTimeout(()=>{ scopeMemory[currentScopeType] = captureScopeState(); syncLayoutModeOptions(); const nextType = targetType(); currentScopeType = nextType; buildScopeUi(); const s = getSettings(); applySettings(s, true, true); buildScopeUi(); restoreScopeState(scopeMemory[nextType]); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); updateProfileStatus(); scheduleHeavyRender("미리보기를 다시 그리는 중입니다…", 30); }, 30); }
+function switchProfile() { showRenderOverlay("출력 대상을 바꾸는 중입니다…"); setTimeout(()=>{ scopeMemory[currentScopeType] = captureScopeState(); syncLayoutModeOptions(); const nextType = targetType(); currentScopeType = nextType; buildScopeUi(); const s = getSettings(); applySettings(s, true, true); buildScopeUi(); restoreScopeState(scopeMemory[nextType]); applySpecialSubjects(s.specialSubjects || []); markCardApplied(); updateProfileStatus(); updateOverviewRowsControl(); scheduleHeavyRender("미리보기를 다시 그리는 중입니다…", 30); }, 30); }
 function buildFieldRows() {
   $("fieldRows").innerHTML = FIELD_DEFS.map(f => {
     const pos = f.key === "english" ? `<span class="pos-fixed" title="영문명은 과목 아래 고정">↓</span>` : `<select data-field-pos="${f.key}" title="위치">${POSITIONS.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join("")}</select>`;
@@ -1113,18 +1131,21 @@ function overviewCellHtml(cellItems) {
 }
 function overviewRowsPerPage() {
   const paper = $("paper")?.value || "a4-landscape";
-  // r286: 학급 전체 가로 출력은 10~12학년 9개 학급까지 한 장에 담도록 조정합니다.
-  // 전체-세로 출력은 UI에서 제외되지만, 예외 상태 방어값은 유지합니다.
   if (targetType() === "class") return paper === "a4-portrait" ? 4 : 9;
-  if (overviewRowsSelectable()) {
-    const selected = normalizeOverviewRowsValue($("overviewRowsPerPage")?.value || "auto");
+  if (isOverviewRowsControlProfile()) {
+    const selected = overviewRowsDraftValue(overviewRowsValueFromUi());
     if (selected !== "auto") return Number(selected);
   }
   return paper === "a4-portrait" ? 8 : 10;
 }
 function overviewFullPages(ents) {
   const labels=periodLabels();
-  const rowGroups=balancedChunkList(ents, overviewRowsPerPage());
+  const appliedRows = overviewRowsPerPage();
+  const rowGroups=balancedChunkList(ents, appliedRows);
+  if (isOverviewRowsControlProfile()) {
+    const selected = overviewRowsDraftValue(overviewRowsValueFromUi());
+    console.info(`[print-rows:r367] target=${targetType()} selected=${selected} applied=${appliedRows} entities=${ents.length} pages=${rowGroups.length}`);
+  }
   const allEntries=visibleEntriesForScope();
   const pageClass=paperClass();
   const fontClass=collectSettings().fontScale;
@@ -1199,7 +1220,8 @@ function scheduleHeavyRender(text="미리보기를 다시 그리는 중입니다
 function renderPagesFor(ents, metaPrefix="") {
   const pages = layoutMode()==="overview" ? overviewPages(ents) : ents.map(pageForEntity);
   const inner = $("previewInner");
-  $("previewMeta").textContent = `${selectedSemesterLabel()} · ${metaPrefix}${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드`;
+  const rowsMeta = isOverviewRowsControlProfile() ? ` · 페이지당 최대 ${overviewRowsPerPage()}행` : "";
+  $("previewMeta").textContent = `${selectedSemesterLabel()} · ${metaPrefix}${ents.length}개 대상 · ${entries().length}개 배치 · ${cards().length}개 카드${rowsMeta}`;
   inner.innerHTML = pages.length ? pages.join("") : `<section class="preview-page"><div class="disabled-note">출력할 대상이 없습니다. 오른쪽 범위를 확인해 주세요.</div></section>`;
   applyZoom();
 }
@@ -1240,7 +1262,7 @@ function preset(name) { const s=collectSettings(); Object.keys(s.fields).forEach
   else if (name==="detail") { FIELD_DEFS.forEach(f=>{ s.fields[f.key]={enabled:true,bold:f.key==="subject"||f.key==="room",pos:f.pos}; }); s.fields.class.pos="tl"; s.fields.period.pos="tr"; s.fields.teacher.pos="bl"; s.fields.room.pos="br"; s.fields.english.pos="bc"; s.fontScale="small"; s.splitStyles={"1":{font:"small",layout:"standard"},"2":{font:"small",layout:"compact"},"3":{font:"xsmall",layout:"simple"},"4":{font:"xsmall",layout:"simple"}}; }
   else { s.fields.subject={enabled:true,bold:true,pos:"mc"}; s.fields.english={enabled:true,bold:false,pos:"bc"}; s.fields.teacher={enabled:true,bold:false,pos:"bl"}; s.fields.room={enabled:true,bold:true,pos:"br"}; s.fields.class={enabled:false,bold:false,pos:"tl"}; s.fields.period={enabled:false,bold:false,pos:"tr"}; s.fontScale="normal"; s.splitStyles=structuredClone(SPLIT_DEFAULTS); }
   applySettings(s,true); markCardApplyNeeded(); }
-function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); updateExportButtonLabel(); }
+function initialUi() { buildFieldRows(); const last=lastProfileKey(); const store=readStore(); const base=last && store[last] ? store[last] : defaultSettings(); applySettings(base,false,true); currentScopeType = targetType(); buildScopeUi(); buildSpecialSubjects(); restoreScopeState(scopeMemory[currentScopeType] || base); applying=true; setSplitTab(1); applying=false; renderEntityList(); applySpecialSubjects(base.specialSubjects||[]); updateExportButtonLabel(); updateOverviewRowsControl(); }
 function setSplitTab(n) {
   const next = String(n);
   if (!applying) {
@@ -2730,6 +2752,13 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    return;
  }
  if (e.target.id === "outputKind") return;
+ if (e.target.id === "overviewRowsPerPage") {
+   const value = rememberOverviewRowsDraft(e.target.value);
+   e.target.value = value;
+   markDirty("페이지당 행 수 변경됨 · 설정 저장 가능");
+   scheduleHeavyRender("페이지당 행 수를 적용하는 중입니다…", 30);
+   return;
+ }
  if (e.target.id === "semester") {
    rememberSemester(e.target.value);
    scopeMemory[currentScopeType] = captureScopeState();
@@ -2739,13 +2768,7 @@ function wireEvents() { setupPreviewPan(); ["outputKind"].forEach(id=>$(id).addE
    scheduleHeavyRender(`${selectedSemesterLabel()} 시간표를 다시 그리는 중입니다…`, 30);
    return;
  }
- if (e.target.id === "overviewRowsPerPage") {
-   e.target.value = normalizeOverviewRowsValue(e.target.value);
-   markDirty("페이지당 행 수 변경됨 · 설정 저장 가능");
-   scheduleHeavyRender("페이지당 행 수를 적용하는 중입니다…", 30);
-   return;
- }
  if (e.target.matches('input,select')) { if (e.target.id === "format") { enforceFormatAvailability(); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "paper") { const nextPaper=normalizedPaperValue(e.target.value, currentOfficeProfile(), format()); if ($("paper").value !== nextPaper) $("paper").value=nextPaper; applyPaper(nextPaper); enforcePaperAvailability(); updateProfileStatus(); markDirty("설정 저장 가능"); } if (e.target.id === "headerLeft" || e.target.id === "headerRight") { markDirty("설정 저장 가능"); scheduleRender(); } if (e.target.id === "fontMode") { applyFontMode(e.target.value); markDirty("설정 저장 가능"); scheduleRender(); } if (/^splitFont[1-4]$/.test(e.target.id)) { applySplitFontPresetToControls(e.target.value); if (!splitFieldDraft) splitFieldDraft=normalizeSplitFields(null); splitFieldDraft[String(activeSplitTab||"1")] = readFieldControls(); syncActiveStyleDraft(); } if (/^splitLayout[1-4]$/.test(e.target.id) || /^splitDir[2-4]$/.test(e.target.id) || e.target.id === "ellipsisMode") { syncActiveStyleDraft(); } if (e.target.id === "ellipsisMode") { document.body.classList.toggle("ellipsis-enabled", !!e.target.checked); } if (e.target.matches('[data-special-subject]') || e.target.id === "specialShowRoom" || e.target.id === "specialShowClass") markDirty("설정 저장 가능"); if (cardControlChanged(e.target)) { markCardApplyNeeded(); } else { scheduleRender(); } } }); document.body.addEventListener("click", e=>{ const tab=e.target.closest("[data-split-tab]"); if(tab){ setSplitTab(tab.dataset.splitTab); return; } }); $("applyCardSettingsBtn").addEventListener("click",()=>{ syncActiveFieldDraft(); syncActiveStyleDraft(); markCardApplied(); markDirty("설정 저장 가능"); scheduleHeavyRender("카드 표시 설정을 적용하는 중입니다…", 30); }); $("saveSettingsBtn").addEventListener("click",()=>{ saveSettings(); }); $("exportSettingsBtn")?.addEventListener("click",()=>{ exportDesignerSettings(); }); $("refreshBtn").addEventListener("click",()=>scheduleHeavyRender("미리보기를 새로고침하는 중입니다…", 30)); $("excelDbBtn")?.addEventListener("click",downloadExcelDatabase); $("printBtn").addEventListener("click",runMainExport); $("zoom").addEventListener("input",applyZoom); $("loginBtn").addEventListener("click",login); $("logoutBtn").addEventListener("click",logout); }
 function updateAuth(user) { $("authStatus").textContent = user ? (LOCAL_DEV_MODE ? "Local Dev" : (user.email || user.displayName || "로그인됨")) : "로그인 필요"; $("loginBtn").classList.toggle("hidden", !!user || LOCAL_DEV_MODE); $("logoutBtn").classList.toggle("hidden", !user || LOCAL_DEV_MODE); if (user && !subscribed) { subscribed=true; subscribeDomains(["classes","timetable","rooms","rosters","templates"]); } if (user && !LOCAL_DEV_MODE) { loadDesignerSettingsFromFirestore(true); } }
-function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms && initialLoad.templates; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); buildScopeUi(); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
+function boot() { initialUi(); wireEvents(); setOnUpdate(()=>{ dataReady = initialLoad.classes && initialLoad.timetable && initialLoad.rooms && initialLoad.templates; if (!dataReady) return; scopeMemory[currentScopeType] = captureScopeState(); buildScopeUi(); buildSpecialSubjects(); const s=getSettings(); applySettings(s,true,true); buildScopeUi(); restoreScopeState(scopeMemory[currentScopeType]); applySpecialSubjects(s.specialSubjects||[]); updateOverviewRowsControl(); scheduleHeavyRender("시간표 데이터를 불러와 미리보기를 그리는 중입니다…", 30); }); onAuth(updateAuth); }
 try { boot(); } catch (err) { console.error(err); const meta=document.getElementById("previewMeta"); if(meta) meta.textContent="초기화 오류: " + (err && err.message ? err.message : String(err)); const box=document.getElementById("previewInner"); if(box) box.innerHTML=`<div class="preview-page"><div class="disabled-note">출력 디자이너 초기화 오류가 발생했습니다.<br>${err && err.message ? err.message : String(err)}</div></div>`; }
