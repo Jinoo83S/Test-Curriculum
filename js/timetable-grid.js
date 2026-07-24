@@ -6,6 +6,7 @@ import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r35
 import { sectionLabel, gradeDisplay } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
 import { splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { normalizeTeacherEvents, resolveTeacherEventNames, teacherEventSlots } from "./timetable-teacher-events.js?v=2026-07-24-teacher-events-r369-2";
 import {
   getAllClasses,
   getTtCardClassInfos,
@@ -1006,7 +1007,9 @@ function renderTeacherGrid(wrap, ctx) {
   table.className = "tt-table tt-all-class-table tt-teacher-class-table";
   table.style.cssText = "table-layout:fixed;width:100%;height:calc(100% - 24px);min-width:0;border-collapse:separate;border-spacing:0";
 
-  const rowCount = Math.max(1, classes.length);
+  const activeTeacherEvents = normalizeTeacherEvents(ctx.teacherEvents || [], { periodCount: numPer })
+    .filter(event => event.active && resolveTeacherEventNames(event, ctx.teachers || []).some(name => selectedTeacherSet.has(name)));
+  const rowCount = Math.max(1, classes.length + (activeTeacherEvents.length ? 1 : 0));
   wrap.style.setProperty("--num-rows", String(rowCount));
   const rowHeight = `calc((100% - var(--tt-all-header-height, 30px)) / ${rowCount})`;
   wrap.style.setProperty("--tt-all-row-height", rowHeight);
@@ -1062,6 +1065,57 @@ function renderTeacherGrid(wrap, ctx) {
   const tbody = document.createElement("tbody");
   tbody.style.height = "calc(100% - var(--tt-all-header-height, 30px))";
   let prevGrade = null;
+
+  if (activeTeacherEvents.length) {
+  const eventRow = document.createElement("tr");
+  eventRow.className = "tt-teacher-event-row";
+  eventRow.style.height = rowHeight;
+  const eventHeader = document.createElement("td");
+  eventHeader.className = "tt-all-row-hdr tt-teacher-event-row-hdr";
+  eventHeader.style.cssText = "background:#f3e8ff;color:#6b21a8;border-left:2px solid #a855f7;overflow:hidden;font-size:8px;width:28px;min-width:28px;max-width:28px;font-weight:950";
+  eventHeader.innerHTML = `<b style="display:block;font-size:8px;line-height:1.05">교사</b><span style="font-size:7px;line-height:1.05">일정</span>`;
+  eventRow.appendChild(eventHeader);
+  dayIndexes.forEach(day => {
+    periods.forEach((_, period) => {
+      const td = document.createElement("td");
+      const isDayStart = period === 0;
+      const isDayEnd = period === periods.length - 1;
+      td.className = "tt-cell tt-all-cell tt-teacher-event-cell" + (isDayStart ? " day-start" : "") + (isDayEnd ? " day-end" : "");
+      td.dataset.day = String(day);
+      td.dataset.period = String(period);
+      td.style.cssText = `padding:1px;vertical-align:top;overflow:hidden;height:${rowHeight};position:relative;background:#faf5ff`;
+      const slotEvents = activeTeacherEvents.filter(event => teacherEventSlots(event, numPer).some(slot => slot.day === day && slot.period === period));
+      if (slotEvents.length) {
+        const holder = document.createElement("div");
+        holder.style.cssText = "height:100%;display:flex;gap:1px;align-items:stretch;overflow:hidden";
+        slotEvents.forEach(event => {
+          const names = resolveTeacherEventNames(event, ctx.teachers || []).filter(name => selectedTeacherSet.has(name));
+          const card = document.createElement("button");
+          card.type = "button";
+          card.className = "tt-teacher-event-card";
+          card.style.cssText = "flex:1;min-width:0;border:1px solid #c084fc;border-left:3px solid #9333ea;border-radius:4px;background:#f3e8ff;color:#581c87;padding:2px;overflow:hidden;cursor:pointer;text-align:center;line-height:1.05";
+          const titleEl = document.createElement("b");
+          titleEl.style.cssText = "display:block;font-size:clamp(6.5px,.58vw,8.5px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+          titleEl.textContent = cleanText(event.title);
+          const namesEl = document.createElement("span");
+          namesEl.style.cssText = "display:block;margin-top:1px;font-size:clamp(5.5px,.5vw,7px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
+          namesEl.textContent = names.join(", ");
+          card.append(titleEl, namesEl);
+          card.title = [event.title, names.join(", "), event.note].filter(Boolean).join(" · ");
+          card.addEventListener("click", () => ctx.openTeacherEventsManager?.(event.id));
+          holder.appendChild(card);
+        });
+        td.appendChild(holder);
+      } else {
+        const ph = document.createElement("div");
+        ph.className = "tt-cell-ph";
+        td.appendChild(ph);
+      }
+      eventRow.appendChild(td);
+    });
+  });
+  tbody.appendChild(eventRow);
+  }
 
   const teacherEntryMatchesSelection = entry => {
     const names = Array.isArray(entry.teacherNames) && entry.teacherNames.length

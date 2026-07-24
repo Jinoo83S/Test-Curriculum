@@ -6091,7 +6091,10 @@ export function createAutoAssignAll(deps) {
     const targetSummary = summarizeAutoTargetsForPrecheck(standalone, groupBlocks);
     const protectedSummary = protectedSlotSummary(protectedEntries);
 
-    const structuralPreflight = buildTimetablePreflightDiagnostics(appState, {
+    const structuralPreflight = buildTimetablePreflightDiagnostics({
+      ...appState,
+      timetable: { ...(ttDomain() || {}), teacherConstraints: constraints() || {} },
+    }, {
       scopeGrades: activeGrades.length ? activeGrades : availableGrades,
       protectedEntries,
       periodCount: Number(ttConfig()?.periodCount || 7),
