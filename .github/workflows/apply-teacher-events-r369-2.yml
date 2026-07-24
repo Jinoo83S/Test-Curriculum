@@ -1,5 +1,6 @@
 name: Apply teacher events r369-2
 
+# retrigger: 2026-07-24-r2
 on:
   push:
     branches:
