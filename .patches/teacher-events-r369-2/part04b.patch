@@ -1,0 +1,115 @@
++  const names = [...new Set(blockers.map(item => item.title).filter(Boolean))].join(", ");
++  const teacherNames = [...new Set(entryTeachers(entry))].join(", ");
++  alert(`해당 교시에 교사 일정이 등록되어 있어 수업을 배치할 수 없습니다.
++
++교사: ${teacherNames || "미확인"}
++일정: ${names || "교사 일정"}`);
++  return false;
++}
++
+ function addEntry(data, options = {}) {
+   if (!canEdit()) return null;
+   resetCardMoveRenderScope();
+   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
+   if (!e.templateId) return null;
++  if (!allowPlacementOutsideTeacherEvents(e, e.day, e.period)) return null;
+ 
+   if (hasSameCardInSameSlot(e)) {
+     alert("이미 같은 시간에 배치된 카드입니다. 기존 카드를 이동하거나 삭제한 뒤 다시 배치해 주세요.");
+@@ -3939,7 +4005,7 @@ function recomputeConflicts() {
+       isSharedUseRoom
+     }
+   );
+-  constraintMap = detectConstraintViolations(entries(), constraints(), {
++  constraintMap = detectConstraintViolations(entries(), effectiveConstraints(), {
+     getEntryCardIds: ttCardIdsFromPlacement,
+     getCardTimeInfo,
+     getEntryClassKeys: e => [...(cachedAudience(e)?.classKeys || [])],
+@@ -4063,6 +4129,9 @@ function renderGrid() {
+     currentRoom,
+     periods: ttConfig().periodLabels,
+     entries: entries(),
++    teacherEvents: teacherEvents(),
++    teachers: appState.teachers?.teachers || [],
++    openTeacherEventsManager: eventId => teacherEventsManagerApi?.openTeacherEventsManager?.(eventId),
+     getDragData: () => dragData,
+     setDragData: value => setAppDragData(value, "grid-module"),
+     handleDrop,
+@@ -5319,6 +5388,11 @@ function moveEntry(entryId, day, period) {
+     alert(`연속수업을 배치할 공간이 부족합니다. ${periodCount}교시 범위 안으로 이동해 주세요.`);
+     return false;
+   }
++  for (let index = 0; index < linkedEntries.length; index += 1) {
++    const item = linkedEntries[index];
++    const target = targetPlacements[index];
++    if (!allowPlacementOutsideTeacherEvents(item, target.day, target.period)) return false;
++  }
+ 
+   const isSamePlacement = linkedEntries.every((item, index) =>
+     Number(item.day) === Number(targetPlacements[index]?.day)
+@@ -5691,7 +5765,7 @@ export const autoAssignAll = createAutoAssignAll({
+   getTemplateById, getTemplateCardTitle, getTtCardById,
+   describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
+   getTeachersForTtCard,
+-  entries, ttDomain, ttConfig, constraints,
++  entries, ttDomain, ttConfig, constraints: effectiveConstraints,
+   buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
+   audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
+   shuffle, captureTimetableUndo, addTimetableLog, setLastAutoAssignReport,
+@@ -6119,6 +6193,10 @@ function getDragPreviewBlockLight(candidates, options = {}) {
+     const candidateProtectedGrades = protectedGradesForEntry(candidate);
+     const candidateTeachers = new Set(splitTeacherNames(candidate.teacherName || ""));
+ 
++    if (!allowPlacementOutsideTeacherEvents(candidate, candidate.day, candidate.period, { silent: true })) {
++      return { kind: "conflict", candidate, conflictTypes: ["unavailable"] };
++    }
++
+     if (isRoomUnavailableForDragPreview(candidate.roomId, candidate.day, candidate.period)) {
+       return { kind: "conflict", candidate, conflictTypes: ["roomUnavailable"] };
+     }
+@@ -6373,6 +6451,7 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
+   void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
+ });
+ $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
++$("ttTeacherEventsBtn")?.addEventListener("click", () => teacherEventsManagerApi?.openTeacherEventsManager?.());
+ $("ttAutoPrecheckBtn")?.addEventListener("click", async () => {
+   try { await ensureTimetableDataSyncedForOperation("auto-precheck"); } catch (e) { alert("자동배치 사전점검 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
+   autoAssignAll.openPrecheck?.();
+@@ -6399,8 +6478,9 @@ $("ttTeacherStatisticsBtn")?.addEventListener("click", () => openStatisticsDialo
+   getTtCards,
+   getTeachers: () => appState.teachers?.teachers || [],
+   getRooms,
+-  getTeacherConstraints: () => ttDomain()?.teacherConstraints || {},
++  getTeacherConstraints: effectiveConstraints,
+   getTeacherConstraintsById: () => ttDomain()?.teacherConstraintsById || {},
++  getTeacherEvents: teacherEvents,
+   getConstraintPolicy: () => ttDomain()?.cpSatConstraintPolicy || {},
+   getPeriodCount: () => ttConfig()?.periodCount || 7,
+ }));
+@@ -6425,6 +6505,7 @@ setupCpSatWebappImport?.({
+   resumeAutoSave,
+   isAutoSaveSuspended,
+   prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat"),
++  getEffectiveTeacherConstraints: effectiveConstraints,
+   verifyPersistedTimetableState,
+   buildAutoSourceSignature: () => autoAssignAll.getCurrentSourceSignature?.() || "",
+   activeSchoolYear: ACTIVE_SCHOOL_YEAR
+diff --git a/timetable.html b/timetable.html
+index 204de7e..0000000 100644
+--- a/timetable.html
++++ b/timetable.html
+@@ -2098,6 +2098,7 @@
+     <button type="button" onclick="location.href='timetable-print.html'">🖨 출력</button>
+     <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
+     <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
++    <button id="ttTeacherEventsBtn" class="tt-fixed-btn" type="button" title="교사 미팅·회의 시간을 등록하고 해당 교사의 수업 배정을 차단합니다.">📅 교사 일정</button>
+     <button id="ttAutoPrecheckBtn" class="tt-precheck-btn" type="button">🩺 사전 점검</button>
+     <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
+     <button id="ttTeacherStatisticsBtn" class="tt-version-btn" type="button">📈 통계</button>
+@@ -2170,7 +2171,7 @@
+ // 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
+ // r381은 표시 밀도/행높이 조절과 교사·교실 통계를 제공합니다.
+ // 파일명은 기존 표준 파일명을 그대로 유지합니다.
+-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-22-card-move-performance-r387-13";
++window.HIS_RUNTIME_ASSET_VERSION = "2026-07-24-teacher-events-r369-2";
+ window.HIS_RELEASE = "r387-13";
