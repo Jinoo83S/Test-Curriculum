@@ -1,5 +1,5 @@
 import { login, logout, onAuth } from "./auth.js?v=1.0.0-20260724.1";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=1.0.0-20260724.1";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=1.0.0-20260724.2";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=1.0.0-20260724.1";
 import { auth, db } from "./config.js?v=1.0.0-20260724.1";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
@@ -15,6 +15,7 @@ import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=1.0.0-202
 import { createDocxBuilder } from "./timetable-print-word.js?v=1.0.0-20260724.1";
 import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=1.0.0-20260724.1";
 import { createPdfExporter } from "./timetable-print-pdf.js?v=1.0.0-20260724.1";
+import { buildTeacherEventPrintEntries } from "./timetable-teacher-events.js?v=1.0.0-20260724.2";
 import {
   allocateProportionalHeights,
   card3x3Dimensions,
@@ -24,7 +25,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=1.0.0-20260724.1";
 
-const VERSION = "1.0.0-20260724.1";
+const VERSION = "1.0.0-20260724.2";
 const SOURCE_PRINT_RUNTIME = "r368";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
@@ -214,7 +215,17 @@ function semesterCardValues(c, e={}) { return resolveSemesterCardValues(c || {},
 function semesterEntryValues(e) { return resolveSemesterEntryValues(e || {}, templateMap(), selectedSemester()); }
 function classes() { return (appState.classes?.classes || []).map(c => ({...c, key:classKey(c), label:classLabel(c), gradeNo:gradeNo(c.gradeKey || c.grade)})).filter(c => c.gradeNo>=7 && c.gradeNo<=12).sort((a,b)=>a.gradeNo-b.gradeNo || a.label.localeCompare(b.label,"ko",{numeric:true})); }
 function rooms() { return (appState.rooms?.rooms || []).map(r => ({...r, label:clean(r.name || r.short || r.id)})).filter(r=>r.id && r.label).sort((a,b)=>a.label.localeCompare(b.label,"ko",{numeric:true})); }
-function entries() { return appState.timetable?.entries || []; }
+function baseEntries() { return appState.timetable?.entries || []; }
+function entries() {
+  const base = baseEntries();
+  if (targetType() !== "teacher") return base;
+  const events = buildTeacherEventPrintEntries(
+    appState.timetable?.teacherEvents || [],
+    appState.teachers?.teachers || [],
+    appState.timetable?.config?.periodCount || 7,
+  );
+  return [...base, ...events];
+}
 function cards() { return appState.timetable?.ttcards || []; }
 function cardMap() { return new Map(cards().map(c => [c.id,c])); }
 function roomMap() { return new Map(rooms().map(r => [r.id,r])); }

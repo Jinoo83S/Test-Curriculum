@@ -8,6 +8,7 @@ import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=1.0.0-20260724.1";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=1.0.0-20260724.1";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=1.0.0-20260724.1";
+import { normalizeTeacherEvents } from "./timetable-teacher-events.js?v=1.0.0-20260724.2";
 import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, encodeTimetableRevisionSnapshot, decodeTimetableRevisionSnapshot, isRestorableTimetableRevision, TIMETABLE_REVISION_SCHEMA_VERSION, TIMETABLE_REVISION_HISTORY_SLOTS } from "./timetable-save-revision.js?v=1.0.0-20260724.1";
 import { auditPersistedTimetable } from "./timetable-persistence-audit.js?v=1.0.0-20260724.1";
 import { normalizeCpSatConstraintPolicy } from "./cp-sat-constraint-policy.js?v=1.0.0-20260724.1";
@@ -1746,6 +1747,7 @@ function buildTimetableMetaStorageDoc(normalized = {}) {
     config: n.config,
     teacherConstraints: n.teacherConstraints,
     teacherConstraintsById: n.teacherConstraintsById || {},
+    teacherEvents: n.teacherEvents || [],
     roomAvailabilityOrphans: n.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: n.ttcardTeacherOptions || {},
     cpSatConstraintPolicy: normalizeCpSatConstraintPolicy(n.cpSatConstraintPolicy || {}),
@@ -2029,6 +2031,8 @@ function normalizeTimetableDomain(raw = {}) {
         : null
     },
     entries: normalizedEntries,
+    // 교사 전용 일정은 학생/학급/교실을 점유하지 않고 해당 교사의 수업 가능 시간만 차단합니다.
+    teacherEvents: normalizeTeacherEvents(raw.teacherEvents || raw.teacherMeetings || [], { periodCount: pc }),
     ttcards: Array.isArray(raw.ttcards) ? raw.ttcards.map(normalizeTtCard) : [],
     // 시간표 전용 묶음수업/그룹 스냅샷입니다.
     // 예전 데이터 호환을 위해 raw.templateGroups도 한 번 수용합니다.
@@ -2316,6 +2320,7 @@ async function buildNormalizedDiagnostic(raw) {
     config: splitMetaDoc?.data?.config || {},
     teacherConstraints: splitMetaDoc?.data?.teacherConstraints || {},
     teacherConstraintsById: splitMetaDoc?.data?.teacherConstraintsById || {},
+    teacherEvents: splitMetaDoc?.data?.teacherEvents || [],
     roomAvailabilityOrphans: splitMetaDoc?.data?.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: splitMetaDoc?.data?.ttcardTeacherOptions || {},
     cpSatConstraintPolicy: splitMetaDoc?.data?.cpSatConstraintPolicy || {},
@@ -2614,6 +2619,7 @@ function timetableCountsForGuard(domain = {}) {
     cards: Array.isArray(domain?.ttcards) ? domain.ttcards.length : 0,
     groups: Array.isArray(domain?.ttcardGroups) ? domain.ttcardGroups.length : 0,
     saved: Array.isArray(domain?.savedSchedules) ? domain.savedSchedules.length : 0,
+    teacherEvents: Array.isArray(domain?.teacherEvents) ? domain.teacherEvents.length : 0,
     constraints: domain?.teacherConstraints && typeof domain.teacherConstraints === "object" ? Object.keys(domain.teacherConstraints).length : 0
   };
 }
@@ -2640,6 +2646,7 @@ function splitTimetableLooksTruncatedForGuard() {
   const metaHasOperationalHints =
     (Array.isArray(meta.ttcardGroups || meta.templateGroups) && (meta.ttcardGroups || meta.templateGroups).length >= 10) ||
     (Array.isArray(meta.savedSchedules) && meta.savedSchedules.length > 0) ||
+    (Array.isArray(meta.teacherEvents) && meta.teacherEvents.length > 0) ||
     (meta.teacherConstraints && typeof meta.teacherConstraints === "object" && Object.keys(meta.teacherConstraints).length > 0) ||
     !!meta.autoAssignMeta || !!meta.bestAutoAssignSnapshot;
   return entries === 0 && cards <= 1 && metaHasOperationalHints;
@@ -3418,6 +3425,7 @@ function domainHasData(domain) {
     return (appState.timetable?.entries || []).length > 0 ||
       (appState.timetable?.ttcards || []).length > 0 ||
       (appState.timetable?.ttcardGroups || []).length > 0 ||
+      (appState.timetable?.teacherEvents || []).length > 0 ||
       Object.keys(appState.timetable?.teacherConstraints || {}).length > 0;
   }
   return false;
@@ -3550,7 +3558,7 @@ async function applyTimetableSplitIfReady() {
       metaExists: timetableSplitCache.metaExists
     });
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
-      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
+      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || (d.teacherEvents || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
     });
     if (migrated) return;
   }
@@ -3558,7 +3566,7 @@ async function applyTimetableSplitIfReady() {
   if (!hasSplitData && !splitConfirmed.has("timetable") && !splitFallbackAttempted.timetable) {
     splitFallbackAttempted.timetable = true;
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
-      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
+      hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || (d.teacherEvents || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
     });
     if (migrated) return;
   }
@@ -3569,6 +3577,7 @@ async function applyTimetableSplitIfReady() {
     config: timetableSplitCache.meta?.config || {},
     teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
     teacherConstraintsById: timetableSplitCache.meta?.teacherConstraintsById || {},
+    teacherEvents: timetableSplitCache.meta?.teacherEvents || [],
     roomAvailabilityOrphans: timetableSplitCache.meta?.roomAvailabilityOrphans || {},
     ttcardTeacherOptions: timetableSplitCache.meta?.ttcardTeacherOptions || {},
     cpSatConstraintPolicy: timetableSplitCache.meta?.cpSatConstraintPolicy || {},

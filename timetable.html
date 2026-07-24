@@ -1026,6 +1026,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button type="button" onclick="location.href='timetable-print.html'">🖨 출력</button>
     <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
     <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
+    <button id="ttTeacherEventsBtn" class="tt-fixed-btn" type="button" title="교사 미팅·회의 시간을 등록하고 해당 교사의 수업 배정을 차단합니다.">📅 교사 일정</button>
     <button id="ttAutoPrecheckBtn" class="tt-precheck-btn" type="button">🩺 사전 점검</button>
     <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
     <button id="ttTeacherStatisticsBtn" class="tt-version-btn" type="button">📈 통계</button>
@@ -1108,11 +1109,11 @@ document.documentElement.dataset.hisRelease = "v1.0.0";
   const expectedSourceRuntime = "r387-13";
   const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
   try {
-    const versionModule = await import(`./js/version.js?v=1.0.0-20260724.1)}`);
+    const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedAsset)}`);
     if (versionModule.APP_VERSION !== expectedAsset || versionModule.ASSET_VERSION !== expectedAsset) {
       throw new Error(`version.js 불일치: ${versionModule.APP_VERSION} / ${versionModule.ASSET_VERSION}`);
     }
-    await import(`./js/timetable.js?v=1.0.0-20260724.1)}`);
+    await import(`./js/timetable.js?v=1.0.0-20260724.2`);
     if (globalThis.HIS_TIMETABLE_RUNTIME_RELEASE !== expectedSourceRuntime) {
       throw new Error(`시간표 런타임 불일치: ${globalThis.HIS_TIMETABLE_RUNTIME_RELEASE || "미확인"}`);
     }
