@@ -1,0 +1,136 @@
+diff --git a/js/timetable-teacher-events.js b/js/timetable-teacher-events.js
+new file mode 100644
+index 0000000..a8ae31f
+--- /dev/null
++++ b/js/timetable-teacher-events.js
+@@ -0,0 +1,344 @@
++// ================================================================
++// timetable-teacher-events.js · 교사 전용 일정(미팅/회의)
++// r369-2: 학생·학급·교실 점유 없이 해당 교사의 수업 배정만 차단합니다.
++// ================================================================
++
++const DAY_LABELS = Object.freeze(["월", "화", "수", "목", "금"]);
++const STYLE_ID = "ttTeacherEventsStyleR369";
++
++const clean = value => String(value ?? "").trim();
++const asArray = value => Array.isArray(value) ? value : [];
++const unique = values => [...new Set(asArray(values).map(clean).filter(Boolean))];
++
++function splitNames(value = "") {
++  if (Array.isArray(value)) return unique(value.flatMap(splitNames));
++  return unique(String(value || "").split(/[,/\n]+/g));
++}
++
++function teacherId(teacher = {}) {
++  return clean(teacher.id || teacher.teacherId || teacher.uid);
++}
++
++function teacherName(teacher = {}) {
++  return clean(teacher.name || teacher.teacherName || teacher.label || teacher.displayName);
++}
++
++export function normalizeTeacherEvent(raw = {}, options = {}) {
++  const periodCount = Math.max(1, Number(options.periodCount || 12) || 12);
++  const day = Math.max(0, Math.min(4, Number.parseInt(raw.day, 10) || 0));
++  const period = Math.max(0, Math.min(periodCount - 1, Number.parseInt(raw.period, 10) || 0));
++  const durationPeriods = Math.max(1, Math.min(periodCount - period, Number.parseInt(raw.durationPeriods || raw.duration || 1, 10) || 1));
++  return {
++    id: clean(raw.id),
++    title: clean(raw.title || raw.name || raw.label || "교사 미팅"),
++    day,
++    period,
++    durationPeriods,
++    teacherIds: unique(raw.teacherIds || raw.attendeeTeacherIds || []),
++    teacherNames: unique([
++      ...splitNames(raw.teacherNames || raw.attendeeTeacherNames || []),
++      ...splitNames(raw.teacherName || raw.attendeeTeacherName || ""),
++    ]),
++    note: clean(raw.note || raw.memo),
++    active: raw.active !== false,
++    createdAt: clean(raw.createdAt),
++    updatedAt: clean(raw.updatedAt),
++  };
++}
++
++export function normalizeTeacherEvents(raw = [], options = {}) {
++  const seen = new Set();
++  return asArray(raw).map(item => normalizeTeacherEvent(item, options)).filter(item => {
++    if (!item.id || seen.has(item.id)) return false;
++    seen.add(item.id);
++    return item.teacherIds.length > 0 || item.teacherNames.length > 0;
++  });
++}
++
++export function resolveTeacherEventNames(event = {}, teachers = []) {
++  const byId = new Map(asArray(teachers).map(item => [teacherId(item), teacherName(item)]).filter(([id, name]) => id && name));
++  const ids = unique(event.teacherIds || []);
++  const resolved = ids.map(id => byId.get(clean(id)) || "").filter(Boolean);
++  // 모든 ID를 현재 교사 명단에서 확인할 수 있으면 최신 이름만 사용합니다.
++  // 일부 ID가 사라진 오래된 데이터는 저장 당시 이름을 보조값으로 유지합니다.
++  return ids.length > 0 && resolved.length === ids.length
++    ? unique(resolved)
++    : unique([...resolved, ...asArray(event.teacherNames)]);
++}
++
++export function teacherEventSlots(event = {}, periodCount = 12) {
++  const normalized = normalizeTeacherEvent(event, { periodCount });
++  const out = [];
++  for (let offset = 0; offset < normalized.durationPeriods; offset += 1) {
++    const period = normalized.period + offset;
++    if (period >= 0 && period < periodCount) out.push({ day: normalized.day, period });
++  }
++  return out;
++}
++
++export function findTeacherEventBlockers({ teacherNames = [], day, period, teacherEvents = [], teachers = [], periodCount = 12 } = {}) {
++  const requested = new Set(unique(teacherNames));
++  if (!requested.size) return [];
++  return normalizeTeacherEvents(teacherEvents, { periodCount }).filter(event => {
++    if (!event.active) return false;
++    const eventNames = resolveTeacherEventNames(event, teachers);
++    if (!eventNames.some(name => requested.has(name))) return false;
++    return teacherEventSlots(event, periodCount).some(slot => slot.day === Number(day) && slot.period === Number(period));
++  });
++}
++
++export function buildEffectiveTeacherConstraints(base = {}, teacherEvents = [], teachers = [], periodCount = 12) {
++  const result = {};
++  Object.entries(base && typeof base === "object" ? base : {}).forEach(([key, value]) => {
++    result[key] = {
++      ...(value && typeof value === "object" ? value : {}),
++      unavailableSlots: asArray(value?.unavailableSlots).map(slot => ({ day: Number(slot.day), period: Number(slot.period) }))
++        .filter(slot => Number.isInteger(slot.day) && Number.isInteger(slot.period)),
++    };
++  });
++
++  normalizeTeacherEvents(teacherEvents, { periodCount }).filter(event => event.active).forEach(event => {
++    const slots = teacherEventSlots(event, periodCount);
++    resolveTeacherEventNames(event, teachers).forEach(name => {
++      // 기존 교사 제한값이 없더라도 미팅 시간만 추가합니다.
++      // maxPerDay/maxConsecutive 등의 새 기본값을 만들면 기존 배치 정책이 달라질 수 있습니다.
++      const current = result[name] || { unavailableSlots: [] };
++      const map = new Map(asArray(current.unavailableSlots).map(slot => [`${slot.day}:${slot.period}`, { day: Number(slot.day), period: Number(slot.period) }]));
++      slots.forEach(slot => map.set(`${slot.day}:${slot.period}`, slot));
++      result[name] = { ...current, unavailableSlots: [...map.values()].sort((a, b) => (a.day - b.day) || (a.period - b.period)) };
++    });
++  });
++  return result;
++}
++
++export function buildTeacherEventPrintEntries(teacherEvents = [], teachers = [], periodCount = 12) {
++  const out = [];
++  normalizeTeacherEvents(teacherEvents, { periodCount }).filter(event => event.active).forEach(event => {
++    const names = resolveTeacherEventNames(event, teachers);
++    teacherEventSlots(event, periodCount).forEach((slot, index) => {
++      out.push({
++        id: `teacher-event:${event.id}:${index}`,
++        teacherEventId: event.id,
++        isTeacherEvent: true,
++        day: slot.day,
++        period: slot.period,
++        title: event.title,
++        subject: event.title,
++        label: event.title,
++        teacherName: names.join(", "),
++        teacherNames: names,
++        roomId: null,
