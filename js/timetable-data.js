@@ -1,12 +1,12 @@
 // ================================================================
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
-import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { appState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
-import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
-export { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
-import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=1.0.0-20260724.1";
+import { appState } from "./state.js?v=1.0.0-20260724.1";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=1.0.0-20260724.1";
+import { getTtCards, getTtCardById } from "./ttcards.js?v=1.0.0-20260724.1";
+export { getTtCardById } from "./ttcards.js?v=1.0.0-20260724.1";
+import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=1.0.0-20260724.1";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];

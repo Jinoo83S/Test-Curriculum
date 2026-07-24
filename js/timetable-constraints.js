@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-constraints.js · Teacher constraints + homeroom UI
 // ================================================================
-import { normalizeTimetableConstraint, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { normalizeTimetableConstraint, synchronizeTeacherIdentityState } from "./state.js?v=1.0.0-20260724.1";
 
 export function createTimetableConstraintsHandlers({
   appState,

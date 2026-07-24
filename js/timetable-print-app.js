@@ -1,7 +1,7 @@
-import { login, logout, onAuth } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { auth, db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth } from "./auth.js?v=1.0.0-20260724.1";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=1.0.0-20260724.1";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=1.0.0-20260724.1";
+import { auth, db } from "./config.js?v=1.0.0-20260724.1";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   buildPrintTemplateMap,
@@ -9,12 +9,12 @@ import {
   printSemesterLabel,
   resolveSemesterCardValues,
   resolveSemesterEntryValues,
-} from "./timetable-print-semester.js?v=2026-07-15-print-semester-r360";
-import { downloadBlobFile, downloadTextFile, safeFilePart } from "./timetable-print-file-utils.js?v=2026-07-15-print-modules-r361";
-import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=2026-07-15-print-modules-r361";
-import { createDocxBuilder } from "./timetable-print-word.js?v=2026-07-15-print-modules-r361";
-import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=2026-07-15-print-modules-r361";
-import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-usability-r365";
+} from "./timetable-print-semester.js?v=1.0.0-20260724.1";
+import { downloadBlobFile, downloadTextFile, safeFilePart } from "./timetable-print-file-utils.js?v=1.0.0-20260724.1";
+import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=1.0.0-20260724.1";
+import { createDocxBuilder } from "./timetable-print-word.js?v=1.0.0-20260724.1";
+import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=1.0.0-20260724.1";
+import { createPdfExporter } from "./timetable-print-pdf.js?v=1.0.0-20260724.1";
 import {
   allocateProportionalHeights,
   card3x3Dimensions,
@@ -22,9 +22,10 @@ import {
   docxCellSize,
   wordSpanWidth,
   wordTableWidths as computeWordTableWidths,
-} from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
+} from "./timetable-print-word-layout.js?v=1.0.0-20260724.1";
 
-const VERSION = "2026-07-24-overview-fixed-rows-r368";
+const VERSION = "1.0.0-20260724.1";
+const SOURCE_PRINT_RUNTIME = "r368";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },

@@ -1,10 +1,10 @@
 // ================================================================
 // data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r205
 // ================================================================
-import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { clean, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { buildOperationalConstraintModel } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { clean, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js?v=1.0.0-20260724.1";
+import { buildOperationalConstraintModel } from "./timetable-constraint-model.js?v=1.0.0-20260724.1";
 
 const CLEANUP_DOMAINS = ["classes", "templates", "rooms", "rosters", "timetable"];
 

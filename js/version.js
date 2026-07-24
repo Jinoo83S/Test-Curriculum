@@ -1,11 +1,8 @@
 // ================================================================
-// version.js · Release label + runtime asset cache version
+// version.js · HIS Curriculum ver1.0 release/cache identity
 // ================================================================
-// HIS_APP_VERSION is the user-visible release label.
-// HIS_RUNTIME_ASSET_VERSION is intentionally separate: a release may change
-// only a few modules, so unchanged files can keep their previous cache URL.
-// This prevents every patch from containing nearly the entire application.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-07-22-bottom-panel-vertical-scroll-r382");
+export const RELEASE_LABEL = String(globalThis.HIS_RELEASE || "v1.0.0");
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "1.0.0-20260724.1");
 export const ASSET_VERSION = String(globalThis.HIS_RUNTIME_ASSET_VERSION || APP_VERSION);
 
 export function versioned(path) {

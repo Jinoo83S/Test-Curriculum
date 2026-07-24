@@ -1,7 +1,7 @@
 {
-  "release": "r382",
-  "appVersion": "2026-07-22-bottom-panel-vertical-scroll-r382",
-  "build": "r382-bottom-panel-vertical-scroll-20260722",
+  "release": "v1.0.0",
+  "appVersion": "1.0.0-20260724.1",
+  "build": "ver1.0-baseline-1.0.0-20260724.1",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "hard-soft-off-by-school-year",
   "validationPolicy": "full-applied-entries-and-constraint-policy-audit",
@@ -20,5 +20,9 @@
   "displayDensityPolicy": "compact-normal-wide-and-55-115-row-height-slider-local-persistence",
   "bottomPanelLayout": "r382-three-column-category-action-filter-subjects",
   "subjectCardScroll": "vertical-internal-scroll-no-more-button",
-  "subjectCardDesign": "preserve-existing-card-rendering"
+  "subjectCardDesign": "preserve-existing-card-rendering",
+  "displayVersion": "v1.0.0",
+  "assetVersion": "1.0.0-20260724.1",
+  "sourceTimetableRuntime": "r387-13",
+  "releasedAt": "2026-07-24T10:39:43+09:00"
 }

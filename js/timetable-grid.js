@@ -2,16 +2,16 @@
 // timetable-grid.js · Timetable Grid Rendering
 // r380: manual replacement drag + visible red/yellow border legend.
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { sectionLabel, gradeDisplay } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
-import { splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { sectionLabel, gradeDisplay } from "./utils.js?v=1.0.0-20260724.1";
+import { getTtCardById } from "./ttcards.js?v=1.0.0-20260724.1";
+import { splitTeacherNames } from "./templates.js?v=1.0.0-20260724.1";
 import {
   getAllClasses,
   getTtCardClassInfos,
   entryHasGrade,
   entryMatchesClass,
-} from "./timetable-data.js?v=2026-07-15-room-availability-separation-r355";
+} from "./timetable-data.js?v=1.0.0-20260724.1";
 
 const DAYS = ["월", "화", "수", "목", "금"];
 const TT_DRAG_MIME = "application/x-his-timetable-drag";

@@ -1,10 +1,10 @@
 // ================================================================
 // rooms.js · Room CRUD + View Rendering
 // ================================================================
-import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { uid, clean, makeBtn } from "./utils.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=1.0.0-20260724.1";
+import { GRADE_KEYS } from "./config.js?v=1.0.0-20260724.1";
 
 const rDomain = () => appState.rooms;
 export const getRooms    = () => rDomain().rooms;

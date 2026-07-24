@@ -1,24 +1,24 @@
  // ================================================================
 // timetable.js · Timetable Page — Main Module
 // ================================================================
-import { GRADE_KEYS, ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_KEYS, ACTIVE_SCHOOL_YEAR } from "./config.js?v=1.0.0-20260724.1";
+import { login, logout, onAuth, canEdit } from "./auth.js?v=1.0.0-20260724.1";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot,
          listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation,
-         verifyPersistedTimetableState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
-import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
-import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
-import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
-import { normalizeRoomUnavailableSlots, isLegacyRoomAvailabilityKey } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
-import { CLASS_UNAVAILABLE_PREFIX } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+         verifyPersistedTimetableState } from "./state.js?v=1.0.0-20260724.1";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=1.0.0-20260724.1";
+import { versioned } from "./version.js?v=1.0.0-20260724.1";
+import { openFirestoreUsageDialog } from "./firestore-usage.js?v=1.0.0-20260724.1";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=1.0.0-20260724.1";
+import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=1.0.0-20260724.1";
+import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=1.0.0-20260724.1";
+import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=1.0.0-20260724.1";
+import { normalizeRoomUnavailableSlots, isLegacyRoomAvailabilityKey } from "./room-availability.js?v=1.0.0-20260724.1";
+import { CLASS_UNAVAILABLE_PREFIX } from "./timetable-constraint-model.js?v=1.0.0-20260724.1";
 import {
   ttCardIdsFromPlacement as occTtCardIdsFromPlacement,
   getEntryOccupancy,
@@ -28,11 +28,11 @@ import {
   conflictDetailBetween as occConflictDetailBetween,
   formatClassLabelFromKey as occFormatClassLabelFromKey,
   normalizeClassKey as occNormalizeClassKey
-} from "./timetable-occupancy.js?v=2026-07-15-room-availability-separation-r355";
-import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-room-availability-separation-r355";
-import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { createTimetableRevisionHistoryUi } from "./timetable-revision-history.js?v=2026-07-15-timetable-revision-restore-r357";
+} from "./timetable-occupancy.js?v=1.0.0-20260724.1";
+import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictTypes, applyConflictVisuals as applyConflictVisualsBase } from "./timetable-ui.js?v=1.0.0-20260724.1";
+import { createTimetableUndoHandlers } from "./timetable-undo.js?v=1.0.0-20260724.1";
+import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=1.0.0-20260724.1";
+import { createTimetableRevisionHistoryUi } from "./timetable-revision-history.js?v=1.0.0-20260724.1";
 
 
 const [

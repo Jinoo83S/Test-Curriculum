@@ -1,8 +1,8 @@
 // ================================================================
 // app-templates-ui.js · Template sidebar/form/manager UI wiring
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, scheduleSave, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { appState, scheduleSave, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=1.0.0-20260724.1";
 import {
   renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,
   addTemplateManagerRow, getOrCreateDraft, resetDraft, commitDraft,
@@ -14,7 +14,7 @@ import {
   setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+} from "./templates.js?v=1.0.0-20260724.1";
 const $ = id => document.getElementById(id);
 
 export function setupAppTemplatesUi({

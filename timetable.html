@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
 <meta http-equiv="Pragma" content="no-cache"/>
 <meta http-equiv="Expires" content="0"/>
-<meta name="his-release" content="r381-density-room-statistics"/>
-<title>HIS 시간표 · r381</title>
+<meta name="his-release" content="v1.0.0"/>
+<title>HIS 시간표 · v1.0.0</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -225,7 +225,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-cell[data-day="2"]{border-right:2px solid #c7d2e0}
 .tt-cell[data-day="3"]{border-right:2px solid #c7d2e0}
 .tt-cell[data-day="4"]{border-right:1px solid #e2e8f0}
-/* ── All-classes grid: 월~금 × 교시 전체표 ── */
+/* ── All-classes grid (aScTimetables style) ── */
 .tt-all-class-table{table-layout:auto;min-width:max-content;border-collapse:collapse}
 .tt-all-corner{background:#1e3a5f;color:white;font-size:11px;font-weight:700;text-align:center;padding:4px 8px;min-width:44px;white-space:nowrap;border-bottom:2px solid #1e3a5f;border-right:2px solid #475569;position:sticky;left:0;z-index:3}
 .tt-all-row-hdr{min-width:44px;max-width:52px;text-align:center;padding:2px 4px;font-size:11px;border-right:2px solid #cbd5e1;white-space:nowrap;position:sticky;left:0;z-index:2;cursor:default}
@@ -554,19 +554,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
 .tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
 @media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
-
-
-.tt-title-version-badge{display:inline-flex;align-items:center;margin-left:8px;padding:2px 7px;border-radius:999px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:11px;font-weight:900;line-height:1;vertical-align:middle;}
-
-/* r104 real merged group-card cells */
-.tt-real-merge-cell{overflow:hidden!important;position:relative!important;padding:0 1px!important;}
-.tt-real-merge-cell .tt-entry-card,
-.tt-real-merge-cell .tt-all-summary-card{width:100%!important;height:100%!important;min-height:0!important;box-sizing:border-box!important;border-radius:8px!important;box-shadow:0 2px 8px rgba(15,23,42,.16), inset 0 0 0 1px rgba(15,23,42,.10)!important;}
-.tt-real-merge-card{display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;}
-.tt-real-merge-card .tt-entry-title,
-.tt-real-merge-card .tt-all-summary-top{font-weight:950!important;}
-.tt-merged-suppressed{display:none!important;}
-
 
 </style>
 
@@ -999,33 +986,350 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
 @media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
 
-
-
 </style>
 
 <!-- Timetable-specific final UI overrides. Loaded after the embedded timetable styles. -->
-<link rel="stylesheet" href="timetable-ui.css?v=2026-07-15-room-availability-separation-r355"/>
-<link rel="stylesheet" href="timetable-revision-history.css?v=2026-07-15-timetable-loading-hotfix-r358"/>
+<link rel="stylesheet" href="timetable-ui.css?v=1.0.0-20260724.1"/>
 
 
-<style id="tt-real-merged-group-style-r100">
-.tt-real-merged-table{overflow:visible!important;}
-.tt-real-merged-table tbody,.tt-real-merged-table tr{overflow:visible!important;}
-.tt-group-span-anchor,.tt-group-rowspan-anchor{overflow:visible!important;z-index:25!important;}
-.tt-covered-by-span{background:transparent!important;}
-.tt-covered-by-span .tt-cell-ph,.tt-cell-ph-covered{visibility:hidden!important;opacity:0!important;}
-.tt-span-overlay-card{pointer-events:auto!important;align-items:center!important;justify-content:center!important;text-align:center!important;}
-.tt-span-overlay-horizontal{transform:translateZ(0);}
-.tt-span-overlay-vertical{transform:translateZ(0);}
-.tt-span-overlay-card .tt-entry-title,
-.tt-span-overlay-card .tt-all-summary-top{font-weight:950!important;}
-.tt-entry-group-span-badge{color:inherit!important;}
-
-
+<style id="tt-ver1-compat-style">
+.tt-title-version-badge{display:inline-flex;align-items:center;margin-left:5px;height:20px;padding:0 7px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:900;vertical-align:middle}
+.tt-density-controls{display:flex;align-items:center;gap:4px;height:30px;padding:2px 7px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;white-space:nowrap;color:#334155;font-size:11px;font-weight:800}
+.tt-density-controls button{height:24px!important;min-width:38px!important;padding:0 7px!important;border:1px solid transparent!important;border-radius:7px!important;background:#f1f5f9!important;color:#475569!important;font-size:10px!important;font-weight:800!important}
+.tt-density-controls button.active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}.tt-density-controls .tt-density-divider{width:1px;height:18px;background:#cbd5e1;margin:0 3px}.tt-density-controls input[type=range]{width:92px;height:20px;margin:0;padding:0;accent-color:#2563eb}.tt-density-controls output{min-width:34px;color:#1d4ed8;font-variant-numeric:tabular-nums}
+.tt-quick-action-btn{height:24px;padding:2px 9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:11px;font-weight:900;white-space:nowrap;cursor:pointer}.tt-quick-action-blue{border-color:#93c5fd;color:#1d4ed8}
+#ttSubjectsContent>.tt-r387-13-subject-layout{display:grid!important;grid-template-columns:116px minmax(0,1fr)!important;gap:9px!important;width:100%!important;height:100%!important;min-height:0!important}
+#ttSubjectsContent .tt-r387-13-filter-rail{min-width:0;min-height:0;overflow-y:auto;padding-right:8px;border-right:1px solid #e2e8f0}
+#ttSubjectsContent .tt-r387-13-filter-list{display:flex;flex-direction:column;gap:4px;align-items:stretch}
+#ttSubjectsContent .tt-r387-13-card-pane{min-width:0;min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden}
+#ttSubjectsContent .tt-r387-13-card-scroll{flex:1 1 auto;min-height:0;overflow-y:auto!important;overflow-x:hidden!important;padding:1px 6px 8px 1px;display:flex!important;flex-direction:column!important;gap:8px!important}
+#ttSubjectsContent .tt-r387-13-card-scroll .tt-sc-cards{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))!important;align-content:start!important;gap:6px!important;width:100%!important;min-width:0!important}
+#ttTeacherCardsContent{height:100%;min-height:0;overflow:hidden}#ttTeacherCardsContent .tt-r387-13-teacher-layout{display:grid!important;grid-template-columns:178px minmax(0,1fr)!important;gap:7px!important;width:100%!important;height:100%!important;min-height:0!important}
+#ttTeacherCardsContent .tt-r387-13-teacher-list-pane,#ttTeacherCardsContent .tt-r387-13-teacher-detail-pane{min-width:0!important;min-height:0!important;height:100%!important;border:1px solid #dbe3ee!important;border-radius:8px!important;background:#fff!important;overflow:auto!important}
+#ttTeacherCardsContent .tt-teacher-card-cardlist,#ttTeacherCardsContent .tt-teacher-card-entrylist{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;align-content:start!important;gap:5px!important;padding:5px!important}
+@media(max-width:1250px){.tt-density-controls .tt-density-label,.tt-density-controls label,.tt-density-controls .tt-density-divider{display:none}.tt-density-controls input[type=range]{width:68px}}
+@media(max-width:980px){#ttTeacherCardsContent .tt-r387-13-teacher-layout{grid-template-columns:150px minmax(0,1fr)!important}#ttTeacherCardsContent .tt-teacher-card-cardlist,#ttTeacherCardsContent .tt-teacher-card-entrylist{grid-template-columns:1fr!important}}
 </style>
+</head>
+<body>
+<header class="tt-topbar">
+  <a href="index.html" class="tt-back">← HIS</a>
+  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">v1.0.0</span></h1>
+  <div class="tt-topbar-right">
+    <div class="tt-mode-switch" aria-label="개발 모드 전환">
+      <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
+      <button id="topOnlineModeBtn" class="tt-mode-btn" type="button">온라인 모드</button>
+    </div>
+    <span class="tt-auth-status" id="ttAuthStatus">로그인 확인 중…</span>
+    <button id="ttLoginBtn" class="hidden">Google 로그인</button>
+    <button id="ttLogoutBtn" class="hidden">로그아웃</button>
+    <button type="button" onclick="location.href='timetable-print.html'">🖨 출력</button>
+    <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
+    <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
+    <button id="ttAutoPrecheckBtn" class="tt-precheck-btn" type="button">🩺 사전 점검</button>
+    <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
+    <button id="ttTeacherStatisticsBtn" class="tt-version-btn" type="button">📈 통계</button>
+    <button id="ttScheduleVersionsBtn" class="tt-version-btn" type="button">🗃 저장/복구</button>
+    <button id="ttSaveBtn" class="tt-save-btn">💾 저장</button>
+  </div>
+</header>
+
+<div class="tt-toolbar">
+  <div class="tt-view-btns">
+    <button class="tt-view-btn active" data-view="all"     type="button">🗂 전체</button>
+    <button class="tt-view-btn"        data-view="teacher" type="button">👩‍🏫 교사별</button>
+    <button class="tt-view-btn"        data-view="room"    type="button">🏫 교실별</button>
+    <button class="tt-view-btn"        data-view="class"   type="button">🏷 학년·반별</button>
+  </div>
+  <select id="ttGradeSelect"   class="hidden"></select>
+  <select id="ttTeacherSelect" class="hidden"></select>
+  <select id="ttRoomSelect"    class="hidden"></select>
+
+  <!-- Schedule controls: 교시만, 점심 삭제 -->
+  <div class="tt-schedule-controls">
+    <label>교시</label>
+    <input id="ttPeriodCountInput" type="number" min="1" max="12" value="8">
+    <button id="ttPeriodApplyBtn" type="button">적용</button>
+  </div>
+
+  <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
+  <div class="tt-toolbar-right">
+    <div id="ttDisplayDensityControls" class="tt-density-controls" aria-label="시간표 표시 밀도와 행높이">
+      <span class="tt-density-label">표시 밀도</span>
+      <button type="button" data-density="compact">좁게</button>
+      <button type="button" data-density="normal">보통</button>
+      <button type="button" data-density="wide">넓게</button>
+      <span class="tt-density-divider"></span>
+      <label for="ttRowHeightSlider">행높이</label>
+      <input id="ttRowHeightSlider" data-role="row-slider" type="range" min="55" max="115" step="5" value="85">
+      <output data-role="row-value">85%</output>
+    </div>
+    <button id="ttToggleBottom" class="tt-bottom-toggle-btn" type="button" title="하단 패널 숨기기/보이기">
+      <span id="ttToggleIcon">▾</span> 작업 패널
+    </button>
+  </div>
+</div>
+
+<!-- Grid only - no sidebar -->
+<div class="tt-body"><div id="ttGrid"></div></div>
+
+<!-- Bottom panel: 과목카드 / 교사조건 / 교실관리 -->
+<div class="tt-bottom" id="ttBottom">
+  <div class="tt-bottom-resizer" id="ttBottomResizer"></div>
+  <div class="tt-bottom-scroll">
+    <div class="tt-bottom-tab">
+      <button class="tt-bottom-tab-btn active" data-tab="subjects">📚 과목 카드</button>
+      <button id="ttScheduleConditionGlobalBtn" data-open-schedule-condition="1" type="button" class="tt-quick-action-btn" title="연속교시 / 필요교실 조건 관리">조건</button>
+      <button id="ttManualCardVaultGlobalBtn" type="button" class="tt-quick-action-btn tt-quick-action-blue" title="수동카드 보관함">수동</button>
+      <button class="tt-bottom-tab-btn"         data-tab="constraints">👩‍🏫 교사 조건</button>
+      <button class="tt-bottom-tab-btn"         data-tab="teacherCards">👨‍🏫 교사별 카드</button>
+      <button class="tt-bottom-tab-btn"         data-tab="rooms">🏫 교실 관리</button>
+      <button class="tt-bottom-tab-btn"         data-tab="logs">🧾 로그</button>
+    </div>
+    <div class="tt-bottom-content">
+      <div id="ttSubjectsContent"></div>
+      <div id="ttConstraintsContent" class="hidden"></div>
+      <div id="ttTeacherCardsContent" class="hidden"></div>
+      <div id="ttRoomsContent" class="hidden"></div>
+      <div id="ttLogsContent" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.HIS_APP_VERSION = "1.0.0-20260724.1";
+window.HIS_RUNTIME_ASSET_VERSION = "1.0.0-20260724.1";
+window.HIS_RELEASE = "v1.0.0";
+window.HIS_RELEASE_BUILD = "1.0.0-20260724.1";
+document.documentElement.dataset.hisRelease = "v1.0.0";
+</script>
+<script type="module">
+  const expectedAsset = "1.0.0-20260724.1";
+  const expectedSourceRuntime = "r387-13";
+  const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
+  try {
+    const versionModule = await import(`./js/version.js?v=1.0.0-20260724.1)}`);
+    if (versionModule.APP_VERSION !== expectedAsset || versionModule.ASSET_VERSION !== expectedAsset) {
+      throw new Error(`version.js 불일치: ${versionModule.APP_VERSION} / ${versionModule.ASSET_VERSION}`);
+    }
+    await import(`./js/timetable.js?v=1.0.0-20260724.1)}`);
+    if (globalThis.HIS_TIMETABLE_RUNTIME_RELEASE !== expectedSourceRuntime) {
+      throw new Error(`시간표 런타임 불일치: ${globalThis.HIS_TIMETABLE_RUNTIME_RELEASE || "미확인"}`);
+    }
+    if (globalThis.HIS_CP_SAT_SERVER_FILE && globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
+      throw new Error(`CP-SAT 서버 파일 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE}`);
+    }
+    document.documentElement.dataset.hisRuntimeVerified = expectedAsset;
+    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "v1.0.0"; });
+    console.info("[HIS v1.0.0] source runtime r387-13 verified");
+  } catch (error) {
+    console.error("[HIS v1.0.0] runtime verification failed", error);
+    const box = document.createElement("div");
+    box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
+    box.textContent = `v1.0.0 실행 파일 검증에 실패했습니다.
+${error?.message || error}`;
+    document.body.appendChild(box);
+    throw error;
+  }
+</script>
+<script>
+/* ── Tab switching ── */
+document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const t = btn.dataset.tab;
+    document.getElementById("ttSubjectsContent")?.classList.toggle("hidden", t !== "subjects");
+    document.getElementById("ttConstraintsContent")?.classList.toggle("hidden", t !== "constraints");
+    document.getElementById("ttTeacherCardsContent")?.classList.toggle("hidden", t !== "teacherCards");
+    document.body.dataset.ttBottomTab = t;
+    document.getElementById("ttRoomsContent")?.classList.toggle("hidden", t !== "rooms");
+    document.getElementById("ttLogsContent")?.classList.toggle("hidden", t !== "logs");
+  });
+});
+
+/* ── Bottom resize & toggle ── */
+(function() {
+  const bottom  = document.getElementById("ttBottom");
+  const resizer = document.getElementById("ttBottomResizer");
+  const DEFAULT_H = 172;
+  const MIN_H = 104;
+  const MAX_H = 520;
+
+  function clampHeight(value) {
+    const n = Number.parseInt(value, 10);
+    return Math.max(MIN_H, Math.min(MAX_H, Number.isFinite(n) ? n : DEFAULT_H));
+  }
+
+  function applyHeight(value, save = false) {
+    const next = clampHeight(value);
+    bottom.style.height = next + "px";
+    bottom.style.setProperty("--tt-bottom-current-height", next + "px");
+    document.documentElement.style.setProperty("--tt-bottom-current-height", next + "px");
+    if (save) localStorage.setItem("tt_botH", String(next));
+    return next;
+  }
+
+  let h = applyHeight(localStorage.getItem("tt_botH") || DEFAULT_H, true);
+
+  let resizeActive = false;
+  function startResize(clientY, pointerId = null) {
+    if (resizeActive) return;
+    resizeActive = true;
+    document.body.classList.add("tt-resizing-bottom");
+    const startY = clientY;
+    const startH = bottom.offsetHeight;
+
+    const move = ev => {
+      const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? startY;
+      const delta = startY - y;
+      h = applyHeight(startH + delta, false);
+    };
+    const end = () => {
+      applyHeight(h, true);
+      resizeActive = false;
+      document.body.classList.remove("tt-resizing-bottom");
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", end);
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", end);
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", end);
+      try { if (pointerId != null) resizer.releasePointerCapture?.(pointerId); } catch (_) {}
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", end);
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", end);
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", end);
+  }
+
+  resizer.addEventListener("mousedown", e => {
+    e.preventDefault();
+    startResize(e.clientY);
+  });
+  resizer.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    e.preventDefault();
+    try { resizer.setPointerCapture?.(e.pointerId); } catch (_) {}
+    startResize(e.clientY, e.pointerId);
+  });
+  resizer.addEventListener("touchstart", e => {
+    const t = e.touches?.[0];
+    if (!t) return;
+    e.preventDefault();
+    startResize(t.clientY);
+  }, { passive: false });
+
+  resizer.addEventListener("dblclick", () => {
+    h = applyHeight(DEFAULT_H, true);
+    document.querySelector(".tt-body")?.scrollIntoView({ block: "start", behavior: "smooth" });
+  });
+
+  window._ttSetBottomHeight = applyHeight;
+})();
+
+/* ── Bottom bar toggle (synced with resizer h variable via shared ref) ── */
+window._ttBottomToggle = (function() {
+  const bottom = document.getElementById("ttBottom");
+  const btn    = document.getElementById("ttToggleBottom");
+  let collapsed = false;
+
+  function getH() { return parseInt(localStorage.getItem("tt_botH") || "172", 10); }
+
+  function show() {
+    collapsed = false;
+    window._ttSetBottomHeight?.(getH(), false);
+    bottom.style.overflow = "";
+    btn?.classList.remove("active");
+  }
+  function hide() {
+    collapsed = true;
+    bottom.style.height = "0";
+    bottom.style.overflow = "hidden";
+    btn?.classList.add("active");
+  }
+
+  btn?.addEventListener("click", () => { collapsed ? show() : hide(); });
+  return { show, hide, isCollapsed: () => collapsed };
+})();
 
 
-<!-- r109: moved legacy override styles from invalid post-html position -->
+/* ── Bottom panel wheel scroll fix ── */
+(function() {
+  const bottom = document.getElementById("ttBottom");
+  if (!bottom || bottom.dataset.wheelScrollFixedR4 === "1") return;
+  bottom.dataset.wheelScrollFixedR4 = "1";
+
+  const toPixels = (ev, baseEl) => {
+    if (ev.deltaMode === 1) return ev.deltaY * 32;
+    if (ev.deltaMode === 2) return ev.deltaY * Math.max(1, baseEl?.clientHeight || window.innerHeight || 600);
+    return ev.deltaY;
+  };
+
+  const isHidden = el => !el || el.classList?.contains("hidden") || el.hidden;
+  const isActuallyVisible = el => !!el && !isHidden(el) && !!(el.offsetWidth || el.offsetHeight || el.getClientRects?.().length);
+  const maxScrollTop = el => Math.max(0, (el?.scrollHeight || 0) - (el?.clientHeight || 0));
+  const canScrollY = (el, dy) => {
+    const max = maxScrollTop(el);
+    if (!el || max <= 1) return false;
+    if (dy > 0) return el.scrollTop < max - 1;
+    if (dy < 0) return el.scrollTop > 1;
+    return false;
+  };
+
+  function findBestScroller(target, dy) {
+    let el = target instanceof Element ? target : null;
+    while (el && el !== document.body && el !== document.documentElement) {
+      if (!bottom.contains(el)) break;
+      const style = window.getComputedStyle(el);
+      const overflowY = style.overflowY || style.overflow || "";
+      if (/(auto|scroll|overlay)/.test(overflowY) && canScrollY(el, dy)) return el;
+      el = el.parentElement;
+    }
+
+    const activeTab = [...bottom.querySelectorAll(".tt-bottom-content > div")]
+      .find(el => !el.classList.contains("hidden") && isActuallyVisible(el));
+    const candidates = [
+      activeTab,
+      activeTab?.querySelector(".tt-log-list, .tt-log-table-wrap, .room-status-scroll, .room-editor-list, .tt-subject-card-dialog-body, .tt-subject-editor-card-list"),
+      bottom.querySelector(".tt-bottom-content"),
+      bottom.querySelector(".tt-bottom-scroll"),
+    ].filter(Boolean);
+
+    return candidates.find(el => canScrollY(el, dy)) || bottom.querySelector(".tt-bottom-scroll");
+  }
+
+  function scrollByWheel(scroller, dy) {
+    if (!scroller) return false;
+    const before = scroller.scrollTop;
+    const max = maxScrollTop(scroller);
+    scroller.scrollTop = Math.max(0, Math.min(max, before + dy));
+    return scroller.scrollTop !== before;
+  }
+
+  document.addEventListener("wheel", ev => {
+    if (ev.ctrlKey) return;
+    if (!(ev.target instanceof Element) || !bottom.contains(ev.target)) return;
+    const dy = toPixels(ev, bottom);
+    if (!dy) return;
+    const scroller = findBestScroller(ev.target, dy);
+    if (scrollByWheel(scroller, dy)) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }, { passive: false, capture: true });
+})();
+
+/* ── Schedule controls ── */
+(function() {
+  document.getElementById("ttPeriodApplyBtn")?.addEventListener("click", () => {
+    window._ttApplyPeriod?.();
+  });
+})();
+</script>
+
 <style>
 /* Drag highlight */
 .tt-drag-teacher-busy { outline: 1.5px solid #f59e0b !important; }
@@ -1260,8 +1564,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-version-compare{border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;padding:12px;font-size:12px;color:#334155;line-height:1.6}
 .tt-version-compare h4{margin:0 0 6px;color:#0f172a;font-size:13px}
 @media (max-width:760px){.tt-version-savebox,.tt-version-row{grid-template-columns:1fr}.tt-version-row-buttons{justify-content:flex-start}}
-
-
 
 </style>
 <style>
@@ -1635,851 +1937,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .tt-bottom-content{min-height:0!important;}
 .tt-bottom-content > div:not(.hidden){min-height:0;}
 
-
-/* r181: 하단 작업 패널은 내용 높이만 차지합니다. 남는 공백/상태 메시지 영역 제거. */
-#hisBuildBadge,.his-build-badge,.his-build-version,.tt-build-badge,.tt-floating-build-badge,
-.tt-bottom-build-strip,.tt-status-strip,.tt-footer-status,.tt-bottom-message-strip,
-#appHealthInlineStatus,#ttAppHealthStatus,#ttStatusMessage,#ttBottomMessage,.app-health-inline-status,
-.app-health-status-row,.tt-inline-status,.tt-bottom-empty-space{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important}
-.tt-bottom{
-  flex:0 0 auto!important;
-  height:auto!important;
-  min-height:0!important;
-  max-height:var(--tt-bottom-current-height, 172px)!important;
-  overflow:hidden!important;
-  border-top:1px solid #cbd5e1!important;
-}
-.tt-bottom-resizer{flex:0 0 7px!important}
-.tt-bottom-scroll{
-  height:auto!important;
-  max-height:calc(var(--tt-bottom-current-height, 172px) - 7px)!important;
-  overflow:auto!important;
-}
-.tt-bottom-content{
-  min-height:0!important;
-  height:auto!important;
-  max-height:none!important;
-  overflow:visible!important;
-  padding-bottom:6px!important;
-}
-.tt-bottom-content > div.hidden{display:none!important;height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
-.tt-bottom-content > div:not(.hidden){min-height:0!important;height:auto!important}
-.tt-bottom.tt-bottom-collapsed{display:none!important;height:0!important;max-height:0!important;min-height:0!important;border:0!important;overflow:hidden!important}
-.tt-bottom.tt-bottom-collapsed *{display:none!important}
-.tt-bottom-toggle-btn{gap:6px!important;border-radius:999px!important;background:#fff!important;color:#334155!important;border-color:#cbd5e1!important;font-weight:900!important}
-.tt-bottom-toggle-btn:hover{background:#eff6ff!important;color:#1d4ed8!important;border-color:#93c5fd!important}
-.tt-bottom-toggle-btn.active{background:#fee2e2!important;color:#b91c1c!important;border-color:#fecaca!important}
-#ttToggleIcon{font-size:12px;line-height:1;transition:transform .12s ease}
-.tt-bottom-toggle-btn.active #ttToggleIcon{transform:rotate(-90deg)!important}
-.his-toast-root{position:fixed;right:18px;bottom:18px;z-index:100000;display:grid;gap:8px;pointer-events:none}
-.his-toast{min-width:220px;max-width:min(420px,calc(100vw - 36px));background:#0f172a;color:#fff;border-radius:12px;padding:10px 13px;box-shadow:0 16px 40px rgba(15,23,42,.28);font-size:13px;font-weight:800;line-height:1.35;opacity:.98;pointer-events:none}
-.his-toast.ok{background:#166534}.his-toast.warn{background:#92400e}.his-toast.error{background:#991b1b}
-
-/* r181: 하단 패널을 접었을 때 남는 회색 공백 제거.
-   원인: #ttGrid는 화면 남는 높이를 차지하는데, 행 높이는 예전 하단 패널 높이를 계속 예약했습니다.
-   해결: 하단 패널 접힘 상태를 body class로 관리하고, 시간표 행 높이를 남는 공간에 맞춰 재계산합니다. */
-:root{
-  --tt-bottom-reserved-h: 0px;
-  --tt-grid-extra-gap: 4px;
-}
-body.tt-bottom-is-open{
-  --tt-bottom-reserved-h: min(var(--tt-bottom-current-height, 172px), 172px);
-}
-body.tt-bottom-is-collapsed{
-  --tt-bottom-reserved-h: 0px;
-}
-.tt-body{
-  flex:1 1 auto!important;
-  min-height:0!important;
-  height:auto!important;
-  overflow:hidden!important;
-  background:#f8fafc!important;
-}
-#ttGrid{
-  flex:1 1 auto!important;
-  min-height:0!important;
-  height:auto!important;
-  overflow:auto!important;
-  background:#f8fafc!important;
-}
-.tt-all-class-table tbody tr{
-  height:calc((100vh - 44px - 38px - 34px - var(--tt-bottom-reserved-h, 0px) - var(--tt-grid-extra-gap, 4px)) / var(--num-rows, 15))!important;
-  min-height:30px!important;
-}
-body.tt-bottom-is-collapsed .tt-all-class-table tbody tr{
-  height:calc((100vh - 44px - 38px - 34px - var(--tt-grid-extra-gap, 4px)) / var(--num-rows, 15))!important;
-}
-body.tt-bottom-is-collapsed #ttBottom{
-  display:none!important;
-  height:0!important;
-  max-height:0!important;
-  min-height:0!important;
-  margin:0!important;
-  padding:0!important;
-  border:0!important;
-}
-body.tt-bottom-is-collapsed .tt-body{
-  padding-bottom:0!important;
-  margin-bottom:0!important;
-}
-
-
-/* r181: 하단 공백 최종 수정 - 하단 패널은 저장 높이가 아니라 실제 내용 높이만 차지합니다. */
-:root{
-  --tt-bottom-measured-h:0px;
-  --tt-bottom-reserved-h:0px;
-}
-body.tt-bottom-is-open{
-  --tt-bottom-reserved-h:var(--tt-bottom-measured-h, 0px)!important;
-}
-body.tt-bottom-is-collapsed{
-  --tt-bottom-measured-h:0px!important;
-  --tt-bottom-reserved-h:0px!important;
-}
-#ttBottom{
-  flex:0 0 auto!important;
-  min-height:0!important;
-  overflow:hidden!important;
-}
-body.tt-bottom-is-open #ttBottom{
-  display:flex!important;
-  height:auto;
-  min-height:0!important;
-}
-body.tt-bottom-is-open #ttBottom.tt-bottom-r181-measured{
-  height:var(--tt-bottom-measured-h, auto)!important;
-  max-height:var(--tt-bottom-measured-h, none)!important;
-}
-#ttBottom .tt-bottom-resizer{
-  flex:0 0 7px!important;
-}
-#ttBottom .tt-bottom-scroll{
-  flex:0 1 auto!important;
-  min-height:0!important;
-  height:auto!important;
-  max-height:none!important;
-  overflow-y:auto!important;
-}
-#ttBottom .tt-bottom-content{
-  min-height:0!important;
-  height:auto!important;
-  padding-bottom:0!important;
-  margin-bottom:0!important;
-  overflow:visible!important;
-}
-#ttBottom .tt-bottom-content > div.hidden{
-  display:none!important;
-  height:0!important;
-  min-height:0!important;
-  margin:0!important;
-  padding:0!important;
-  overflow:hidden!important;
-}
-#ttBottom .tt-bottom-content > div:not(.hidden){
-  min-height:0!important;
-  height:auto!important;
-  margin-bottom:0!important;
-}
-body.tt-bottom-is-collapsed #ttBottom,
-body.tt-bottom-is-collapsed #ttBottom *{
-  display:none!important;
-  height:0!important;
-  min-height:0!important;
-  max-height:0!important;
-  margin:0!important;
-  padding:0!important;
-  border:0!important;
-  overflow:hidden!important;
-}
-body.tt-bottom-is-collapsed .tt-body,
-body.tt-bottom-is-open .tt-body{
-  padding-bottom:0!important;
-  margin-bottom:0!important;
-}
-.tt-all-class-table tbody tr{
-  height:calc((100vh - 44px - 38px - 34px - var(--tt-bottom-reserved-h, 0px) - 2px) / var(--num-rows, 15))!important;
-}
-
-
-
-/* r181: 작업 패널 닫힘 = 하단 패널 완전 제거 + 시간표 영역 전체 확장 */
-body.tt-bottom-is-collapsed #ttBottom,
-body.tt-bottom-is-collapsed #ttBottom *{
-  display:none!important;
-  visibility:hidden!important;
-  height:0!important;
-  min-height:0!important;
-  max-height:0!important;
-  flex-basis:0!important;
-  margin:0!important;
-  padding:0!important;
-  border:0!important;
-  overflow:hidden!important;
-}
-body.tt-bottom-is-collapsed{
-  --tt-bottom-measured-h:0px!important;
-  --tt-bottom-reserved-h:0px!important;
-  --tt-bottom-current-height:0px!important;
-}
-body.tt-bottom-is-collapsed .tt-body{
-  flex:1 1 0!important;
-  min-height:0!important;
-  height:auto!important;
-  padding-bottom:0!important;
-  margin-bottom:0!important;
-  overflow:hidden!important;
-}
-body.tt-bottom-is-collapsed #ttGrid{
-  flex:1 1 0!important;
-  height:100%!important;
-  min-height:0!important;
-  max-height:none!important;
-  overflow:auto!important;
-}
-body.tt-bottom-is-collapsed .tt-all-class-wrap,
-body.tt-bottom-is-collapsed .tt-class-wrap,
-body.tt-bottom-is-collapsed .tt-grade-wrap,
-body.tt-bottom-is-collapsed .tt-room-wrap,
-body.tt-bottom-is-collapsed .tt-teacher-wrap{
-  height:100%!important;
-  min-height:0!important;
-}
-body.tt-bottom-is-collapsed .tt-bottom-toggle-btn{
-  background:#fee2e2!important;
-  color:#991b1b!important;
-  border-color:#fecaca!important;
-}
-body.tt-bottom-is-open .tt-bottom-toggle-btn{
-  background:#fff!important;
-  color:#334155!important;
-}
-
-
-/* r181: 작업 패널 접힘 상태에서는 시간표를 남은 화면 100%에 맞추고 세로 스크롤을 제거합니다.
-   하단 패널 열림/리사이즈 상태는 r179 구조 그대로 유지합니다. */
-body.tt-bottom-is-collapsed #ttGrid{
-  overflow-x:auto!important;
-  overflow-y:hidden!important;
-}
-body.tt-bottom-is-collapsed #ttGrid.tt-all-summary-active{
-  height:100%!important;
-  min-height:0!important;
-  max-height:none!important;
-  overflow:hidden!important;
-}
-body.tt-bottom-is-collapsed #ttGrid .tt-all-class-table tbody tr,
-body.tt-bottom-is-collapsed #ttGrid .tt-all-class-table tbody td,
-body.tt-bottom-is-collapsed #ttGrid .tt-all-class-table tbody th{
-  min-height:0!important;
-}
-body.tt-bottom-is-open #ttGrid{
-  overflow:auto!important;
-}
-
-/* r381 · 안3 표시 밀도/행높이 조절 */
-.tt-density-controls{display:flex;align-items:center;gap:4px;height:30px;padding:2px 7px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;white-space:nowrap;color:#334155;font-size:11px;font-weight:800}
-.tt-density-controls .tt-density-label{margin-right:2px;color:#475569}
-.tt-density-controls button{height:24px!important;min-width:38px!important;padding:0 7px!important;border:1px solid transparent!important;border-radius:7px!important;background:#f1f5f9!important;color:#475569!important;font-size:10px!important;font-weight:800!important}
-.tt-density-controls button.active{background:#2563eb!important;color:#fff!important;border-color:#2563eb!important}
-.tt-density-controls .tt-density-divider{width:1px;height:18px;background:#cbd5e1;margin:0 3px}
-.tt-density-controls input[type=range]{width:92px;height:20px;margin:0;padding:0;accent-color:#2563eb}
-.tt-density-controls output{min-width:34px;color:#1d4ed8;font-variant-numeric:tabular-nums}
-@media(max-width:1250px){.tt-density-controls .tt-density-label,.tt-density-controls label,.tt-density-controls .tt-density-divider{display:none}.tt-density-controls input[type=range]{width:68px}}
-
-
-
-
 </style>
-
-<style id="tt-bottom-panel-r387-13-style">
-/* r387-13: 현재 tt-card-toolbar DOM에 맞춘 최종 배치 */
-#ttBottom{--tt-r382-category-w:120px;--tt-r382-action-w:128px}
-#ttBottomActions .tt-r382-action-list{display:none!important}
-#ttBottomActions .tt-r387-13-action-list{display:flex;flex-direction:column;gap:4px}
-#ttBottomActions .tt-r387-13-action-list > *,
-#ttBottomActions .tt-r387-13-action-list button,
-#ttBottomActions .tt-r387-13-action-list select{
-  width:100%!important;max-width:100%!important;min-width:0!important;
-  min-height:27px!important;height:27px!important;margin:0!important;
-  padding:3px 7px!important;box-sizing:border-box!important;
-  border:1px solid #dbe3ee!important;border-radius:7px!important;
-  background:#fff!important;color:#334155!important;font-size:11px!important;font-weight:800!important;
-}
-#ttBottomActions .tt-r387-13-action-list button{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:5px!important}
-#ttBottomActions .tt-r387-13-action-list > div{height:auto!important;display:flex!important;flex-direction:column!important;gap:4px!important;padding:0!important;border:0!important;background:transparent!important}
-#ttSubjectsContent > .tt-r387-13-subject-layout{
-  display:grid!important;grid-template-columns:116px minmax(0,1fr)!important;gap:9px!important;
-  width:100%!important;height:100%!important;min-height:0!important;
-}
-#ttSubjectsContent .tt-r387-13-filter-rail{min-width:0;min-height:0;overflow-y:auto;padding-right:8px;border-right:1px solid #e2e8f0}
-#ttSubjectsContent .tt-r387-13-filter-rail::before{content:"필터";display:block;margin:0 0 6px;color:#334155;font-size:11px;font-weight:900}
-#ttSubjectsContent .tt-r387-13-filter-list{display:flex;flex-direction:column;gap:4px;align-items:stretch}
-#ttSubjectsContent .tt-r387-13-filter-list > *{width:100%!important;max-width:100%!important;display:flex!important;flex-wrap:wrap!important;gap:4px!important;padding:0!important;margin:0!important;border:0!important;background:transparent!important}
-#ttSubjectsContent .tt-r387-13-filter-list button{min-width:28px!important;height:26px!important;margin:0!important;padding:2px 6px!important;border:1px solid #dbe3ee!important;border-radius:7px!important;background:#fff!important;font-size:11px!important;font-weight:800!important}
-#ttSubjectsContent .tt-r387-13-card-pane{min-width:0;min-height:0;height:100%;display:flex;flex-direction:column;overflow:hidden}
-#ttSubjectsContent .tt-r387-13-card-title{flex:0 0 auto;margin:0 0 6px;color:#334155;font-size:11px;font-weight:900}
-#ttSubjectsContent .tt-r387-13-card-scroll{flex:1 1 auto;min-height:0;overflow-y:auto!important;overflow-x:hidden!important;padding:1px 6px 8px 1px;scrollbar-gutter:stable;overscroll-behavior:contain;display:flex!important;flex-direction:column!important;gap:8px!important}
-#ttSubjectsContent .tt-r387-13-card-scroll > .tt-card-status-section{display:block!important;width:100%!important;min-width:0!important;margin:0!important;overflow:visible!important}
-#ttSubjectsContent .tt-r387-13-card-scroll > .tt-card-status-section > .tt-panel-section-title{margin:0 0 5px!important}
-#ttSubjectsContent .tt-r387-13-card-scroll .tt-sc-cards{display:grid!important;grid-template-columns:repeat(auto-fill,minmax(132px,1fr))!important;align-content:start!important;gap:6px!important;width:100%!important;min-width:0!important;overflow:visible!important}
-#ttSubjectsContent .tt-r387-13-card-scroll .tt-subject-card{width:auto!important;min-width:0!important;max-width:none!important;box-sizing:border-box!important}
-#ttSubjectsContent .tt-r387-13-card-scroll > .tt-empty{display:block!important;width:100%!important}
-#ttSubjectsContent > .tt-card-toolbar{display:none!important}
-</style>
-
-<style id="tt-teacher-cards-compact-r387-13-style">
-/* r387-13: 교사별 카드는 시간표를 가리지 않는 압축형 검사용 패널 */
-body[data-tt-bottom-tab="teacherCards"] #ttBottom{
-  --tt-r382-category-w:104px!important;
-  --tt-r382-action-w:0px!important;
-}
-body[data-tt-bottom-tab="teacherCards"] #ttBottom .tt-bottom-scroll{
-  grid-template-columns:104px minmax(0,1fr)!important;
-}
-body[data-tt-bottom-tab="teacherCards"] #ttBottomActions{
-  display:none!important;
-  width:0!important;min-width:0!important;padding:0!important;border:0!important;overflow:hidden!important;
-}
-body[data-tt-bottom-tab="teacherCards"] #ttBottom .tt-bottom-content{
-  grid-column:2!important;
-  padding:5px 7px!important;
-}
-body[data-tt-bottom-tab="teacherCards"] #ttBottom .tt-bottom-tab{
-  padding:6px 5px!important;
-  gap:1px!important;
-}
-body[data-tt-bottom-tab="teacherCards"] #ttBottom .tt-bottom-tab::before{
-  margin:0 3px 3px!important;
-  font-size:10px!important;
-}
-body[data-tt-bottom-tab="teacherCards"] #ttBottom .tt-bottom-tab > button{
-  min-height:23px!important;height:23px!important;padding:2px 5px!important;
-  font-size:10px!important;border-radius:6px!important;
-}
-#ttTeacherCardsContent.tt-r387-13-teacher-compact{
-  height:100%!important;min-height:0!important;overflow:hidden!important;
-  color:#334155!important;font-size:11px!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-layout{
-  display:grid!important;
-  grid-template-columns:178px minmax(0,1fr)!important;
-  gap:7px!important;
-  width:100%!important;height:100%!important;min-height:0!important;
-  padding:0!important;margin:0!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-list-pane{
-  min-width:0!important;min-height:0!important;height:100%!important;
-  padding:5px!important;border:1px solid #dbe3ee!important;border-radius:8px!important;
-  background:#fff!important;overflow-y:auto!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-list-pane input[type="search"],
-#ttTeacherCardsContent .tt-r387-13-teacher-list-pane input[type="text"]{
-  width:100%!important;height:27px!important;min-height:27px!important;
-  margin:0 0 4px!important;padding:3px 7px!important;
-  border:1px solid #cbd5e1!important;border-radius:6px!important;
-  font-size:10.5px!important;font-weight:700!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-list-pane button,
-#ttTeacherCardsContent .tt-r387-13-teacher-list-pane [role="button"]{
-  width:100%!important;min-height:30px!important;height:auto!important;
-  margin:0 0 3px!important;padding:4px 7px!important;
-  border-radius:6px!important;font-size:10.5px!important;line-height:1.15!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-list-pane button *{
-  line-height:1.15!important;margin-top:0!important;margin-bottom:0!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-detail-pane{
-  min-width:0!important;min-height:0!important;height:100%!important;
-  padding:0!important;margin:0!important;overflow:hidden!important;
-  border:1px solid #dbe3ee!important;border-radius:8px!important;background:#fff!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-summary{
-  min-height:32px!important;height:auto!important;padding:5px 9px!important;margin:0!important;
-  border-bottom:1px solid #e2e8f0!important;background:#f8fafc!important;
-  display:flex!important;align-items:center!important;gap:8px!important;flex-wrap:wrap!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-summary h1,
-#ttTeacherCardsContent .tt-r387-13-teacher-summary h2,
-#ttTeacherCardsContent .tt-r387-13-teacher-summary h3,
-#ttTeacherCardsContent .tt-r387-13-teacher-summary strong{
-  margin:0!important;font-size:13px!important;line-height:1.2!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-summary p,
-#ttTeacherCardsContent .tt-r387-13-teacher-summary div,
-#ttTeacherCardsContent .tt-r387-13-teacher-summary span{
-  margin:0!important;font-size:10.5px!important;line-height:1.2!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-columns{
-  display:grid!important;grid-template-columns:minmax(0,55fr) minmax(0,45fr)!important;
-  gap:7px!important;height:calc(100% - 33px)!important;min-height:0!important;
-  padding:6px!important;margin:0!important;overflow:hidden!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane{
-  min-width:0!important;min-height:0!important;height:100%!important;
-  padding:0!important;margin:0!important;overflow-y:auto!important;
-  border:1px solid #e2e8f0!important;border-radius:7px!important;background:#fbfdff!important;
-}
-#ttTeacherCardsContent .tt-r387-13-pane-heading{
-  position:sticky!important;top:0!important;z-index:2!important;
-  min-height:25px!important;margin:0!important;padding:5px 8px!important;
-  background:#f8fafc!important;border-bottom:1px solid #e2e8f0!important;
-  font-size:10.5px!important;font-weight:900!important;line-height:1.2!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane button,
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane [draggable="true"],
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane > div > div,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane button,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane > div > div{
-  min-height:34px!important;height:auto!important;margin:3px 5px!important;padding:5px 7px!important;
-  border-radius:6px!important;line-height:1.15!important;font-size:10.5px!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane h3,
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane h4,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane h3,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane h4{
-  margin:0!important;font-size:11px!important;line-height:1.15!important;
-}
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane p,
-#ttTeacherCardsContent .tt-r387-13-teacher-card-pane span,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane p,
-#ttTeacherCardsContent .tt-r387-13-teacher-assignment-pane span{
-  line-height:1.15!important;margin-top:1px!important;margin-bottom:0!important;
-}
-@media(max-width:1100px){
-  body[data-tt-bottom-tab="teacherCards"] #ttBottom{--tt-r382-category-w:94px!important}
-  body[data-tt-bottom-tab="teacherCards"] #ttBottom .tt-bottom-scroll{grid-template-columns:94px minmax(0,1fr)!important}
-  #ttTeacherCardsContent .tt-r387-13-teacher-layout{grid-template-columns:158px minmax(0,1fr)!important}
-}
-</style>
-
-
-<style id="tt-teacher-cards-two-column-r387-13-style">
-/* r387-13: 교사별 카드 목록과 현재 배정 목록만 안전하게 2열로 표시 */
-#ttTeacherCardsContent .tt-teacher-card-cardlist,
-#ttTeacherCardsContent .tt-teacher-card-entrylist{
-  display:grid!important;
-  grid-template-columns:repeat(2,minmax(0,1fr))!important;
-  align-content:start!important;
-  gap:5px!important;
-  padding:5px!important;
-  margin:0!important;
-}
-#ttTeacherCardsContent .tt-teacher-card-cardlist > *,
-#ttTeacherCardsContent .tt-teacher-card-entrylist > *{
-  min-width:0!important;
-  width:auto!important;
-  margin:0!important;
-  box-sizing:border-box!important;
-}
-#ttTeacherCardsContent .tt-teacher-card-empty{
-  grid-column:1 / -1!important;
-}
-@media(max-width:980px){
-  #ttTeacherCardsContent .tt-teacher-card-cardlist,
-  #ttTeacherCardsContent .tt-teacher-card-entrylist{
-    grid-template-columns:minmax(0,1fr)!important;
-  }
-}
-</style>
-
-</head>
-<body>
-<header class="tt-topbar">
-  <a href="index.html" class="tt-back">← HIS</a>
-  <h1>시간표 편집 <span class="tt-title-version-badge" data-his-release-badge="1">r387-13</span></h1>
-  <div class="tt-topbar-right">
-    <div class="tt-mode-switch" aria-label="개발 모드 전환">
-      <button id="topLocalModeBtn" class="tt-mode-btn" type="button">로컬 모드</button>
-      <button id="topOnlineModeBtn" class="tt-mode-btn" type="button">온라인 모드</button>
-    </div>
-    <span class="tt-auth-status" id="ttAuthStatus">로그인 확인 중…</span>
-    <button id="ttLoginBtn" class="hidden">Google 로그인</button>
-    <button id="ttLogoutBtn" class="hidden">로그아웃</button>
-    <button type="button" onclick="location.href='timetable-print.html'">🖨 출력</button>
-    <button id="ttClearGradeBtn" class="tt-clear-btn" type="button">🗑 초기화</button>
-    <button id="ttFixedLessonsBtn" class="tt-fixed-btn" type="button">📌 고정 수업</button>
-    <button id="ttAutoPrecheckBtn" class="tt-precheck-btn" type="button">🩺 사전 점검</button>
-    <button id="ttAutoAssignBtn" class="tt-auto-btn" type="button">🎲 자동 배치</button>
-    <button id="ttTeacherStatisticsBtn" class="tt-version-btn" type="button">📈 통계</button>
-    <button id="ttScheduleVersionsBtn" class="tt-version-btn" type="button">🗃 저장/복구</button>
-    <button id="ttSaveBtn" class="tt-save-btn">💾 저장</button>
-  </div>
-</header>
-
-<div class="tt-toolbar">
-  <div class="tt-view-btns">
-    <button class="tt-view-btn active" data-view="all"     type="button">🗂 전체</button>
-    <button class="tt-view-btn"        data-view="teacher" type="button">👩‍🏫 교사별</button>
-    <button class="tt-view-btn"        data-view="room"    type="button">🏫 교실별</button>
-    <button class="tt-view-btn"        data-view="class"   type="button">🏷 학년·반별</button>
-  </div>
-  <select id="ttGradeSelect"   class="hidden"></select>
-  <select id="ttTeacherSelect" class="hidden"></select>
-  <select id="ttRoomSelect"    class="hidden"></select>
-
-  <!-- Schedule controls: 교시만, 점심 삭제 -->
-  <div class="tt-schedule-controls">
-    <label>교시</label>
-    <input id="ttPeriodCountInput" type="number" min="1" max="12" value="8">
-    <button id="ttPeriodApplyBtn" type="button">적용</button>
-  </div>
-
-  <span id="ttConflictBar" class="tt-conflict-bar tt-conflict-bar-ok">✅ 충돌 없음</span>
-  <div class="tt-toolbar-right">
-    <div id="ttDisplayDensityControls" class="tt-density-controls" aria-label="시간표 표시 밀도와 행높이">
-      <span class="tt-density-label">표시 밀도</span>
-      <button type="button" data-density="compact">좁게</button>
-      <button type="button" data-density="normal">보통</button>
-      <button type="button" data-density="wide">넓게</button>
-      <span class="tt-density-divider"></span>
-      <label for="ttRowHeightSlider">행높이</label>
-      <input id="ttRowHeightSlider" data-role="row-slider" type="range" min="55" max="115" step="5" value="85">
-      <output data-role="row-value">85%</output>
-    </div>
-    <button id="ttToggleBottom" class="tt-bottom-toggle-btn" type="button" title="하단 패널 숨기기/보이기">
-      <span id="ttToggleIcon">▾</span> 작업 패널
-    </button>
-  </div>
-</div>
-
-<!-- Grid only - no sidebar -->
-<div class="tt-body"><div id="ttGrid"></div></div>
-
-<!-- Bottom panel: 과목카드 / 교사조건 / 교실관리 -->
-<div class="tt-bottom" id="ttBottom">
-  <div class="tt-bottom-resizer" id="ttBottomResizer"></div>
-  <div class="tt-bottom-scroll">
-    <div class="tt-bottom-tab">
-      <button class="tt-bottom-tab-btn active" data-tab="subjects">📚 과목 카드</button>
-      <button id="ttScheduleConditionGlobalBtn" data-open-schedule-condition="1" type="button" style="height:24px;padding:2px 9px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:11px;font-weight:900;white-space:nowrap;cursor:pointer" title="연속교시 / 필요교실 조건 관리">조건</button>
-      <button id="ttManualCardVaultGlobalBtn" type="button" style="height:24px;padding:2px 9px;border:1px solid #93c5fd;border-radius:8px;background:#fff;color:#1d4ed8;font-size:11px;font-weight:900;white-space:nowrap;cursor:pointer" title="수동카드 보관함">수동</button>
-      <button class="tt-bottom-tab-btn"         data-tab="constraints">👩‍🏫 교사 조건</button>
-      <button class="tt-bottom-tab-btn"         data-tab="teacherCards">👨‍🏫 교사별 카드</button>
-      <button class="tt-bottom-tab-btn"         data-tab="rooms">🏫 교실 관리</button>
-      <button class="tt-bottom-tab-btn"         data-tab="logs">🧾 로그</button>
-    </div>
-    <div class="tt-bottom-content">
-      <div id="ttSubjectsContent"></div>
-      <div id="ttConstraintsContent" class="hidden"></div>
-      <div id="ttTeacherCardsContent" class="hidden"></div>
-      <div id="ttRoomsContent" class="hidden"></div>
-      <div id="ttLogsContent" class="hidden"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-window.HIS_APP_VERSION = "2026-07-22-card-move-performance-r387-13";
-// 사용자 표시 버전과 정적 자산 캐시 버전을 분리합니다.
-// r381은 표시 밀도/행높이 조절과 교사·교실 통계를 제공합니다.
-// 파일명은 기존 표준 파일명을 그대로 유지합니다.
-window.HIS_RUNTIME_ASSET_VERSION = "2026-07-22-card-move-performance-r387-13";
-window.HIS_RELEASE = "r387-13";
-window.HIS_RELEASE_BUILD = "r387-13-card-move-performance-20260722";
-document.documentElement.dataset.hisRelease = "r387-13";
-console.info("[HIS release:r387-13] teacher cards two-column layout loaded");
-window.addEventListener("DOMContentLoaded", function(){
-  document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(function(el){ el.textContent = "r387-13"; });
-});
-</script>
-<script type="importmap">
-{"imports":{
-  "./js/version.js?v=2026-07-15-room-availability-separation-r355":"./js/version.js?v=2026-07-22-card-move-performance-r387-13",
-  "./js/state.js":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
-  "./js/state.js?v=2026-07-15-room-availability-separation-r355":"./js/state.js?v=2026-07-21-cpsat-constraint-policy-r378",
-  "./js/timetable.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable.js?v=2026-07-22-card-move-performance-r387-13",
-  "./js/timetable-autoassign.js?v=2026-07-15-room-availability-separation-r355":"./js/timetable-autoassign.js?v=2026-07-21-cpsat-constraint-policy-r378",
-  "./js/cp-sat-webapp-import.js?v=2026-07-15-room-availability-separation-r355":"./js/cp-sat-webapp-import.js?v=2026-07-21-cpsat-constraint-policy-r378"
-}}
-</script>
-<script type="module">
-  const expectedVersion = "2026-07-22-card-move-performance-r387-13";
-  const expectedServerFile = "HIS_CP_SAT_Local_Server_r348.zip";
-  try {
-    const versionModule = await import(`./js/version.js?v=${encodeURIComponent(expectedVersion)}`);
-    if (versionModule.APP_VERSION !== expectedVersion) {
-      throw new Error(`version.js 불일치: ${versionModule.APP_VERSION}`);
-    }
-    await import(`./js/timetable.js?v=${encodeURIComponent(expectedVersion)}`);
-    if (globalThis.HIS_CP_SAT_BRIDGE_RELEASE !== "r378" || globalThis.HIS_CP_SAT_SERVER_FILE !== expectedServerFile) {
-      throw new Error(`CP-SAT 브리지 불일치: ${globalThis.HIS_CP_SAT_SERVER_FILE || "미확인"}`);
-    }
-    document.querySelectorAll("[data-his-release-badge], .tt-title-version-badge").forEach(el => { el.textContent = "r387-13"; });
-    document.documentElement.dataset.hisRuntimeVerified = "r387-13";
-    console.info("[HIS release:r387-13] display density · teacher/room statistics · manual replacement · CP-SAT bridge r378 · server r348");
-  } catch (error) {
-    console.error("[HIS release:r387-13] runtime verification failed", error);
-    const message = `r387-13 실행 파일 검증에 실패했습니다.\n${error?.message || error}`;
-    const box = document.createElement("div");
-    box.style.cssText = "position:fixed;inset:18px;z-index:2147483647;padding:22px;border:2px solid #dc2626;border-radius:14px;background:#fff;color:#7f1d1d;font:700 15px/1.6 sans-serif;white-space:pre-wrap;overflow:auto";
-    box.textContent = message;
-    document.body.appendChild(box);
-    throw error;
-  }
-</script>
-<script>
-/* ── Tab switching ── */
-document.querySelectorAll(".tt-bottom-tab-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".tt-bottom-tab-btn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    const t = btn.dataset.tab;
-    document.getElementById("ttSubjectsContent")?.classList.toggle("hidden", t !== "subjects");
-    document.getElementById("ttConstraintsContent")?.classList.toggle("hidden", t !== "constraints");
-    document.getElementById("ttTeacherCardsContent")?.classList.toggle("hidden", t !== "teacherCards");
-    document.getElementById("ttRoomsContent")?.classList.toggle("hidden", t !== "rooms");
-    document.getElementById("ttLogsContent")?.classList.toggle("hidden", t !== "logs");
-  });
-});
-
-/* ── Bottom resize & toggle ── */
-(function() {
-  const bottom  = document.getElementById("ttBottom");
-  const resizer = document.getElementById("ttBottomResizer");
-  const DEFAULT_H = 172;
-  const MIN_H = 104;
-  const MAX_H = 520;
-
-  function clampHeight(value) {
-    const n = Number.parseInt(value, 10);
-    return Math.max(MIN_H, Math.min(MAX_H, Number.isFinite(n) ? n : DEFAULT_H));
-  }
-
-  function applyHeight(value, save = false) {
-    const next = clampHeight(value);
-    // r181: 고정 height를 주면 과목카드 아래에 빈 공간이 생깁니다.
-    // max-height만 보관하고 실제 높이는 내용만큼 자동으로 줄어들게 합니다.
-    bottom.style.height = "auto";
-    bottom.style.maxHeight = next + "px";
-    bottom.style.setProperty("--tt-bottom-current-height", next + "px");
-    document.documentElement.style.setProperty("--tt-bottom-current-height", next + "px");
-    if (!document.body.classList.contains("tt-bottom-is-collapsed")) {
-      document.documentElement.style.setProperty("--tt-bottom-reserved-h", Math.min(next, 172) + "px");
-    }
-    if (save) localStorage.setItem("tt_botH", String(next));
-    return next;
-  }
-
-  const savedH = Number.parseInt(localStorage.getItem("tt_botH") || "", 10);
-  let h = applyHeight(Number.isFinite(savedH) ? Math.min(savedH, DEFAULT_H) : DEFAULT_H, true);
-
-  let resizeActive = false;
-  function startResize(clientY, pointerId = null) {
-    if (resizeActive) return;
-    resizeActive = true;
-    document.body.classList.add("tt-resizing-bottom");
-    const startY = clientY;
-    const startH = bottom.offsetHeight;
-
-    const move = ev => {
-      const y = ev.clientY ?? ev.touches?.[0]?.clientY ?? startY;
-      const delta = startY - y;
-      h = applyHeight(startH + delta, false);
-    };
-    const end = () => {
-      applyHeight(h, true);
-      resizeActive = false;
-      document.body.classList.remove("tt-resizing-bottom");
-      document.removeEventListener("mousemove", move);
-      document.removeEventListener("mouseup", end);
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", end);
-      document.removeEventListener("touchmove", move);
-      document.removeEventListener("touchend", end);
-      try { if (pointerId != null) resizer.releasePointerCapture?.(pointerId); } catch (_) {}
-    };
-    document.addEventListener("mousemove", move);
-    document.addEventListener("mouseup", end);
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", end);
-    document.addEventListener("touchmove", move, { passive: false });
-    document.addEventListener("touchend", end);
-  }
-
-  resizer.addEventListener("mousedown", e => {
-    e.preventDefault();
-    startResize(e.clientY);
-  });
-  resizer.addEventListener("pointerdown", e => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    e.preventDefault();
-    try { resizer.setPointerCapture?.(e.pointerId); } catch (_) {}
-    startResize(e.clientY, e.pointerId);
-  });
-  resizer.addEventListener("touchstart", e => {
-    const t = e.touches?.[0];
-    if (!t) return;
-    e.preventDefault();
-    startResize(t.clientY);
-  }, { passive: false });
-
-  resizer.addEventListener("dblclick", () => {
-    h = applyHeight(DEFAULT_H, true);
-    document.querySelector(".tt-body")?.scrollIntoView({ block: "start", behavior: "smooth" });
-  });
-
-  window._ttSetBottomHeight = applyHeight;
-})();
-
-/* ── Bottom bar toggle (synced with resizer h variable via shared ref) ── */
-window._ttBottomToggle = (function() {
-  const bottom = document.getElementById("ttBottom");
-  const btn    = document.getElementById("ttToggleBottom");
-  const icon   = document.getElementById("ttToggleIcon");
-  let collapsed = localStorage.getItem("tt_bottom_collapsed") === "1";
-
-  function getH() { return parseInt(localStorage.getItem("tt_botH") || "172", 10); }
-  let fitRaf1 = 0;
-  let fitRaf2 = 0;
-  function scheduleGridFitRerender() {
-    if (fitRaf1) cancelAnimationFrame(fitRaf1);
-    if (fitRaf2) cancelAnimationFrame(fitRaf2);
-    fitRaf1 = requestAnimationFrame(() => {
-      try { window._ttRenderAll?.(); } catch (_) {}
-      fitRaf2 = requestAnimationFrame(() => {
-        try { window._ttRenderAll?.(); } catch (_) {}
-      });
-    });
-  }
-  function syncButton() {
-    document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
-    document.body.classList.toggle("tt-bottom-is-open", !collapsed);
-    document.documentElement.style.setProperty("--tt-bottom-reserved-h", collapsed ? "0px" : Math.min(getH(), 172) + "px");
-    btn?.classList.toggle("active", collapsed);
-    if (icon) icon.textContent = collapsed ? "▸" : "▾";
-    if (btn) btn.title = collapsed ? "작업 패널 보이기" : "작업 패널 숨기기";
-  }
-
-  function show() {
-    collapsed = false;
-    localStorage.setItem("tt_bottom_collapsed", "0");
-    bottom?.classList.remove("tt-bottom-collapsed");
-    if (bottom) {
-      bottom.style.display = "";
-      bottom.style.overflow = "";
-    }
-    window._ttSetBottomHeight?.(getH(), false);
-    syncButton();
-    scheduleGridFitRerender();
-  }
-  function hide() {
-    collapsed = true;
-    localStorage.setItem("tt_bottom_collapsed", "1");
-    if (bottom) {
-      bottom.classList.add("tt-bottom-collapsed");
-      bottom.style.height = "0px";
-      bottom.style.maxHeight = "0px";
-      bottom.style.overflow = "hidden";
-    }
-    syncButton();
-    scheduleGridFitRerender();
-  }
-
-  btn?.addEventListener("click", ev => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    collapsed ? show() : hide();
-  }, { capture: true });
-  if (collapsed) hide(); else show();
-  scheduleGridFitRerender();
-  // r181 safety: 오래된 inline style/cache가 남아도 다음 frame에서 예약 높이를 다시 맞춥니다.
-  requestAnimationFrame(() => {
-    document.body.classList.toggle("tt-bottom-is-collapsed", collapsed);
-    document.body.classList.toggle("tt-bottom-is-open", !collapsed);
-    document.documentElement.style.setProperty("--tt-bottom-reserved-h", collapsed ? "0px" : Math.min(getH(), 172) + "px");
-  });
-  return { show, hide, toggle: () => collapsed ? show() : hide(), isCollapsed: () => collapsed };
-})();
-
-/* ── r387-13: legacy measured-height observer disabled ──
-   하단 패널 전체 subtree 감시가 카드 이동/탭 렌더마다 반복 reflow를 일으켜 비활성화합니다.
-   호환 호출은 최종 단일 컨트롤러의 fitGrid로 전달합니다. */
-(function(){
-  window._ttReflowBottomPanel = function(){
-    window.__ttBottomPerformanceR3872?.scheduleFit?.();
-  };
-})();
-
-/* ── Bottom panel wheel scroll fix ── */
-(function() {
-  const bottom = document.getElementById("ttBottom");
-  if (!bottom || bottom.dataset.wheelScrollFixedR4 === "1") return;
-  bottom.dataset.wheelScrollFixedR4 = "1";
-
-  const toPixels = (ev, baseEl) => {
-    if (ev.deltaMode === 1) return ev.deltaY * 32;
-    if (ev.deltaMode === 2) return ev.deltaY * Math.max(1, baseEl?.clientHeight || window.innerHeight || 600);
-    return ev.deltaY;
-  };
-
-  const isHidden = el => !el || el.classList?.contains("hidden") || el.hidden;
-  const isActuallyVisible = el => !!el && !isHidden(el) && !!(el.offsetWidth || el.offsetHeight || el.getClientRects?.().length);
-  const maxScrollTop = el => Math.max(0, (el?.scrollHeight || 0) - (el?.clientHeight || 0));
-  const canScrollY = (el, dy) => {
-    const max = maxScrollTop(el);
-    if (!el || max <= 1) return false;
-    if (dy > 0) return el.scrollTop < max - 1;
-    if (dy < 0) return el.scrollTop > 1;
-    return false;
-  };
-
-  function findBestScroller(target, dy) {
-    let el = target instanceof Element ? target : null;
-    while (el && el !== document.body && el !== document.documentElement) {
-      if (!bottom.contains(el)) break;
-      const style = window.getComputedStyle(el);
-      const overflowY = style.overflowY || style.overflow || "";
-      if (/(auto|scroll|overlay)/.test(overflowY) && canScrollY(el, dy)) return el;
-      el = el.parentElement;
-    }
-
-    const activeTab = [...bottom.querySelectorAll(".tt-bottom-content > div")]
-      .find(el => !el.classList.contains("hidden") && isActuallyVisible(el));
-    const candidates = [
-      activeTab,
-      activeTab?.querySelector(".tt-log-list, .tt-log-table-wrap, .room-status-scroll, .room-editor-list, .tt-subject-card-dialog-body, .tt-subject-editor-card-list"),
-      bottom.querySelector(".tt-bottom-content"),
-      bottom.querySelector(".tt-bottom-scroll"),
-    ].filter(Boolean);
-
-    return candidates.find(el => canScrollY(el, dy)) || bottom.querySelector(".tt-bottom-scroll");
-  }
-
-  function scrollByWheel(scroller, dy) {
-    if (!scroller) return false;
-    const before = scroller.scrollTop;
-    const max = maxScrollTop(scroller);
-    scroller.scrollTop = Math.max(0, Math.min(max, before + dy));
-    return scroller.scrollTop !== before;
-  }
-
-  document.addEventListener("wheel", ev => {
-    if (ev.ctrlKey) return;
-    if (!(ev.target instanceof Element) || !bottom.contains(ev.target)) return;
-    const dy = toPixels(ev, bottom);
-    if (!dy) return;
-    const scroller = findBestScroller(ev.target, dy);
-    if (scrollByWheel(scroller, dy)) {
-      ev.preventDefault();
-      ev.stopPropagation();
-    }
-  }, { passive: false, capture: true });
-})();
-
-/* ── Schedule controls ── */
-(function() {
-  document.getElementById("ttPeriodApplyBtn")?.addEventListener("click", () => {
-    window._ttApplyPeriod?.();
-  });
-})();
-</script>
-
-
-<!-- r109: moved legacy final scripts from invalid post-html position -->
 <script id="tt-ui-css-final">
 (function(){
-  var href = "timetable-ui.css?v=" + encodeURIComponent(window.HIS_APP_VERSION || "2026-07-15-room-availability-separation-r355");
+  var href = "timetable-ui.css?v=1.0.0-20260724.1";
   var id = "tt-ui-css-final-link";
   var old = document.getElementById(id);
   if (old) old.remove();
@@ -2491,752 +1952,6 @@ window._ttBottomToggle = (function() {
 })();
 </script>
 
-
-<script id="tt-bottom-toggle-hard-r181">
-/* r387-13: legacy hard-toggle disabled. Final single controller below owns toggle/resize. */
-</script>
-
-
-<style id="tt-single-scroll-layout-css-r181">
-/* r181: 스크롤 구조 단일화
-   - 전체 문서 스크롤 금지
-   - 시간표 영역은 세로 스크롤 없이 남은 높이에 맞춤
-   - 작업 패널만 열림 상태에서 내부 세로 스크롤 허용
-*/
-html, body{
-  height:100%!important;
-  min-height:0!important;
-  overflow:hidden!important;
-}
-body.tt-single-scroll-layout-r181{
-  display:flex!important;
-  flex-direction:column!important;
-  min-height:0!important;
-  max-height:100vh!important;
-}
-body.tt-single-scroll-layout-r181 .tt-body{
-  flex:1 1 0!important;
-  min-height:0!important;
-  max-height:none!important;
-  overflow:hidden!important;
-  display:flex!important;
-  flex-direction:column!important;
-}
-body.tt-single-scroll-layout-r181 #ttGrid{
-  flex:1 1 0!important;
-  min-height:0!important;
-  overflow-x:auto!important;
-  overflow-y:hidden!important;
-  background:#f8fafc!important;
-}
-body.tt-single-scroll-layout-r181 #ttBottom{
-  flex:0 0 auto!important;
-  min-height:0!important;
-  overflow:hidden!important;
-}
-body.tt-single-scroll-layout-r181.tt-bottom-is-collapsed #ttBottom,
-body.tt-single-scroll-layout-r181.tt-bottom-is-collapsed #ttBottom *{
-  display:none!important;
-  height:0!important;
-  min-height:0!important;
-  max-height:0!important;
-  flex-basis:0!important;
-  margin:0!important;
-  padding:0!important;
-  border:0!important;
-  overflow:hidden!important;
-}
-body.tt-single-scroll-layout-r181.tt-bottom-is-open #ttBottom{
-  display:flex!important;
-  flex-direction:column!important;
-  height:var(--tt-bottom-user-h, 172px)!important;
-  max-height:var(--tt-bottom-user-h, 172px)!important;
-  min-height:0!important;
-}
-body.tt-single-scroll-layout-r181 #ttBottom .tt-bottom-resizer{
-  flex:0 0 8px!important;
-  height:8px!important;
-  cursor:row-resize!important;
-}
-body.tt-single-scroll-layout-r181 #ttBottom .tt-bottom-scroll{
-  flex:1 1 0!important;
-  min-height:0!important;
-  height:auto!important;
-  max-height:none!important;
-  overflow-y:auto!important;
-  overflow-x:hidden!important;
-}
-body.tt-single-scroll-layout-r181 #ttBottom .tt-bottom-content{
-  min-height:0!important;
-  height:auto!important;
-  overflow:visible!important;
-}
-body.tt-single-scroll-layout-r181 .tt-all-class-table tbody tr,
-body.tt-single-scroll-layout-r181 .tt-all-class-table tbody td.tt-all-cell,
-body.tt-single-scroll-layout-r181 .tt-all-class-table tbody td.tt-all-row-hdr{
-  height:var(--tt-layout-row-h, var(--tt-all-row-height, 32px))!important;
-}
-body.tt-single-scroll-layout-r181.tt-bottom-is-collapsed #ttGrid{
-  overflow-y:hidden!important;
-}
-
-
-
-
-
-/* ── r382: 하단 패널 3열 재구성 + 과목카드 세로 스크롤 ───────── */
-#ttBottom{
-  --tt-r382-category-w: 142px;
-  --tt-r382-action-w: 138px;
-}
-#ttBottom .tt-bottom-scroll{
-  display:grid!important;
-  grid-template-columns:var(--tt-r382-category-w) var(--tt-r382-action-w) minmax(0,1fr)!important;
-  grid-template-rows:minmax(0,1fr)!important;
-  gap:0!important;
-  overflow:hidden!important;
-  background:#f8fafc!important;
-}
-#ttBottom .tt-bottom-tab{
-  grid-column:1!important;
-  grid-row:1!important;
-  display:flex!important;
-  flex-direction:column!important;
-  align-items:stretch!important;
-  gap:2px!important;
-  min-width:0!important;
-  min-height:0!important;
-  height:100%!important;
-  padding:10px 8px!important;
-  overflow-y:auto!important;
-  border-right:1px solid #e2e8f0!important;
-  border-bottom:0!important;
-  background:#fff!important;
-}
-#ttBottom .tt-bottom-tab::before{
-  content:"카테고리";
-  display:block;
-  margin:0 4px 6px;
-  color:#334155;
-  font-size:11px;
-  font-weight:900;
-}
-#ttBottom .tt-bottom-tab > button{
-  width:100%!important;
-  min-height:27px!important;
-  height:27px!important;
-  margin:0!important;
-  padding:3px 7px!important;
-  display:flex!important;
-  align-items:center!important;
-  justify-content:flex-start!important;
-  border:1px solid transparent!important;
-  border-radius:7px!important;
-  background:transparent!important;
-  color:#475569!important;
-  font-size:11px!important;
-  font-weight:800!important;
-  text-align:left!important;
-  white-space:nowrap!important;
-}
-#ttBottom .tt-bottom-tab > button:hover{background:#f1f5f9!important;color:#1d4ed8!important}
-#ttBottom .tt-bottom-tab > button.active{background:#dbeafe!important;color:#1d4ed8!important;border-color:#bfdbfe!important}
-#ttBottom .tt-bottom-content{
-  grid-column:3!important;
-  grid-row:1!important;
-  min-width:0!important;
-  min-height:0!important;
-  height:100%!important;
-  padding:9px 10px!important;
-  overflow:hidden!important;
-  background:#fff!important;
-}
-#ttBottomActions{
-  grid-column:2;
-  grid-row:1;
-  min-width:0;
-  min-height:0;
-  height:100%;
-  padding:10px 8px;
-  overflow-y:auto;
-  border-right:1px solid #e2e8f0;
-  background:#fff;
-}
-#ttBottomActions::before{
-  content:"작업";
-  display:block;
-  margin:0 4px 6px;
-  color:#334155;
-  font-size:11px;
-  font-weight:900;
-}
-#ttBottomActions .tt-r382-action-list{display:flex;flex-direction:column;gap:4px}
-#ttBottomActions button,
-#ttBottomActions select,
-#ttBottomActions .tt-r382-action-control{
-  width:100%!important;
-  min-height:27px!important;
-  height:27px!important;
-  margin:0!important;
-  padding:3px 7px!important;
-  border:1px solid #dbe3ee!important;
-  border-radius:7px!important;
-  background:#fff!important;
-  color:#334155!important;
-  font-size:11px!important;
-  font-weight:800!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-#ttBottomActions button{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:5px!important;cursor:pointer}
-#ttBottomActions button:hover{background:#eff6ff!important;border-color:#93c5fd!important;color:#1d4ed8!important}
-#ttSubjectsContent{height:100%!important;min-height:0!important;overflow:hidden!important}
-#ttSubjectsContent .tt-r382-subject-layout{
-  display:grid;
-  grid-template-columns:128px minmax(0,1fr);
-  gap:10px;
-  height:100%;
-  min-height:0;
-}
-#ttSubjectsContent .tt-r382-filter-rail{
-  min-width:0;
-  min-height:0;
-  padding-right:9px;
-  overflow-y:auto;
-  border-right:1px solid #e2e8f0;
-}
-#ttSubjectsContent .tt-r382-filter-rail::before{
-  content:"필터";
-  display:block;
-  margin:0 0 7px;
-  color:#334155;
-  font-size:11px;
-  font-weight:900;
-}
-#ttSubjectsContent .tt-r382-filter-list{display:flex;flex-direction:column;gap:4px;align-items:stretch}
-#ttSubjectsContent .tt-r382-filter-list > *{max-width:100%!important}
-#ttSubjectsContent .tt-r382-filter-list button,
-#ttSubjectsContent .tt-r382-filter-list select{
-  min-height:26px!important;
-  height:26px!important;
-  width:100%!important;
-  margin:0!important;
-  padding:2px 6px!important;
-  border:1px solid #dbe3ee!important;
-  border-radius:7px!important;
-  background:#fff!important;
-  color:#334155!important;
-  font-size:11px!important;
-  font-weight:800!important;
-}
-#ttSubjectsContent .tt-r382-card-pane{
-  min-width:0;
-  min-height:0;
-  height:100%;
-  display:flex;
-  flex-direction:column;
-  overflow:hidden;
-}
-#ttSubjectsContent .tt-r382-card-title{
-  flex:0 0 auto;
-  margin:0 0 6px;
-  color:#334155;
-  font-size:11px;
-  font-weight:900;
-}
-#ttSubjectsContent .tt-r382-card-scroll{
-  flex:1 1 auto;
-  min-height:0;
-  overflow-y:auto!important;
-  overflow-x:hidden!important;
-  padding:1px 6px 8px 1px;
-  scrollbar-gutter:stable;
-  overscroll-behavior:contain;
-}
-#ttSubjectsContent .tt-sc-cards{
-  display:grid!important;
-  grid-template-columns:repeat(auto-fill,minmax(132px,1fr))!important;
-  align-content:start!important;
-  gap:6px!important;
-  width:100%!important;
-  min-width:0!important;
-  overflow:visible!important;
-}
-#ttSubjectsContent .tt-subject-card{
-  width:auto!important;
-  min-width:0!important;
-  max-width:none!important;
-  box-sizing:border-box!important;
-}
-#ttSubjectsContent .tt-sc-header.tt-r382-header-rest{
-  display:flex!important;
-  flex-wrap:wrap!important;
-  gap:4px!important;
-  margin:0 0 6px!important;
-}
-@media(max-width:1100px){
-  #ttBottom{--tt-r382-category-w:124px;--tt-r382-action-w:124px}
-  #ttSubjectsContent .tt-r382-subject-layout{grid-template-columns:112px minmax(0,1fr)}
-}
-
-</style>
-
-<script id="tt-single-scroll-layout-r387-13">
-(function(){
-  const VERSION = "r387-13";
-  if (window.__ttBottomPerformanceR3872) return;
-
-  const root = document.documentElement;
-  const body = document.body;
-  const bottom = document.getElementById("ttBottom");
-  let btn = document.getElementById("ttToggleBottom");
-  let resizer = document.getElementById("ttBottomResizer");
-  if (!bottom || !btn || !resizer) return;
-
-  body.classList.add("tt-single-scroll-layout-r181");
-
-  const MIN_H = 112;
-  const MAX_H = 420;
-  const DEFAULT_H = 172;
-  let collapsed = localStorage.getItem("tt_bottom_collapsed") === "1";
-  let userH = clamp(localStorage.getItem("tt_botH") || DEFAULT_H);
-  let resizing = false;
-  let dragRaf = 0;
-  let fitRaf = 0;
-  let pendingHeight = userH;
-  let dragFrameCount = 0;
-  let dragStartedAt = 0;
-
-  function clamp(value){
-    const n = Number.parseInt(value, 10);
-    return Math.max(MIN_H, Math.min(MAX_H, Number.isFinite(n) ? n : DEFAULT_H));
-  }
-  function setImportant(el, prop, value){
-    try { el?.style?.setProperty(prop, value, "important"); } catch (_) {}
-  }
-  function setVars(){
-    const hpx = collapsed ? "0px" : `${userH}px`;
-    root.style.setProperty("--tt-bottom-user-h", hpx);
-    root.style.setProperty("--tt-bottom-current-height", hpx);
-    root.style.setProperty("--tt-bottom-measured-h", hpx);
-    root.style.setProperty("--tt-bottom-reserved-h", hpx);
-  }
-  function updateButton(){
-    btn.classList.toggle("active", collapsed);
-    const icon = btn.querySelector("#ttToggleIcon");
-    if (icon) icon.textContent = collapsed ? "▸" : "▾";
-    btn.title = collapsed ? "작업 패널 열기" : "작업 패널 닫기";
-  }
-  function applyBottomBox(){
-    setVars();
-    body.classList.toggle("tt-bottom-is-collapsed", collapsed);
-    body.classList.toggle("tt-bottom-is-open", !collapsed);
-    bottom.classList.toggle("tt-bottom-collapsed", collapsed);
-    updateButton();
-
-    if (collapsed) {
-      setImportant(bottom, "display", "none");
-      setImportant(bottom, "height", "0px");
-      setImportant(bottom, "max-height", "0px");
-      setImportant(bottom, "min-height", "0px");
-      setImportant(bottom, "flex-basis", "0px");
-      setImportant(bottom, "overflow", "hidden");
-      return;
-    }
-
-    setImportant(bottom, "display", "flex");
-    setImportant(bottom, "height", `${userH}px`);
-    setImportant(bottom, "max-height", `${userH}px`);
-    setImportant(bottom, "min-height", "0px");
-    setImportant(bottom, "flex-basis", `${userH}px`);
-    setImportant(bottom, "overflow", "hidden");
-    const scroll = bottom.querySelector(".tt-bottom-scroll");
-    if (scroll) {
-      setImportant(scroll, "height", `calc(${userH}px - 8px)`);
-      setImportant(scroll, "max-height", `calc(${userH}px - 8px)`);
-      setImportant(scroll, "min-height", "0px");
-    }
-  }
-  function tableInGrid(){
-    const grid = document.getElementById("ttGrid");
-    return grid?.querySelector("table.tt-table") || grid?.querySelector("table");
-  }
-  function fitGrid(){
-    fitRaf = 0;
-    const grid = document.getElementById("ttGrid");
-    if (!grid) return;
-    const gridTop = grid.getBoundingClientRect().top;
-    const bottomH = collapsed ? 0 : userH;
-    const available = Math.max(180, Math.floor(window.innerHeight - gridTop - bottomH));
-
-    setImportant(grid, "height", `${available}px`);
-    setImportant(grid, "max-height", `${available}px`);
-    setImportant(grid, "min-height", "0px");
-    setImportant(grid, "overflow-x", "auto");
-    setImportant(grid, "overflow-y", "hidden");
-
-    const table = tableInGrid();
-    const rows = table?.tBodies?.[0]?.rows ? Array.from(table.tBodies[0].rows) : [];
-    const rowCount = Math.max(1, rows.length || Number(root.style.getPropertyValue("--num-rows")) || 15);
-    const theadH = Math.ceil(table?.tHead?.getBoundingClientRect().height || 42);
-    const naturalRowH = Math.max(18, Math.floor((available - theadH - 2) / rowCount));
-    let rowScale = 85;
-    try {
-      const saved = JSON.parse(localStorage.getItem("his_timetable_display_density_r381") || "{}");
-      rowScale = Number.parseInt(saved.scale || 85, 10);
-    } catch (_) {}
-    rowScale = Math.max(55, Math.min(115, Number.isFinite(rowScale) ? rowScale : 85));
-    const rowPx = `${Math.max(14, Math.round(naturalRowH * rowScale / 100))}px`;
-    root.style.setProperty("--tt-layout-row-h", rowPx);
-    root.style.setProperty("--tt-all-row-height", rowPx);
-    grid.style.setProperty("--tt-all-row-height", rowPx);
-  }
-  function scheduleFit(){
-    if (fitRaf) cancelAnimationFrame(fitRaf);
-    fitRaf = requestAnimationFrame(fitGrid);
-  }
-  function flushDragHeight(){
-    dragRaf = 0;
-    userH = clamp(pendingHeight);
-    applyBottomBox();
-    dragFrameCount += 1;
-  }
-  function scheduleDragHeight(value){
-    pendingHeight = clamp(value);
-    if (dragRaf) return;
-    dragRaf = requestAnimationFrame(flushDragHeight);
-  }
-  function commitLayout({ save = false } = {}){
-    if (dragRaf) {
-      cancelAnimationFrame(dragRaf);
-      flushDragHeight();
-    } else {
-      applyBottomBox();
-    }
-    if (save) localStorage.setItem("tt_botH", String(userH));
-    scheduleFit();
-  }
-
-  // Remove every older anonymous click/drag handler by replacing the controls once.
-  const nextBtn = btn.cloneNode(true);
-  btn.replaceWith(nextBtn);
-  btn = nextBtn;
-  const nextResizer = resizer.cloneNode(true);
-  resizer.replaceWith(nextResizer);
-  resizer = nextResizer;
-
-  btn.addEventListener("click", event => {
-    event.preventDefault();
-    event.stopPropagation();
-    collapsed = !collapsed;
-    localStorage.setItem("tt_bottom_collapsed", collapsed ? "1" : "0");
-    commitLayout();
-  }, { capture:true });
-
-  function startResize(clientY){
-    if (collapsed || resizing) return;
-    resizing = true;
-    dragStartedAt = performance.now();
-    dragFrameCount = 0;
-    const startY = clientY;
-    const startH = userH;
-    body.classList.add("tt-resizing-bottom");
-
-    const move = event => {
-      if (!resizing) return;
-      const y = event.clientY ?? event.touches?.[0]?.clientY ?? startY;
-      scheduleDragHeight(startH + (startY - y));
-      event.preventDefault?.();
-    };
-    const end = () => {
-      if (!resizing) return;
-      resizing = false;
-      body.classList.remove("tt-resizing-bottom");
-      commitLayout({ save:true });
-      document.removeEventListener("mousemove", move, true);
-      document.removeEventListener("mouseup", end, true);
-      document.removeEventListener("pointermove", move, true);
-      document.removeEventListener("pointerup", end, true);
-      document.removeEventListener("touchmove", move, true);
-      document.removeEventListener("touchend", end, true);
-      console.info(`[bottom-resize:${VERSION}] frames=${dragFrameCount} renderAll=0 fitGrid=1 elapsed=${Math.round(performance.now()-dragStartedAt)}ms height=${userH}`);
-    };
-    document.addEventListener("mousemove", move, true);
-    document.addEventListener("mouseup", end, true);
-    document.addEventListener("pointermove", move, true);
-    document.addEventListener("pointerup", end, true);
-    document.addEventListener("touchmove", move, { capture:true, passive:false });
-    document.addEventListener("touchend", end, true);
-  }
-
-  resizer.addEventListener("mousedown", event => {
-    event.preventDefault();
-    startResize(event.clientY);
-  }, true);
-  resizer.addEventListener("pointerdown", event => {
-    if (event.pointerType === "mouse" && event.button !== 0) return;
-    event.preventDefault();
-    startResize(event.clientY);
-  }, true);
-  resizer.addEventListener("touchstart", event => {
-    const touch = event.touches?.[0];
-    if (!touch) return;
-    event.preventDefault();
-    startResize(touch.clientY);
-  }, { capture:true, passive:false });
-  resizer.addEventListener("dblclick", event => {
-    event.preventDefault();
-    userH = DEFAULT_H;
-    commitLayout({ save:true });
-  }, true);
-
-  let windowResizeRaf = 0;
-  window.addEventListener("resize", () => {
-    if (windowResizeRaf) return;
-    windowResizeRaf = requestAnimationFrame(() => {
-      windowResizeRaf = 0;
-      applyBottomBox();
-      fitGrid();
-    });
-  }, { passive:true });
-
-  window._ttBottomToggle = {
-    show(){ collapsed=false; localStorage.setItem("tt_bottom_collapsed","0"); commitLayout(); },
-    hide(){ collapsed=true; localStorage.setItem("tt_bottom_collapsed","1"); commitLayout(); },
-    toggle(){ collapsed=!collapsed; localStorage.setItem("tt_bottom_collapsed",collapsed?"1":"0"); commitLayout(); },
-    isCollapsed(){ return collapsed; },
-    setHeight(value){ userH=clamp(value); commitLayout({save:true}); }
-  };
-  window._ttSetBottomHeight = (value, save=true) => {
-    userH = clamp(value);
-    commitLayout({ save });
-    return userH;
-  };
-
-  window.__ttBottomPerformanceR3872 = { fitGrid, scheduleFit, applyBottomBox };
-  applyBottomBox();
-  scheduleFit();
-  setTimeout(scheduleFit, 120);
-})();
-</script>
-
-
-<script>
-/* ── r387-13: 상태별 카드 섹션 전체를 하단 3열 안에 고정 ── */
-(function(){
-  let queued = false;
-  let applying = false;
-  let observer = null;
-
-  function ensureActionColumn(){
-    const scroll = document.querySelector('#ttBottom .tt-bottom-scroll');
-    const content = document.querySelector('#ttBottom .tt-bottom-content');
-    if (!scroll || !content) return null;
-    let actions = document.getElementById('ttBottomActions');
-    if (!actions){
-      actions = document.createElement('aside');
-      actions.id = 'ttBottomActions';
-      actions.setAttribute('aria-label','작업');
-      actions.innerHTML = '<div class="tt-r387-13-action-list"></div>';
-      scroll.insertBefore(actions, content);
-    }
-    return actions.querySelector('.tt-r387-13-action-list');
-  }
-
-  function ensureSubjectLayout(panel){
-    let layout = panel.querySelector(':scope > .tt-r387-13-subject-layout');
-    if (!layout){
-      layout = document.createElement('div');
-      layout.className = 'tt-r387-13-subject-layout';
-      layout.innerHTML = '<aside class="tt-r387-13-filter-rail"><div class="tt-r387-13-filter-list"></div></aside><section class="tt-r387-13-card-pane"><div class="tt-r387-13-card-title">과목 카드</div><div class="tt-r387-13-card-scroll"></div></section>';
-      panel.appendChild(layout);
-    }
-    return layout;
-  }
-
-  function classifyToolbarChildren(toolbar){
-    const children = [...toolbar.children];
-    const actions = toolbar.querySelector(':scope > .tt-card-toolbar-actions') || children[0] || null;
-    const remaining = children.filter(el => el !== actions);
-    const sort = remaining.find(el => el.querySelector('select') || /정렬|가나다/.test(el.textContent || '')) || remaining[0] || null;
-    const filter = remaining.find(el => el !== sort && (el.querySelector('button') || /학년|반|전체/.test(el.textContent || ''))) || remaining.find(el => el !== sort) || null;
-    return { actions, sort, filter };
-  }
-
-  function collectCardSections(panel){
-    const sections = [...panel.querySelectorAll('.tt-card-status-section')];
-    if (sections.length) return sections;
-    const empty = panel.querySelector(':scope > .tt-empty');
-    return empty ? [empty] : [];
-  }
-
-  function rebuild(){
-    if (applying) return;
-    applying = true;
-    try{
-      const panel = document.getElementById('ttSubjectsContent');
-      const actionList = ensureActionColumn();
-      if (!panel || !actionList) return;
-
-      const toolbar = panel.querySelector(':scope > .tt-card-toolbar, .tt-card-toolbar');
-      const cardSections = collectCardSections(panel);
-      if (!toolbar || !cardSections.length) return;
-
-      const layout = ensureSubjectLayout(panel);
-      const filterList = layout.querySelector('.tt-r387-13-filter-list');
-      const cardScroll = layout.querySelector('.tt-r387-13-card-scroll');
-      const parts = classifyToolbarChildren(toolbar);
-
-      actionList.replaceChildren();
-      filterList.replaceChildren();
-
-      if (parts.actions){
-        [...parts.actions.children].forEach(el => actionList.appendChild(el));
-        parts.actions.remove();
-      }
-      if (parts.sort) actionList.appendChild(parts.sort);
-      if (parts.filter) filterList.appendChild(parts.filter);
-
-      // 배치 필요/배치 완료를 분리하지 않고 동일한 세로 스크롤 안에 순서대로 둡니다.
-      cardSections.forEach(section => {
-        if (section.parentElement !== cardScroll) cardScroll.appendChild(section);
-      });
-
-      toolbar.remove();
-      panel.querySelectorAll(':scope > .tt-r382-subject-layout, :scope > .tt-r384-subject-layout').forEach(el => el.remove());
-    } finally {
-      applying = false;
-    }
-  }
-
-  function queue(){
-    if (queued || applying) return;
-    queued = true;
-    requestAnimationFrame(function(){ queued = false; rebuild(); });
-  }
-
-  function start(){
-    const panel = document.getElementById('ttSubjectsContent');
-    if (!panel) return;
-    observer?.disconnect();
-    observer = new MutationObserver(queue);
-    observer.observe(panel,{childList:true,subtree:true});
-    queue();
-    [50,150,350,800,1500,2600].forEach(ms => setTimeout(queue,ms));
-  }
-
-  document.addEventListener('DOMContentLoaded', start);
-  window.addEventListener('his:timetable-rendered', queue);
-  document.addEventListener('click', function(ev){
-    if (ev.target.closest('.tt-bottom-tab-btn,[data-tab="subjects"]')) setTimeout(queue,0);
-  }, true);
-  window.HIS_REBUILD_BOTTOM_PANEL_R385 = queue;
-})();
-</script>
-
-
-<script id="tt-teacher-cards-compact-r387-13-script">
-(function(){
-  if (window.__ttTeacherCardsCompactR386) return;
-  window.__ttTeacherCardsCompactR386 = true;
-  let queued = false;
-
-  const clean = value => String(value || '').replace(/\s+/g,' ').trim();
-  function smallestTextElement(root, text){
-    return [...root.querySelectorAll('h1,h2,h3,h4,h5,strong,span,div')]
-      .filter(el => clean(el.textContent) === text)
-      .sort((a,b) => a.children.length - b.children.length)[0] || null;
-  }
-  function commonAncestor(a,b,stop){
-    if (!a || !b) return null;
-    const seen = new Set();
-    for (let n=a;n && n!==stop;n=n.parentElement) seen.add(n);
-    for (let n=b;n && n!==stop;n=n.parentElement) if (seen.has(n)) return n;
-    return null;
-  }
-  function directChildUnder(node, parent){
-    let cur=node;
-    while(cur && cur.parentElement && cur.parentElement!==parent) cur=cur.parentElement;
-    return cur && cur.parentElement===parent ? cur : null;
-  }
-  function findLayout(root, searchInput, assignmentText){
-    let node=searchInput?.parentElement;
-    while(node && node!==root){
-      if (assignmentText && node.contains(assignmentText) && node.children.length>=2) return node;
-      node=node.parentElement;
-    }
-    return root.firstElementChild || root;
-  }
-  function tagTeacherPanel(){
-    const root=document.getElementById('ttTeacherCardsContent');
-    if (!root || root.classList.contains('hidden')) return;
-    root.classList.add('tt-r387-13-teacher-compact');
-
-    const search=[...root.querySelectorAll('input')].find(el => /교사\s*검색/.test(el.placeholder||'') || /교사\s*검색/.test(el.getAttribute('aria-label')||''));
-    const assignmentText=smallestTextElement(root,'현재 배정');
-    const cardText=smallestTextElement(root,'시간표 카드');
-    if (!search || !assignmentText || !cardText) return;
-
-    const layout=findLayout(root,search,assignmentText);
-    layout.classList.add('tt-r387-13-teacher-layout');
-    const listPane=directChildUnder(search,layout);
-    const detailPane=directChildUnder(assignmentText,layout);
-    if (listPane) listPane.classList.add('tt-r387-13-teacher-list-pane');
-    if (!detailPane) return;
-    detailPane.classList.add('tt-r387-13-teacher-detail-pane');
-
-    const panesCommon=commonAncestor(cardText,assignmentText,detailPane);
-    let columns=panesCommon;
-    while(columns && columns!==detailPane){
-      const cardChild=directChildUnder(cardText,columns);
-      const assignmentChild=directChildUnder(assignmentText,columns);
-      if (cardChild && assignmentChild && cardChild!==assignmentChild) break;
-      columns=columns.parentElement;
-    }
-    if (!columns || columns===detailPane) {
-      columns=commonAncestor(cardText,assignmentText,detailPane) || detailPane;
-    }
-    columns.classList.add('tt-r387-13-teacher-columns');
-    const cardPane=directChildUnder(cardText,columns);
-    const assignmentPane=directChildUnder(assignmentText,columns);
-    cardPane?.classList.add('tt-r387-13-teacher-card-pane');
-    assignmentPane?.classList.add('tt-r387-13-teacher-assignment-pane');
-    cardText.classList.add('tt-r387-13-pane-heading');
-    assignmentText.classList.add('tt-r387-13-pane-heading');
-
-    [...detailPane.children].forEach(child => {
-      if (child!==columns && (child.contains(cardText)===false) && (child.contains(assignmentText)===false)) {
-        child.classList.add('tt-r387-13-teacher-summary');
-      }
-    });
-  }
-  function setTab(tab){
-    document.body.dataset.ttBottomTab=tab || 'subjects';
-    if (tab==='teacherCards') requestAnimationFrame(tagTeacherPanel);
-  }
-  function currentTab(){
-    return document.querySelector('.tt-bottom-tab-btn.active')?.dataset.tab || 'subjects';
-  }
-  function queue(){
-    if (queued) return;
-    queued=true;
-    requestAnimationFrame(()=>{queued=false;if(currentTab()==='teacherCards') tagTeacherPanel();});
-  }
-  document.addEventListener('click',ev=>{
-    const btn=ev.target.closest('.tt-bottom-tab-btn[data-tab]');
-    if (!btn) return;
-    setTimeout(()=>setTab(btn.dataset.tab),0);
-  },true);
-  document.addEventListener('DOMContentLoaded',()=>{
-    setTab(currentTab());
-    const root=document.getElementById('ttTeacherCardsContent');
-    if (root) new MutationObserver(queue).observe(root,{childList:true,subtree:true});
-    [100,350,800,1600].forEach(ms=>setTimeout(queue,ms));
-  });
-  window.addEventListener('his:timetable-rendered',queue);
-})();
-</script>
 
 </body>
 </html>

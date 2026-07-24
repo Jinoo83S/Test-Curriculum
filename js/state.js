@@ -1,16 +1,16 @@
 // ================================================================
 // state.js · Shared Application State + Firestore Sync
 // ================================================================
-import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
-import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
-import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, encodeTimetableRevisionSnapshot, decodeTimetableRevisionSnapshot, isRestorableTimetableRevision, TIMETABLE_REVISION_SCHEMA_VERSION, TIMETABLE_REVISION_HISTORY_SLOTS } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
-import { auditPersistedTimetable } from "./timetable-persistence-audit.js?v=2026-07-20-cpsat-meta-persistence-r375";
-import { normalizeCpSatConstraintPolicy } from "./cp-sat-constraint-policy.js?v=2026-07-21-cpsat-policy-r378";
+import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=1.0.0-20260724.1";
+import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=1.0.0-20260724.1";
+import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=1.0.0-20260724.1";
+import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=1.0.0-20260724.1";
+import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=1.0.0-20260724.1";
+import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCollectionRevisionPlan, summarizeTimetableRevisionPlan, assertAtomicTimetableRevisionCapacity, encodeTimetableRevisionSnapshot, decodeTimetableRevisionSnapshot, isRestorableTimetableRevision, TIMETABLE_REVISION_SCHEMA_VERSION, TIMETABLE_REVISION_HISTORY_SLOTS } from "./timetable-save-revision.js?v=1.0.0-20260724.1";
+import { auditPersistedTimetable } from "./timetable-persistence-audit.js?v=1.0.0-20260724.1";
+import { normalizeCpSatConstraintPolicy } from "./cp-sat-constraint-policy.js?v=1.0.0-20260724.1";
 import {
   setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";

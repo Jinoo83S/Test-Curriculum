@@ -8469,3 +8469,6 @@ body.his-dev-tools-off .developer-toggle-btn {
 .group-pool-area-label {
   margin-bottom: 4px;
 }
+
+/* ver1.0 release badge */
+.app-release-badge{display:inline-flex;align-items:center;height:20px;margin-left:6px;padding:0 7px;border-radius:999px;background:#dbeafe;color:#1e40af;font-size:10px;font-weight:900;vertical-align:middle}

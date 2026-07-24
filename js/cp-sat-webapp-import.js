@@ -1,20 +1,20 @@
-import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
-import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
-import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=2026-07-16-cpsat-result-truth-r367";
-import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
-import { encodeTimetableRevisionSnapshot } from "./timetable-save-revision.js?v=2026-07-15-timetable-revision-restore-r357";
+import { buildSolverConstraintSummary } from "./timetable-constraint-model.js?v=1.0.0-20260724.1";
+import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary, blockingTimetablePreflightIssues } from "./timetable-preflight-diagnostics.js?v=1.0.0-20260724.1";
+import { buildCpSatScopeAudit, auditCpSatResult, cpSatResultStatusLabel } from "./timetable-solve-result-status.js?v=1.0.0-20260724.1";
+import { estimateCpSatSaveOperations, extractCpSatServerTiming, formatCpSatDuration, readCpSatRunHistory, upsertCpSatRunHistory, clearCpSatRunHistory } from "./timetable-cpsat-run-history.js?v=1.0.0-20260724.1";
+import { encodeTimetableRevisionSnapshot } from "./timetable-save-revision.js?v=1.0.0-20260724.1";
 import {
   CP_SAT_LOCKED_RULES, CP_SAT_EDITABLE_RULES,
   defaultCpSatConstraintPolicy, normalizeCpSatConstraintPolicy,
   cpSatConstraintPolicySummary, hasActiveSoftCpSatPolicy,
   applyCpSatConstraintPolicyToPayload, auditCpSatConstraintPolicy,
-} from "./cp-sat-constraint-policy.js?v=2026-07-21-cpsat-policy-r378";
+} from "./cp-sat-constraint-policy.js?v=1.0.0-20260724.1";
 // ================================================================
 // cp-sat-webapp-import.js · HIS current timetable webapp CP-SAT API bridge
 // r378: 연도별 강제/유연/해제 정책을 payload·검증·Firestore에 연결.
 // ================================================================
 
-import { migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+import { migrateLegacyRoomAvailability } from "./room-availability.js?v=1.0.0-20260724.1";
 
 const CP_SAT_API_UI_ID = "ttCpSatApiOverlay";
 const CP_SAT_API_BUTTON_ID = "ttCpSatApiBtn";

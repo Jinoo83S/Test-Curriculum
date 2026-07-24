@@ -6,10 +6,12 @@
   <title>HIS 결과표</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-07-15-room-availability-separation-r355";
+    window.HIS_APP_VERSION = "1.0.0-20260724.1";
+    window.HIS_RUNTIME_ASSET_VERSION = "1.0.0-20260724.1";
+    window.HIS_RELEASE = "v1.0.0";
     (function() {
       var link = document.getElementById("his-main-css");
-      if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
+      if (link) link.href = "style.css?v=1.0.0-20260724.1" + encodeURIComponent(window.HIS_APP_VERSION);
     })();
   </script>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
@@ -18,7 +20,7 @@
 
 <header class="topbar">
   <div class="topbar-left">
-    <h1>HIS Curriculum</h1>
+    <h1>HIS Curriculum <span class="app-release-badge">v1.0.0</span></h1>
     <p class="subtitle">한동글로벌학교</p>
   </div>
   <nav class="topbar-nav" id="topbarMainNav">
@@ -27,7 +29,7 @@
 <a href="setup.html" data-section="setup" class="topbar-nav-btn topbar-nav-link">⚙️ 세부 구성</a>
 <a href="prework.html" data-section="prework" class="topbar-nav-btn topbar-nav-link">🗂 시간표 사전작업</a>
 <a href="results.html" data-section="results" class="topbar-nav-btn topbar-nav-link active">📊 결과표</a>
-    <a href="timetable.html?release=r382-bottom-panel-vertical-scroll-20260722" class="topbar-nav-btn topbar-nav-link">⏰ 시간표</a>
+    <a href="timetable.html?release=v1.0.0" class="topbar-nav-btn topbar-nav-link">⏰ 시간표</a>
   </nav>
   <div class="topbar-right">
     <div class="top-mode-switch" aria-label="저장 위치 모드 전환">
@@ -59,7 +61,7 @@
   </section>
 </main>
 <script type="module">
-  import { versioned } from "./js/version.js?v=2026-07-15-room-availability-separation-r355";
+  import { versioned } from "./js/version.js?v=1.0.0-20260724.1";
   await import(versioned("./js/app.js"));
 </script>
 </body>

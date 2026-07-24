@@ -1,8 +1,8 @@
 // ================================================================
 // destructive-operation-guard.js · Backup / audit / target guards
 // ================================================================
-import { auth, db, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { assertSchoolYearPathSpec, getSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=2026-07-15-room-availability-separation-r355";
+import { auth, db, getSchoolYearRefs } from "./config.js?v=1.0.0-20260724.1";
+import { assertSchoolYearPathSpec, getSchoolYearPathSpec, pathSegmentsToString } from "./school-year-paths.js?v=1.0.0-20260724.1";
 import { doc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 export const DESTRUCTIVE_OPERATION_GUARD_BUILD = "2026-07-15-room-availability-separation-r355";

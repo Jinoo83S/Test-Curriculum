@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-print-excel.js · Database-style XLSX package builder
 // ================================================================
-import { officeXmlEsc, zipStore } from "./timetable-print-archive.js?v=2026-07-15-print-modules-r361";
+import { officeXmlEsc, zipStore } from "./timetable-print-archive.js?v=1.0.0-20260724.1";
 
 function colName(number) {
   let n = Math.max(1, Math.floor(Number(number) || 1));

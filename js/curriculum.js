@@ -1,10 +1,10 @@
 // ================================================================
 // curriculum.js · Curriculum Board Mutations + Rendering
 // ================================================================
-import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js?v=1.0.0-20260724.1";
+import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=1.0.0-20260724.1";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -24,7 +24,7 @@ export function getCategoryColor(category) {
 }
 
 // ── Template lookup (reads from templates domain) ─────────────────
-import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=1.0.0-20260724.1";
 
 // ── Row Mutations ─────────────────────────────────────────────────
 /**

@@ -6,8 +6,8 @@
 // so the engine can still use the current app state, UI callbacks, and
 // shared occupancy logic without creating circular imports.
 
-import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
-import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary } from "./timetable-preflight-diagnostics.js?v=2026-07-16-cpsat-result-truth-r367";
+import { isExperimentalResidualRepairEnabled, stripStaleResidualPuzzleReport } from "./timetable-validator.js?v=1.0.0-20260724.1";
+import { buildTimetablePreflightDiagnostics, formatTimetablePreflightSummary } from "./timetable-preflight-diagnostics.js?v=1.0.0-20260724.1";
 
 globalThis.HIS_AUTOASSIGN_BUILD = "2026-07-16-cpsat-result-truth-r367";
 

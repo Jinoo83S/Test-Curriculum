@@ -1,15 +1,15 @@
 // ================================================================
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
-import { appState, scheduleSave } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { getRooms } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
-import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { appState, scheduleSave } from "./state.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { getRooms } from "./rooms.js?v=1.0.0-20260724.1";
+import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=1.0.0-20260724.1";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
-} from "./timetable-data.js?v=2026-07-15-room-availability-separation-r355";
-import { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
+} from "./timetable-data.js?v=1.0.0-20260724.1";
+import { getTtCardById } from "./ttcards.js?v=1.0.0-20260724.1";
 
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;

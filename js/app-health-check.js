@@ -7,11 +7,24 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { APP_VERSION, versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
-import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
-import { inspectRoomAvailabilitySeparation } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+} from "./state.js?v=1.0.0-20260724.1";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=1.0.0-20260724.1";
+import { APP_VERSION, versioned } from "./version.js?v=1.0.0-20260724.1";
+import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=1.0.0-20260724.1";
+import { inspectRoomAvailabilitySeparation } from "./room-availability.js?v=1.0.0-20260724.1";
+
+const REQUIRED_ENTRY_FILES = [
+  "./index.html",
+  "./roster.html",
+  "./setup.html",
+  "./prework.html",
+  "./results.html",
+  "./timetable.html",
+  "./timetable-print.html",
+  "./style.css",
+  "./timetable-print.css",
+  "./timetable-ui.css",
+];
 
 const MODULE_FILES = [
   "./js/app.js",
@@ -75,6 +88,9 @@ const TIMETABLE_DOM_ELEMENTS = [
   "ttLogsContent",
   "ttAutoAssignBtn",
   "ttScheduleVersionsBtn",
+  "ttTeacherStatisticsBtn",
+  "ttDisplayDensityControls",
+  "ttTeacherCardsContent",
   "ttSaveBtn",
   "ttGradeSelect",
   "ttConflictBar",
@@ -240,6 +256,23 @@ function checkDom(report) {
   const expected = isTimetablePage ? TIMETABLE_DOM_ELEMENTS : APP_DOM_ELEMENTS;
   const missing = expected.filter(id => !document.getElementById(id));
   add(report, "DOM 점검", missing.length ? "error" : "ok", isTimetablePage ? "시간표 편집 필수 DOM" : "메인 앱 필수 DOM", missing.length ? `누락: ${missing.join(", ")}` : "필수 요소 확인됨");
+}
+
+async function checkRequiredEntryFiles(report) {
+  const missing = [];
+  const checked = [];
+  for (const path of REQUIRED_ENTRY_FILES) {
+    try {
+      const url = new URL(path, document.baseURI).toString();
+      let res = await fetch(url, { method: "HEAD", cache: "no-store" });
+      if (!res.ok) res = await fetch(url, { method: "GET", cache: "no-store" });
+      if (!res.ok) missing.push(`${path} (${res.status})`);
+      else checked.push(path);
+    } catch (error) {
+      missing.push(`${path} (${error?.message || error})`);
+    }
+  }
+  add(report, "배포 파일", missing.length ? "error" : "ok", "필수 진입 페이지·스타일", missing.length ? `누락/접근 실패 ${missing.length}개: ${missing.join(", ")}` : `${checked.length}개 파일 확인됨`);
 }
 
 async function checkModuleFiles(report) {
@@ -430,6 +463,7 @@ export async function runAppHealthCheck() {
   checkRoomAvailabilityStorage(report);
   checkDom(report);
   checkTimetableReferences(report);
+  await checkRequiredEntryFiles(report);
   await checkModuleFiles(report);
 
   report.overall = report.counts.error ? "error" : report.counts.warn ? "warn" : "ok";

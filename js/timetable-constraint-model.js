@@ -8,7 +8,7 @@
 // 4) 교사: 과목 / 교실 / 수업가능시간
 // ================================================================
 
-import { normalizeRoomUnavailableSlots } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
+import { normalizeRoomUnavailableSlots } from "./room-availability.js?v=1.0.0-20260724.1";
 
 const clean = v => String(v ?? "").trim();
 const asArray = v => Array.isArray(v) ? v : [];

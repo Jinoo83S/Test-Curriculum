@@ -4,7 +4,7 @@
 // 2026 keeps the existing Firestore paths for backward compatibility.
 // New years use isolated schoolYears/{year}/... paths.
 
-import { LEGACY_PATH_YEAR } from "./school-year-paths.js?v=2026-07-15-room-availability-separation-r355";
+import { LEGACY_PATH_YEAR } from "./school-year-paths.js?v=1.0.0-20260724.1";
 
 export const SCHOOL_YEAR_UI_BUILD = "2026-07-15-room-availability-separation-r355";
 export const LEGACY_SCHOOL_YEAR = LEGACY_PATH_YEAR;

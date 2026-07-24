@@ -1,8 +1,8 @@
 // ================================================================
 // auth.js · Authentication
 // ================================================================
-import { auth, provider } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
+import { auth, provider } from "./config.js?v=1.0.0-20260724.1";
+import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js?v=1.0.0-20260724.1";
 import {
   signInWithPopup, getRedirectResult,
   signOut, onAuthStateChanged

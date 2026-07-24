@@ -1,7 +1,7 @@
 // ================================================================
 // app-auth-ui.js · Main app login/logout status UI
 // ================================================================
-import { login, logout } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout } from "./auth.js?v=1.0.0-20260724.1";
 
 const AUTH_SESSION_KEY = "his_auth_recent_user_v1";
 const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;

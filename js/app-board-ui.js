@@ -1,11 +1,11 @@
 // ================================================================
 // app-board-ui.js · Curriculum board tabs / export / reset UI
 // ================================================================
-import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=1.0.0-20260724.1";
+import { schoolYearLabel } from "./school-year.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { appState, saveNow } from "./state.js?v=1.0.0-20260724.1";
+import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=1.0.0-20260724.1";
 
 const DEFAULT_BOARD_OPTIONS = {
   category: ["교과", "창체"],

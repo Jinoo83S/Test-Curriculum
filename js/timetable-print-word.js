@@ -1,7 +1,7 @@
 // ================================================================
 // timetable-print-word.js · DOCX package builder
 // ================================================================
-import { zipStore } from "./timetable-print-archive.js?v=2026-07-15-print-modules-r361";
+import { zipStore } from "./timetable-print-archive.js?v=1.0.0-20260724.1";
 
 function requireFunction(value, name) {
   if (typeof value !== "function") throw new TypeError(`DOCX 의존 함수 누락: ${name}`);

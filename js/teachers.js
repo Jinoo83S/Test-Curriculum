@@ -1,11 +1,11 @@
 // ================================================================
 // teachers.js · Teacher Mutations + Teacher View Rendering
 // ================================================================
-import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { countTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
-import { getSubjectsForTeacher } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=1.0.0-20260724.1";
+import { canEdit } from "./auth.js?v=1.0.0-20260724.1";
+import { appState, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=1.0.0-20260724.1";
+import { countTeacherIdentityReferences } from "./teacher-identity.js?v=1.0.0-20260724.1";
+import { getSubjectsForTeacher } from "./templates.js?v=1.0.0-20260724.1";
 
 const tDomain   = () => appState.teachers;
 export const getTeachers    = () => tDomain().teachers;
