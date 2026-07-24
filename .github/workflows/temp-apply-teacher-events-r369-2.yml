@@ -1,0 +1,126 @@
+name: Temporary teacher events r369-2 builder
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/temp-apply-teacher-events-r369-2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/teacher-events-r369-2
+          fetch-depth: 0
+
+      - name: Assemble and verify patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .patches/teacher-events-r369-2/part*.patch > /tmp/teacher-events-r369-2.patch
+          test "$(wc -c < /tmp/teacher-events-r369-2.patch | tr -d ' ')" = "66366"
+          echo "baaa81ccca80f4d84ce769f4cee5a5ed6f81c36ce9763ca82e1c68a1b845bf61  /tmp/teacher-events-r369-2.patch" | sha256sum -c -
+          git apply --recount --check /tmp/teacher-events-r369-2.patch
+
+      - name: Apply patch and guard changed files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --recount --whitespace=nowarn /tmp/teacher-events-r369-2.patch
+          expected=$(cat <<'EOF'
+          js/cp-sat-webapp-import.js
+          js/state.js
+          js/timetable-autoassign.js
+          js/timetable-grid.js
+          js/timetable-print-app.js
+          js/timetable-statistics.js
+          js/timetable-teacher-events.js
+          js/timetable.js
+          timetable-print.html
+          timetable.html
+          EOF
+          )
+          actual="$(git diff --name-only | sort)"
+          test "$actual" = "$(printf '%s\n' "$expected" | sed 's/^          //' | sort)"
+          ! git diff --name-only | grep -E '\.css$'
+          git diff --check
+
+      - name: Static and core tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in js/cp-sat-webapp-import.js js/state.js js/timetable-autoassign.js js/timetable-grid.js js/timetable-print-app.js js/timetable-statistics.js js/timetable-teacher-events.js js/timetable.js; do
+            node --check "$file"
+          done
+          cp js/timetable-teacher-events.js /tmp/timetable-teacher-events.mjs
+          node --input-type=module <<'NODE'
+          import { normalizeTeacherEvents, teacherEventSlots, buildEffectiveTeacherConstraints, findTeacherEventBlockers, buildTeacherEventPrintEntries } from 'file:///tmp/timetable-teacher-events.mjs';
+          const teachers = [{ id:'t1', name:'교사A' }, { id:'t2', name:'교사B' }];
+          const events = normalizeTeacherEvents([{ id:'m1', title:'중등 회의', day:1, period:2, durationPeriods:2, teacherIds:['t1','t2'], teacherNames:['교사A','교사B'], active:true }], { periodCount:7 });
+          if (events.length !== 1) throw new Error('event normalize failed');
+          if (teacherEventSlots(events[0], 7).length !== 2) throw new Error('slot expansion failed');
+          const effective = buildEffectiveTeacherConstraints({ 교사A:{ unavailableSlots:[{day:0,period:0}], maxPerDay:5 } }, events, teachers, 7);
+          if (effective.교사A.unavailableSlots.length !== 3 || effective.교사A.maxPerDay !== 5) throw new Error('constraint merge failed');
+          if (findTeacherEventBlockers({ teacherNames:['교사A'], day:1, period:3, teacherEvents:events, teachers, periodCount:7 }).length !== 1) throw new Error('blocker failed');
+          if (buildTeacherEventPrintEntries(events, teachers, 7).length !== 2) throw new Error('print entries failed');
+          NODE
+          test "$(grep -c 'id="ttTeacherEventsBtn"' timetable.html)" = "1"
+          grep -q 'classes.length + (activeTeacherEvents.length ? 1 : 0)' js/timetable-grid.js
+          grep -q 'const expectedVersion = "2026-07-22-card-move-performance-r387-13"' timetable.html
+          grep -q 'const timetableModuleVersion = "2026-07-24-teacher-events-r369-2"' timetable.html
+          grep -q 'timetable-print-app.js?v=2026-07-24-teacher-events-r369-2' timetable-print.html
+          html_stats=$(git diff --numstat -- timetable.html)
+          test "$(echo "$html_stats" | awk '{print $1}')" -le 10
+          test "$(echo "$html_stats" | awk '{print $2}')" -le 10
+          print_stats=$(git diff --numstat -- timetable-print.html)
+          test "$(echo "$print_stats" | awk '{print $1}')" = "1"
+          test "$(echo "$print_stats" | awk '{print $2}')" = "1"
+          echo TEACHER_EVENTS_R369_2_CHECK_OK
+          git diff --stat
+          git diff --numstat
+
+      - name: Build upload ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/upload/js
+          cp timetable.html timetable-print.html /tmp/upload/
+          cp js/cp-sat-webapp-import.js js/state.js js/timetable-autoassign.js js/timetable-grid.js js/timetable-print-app.js js/timetable-statistics.js js/timetable-teacher-events.js js/timetable.js /tmp/upload/js/
+          cat > /tmp/upload/업로드_안내.txt <<'EOF'
+          기준 커밋: eb255ca94e96f27f7e98e354ceb4e764d9868b13
+          운영 파일: 10개
+          CSS 변경: 없음
+          커밋명: 시간표_교사전용일정_수업분리_배정차단_r369-2
+          EOF
+          cd /tmp/upload
+          zip -r /tmp/커리큘럼_교사전용일정_r369-2_vscode업로드용.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: teacher-events-r369-2-vscode-upload
+          path: /tmp/커리큘럼_교사전용일정_r369-2_vscode업로드용.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit operational files to feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .patches/teacher-events-r369-2
+          rm -f .github/workflows/apply-teacher-events-r369-2.yml
+          rmdir .patches 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "시간표_교사전용일정_수업분리_배정차단_r369-2"
+          git push origin HEAD:feature/teacher-events-r369-2
