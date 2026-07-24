@@ -2,13 +2,11 @@ name: Apply teacher events r369-2
 
 on:
   push:
-    branches:
-      - feature/teacher-events-r369-2
+    branches: [feature/teacher-events-r369-2]
     paths:
       - ".github/workflows/apply-teacher-events-r369-2.yml"
   pull_request:
-    branches:
-      - main
+    branches: [main]
     paths:
       - ".github/workflows/apply-teacher-events-r369-2.yml"
       - ".patches/teacher-events-r369-2/**"
@@ -25,8 +23,9 @@ jobs:
         with:
           ref: feature/teacher-events-r369-2
           fetch-depth: 0
+          show-progress: false
 
-      - name: Assemble and verify patch
+      - name: Apply and verify teacher events patch
         shell: bash
         run: |
           set -euo pipefail
@@ -34,12 +33,8 @@ jobs:
           test "$(wc -c < /tmp/teacher-events-r369-2.patch | tr -d ' ')" = "66366"
           echo "baaa81ccca80f4d84ce769f4cee5a5ed6f81c36ce9763ca82e1c68a1b845bf61  /tmp/teacher-events-r369-2.patch" | sha256sum -c -
           git apply --recount --check /tmp/teacher-events-r369-2.patch
-
-      - name: Apply patch
-        shell: bash
-        run: |
-          set -euo pipefail
           git apply --recount --whitespace=nowarn /tmp/teacher-events-r369-2.patch
+
           expected=$(cat <<'EOF'
           js/cp-sat-webapp-import.js
           js/state.js
@@ -53,38 +48,18 @@ jobs:
           timetable.html
           EOF
           )
-          actual="$(git diff --name-only | sort)"
+          actual="$( { git diff --name-only; git ls-files --others --exclude-standard; } | grep -v '^\.patches/' | grep -v '^\.github/workflows/apply-teacher-events-r369-2.yml$' | sort -u )"
           test "$actual" = "$(printf '%s\n' "$expected" | sed 's/^          //' | sort)"
-          if git diff --name-only | grep -E '\.css$'; then
-            echo "CSS modification is forbidden" >&2
-            exit 1
-          fi
+          ! printf '%s\n' "$actual" | grep -E '\.css$'
           git diff --check
 
-      - name: Static and core checks
-        shell: bash
-        run: |
-          set -euo pipefail
-          for file in \
-            js/cp-sat-webapp-import.js \
-            js/state.js \
-            js/timetable-autoassign.js \
-            js/timetable-grid.js \
-            js/timetable-print-app.js \
-            js/timetable-statistics.js \
-            js/timetable-teacher-events.js \
-            js/timetable.js; do
+          for file in js/cp-sat-webapp-import.js js/state.js js/timetable-autoassign.js js/timetable-grid.js js/timetable-print-app.js js/timetable-statistics.js js/timetable-teacher-events.js js/timetable.js; do
             node --check "$file"
           done
+
           cp js/timetable-teacher-events.js /tmp/timetable-teacher-events.mjs
           node --input-type=module <<'NODE'
-          import {
-            normalizeTeacherEvents,
-            teacherEventSlots,
-            buildEffectiveTeacherConstraints,
-            findTeacherEventBlockers,
-            buildTeacherEventPrintEntries,
-          } from 'file:///tmp/timetable-teacher-events.mjs';
+          import { normalizeTeacherEvents, teacherEventSlots, buildEffectiveTeacherConstraints, findTeacherEventBlockers, buildTeacherEventPrintEntries } from 'file:///tmp/timetable-teacher-events.mjs';
           const teachers = [{ id:'t1', name:'교사A' }, { id:'t2', name:'교사B' }];
           const events = normalizeTeacherEvents([{ id:'m1', title:'중등 회의', day:1, period:2, durationPeriods:2, teacherIds:['t1','t2'], teacherNames:['교사A','교사B'], active:true }], { periodCount:7 });
           if (events.length !== 1) throw new Error('event normalize failed');
@@ -94,24 +69,24 @@ jobs:
           if (findTeacherEventBlockers({ teacherNames:['교사A'], day:1, period:3, teacherEvents:events, teachers, periodCount:7 }).length !== 1) throw new Error('blocker failed');
           if (buildTeacherEventPrintEntries(events, teachers, 7).length !== 2) throw new Error('print entries failed');
           NODE
+
           test "$(grep -c 'id="ttTeacherEventsBtn"' timetable.html)" = "1"
           grep -q 'classes.length + (activeTeacherEvents.length ? 1 : 0)' js/timetable-grid.js
           grep -q 'const expectedVersion = "2026-07-22-card-move-performance-r387-13"' timetable.html
           grep -q 'const timetableModuleVersion = "2026-07-24-teacher-events-r369-2"' timetable.html
           grep -q 'timetable-print-app.js?v=2026-07-24-teacher-events-r369-2' timetable-print.html
+
           html_stats=$(git diff --numstat -- timetable.html)
-          html_add=$(echo "$html_stats" | awk '{print $1}')
-          html_del=$(echo "$html_stats" | awk '{print $2}')
-          test "$html_add" -le 10
-          test "$html_del" -le 10
+          test "$(echo "$html_stats" | awk '{print $1}')" -le 10
+          test "$(echo "$html_stats" | awk '{print $2}')" -le 10
           print_stats=$(git diff --numstat -- timetable-print.html)
           test "$(echo "$print_stats" | awk '{print $1}')" = "1"
           test "$(echo "$print_stats" | awk '{print $2}')" = "1"
-          echo "TEACHER_EVENTS_R369_2_CHECK_OK"
+          echo TEACHER_EVENTS_R369_2_CHECK_OK
           git diff --stat
           git diff --numstat
 
-      - name: Build upload artifact
+      - name: Build upload ZIP
         shell: bash
         run: |
           set -euo pipefail
