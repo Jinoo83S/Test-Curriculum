@@ -1,0 +1,72 @@
++      formEl.querySelectorAll('[data-action="close"]').forEach(button => button.addEventListener("click", close));
++      formEl.querySelector('[data-action="save"]')?.addEventListener("click", () => {
++        if (!canEdit()) { alert("편집 권한이 없습니다."); return; }
++        const title = clean(formEl.querySelector('[data-field="title"]')?.value);
++        const selected = [...formEl.querySelectorAll('[data-teacher-id]:checked')];
++        if (!title) { alert("일정명을 입력하세요."); return; }
++        if (!selected.length) { alert("참석 교사를 한 명 이상 선택하세요."); return; }
++        const now = new Date().toISOString();
++        const next = normalizeTeacherEvent({
++          ...(item || {}),
++          id: item?.id || uid("teacher-event"),
++          title,
++          day: Number(formEl.querySelector('[data-field="day"]')?.value || 0),
++          period: Number(formEl.querySelector('[data-field="period"]')?.value || 0),
++          durationPeriods: Number(formEl.querySelector('[data-field="duration"]')?.value || 1),
++          active: !!formEl.querySelector('[data-field="active"]')?.checked,
++          note: clean(formEl.querySelector('[data-field="note"]')?.value),
++          teacherIds: unique(selected.map(box => box.dataset.teacherId)),
++          teacherNames: unique(selected.map(box => box.dataset.teacherName)),
++          createdAt: item?.createdAt || now,
++          updatedAt: now,
++        }, { periodCount });
++        const nextTeacherSet = new Set(resolveTeacherEventNames(next, teachers));
++        const nextSlotSet = new Set(teacherEventSlots(next, periodCount).map(slot => `${slot.day}:${slot.period}`));
++        const eventOverlaps = next.active ? events().filter(other => {
++          if (!other.active || other.id === item?.id) return false;
++          const sameTeacher = resolveTeacherEventNames(other, teachers).some(name => nextTeacherSet.has(name));
++          const sameSlot = teacherEventSlots(other, periodCount).some(slot => nextSlotSet.has(`${slot.day}:${slot.period}`));
++          return sameTeacher && sameSlot;
++        }) : [];
++        if (eventOverlaps.length) {
++          alert(`같은 교사가 같은 시간에 참석하는 다른 일정이 있습니다.\n\n${[...new Set(eventOverlaps.map(row => row.title))].join(", ")}`);
++          return;
++        }
++        const overlapping = asArray(getEntries()).filter(entry => {
++          if (!nextSlotSet.has(`${Number(entry?.day)}:${Number(entry?.period)}`)) return false;
++          return asArray(getEntryTeachers(entry)).some(name => nextTeacherSet.has(clean(name)));
++        });
++        if (overlapping.length && !confirm(`현재 배치된 수업 ${overlapping.length}개와 시간이 겹칩니다.
++
++일정을 저장하면 해당 수업은 충돌로 표시되며 다른 시간으로 옮겨야 합니다. 계속할까요?`)) return;
++        captureTimetableUndo(item ? "교사 일정 수정" : "교사 일정 추가");
++        const domain = ttDomain();
++        domain.teacherEvents = item ? events().map(row => row.id === item.id ? next : row) : [...events(), next];
++        selectedId = next.id;
++        persist(item ? "updated" : "created");
++        render();
++      });
++      formEl.querySelector('[data-action="delete"]')?.addEventListener("click", () => {
++        if (!item || !canEdit()) return;
++        if (!confirm(`"${item.title}" 일정을 삭제할까요?`)) return;
++        captureTimetableUndo("교사 일정 삭제");
++        const domain = ttDomain();
++        domain.teacherEvents = events().filter(row => row.id !== item.id);
++        selectedId = "";
++        persist("deleted");
++        render();
++      });
++    };
++
++    const render = () => { renderList(); renderForm(); };
++    backdrop.querySelector('[data-action="close"]')?.addEventListener("click", close);
++    backdrop.querySelector('[data-action="new"]')?.addEventListener("click", () => { selectedId = ""; render(); });
++    backdrop.addEventListener("click", event => { if (event.target === backdrop) close(); });
++    onKey = event => { if (event.key === "Escape") close(); };
++    document.addEventListener("keydown", onKey, true);
++    render();
++    return { close };
++  }
++
++  return { openTeacherEventsManager, getTeacherEvents: events };
++}
