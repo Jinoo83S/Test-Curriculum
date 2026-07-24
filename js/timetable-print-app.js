@@ -24,7 +24,7 @@ import {
   wordTableWidths as computeWordTableWidths,
 } from "./timetable-print-word-layout.js?v=2026-07-15-word-layout-r362";
 
-const VERSION = "2026-07-23-overview-rows-r367";
+const VERSION = "2026-07-24-overview-fixed-rows-r368";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const FIELD_DEFS = [
   { key:"subject", label:"과목", pos:"mc", bold:true, enabled:true },
@@ -1108,6 +1108,19 @@ function balancedChunkList(list, maxSize) {
   }
   return out;
 }
+function fixedChunkList(list, size) {
+  const arr = Array.isArray(list) ? list : [];
+  const take = Math.max(1, Number(size) || 1);
+  const out = [];
+  for (let idx = 0; idx < arr.length; idx += take) out.push(arr.slice(idx, idx + take));
+  return out.length ? out : [[]];
+}
+function overviewRowGroups(list) {
+  const applied = overviewRowsPerPage();
+  if (!isOverviewRowsControlProfile()) return balancedChunkList(list, applied);
+  const selected = overviewRowsDraftValue(overviewRowsValueFromUi());
+  return selected === "auto" ? balancedChunkList(list, applied) : fixedChunkList(list, applied);
+}
 function overviewRowMetrics(rowCount=1) {
   const n = Math.max(1, Number(rowCount) || 1);
   const printableHmm = paperOrientation() === "portrait" ? 262 : 182;
@@ -1141,10 +1154,10 @@ function overviewRowsPerPage() {
 function overviewFullPages(ents) {
   const labels=periodLabels();
   const appliedRows = overviewRowsPerPage();
-  const rowGroups=balancedChunkList(ents, appliedRows);
+  const rowGroups=overviewRowGroups(ents);
   if (isOverviewRowsControlProfile()) {
     const selected = overviewRowsDraftValue(overviewRowsValueFromUi());
-    console.info(`[print-rows:r367] target=${targetType()} selected=${selected} applied=${appliedRows} entities=${ents.length} pages=${rowGroups.length}`);
+    console.info(`[print-rows:r368] target=${targetType()} selected=${selected} applied=${appliedRows} distribution=${rowGroups.map(group=>group.length).join(",")} entities=${ents.length} pages=${rowGroups.length}`);
   }
   const allEntries=visibleEntriesForScope();
   const pageClass=paperClass();
@@ -1164,14 +1177,14 @@ function overviewFullPages(ents) {
     const right = headerRightText("");
     const fitClass = targetType() === "class" ? "class-overview-fit9" : "";
     const rowMetrics = overviewRowMetrics(group.length);
-    const rowStyle = targetType() === "class" ? ` style="--overview-rows:${group.length};--overview-row-mm:${rowMetrics.rowMm}mm;--overview-row-px:${rowMetrics.rowPx}px"` : "";
-    pages.push(`<section class="preview-page overview overview-wide ${fitClass} ${pageClass} ${fontClass}"${rowStyle}>${titleRowHtml(title,left,right)}<table class="tt-table overview-full-days">${colgroup}<thead><tr><th rowspan="2" class="corner-cell"></th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`);
+    const rowStyle = ` style="--overview-rows:${group.length};--overview-row-mm:${rowMetrics.rowMm}mm;--overview-row-px:${rowMetrics.rowPx}px"`;
+    pages.push(`<section class="preview-page overview overview-wide dynamic-overview-rows ${fitClass} ${pageClass} ${fontClass}"${rowStyle}>${titleRowHtml(title,left,right)}<table class="tt-table overview-full-days">${colgroup}<thead><tr><th rowspan="2" class="corner-cell"></th>${dayHeader}</tr><tr>${periodHeader}</tr></thead><tbody>${rows}</tbody></table></section>`);
   });
   return pages;
 }
 function overviewDayPages(ents) {
   const labels=periodLabels();
-  const rowGroups=balancedChunkList(ents, overviewRowsPerPage());
+  const rowGroups=overviewRowGroups(ents);
   const allEntries=visibleEntriesForScope();
   const pageClass=paperClass();
   const fontClass=collectSettings().fontScale;
@@ -1759,7 +1772,7 @@ function overviewExportMatrixPages(ents, allEntries=visibleEntriesForScope()) {
   const profile = `${targetType()}:overview`;
   const layoutProfile = officeLayoutProfile(profile);
   const cols = 1 + DAYS.length * labels.length;
-  const rowGroups = balancedChunkList(ents, overviewRowsPerPage());
+  const rowGroups = overviewRowGroups(ents);
   const pages = [];
   rowGroups.forEach((group, gi) => {
     const grid = [];

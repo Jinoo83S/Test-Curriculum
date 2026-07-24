@@ -6,11 +6,21 @@
 <title>HIS 시간표 출력 디자이너</title>
 <link rel="stylesheet" href="timetable-print.css?v=2026-07-15-print-usability-r365">
 <style id="printPageStyle">@page{size:297mm 210mm;margin:5mm}</style>
+<style id="overviewRowsStyle">
+.preview-page.overview.dynamic-overview-rows .tt-table.overview-full-days tbody tr{height:var(--overview-row-px)!important;}
+.preview-page.overview.dynamic-overview-rows .tt-table.overview-full-days tbody th,
+.preview-page.overview.dynamic-overview-rows .tt-table.overview-full-days tbody td{height:var(--overview-row-px)!important;min-height:0!important;max-height:var(--overview-row-px)!important;}
+@media print{
+  .preview-page.overview.dynamic-overview-rows .tt-table.overview-full-days tbody tr,
+  .preview-page.overview.dynamic-overview-rows .tt-table.overview-full-days tbody th,
+  .preview-page.overview.dynamic-overview-rows .tt-table.overview-full-days tbody td{height:var(--overview-row-mm)!important;max-height:var(--overview-row-mm)!important;}
+}
+</style>
 </head>
 <body>
 <header class="topbar">
   <a href="timetable.html?release=r382-bottom-panel-vertical-scroll-20260722">← 시간표로 돌아가기</a>
-  <h1>시간표 출력 디자이너 <span class="badge">r367</span></h1>
+  <h1>시간표 출력 디자이너 <span class="badge">r368</span></h1>
   <div class="spacer"></div>
   <span id="authStatus" class="status">로그인 확인 중…</span>
   <button id="saveSettingsBtn" class="save">설정 저장</button>
@@ -29,7 +39,7 @@
       <div class="field"><span>출력 학기</span><select id="semester"><option value="1">1학기</option><option value="2">2학기</option></select></div>
       <select id="targetType" class="hidden"><option value="class">학급</option><option value="student">학생</option><option value="teacher">교사</option><option value="room">교실</option></select><select id="layoutMode" class="hidden"><option value="individual">개별 출력</option><option value="overview">전체표 출력</option></select>
       <div class="two"><div class="field"><span>형식</span><select id="format"><option value="pdf">PDF</option><option value="word">Word</option></select></div><div class="field"><span>용지</span><select id="paper"><option value="a4-landscape">가로</option><option value="a4-portrait">세로</option></select></div></div>
-      <div class="field hidden" id="overviewRowsField"><span>페이지당 최대 행 수</span><select id="overviewRowsPerPage"><option value="auto">자동 (10행)</option><option value="6">6행</option><option value="7">7행</option><option value="8">8행</option><option value="9">9행</option><option value="10">10행</option><option value="11">11행</option><option value="12">12행</option></select></div>
+      <div class="field hidden" id="overviewRowsField"><span>페이지당 행 수</span><select id="overviewRowsPerPage"><option value="auto">자동 (10행)</option><option value="6">6행</option><option value="7">7행</option><option value="8">8행</option><option value="9">9행</option><option value="10">10행</option><option value="11">11행</option><option value="12">12행</option></select></div>
       
       <div class="field"><span>글꼴</span><select id="fontMode"><option value="system">기본 시스템</option><option value="malgun">맑은 고딕</option><option value="malgun-tight">맑은 고딕 좁게</option><option value="pretty">개별표용 부드러운 글꼴</option><option value="nanum">나눔고딕</option></select></div>
       <div class="note-fields"><div class="field"><span>제목 왼쪽</span><input id="headerLeft" type="text" placeholder="자동: 학년/대상"></div><div class="field"><span>제목 오른쪽</span><input id="headerRight" type="text" placeholder="자동: 날짜"></div></div>
@@ -81,6 +91,6 @@
     </div></section>
   </aside>
 </main>
-<script type="module" src="./js/timetable-print-app.js?v=2026-07-23-overview-rows-r367"></script>
+<script type="module" src="./js/timetable-print-app.js?v=2026-07-24-overview-fixed-rows-r368"></script>
 </body>
 </html>
