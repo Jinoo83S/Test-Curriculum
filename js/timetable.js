@@ -49,6 +49,7 @@ const [
   manualReplaceModule,
   teacherStatisticsModule,
   displayDensityModule,
+  excelImportModule,
   cpSatImportModule,
 ] = await Promise.all([
   import(versioned("./data-cleanup.js")),
@@ -64,6 +65,7 @@ const [
   import(versioned("./timetable-manual-replace.js")),
   import(versioned("./timetable-statistics.js")),
   import(versioned("./timetable-display-density.js")),
+  import(versioned("./timetable-excel-import.js")),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
     console.warn("[CP-SAT import] optional module load failed", err);
     return {};
@@ -95,6 +97,7 @@ const { buildManualReplacementPlan } = manualReplaceModule;
 // r379 compatibility markers: timetable-teacher-statistics.js / openTeacherStatisticsDialog
 const { openStatisticsDialog } = teacherStatisticsModule;
 const { setupTimetableDisplayDensity } = displayDensityModule;
+const { createTimetableExcelImport } = excelImportModule;
 const { setupCpSatWebappImport } = cpSatImportModule || {};
 setupTimetableDisplayDensity?.();
 
@@ -4455,6 +4458,71 @@ function cloneTimetableEntries(list = entries()) {
   return (list || []).map(e => normalizeTimetableEntry(JSON.parse(JSON.stringify(e || {}))));
 }
 
+let timetableExcelImportApi = null;
+function getTimetableExcelImportApi() {
+  if (timetableExcelImportApi) return timetableExcelImportApi;
+  timetableExcelImportApi = createTimetableExcelImport({
+    getPeriodCount: () => ttConfig()?.periodCount || 7,
+    getClasses: getAllClasses,
+    getRooms,
+    getTeachers: () => appState.teachers?.teachers || [],
+    getCards: getTtCards,
+    getGroups: () => ttDomain()?.ttcardGroups || [],
+    classKey,
+    getTemplateById,
+    getTtCardClassInfos,
+    getTeachersForTtCard,
+    buildEntryDataFromTtCards,
+    normalizeTimetableEntry,
+    uid,
+    onSaveOnly: async ({ fileName, plan, entries: importedEntries }) => {
+      if (!canEdit()) throw new Error("편집 권한이 없습니다.");
+      const now = new Date().toISOString();
+      const baseName = clean(fileName).replace(/\.[^.]+$/, "") || "aSc Excel";
+      const imported = {
+        id: uid("ttv"),
+        name: `${baseName} · Excel 가져오기`,
+        note: `aSc Excel 가져오기 · 원본 ${plan.sourceRows}행 · 배치 ${importedEntries.length}개`,
+        createdAt: now,
+        updatedAt: now,
+        periodCount: plan.periodCount,
+        entryCount: importedEntries.length,
+        entries: cloneTimetableEntries(importedEntries),
+      };
+      savedSchedules().unshift(imported);
+      ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+      await saveNow("timetable", { force: true });
+      openScheduleVersionManager();
+    },
+    onApply: async ({ fileName, plan, entries: importedEntries }) => {
+      if (!canEdit()) throw new Error("편집 권한이 없습니다.");
+      const now = new Date().toISOString();
+      captureTimetableUndo(`aSc Excel 시간표 가져오기: ${clean(fileName) || "시간표.xlsx"}`);
+      if (entries().length) {
+        const backup = {
+          id: uid("ttv"),
+          name: `Excel 가져오기 전 자동 백업 ${formatVersionDate(now)}`,
+          note: `aSc Excel 적용 직전 자동 백업 · 기존 배치 ${entries().length}개`,
+          createdAt: now,
+          updatedAt: now,
+          periodCount: ttConfig().periodCount,
+          entryCount: entries().length,
+          entries: cloneTimetableEntries(entries()),
+        };
+        savedSchedules().unshift(backup);
+        ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+      }
+      ttDomain().entries = cloneTimetableEntries(importedEntries);
+      await saveNow("timetable", { force: true });
+      recomputeConflicts();
+      renderAll();
+      const warningText = plan.warnings?.length ? `\n\n확인할 경고 ${plan.warnings.length}건은 가져오기 미리보기에서 표시했습니다.` : "";
+      alert(`aSc Excel 시간표를 적용했습니다.\n배치 ${importedEntries.length}개${warningText}`);
+    },
+  });
+  return timetableExcelImportApi;
+}
+
 function formatVersionDate(iso) {
   const d = new Date(iso || Date.now());
   if (Number.isNaN(d.getTime())) return "날짜 없음";
@@ -4703,7 +4771,9 @@ function openScheduleVersionManager() {
         <div class="tt-version-actions">
           <button type="button" class="secondary" data-action="export-current">현재 배치 JSON 내보내기</button>
           <button type="button" class="secondary" data-action="import-json">JSON 가져오기</button>
+          <button type="button" class="secondary" data-action="import-xlsx">aSc Excel 가져오기</button>
           <input id="ttVersionImportFile" type="file" accept="application/json,.json" hidden>
+          <input id="ttVersionImportExcelFile" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden>
         </div>
         <div id="ttVersionCompareBox"></div>
         <div class="tt-version-list">
@@ -4763,6 +4833,19 @@ function openScheduleVersionManager() {
   });
   overlay.querySelector('[data-action="import-json"]')?.addEventListener("click", () => overlay.querySelector("#ttVersionImportFile")?.click());
   overlay.querySelector("#ttVersionImportFile")?.addEventListener("change", e => importSavedScheduleVersion(e.target.files?.[0]));
+  overlay.querySelector('[data-action="import-xlsx"]')?.addEventListener("click", () => overlay.querySelector("#ttVersionImportExcelFile")?.click());
+  overlay.querySelector("#ttVersionImportExcelFile")?.addEventListener("change", async e => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    close();
+    try {
+      await getTimetableExcelImportApi().openFile(file);
+    } catch (error) {
+      alert(`aSc Excel 파일을 불러올 수 없습니다.\n${error?.message || error}`);
+      openScheduleVersionManager();
+    }
+  });
   overlay.querySelectorAll("[data-action][data-id]").forEach(btn => {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
