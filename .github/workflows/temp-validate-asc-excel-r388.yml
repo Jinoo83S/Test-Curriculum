@@ -39,8 +39,9 @@ jobs:
           node --check js/timetable-excel-import.js
           node --check js/timetable.js
           git diff --check
-          test "$(git diff --name-only | sort | tr '\n' ' ')" = "js/timetable-excel-import.js js/timetable.js timetable.html "
-          ! git diff --name-only | grep -E '\.css$'
+          actual="$( { git diff --name-only; git ls-files --others --exclude-standard; } | sort -u | tr '\n' ' ')"
+          test "$actual" = "js/timetable-excel-import.js js/timetable.js timetable.html "
+          ! printf '%s\n' "$actual" | grep -E '\.css$'
           grep -q 'data-action="import-xlsx"' js/timetable.js
           grep -q 'timetableModuleVersion = "2026-08-10-asc-excel-import-r388"' timetable.html
           cp js/timetable-excel-import.js /tmp/timetable-excel-import.mjs
