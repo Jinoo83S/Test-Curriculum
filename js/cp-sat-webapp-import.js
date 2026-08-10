@@ -1583,6 +1583,7 @@ export function setupCpSatWebappImport(ctx = {}) {
     resumeAutoSave = null,
     isAutoSaveSuspended = null,
     prepareSolverState = null,
+    getEffectiveTeacherConstraints = null,
     verifyPersistedTimetableState = null,
     buildAutoSourceSignature = null,
     activeSchoolYear = "",
@@ -1590,6 +1591,14 @@ export function setupCpSatWebappImport(ctx = {}) {
 
   ensureStyle();
   installCpSatButton();
+
+  function currentTimetableForSolver() {
+    const current = ttDomain?.() || appState?.timetable || {};
+    const effective = typeof getEffectiveTeacherConstraints === "function"
+      ? getEffectiveTeacherConstraints()
+      : current.teacherConstraints;
+    return { ...current, teacherConstraints: deepClone(effective || {}) };
+  }
 
   function findExistingCpSatButton() {
     const byId = document.getElementById(CP_SAT_API_BUTTON_ID)
@@ -1739,8 +1748,7 @@ export function setupCpSatWebappImport(ctx = {}) {
   }
 
   function buildSolverStateForEntries(entryList = null) {
-    const domain = ttDomain?.() || appState?.timetable || {};
-    const timetable = deepClone(domain || {});
+    const timetable = deepClone(currentTimetableForSolver());
     const useEntries = entryList == null ? asArray(entries?.()) : asArray(entryList);
     timetable.entries = deepClone(useEntries);
     return makeSolverState(appState, { timetable, entries: useEntries }, { preserveAllEntries: true });
@@ -2327,7 +2335,7 @@ ${error?.message || error}`);
     async function solverState() {
       if (typeof prepareSolverState === "function") await prepareSolverState();
       policyState = readPolicyEditor();
-      const currentTimetable = ttDomain?.() || appState?.timetable || {};
+      const currentTimetable = currentTimetableForSolver();
       latestState = makeSolverState(appState, {
         timetable: { ...currentTimetable, cpSatConstraintPolicy: deepClone(policyState) },
         entries: asArray(entries?.()),
@@ -2377,7 +2385,7 @@ ${error?.message || error}`);
     function localSolverPreflight() {
       const currentEntries = asArray(entries?.());
       const seedEntries = currentEntries.filter(entry => isSolverSeedEntryForPayload(entry, currentEntries.length));
-      const currentTimetable = ttDomain?.() || appState?.timetable || {};
+      const currentTimetable = currentTimetableForSolver();
       const scopeGrades = unique(asArray(currentTimetable.ttcards || currentTimetable.ttCards || currentTimetable.cards).map(card => card?.gradeKey));
       return buildTimetablePreflightDiagnostics({
         ...appState,
@@ -2853,11 +2861,11 @@ ${error?.message || error}`);
 
   window.HisCpSatWebappImport = {
     makeSolverState: () => makeSolverState(appState, {
-      timetable: ttDomain?.() || appState?.timetable || {},
+      timetable: currentTimetableForSolver(),
       entries: asArray(entries?.()),
     }),
     privacyReport: () => privacyReport(makeSolverState(appState, {
-      timetable: ttDomain?.() || appState?.timetable || {},
+      timetable: currentTimetableForSolver(),
       entries: asArray(entries?.()),
     })),
     refreshCurrentValidationMeta: (base = localStorage.getItem(API_URL_KEY) || API_DEFAULT) => refreshCurrentValidationMeta(base, "console-current-validation-refresh"),

@@ -15,6 +15,7 @@ import { officeXmlEsc as xmlEsc } from "./timetable-print-archive.js?v=2026-07-1
 import { createDocxBuilder } from "./timetable-print-word.js?v=2026-07-15-print-modules-r361";
 import { buildXlsxDatabaseBlob } from "./timetable-print-excel.js?v=2026-07-15-print-modules-r361";
 import { createPdfExporter } from "./timetable-print-pdf.js?v=2026-07-15-print-usability-r365";
+import { buildTeacherEventPrintEntries } from "./timetable-teacher-events.js?v=2026-07-24-teacher-events-r369-2";
 import {
   allocateProportionalHeights,
   card3x3Dimensions,
@@ -213,7 +214,17 @@ function semesterCardValues(c, e={}) { return resolveSemesterCardValues(c || {},
 function semesterEntryValues(e) { return resolveSemesterEntryValues(e || {}, templateMap(), selectedSemester()); }
 function classes() { return (appState.classes?.classes || []).map(c => ({...c, key:classKey(c), label:classLabel(c), gradeNo:gradeNo(c.gradeKey || c.grade)})).filter(c => c.gradeNo>=7 && c.gradeNo<=12).sort((a,b)=>a.gradeNo-b.gradeNo || a.label.localeCompare(b.label,"ko",{numeric:true})); }
 function rooms() { return (appState.rooms?.rooms || []).map(r => ({...r, label:clean(r.name || r.short || r.id)})).filter(r=>r.id && r.label).sort((a,b)=>a.label.localeCompare(b.label,"ko",{numeric:true})); }
-function entries() { return appState.timetable?.entries || []; }
+function baseEntries() { return appState.timetable?.entries || []; }
+function entries() {
+  const base = baseEntries();
+  if (targetType() !== "teacher") return base;
+  const events = buildTeacherEventPrintEntries(
+    appState.timetable?.teacherEvents || [],
+    appState.teachers?.teachers || [],
+    appState.timetable?.config?.periodCount || 7,
+  );
+  return [...base, ...events];
+}
 function cards() { return appState.timetable?.ttcards || []; }
 function cardMap() { return new Map(cards().map(c => [c.id,c])); }
 function roomMap() { return new Map(rooms().map(r => [r.id,r])); }
