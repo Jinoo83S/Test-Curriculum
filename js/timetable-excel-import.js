@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-excel-import.js · aSc 기반 정리 Excel 시간표 가져오기
-// 2026-08-10: 기존 카드/그룹/교사/교실 설정은 유지하고 entries만 재구성합니다.
+// r389 · 2026-08-10: aSc 배치를 현재 그룹 구조 그대로 복원하고 기존 카드/교사/학급 메타를 유지합니다.
 // ================================================================
 
 const DAY_INDEX = new Map([
@@ -11,6 +11,7 @@ const DAY_INDEX = new Map([
   ["금", 4], ["금요일", 4], ["fri", 4], ["friday", 4],
 ]);
 const REQUIRED_HEADERS = ["학년", "반", "요일", "교시", "과목", "교사", "교실"];
+const DAY_LABELS = ["월", "화", "수", "목", "금"];
 const STYLE_ID = "ttAscExcelImportStyle20260810";
 
 const clean = value => String(value ?? "").trim();
@@ -260,17 +261,19 @@ function buildMembership(groups = []) {
   const membership = new Map();
   asArray(groups).forEach(group => {
     const excluded = new Set(asArray(group.excludedCardIds).map(clean).filter(Boolean));
-    const unitCardIds = new Set();
-    asArray(group.units).forEach(unit => {
-      const ids = unique(unit.ttcardIds).filter(id => !excluded.has(id));
-      ids.forEach(id => {
-        unitCardIds.add(id);
-        membership.set(id, { groupId: group.id, groupName: clean(group.name), unitId: unit.id, unitCardIds: ids, kind: "unit" });
+    // 현재 시간표의 정식 배치 구조는 같은 group의 구성 카드를 같은 시간에 하나의 entry로 보관합니다.
+    // units는 자동배치 후보를 구성하기 위한 내부 구조일 수 있으므로 Excel 복원 시 unit별 entry로 쪼개지 않습니다.
+    const groupCardIds = unique([
+      ...asArray(group.units).flatMap(unit => asArray(unit?.ttcardIds)),
+      ...asArray(group.poolCardIds),
+    ]).filter(id => id && !excluded.has(id));
+    groupCardIds.forEach(id => {
+      membership.set(id, {
+        groupId: group.id,
+        groupName: clean(group.name),
+        groupCardIds,
+        kind: "group",
       });
-    });
-    unique(group.poolCardIds).forEach(id => {
-      if (!id || excluded.has(id) || unitCardIds.has(id)) return;
-      membership.set(id, { groupId: group.id, groupName: clean(group.name), unitId: null, unitCardIds: [id], kind: "pool" });
     });
   });
   return membership;
@@ -345,6 +348,54 @@ function addBucketRow(bucket, row, cardId, roomResolution, teacherMap) {
   roomResolution.missing.forEach(name => bucket.missingRooms.add(name));
 }
 
+function compoundCoverageKey(card = {}) {
+  if (!card?.compoundParentTemplateId || !card?.compoundPartId) return "";
+  return `${card.gradeKey || ""}::${card.sectionIdx ?? 0}::${card.compoundParentTemplateId}`;
+}
+
+function analyzeGroupCoverage(bucket, cardById) {
+  if (!bucket?.member?.groupId) return null;
+  const expectedIds = unique(bucket.member.groupCardIds).filter(id => cardById.has(id));
+  if (!expectedIds.length) return null;
+
+  const present = new Set(bucket.cardIds);
+  const missingPlain = [];
+  const compoundAlternatives = new Map();
+
+  expectedIds.forEach(id => {
+    const card = cardById.get(id);
+    const compoundKey = compoundCoverageKey(card);
+    if (!compoundKey) {
+      if (!present.has(id)) missingPlain.push(id);
+      return;
+    }
+    if (!compoundAlternatives.has(compoundKey)) compoundAlternatives.set(compoundKey, []);
+    compoundAlternatives.get(compoundKey).push(id);
+  });
+
+  const missingCompound = [...compoundAlternatives.entries()]
+    .filter(([, ids]) => !ids.some(id => present.has(id)))
+    .map(([key, ids]) => ({ key, ids }));
+
+  if (!missingPlain.length && !missingCompound.length) return null;
+
+  const labelForId = id => {
+    const card = cardById.get(id) || {};
+    return clean(card.subject || card.label || card.subjectEn || id);
+  };
+  return {
+    groupId: bucket.member.groupId,
+    groupName: bucket.member.groupName || bucket.member.groupId,
+    day: bucket.day,
+    period: bucket.period,
+    presentCardIds: [...bucket.cardIds],
+    missingPlainCardIds: missingPlain,
+    missingPlainLabels: missingPlain.map(labelForId),
+    missingCompoundKeys: missingCompound.map(item => item.key),
+    missingCompoundLabels: missingCompound.map(item => unique(item.ids.map(labelForId)).join(" / ")),
+  };
+}
+
 export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manualMappings = {}) {
   const periodCount = Math.max(1, Number(context.periodCount || 7) || 7);
   const classMap = makeClassMap(context.classes, context.classKey);
@@ -385,8 +436,9 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
     const { row, cardMeta, roomResolution } = mapped;
     const cardId = cardMeta.card.id;
     const member = membership.get(cardId) || null;
-    const bucketKey = member?.kind === "unit"
-      ? `${row.day}:${row.period}:unit:${member.groupId}:${member.unitId}`
+    // 같은 group에 속한 카드들은 현재 정상 시간표와 동일하게 요일+교시+groupId당 하나의 entry로 합칩니다.
+    const bucketKey = member?.groupId
+      ? `${row.day}:${row.period}:group:${member.groupId}`
       : `${row.day}:${row.period}:card:${cardId}`;
     if (!buckets.has(bucketKey)) {
       buckets.set(bucketKey, {
@@ -408,21 +460,26 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
   });
 
   const entries = [];
-  const partialUnits = [];
+  const groupSyncWarnings = [];
   const cardById = new Map(cardMetas.map(meta => [meta.card.id, meta.card]));
   buckets.forEach(bucket => {
-    const cardIds = [...bucket.cardIds];
-    if (bucket.member?.kind === "unit") {
-      const expected = unique(bucket.member.unitCardIds).filter(id => cardById.has(id));
-      const missing = expected.filter(id => !bucket.cardIds.has(id));
-      if (missing.length) partialUnits.push({ bucket, expected, present: cardIds, missing });
-    }
+    const coverageWarning = analyzeGroupCoverage(bucket, cardById);
+    if (coverageWarning) groupSyncWarnings.push(coverageWarning);
+    const presentCardIds = [...bucket.cardIds];
+    // Excel에 실제로 같은 시간에 존재하는 카드만 하나의 group entry로 합칩니다.
+    // 현재 그룹의 나머지 카드를 임의로 추가하면 aSc 배치 자체를 바꾸게 되므로 절대 보충하지 않습니다.
+    // 다만 저장 순서는 현재 group 정의를 우선해 재현성을 유지합니다.
+    const groupOrder = bucket.member?.groupCardIds || [];
+    const orderedPresent = groupOrder.filter(id => bucket.cardIds.has(id));
+    const cardIds = orderedPresent.length
+      ? [...orderedPresent, ...presentCardIds.filter(id => !orderedPresent.includes(id))]
+      : presentCardIds;
     const cards = cardIds.map(id => cardById.get(id)).filter(Boolean);
     let data = context.buildEntryDataFromTtCards?.(cards, {
       day: bucket.day,
       period: bucket.period,
       groupId: bucket.member?.groupId || null,
-      unitId: bucket.member?.unitId || null,
+      unitId: null,
       groupName: bucket.member?.groupName || "",
     });
     if (!data && cards.length) {
@@ -435,10 +492,9 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
       };
     }
     if (!data) return;
-    data.audienceClassKeys = [...bucket.classKeys];
-    data.teacherNames = [...bucket.teacherNames];
-    data.teacherIds = [...bucket.teacherIds];
-    data.teacherName = data.teacherNames.join(", ");
+    // 교사/학급 점유 범위는 현재 카드가 source of truth입니다.
+    // Excel 행의 교사·반 텍스트로 덮어쓰면 한 그룹이 다시 여러 충돌로 보일 수 있으므로
+    // buildEntryDataFromTtCards()가 만든 canonical 메타를 그대로 유지합니다.
     const roomIds = [...bucket.roomIds];
     const assignments = {};
     bucket.cardRows.forEach((rowsForCard, id) => {
@@ -446,19 +502,34 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
       if (ids.length) assignments[id] = ids[0];
     });
     if (Object.keys(assignments).length) data.roomAssignmentsByTtCardId = assignments;
-    if (roomIds.length > 1) {
-      data.roomIds = roomIds;
-      data.roomId = null;
-    } else if (roomIds.length === 1) {
-      data.roomId = roomIds[0];
-      delete data.roomIds;
+    if (roomIds.length) {
+      data.roomId = roomIds.length === 1 ? roomIds[0] : null;
+      data.roomIds = [...roomIds];
+      data.manualRoomIds = [...roomIds];
+      data.fixedRoomIds = [...roomIds];
+      data.solverFixedRoomIds = [...roomIds];
+      data.requiredRoomIds = [...roomIds];
+      if (roomIds.length > 1) {
+        data.requiredRoomCount = roomIds.length;
+        data.multiRoomCount = roomIds.length;
+        data.solverRequiredRoomCount = roomIds.length;
+      } else {
+        delete data.requiredRoomCount;
+        delete data.multiRoomCount;
+        delete data.solverRequiredRoomCount;
+      }
+      data.roomRule = "fixed";
+      data.roomPinned = true;
     } else {
       data.roomId = null;
       delete data.roomIds;
-    }
-    if (roomIds.length) {
-      data.roomRule = "fixed";
-      data.roomPinned = true;
+      delete data.manualRoomIds;
+      delete data.fixedRoomIds;
+      delete data.solverFixedRoomIds;
+      delete data.requiredRoomIds;
+      delete data.requiredRoomCount;
+      delete data.multiRoomCount;
+      delete data.solverRequiredRoomCount;
     }
     data.pinned = false;
     const normalizedEntry = context.normalizeTimetableEntry ? context.normalizeTimetableEntry({ id: context.uid?.("ent") || `ent-import-${Date.now()}-${entries.length}`, ...data }) : { id: context.uid?.("ent") || `ent-import-${Date.now()}-${entries.length}`, ...data };
@@ -467,8 +538,8 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
 
   if (sourceTeacherMissing.size) warnings.push(`현재 교사 명단에 없는 이름: ${[...sourceTeacherMissing].join(", ")}`);
   if (sourceRoomMissing.size) warnings.push(`현재 교실 목록에 없는 이름: ${[...sourceRoomMissing].join(", ")}`);
-  if (classAudienceMismatch.length) warnings.push(`Excel 반과 현재 과목카드 대상 반이 다른 행 ${classAudienceMismatch.length}개 — 가져온 entry에는 Excel 반을 우선 적용합니다.`);
-  if (partialUnits.length) warnings.push(`현재 묶음수업 unit의 카드가 Excel에서 일부만 확인된 시간 ${partialUnits.length}개`);
+  if (classAudienceMismatch.length) warnings.push(`Excel 반과 현재 과목카드 대상 반이 다른 행 ${classAudienceMismatch.length}개 — 배치에는 현재 과목카드의 대상 반을 유지합니다. 매칭을 확인해 주세요.`);
+  if (groupSyncWarnings.length) warnings.push(`현재 동시배정 그룹 구성과 aSc Excel 배치가 다른 시간 ${groupSyncWarnings.length}개 — 누락 카드를 임의로 추가하지 않고 기존 동시배정 충돌 검사에 맡깁니다.`);
   if (normalized.invalid.length) warnings.push(`기본 열 값이 잘못되어 제외된 행 ${normalized.invalid.length}개`);
 
   const sourceSlotCount = new Set(normalized.rows.map(row => `${row.day}:${row.period}`)).size;
@@ -489,7 +560,9 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
     sourceTeacherMissing: [...sourceTeacherMissing],
     sourceRoomMissing: [...sourceRoomMissing],
     classAudienceMismatch,
-    partialUnits,
+    groupSyncWarnings,
+    // r388 호환 필드는 유지하되, 그룹 완성 여부는 기존 충돌검사의 syncRequired가 판정합니다.
+    partialUnits: [],
     ready: unresolved.length === 0 && normalized.invalid.length === 0 && entries.length > 0,
   };
 }
@@ -596,6 +669,12 @@ export function createTimetableExcelImport(context = {}) {
         return `<div class="tt-xlsx-map"><div><b>${escapeHtml(`${row.gradeNo}학년 ${row.classLabel} · ${row.subject}`)}</b><small>Excel 교사: ${escapeHtml(row.teacher || "없음")} · 행 ${row.sourceRow}</small></div><select data-map-key="${escapeHtml(item.key)}"><option value="">현재 과목카드를 선택하세요</option>${options}</select></div>`;
       }).join("") : `<div class="tt-xlsx-ok">✓ 모든 유효 행이 현재 시간표 카드와 매칭되었습니다.</div>`;
       const warnings = plan.warnings.length ? `<ul>${plan.warnings.map(x => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : `<div class="tt-xlsx-ok">추가 경고가 없습니다.</div>`;
+      const groupSyncHtml = plan.groupSyncWarnings.length
+        ? `<ul>${plan.groupSyncWarnings.slice(0, 30).map(item => {
+            const missing = [...item.missingPlainLabels, ...item.missingCompoundLabels].filter(Boolean).join(", ") || "구성 카드";
+            return `<li><b>${escapeHtml(item.groupName)}</b> · ${DAY_LABELS[item.day] || "?"} ${item.period + 1}교시 · 현재 그룹 기준 누락: ${escapeHtml(missing)}</li>`;
+          }).join("")}</ul>${plan.groupSyncWarnings.length > 30 ? `<div>외 ${plan.groupSyncWarnings.length - 30}개 시간</div>` : ""}`
+        : `<div class="tt-xlsx-ok">✓ 현재 동시배정 그룹 구성과 일치합니다.</div>`;
       body.innerHTML = `<div class="tt-xlsx-summary">
         <div class="tt-xlsx-stat"><b>${plan.sourceRows}</b><span>Excel 행</span></div>
         <div class="tt-xlsx-stat"><b>${plan.mappedRowCount}</b><span>매칭 행</span></div>
@@ -606,6 +685,7 @@ export function createTimetableExcelImport(context = {}) {
       </div>
       <div class="tt-xlsx-box"><h3>교시 해석</h3><div class="tt-xlsx-box-content">Excel 교시값에서 <b>${plan.periodOffset}</b>을 빼 현재 0기준 교시로 변환합니다. 이 파일처럼 aSc의 HR이 1번이고 실제 수업이 2~8이면 <b>2 → 1교시</b>, <b>8 → 7교시</b>로 들어갑니다.</div></div>
       <div class="tt-xlsx-box"><h3>과목카드 매칭${plan.unresolvedGroups.length ? ` · 확인 필요 ${plan.unresolvedGroups.length}종` : ""}</h3><div class="tt-xlsx-box-content ${plan.unresolvedGroups.length ? "tt-xlsx-error" : ""}">${unresolvedHtml}</div></div>
+      <div class="tt-xlsx-box"><h3>동시배정 구조${plan.groupSyncWarnings.length ? ` · 확인 필요 ${plan.groupSyncWarnings.length}시간` : ""}</h3><div class="tt-xlsx-box-content ${plan.groupSyncWarnings.length ? "tt-xlsx-warn" : ""}">${groupSyncHtml}</div></div>
       <div class="tt-xlsx-box"><h3>경고</h3><div class="tt-xlsx-box-content ${plan.warnings.length ? "tt-xlsx-warn" : ""}">${warnings}</div></div>
       <div class="tt-xlsx-box"><h3>가져오기 원칙</h3><div class="tt-xlsx-box-content">“전체” 시트만 사용합니다. “교사별/반별/교실별”은 같은 데이터의 정렬본이므로 중복 가져오지 않습니다. 요일·교시가 없는 “미배정” 시트는 현재 시간표 위치를 만들 수 없어 제외합니다.</div></div>`;
       body.querySelectorAll("[data-map-key]").forEach(select => {
