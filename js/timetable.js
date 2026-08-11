@@ -4458,6 +4458,110 @@ function cloneTimetableEntries(list = entries()) {
   return (list || []).map(e => normalizeTimetableEntry(JSON.parse(JSON.stringify(e || {}))));
 }
 
+function stableReplacementEntryIdentityKey(entry = {}) {
+  const cardIds = [...new Set([...(entry.ttcardIds || []), entry.ttcardId].map(clean).filter(Boolean))].sort();
+  if (cardIds.length) return `cards:${cardIds.join("|")}`;
+  const templateIds = [...new Set([...(entry.templateIds || []), entry.templateId].map(clean).filter(Boolean))].sort();
+  const gradeKeys = [...new Set([...(entry.gradeKeys || []), entry.gradeKey].map(clean).filter(Boolean))].sort();
+  return [
+    "entry",
+    clean(entry.groupId),
+    clean(entry.unitId),
+    templateIds.join("|"),
+    gradeKeys.join("|"),
+    entry.sectionIdx ?? 0,
+    clean(entry.teacherName),
+  ].join(":");
+}
+
+function remapReplacementEntryIds(nextEntries = [], currentEntries = entries()) {
+  const current = cloneTimetableEntries(currentEntries);
+  const next = cloneTimetableEntries(nextEntries);
+  const buckets = new Map();
+
+  current.forEach(entry => {
+    const key = stableReplacementEntryIdentityKey(entry);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(entry);
+  });
+  buckets.forEach(bucket => bucket.sort((a, b) =>
+    (Number(a.day) - Number(b.day)) ||
+    (Number(a.period) - Number(b.period)) ||
+    clean(a.id).localeCompare(clean(b.id))
+  ));
+
+  let reusedCount = 0;
+  next.forEach(entry => {
+    const bucket = buckets.get(stableReplacementEntryIdentityKey(entry));
+    if (!bucket?.length) return;
+    let matchIndex = bucket.findIndex(candidate =>
+      Number(candidate.day) === Number(entry.day) &&
+      Number(candidate.period) === Number(entry.period)
+    );
+    if (matchIndex < 0) matchIndex = 0;
+    const [matched] = bucket.splice(matchIndex, 1);
+    if (!clean(matched?.id)) return;
+    entry.id = matched.id;
+    reusedCount += 1;
+  });
+
+  const currentIds = new Set(current.map(entry => clean(entry.id)).filter(Boolean));
+  const nextIds = new Set(next.map(entry => clean(entry.id)).filter(Boolean));
+  const deletedCount = [...currentIds].filter(id => !nextIds.has(id)).length;
+  const newCount = next.filter(entry => !currentIds.has(clean(entry.id))).length;
+  const estimatedEntryWrites = next.length + deletedCount;
+  const estimatedAtomicWrites = estimatedEntryWrites + 2; // timetableMeta + revision
+
+  return {
+    entries: next,
+    reusedCount,
+    newCount,
+    deletedCount,
+    estimatedEntryWrites,
+    estimatedAtomicWrites,
+  };
+}
+
+function assertReplacementSaveCapacity(plan = {}, label = "시간표 교체") {
+  if (LOCAL_DEV_MODE) return;
+  const estimated = Math.max(0, Number(plan.estimatedAtomicWrites || 0) || 0);
+  if (estimated <= 480) return;
+  throw new Error(
+    `${label} 저장 예상 쓰기 ${estimated}건으로 Firestore 원자 저장 안전 범위(480건)를 초과합니다. ` +
+    `현재 배치를 다시 불러온 뒤 Excel/저장본을 적용해 주세요.`
+  );
+}
+
+function isLocalStorageQuotaSaveError(error) {
+  const message = `${error?.name || ""} ${error?.message || error || ""}`.toLowerCase();
+  return message.includes("localstorage") || message.includes("quota") || message.includes("저장공간");
+}
+
+async function saveTimetableWithStorageRetry(options = {}) {
+  const saveOptions = { ...options, force: true, throwOnError: true };
+  const run = async () => {
+    const ok = await saveNow("timetable", saveOptions);
+    if (!ok) throw new Error("시간표 저장이 완료되지 않았습니다.");
+    return true;
+  };
+
+  try {
+    await run();
+    return { ok: true, prunedLocalSavedSchedules: 0 };
+  } catch (error) {
+    if (!LOCAL_DEV_MODE || !isLocalStorageQuotaSaveError(error) || savedSchedules().length <= 1) throw error;
+
+    const beforeCount = savedSchedules().length;
+    // local=1은 테스트용 복사본입니다. 저장공간 한도에 걸릴 때만 수동 배치 보관본을
+    // 최신 1개로 줄이고 현재 시간표 데이터는 그대로 보존합니다.
+    ttDomain().savedSchedules = savedSchedules().slice(0, 1);
+    const removed = Math.max(0, beforeCount - ttDomain().savedSchedules.length);
+    console.warn(`[aSc-save:r390] localStorage 용량 보정: 수동 저장본 ${beforeCount}개 → ${ttDomain().savedSchedules.length}개`);
+    await run();
+    return { ok: true, prunedLocalSavedSchedules: removed };
+  }
+}
+
 let timetableExcelImportApi = null;
 function getTimetableExcelImportApi() {
   if (timetableExcelImportApi) return timetableExcelImportApi;
@@ -4479,45 +4583,84 @@ function getTimetableExcelImportApi() {
       if (!canEdit()) throw new Error("편집 권한이 없습니다.");
       const now = new Date().toISOString();
       const baseName = clean(fileName).replace(/\.[^.]+$/, "") || "aSc Excel";
+      const previousSavedSchedules = JSON.parse(JSON.stringify(savedSchedules()));
+      const stable = remapReplacementEntryIds(importedEntries, entries());
       const imported = {
         id: uid("ttv"),
         name: `${baseName} · Excel 가져오기`,
-        note: `aSc Excel 가져오기 · 원본 ${plan.sourceRows}행 · 배치 ${importedEntries.length}개`,
+        note: `aSc Excel 가져오기 · 원본 ${plan.sourceRows}행 · 배치 ${stable.entries.length}개`,
         createdAt: now,
         updatedAt: now,
         periodCount: plan.periodCount,
-        entryCount: importedEntries.length,
-        entries: cloneTimetableEntries(importedEntries),
+        entryCount: stable.entries.length,
+        entries: stable.entries,
       };
-      savedSchedules().unshift(imported);
-      ttDomain().savedSchedules = savedSchedules().slice(0, 30);
-      await saveNow("timetable", { force: true });
-      openScheduleVersionManager();
+
+      try {
+        savedSchedules().unshift(imported);
+        ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+        const saved = await saveTimetableWithStorageRetry({
+          revisionReason: "asc-excel-save-version",
+          revisionLabel: "aSc Excel 저장본 추가",
+        });
+        if (saved.prunedLocalSavedSchedules) {
+          alert(`로컬 저장공간 한도 때문에 로컬 수동 저장본은 최신 1개만 유지했습니다.\n현재 시간표 데이터는 그대로 보존됩니다.`);
+        }
+        openScheduleVersionManager();
+      } catch (error) {
+        ttDomain().savedSchedules = previousSavedSchedules;
+        throw error;
+      }
     },
     onApply: async ({ fileName, plan, entries: importedEntries }) => {
       if (!canEdit()) throw new Error("편집 권한이 없습니다.");
       const now = new Date().toISOString();
-      captureTimetableUndo(`aSc Excel 시간표 가져오기: ${clean(fileName) || "시간표.xlsx"}`);
-      if (entries().length) {
-        const backup = {
-          id: uid("ttv"),
-          name: `Excel 가져오기 전 자동 백업 ${formatVersionDate(now)}`,
-          note: `aSc Excel 적용 직전 자동 백업 · 기존 배치 ${entries().length}개`,
-          createdAt: now,
-          updatedAt: now,
-          periodCount: ttConfig().periodCount,
-          entryCount: entries().length,
-          entries: cloneTimetableEntries(entries()),
-        };
-        savedSchedules().unshift(backup);
-        ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+      const previousEntries = cloneTimetableEntries(entries());
+      const previousSavedSchedules = JSON.parse(JSON.stringify(savedSchedules()));
+      const stable = remapReplacementEntryIds(importedEntries, previousEntries);
+      assertReplacementSaveCapacity(stable, "aSc Excel 가져오기");
+
+      try {
+        captureTimetableUndo(`aSc Excel 시간표 가져오기: ${clean(fileName) || "시간표.xlsx"}`);
+        if (previousEntries.length) {
+          const backup = {
+            id: uid("ttv"),
+            name: `Excel 가져오기 전 자동 백업 ${formatVersionDate(now)}`,
+            note: `aSc Excel 적용 직전 자동 백업 · 기존 배치 ${previousEntries.length}개`,
+            createdAt: now,
+            updatedAt: now,
+            periodCount: ttConfig().periodCount,
+            entryCount: previousEntries.length,
+            entries: cloneTimetableEntries(previousEntries),
+          };
+          savedSchedules().unshift(backup);
+          ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+        }
+
+        ttDomain().entries = stable.entries;
+        const saved = await saveTimetableWithStorageRetry({
+          revisionReason: "asc-excel-import",
+          revisionLabel: "aSc Excel 시간표 가져오기",
+        });
+        recomputeConflicts();
+        renderAll();
+
+        console.info(
+          `[aSc-save:r390] 적용 저장 완료 entries=${stable.entries.length} reusedIds=${stable.reusedCount} ` +
+          `newIds=${stable.newCount} deleteIds=${stable.deletedCount} estimatedAtomicWrites=${stable.estimatedAtomicWrites}`
+        );
+        const warningText = plan.warnings?.length ? `\n\n확인할 경고 ${plan.warnings.length}건은 가져오기 미리보기에서 표시했습니다.` : "";
+        const localStorageText = saved.prunedLocalSavedSchedules
+          ? `\n\n로컬 저장공간 한도 때문에 로컬 수동 저장본은 최신 1개만 유지했습니다.`
+          : "";
+        alert(`aSc Excel 시간표를 적용하고 저장했습니다.\n배치 ${stable.entries.length}개${warningText}${localStorageText}`);
+      } catch (error) {
+        ttDomain().entries = previousEntries;
+        ttDomain().savedSchedules = previousSavedSchedules;
+        try { recomputeConflicts(); } catch (_) {}
+        try { renderAll(); } catch (_) {}
+        throw error;
       }
-      ttDomain().entries = cloneTimetableEntries(importedEntries);
-      await saveNow("timetable", { force: true });
-      recomputeConflicts();
-      renderAll();
-      const warningText = plan.warnings?.length ? `\n\n확인할 경고 ${plan.warnings.length}건은 가져오기 미리보기에서 표시했습니다.` : "";
-      alert(`aSc Excel 시간표를 적용했습니다.\n배치 ${importedEntries.length}개${warningText}`);
     },
   });
   return timetableExcelImportApi;
@@ -4616,8 +4759,9 @@ function buildVersionCompareHtml(version) {
   </div>`;
 }
 
-function saveCurrentScheduleVersion(name = "") {
-  if (!canEdit()) return;
+async function saveCurrentScheduleVersion(name = "") {
+  if (!canEdit()) return null;
+  const previousSavedSchedules = JSON.parse(JSON.stringify(savedSchedules()));
   const version = {
     id: uid("ttv"),
     name: clean(name) || defaultSavedScheduleName(),
@@ -4630,26 +4774,65 @@ function saveCurrentScheduleVersion(name = "") {
   };
   savedSchedules().unshift(version);
   ttDomain().savedSchedules = savedSchedules().slice(0, 30);
-  void saveNow("timetable", { force: true });
-  renderAll();
-  return version;
+
+  try {
+    const saved = await saveTimetableWithStorageRetry({
+      revisionReason: "manual-schedule-save",
+      revisionLabel: `현재 배치 저장 · ${version.name}`,
+    });
+    if (saved.prunedLocalSavedSchedules) {
+      alert(`로컬 저장공간 한도 때문에 로컬 수동 저장본은 최신 1개만 유지했습니다.\n현재 시간표 데이터는 그대로 보존됩니다.`);
+    }
+    renderAll();
+    return version;
+  } catch (error) {
+    ttDomain().savedSchedules = previousSavedSchedules;
+    renderAll();
+    alert(`현재 배치를 저장하지 못했습니다.\n\n${error?.message || error}`);
+    return null;
+  }
 }
 
-function loadSavedScheduleVersion(versionId) {
-  if (!canEdit()) return;
+async function loadSavedScheduleVersion(versionId) {
+  if (!canEdit()) return false;
   const version = savedSchedules().find(v => v.id === versionId);
-  if (!version) return;
+  if (!version) return false;
   const msg = `저장된 배치 "${version.name}"을 불러올까요?\n\n현재 시간표 배치는 저장본의 배치로 교체됩니다.\n카드/그룹/교사조건은 그대로 유지됩니다.`;
-  if (!confirm(msg)) return;
+  if (!confirm(msg)) return false;
+
+  const previousEntries = cloneTimetableEntries(entries());
+  const previousPeriodCount = ttConfig().periodCount;
+  const stable = remapReplacementEntryIds(version.entries || [], previousEntries);
+  assertReplacementSaveCapacity(stable, "저장 배치 불러오기");
+
   captureTimetableUndo(`저장 배치 불러오기: ${version.name}`);
-  ttDomain().entries = cloneTimetableEntries(version.entries || []);
+  ttDomain().entries = stable.entries;
+  let periodChanged = false;
   if (version.periodCount && version.periodCount !== ttConfig().periodCount) {
     const applyPeriod = confirm(`저장본은 ${version.periodCount}교시 기준입니다. 현재 교시 설정도 ${version.periodCount}교시로 바꿀까요?`);
-    if (applyPeriod) setPeriodCount(version.periodCount);
+    if (applyPeriod) { setPeriodCount(version.periodCount); periodChanged = true; }
   }
-  void saveNow("timetable", { force: true });
-  recomputeConflicts();
-  renderAll();
+
+  try {
+    await saveTimetableWithStorageRetry({
+      revisionReason: "saved-schedule-load",
+      revisionLabel: `저장 배치 불러오기 · ${version.name}`,
+    });
+    console.info(
+      `[saved-schedule:r390] 불러오기 저장 완료 entries=${stable.entries.length} reusedIds=${stable.reusedCount} ` +
+      `newIds=${stable.newCount} deleteIds=${stable.deletedCount} estimatedAtomicWrites=${stable.estimatedAtomicWrites}`
+    );
+    recomputeConflicts();
+    renderAll();
+    return true;
+  } catch (error) {
+    ttDomain().entries = previousEntries;
+    if (periodChanged && previousPeriodCount !== ttConfig().periodCount) setPeriodCount(previousPeriodCount);
+    try { recomputeConflicts(); } catch (_) {}
+    try { renderAll(); } catch (_) {}
+    alert(`저장 배치를 불러왔지만 저장하지 못해 이전 상태로 되돌렸습니다.\n\n${error?.message || error}`);
+    return false;
+  }
 }
 
 function renameSavedScheduleVersion(versionId) {
@@ -4714,10 +4897,13 @@ function exportSavedScheduleVersion(versionId) {
 function importSavedScheduleVersion(file) {
   if (!canEdit() || !file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
+    const previousSavedSchedules = JSON.parse(JSON.stringify(savedSchedules()));
     try {
       const parsed = JSON.parse(String(reader.result || "{}"));
       const raw = parsed.schedule || parsed;
+      const rawEntries = Array.isArray(raw.entries) ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId) : [];
+      const stable = remapReplacementEntryIds(rawEntries, entries());
       const imported = {
         id: uid("ttv"),
         name: clean(raw.name) || `가져온 배치 ${formatVersionDate(new Date().toISOString())}`,
@@ -4725,14 +4911,22 @@ function importSavedScheduleVersion(file) {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         periodCount: Math.max(1, Math.min(12, parseInt(raw.periodCount) || ttConfig().periodCount)),
-        entries: Array.isArray(raw.entries) ? raw.entries.map(normalizeTimetableEntry).filter(e => e.templateId) : [],
+        entries: stable.entries,
       };
       imported.entryCount = imported.entries.length;
       if (!imported.entries.length) throw new Error("entries가 없습니다.");
       savedSchedules().unshift(imported);
-      void saveNow("timetable", { force: true });
+      ttDomain().savedSchedules = savedSchedules().slice(0, 30);
+      const saved = await saveTimetableWithStorageRetry({
+        revisionReason: "saved-schedule-json-import",
+        revisionLabel: `배치 JSON 가져오기 · ${imported.name}`,
+      });
+      if (saved.prunedLocalSavedSchedules) {
+        alert(`로컬 저장공간 한도 때문에 로컬 수동 저장본은 최신 1개만 유지했습니다.\n현재 시간표 데이터는 그대로 보존됩니다.`);
+      }
       openScheduleVersionManager();
     } catch (e) {
+      ttDomain().savedSchedules = previousSavedSchedules;
       alert(`배치 파일을 불러올 수 없습니다.\n${e?.message || e}`);
     }
   };
@@ -4819,10 +5013,15 @@ function openScheduleVersionManager() {
   const close = () => overlay.remove();
   overlay.querySelector(".tt-version-close")?.addEventListener("click", close);
   overlay.addEventListener("click", e => { if (e.target === overlay) close(); });
-  overlay.querySelector('[data-action="save-current"]')?.addEventListener("click", () => {
+  overlay.querySelector('[data-action="save-current"]')?.addEventListener("click", async event => {
+    const btn = event.currentTarget;
     const name = overlay.querySelector("#ttVersionNameInput")?.value || "";
-    saveCurrentScheduleVersion(name);
-    openScheduleVersionManager();
+    btn.disabled = true;
+    const previousText = btn.textContent;
+    btn.textContent = "저장 중…";
+    const version = await saveCurrentScheduleVersion(name);
+    if (version) openScheduleVersionManager();
+    else { btn.disabled = false; btn.textContent = previousText; }
   });
   overlay.querySelector('[data-action="export-current"]')?.addEventListener("click", () => {
     const temp = { id: uid("ttv"), name: clean(overlay.querySelector("#ttVersionNameInput")?.value) || defaultSavedScheduleName(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), periodCount: ttConfig().periodCount, entries: cloneTimetableEntries(entries()) };
@@ -4850,7 +5049,7 @@ function openScheduleVersionManager() {
     btn.addEventListener("click", () => {
       const id = btn.dataset.id;
       const action = btn.dataset.action;
-      if (action === "load") { close(); loadSavedScheduleVersion(id); }
+      if (action === "load") { close(); void loadSavedScheduleVersion(id); }
       else if (action === "compare") {
         const version = savedSchedules().find(v => v.id === id);
         const box = overlay.querySelector("#ttVersionCompareBox");
