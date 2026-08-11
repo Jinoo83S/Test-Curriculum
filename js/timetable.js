@@ -50,6 +50,7 @@ const [
   teacherStatisticsModule,
   displayDensityModule,
   excelImportModule,
+  teacherEventsModule,
   cpSatImportModule,
 ] = await Promise.all([
   import(versioned("./data-cleanup.js")),
@@ -66,6 +67,7 @@ const [
   import(versioned("./timetable-statistics.js")),
   import(versioned("./timetable-display-density.js")),
   import(versioned("./timetable-excel-import.js")),
+  import(versioned("./timetable-teacher-events.js")),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
     console.warn("[CP-SAT import] optional module load failed", err);
     return {};
@@ -98,6 +100,12 @@ const { buildManualReplacementPlan } = manualReplaceModule;
 const { openStatisticsDialog } = teacherStatisticsModule;
 const { setupTimetableDisplayDensity } = displayDensityModule;
 const { createTimetableExcelImport } = excelImportModule;
+const {
+  createTeacherEventsManager,
+  normalizeTeacherEvents,
+  buildEffectiveTeacherConstraints,
+  findTeacherEventBlockers,
+} = teacherEventsModule;
 const { setupCpSatWebappImport } = cpSatImportModule || {};
 setupTimetableDisplayDensity?.();
 
@@ -106,6 +114,13 @@ const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries;
 const ttConfig  = () => ttDomain().config;
 const constraints = () => ttDomain().teacherConstraints;
+const teacherEvents = () => ttDomain().teacherEvents || [];
+const effectiveConstraints = () => buildEffectiveTeacherConstraints(
+  constraints() || {},
+  teacherEvents(),
+  appState.teachers?.teachers || [],
+  ttConfig()?.periodCount || 7,
+);
 
 // ── Module state ──────────────────────────────────────────────────
 let currentView    = "all";
@@ -280,6 +295,7 @@ let constraintMap  = new Map();
 
 // ── Split module APIs ───────────────────────────────────────────
 let constraintsPanelApi = null;
+let teacherEventsManagerApi = null;
 let addTimetableLog = () => {};
 let setLastAutoAssignReport = () => {};
 let getConflictCounts = () => ({ counts: {}, totalAffected: 0 });
@@ -673,6 +689,7 @@ const undoHandlers = createTimetableUndoHandlers({
     config: ttDomain().config || {},
     teacherConstraints: ttDomain().teacherConstraints || {},
     teacherConstraintsById: ttDomain().teacherConstraintsById || {},
+    teacherEvents: ttDomain().teacherEvents || [],
     roomAvailability: getRooms().map(room => ({
       id: room.id,
       unavailableSlots: normalizeRoomUnavailableSlots(room.unavailableSlots),
@@ -683,6 +700,7 @@ const undoHandlers = createTimetableUndoHandlers({
     ttDomain().config = snapshot.config || ttDomain().config || {};
     ttDomain().teacherConstraints = snapshot.teacherConstraints || {};
     ttDomain().teacherConstraintsById = snapshot.teacherConstraintsById || {};
+    ttDomain().teacherEvents = snapshot.teacherEvents || [];
     const availabilityById = new Map((snapshot.roomAvailability || []).map(row => [clean(row?.id), normalizeRoomUnavailableSlots(row?.unavailableSlots)]));
     getRooms().forEach(room => {
       if (availabilityById.has(clean(room?.id))) room.unavailableSlots = availabilityById.get(clean(room.id));
@@ -698,6 +716,28 @@ const undoHandlers = createTimetableUndoHandlers({
 captureTimetableUndo = undoHandlers.captureTimetableUndo;
 undoLastTimetableEdit = undoHandlers.undoLastTimetableEdit;
 undoHandlers.installUndoShortcut();
+
+teacherEventsManagerApi = createTeacherEventsManager({
+  ttDomain,
+  getTeachers: () => {
+    const registered = appState.teachers?.teachers || [];
+    if (registered.length) return registered;
+    return getAllTimetableTeachers().map(name => ({ id: "", name }));
+  },
+  getPeriodCount: () => ttConfig()?.periodCount || 7,
+  getEntries: entries,
+  getEntryTeachers: entryTeachers,
+  canEdit,
+  uid,
+  captureTimetableUndo: (...args) => captureTimetableUndo(...args),
+  scheduleSave,
+  persistTimetable: () => saveTimetableWithStorageRetry({
+    revisionReason: "teacher-event",
+    revisionLabel: "교사 일정 저장",
+  }),
+  recomputeConflicts,
+  renderAll: () => renderAll(),
+});
 
 // ── Conflict display helpers ───────────────────────────────────
 function applyConflictVisuals(card, conflictTypes, conflicts) {
@@ -3363,7 +3403,11 @@ function getRelatedConflictEntries(entry, type) {
 function getConstraintConflictMessage(type, entry) {
   const teachers = entryTeachers(entry).join(", ") || "담당 교사";
   if (type === "roomMissing") return "이 수업 또는 그룹 구성 과목 중 교실이 배정되지 않은 항목이 있습니다. 상세보기에서 구성 과목별 교실을 지정해 주세요.";
-  if (type === "unavailable") return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
+  if (type === "unavailable") {
+    const blockers = teacherEventBlockersForEntryAt(entry, entry.day, entry.period);
+    if (blockers.length) return `${teachers} 선생님의 교사 일정(${[...new Set(blockers.map(item => item.title))].join(", ")}) 시간입니다.`;
+    return `${teachers} 선생님의 수업 불가 시간으로 설정되어 있습니다.`;
+  }
   if (type === "cardUnavailable") return `이 과목카드는 현재 교시에 배정할 수 없는 시간으로 설정되어 있습니다.`;
   if (type === "classUnavailable") return `이 반은 현재 교시에 수업할 수 없는 시간으로 설정되어 있습니다.`;
   if (type === "maxConsecutive") return `${teachers} 선생님의 연속 수업 제한을 초과했습니다.`;
@@ -3487,11 +3531,36 @@ function hasSameCardInSameSlot(candidate = {}) {
   });
 }
 
+function teacherEventBlockersForEntryAt(entry = {}, day = entry.day, period = entry.period) {
+  return findTeacherEventBlockers({
+    teacherNames: entryTeachers(entry),
+    day,
+    period,
+    teacherEvents: teacherEvents(),
+    teachers: appState.teachers?.teachers || [],
+    periodCount: ttConfig()?.periodCount || 7,
+  });
+}
+
+function allowPlacementOutsideTeacherEvents(entry = {}, day = entry.day, period = entry.period, options = {}) {
+  const blockers = teacherEventBlockersForEntryAt(entry, day, period);
+  if (!blockers.length) return true;
+  if (options.silent) return false;
+  const names = [...new Set(blockers.map(item => item.title).filter(Boolean))].join(", ");
+  const teacherNames = [...new Set(entryTeachers(entry))].join(", ");
+  alert(`해당 교시에 교사 일정이 등록되어 있어 수업을 배치할 수 없습니다.
+
+교사: ${teacherNames || "미확인"}
+일정: ${names || "교사 일정"}`);
+  return false;
+}
+
 function addEntry(data, options = {}) {
   if (!canEdit()) return null;
   resetCardMoveRenderScope();
   const e = normalizeTimetableEntry({ id: uid("ent"), ...applyDefaultRoomToEntryData(data) });
   if (!e.templateId) return null;
+  if (!allowPlacementOutsideTeacherEvents(e, e.day, e.period)) return null;
 
   if (hasSameCardInSameSlot(e)) {
     alert("이미 같은 시간에 배치된 카드입니다. 기존 카드를 이동하거나 삭제한 뒤 다시 배치해 주세요.");
@@ -3942,7 +4011,7 @@ function recomputeConflicts() {
       isSharedUseRoom
     }
   );
-  constraintMap = detectConstraintViolations(entries(), constraints(), {
+  constraintMap = detectConstraintViolations(entries(), effectiveConstraints(), {
     getEntryCardIds: ttCardIdsFromPlacement,
     getCardTimeInfo,
     getEntryClassKeys: e => [...(cachedAudience(e)?.classKeys || [])],
@@ -4066,6 +4135,9 @@ function renderGrid() {
     currentRoom,
     periods: ttConfig().periodLabels,
     entries: entries(),
+    teacherEvents: teacherEvents(),
+    teachers: appState.teachers?.teachers || [],
+    openTeacherEventsManager: eventId => teacherEventsManagerApi?.openTeacherEventsManager?.(eventId),
     getDragData: () => dragData,
     setDragData: value => setAppDragData(value, "grid-module"),
     handleDrop,
@@ -4579,7 +4651,7 @@ function getTimetableExcelImportApi() {
     buildEntryDataFromTtCards,
     normalizeTimetableEntry,
     uid,
-    onSaveOnly: async ({ fileName, plan, entries: importedEntries }) => {
+    onSaveOnly: async ({ fileName, plan, entries: importedEntries, teacherEvents: importedTeacherEvents = [] }) => {
       if (!canEdit()) throw new Error("편집 권한이 없습니다.");
       const now = new Date().toISOString();
       const baseName = clean(fileName).replace(/\.[^.]+$/, "") || "aSc Excel";
@@ -4588,7 +4660,7 @@ function getTimetableExcelImportApi() {
       const imported = {
         id: uid("ttv"),
         name: `${baseName} · Excel 가져오기`,
-        note: `aSc Excel 가져오기 · 원본 ${plan.sourceRows}행 · 배치 ${stable.entries.length}개`,
+        note: `aSc Excel 가져오기 · 원본 ${plan.sourceRows}행 · 배치 ${stable.entries.length}개${plan.teacherEventSourcePresent ? ` · 교사 일정 ${importedTeacherEvents.length}건은 현재 시간표에 적용할 때만 반영` : " · 기존 교사 일정 유지"}`,
         createdAt: now,
         updatedAt: now,
         periodCount: plan.periodCount,
@@ -4612,13 +4684,17 @@ function getTimetableExcelImportApi() {
         throw error;
       }
     },
-    onApply: async ({ fileName, plan, entries: importedEntries }) => {
+    onApply: async ({ fileName, plan, entries: importedEntries, teacherEvents: importedTeacherEvents = [] }) => {
       if (!canEdit()) throw new Error("편집 권한이 없습니다.");
       const now = new Date().toISOString();
       const previousEntries = cloneTimetableEntries(entries());
       const previousSavedSchedules = JSON.parse(JSON.stringify(savedSchedules()));
+      const previousTeacherEvents = JSON.parse(JSON.stringify(teacherEvents()));
       const stable = remapReplacementEntryIds(importedEntries, previousEntries);
       assertReplacementSaveCapacity(stable, "aSc Excel 가져오기");
+      const nextTeacherEvents = plan.replaceTeacherEvents
+        ? normalizeTeacherEvents(importedTeacherEvents, { periodCount: plan.periodCount || ttConfig()?.periodCount || 7 })
+        : previousTeacherEvents;
 
       try {
         captureTimetableUndo(`aSc Excel 시간표 가져오기: ${clean(fileName) || "시간표.xlsx"}`);
@@ -4638,6 +4714,9 @@ function getTimetableExcelImportApi() {
         }
 
         ttDomain().entries = stable.entries;
+        // 교사 일정 원본이 실제로 포함된 Excel에서만 교체합니다.
+        // 현재 정리 Excel처럼 미팅 행이 없는 파일을 가져올 때 기존 교사 일정은 절대 지우지 않습니다.
+        ttDomain().teacherEvents = nextTeacherEvents;
         const saved = await saveTimetableWithStorageRetry({
           revisionReason: "asc-excel-import",
           revisionLabel: "aSc Excel 시간표 가져오기",
@@ -4646,17 +4725,22 @@ function getTimetableExcelImportApi() {
         renderAll();
 
         console.info(
-          `[aSc-save:r390] 적용 저장 완료 entries=${stable.entries.length} reusedIds=${stable.reusedCount} ` +
-          `newIds=${stable.newCount} deleteIds=${stable.deletedCount} estimatedAtomicWrites=${stable.estimatedAtomicWrites}`
+          `[aSc-save:r391] 적용 저장 완료 entries=${stable.entries.length} reusedIds=${stable.reusedCount} ` +
+          `newIds=${stable.newCount} deleteIds=${stable.deletedCount} teacherEvents=${nextTeacherEvents.length} ` +
+          `teacherEventsMode=${plan.replaceTeacherEvents ? "replace" : "preserve"} estimatedAtomicWrites=${stable.estimatedAtomicWrites}`
         );
         const warningText = plan.warnings?.length ? `\n\n확인할 경고 ${plan.warnings.length}건은 가져오기 미리보기에서 표시했습니다.` : "";
         const localStorageText = saved.prunedLocalSavedSchedules
           ? `\n\n로컬 저장공간 한도 때문에 로컬 수동 저장본은 최신 1개만 유지했습니다.`
           : "";
-        alert(`aSc Excel 시간표를 적용하고 저장했습니다.\n배치 ${stable.entries.length}개${warningText}${localStorageText}`);
+        const teacherEventText = plan.replaceTeacherEvents
+          ? `\n교사 일정 ${nextTeacherEvents.length}건도 함께 적용했습니다. (학생·학급·교실 점유 없음)`
+          : `\nExcel에 교사 미팅 원본이 없어 기존 교사 일정 ${previousTeacherEvents.length}건을 유지했습니다.`;
+        alert(`aSc Excel 시간표를 적용하고 저장했습니다.\n배치 ${stable.entries.length}개${teacherEventText}${warningText}${localStorageText}`);
       } catch (error) {
         ttDomain().entries = previousEntries;
         ttDomain().savedSchedules = previousSavedSchedules;
+        ttDomain().teacherEvents = previousTeacherEvents;
         try { recomputeConflicts(); } catch (_) {}
         try { renderAll(); } catch (_) {}
         throw error;
@@ -5601,6 +5685,11 @@ function moveEntry(entryId, day, period) {
     alert(`연속수업을 배치할 공간이 부족합니다. ${periodCount}교시 범위 안으로 이동해 주세요.`);
     return false;
   }
+  for (let index = 0; index < linkedEntries.length; index += 1) {
+    const item = linkedEntries[index];
+    const target = targetPlacements[index];
+    if (!allowPlacementOutsideTeacherEvents(item, target.day, target.period)) return false;
+  }
 
   const isSamePlacement = linkedEntries.every((item, index) =>
     Number(item.day) === Number(targetPlacements[index]?.day)
@@ -5973,7 +6062,7 @@ export const autoAssignAll = createAutoAssignAll({
   getTemplateById, getTemplateCardTitle, getTtCardById,
   describeTtCard, makePlacementFromGroupItem, getSubjectsForGrade, getCreditsForTtCard,
   getTeachersForTtCard,
-  entries, ttDomain, ttConfig, constraints,
+  entries, ttDomain, ttConfig, constraints: effectiveConstraints,
   buildSchedulableItems, getEffectiveAssignedRoomId, applyDefaultRoomToEntryData,
   audienceForPlacement, audiencesConflict, ttCardIdsFromPlacement, protectedSlotConflict,
   shuffle, captureTimetableUndo, addTimetableLog, setLastAutoAssignReport,
@@ -6401,6 +6490,10 @@ function getDragPreviewBlockLight(candidates, options = {}) {
     const candidateProtectedGrades = protectedGradesForEntry(candidate);
     const candidateTeachers = new Set(splitTeacherNames(candidate.teacherName || ""));
 
+    if (!allowPlacementOutsideTeacherEvents(candidate, candidate.day, candidate.period, { silent: true })) {
+      return { kind: "conflict", candidate, conflictTypes: ["unavailable"] };
+    }
+
     if (isRoomUnavailableForDragPreview(candidate.roomId, candidate.day, candidate.period)) {
       return { kind: "conflict", candidate, conflictTypes: ["roomUnavailable"] };
     }
@@ -6655,6 +6748,7 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
+$("ttTeacherEventsBtn")?.addEventListener("click", () => teacherEventsManagerApi?.openTeacherEventsManager?.());
 $("ttAutoPrecheckBtn")?.addEventListener("click", async () => {
   try { await ensureTimetableDataSyncedForOperation("auto-precheck"); } catch (e) { alert("자동배치 사전점검 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
   autoAssignAll.openPrecheck?.();
@@ -6681,7 +6775,7 @@ $("ttTeacherStatisticsBtn")?.addEventListener("click", () => openStatisticsDialo
   getTtCards,
   getTeachers: () => appState.teachers?.teachers || [],
   getRooms,
-  getTeacherConstraints: () => ttDomain()?.teacherConstraints || {},
+  getTeacherConstraints: effectiveConstraints,
   getTeacherConstraintsById: () => ttDomain()?.teacherConstraintsById || {},
   getConstraintPolicy: () => ttDomain()?.cpSatConstraintPolicy || {},
   getPeriodCount: () => ttConfig()?.periodCount || 7,
@@ -6707,6 +6801,7 @@ setupCpSatWebappImport?.({
   resumeAutoSave,
   isAutoSaveSuspended,
   prepareSolverState: () => ensureTimetableDataSyncedForOperation("cp-sat"),
+  getEffectiveTeacherConstraints: effectiveConstraints,
   verifyPersistedTimetableState,
   buildAutoSourceSignature: () => autoAssignAll.getCurrentSourceSignature?.() || "",
   activeSchoolYear: ACTIVE_SCHOOL_YEAR

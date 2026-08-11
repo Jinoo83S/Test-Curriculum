@@ -1,6 +1,6 @@
 // ================================================================
 // timetable-excel-import.js · aSc 기반 정리 Excel 시간표 가져오기
-// r389 · 2026-08-10: aSc 배치를 현재 그룹 구조 그대로 복원하고 기존 카드/교사/학급 메타를 유지합니다.
+// r391 · 2026-08-11: aSc 수업 배치와 교사 전용 미팅을 분리해 가져옵니다.
 // ================================================================
 
 const DAY_INDEX = new Map([
@@ -12,7 +12,8 @@ const DAY_INDEX = new Map([
 ]);
 const REQUIRED_HEADERS = ["학년", "반", "요일", "교시", "과목", "교사", "교실"];
 const DAY_LABELS = ["월", "화", "수", "목", "금"];
-const STYLE_ID = "ttAscExcelImportStyle20260810";
+const STYLE_ID = "ttAscExcelImportStyle20260811R391";
+const TEACHER_EVENT_SHEET_NAMES = ["교사일정", "교사 일정", "Teacher Events", "TeacherEvents", "Meetings", "미팅", "회의"];
 
 const clean = value => String(value ?? "").trim();
 const asArray = value => Array.isArray(value) ? value : [];
@@ -24,6 +25,159 @@ function fold(value = "") {
   try { s = s.normalize("NFKC"); } catch (_) {}
   s = s.toLowerCase().replaceAll("리더쉽", "리더십");
   return s.replace(/[\s\[\](){}_.:,/·&+\-]+/g, "");
+}
+
+
+function fieldValue(raw = {}, aliases = []) {
+  if (!raw || typeof raw !== "object") return "";
+  const byFolded = new Map(Object.entries(raw).map(([key, value]) => [fold(key), value]));
+  for (const alias of aliases) {
+    const value = byFolded.get(fold(alias));
+    if (value != null && clean(value) !== "") return value;
+  }
+  return "";
+}
+
+function splitTeacherNames(value = "") {
+  if (Array.isArray(value)) return unique(value.flatMap(splitTeacherNames));
+  return unique(String(value || "").split(/[,/;|\n]+/g));
+}
+
+function isTeacherEventSubject(value = "") {
+  const key = fold(value);
+  return new Set(["meeting", "미팅", "회의", "교사미팅", "교사회의"]).has(key);
+}
+
+function isWithoutClassMarker(value = "") {
+  const key = fold(value);
+  return !key || ["withoutclass", "noclass", "학급없음", "반없음", "없음"].includes(key);
+}
+
+function isTeacherEventSourceRow(raw = {}) {
+  const subject = fieldValue(raw, ["과목", "일정명", "일정", "회의명", "Meeting", "Title"]);
+  const classText = fieldValue(raw, ["반", "학급", "Class"]);
+  const roomText = fieldValue(raw, ["교실", "Room", "Classroom"]);
+  return isTeacherEventSubject(subject) && isWithoutClassMarker(classText) && !clean(roomText);
+}
+
+function parseDurationPeriods(value = "") {
+  const raw = clean(value);
+  if (!raw) return 1;
+  if (/두\s*(시간|교시)/.test(raw)) return 2;
+  if (/한\s*(시간|교시)/.test(raw)) return 1;
+  const match = raw.match(/(\d{1,2})/);
+  return Math.max(1, Number.parseInt(match?.[1] || "1", 10) || 1);
+}
+
+function tinyHash(value = "") {
+  let hash = 2166136261;
+  const text = String(value || "");
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function stableTeacherEventId({ title = "", day = 0, period = 0, durationPeriods = 1, teacherNames = [] } = {}) {
+  const signature = [fold(title), day, period, durationPeriods, ...unique(teacherNames).map(normalizeTeacherName).sort()].join("|");
+  return `teacher-event-asc-${tinyHash(signature)}`;
+}
+
+function eventPeriodOffset(rawRows = [], fallbackOffset = 1, periodCount = 7) {
+  const values = asArray(rawRows)
+    .map(raw => Number.parseInt(clean(fieldValue(raw, ["교시", "Period", "period"])), 10))
+    .filter(Number.isInteger);
+  if (!values.length) return fallbackOffset;
+  // 명시적으로 1교시가 있으면 일반 1~N 표기입니다. 그 외에는 전체 시트와 같은 aSc 번호체계를 따릅니다.
+  if (values.includes(1) && Math.max(...values) <= periodCount) return 1;
+  return fallbackOffset;
+}
+
+export function normalizeTeacherEventRows(rawRows = [], {
+  periodCount = 7,
+  periodOffset = 1,
+  teachers = [],
+  sourceSheetName = "",
+  sourceKind = "sheet",
+} = {}) {
+  const teacherMap = new Map(asArray(teachers)
+    .map(teacher => [normalizeTeacherName(teacher?.name || teacher?.teacherName), teacher])
+    .filter(([name]) => name));
+  const actualOffset = eventPeriodOffset(rawRows, periodOffset, periodCount);
+  const buckets = new Map();
+  const invalid = [];
+  const missingTeachers = new Set();
+  const ignoredRoomRows = [];
+
+  asArray(rawRows).forEach((raw, idx) => {
+    const dayRaw = clean(fieldValue(raw, ["요일", "Day", "day"])).toLowerCase();
+    const day = DAY_INDEX.get(dayRaw);
+    const rawPeriod = Number.parseInt(clean(fieldValue(raw, ["교시", "Period", "period"])), 10);
+    const period = Number.isInteger(rawPeriod) ? rawPeriod - actualOffset : NaN;
+    const rawTitle = fieldValue(raw, ["일정명", "일정", "회의명", "과목", "Meeting", "Title"]);
+    const title = isTeacherEventSubject(rawTitle) ? "교사 미팅" : (clean(rawTitle) || "교사 미팅");
+    const teacherText = fieldValue(raw, ["교사", "참석교사", "참여교사", "Teachers", "Teacher"]);
+    const teacherNames = splitTeacherNames(teacherText);
+    const durationPeriods = Math.max(1, Math.min(periodCount, parseDurationPeriods(fieldValue(raw, ["연속교시", "교시수", "길이", "Duration", "durationPeriods"]))));
+    const note = clean(fieldValue(raw, ["메모", "비고", "Note", "Memo"]));
+    const roomText = clean(fieldValue(raw, ["교실", "Room", "Classroom"]));
+    const sourceRow = Number(raw?.__sourceRow || idx + 2);
+    const reasons = [];
+    if (!Number.isInteger(day) || day < 0 || day > 4) reasons.push("요일");
+    if (!Number.isInteger(period) || period < 0 || period >= periodCount) reasons.push("교시");
+    if (!teacherNames.length) reasons.push("교사");
+    if (Number.isInteger(period) && period + durationPeriods > periodCount) reasons.push("연속교시");
+    if (roomText) ignoredRoomRows.push({ sourceRow, roomText });
+    if (reasons.length) {
+      invalid.push({ sourceRow, raw, title, day, period, rawPeriod, teacherNames, durationPeriods, reasons });
+      return;
+    }
+
+    const key = [fold(title), day, period, durationPeriods].join(":");
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        title, day, period, durationPeriods,
+        teacherNames: new Set(), teacherIds: new Set(), notes: new Set(), sourceRows: [],
+      });
+    }
+    const bucket = buckets.get(key);
+    teacherNames.forEach(name => {
+      bucket.teacherNames.add(name);
+      const teacher = teacherMap.get(normalizeTeacherName(name));
+      if (teacher?.id) bucket.teacherIds.add(teacher.id);
+      else missingTeachers.add(name);
+    });
+    if (note) bucket.notes.add(note);
+    bucket.sourceRows.push(sourceRow);
+  });
+
+  const events = [...buckets.values()].map(bucket => {
+    const teacherNames = [...bucket.teacherNames];
+    return {
+      id: stableTeacherEventId({ ...bucket, teacherNames }),
+      title: bucket.title,
+      day: bucket.day,
+      period: bucket.period,
+      durationPeriods: bucket.durationPeriods,
+      teacherIds: [...bucket.teacherIds],
+      teacherNames,
+      note: [...bucket.notes].join(" · "),
+      active: true,
+      source: "asc-excel",
+      sourceSheet: clean(sourceSheetName),
+      sourceKind,
+      sourceRows: [...bucket.sourceRows],
+    };
+  }).sort((a, b) => (a.day - b.day) || (a.period - b.period) || a.title.localeCompare(b.title, "ko"));
+
+  return {
+    events,
+    invalid,
+    missingTeachers: [...missingTeachers],
+    ignoredRoomRows,
+    periodOffset: actualOffset,
+  };
 }
 
 function sourceBaseSubject(value = "") {
@@ -396,10 +550,20 @@ function analyzeGroupCoverage(bucket, cardById) {
   };
 }
 
-export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manualMappings = {}) {
+export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manualMappings = {}, importExtras = {}) {
   const periodCount = Math.max(1, Number(context.periodCount || 7) || 7);
   const classMap = makeClassMap(context.classes, context.classKey);
-  const normalized = normalizeAscExcelRows(rawRows, { periodCount, classMap });
+  const inlineTeacherEventRows = asArray(rawRows).filter(isTeacherEventSourceRow);
+  const lessonRawRows = asArray(rawRows).filter(raw => !isTeacherEventSourceRow(raw));
+  const normalized = normalizeAscExcelRows(lessonRawRows, { periodCount, classMap });
+  const eventSourceRows = [...inlineTeacherEventRows, ...asArray(importExtras.teacherEventRows)];
+  const teacherEventResult = normalizeTeacherEventRows(eventSourceRows, {
+    periodCount,
+    periodOffset: normalized.periodOffset,
+    teachers: context.teachers,
+    sourceSheetName: clean(importExtras.teacherEventSheetName) || (inlineTeacherEventRows.length ? "전체" : ""),
+    sourceKind: inlineTeacherEventRows.length && !asArray(importExtras.teacherEventRows).length ? "inline" : "sheet",
+  });
   const roomMap = makeRoomMap(context.rooms);
   const teacherMap = new Map(asArray(context.teachers).map(t => [normalizeTeacherName(t.name), t]).filter(([name]) => name));
   const cardMetas = buildCardMetas({
@@ -541,6 +705,12 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
   if (classAudienceMismatch.length) warnings.push(`Excel 반과 현재 과목카드 대상 반이 다른 행 ${classAudienceMismatch.length}개 — 배치에는 현재 과목카드의 대상 반을 유지합니다. 매칭을 확인해 주세요.`);
   if (groupSyncWarnings.length) warnings.push(`현재 동시배정 그룹 구성과 aSc Excel 배치가 다른 시간 ${groupSyncWarnings.length}개 — 누락 카드를 임의로 추가하지 않고 기존 동시배정 충돌 검사에 맡깁니다.`);
   if (normalized.invalid.length) warnings.push(`기본 열 값이 잘못되어 제외된 행 ${normalized.invalid.length}개`);
+  if (teacherEventResult.missingTeachers.length) warnings.push(`교사 일정에 현재 교사 명단과 일치하지 않는 이름: ${teacherEventResult.missingTeachers.join(", ")} — 이름은 보존하지만 교사 ID는 연결하지 못했습니다.`);
+  if (teacherEventResult.ignoredRoomRows.length) warnings.push(`교사 일정 ${teacherEventResult.ignoredRoomRows.length}행의 교실 값은 무시했습니다. 교사 미팅은 교실을 점유하지 않습니다.`);
+  if (teacherEventResult.invalid.length) warnings.push(`교사 일정으로 읽었지만 요일·교시·교사 값이 부족한 행 ${teacherEventResult.invalid.length}개`);
+  const teacherEventSourcePresent = inlineTeacherEventRows.length > 0 || importExtras.teacherEventSheetDetected === true;
+  if (!teacherEventSourcePresent) warnings.push(`현재 Excel에는 교사 미팅 원본이 없습니다. 기존 웹앱의 교사 일정은 유지합니다.`);
+  else if (!teacherEventResult.events.length) warnings.push(`교사 일정 원본은 확인했지만 적용 가능한 미팅이 없습니다. 기존 웹앱의 교사 일정은 유지합니다.`);
 
   const sourceSlotCount = new Set(normalized.rows.map(row => `${row.day}:${row.period}`)).size;
   const uniqueMappings = new Map();
@@ -549,6 +719,7 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
     periodCount,
     periodOffset: normalized.periodOffset,
     sourceRows: rawRows.length,
+    lessonSourceRows: lessonRawRows.length,
     validRows: normalized.rows.length,
     mappedRowCount: mappedRows.length,
     sourceSlotCount,
@@ -561,9 +732,18 @@ export function buildTimetableExcelImportPlan(rawRows = [], context = {}, manual
     sourceRoomMissing: [...sourceRoomMissing],
     classAudienceMismatch,
     groupSyncWarnings,
+    teacherEvents: teacherEventResult.events,
+    teacherEventSourceRows: eventSourceRows.length,
+    teacherEventInvalidRows: teacherEventResult.invalid,
+    teacherEventMissingTeachers: teacherEventResult.missingTeachers,
+    teacherEventIgnoredRoomRows: teacherEventResult.ignoredRoomRows,
+    teacherEventPeriodOffset: teacherEventResult.periodOffset,
+    teacherEventSheetName: clean(importExtras.teacherEventSheetName),
+    teacherEventSourcePresent,
+    replaceTeacherEvents: teacherEventSourcePresent && teacherEventResult.events.length > 0 && teacherEventResult.invalid.length === 0,
     // r388 호환 필드는 유지하되, 그룹 완성 여부는 기존 충돌검사의 syncRequired가 판정합니다.
     partialUnits: [],
-    ready: unresolved.length === 0 && normalized.invalid.length === 0 && entries.length > 0,
+    ready: unresolved.length === 0 && normalized.invalid.length === 0 && teacherEventResult.invalid.length === 0 && entries.length > 0,
   };
 }
 
@@ -582,7 +762,21 @@ export function extractAscRowsFromWorkbook(workbook) {
   const headers = rows.length ? Object.keys(rows[0] || {}).map(clean) : [];
   const missing = REQUIRED_HEADERS.filter(h => !headers.includes(h));
   if (missing.length) throw new Error(`필수 열이 없습니다: ${missing.join(", ")}`);
-  return { sheetName, rows };
+
+  const eventSheetName = workbook.SheetNames.find(name => TEACHER_EVENT_SHEET_NAMES.some(candidate => fold(candidate) === fold(name))) || "";
+  let teacherEventRows = [];
+  if (eventSheetName) {
+    const eventSheet = workbook.Sheets[eventSheetName];
+    teacherEventRows = globalThis.XLSX.utils.sheet_to_json(eventSheet, { defval: "", raw: false, blankrows: false })
+      .map((row, idx) => ({ ...row, __sourceRow: idx + 2 }));
+  }
+  return {
+    sheetName,
+    rows,
+    teacherEventSheetName: eventSheetName,
+    teacherEventSheetDetected: !!eventSheetName,
+    teacherEventRows,
+  };
 }
 
 function ensureStyle() {
@@ -593,7 +787,7 @@ function ensureStyle() {
 .tt-xlsx-backdrop{position:fixed;inset:0;z-index:2147483620;background:rgba(15,23,42,.62);display:flex;align-items:center;justify-content:center;padding:18px;font-family:Arial,"Malgun Gothic",sans-serif}
 .tt-xlsx-dialog{width:min(1120px,96vw);max-height:92vh;background:#fff;border-radius:14px;box-shadow:0 28px 80px rgba(15,23,42,.4);display:flex;flex-direction:column;overflow:hidden;color:#0f172a}
 .tt-xlsx-head{display:flex;gap:12px;align-items:center;padding:14px 18px;background:#f8fafc;border-bottom:1px solid #e2e8f0}.tt-xlsx-head h2{margin:0;font-size:18px}.tt-xlsx-head p{margin:3px 0 0;font-size:11px;color:#64748b;font-weight:700}.tt-xlsx-close{margin-left:auto;width:34px;height:34px;border:0;border-radius:9px;background:#e2e8f0;font-size:20px;cursor:pointer}
-.tt-xlsx-body{padding:14px 18px;overflow:auto}.tt-xlsx-summary{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px}.tt-xlsx-stat{padding:9px;border:1px solid #dbe4f0;border-radius:10px;background:#f8fafc;text-align:center}.tt-xlsx-stat b{display:block;font-size:18px}.tt-xlsx-stat span{font-size:10px;color:#64748b;font-weight:800}
+.tt-xlsx-body{padding:14px 18px;overflow:auto}.tt-xlsx-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:7px}.tt-xlsx-stat{padding:9px;border:1px solid #dbe4f0;border-radius:10px;background:#f8fafc;text-align:center}.tt-xlsx-stat b{display:block;font-size:18px}.tt-xlsx-stat span{font-size:10px;color:#64748b;font-weight:800}
 .tt-xlsx-box{margin-top:12px;border:1px solid #dbe4f0;border-radius:10px;overflow:hidden}.tt-xlsx-box h3{margin:0;padding:8px 10px;background:#f8fafc;border-bottom:1px solid #e2e8f0;font-size:12px}.tt-xlsx-box-content{padding:9px 10px;font-size:11px;line-height:1.55}.tt-xlsx-ok{color:#166534}.tt-xlsx-warn{color:#92400e}.tt-xlsx-error{color:#991b1b}.tt-xlsx-map{display:grid;grid-template-columns:minmax(220px,1fr) minmax(280px,1.5fr);gap:8px;align-items:center;margin-bottom:7px}.tt-xlsx-map select{height:31px;border:1px solid #cbd5e1;border-radius:7px;background:#fff;padding:0 7px;font-size:11px}.tt-xlsx-map small{display:block;color:#64748b;margin-top:2px}
 .tt-xlsx-actions{display:flex;gap:8px;align-items:center;padding:12px 18px;border-top:1px solid #e2e8f0;background:#f8fafc}.tt-xlsx-actions button{height:34px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;padding:0 12px;font-size:11px;font-weight:900;cursor:pointer}.tt-xlsx-actions .primary{background:#2563eb;border-color:#2563eb;color:#fff}.tt-xlsx-actions .secondary{background:#fff}.tt-xlsx-actions button:disabled{opacity:.45;cursor:not-allowed}.tt-xlsx-note{margin-left:auto;font-size:10px;color:#64748b;font-weight:700}
 @media(max-width:900px){.tt-xlsx-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.tt-xlsx-map{grid-template-columns:1fr}}
@@ -615,6 +809,9 @@ function candidateLabel(candidate) {
 export function createTimetableExcelImport(context = {}) {
   const manualMappings = {};
   let currentRawRows = [];
+  let currentTeacherEventRows = [];
+  let currentTeacherEventSheetName = "";
+  let currentTeacherEventSheetDetected = false;
   let currentPlan = null;
   let fileName = "";
 
@@ -635,7 +832,11 @@ export function createTimetableExcelImport(context = {}) {
   });
 
   function rebuildPlan() {
-    currentPlan = buildTimetableExcelImportPlan(currentRawRows, planContext(), manualMappings);
+    currentPlan = buildTimetableExcelImportPlan(currentRawRows, planContext(), manualMappings, {
+      teacherEventRows: currentTeacherEventRows,
+      teacherEventSheetName: currentTeacherEventSheetName,
+      teacherEventSheetDetected: currentTeacherEventSheetDetected,
+    });
     return currentPlan;
   }
 
@@ -646,7 +847,7 @@ export function createTimetableExcelImport(context = {}) {
     backdrop.id = "ttAscExcelImportBackdrop";
     backdrop.className = "tt-xlsx-backdrop";
     backdrop.innerHTML = `<section class="tt-xlsx-dialog" role="dialog" aria-modal="true">
-      <header class="tt-xlsx-head"><div><h2>aSc Excel 시간표 가져오기</h2><p>${escapeHtml(fileName)} · 기존 카드/그룹/교사조건은 유지하고 배치(entries)만 만듭니다.</p></div><button type="button" class="tt-xlsx-close" aria-label="닫기">×</button></header>
+      <header class="tt-xlsx-head"><div><h2>aSc Excel 시간표 가져오기</h2><p>${escapeHtml(fileName)} · 학생 수업(entries)과 교사 전용 미팅을 분리해 가져옵니다.</p></div><button type="button" class="tt-xlsx-close" aria-label="닫기">×</button></header>
       <div class="tt-xlsx-body" data-role="body"></div>
       <footer class="tt-xlsx-actions"><button type="button" class="secondary" data-action="save-only">저장본으로 추가</button><button type="button" class="primary" data-action="apply">현재 시간표에 적용</button><span class="tt-xlsx-note">적용 전 현재 배치를 자동 백업합니다.</span></footer>
     </section>`;
@@ -675,6 +876,9 @@ export function createTimetableExcelImport(context = {}) {
             return `<li><b>${escapeHtml(item.groupName)}</b> · ${DAY_LABELS[item.day] || "?"} ${item.period + 1}교시 · 현재 그룹 기준 누락: ${escapeHtml(missing)}</li>`;
           }).join("")}</ul>${plan.groupSyncWarnings.length > 30 ? `<div>외 ${plan.groupSyncWarnings.length - 30}개 시간</div>` : ""}`
         : `<div class="tt-xlsx-ok">✓ 현재 동시배정 그룹 구성과 일치합니다.</div>`;
+      const teacherEventHtml = plan.teacherEvents.length
+        ? `<ul>${plan.teacherEvents.map(event => `<li><b>${escapeHtml(event.title)}</b> · ${DAY_LABELS[event.day] || "?"} ${event.period + 1}교시${event.durationPeriods > 1 ? `~${event.period + event.durationPeriods}교시` : ""} · ${escapeHtml(event.teacherNames.join(", "))} · 교실 없음</li>`).join("")}</ul>`
+        : `<div class="tt-xlsx-warn">이 파일에는 가져올 교사 미팅 시간이 없습니다. 현재 웹앱에 등록된 교사 일정은 삭제하지 않고 그대로 유지합니다.</div>`;
       body.innerHTML = `<div class="tt-xlsx-summary">
         <div class="tt-xlsx-stat"><b>${plan.sourceRows}</b><span>Excel 행</span></div>
         <div class="tt-xlsx-stat"><b>${plan.mappedRowCount}</b><span>매칭 행</span></div>
@@ -682,12 +886,14 @@ export function createTimetableExcelImport(context = {}) {
         <div class="tt-xlsx-stat"><b>${plan.sourceSlotCount}</b><span>사용 시간칸</span></div>
         <div class="tt-xlsx-stat"><b>${plan.unresolved.length}</b><span>미매칭 행</span></div>
         <div class="tt-xlsx-stat"><b>${plan.invalidRows.length}</b><span>제외 행</span></div>
+        <div class="tt-xlsx-stat"><b>${plan.teacherEvents.length}</b><span>교사 일정</span></div>
       </div>
       <div class="tt-xlsx-box"><h3>교시 해석</h3><div class="tt-xlsx-box-content">Excel 교시값에서 <b>${plan.periodOffset}</b>을 빼 현재 0기준 교시로 변환합니다. 이 파일처럼 aSc의 HR이 1번이고 실제 수업이 2~8이면 <b>2 → 1교시</b>, <b>8 → 7교시</b>로 들어갑니다.</div></div>
       <div class="tt-xlsx-box"><h3>과목카드 매칭${plan.unresolvedGroups.length ? ` · 확인 필요 ${plan.unresolvedGroups.length}종` : ""}</h3><div class="tt-xlsx-box-content ${plan.unresolvedGroups.length ? "tt-xlsx-error" : ""}">${unresolvedHtml}</div></div>
       <div class="tt-xlsx-box"><h3>동시배정 구조${plan.groupSyncWarnings.length ? ` · 확인 필요 ${plan.groupSyncWarnings.length}시간` : ""}</h3><div class="tt-xlsx-box-content ${plan.groupSyncWarnings.length ? "tt-xlsx-warn" : ""}">${groupSyncHtml}</div></div>
+      <div class="tt-xlsx-box"><h3>교사 일정${plan.teacherEvents.length ? ` · ${plan.teacherEvents.length}건` : ""}</h3><div class="tt-xlsx-box-content">${teacherEventHtml}</div></div>
       <div class="tt-xlsx-box"><h3>경고</h3><div class="tt-xlsx-box-content ${plan.warnings.length ? "tt-xlsx-warn" : ""}">${warnings}</div></div>
-      <div class="tt-xlsx-box"><h3>가져오기 원칙</h3><div class="tt-xlsx-box-content">“전체” 시트만 사용합니다. “교사별/반별/교실별”은 같은 데이터의 정렬본이므로 중복 가져오지 않습니다. 요일·교시가 없는 “미배정” 시트는 현재 시간표 위치를 만들 수 없어 제외합니다.</div></div>`;
+      <div class="tt-xlsx-box"><h3>가져오기 원칙</h3><div class="tt-xlsx-box-content">수업은 “전체” 시트에서 읽고, 교사 미팅은 “교사일정/교사 일정/Meetings” 시트 또는 “전체” 시트의 <b>Without class + meeting + 교실 없음</b> 행에서만 읽습니다. 교사 미팅은 학생·학급·교실을 점유하지 않고 참여 교사의 수업 가능 시간만 차단합니다. “교사별/반별/교실별”은 중복 가져오지 않으며 요일·교시 없는 “미배정” 시트도 제외합니다.</div></div>`;
       body.querySelectorAll("[data-map-key]").forEach(select => {
         select.value = manualMappings[select.dataset.mapKey] || "";
         select.addEventListener("change", () => {
@@ -702,14 +908,14 @@ export function createTimetableExcelImport(context = {}) {
       if (!plan.ready) return;
       if (!confirm(`Excel 배치 ${plan.entries.length}개를 현재 시간표에 적용할까요?\n\n현재 배치는 자동 백업한 뒤 교체합니다.`)) return;
       applyBtn.disabled = true; saveBtn.disabled = true;
-      try { await context.onApply?.({ fileName, plan, entries: deepClone(plan.entries) }); close(); }
+      try { await context.onApply?.({ fileName, plan, entries: deepClone(plan.entries), teacherEvents: deepClone(plan.teacherEvents) }); close(); }
       catch (error) { alert(`Excel 시간표 적용에 실패했습니다.\n${error?.message || error}`); applyBtn.disabled = false; saveBtn.disabled = false; }
     });
     saveBtn.addEventListener("click", async () => {
       const plan = rebuildPlan();
       if (!plan.ready) return;
       saveBtn.disabled = true;
-      try { await context.onSaveOnly?.({ fileName, plan, entries: deepClone(plan.entries) }); close(); }
+      try { await context.onSaveOnly?.({ fileName, plan, entries: deepClone(plan.entries), teacherEvents: deepClone(plan.teacherEvents) }); close(); }
       catch (error) { alert(`Excel 시간표 저장본 추가에 실패했습니다.\n${error?.message || error}`); saveBtn.disabled = false; }
     });
     render();
@@ -722,6 +928,9 @@ export function createTimetableExcelImport(context = {}) {
     const workbook = globalThis.XLSX.read(buffer, { type: "array", cellDates: false, dense: false });
     const extracted = extractAscRowsFromWorkbook(workbook);
     currentRawRows = extracted.rows;
+    currentTeacherEventRows = extracted.teacherEventRows || [];
+    currentTeacherEventSheetName = extracted.teacherEventSheetName || "";
+    currentTeacherEventSheetDetected = extracted.teacherEventSheetDetected === true;
     fileName = clean(file.name) || "시간표.xlsx";
     Object.keys(manualMappings).forEach(key => delete manualMappings[key]);
     openPreview();
