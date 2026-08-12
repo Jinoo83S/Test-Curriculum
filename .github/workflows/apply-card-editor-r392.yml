@@ -9,7 +9,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/apply-card-editor-r392.yml"
-      - ".patches/timetable-card-editor-r392.patch"
+      - ".patches/**"
       - "js/timetable-card-editor.js"
 
 permissions:
@@ -26,13 +26,12 @@ jobs:
           fetch-depth: 0
           show-progress: false
 
-      - name: Verify base and apply patch
+      - name: Verify base and apply changes
         shell: bash
         run: |
           set -euo pipefail
           test "$(git merge-base HEAD origin/main)" = "81a16ac0efc3d1efd2259fdc4b2c4333247e572f"
-          git apply --check .patches/timetable-card-editor-r392.patch
-          git apply --whitespace=nowarn .patches/timetable-card-editor-r392.patch
+          python3 .patches/apply-card-editor-r392.py
           git diff --check
 
       - name: Static regression checks
@@ -41,15 +40,17 @@ jobs:
           set -euo pipefail
           node --check js/timetable-card-editor.js
           node --check js/timetable.js
+          node --check js/ttcards.js
           test "$(grep -c 'id="ttCardEditorBtn"' timetable.html)" = "1"
           grep -q '2026-08-12-timetable-card-editor-r392' timetable.html
           grep -q 'createTimetableCardEditor' js/timetable.js
           grep -q 'card.autoAssignExcluded === true' js/timetable.js
+          grep -q 'autoAssignExcluded' js/ttcards.js
           grep -q 'teacherEventsManagerApi' js/timetable.js
           grep -q 'createTimetableExcelImport' js/timetable.js
           grep -q 'saveNow("timetable", { force: true })' js/timetable.js
           changed="$( { git diff --name-only; git diff --name-only origin/main...HEAD; } | grep -v '^\.patches/' | grep -v '^\.github/workflows/' | sort -u )"
-          expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable.js timetable.html | sort)
+          expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable.js js/ttcards.js timetable.html | sort)
           test "$changed" = "$expected"
           ! printf '%s\n' "$changed" | grep -E '\.css$'
           html_stats=$(git diff --numstat -- timetable.html)
@@ -65,10 +66,10 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/upload/js
           cp timetable.html /tmp/upload/
-          cp js/timetable.js js/timetable-card-editor.js /tmp/upload/js/
+          cp js/timetable.js js/ttcards.js js/timetable-card-editor.js /tmp/upload/js/
           cat > /tmp/upload/업로드_안내.txt <<'EOF'
           기준 커밋: 81a16ac0efc3d1efd2259fdc4b2c4333247e572f
-          운영 파일: 3개
+          운영 파일: 4개
           CSS 변경: 없음
           커밋명: 시간표_카드상세편집_교사반시수교실시간조건_r392
           EOF
@@ -87,9 +88,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -f .patches/timetable-card-editor-r392.patch
+          rm -rf .patches
           rm -f .github/workflows/apply-card-editor-r392.yml
-          rmdir .patches 2>/dev/null || true
           rmdir .github/workflows 2>/dev/null || true
           rmdir .github 2>/dev/null || true
           git add -A
