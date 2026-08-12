@@ -1281,6 +1281,37 @@ export function createTimetableDetailHandlers(ctx) {
   const ttConfig = () => ctx.ttConfig();
   const currentGrade = () => ctx.currentGrade();
 
+  function appendCardEditorButtons(box, cardIds = [], modal = null) {
+    const ids = uniqueIds(cardIds).filter(id => getTtCardById(id));
+    if (!ids.length || !canEdit() || typeof ctx.openTtCardEditor !== "function") return;
+
+    const section = document.createElement("div");
+    section.style.cssText = "margin:8px 0 10px;padding:8px 9px;border:1px solid #bfdbfe;border-radius:9px;background:#eff6ff";
+    const label = document.createElement("div");
+    label.style.cssText = "font-size:10.5px;font-weight:900;color:#1e3a8a;margin-bottom:6px";
+    label.textContent = ids.length === 1 ? "과목카드 설정" : "구성 과목카드 설정";
+    section.appendChild(label);
+
+    const buttons = document.createElement("div");
+    buttons.style.cssText = "display:flex;gap:6px;flex-wrap:wrap";
+    ids.forEach(id => {
+      const card = getTtCardById(id);
+      const desc = card ? describeTtCard(card) : null;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.style.cssText = "min-height:30px;border:1px solid #60a5fa;border-radius:8px;background:#fff;color:#1d4ed8;padding:5px 9px;font-size:11px;font-weight:900;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      btn.textContent = ids.length === 1 ? "🛠 카드 편집" : `🛠 ${desc?.title || card?.subject || card?.label || "카드"}`;
+      btn.title = "담당 교사·대상반·시수·교실·시간조건·자동배치 설정을 수정합니다.";
+      btn.addEventListener("click", () => {
+        modal?.remove?.();
+        ctx.openTtCardEditor(id);
+      });
+      buttons.appendChild(btn);
+    });
+    section.appendChild(buttons);
+    box.appendChild(section);
+  }
+
   function showSidebarCardDetail({ title, teachers, gradeKeys, credits, assigned, isDone, sectionIdx, groupName, groupId = "", detailItems = [] }) {
     // 그룹카드가 아닌 단일 과목카드는 중간 "과목카드 상세"를 거치지 않고,
     // 이미 배치된 수업이 있으면 곧바로 배치 상세카드로 엽니다.
@@ -1308,6 +1339,8 @@ export function createTimetableDetailHandlers(ctx) {
     titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:10px;color:#1e3a5f;padding-right:20px";
     titleEl.textContent = title;
     box.appendChild(titleEl);
+    const topDetailCardIds = uniqueIds((detailItems || []).map(item => item.ttcardId || item.id));
+    appendCardEditorButtons(box, topDetailCardIds, modal);
 
     const rows = [
       ["학년", gradeKeys.map(g => gradeDisplay(g)).join(", ") || "-"],
@@ -1669,6 +1702,7 @@ export function createTimetableDetailHandlers(ctx) {
     titleEl.style.cssText = "font-weight:700;font-size:15px;margin-bottom:8px;color:#1e3a5f;padding-right:24px";
     titleEl.textContent = entryTitle(entry);
     box.appendChild(titleEl);
+    appendCardEditorButtons(box, uniqueIds([entry.ttcardId, ...(entry.ttcardIds || [])]), modal);
 
     function makeRow(label, value) {
       const r = document.createElement("div");

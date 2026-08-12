@@ -1655,6 +1655,100 @@ async function applyTimetableCardEditorPatch(cardId, patch = {}) {
   }
 }
 
+function getTimetableCardEditorOccurrences(cardId = "") {
+  const id = clean(cardId);
+  if (!id) return [];
+  return entries()
+    .filter(entry => ttCardIdsFromPlacement(entry).map(clean).includes(id))
+    .map(entry => {
+      const cardIds = ttCardIdsFromPlacement(entry).map(clean).filter(Boolean);
+      const assignments = roomAssignmentsForEntry(entry);
+      const roomId = clean(assignments[id] || (cardIds.length === 1 ? entry.roomId : "") || "");
+      const editable = cardIds.length === 1 && !entry.groupId && !entry.unitId;
+      return {
+        entryId: clean(entry.id),
+        day: Number(entry.day),
+        period: Number(entry.period),
+        roomId,
+        editable,
+        grouped: !editable,
+      };
+    })
+    .filter(row => row.entryId && Number.isInteger(row.day) && Number.isInteger(row.period))
+    .sort((a, b) => (a.day - b.day) || (a.period - b.period) || a.entryId.localeCompare(b.entryId));
+}
+
+async function applyTimetableCardOccurrenceRooms(cardId = "", changes = []) {
+  if (!canEdit()) throw new Error("편집 권한이 없습니다.");
+  const id = clean(cardId);
+  const card = getTtCardById(id);
+  if (!card) throw new Error("시간표 카드를 찾을 수 없습니다.");
+
+  const pending = (Array.isArray(changes) ? changes : [])
+    .map(row => ({ entryId: clean(row?.entryId), roomId: clean(row?.roomId) }))
+    .filter(row => row.entryId);
+  if (!pending.length) return true;
+
+  const domain = ttDomain();
+  const previousEntries = JSON.parse(JSON.stringify(domain.entries || []));
+  captureTimetableUndo("카드 회차별 교실 수정");
+
+  try {
+    let changed = 0;
+    pending.forEach(({ entryId, roomId }) => {
+      const entry = entries().find(row => clean(row.id) === entryId);
+      if (!entry) throw new Error(`배치 항목을 찾을 수 없습니다: ${entryId}`);
+      const cardIds = ttCardIdsFromPlacement(entry).map(clean).filter(Boolean);
+      if (!cardIds.includes(id)) throw new Error("선택한 배치에 해당 카드가 없습니다.");
+      if (cardIds.length !== 1 || entry.groupId || entry.unitId) {
+        throw new Error("묶음/그룹 수업의 회차별 교실은 배치 상세의 구성 과목별 교실에서 수정해 주세요.");
+      }
+      if (roomId && !getRoomById(roomId)) throw new Error(`등록되지 않은 교실입니다: ${roomId}`);
+
+      const currentAssignments = roomAssignmentsForEntry(entry);
+      const currentRoomId = clean(currentAssignments[id] || entry.roomId || "");
+      const currentIsOccurrenceOverride = entry.roomPinned === true && normalizeRoomRuleValue(entry.roomRule || "teacher") === "fixed";
+      if (roomId === currentRoomId && ((roomId && currentIsOccurrenceOverride) || (!roomId && !currentIsOccurrenceOverride))) return;
+
+      const assignments = { ...(entry.roomAssignmentsByTtCardId || {}) };
+      if (roomId) {
+        entry.roomRule = "fixed";
+        entry.fixedRoomId = roomId;
+        entry.roomId = roomId;
+        entry.roomPinned = true;
+        assignments[id] = roomId;
+        entry.roomAssignmentsByTtCardId = assignments;
+        delete entry.roomIds;
+      } else {
+        entry.roomPinned = false;
+        entry.roomRule = roomRuleForCard(card);
+        delete entry.fixedRoomId;
+        delete assignments[id];
+        entry.roomAssignmentsByTtCardId = assignments;
+        const defaultRoomId = clean(resolveRoomForTtCard(card, entry) || "");
+        entry.roomId = defaultRoomId || null;
+        if (defaultRoomId) entry.roomAssignmentsByTtCardId[id] = defaultRoomId;
+        delete entry.roomIds;
+      }
+      changed += 1;
+    });
+
+    if (!changed) return true;
+    scheduleSave("timetable");
+    const saved = await saveNow("timetable", { force: true });
+    if (saved === false) throw new Error("시간표 저장이 완료되지 않았습니다.");
+    if (typeof savePendingNow === "function") await savePendingNow();
+    recomputeConflicts();
+    renderAll();
+    try { console.info(`[card-editor:r393] occurrence-room card=${id} changed=${changed}`); } catch (_) {}
+    return true;
+  } catch (error) {
+    domain.entries = previousEntries;
+    try { recomputeConflicts(); renderAll(); } catch (_) {}
+    throw error;
+  }
+}
+
 function getTimetableCardEditorApi() {
   if (timetableCardEditorApi) return timetableCardEditorApi;
   timetableCardEditorApi = createTimetableCardEditor({
@@ -1665,8 +1759,10 @@ function getTimetableCardEditorApi() {
     getPeriodCount: () => ttConfig()?.periodCount || 7,
     describeCard: describeTtCard,
     getGroupInfo: cardId => getGroupInfoForTeacherCard(cardId),
+    getOccurrences: getTimetableCardEditorOccurrences,
     canEdit,
     applyCardPatch: applyTimetableCardEditorPatch,
+    applyOccurrenceRooms: applyTimetableCardOccurrenceRooms,
   });
   return timetableCardEditorApi;
 }
@@ -5382,6 +5478,7 @@ const ttDetailHandlers = createTimetableDetailHandlers({
   getRoomDisplayName,
   getEntryPinBlockEntries,
   toggleEntryPinnedBlock,
+  openTtCardEditor: cardId => getTimetableCardEditorApi().open(cardId),
 });
 
 function getCompoundDetailBucketKeyForCard(card = {}) {
@@ -6852,7 +6949,6 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
-$("ttCardEditorBtn")?.addEventListener("click", () => getTimetableCardEditorApi().open());
 $("ttTeacherEventsBtn")?.addEventListener("click", () => teacherEventsManagerApi?.openTeacherEventsManager?.());
 $("ttAutoPrecheckBtn")?.addEventListener("click", async () => {
   try { await ensureTimetableDataSyncedForOperation("auto-precheck"); } catch (e) { alert("자동배치 사전점검 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
