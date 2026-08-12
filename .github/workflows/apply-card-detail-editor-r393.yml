@@ -35,7 +35,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git merge-base HEAD 3eb44868afaea9ec6bf7e06e28faa24c809382a3)" = "3eb44868afaea9ec6bf7e06e28faa24c809382a3"
+          test "$(git merge-base HEAD 57d1b052747f2e50ae1c8d4803ae1cdd770ff4ea)" = "57d1b052747f2e50ae1c8d4803ae1cdd770ff4ea"
           python3 .patches/apply-card-detail-editor-r393.py
           git diff --check
 
@@ -74,7 +74,7 @@ jobs:
           cp timetable.html /tmp/upload/
           cp js/timetable.js js/ttcards.js js/timetable-card-editor.js js/timetable-detail.js /tmp/upload/js/
           cat > /tmp/upload/업로드_안내.txt <<'EOF'
-          기준: main r391에서 바로 덮어쓰기 가능한 누적 패치
+          기준: main r392에서 바로 덮어쓰기 가능한 누적 패치
           운영 파일: 5개
           CSS 변경: 없음
           상단 카드 편집 버튼: 제거
