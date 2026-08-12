@@ -49,6 +49,7 @@ const [
   manualReplaceModule,
   teacherStatisticsModule,
   displayDensityModule,
+  cardEditorModule,
   excelImportModule,
   teacherEventsModule,
   cpSatImportModule,
@@ -66,6 +67,7 @@ const [
   import(versioned("./timetable-manual-replace.js")),
   import(versioned("./timetable-statistics.js")),
   import(versioned("./timetable-display-density.js")),
+  import(versioned("./timetable-card-editor.js")),
   import(versioned("./timetable-excel-import.js")),
   import(versioned("./timetable-teacher-events.js")),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
@@ -99,6 +101,7 @@ const { buildManualReplacementPlan } = manualReplaceModule;
 // r379 compatibility markers: timetable-teacher-statistics.js / openTeacherStatisticsDialog
 const { openStatisticsDialog } = teacherStatisticsModule;
 const { setupTimetableDisplayDensity } = displayDensityModule;
+const { createTimetableCardEditor } = cardEditorModule;
 const { createTimetableExcelImport } = excelImportModule;
 const {
   createTeacherEventsManager,
@@ -1525,6 +1528,7 @@ function isManualCardStored(card = {}) {
 
 function isTtCardIncludedInAutoAssign(card = {}) {
   if (!card) return false;
+  if (card.autoAssignExcluded === true) return false;
   if (!isManualTtCard(card)) return true;
   return !isManualCardStored(card);
 }
@@ -1565,6 +1569,106 @@ function normalizeManualTtCardState({ persist = false } = {}) {
   });
   if (changed && persist && canEdit()) scheduleSave("timetable");
   return changed;
+}
+
+let timetableCardEditorApi = null;
+
+function syncEntriesFromEditedTtCards(cardIds = []) {
+  const changedIds = new Set((cardIds || []).map(clean).filter(Boolean));
+  if (!changedIds.size) return 0;
+  let changed = 0;
+  entries().forEach(entry => {
+    const ids = ttCardIdsFromPlacement(entry).map(clean).filter(Boolean);
+    if (!ids.some(id => changedIds.has(id))) return;
+    const cards = ids.map(id => getTtCardById(id)).filter(Boolean);
+    if (!cards.length) return;
+
+    const teacherNames = [...new Set(cards.flatMap(card => getTeachersForTtCard(card)).map(clean).filter(Boolean))];
+    const teacherIds = [...new Set(cards.flatMap(card => Array.isArray(card.teacherIds) ? card.teacherIds : []).map(clean).filter(Boolean))];
+    const classKeys = [...new Set(cards.flatMap(card => getTtCardClassInfos(card).map(info => classKey(info))).map(clean).filter(Boolean))];
+
+    entry.teacherName = teacherNames.join(", ");
+    entry.teacherNames = teacherNames;
+    entry.teacherIds = teacherIds;
+    entry.audienceClassKeys = classKeys;
+    changed += 1;
+  });
+  try { changed += reconcileExistingEntryRoomAssignmentsFromCards({ persist: false }) || 0; } catch (_) {}
+  return changed;
+}
+
+async function applyTimetableCardEditorPatch(cardId, patch = {}) {
+  if (!canEdit()) throw new Error("편집 권한이 없습니다.");
+  const card = getTtCardById(cardId);
+  if (!card) throw new Error("시간표 카드를 찾을 수 없습니다.");
+
+  const domain = ttDomain();
+  const previousCards = JSON.parse(JSON.stringify(domain.ttcards || []));
+  const previousEntries = JSON.parse(JSON.stringify(domain.entries || []));
+  const now = new Date().toISOString();
+  captureTimetableUndo("시간표 카드 설정 수정");
+
+  try {
+    const teacherNames = [...new Set((patch.teacherNames || []).map(clean).filter(Boolean))];
+    const teacherIds = [...new Set((patch.teacherIds || []).map(clean).filter(Boolean))];
+    const classKeys = [...new Set((patch.classKeys || []).map(clean).filter(Boolean))];
+    const classLabels = [...new Set((patch.classLabels || []).map(clean).filter(Boolean))];
+    const credits = Number(patch.credits);
+    if (!classKeys.length) throw new Error("대상 학급이 비어 있습니다.");
+    if (!Number.isFinite(credits) || credits < 0) throw new Error("주당 시수가 올바르지 않습니다.");
+
+    card.teacherIds = teacherIds;
+    card.teacherName = teacherNames.join(", ");
+    card.teachers = teacherNames;
+    card.teacherMode = teacherNames.length ? "" : "none";
+    card.classKeys = classKeys;
+    card.classLabels = classLabels;
+    card.studentKeys = [];
+    card.credits = credits;
+    card.isWholeGrade = !!patch.isWholeGrade;
+    card.roomRule = clean(patch.roomRule || "teacher") || "teacher";
+    card.fixedRoomId = card.roomRule === "fixed" ? (clean(patch.fixedRoomId) || null) : null;
+    card.allowedSlots = (patch.allowedSlots || []).map(slot => ({ day: Number(slot.day), period: Number(slot.period) }));
+    card.unavailableSlots = (patch.unavailableSlots || []).map(slot => ({ day: Number(slot.day), period: Number(slot.period) }));
+    card.autoAssignExcluded = patch.autoAssignExcluded === true;
+    if (isManualTtCard(card)) {
+      card.manualAutoAssign = !card.autoAssignExcluded;
+      card.manualCardStatus = card.autoAssignExcluded ? "stored" : "active";
+    }
+    card.manualEdited = true;
+    card.editedAt = now;
+
+    syncEntriesFromEditedTtCards([card.id]);
+    scheduleSave("timetable");
+    const saved = await saveNow("timetable", { force: true });
+    if (saved === false) throw new Error("시간표 저장이 완료되지 않았습니다.");
+    if (typeof savePendingNow === "function") await savePendingNow();
+    recomputeConflicts();
+    renderAll();
+    try { console.info(`[card-editor:r392] saved card=${card.id} teachers=${teacherNames.length} classes=${classKeys.length} credits=${credits} excluded=${card.autoAssignExcluded ? 1 : 0}`); } catch (_) {}
+    return true;
+  } catch (error) {
+    domain.ttcards = previousCards;
+    domain.entries = previousEntries;
+    try { recomputeConflicts(); renderAll(); } catch (_) {}
+    throw error;
+  }
+}
+
+function getTimetableCardEditorApi() {
+  if (timetableCardEditorApi) return timetableCardEditorApi;
+  timetableCardEditorApi = createTimetableCardEditor({
+    getCards: () => appState.timetable?.ttcards || [],
+    getTeachers: () => appState.teachers?.teachers || [],
+    getClasses: () => appState.classes?.classes || [],
+    getRooms,
+    getPeriodCount: () => ttConfig()?.periodCount || 7,
+    describeCard: describeTtCard,
+    getGroupInfo: cardId => getGroupInfoForTeacherCard(cardId),
+    canEdit,
+    applyCardPatch: applyTimetableCardEditorPatch,
+  });
+  return timetableCardEditorApi;
 }
 
 function setManualTtCardAutoAssign(cardIds = [], include = true) {
@@ -6748,6 +6852,7 @@ Ctrl+Z로 직전 상태를 되돌릴 수 있습니다.`)) return;
   void saveNow("timetable", { force: true }); recomputeConflicts(); renderAll();
 });
 $("ttFixedLessonsBtn")?.addEventListener("click", () => openFixedLessonManager());
+$("ttCardEditorBtn")?.addEventListener("click", () => getTimetableCardEditorApi().open());
 $("ttTeacherEventsBtn")?.addEventListener("click", () => teacherEventsManagerApi?.openTeacherEventsManager?.());
 $("ttAutoPrecheckBtn")?.addEventListener("click", async () => {
   try { await ensureTimetableDataSyncedForOperation("auto-precheck"); } catch (e) { alert("자동배치 사전점검 전 데이터 정리에 실패했습니다: " + (e?.message || e)); return; }
