@@ -1,11 +1,11 @@
  // ================================================================
 // timetable-card-editor.js · 시간표 카드 마스터 상세 편집기
-// r392 · 2026-08-12
+// r393 · 2026-08-12
 // - 교사 / 대상반 / 시수 / 교실 규칙 / 가능·불가시간 / 자동배치 포함
 // - 묶음수업 구조 자체는 수정하지 않고 기존 그룹 관리 기능을 유지합니다.
 // ================================================================
 
-const STYLE_ID = "ttCardEditorStyleR392";
+const STYLE_ID = "ttCardEditorStyleR393";
 const DAY_LABELS = ["월", "화", "수", "목", "금"];
 const clean = value => String(value ?? "").trim();
 const asArray = value => Array.isArray(value) ? value : [];
@@ -80,6 +80,7 @@ function ensureStyle() {
 .tt-ce-time-head{display:flex;gap:6px;align-items:center;margin-bottom:8px}.tt-ce-time-head select{height:31px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;font-size:11px}.tt-ce-time-head span{font-size:10px;color:#64748b;font-weight:750}
 .tt-ce-timegrid{display:grid;grid-template-columns:48px repeat(5,minmax(48px,1fr));gap:4px;min-width:390px}.tt-ce-timecell{min-height:28px;border:1px solid #dbe4f0;border-radius:7px;background:#fff;font-size:10px;font-weight:850}.tt-ce-timecell.hdr{display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#475569}.tt-ce-timecell.on{background:#dbeafe;border-color:#60a5fa;color:#1d4ed8}.tt-ce-timecell.danger.on{background:#fee2e2;border-color:#f87171;color:#991b1b}
 .tt-ce-note{padding:8px 10px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:10px;line-height:1.45;margin-top:7px}
+.tt-ce-occ-list{display:flex;flex-direction:column;gap:6px}.tt-ce-occ-row{display:grid;grid-template-columns:minmax(88px,120px) minmax(160px,1fr);gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:7px 8px}.tt-ce-occ-row b{font-size:11px;color:#334155}.tt-ce-occ-row select{height:31px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;font-size:11px;background:#fff}.tt-ce-occ-row.is-grouped{background:#f8fafc;opacity:.72}.tt-ce-occ-save{margin-top:8px;height:32px;border:1px solid #2563eb;border-radius:8px;background:#2563eb;color:#fff;padding:0 11px;font-size:11px;font-weight:900;cursor:pointer}.tt-ce-occ-save:disabled{opacity:.55;cursor:not-allowed}
 .tt-ce-actions{position:sticky;bottom:-14px;background:#fff;border-top:1px solid #e2e8f0;margin:14px -17px -14px;padding:11px 17px;display:flex;gap:8px;align-items:center}.tt-ce-actions button{height:34px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 12px;font-size:11px;font-weight:900;cursor:pointer}.tt-ce-actions .primary{background:#2563eb;border-color:#2563eb;color:#fff}.tt-ce-actions span{margin-left:auto;font-size:10px;color:#64748b;font-weight:750}
 @media(max-width:860px){.tt-ce-body{grid-template-columns:1fr}.tt-ce-left{max-height:250px;border-right:0;border-bottom:1px solid #e2e8f0}.tt-ce-checkgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-ce-grid2{grid-template-columns:1fr}}
 `;
@@ -249,6 +250,88 @@ export function createTimetableCardEditor(context = {}) {
       const autoInclude = basic.querySelector('[data-field="autoInclude"]'); autoInclude.checked = card.autoAssignExcluded !== true;
       const refreshFixed = () => { fixedRoom.disabled = roomRule.value !== "fixed"; fixedField.style.opacity = roomRule.value === "fixed" ? "1" : ".62"; };
       roomRule.addEventListener("change", refreshFixed); refreshFixed();
+
+      const occurrences = asArray(context.getOccurrences?.(card.id));
+      if (occurrences.length) {
+        const occSection = document.createElement("section");
+        occSection.className = "tt-ce-section";
+        occSection.innerHTML = "<h3>현재 배치 회차별 교실</h3>";
+        const occBody = document.createElement("div");
+        occBody.className = "tt-ce-secbody";
+        const occList = document.createElement("div");
+        occList.className = "tt-ce-occ-list";
+        const sortedRooms = getRooms().filter(room => clean(room.id)).sort((a,b)=>clean(a.name||a.id).localeCompare(clean(b.name||b.id),"ko",{numeric:true}));
+        let editableOccurrenceCount = 0;
+
+        occurrences.forEach((occ, index) => {
+          const row = document.createElement("div");
+          row.className = `tt-ce-occ-row${occ.editable ? "" : " is-grouped"}`;
+          const slot = document.createElement("b");
+          slot.textContent = `${DAY_LABELS[Number(occ.day)] || "?"} ${Number(occ.period) + 1}교시`;
+          const select = document.createElement("select");
+          select.dataset.entryId = clean(occ.entryId);
+          select.dataset.originalRoomId = clean(occ.roomId);
+          select.innerHTML = `<option value="">카드 기본 규칙 사용</option>${sortedRooms.map(room => `<option value="${escapeHtml(room.id)}">${escapeHtml(room.name || room.id)}</option>`).join("")}`;
+          if (clean(occ.roomId) && !sortedRooms.some(room => clean(room.id) === clean(occ.roomId))) {
+            const unknown = document.createElement("option");
+            unknown.value = clean(occ.roomId);
+            unknown.textContent = clean(occ.roomId);
+            select.appendChild(unknown);
+          }
+          select.value = clean(occ.roomId);
+          select.disabled = !canEdit || !occ.editable;
+          if (occ.editable) editableOccurrenceCount += 1;
+          else {
+            select.title = "묶음/그룹 수업은 배치 상세에서 구성 과목별 교실을 수정합니다.";
+            const grouped = document.createElement("option");
+            grouped.value = clean(occ.roomId);
+            grouped.textContent = `${clean(occ.roomId) ? "현재 교실 유지" : "그룹/묶음 수업"}`;
+            if (![...select.options].some(option => option.value === grouped.value)) select.appendChild(grouped);
+            select.value = clean(occ.roomId);
+          }
+          row.append(slot, select);
+          occList.appendChild(row);
+        });
+
+        occBody.appendChild(occList);
+        const occNote = document.createElement("div");
+        occNote.className = "tt-ce-note";
+        occNote.textContent = "이 설정은 현재 배치의 각 회차 교실만 고정합니다. 예: 같은 음악 카드의 한 회차는 Chapel, 다른 회차는 VH106으로 지정할 수 있습니다. 묶음/그룹 수업은 배치 상세의 구성 과목별 교실에서 수정합니다.";
+        occBody.appendChild(occNote);
+
+        if (editableOccurrenceCount) {
+          const occSave = document.createElement("button");
+          occSave.type = "button";
+          occSave.className = "tt-ce-occ-save";
+          occSave.textContent = "회차별 교실 저장";
+          occSave.disabled = !canEdit;
+          occSave.addEventListener("click", async () => {
+            const changes = [...occList.querySelectorAll("select[data-entry-id]")]
+              .filter(select => !select.disabled && clean(select.value) !== clean(select.dataset.originalRoomId))
+              .map(select => ({ entryId: select.dataset.entryId, roomId: select.value }));
+            if (!changes.length) {
+              occSave.textContent = "변경 없음";
+              setTimeout(() => { occSave.textContent = "회차별 교실 저장"; }, 1200);
+              return;
+            }
+            occSave.disabled = true;
+            occSave.textContent = "저장 중…";
+            try {
+              const result = await context.applyOccurrenceRooms?.(card.id, changes);
+              if (result === false) throw new Error("회차별 교실 변경을 저장하지 못했습니다.");
+              occSave.textContent = "저장됨";
+              setTimeout(() => renderEditor(), 250);
+            } catch (error) {
+              alert(`회차별 교실 저장에 실패했습니다.\n${error?.message || error}`);
+              occSave.disabled = !canEdit;
+              occSave.textContent = "회차별 교실 저장";
+            }
+          });
+          occBody.appendChild(occSave);
+        }
+        occSection.appendChild(occBody);
+        editor.appendChild(occSection);
+      }
 
       const timeSection = document.createElement("section"); timeSection.className = "tt-ce-section"; timeSection.innerHTML = "<h3>배정 가능·불가 시간</h3>";
       const timeBody = document.createElement("div"); timeBody.className = "tt-ce-secbody";
