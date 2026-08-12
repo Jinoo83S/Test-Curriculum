@@ -1,0 +1,109 @@
+name: Apply timetable card detail editor r393
+
+on:
+  push:
+    branches: [feature/timetable-card-detail-editor-r393]
+    paths:
+      - ".github/workflows/apply-card-detail-editor-r393.yml"
+      - ".patches/apply-card-detail-editor-r393.py"
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-card-detail-editor-r393.yml"
+      - ".patches/apply-card-detail-editor-r393.py"
+      - "js/timetable-card-editor.js"
+      - "js/timetable-detail.js"
+      - "js/timetable.js"
+      - "js/ttcards.js"
+      - "timetable.html"
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/timetable-card-detail-editor-r393
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Verify base and apply changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git merge-base HEAD 3eb44868afaea9ec6bf7e06e28faa24c809382a3)" = "3eb44868afaea9ec6bf7e06e28faa24c809382a3"
+          python3 .patches/apply-card-detail-editor-r393.py
+          git diff --check
+
+      - name: Static regression checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/timetable-card-editor.js
+          node --check js/timetable-detail.js
+          node --check js/timetable.js
+          node --check js/ttcards.js
+          test "$(grep -c 'id=\"ttCardEditorBtn\"' timetable.html || true)" = "0"
+          grep -q '2026-08-12-card-detail-editor-occurrence-rooms-r393' timetable.html
+          grep -q 'openTtCardEditor' js/timetable-detail.js
+          grep -q 'appendCardEditorButtons' js/timetable-detail.js
+          grep -q 'getTimetableCardEditorOccurrences' js/timetable.js
+          grep -q 'applyTimetableCardOccurrenceRooms' js/timetable.js
+          grep -q '회차별 교실' js/timetable-card-editor.js
+          grep -q 'teacherEventsManagerApi' js/timetable.js
+          grep -q 'createTimetableExcelImport' js/timetable.js
+          grep -q 'card.autoAssignExcluded === true' js/timetable.js
+          grep -q 'autoAssignExcluded' js/ttcards.js
+          changed="$( { git diff --name-only; git diff --name-only origin/main...HEAD; } | grep -v '^\.patches/' | grep -v '^\.github/workflows/' | sort -u )"
+          expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable-detail.js js/timetable.js js/ttcards.js timetable.html | sort)
+          test "$changed" = "$expected"
+          ! printf '%s\n' "$changed" | grep -E '\.css$'
+          echo CARD_DETAIL_EDITOR_R393_CHECK_OK
+          git diff --stat
+          git diff --numstat
+
+      - name: Build vscode upload ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/upload/js
+          cp timetable.html /tmp/upload/
+          cp js/timetable.js js/ttcards.js js/timetable-card-editor.js js/timetable-detail.js /tmp/upload/js/
+          cat > /tmp/upload/업로드_안내.txt <<'EOF'
+          기준: main r391에서 바로 덮어쓰기 가능한 누적 패치
+          운영 파일: 5개
+          CSS 변경: 없음
+          상단 카드 편집 버튼: 제거
+          카드 상세/배치 상세: 카드 편집 버튼 추가
+          추가 기능: 현재 배치 회차별 교실 지정
+          커밋명: 시간표_카드상세내_편집_회차별교실_r393
+          EOF
+          cd /tmp/upload
+          zip -r /tmp/커리큘럼_카드상세내편집_회차별교실_r393_vscode업로드용.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timetable-card-detail-editor-r393-vscode-upload
+          path: /tmp/커리큘럼_카드상세내편집_회차별교실_r393_vscode업로드용.zip
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit operational files only
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .patches
+          rm -f .github/workflows/apply-card-detail-editor-r393.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "시간표_카드상세내_편집_회차별교실_r393"
+          git push origin HEAD:feature/timetable-card-detail-editor-r393
