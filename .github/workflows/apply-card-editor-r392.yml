@@ -30,7 +30,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git merge-base HEAD main)" = "81a16ac0efc3d1efd2259fdc4b2c4333247e572f"
+          test "$(git merge-base HEAD origin/main)" = "81a16ac0efc3d1efd2259fdc4b2c4333247e572f"
           git apply --check .patches/timetable-card-editor-r392.patch
           git apply --whitespace=nowarn .patches/timetable-card-editor-r392.patch
           git diff --check
@@ -48,10 +48,10 @@ jobs:
           grep -q 'teacherEventsManagerApi' js/timetable.js
           grep -q 'createTimetableExcelImport' js/timetable.js
           grep -q 'saveNow("timetable", { force: true })' js/timetable.js
-          ! git diff --name-only | grep -E '\.css$'
-          changed="$( { git diff --name-only; git ls-files --others --exclude-standard; } | grep -v '^\.patches/' | grep -v '^\.github/workflows/' | sort -u )"
+          changed="$( { git diff --name-only; git diff --name-only origin/main...HEAD; } | grep -v '^\.patches/' | grep -v '^\.github/workflows/' | sort -u )"
           expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable.js timetable.html | sort)
           test "$changed" = "$expected"
+          ! printf '%s\n' "$changed" | grep -E '\.css$'
           html_stats=$(git diff --numstat -- timetable.html)
           test "$(echo "$html_stats" | awk '{print $1}')" -le 5
           test "$(echo "$html_stats" | awk '{print $2}')" -le 4
