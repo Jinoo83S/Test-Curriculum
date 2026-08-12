@@ -6,11 +6,13 @@ on:
     paths:
       - ".github/workflows/apply-manual-card-r394.yml"
       - ".patches/apply-manual-card-r394.py"
+      - ".patches/apply-manual-card-r394-wrapper.py"
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/apply-manual-card-r394.yml"
       - ".patches/apply-manual-card-r394.py"
+      - ".patches/apply-manual-card-r394-wrapper.py"
       - "js/timetable-card-editor.js"
       - "js/timetable.js"
       - "timetable.html"
@@ -34,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git merge-base HEAD a1bf0250119320dac9d9b38c104dbc86cf6ae799)" = "a1bf0250119320dac9d9b38c104dbc86cf6ae799"
-          python3 .patches/apply-manual-card-r394.py
+          python3 .patches/apply-manual-card-r394-wrapper.py
           git diff --check
 
       - name: Static regression checks
@@ -57,7 +59,7 @@ jobs:
           grep -q 'teacherEventsManagerApi' js/timetable.js
           grep -q 'mergeGeneratedAndManualCards' js/ttcards.js
           test "$(grep -c 'id=\"ttCardEditorBtn\"' timetable.html || true)" = "0"
-          grep -q '2026-08-12-manual-card-clone-delete-r394' timetable.html
+          test "$(grep -c '2026-08-12-manual-card-clone-delete-r394' timetable.html)" = "3"
           changed="$(git diff --name-only | sort)"
           expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable.js timetable.html | sort)
           test "$changed" = "$expected"
