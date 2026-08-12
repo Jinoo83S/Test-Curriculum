@@ -485,7 +485,7 @@ function buildPersistedTtCard({ id, templateId, gradeKey, sectionIdx, existing =
     // 수동 수정값은 생성 데이터보다 우선합니다.
     // 단, 창체 시수는 시간표 적용 기준상 항상 1로 유지합니다.
     // 복합 과목의 시수는 구성 과목 시수를 우선합니다.
-    ["label","teacherIds","teacherName","teachers","teacherMode","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots"].forEach(k => {
+    ["label","teacherIds","teacherName","teachers","teacherMode","credits","classKeys","classLabels","isWholeGrade","roomRule","fixedRoomId","allowedSlots","unavailableSlots","autoAssignExcluded"].forEach(k => {
       if (k === "credits" && (isChanCheCategory(generated.category) || isCompoundPart)) return;
       if (existing[k] !== undefined) generated[k] = existing[k];
     });
