@@ -59,7 +59,7 @@ jobs:
           grep -q 'card.autoAssignExcluded === true' js/timetable.js
           grep -q 'autoAssignExcluded' js/ttcards.js
           changed="$( { git diff --name-only; git diff --name-only origin/main...HEAD; } | grep -v '^\.patches/' | grep -v '^\.github/workflows/' | sort -u )"
-          expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable-detail.js js/timetable.js js/ttcards.js timetable.html | sort)
+          expected=$(printf '%s\n' js/timetable-card-editor.js js/timetable-detail.js js/timetable.js timetable.html | sort)
           test "$changed" = "$expected"
           ! printf '%s\n' "$changed" | grep -E '\.css$'
           echo CARD_DETAIL_EDITOR_R393_CHECK_OK
