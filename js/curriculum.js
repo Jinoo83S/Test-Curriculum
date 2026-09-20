@@ -51,7 +51,9 @@ export function addRow(grade) {
   const newRow = createRow(opts(), { category:last.category, track:last.track, group:last.group, credits:last.credits });
   enforceChanCheCredit(newRow);
   rows.push(newRow);
+  curriculum().gradeBoards[grade] = rows;
   scheduleSave("curriculum");
+  _onCurriculumChange();
 }
 
 /** 이전 버전 호환용: 창체 credits 값은 실제 시간 수이므로 더 이상 일괄 1로 변경하지 않습니다. */
@@ -94,6 +96,7 @@ export function deleteRow(grade, rowId) {
   curriculum().gradeBoards[grade] = curriculum().gradeBoards[grade].filter(r => r.id !== rowId);
   if (!curriculum().gradeBoards[grade].length) curriculum().gradeBoards[grade].push(createRow(opts()));
   scheduleSave("curriculum");
+  _onCurriculumChange();
 }
 
 // ── Options Mutations ─────────────────────────────────────────────
