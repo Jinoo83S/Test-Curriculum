@@ -656,7 +656,7 @@ function createMergedDropCell(grade, rowData, templateId) {
 
 function shouldRenderMerged(r) { return !!(r?.sem1TemplateId && r?.sem2TemplateId && r.sem1TemplateId === r.sem2TemplateId && isSemesterDataSame(getTemplateById(r.sem1TemplateId))); }
 
-function createGradeRow(grade, rowData) {
+function createGradeRow(grade, rowData, onUpdate) {
   const row = document.createElement("div"); row.className = "grade-data-row";
   const cat = createSelect(opts().category, rowData.category, v => { updateRowField(grade, rowData.id, "category", v); });
   const catColor = getCategoryColor(rowData.category); cat.classList.add("category-select"); cat.style.backgroundColor = catColor.bg; cat.style.color = catColor.text;
@@ -667,7 +667,7 @@ function createGradeRow(grade, rowData) {
   else { row.appendChild(createDropCell(grade, rowData, "sem1", rowData.sem1TemplateId)); row.appendChild(createDropCell(grade, rowData, "sem2", rowData.sem2TemplateId)); }
   const ci = document.createElement("input"); ci.className = "credit-input"; ci.type = "text"; ci.value = rowData.credits; ci.placeholder = "0"; ci.disabled = !canEdit();
   ci.addEventListener("change", e => updateRowField(grade, rowData.id, "credits", e.target.value)); row.appendChild(ci);
-  const db = makeBtn("×", "row-delete-btn", () => deleteRow(grade, rowData.id)); db.disabled = !canEdit(); row.appendChild(db);
+  const db = makeBtn("×", "row-delete-btn", () => { deleteRow(grade, rowData.id); if (typeof onUpdate === "function") onUpdate(); }); db.disabled = !canEdit(); row.appendChild(db);
   return row;
 }
 
@@ -731,14 +731,14 @@ export function buildTabBoard(visibleGrades, onUpdate) {
       visibleGrades.forEach(g => { const rs = (curriculum().gradeBoards[g] || []).filter(r => r.category === cat && r.track === track); rbg[g] = rs; max = Math.max(max, rs.length); });
       if (!max) return;
       visibleGrades.forEach(g => { const d = document.createElement("div"); d.className = "track-group-divider"; d.textContent = track || "구분 없음"; cbg[g].col.appendChild(d); });
-      for (let i = 0; i < max; i++) visibleGrades.forEach(g => { const rd = rbg[g][i]; cbg[g].col.appendChild(rd ? createGradeRow(g, rd) : createSpacerRow()); });
+      for (let i = 0; i < max; i++) visibleGrades.forEach(g => { const rd = rbg[g][i]; cbg[g].col.appendChild(rd ? createGradeRow(g, rd, onUpdate) : createSpacerRow()); });
     });
     visibleGrades.forEach(g => cbg[g].col.appendChild(createCategorySummaryRow(g, cat)));
   });
 
   columns.forEach(({ grade, col, hr }) => {
     const footer = document.createElement("div"); footer.className = "grade-footer";
-    const addBtn = makeBtn(`${grade} 행 추가`, "add-row-btn", () => addRow(grade));
+    const addBtn = makeBtn(`${grade} 행 추가`, "add-row-btn", () => { addRow(grade); if (typeof onUpdate === "function") onUpdate(); });
     addBtn.disabled = !canEdit(); footer.appendChild(addBtn);
     col.appendChild(footer);
     initColResize(col, hr, grade);
