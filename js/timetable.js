@@ -1616,6 +1616,13 @@ async function applyTimetableCardEditorPatch(cardId, patch = {}) {
     const credits = Number(patch.credits);
     if (!classKeys.length) throw new Error("대상 학급이 비어 있습니다.");
     if (!Number.isFinite(credits) || credits < 0) throw new Error("주당 시수가 올바르지 않습니다.");
+    if (isManualTtCard(card)) {
+      const subject = clean(patch.subject || card.subject || card.label);
+      if (!subject) throw new Error("수동카드 과목명이 비어 있습니다.");
+      card.subject = subject;
+      card.label = subject;
+      card.subjectEn = clean(patch.subjectEn ?? card.subjectEn ?? "");
+    }
 
     card.teacherIds = teacherIds;
     card.teacherName = teacherNames.join(", ");
@@ -1650,6 +1657,128 @@ async function applyTimetableCardEditorPatch(cardId, patch = {}) {
   } catch (error) {
     domain.ttcards = previousCards;
     domain.entries = previousEntries;
+    try { recomputeConflicts(); renderAll(); } catch (_) {}
+    throw error;
+  }
+}
+
+async function cloneTimetableCardForManualUse(cardId = "") {
+  if (!canEdit()) throw new Error("편집 권한이 없습니다.");
+  const source = getTtCardById(clean(cardId));
+  if (!source) throw new Error("복제할 시간표 카드를 찾을 수 없습니다.");
+
+  const domain = ttDomain();
+  if (!Array.isArray(domain.ttcards)) domain.ttcards = [];
+  const cards = domain.ttcards;
+  const previousCards = JSON.parse(JSON.stringify(cards));
+  const now = new Date().toISOString();
+  const id = uid("ttc_manual");
+  captureTimetableUndo("시간표 수동카드 복제");
+
+  try {
+    const cloned = JSON.parse(JSON.stringify(source));
+    cloned.id = id;
+    cloned.templateId = `manual_${id}`;
+    cloned.sectionIdx = 0;
+    cloned.label = clean(source.subject || source.label || "새 수동카드") || "새 수동카드";
+    cloned.subject = cloned.label;
+    cloned.subjectEn = clean(source.subjectEn || "");
+    cloned.category = clean(source.category || "교과") || "교과";
+    cloned.track = "수동";
+    cloned.group = "수동보정";
+    cloned.studentKeys = [];
+    cloned.generatedAt = now;
+    cloned.manualEdited = true;
+    cloned.isManual = true;
+    cloned.manualCreatedAt = now;
+    cloned.manualNote = `카드 상세에서 복제 · 원본 ${clean(source.id)}`;
+    cloned.manualSourceCardId = clean(source.id);
+    cloned.manualCardStatus = "stored";
+    cloned.manualAutoAssign = false;
+    cloned.autoAssignExcluded = true;
+    cloned.compoundParentTemplateId = null;
+    cloned.compoundPartId = null;
+    cloned.compoundPartIndex = null;
+    cloned.compoundPartCount = 0;
+    cloned.compoundTotalCredits = 0;
+    cloned.editedAt = now;
+
+    // 자동배치/CP-SAT 실행 때 만든 파생값은 새 카드에 복사하지 않습니다.
+    [
+      "solverFixedRoomId", "solverFixedRoomIds", "solverFixedRoomSource", "solverFixedRoomGenerated",
+      "solverRequiredRoomCount", "solverDurationPeriods", "solverTeacherIds", "solverTeacherNames",
+      "lastPlacedAt", "lastAutoAssignedAt", "placementId", "entryId"
+    ].forEach(key => { delete cloned[key]; });
+
+    cards.push(cloned);
+    scheduleSave("timetable");
+    const saved = await saveNow("timetable", { force: true });
+    if (saved === false) throw new Error("수동카드 저장이 완료되지 않았습니다.");
+    if (typeof savePendingNow === "function") await savePendingNow();
+    try { recomputeConflicts(); renderAll(); } catch (_) {}
+    try { console.info(`[card-editor:r394] cloned source=${source.id} card=${id} autoAssignExcluded=1`); } catch (_) {}
+    return id;
+  } catch (error) {
+    cards.splice(0, cards.length, ...previousCards);
+    try { recomputeConflicts(); renderAll(); } catch (_) {}
+    throw error;
+  }
+}
+
+function cardGroupReferences(cardId = "") {
+  const id = clean(cardId);
+  const refs = [];
+  (appState.timetable?.ttcardGroups || []).forEach(group => {
+    if ((group.poolCardIds || []).includes(id)) refs.push(clean(group.name || group.id || "그룹"));
+    if ((group.excludedCardIds || []).includes(id)) refs.push(clean(group.name || group.id || "그룹"));
+    (group.units || []).forEach(unit => {
+      if ((unit.ttcardIds || []).includes(id)) refs.push(clean(`${group.name || group.id || "그룹"} / ${unit.name || unit.id || "단위"}`));
+    });
+  });
+  return [...new Set(refs.filter(Boolean))];
+}
+
+async function deleteManualTimetableCard(cardId = "") {
+  if (!canEdit()) throw new Error("편집 권한이 없습니다.");
+  const id = clean(cardId);
+  const card = getTtCardById(id);
+  if (!card) throw new Error("삭제할 시간표 카드를 찾을 수 없습니다.");
+  if (!isManualTtCard(card)) throw new Error("커리큘럼 생성 카드는 여기서 삭제할 수 없습니다. 수동카드만 삭제할 수 있습니다.");
+
+  const usedEntries = entries().filter(entry => ttCardIdsFromPlacement(entry).map(clean).includes(id));
+  if (usedEntries.length) throw new Error(`현재 시간표에 ${usedEntries.length}회 배치된 카드입니다. 배치를 먼저 제거한 뒤 삭제하세요.`);
+  const groupRefs = cardGroupReferences(id);
+  if (groupRefs.length) throw new Error(`묶음/동시수업에 연결된 카드입니다. 그룹에서 먼저 빼 주세요: ${groupRefs.slice(0, 3).join(", ")}`);
+
+  const domain = ttDomain();
+  if (!Array.isArray(domain.ttcards)) domain.ttcards = [];
+  const cards = domain.ttcards;
+  const previousCards = JSON.parse(JSON.stringify(cards));
+  const previousScheduleConditions = domain.scheduleConditions == null ? null : JSON.parse(JSON.stringify(domain.scheduleConditions));
+  const previousMetaScheduleConditions = domain.autoAssignMeta?.scheduleConditions == null ? null : JSON.parse(JSON.stringify(domain.autoAssignMeta.scheduleConditions));
+  captureTimetableUndo("시간표 수동카드 삭제");
+
+  try {
+    const index = cards.findIndex(row => clean(row.id) === id);
+    if (index < 0) throw new Error("삭제할 카드가 목록에서 사라졌습니다.");
+    cards.splice(index, 1);
+    if (domain.scheduleConditions?.cards) delete domain.scheduleConditions.cards[id];
+    if (domain.autoAssignMeta?.scheduleConditions?.cards) delete domain.autoAssignMeta.scheduleConditions.cards[id];
+
+    scheduleSave("timetable");
+    const saved = await saveNow("timetable", { force: true });
+    if (saved === false) throw new Error("수동카드 삭제 저장이 완료되지 않았습니다.");
+    if (typeof savePendingNow === "function") await savePendingNow();
+    try { recomputeConflicts(); renderAll(); } catch (_) {}
+    try { console.info(`[card-editor:r394] deleted manual card=${id}`); } catch (_) {}
+    return true;
+  } catch (error) {
+    cards.splice(0, cards.length, ...previousCards);
+    if (previousScheduleConditions == null) delete domain.scheduleConditions;
+    else domain.scheduleConditions = previousScheduleConditions;
+    if (!domain.autoAssignMeta || typeof domain.autoAssignMeta !== "object") domain.autoAssignMeta = {};
+    if (previousMetaScheduleConditions == null) delete domain.autoAssignMeta.scheduleConditions;
+    else domain.autoAssignMeta.scheduleConditions = previousMetaScheduleConditions;
     try { recomputeConflicts(); renderAll(); } catch (_) {}
     throw error;
   }
@@ -1762,6 +1891,8 @@ function getTimetableCardEditorApi() {
     getOccurrences: getTimetableCardEditorOccurrences,
     canEdit,
     applyCardPatch: applyTimetableCardEditorPatch,
+    cloneCard: cloneTimetableCardForManualUse,
+    deleteManualCard: deleteManualTimetableCard,
     applyOccurrenceRooms: applyTimetableCardOccurrenceRooms,
   });
   return timetableCardEditorApi;

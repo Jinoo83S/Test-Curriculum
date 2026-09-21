@@ -1,11 +1,12 @@
  // ================================================================
 // timetable-card-editor.js · 시간표 카드 마스터 상세 편집기
-// r393 · 2026-08-12
+// r394 · 2026-08-12
 // - 교사 / 대상반 / 시수 / 교실 규칙 / 가능·불가시간 / 자동배치 포함
+// - 카드 상세에서 독립 수동카드 복제/삭제 및 수동카드 과목명 편집
 // - 묶음수업 구조 자체는 수정하지 않고 기존 그룹 관리 기능을 유지합니다.
 // ================================================================
 
-const STYLE_ID = "ttCardEditorStyleR393";
+const STYLE_ID = "ttCardEditorStyleR394";
 const DAY_LABELS = ["월", "화", "수", "목", "금"];
 const clean = value => String(value ?? "").trim();
 const asArray = value => Array.isArray(value) ? value : [];
@@ -81,7 +82,7 @@ function ensureStyle() {
 .tt-ce-timegrid{display:grid;grid-template-columns:48px repeat(5,minmax(48px,1fr));gap:4px;min-width:390px}.tt-ce-timecell{min-height:28px;border:1px solid #dbe4f0;border-radius:7px;background:#fff;font-size:10px;font-weight:850}.tt-ce-timecell.hdr{display:flex;align-items:center;justify-content:center;background:#f1f5f9;color:#475569}.tt-ce-timecell.on{background:#dbeafe;border-color:#60a5fa;color:#1d4ed8}.tt-ce-timecell.danger.on{background:#fee2e2;border-color:#f87171;color:#991b1b}
 .tt-ce-note{padding:8px 10px;border-radius:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:10px;line-height:1.45;margin-top:7px}
 .tt-ce-occ-list{display:flex;flex-direction:column;gap:6px}.tt-ce-occ-row{display:grid;grid-template-columns:minmax(88px,120px) minmax(160px,1fr);gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:7px 8px}.tt-ce-occ-row b{font-size:11px;color:#334155}.tt-ce-occ-row select{height:31px;border:1px solid #cbd5e1;border-radius:8px;padding:0 8px;font-size:11px;background:#fff}.tt-ce-occ-row.is-grouped{background:#f8fafc;opacity:.72}.tt-ce-occ-save{margin-top:8px;height:32px;border:1px solid #2563eb;border-radius:8px;background:#2563eb;color:#fff;padding:0 11px;font-size:11px;font-weight:900;cursor:pointer}.tt-ce-occ-save:disabled{opacity:.55;cursor:not-allowed}
-.tt-ce-actions{position:sticky;bottom:-14px;background:#fff;border-top:1px solid #e2e8f0;margin:14px -17px -14px;padding:11px 17px;display:flex;gap:8px;align-items:center}.tt-ce-actions button{height:34px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 12px;font-size:11px;font-weight:900;cursor:pointer}.tt-ce-actions .primary{background:#2563eb;border-color:#2563eb;color:#fff}.tt-ce-actions span{margin-left:auto;font-size:10px;color:#64748b;font-weight:750}
+.tt-ce-actions{position:sticky;bottom:-14px;background:#fff;border-top:1px solid #e2e8f0;margin:14px -17px -14px;padding:11px 17px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.tt-ce-actions button{height:34px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;padding:0 12px;font-size:11px;font-weight:900;cursor:pointer}.tt-ce-actions .primary{background:#2563eb;border-color:#2563eb;color:#fff}.tt-ce-actions .danger{border-color:#fecaca;color:#b91c1c;background:#fff}.tt-ce-actions span{margin-left:auto;font-size:10px;color:#64748b;font-weight:750}
 @media(max-width:860px){.tt-ce-body{grid-template-columns:1fr}.tt-ce-left{max-height:250px;border-right:0;border-bottom:1px solid #e2e8f0}.tt-ce-checkgrid{grid-template-columns:repeat(2,minmax(0,1fr))}.tt-ce-grid2{grid-template-columns:1fr}}
 `;
   document.head.appendChild(style);
@@ -96,6 +97,10 @@ function cardTeachers(card = {}) {
 
 function cardClassKeys(card = {}) {
   return unique(card.classKeys || []);
+}
+
+function isManualCard(card = {}) {
+  return card?.isManual === true || clean(card?.id).startsWith("ttc_manual") || clean(card?.templateId).startsWith("manual_");
 }
 
 function roomRuleLabel(rule = "teacher") {
@@ -220,8 +225,31 @@ export function createTimetableCardEditor(context = {}) {
       editor.innerHTML = "";
       const canEdit = context.canEdit?.() !== false;
       const title = document.createElement("div");
-      title.innerHTML = `<div style="font-size:17px;font-weight:950;color:#0f172a">${escapeHtml(cardTitle(card))}</div><div class="tt-ce-summary"><span class="tt-ce-chip">${escapeHtml(`${gradeNo(card.gradeKey)||"?"}학년`)}</span><span class="tt-ce-chip">${escapeHtml(groupSummary(card.id))}</span>${card.manualEdited ? '<span class="tt-ce-chip manual">수동 수정</span>' : ''}${card.autoAssignExcluded === true ? '<span class="tt-ce-chip manual">자동배치 제외</span>' : ''}</div>`;
+      title.innerHTML = `<div style="font-size:17px;font-weight:950;color:#0f172a">${escapeHtml(cardTitle(card))}</div><div class="tt-ce-summary"><span class="tt-ce-chip">${escapeHtml(`${gradeNo(card.gradeKey)||"?"}학년`)}</span><span class="tt-ce-chip">${escapeHtml(groupSummary(card.id))}</span>${card.manualEdited ? '<span class="tt-ce-chip manual">수동 수정</span>' : ''}${isManualCard(card) ? '<span class="tt-ce-chip manual">수동카드</span>' : ''}${card.autoAssignExcluded === true ? '<span class="tt-ce-chip manual">자동배치 제외</span>' : ''}</div>`;
       editor.appendChild(title);
+
+      const identitySection = document.createElement("section");
+      identitySection.className = "tt-ce-section";
+      identitySection.innerHTML = "<h3>카드 기본 정보</h3>";
+      const identityBody = document.createElement("div");
+      identityBody.className = "tt-ce-secbody";
+      if (isManualCard(card)) {
+        identityBody.classList.add("tt-ce-grid2");
+        const subjectField = document.createElement("div");
+        subjectField.className = "tt-ce-field";
+        subjectField.innerHTML = `<label>과목명</label><input data-field="subject" type="text" value="${escapeHtml(clean(card.subject || card.label))}"><small>수동카드는 시간표 운영용 과목명을 직접 수정할 수 있습니다.</small>`;
+        const subjectEnField = document.createElement("div");
+        subjectEnField.className = "tt-ce-field";
+        subjectEnField.innerHTML = `<label>영문명</label><input data-field="subjectEn" type="text" value="${escapeHtml(clean(card.subjectEn))}"><small>필요하지 않으면 비워 두어도 됩니다.</small>`;
+        const gradeField = document.createElement("div");
+        gradeField.className = "tt-ce-field";
+        gradeField.innerHTML = `<label>학년</label><input type="text" value="${escapeHtml(card.gradeKey || "")}" disabled><small>학년을 바꿔야 하면 원하는 학년의 카드를 먼저 복제하세요.</small>`;
+        identityBody.append(subjectField, subjectEnField, gradeField);
+      } else {
+        identityBody.innerHTML = `<div style="font-size:11px;line-height:1.5;color:#475569"><b>${escapeHtml(card.gradeKey || "")}</b> · 커리큘럼 생성 카드입니다.<br>과목명과 학년은 커리큘럼 원본을 보호하기 위해 여기서 변경하지 않습니다. 별도 과목카드가 필요하면 아래 <b>이 카드 복제</b>를 사용하세요.</div>`;
+      }
+      identitySection.appendChild(identityBody);
+      editor.appendChild(identitySection);
 
       const teacherSection = document.createElement("section"); teacherSection.className = "tt-ce-section"; teacherSection.innerHTML = "<h3>담당 교사</h3>";
       const teacherBody = document.createElement("div"); teacherBody.className = "tt-ce-secbody";
@@ -363,9 +391,51 @@ export function createTimetableCardEditor(context = {}) {
 
       const actions = document.createElement("div"); actions.className = "tt-ce-actions";
       const save = document.createElement("button"); save.type="button"; save.className="primary"; save.textContent="카드 설정 저장"; save.disabled=!canEdit;
+      const cloneBtn = document.createElement("button"); cloneBtn.type="button"; cloneBtn.textContent="＋ 이 카드 복제"; cloneBtn.disabled=!canEdit; cloneBtn.title="현재 카드의 학년·교사·대상반·시수·교실·시간조건을 복사한 독립 수동카드를 만듭니다.";
+      const deleteBtn = document.createElement("button"); deleteBtn.type="button"; deleteBtn.className="danger"; deleteBtn.textContent="수동카드 삭제"; deleteBtn.disabled=!canEdit || !isManualCard(card); deleteBtn.style.display=isManualCard(card)?"":"none";
       const closeBtn = document.createElement("button"); closeBtn.type="button"; closeBtn.textContent="닫기"; closeBtn.addEventListener("click",close);
-      const status=document.createElement("span"); status.textContent=canEdit?"저장 시 현재 배치에도 즉시 반영됩니다.":"읽기 전용";
-      actions.append(save, closeBtn, status); editor.appendChild(actions);
+      const status=document.createElement("span"); status.textContent=canEdit?"복제 카드는 자동배치 제외 상태로 만들어집니다.":"읽기 전용";
+      actions.append(save, cloneBtn, deleteBtn, closeBtn, status); editor.appendChild(actions);
+
+      cloneBtn.addEventListener("click", async () => {
+        if (!confirm(`‘${cardTitle(card)}’ 카드를 독립 수동카드로 복제할까요?\n\n복제본은 자동배치 제외 상태로 생성되며, 과목명·교사·반·시수를 수정한 뒤 자동배치 포함으로 전환할 수 있습니다.`)) return;
+        cloneBtn.disabled = true;
+        cloneBtn.textContent = "복제 중…";
+        status.textContent = "";
+        try {
+          const newId = await context.cloneCard?.(card.id);
+          if (!newId) throw new Error("복제된 카드 ID를 받지 못했습니다.");
+          selectedCardId = newId;
+          status.textContent = "복제됨 · 자동배치 제외";
+          renderGradeFilter();
+          renderList();
+          renderEditor();
+        } catch (error) {
+          alert(`카드 복제에 실패했습니다.\n${error?.message || error}`);
+          cloneBtn.disabled = !canEdit;
+          cloneBtn.textContent = "＋ 이 카드 복제";
+          status.textContent = "복제 실패";
+        }
+      });
+
+      deleteBtn.addEventListener("click", async () => {
+        if (!isManualCard(card)) return;
+        if (!confirm(`수동카드 ‘${cardTitle(card)}’를 완전히 삭제할까요?\n\n현재 시간표에 배치되어 있거나 묶음수업에 연결된 카드는 삭제되지 않습니다.`)) return;
+        deleteBtn.disabled = true;
+        deleteBtn.textContent = "삭제 중…";
+        try {
+          const result = await context.deleteManualCard?.(card.id);
+          if (result === false) throw new Error("수동카드를 삭제하지 못했습니다.");
+          selectedCardId = cards.find(row => row.id !== card.id)?.id || "";
+          renderGradeFilter();
+          renderList();
+          renderEditor();
+        } catch (error) {
+          alert(`수동카드 삭제에 실패했습니다.\n${error?.message || error}`);
+          deleteBtn.disabled = !canEdit;
+          deleteBtn.textContent = "수동카드 삭제";
+        }
+      });
 
       save.addEventListener("click", async () => {
         const selectedTeacherNames = [...editor.querySelectorAll('input[data-kind="teacher"]:checked')].map(box => box.value);
@@ -378,7 +448,12 @@ export function createTimetableCardEditor(context = {}) {
         if (rule === "fixed" && !fixedRoom.value) { alert("지정 교실을 선택하세요."); return; }
         const classLabelByKey = new Map(classes.map(row => [row.key, row.label]));
         const slots = [...selectedSlots].map(key => { const [day,period]=key.split(":").map(Number); return {day,period}; });
+        const manualSubject = isManualCard(card) ? clean(editor.querySelector('[data-field="subject"]')?.value) : "";
+        const manualSubjectEn = isManualCard(card) ? clean(editor.querySelector('[data-field="subjectEn"]')?.value) : "";
+        if (isManualCard(card) && !manualSubject) { alert("수동카드 과목명을 입력하세요."); return; }
         const patch = {
+          subject: manualSubject,
+          subjectEn: manualSubjectEn,
           teacherNames: selectedTeacherNames,
           teacherIds: unique(selectedTeacherNames.map(name => teacherByName.get(name))),
           classKeys: selectedClassKeys,
