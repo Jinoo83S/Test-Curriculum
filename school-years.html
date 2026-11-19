@@ -26,7 +26,7 @@
 <main>
   <section class="card notice">
     <h2>학년도별 완전 분리 작업공간</h2>
-    <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 2027학년도부터는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
+    <p>2026학년도는 현재 운영 중인 기존 Firestore 경로를 그대로 사용합니다. 그 밖의 학년도는 <b>schoolYears/{학년도}</b> 아래에 커리큘럼·교사·학생·수강명단·시간표를 별도로 저장합니다.</p>
     <p class="muted">새 학년도에서 편집해도 2026학년도 데이터는 변경되지 않습니다. 출력 설정은 사용자 공통 설정으로 유지됩니다.</p>
     <p class="muted"><b>r355:</b> 학년도 경로 안전장치를 유지하면서 교사 연결을 이름이 아닌 고유 교사 ID 기준으로 전환합니다. 교사명 변경 시 과목카드·교실·시간표 연결은 유지되고 표시 이름만 자동 갱신됩니다.</p>
     <p class="muted"><b>최초 1회 필수:</b> Firestore 보안 규칙에 <code>schoolYears</code> 경로 권한을 추가해야 합니다. 웹 파일 배포만으로 보안 규칙은 바뀌지 않습니다.</p>
@@ -41,7 +41,7 @@
 
     <section class="card warning">
       <h2>새 학년도 생성</h2>
-      <div class="field"><label for="targetYear">새 학년도</label><input id="targetYear" type="number" min="2027" max="2099" value="2027" /></div>
+      <div class="field"><label for="targetYear">새 학년도</label><input id="targetYear" type="number" min="2020" max="2099" value="2027" /></div>
       <div class="field"><label for="createMode">생성 방식</label><select id="createMode"><option value="copy">전년도 데이터 안전 복제 후 수정</option><option value="empty">완전 신규 빈 작업공간</option></select></div>
       <div class="field" id="sourceField"><label for="sourceYear">복제할 원본 학년도</label><select id="sourceYear"></select></div>
       <p class="muted">복제는 원본을 읽기만 하고 새 학년도 경로에 새 문서로 작성합니다. 작성 직후 자동 정합성 검사를 실행하며, 실패하면 부분 데이터를 정리합니다.</p>
@@ -215,7 +215,7 @@ function renderYearTable(years) {
     const deleteButton = legacy ? "" : `<button class="btn danger delete-year" data-year="${year}" type="button">삭제</button>`;
     const currentBadge = current ? '<span class="badge current">현재 사용 중</span>' : "";
     return `<tr><td><b>${year}학년도</b></td><td>${legacy?"기존 운영 경로":"학년도 독립 경로"}</td><td><div class="workspace-status">${currentBadge}${verificationBadge(year)}</div></td><td><div class="workspace-actions">${checkButton}${switchButton}${deleteButton}</div></td></tr>`;
-  }).join("")}</tbody></table></div><p class="muted"><b>2026학년도는 삭제할 수 없습니다.</b> 2027학년도 이후 작업공간은 생성 직후 복제·생성 검증을 통과하면 전환할 수 있습니다. 이후 정상 편집은 이 상태를 무효화하지 않습니다.</p>`;
+  }).join("")}</tbody></table></div><p class="muted"><b>2026학년도는 삭제할 수 없습니다.</b> 그 밖의 학년도 작업공간은 생성 직후 복제·생성 검증을 통과하면 전환할 수 있습니다. 이후 정상 편집은 이 상태를 무효화하지 않습니다.</p>`;
   document.querySelectorAll(".check-year").forEach(btn => btn.addEventListener("click", () => runIntegrityCheck(btn.dataset.year)));
   document.querySelectorAll(".switch-year").forEach(btn => btn.addEventListener("click", () => switchYear(btn.dataset.year)));
   document.querySelectorAll(".delete-year").forEach(btn => btn.addEventListener("click", () => deleteWorkspace(btn.dataset.year)));
@@ -375,7 +375,7 @@ async function cleanupTargetWorkspace(year) {
 async function deleteWorkspace(rawYear) {
   if (busy) return;
   const year = normalizeSchoolYear(rawYear, "");
-  if (!year || year === LEGACY_SCHOOL_YEAR || Number(year) < 2027) { alert("2026학년도 운영 기준 작업공간은 삭제할 수 없습니다."); return; }
+  if (!year || year === LEGACY_SCHOOL_YEAR || Number(year) < 2020) { alert("2026학년도 운영 기준 작업공간은 삭제할 수 없습니다."); return; }
   if (!LOCAL_DEV_MODE && !user) { alert("먼저 로그인하세요."); return; }
 
   const refsForYear = workspaceRefs(year);
@@ -674,7 +674,8 @@ async function createWorkspace() {
   const target = normalizeSchoolYear($("targetYear").value, "");
   const mode = $("createMode").value;
   const source = normalizeSchoolYear($("sourceYear").value);
-  if (!target || Number(target) < 2027) { alert("새 학년도는 2027 이상으로 입력해 주세요."); return; }
+  if (!target || Number(target) < 2020) { alert("새 학년도는 2020 이상으로 입력해 주세요."); return; }
+  if (Number(target) < 2026 && mode !== "empty") { alert("과거 학년도는 빈 작업공간으로 생성해 주세요."); return; }
   if (target === LEGACY_SCHOOL_YEAR || target === source) { alert("원본과 다른 새 학년도를 입력해 주세요."); return; }
   if (!LOCAL_DEV_MODE && !user) { alert("먼저 로그인하세요."); return; }
   if (!confirm(`${target}학년도 작업공간을 ${mode==="copy"?`${source}학년도 복제 방식으로`:"빈 작업공간으로"} 생성할까요?`)) return;
