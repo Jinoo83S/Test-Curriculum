@@ -6,7 +6,8 @@
   <title>HIS Curriculum</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-07-15-room-availability-separation-r355";
+    window.HIS_APP_VERSION = "2026-11-19-curriculum-excel-paste-r397";
+    window.HIS_RUNTIME_ASSET_VERSION = "2026-07-15-room-availability-separation-r355";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -112,6 +113,7 @@
 <div class="tab-bar">
 <button class="tab-btn active" id="tab7to9Btn" type="button">7 · 8 · 9</button>
 <button class="tab-btn" id="tab10to12Btn" type="button">10 · 11 · 12</button>
+<button class="secondary-btn" id="curriculumPasteOpen" type="button">엑셀 붙여넣어 생성</button>
 </div>
 <div class="board-scroll">
 <div class="grade-board" id="gradeBoard"></div>
@@ -207,6 +209,20 @@
 </div>
   </section>
 </main>
+<dialog id="curriculumPasteDialog" aria-labelledby="curriculumPasteTitle"
+  style="width:min(1100px, calc(100% - 2rem));max-height:85vh;overflow:auto">
+  <h2 id="curriculumPasteTitle">엑셀 붙여넣어 생성</h2>
+  <p id="curriculumPasteTarget"></p>
+  <label for="curriculumPasteSource">엑셀에서 학년과 열 제목을 포함한 범위를 복사해 붙여넣으세요.</label>
+  <textarea id="curriculumPasteSource" class="excel-paste-area" rows="6" autofocus></textarea>
+  <div class="paste-actions">
+    <button id="curriculumPasteAnalyze" class="secondary-btn" type="button">분석 및 미리보기</button>
+    <button id="curriculumPasteApply" class="primary-btn" type="button" disabled>백업 후 적용</button>
+    <button id="curriculumPasteClose" class="secondary-btn" type="button">닫기</button>
+  </div>
+  <p id="curriculumPasteStatus" role="status" aria-live="polite"></p>
+  <div id="curriculumPastePreview" class="manager-table-wrap"></div>
+</dialog>
 <script type="module">
   import { versioned } from "./js/version.js?v=2026-07-15-room-availability-separation-r355";
 
@@ -222,6 +238,21 @@
     notice.textContent = "커리큘럼 시작 모듈을 불러오지 못했습니다. 배포된 js/app.js에 충돌 표시가 남았거나 이전 파일이 캐시된 상태일 수 있습니다. r355 파일을 다시 덮어쓴 뒤 Ctrl+F5를 눌러 주세요.";
     document.body.appendChild(notice);
   }
+</script>
+<script type="module">
+  const button = document.getElementById("curriculumPasteOpen");
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    try {
+      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r397");
+      openCurriculumPaste();
+    } catch (error) {
+      console.error("[curriculum paste]", error);
+      alert("엑셀 붙여넣기 기능을 열 수 없습니다. 페이지를 새로고침한 후 다시 시도해 주세요.");
+    } finally {
+      button.disabled = false;
+    }
+  });
 </script>
 </body>
 </html>

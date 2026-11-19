@@ -13,7 +13,7 @@ import { createTimetableSaveRevisionId, getTimetableRevisionHistorySlot, buildCo
 import { auditPersistedTimetable } from "./timetable-persistence-audit.js?v=2026-07-20-cpsat-meta-persistence-r375";
 import { normalizeCpSatConstraintPolicy } from "./cp-sat-constraint-policy.js?v=2026-07-21-cpsat-policy-r378";
 import {
-  setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc
+  setDoc, onSnapshot, serverTimestamp, getDoc, getDocs, writeBatch, collection, doc, runTransaction
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 // ── Phase 3 split Firestore paths ────────────────────────────────
@@ -120,6 +120,9 @@ const dirtyDomains = new Set();
 const queuedSaveOptions = {};
 const activeSavePromises = {};
 const domainEditRevisions = {};
+const curriculumPasteDomains = ["curriculum", "templates"];
+const curriculumPasteRemoteExists = {};
+let curriculumPasteSaving = false;
 const autoSaveSuspendTokens = new Map();
 let autoSaveSuspendSeq = 0;
 // 자동저장 지연 시간은 운영/로컬 개발 환경을 분리합니다.
@@ -543,6 +546,7 @@ async function runSaveLoop(domain) {
 }
 
 export async function saveNow(domain, options = {}) {
+  if (curriculumPasteSaving && curriculumPasteDomains.includes(domain)) return false;
   if (!canEdit() || !initialLoad[domain]) return false;
   try { verifyWriteContext(`즉시 저장(${domain})`); }
   catch (_) { return false; }
@@ -573,6 +577,78 @@ export async function flushPendingSaves(options = {}) {
 }
 
 export const savePendingNow = flushPendingSaves;
+
+export async function saveCurriculumPaste(before, after) {
+  if (curriculumPasteSaving || !canEdit() || curriculumPasteDomains.some(domain => !initialLoad[domain])) {
+    throw new Error("커리큘럼과 과목 카드가 모두 로드된 후 다시 시도해 주세요.");
+  }
+  verifyWriteContext("커리큘럼 엑셀 붙여넣기");
+  if (curriculumPasteDomains.some(domain => dirtyDomains.has(domain) || activeSavePromises[domain])) {
+    throw new Error("커리큘럼 또는 과목 카드의 기존 변경사항을 저장한 후 다시 적용해 주세요.");
+  }
+
+  const baseline = {}, next = {};
+  for (const domain of curriculumPasteDomains) {
+    if (fp(appState[domain]) !== fp(before[domain])) throw new Error("데이터가 바뀌었습니다. 미리보기를 다시 확인해 주세요.");
+    baseline[domain] = fp(normalizedForDomain(domain));
+    next[domain] = DOMAIN_NORMALIZERS[domain](after[domain]);
+  }
+  const changed = curriculumPasteDomains.filter(domain => baseline[domain] !== fp(next[domain]));
+  const persisted = { ...savedDomainFingerprints };
+  curriculumPasteSaving = true;
+  try {
+    if (LOCAL_DEV_MODE) {
+      const store = readLocalStateStore();
+      const data = store.data && typeof store.data === "object" ? store.data : store;
+      for (const domain of curriculumPasteDomains) {
+        if (data[domain] && fp(DOMAIN_NORMALIZERS[domain](data[domain])) !== persisted[domain]) {
+          throw new Error("다른 탭에서 데이터가 변경되었습니다. 페이지를 새로고침한 후 다시 분석해 주세요.");
+        }
+      }
+      const patch = Object.fromEntries(changed.map(domain => [domain, next[domain]]));
+      if (!writeLocalStateStore({ ...(store.data ? store : {}), version: store.version || 1,
+        updatedAt: new Date().toISOString(), data: { ...data, ...patch } })) {
+        throw new Error("브라우저에 저장할 수 없습니다. 로컬 저장공간을 확인해 주세요.");
+      }
+    } else {
+      const expectedExists = { ...curriculumPasteRemoteExists };
+      await runTransaction(db, async transaction => {
+        verifyWriteContext("커리큘럼 엑셀 붙여넣기");
+        if (!canEdit()) throw new Error("편집 권한을 확인해 주세요.");
+        const snapshots = await Promise.all(curriculumPasteDomains.map(domain => transaction.get(refs[domain])));
+        for (const [index, domain] of curriculumPasteDomains.entries()) {
+          const snapshot = snapshots[index];
+          const stale = snapshot.exists() !== expectedExists[domain] ||
+            (snapshot.exists() && fp(DOMAIN_NORMALIZERS[domain](snapshot.data())) !== persisted[domain]);
+          if (stale) throw new Error("다른 곳에서 데이터가 변경되었습니다. 최신 데이터를 불러온 뒤 다시 분석해 주세요.");
+        }
+        if (curriculumPasteDomains.some(domain => fp(appState[domain]) !== fp(before[domain]))) {
+          throw new Error("데이터가 바뀌었습니다. 미리보기를 다시 확인해 주세요.");
+        }
+        for (const domain of changed) {
+          transaction.set(refs[domain], { ...next[domain], updatedAt: serverTimestamp() });
+        }
+      });
+      for (const domain of curriculumPasteDomains) {
+        recordFirestoreUsage("reads", 1, `paste: ${storageLabel.domain(domain)}`, { operation: "getDoc" });
+      }
+      for (const domain of changed) {
+        recordFirestoreUsage("writes", 1, `paste: ${storageLabel.domain(domain)}`, { operation: "setDoc" });
+      }
+    }
+
+    // A realtime snapshot may already have delivered this commit or a newer edit.
+    for (const domain of changed) {
+      if (fp(appState[domain]) === fp(before[domain])) {
+        appState[domain] = next[domain];
+        markDomainSaved(domain, next[domain]);
+      }
+      fireUpdate(domain);
+    }
+  } finally {
+    curriculumPasteSaving = false;
+  }
+}
 
 // ================================================================
 // DATA NORMALIZATION
@@ -3383,6 +3459,7 @@ function handleSnap(domain, normalizeFn) {
   const usageState = { seen: false };
   return async (snap) => {
     recordDocSnapshotUsage(`listen: ${storageLabel.domain(domain)}`, snap, usageState);
+    if (curriculumPasteDomains.includes(domain)) curriculumPasteRemoteExists[domain] = snap.exists();
     if (!snap.exists()) {
       const normalized = normalizeFn({});
       appState[domain] = normalized;
