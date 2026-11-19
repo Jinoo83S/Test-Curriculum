@@ -6,7 +6,7 @@
   <title>HIS Curriculum</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-07-15-room-availability-separation-r355";
+    window.HIS_APP_VERSION = "2026-11-19-curriculum-paste-r397";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -113,6 +113,18 @@
 <button class="tab-btn active" id="tab7to9Btn" type="button">7 · 8 · 9</button>
 <button class="tab-btn" id="tab10to12Btn" type="button">10 · 11 · 12</button>
 </div>
+<details class="tpl-paste-details" id="curriculumRawPasteDetails">
+  <summary class="tpl-paste-summary">📋 구글시트 커리큘럼 원자료 붙여넣기</summary>
+  <div class="tpl-paste-body paste-area-wrap">
+    <p><strong id="curriculumRawYear"></strong>에 적용합니다. 구글시트의 학년 열부터 열 제목을 포함해 복사하세요. 미리보기에서 학년별 과목 수를 확인한 뒤 적용할 수 있습니다.</p>
+    <textarea id="curriculumRawPasteArea" class="excel-paste-area" rows="6" placeholder="구글시트 원자료를 여기에 붙여넣으세요 (Ctrl+V)"></textarea>
+    <div class="paste-actions">
+      <button id="curriculumRawPreviewBtn" class="secondary-btn" type="button">미리보기</button>
+      <button id="curriculumRawImportBtn" class="primary-btn" type="button" disabled>선택 학년도에 적용</button>
+    </div>
+    <p id="curriculumRawPreview" role="status" style="white-space:pre-line"></p>
+  </div>
+</details>
 <div class="board-scroll">
 <div class="grade-board" id="gradeBoard"></div>
 </div>
