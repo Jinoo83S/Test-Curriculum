@@ -86,6 +86,13 @@ function analyzeInput() {
 function createUpdatedDomains(before, rows) {
   const after = structuredClone(before);
   const { options, gradeBoards } = after.curriculum;
+  // Remove the four starter rows from grades receiving imported subjects.
+  // Existing course rows and blank rows added later are left intact.
+  for (const grade of new Set(rows.map(entry => entry.grade))) {
+    gradeBoards[grade] = gradeBoards[grade].filter((row, index) => index >= 4 ||
+      row.sem1TemplateId || row.sem2TemplateId || String(row.credits || "").trim() ||
+      row.category !== "교과" || row.track !== "공통" || row.group !== "선택");
+  }
   const newCards = new Map();
   for (const entry of rows) {
     let id = entry.templateId || newCards.get(entry.newCardKey)?.id;
