@@ -661,7 +661,7 @@ function createGradeRow(grade, rowData, onUpdate) {
   const cat = createSelect(opts().category, rowData.category, v => { updateRowField(grade, rowData.id, "category", v); });
   const catColor = getCategoryColor(rowData.category); cat.classList.add("category-select"); cat.style.backgroundColor = catColor.bg; cat.style.color = catColor.text;
   row.appendChild(cat);
-  row.appendChild(createSelect(opts().track, rowData.track,    v => updateRowField(grade, rowData.id, "track",    v)));
+  row.appendChild(createSelect(orderTrackValues(opts().track), rowData.track,    v => updateRowField(grade, rowData.id, "track",    v)));
   row.appendChild(createSelect(opts().group, rowData.group,    v => updateRowField(grade, rowData.id, "group",    v)));
   if (shouldRenderMerged(rowData)) { row.appendChild(createMergedDropCell(grade, rowData, rowData.sem1TemplateId)); }
   else { row.appendChild(createDropCell(grade, rowData, "sem1", rowData.sem1TemplateId)); row.appendChild(createDropCell(grade, rowData, "sem2", rowData.sem2TemplateId)); }
@@ -703,10 +703,30 @@ function getOrderedCategories(grades) {
   return cats;
 }
 
+function orderTrackValues(tracks) {
+  const rank = { "공통": 0, "배정": 1, "선택": 2 };
+  return tracks.map((value, index) => {
+    const match = clean(value).match(/^(공통|배정|선택)\s*(\d*)$/);
+    return { value, index, family: match ? rank[match[1]] : 3, number: match ? Number(match[2] || 0) : 0 };
+  }).sort((a, b) => a.family - b.family || a.number - b.number || a.index - b.index).map(item => item.value);
+}
+
+function getVisibleGradeRows(grade) {
+  const rows = curriculum().gradeBoards[grade] || [];
+  if (!rows.some(row => row.sem1TemplateId || row.sem2TemplateId)) return rows;
+  // A new workspace starts with four empty common rows; keep them in storage but
+  // hide them once imported subjects exist. Rows added later remain editable.
+  return rows.filter((row, index) => index >= 4 ||
+    row.sem1TemplateId || row.sem2TemplateId || clean(row.credits) ||
+    row.category !== DEFAULT_OPTIONS.category[0] ||
+    row.track !== DEFAULT_OPTIONS.track[0] ||
+    row.group !== DEFAULT_OPTIONS.group[0]);
+}
+
 function getOrderedTracks(grades, category) {
   const tracks = [...opts().track];
-  grades.forEach(g => (curriculum().gradeBoards[g] || []).filter(r => r.category === category).forEach(r => { if (r.track && !tracks.includes(r.track)) tracks.push(r.track); }));
-  return tracks;
+  grades.forEach(g => getVisibleGradeRows(g).filter(r => r.category === category).forEach(r => { if (r.track && !tracks.includes(r.track)) tracks.push(r.track); }));
+  return orderTrackValues(tracks);
 }
 
 export function buildTabBoard(visibleGrades, onUpdate) {
@@ -725,10 +745,10 @@ export function buildTabBoard(visibleGrades, onUpdate) {
   const cbg = Object.fromEntries(columns.map(c => [c.grade, c]));
 
   cats.forEach(cat => {
-    const hasAny = visibleGrades.some(g => (curriculum().gradeBoards[g] || []).some(r => r.category === cat)); if (!hasAny) return;
+    const hasAny = visibleGrades.some(g => getVisibleGradeRows(g).some(r => r.category === cat)); if (!hasAny) return;
     getOrderedTracks(visibleGrades, cat).forEach(track => {
       const rbg = {}; let max = 0;
-      visibleGrades.forEach(g => { const rs = (curriculum().gradeBoards[g] || []).filter(r => r.category === cat && r.track === track); rbg[g] = rs; max = Math.max(max, rs.length); });
+      visibleGrades.forEach(g => { const rs = getVisibleGradeRows(g).filter(r => r.category === cat && r.track === track); rbg[g] = rs; max = Math.max(max, rs.length); });
       if (!max) return;
       visibleGrades.forEach(g => { const d = document.createElement("div"); d.className = "track-group-divider"; d.textContent = track || "구분 없음"; cbg[g].col.appendChild(d); });
       for (let i = 0; i < max; i++) visibleGrades.forEach(g => { const rd = rbg[g][i]; cbg[g].col.appendChild(rd ? createGradeRow(g, rd, onUpdate) : createSpacerRow()); });
@@ -804,7 +824,7 @@ export function exportXLSX(activeTab) {
   const wb = XLSX.utils.book_new();
   const rows = [["학년","범주","구분","교과군","1학기(한글)","1학기(영어)","1학기(교사)","2학기(한글)","2학기(영어)","2학기(교사)","시수"]];
   grades.forEach(grade => {
-    (curriculum().gradeBoards[grade] || []).forEach(row => {
+    getVisibleGradeRows(grade).forEach(row => {
       const t1 = row.sem1TemplateId ? getTemplateById(row.sem1TemplateId) : null;
       const t2 = row.sem2TemplateId ? getTemplateById(row.sem2TemplateId) : null;
       const s1 = t1 ? getSemesterTemplateData(t1, "sem1") : { nameKo:"", nameEn:"", teacher:"" };
