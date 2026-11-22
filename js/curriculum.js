@@ -704,11 +704,26 @@ function getOrderedCategories(grades) {
 }
 
 function orderTrackValues(tracks) {
-  const rank = { "공통": 0, "배정": 1, "선택": 2 };
-  return tracks.map((value, index) => {
-    const match = clean(value).match(/^(공통|배정|선택)\s*(\d*)$/);
-    return { value, index, family: match ? rank[match[1]] : 3, number: match ? Number(match[2] || 0) : 0 };
-  }).sort((a, b) => a.family - b.family || a.number - b.number || a.index - b.index).map(item => item.value);
+  const variants = new Map();
+  for (const value of tracks) {
+    const match = clean(value).match(/^(공통|배정|선택)\s*(\d+)$/);
+    if (!match) continue;
+    if (!variants.has(match[1])) variants.set(match[1], []);
+    variants.get(match[1]).push({ value, number: Number(match[2]), index: tracks.indexOf(value) });
+  }
+  const variantNames = new Set([...variants.values()].flatMap(items => items.map(item => item.value)));
+  const ordered = [];
+  for (const value of tracks) {
+    if (variantNames.has(value)) continue;
+    ordered.push(value);
+    if (variants.has(clean(value))) {
+      ordered.push(...variants.get(clean(value))
+        .sort((a, b) => a.number - b.number || a.index - b.index).map(item => item.value));
+      variants.delete(clean(value));
+    }
+  }
+  for (const items of variants.values()) ordered.push(...items.map(item => item.value));
+  return ordered;
 }
 
 function getVisibleGradeRows(grade) {
