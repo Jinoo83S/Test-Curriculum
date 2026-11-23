@@ -6,6 +6,7 @@
 
 import { onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode, setCurriculumMode } from "./curriculum-mode.js?v=r401";
+import { clearThreeYearCache } from "./three-year-board.js?v=r402";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-room-availability-separation-r355";
@@ -160,6 +161,7 @@ async function bootstrap() {
     curriculumModeSelect.value = getCurriculumMode();
     curriculumModeSelect.addEventListener("change", () => {
       setCurriculumMode(curriculumModeSelect.value);
+      clearThreeYearCache();
       boardUi.invalidateTabs();
       renderer.render("curriculum");
     });
