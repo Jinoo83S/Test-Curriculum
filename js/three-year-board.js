@@ -44,12 +44,17 @@ async function changeYear(year, grade, change) {
         transaction.get(refs.curriculum), transaction.get(refs.templates)
       ]);
       if (!curriculumSnap.exists()) throw new Error(`${year}학년도 작업공간이 없습니다. 학년도 관리에서 먼저 생성해 주세요.`);
-      const curriculum = structuredClone(curriculumSnap.data() || {});
-      const templates = structuredClone(templatesSnap.exists() ? templatesSnap.data() || {} : {});
-      curriculum.options ||= { category: ["교과","창체"], track: ["공통","배정","선택"], group: ["선택"] };
-      curriculum.gradeBoards ||= {};
-      curriculum.gradeBoards[grade] ||= [];
-      templates.templates ||= [];
+      const current = curriculumSnap.data() || {};
+      const currentTemplates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
+      const curriculum = {
+        ...current,
+        options: Object.fromEntries(Object.entries(current.options || {
+          category: ["교과","창체"], track: ["공통","배정","선택"], group: ["선택"]
+        }).map(([field, values]) => [field, Array.isArray(values) ? [...values] : []])),
+        gradeBoards: { ...(current.gradeBoards || {}) },
+      };
+      curriculum.gradeBoards[grade] = (current.gradeBoards?.[grade] || []).map(row => ({ ...row }));
+      const templates = { ...currentTemplates, templates: [...(currentTemplates.templates || [])] };
       const templatesChanged = change(curriculum, templates);
       transaction.set(refs.curriculum, { ...curriculum, updatedAt: serverTimestamp() });
       if (templatesChanged) transaction.set(refs.templates, { ...templates, updatedAt: serverTimestamp() });
