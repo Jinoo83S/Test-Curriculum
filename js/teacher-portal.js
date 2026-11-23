@@ -9,6 +9,7 @@ const byId = id => document.getElementById(id);
 const clean = value => String(value ?? "").trim();
 const unique = values => [...new Set(values.filter(Boolean))];
 let authSerial = 0;
+let currentPortalUser = null;
 const LANGUAGE_KEY = "his_portal_language_v1";
 const translations = {
   ko: { curriculumShortcut:"커리큘럼 편집", teacherManagement:"교사관리", schoolYear:"학년도", schoolYearShort:"학년도", googleLogin:"Google 로그인", logout:"로그아웃", checkingAccess:"접근 권한을 확인하고 있습니다", checkingAccessDescription:"교사목록의 학교 이메일과 로그인 계정을 대조합니다.", signInTitle:"학교 Google 계정으로 로그인해 주세요", signInDescription:"교사목록에 등록된 @his.sc.kr 계정만 이용할 수 있습니다.", accessDenied:"교사용 메뉴 접근 권한이 없습니다", portalTitle:"교직원 업무 메뉴", portalDescription:"본인 계정으로 로그인하면 담당 과목과 필요한 확인 업무만 표시됩니다.", welcome:"환영합니다", facultyArea:"교사 업무", facultyAreaDescription:"일반 교사가 사용하는 확인·제출 페이지입니다.", courseChecklist:"담당 과목 확인", courseChecklistDescription:"학기별 담당 과목, Google 폴더, 교과계획서 필수 항목을 확인합니다.", openTask:"업무 열기", moreTasks:"추가 교직원 업무", moreTasksDescription:"새로운 확인 페이지가 이 메뉴에 순차적으로 추가됩니다.", operationsArea:"커리큘럼·시간표 관리", operationsAreaDescription:"권한이 있는 교직원만 접근하는 편집 영역입니다.", curriculumEditor:"커리큘럼 편집", curriculumEditorDescription:"연간·3개년 커리큘럼과 과목카드를 편집합니다.", timetable:"시간표", timetableDescription:"시간표 사전작업, 자동배치와 결과를 관리합니다.", openEditor:"편집 열기", teacherManagementDescription:"교사를 등록·편집·삭제하고 접근 권한을 설정합니다.", manage:"관리하기" },
@@ -25,6 +26,8 @@ function applyLanguage() {
   document.querySelectorAll("#portalYearSelect option").forEach(option => { option.textContent = portalLanguage === "ko" ? `${option.value}학년도` : `School Year ${option.value}`; });
   const button = byId("portalLanguageBtn");
   if (button) button.textContent = portalLanguage === "ko" ? "English" : "한국어";
+  const status = byId("portalAuthStatus");
+  if (status && !currentPortalUser) status.textContent = portalLanguage === "ko" ? "로그인 필요" : "Sign-in required";
 }
 
 function setupLanguage() {
@@ -61,6 +64,7 @@ function setupAuthButtons() {
 }
 
 function renderAuthChrome(user) {
+  currentPortalUser = user || null;
   const status = byId("portalAuthStatus");
   if (status) status.textContent = user?.email || (portalLanguage === "ko" ? "로그인 필요" : "Sign-in required");
   if (byId("portalLoginBtn")) byId("portalLoginBtn").hidden = !!user;
