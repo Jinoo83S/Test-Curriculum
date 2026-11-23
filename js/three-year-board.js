@@ -3,7 +3,7 @@
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, CATEGORY_PALETTE, DEFAULT_OPTIONS, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, initialLoad } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { languageClass, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";

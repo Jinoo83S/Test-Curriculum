@@ -2,7 +2,7 @@
 // timetable.js · Timetable Page — Main Module
 // ================================================================
 import { GRADE_KEYS, ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { login, logout, onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth, canEdit } from "./auth.js?v=r419";
 import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, saveNow,
          normalizeTimetableEntry, migrateFromLegacy, TIMETABLE_CORE_DOMAINS, TIMETABLE_OPTIONAL_DOMAINS,
          setOnSaveStatus, isAutoSaveEnabled, setAutoSaveEnabled, getDirtyDomains, savePendingNow,

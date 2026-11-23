@@ -1,7 +1,7 @@
 // ================================================================
 // app-templates-ui.js · Template sidebar/form/manager UI wiring
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { appState, scheduleSave, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import {
   renderTemplates, renderTemplateManagerTable, handleTableInput, handleTableChange, handleTableDeleteClick,

@@ -2,7 +2,7 @@
 // teachers.js · Teacher Mutations + Teacher View Rendering
 // ================================================================
 import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { appState, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { countTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { getSubjectsForTeacher } from "./templates.js?v=2026-07-15-room-availability-separation-r355";

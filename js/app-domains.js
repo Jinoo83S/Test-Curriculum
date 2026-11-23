@@ -1,7 +1,7 @@
 // ================================================================
 // app-domains.js · View-scoped Firestore subscription manager
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { initialLoad, subscribeDomains, unsubscribeAll, unsubscribeDomains } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 
 // 화면별로 필요한 Firestore 도메인만 실시간 구독합니다.

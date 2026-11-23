@@ -2,7 +2,7 @@
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
 import { appState, scheduleSave } from "./state.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { getRooms } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
 import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import {

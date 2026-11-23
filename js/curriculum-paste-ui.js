@@ -1,6 +1,6 @@
 import { ACTIVE_SCHOOL_YEAR, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste, scheduleSave, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { getSemesterTemplateData } from "./templates.js?v=2026-07-15-room-availability-separation-r355";

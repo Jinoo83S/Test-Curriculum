@@ -4,7 +4,7 @@
 // 이 파일은 앱 전체 초기화만 담당합니다.
 // 화면별 UI, 도메인 구독, 지연 로딩, 렌더링은 전용 모듈로 분리되어 있습니다.
 
-import { onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { onAuth, canEdit } from "./auth.js?v=r419";
 import { getCurriculumMode, setCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-room-availability-separation-r355";
@@ -69,9 +69,15 @@ function setupAuthStateHandler({ boardUi, renderer }) {
   setAuthCheckingUI();
 
   onAuth(async user => {
-    updateAuthUI(user);
+    updateAuthUI(user, { authorized: !user || canEdit() });
 
     if (!user) {
+      stopAllDomainSubscriptions();
+      boardUi.invalidateTabs();
+      renderer.render();
+      return;
+    }
+    if (!canEdit()) {
       stopAllDomainSubscriptions();
       boardUi.invalidateTabs();
       renderer.render();

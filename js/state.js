@@ -4,7 +4,7 @@
 import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
@@ -821,13 +821,16 @@ function normalizeClassesDomain(raw = {}) {
 
 // ── Teachers ──────────────────────────────────────────────────────
 export function normalizeTeacher(t = {}) {
+  const accessRole = ["basic", "curriculum", "admin"].includes(t.accessRole) ? t.accessRole : "basic";
   return {
     id: t.id || uid("tch"),
     name: clean(t.name),
     aliases: Array.isArray(t.aliases) ? uniqueOrdered(t.aliases.map(clean).filter(Boolean)) : [],
     subjects: Array.isArray(t.subjects) ? t.subjects.map(clean).filter(Boolean) : [],
     email: clean(t.email),
-    note: clean(t.note)
+    note: clean(t.note),
+    accessRole,
+    portalDisabled: t.portalDisabled === true
   };
 }
 

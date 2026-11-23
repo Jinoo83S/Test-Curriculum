@@ -1,14 +1,40 @@
 // ================================================================
 // auth.js · Authentication
 // ================================================================
-import { auth, provider } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { auth, provider, getSchoolYearRefs, ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE, LOCAL_DEV_USER } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import {
   signInWithPopup, getRedirectResult,
   signOut, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-export const canEdit = () => LOCAL_DEV_MODE || !!auth.currentUser;
+const FIXED_PORTAL_ADMINS = new Set(["jinwoosuk@his.sc.kr"]);
+const normalizeEmail = value => String(value || "").trim().toLocaleLowerCase();
+const normalizeRole = value => ["basic", "curriculum", "admin"].includes(value) ? value : "basic";
+let currentAccessRole = LOCAL_DEV_MODE ? "admin" : "none";
+
+export const getCurrentAccessRole = () => currentAccessRole;
+export const canAccessCurriculum = () => LOCAL_DEV_MODE || ["curriculum", "admin"].includes(currentAccessRole);
+export const canManageTeachers = () => LOCAL_DEV_MODE || currentAccessRole === "admin";
+export const canEdit = () => !!auth.currentUser && canAccessCurriculum() || LOCAL_DEV_MODE;
+
+async function resolveAccessRole(user) {
+  const email = normalizeEmail(user?.email);
+  if (!user || !email) return "none";
+  if (FIXED_PORTAL_ADMINS.has(email)) return "admin";
+  if (!email.endsWith("@his.sc.kr")) return "none";
+  try {
+    const snapshot = await getDoc(getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains.teachers);
+    const teachers = snapshot.exists() && Array.isArray(snapshot.data()?.teachers) ? snapshot.data().teachers : [];
+    const teacher = teachers.find(item => normalizeEmail(item?.email) === email);
+    if (!teacher || teacher.portalDisabled) return "none";
+    return normalizeRole(teacher.accessRole);
+  } catch (error) {
+    console.warn("[auth role]", error);
+    return "none";
+  }
+}
 
 export async function login() {
   if (LOCAL_DEV_MODE) {
@@ -44,10 +70,14 @@ export async function logout() {
 
 export function onAuth(cb) {
   if (LOCAL_DEV_MODE) {
-    queueMicrotask(() => cb(LOCAL_DEV_USER));
+    currentAccessRole = "admin";
+    queueMicrotask(() => cb(LOCAL_DEV_USER, { role: currentAccessRole }));
     return () => {};
   }
-  return onAuthStateChanged(auth, cb);
+  return onAuthStateChanged(auth, async user => {
+    currentAccessRole = await resolveAccessRole(user);
+    cb(user, { role: currentAccessRole });
+  });
 }
 
 // redirect 로그인 잔여 처리 (이전 버전 호환)

@@ -1,7 +1,7 @@
 // ================================================================
 // save-status-ui.js · Unified save button + quota/local-dev controls
 // ================================================================
-import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r419";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import {
   setOnSaveStatus,

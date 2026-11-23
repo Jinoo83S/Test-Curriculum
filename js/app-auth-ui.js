@@ -1,7 +1,7 @@
 // ================================================================
 // app-auth-ui.js · Main app login/logout status UI
 // ================================================================
-import { login, logout } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout } from "./auth.js?v=r419";
 
 const AUTH_SESSION_KEY = "his_auth_recent_user_v1";
 const AUTH_SESSION_MAX_AGE_MS = 12 * 60 * 60 * 1000;
@@ -71,7 +71,7 @@ export function setAuthCheckingUI() {
   loginOverlayEl?.classList.add("hidden");
 }
 
-export function updateAuthUI(user) {
+export function updateAuthUI(user, { authorized = true } = {}) {
   currentAuthUser = user || null;
   writeRecentAuthSession(user);
 
@@ -86,11 +86,26 @@ export function updateAuthUI(user) {
 
   logoutBtn?.classList.add("hidden");
 
-  if (user) {
+  if (user && authorized) {
     if (authStatusEl) authStatusEl.textContent = `${user.displayName || user.email || "사용자"} 로그인됨`;
     loginOverlayEl?.classList.add("hidden");
+  } else if (user) {
+    if (authStatusEl) authStatusEl.textContent = `${user.displayName || user.email || "사용자"} · 커리큘럼 권한 없음`;
+    if (loginOverlayEl) {
+      const title = loginOverlayEl.querySelector("h2");
+      const copy = loginOverlayEl.querySelector("p");
+      if (title) title.textContent = "커리큘럼 접근 권한이 없습니다";
+      if (copy) copy.textContent = "교사관리에서 커리큘럼 또는 관리자 권한을 받아야 합니다.";
+    }
+    loginOverlayEl?.classList.remove("hidden");
   } else {
     if (authStatusEl) authStatusEl.textContent = "로그인이 필요합니다";
+    if (loginOverlayEl) {
+      const title = loginOverlayEl.querySelector("h2");
+      const copy = loginOverlayEl.querySelector("p");
+      if (title) title.textContent = "로그인이 필요합니다";
+      if (copy) copy.textContent = "Google 로그인 후 HIS 커리큘럼을 읽고 수정할 수 있습니다.";
+    }
     loginOverlayEl?.classList.remove("hidden");
   }
 }

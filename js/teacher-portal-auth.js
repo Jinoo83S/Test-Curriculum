@@ -3,6 +3,7 @@ import { getDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
 
 export const normalizePortalEmail = value => String(value || "").trim().toLocaleLowerCase();
 export const isSchoolEmail = value => normalizePortalEmail(value).endsWith("@his.sc.kr");
+export const normalizePortalRole = value => ["basic", "curriculum", "admin"].includes(value) ? value : "basic";
 export const TEACHER_PORTAL_ADMIN_EMAILS = new Set([
   "jinwoosuk@his.sc.kr",
 ]);
@@ -14,6 +15,7 @@ export async function readTeacherPortalAccess(user, year = ACTIVE_SCHOOL_YEAR) {
   if (TEACHER_PORTAL_ADMIN_EMAILS.has(email)) return {
     allowed: true,
     isAdmin: true,
+    role: "admin",
     user,
     email,
     teacher: { id: "teacher-portal-admin", name: user.displayName || "관리자", email },
@@ -23,12 +25,14 @@ export async function readTeacherPortalAccess(user, year = ACTIVE_SCHOOL_YEAR) {
   const snapshot = await getDoc(ref);
   const teachers = snapshot.exists() && Array.isArray(snapshot.data()?.teachers) ? snapshot.data().teachers : [];
   const teacher = teachers.find(item => normalizePortalEmail(item?.email) === email) || null;
+  if (teacher?.portalDisabled) return { allowed: false, reason: `${email} 계정의 포털 접근이 중지되었습니다.`, teachers };
   if (!teacher) return {
     allowed: false,
     reason: `${year}학년도 교사목록에서 ${email} 계정을 찾지 못했습니다. 관리자에게 교사 이메일 등록을 요청해 주세요.`,
     teachers,
   };
-  return { allowed: true, user, email, teacher, teachers };
+  const role = normalizePortalRole(teacher.accessRole);
+  return { allowed: true, isAdmin: role === "admin", role, user, email, teacher, teachers };
 }
 
 export function teacherChecklistDocRef(user, year = ACTIVE_SCHOOL_YEAR) {

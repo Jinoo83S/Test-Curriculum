@@ -1,14 +1,39 @@
-import { login, logout, onAuth } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth } from "./auth.js?v=r419";
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { readTeacherPortalAccess, teacherChecklistDocRef } from "./teacher-portal-auth.js?v=r418";
+import { readTeacherPortalAccess, teacherChecklistDocRef } from "./teacher-portal-auth.js?v=r419";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);
 const clean = value => String(value ?? "").trim();
 const unique = values => [...new Set(values.filter(Boolean))];
 let authSerial = 0;
+const LANGUAGE_KEY = "his_portal_language_v1";
+const translations = {
+  ko: { curriculumShortcut:"커리큘럼 편집", teacherManagement:"교사관리", schoolYear:"학년도", portalTitle:"교직원 업무 메뉴", portalDescription:"본인 계정으로 로그인하면 담당 과목과 필요한 확인 업무만 표시됩니다.", welcome:"환영합니다", facultyArea:"교사 업무", facultyAreaDescription:"일반 교사가 사용하는 확인·제출 페이지입니다.", courseChecklist:"담당 과목 확인", courseChecklistDescription:"학기별 담당 과목, Google 폴더, 교과계획서 필수 항목을 확인합니다.", openTask:"업무 열기", operationsArea:"커리큘럼·시간표 관리", operationsAreaDescription:"권한이 있는 교직원만 접근하는 편집 영역입니다.", curriculumEditor:"커리큘럼 편집", curriculumEditorDescription:"연간·3개년 커리큘럼과 과목카드를 편집합니다.", timetable:"시간표", timetableDescription:"시간표 사전작업, 자동배치와 결과를 관리합니다.", openEditor:"편집 열기", teacherManagementDescription:"교사를 등록·편집·삭제하고 접근 권한을 설정합니다.", manage:"관리하기" },
+  en: { curriculumShortcut:"Edit Curriculum", teacherManagement:"Teacher Management", schoolYear:"School Year", portalTitle:"Faculty Work Portal", portalDescription:"Sign in to see only your assigned courses and required tasks.", welcome:"Welcome", facultyArea:"Faculty Tasks", facultyAreaDescription:"Check and submission pages used by all teachers.", courseChecklist:"Assigned Course Checklist", courseChecklistDescription:"Review assigned courses, Google folders, and required curriculum items by semester.", openTask:"Open task", operationsArea:"Curriculum & Timetable", operationsAreaDescription:"Editing area for staff with curriculum or administrator access.", curriculumEditor:"Curriculum Editor", curriculumEditorDescription:"Edit annual and three-year curricula and course cards.", timetable:"Timetable", timetableDescription:"Manage preparation, automatic scheduling, and results.", openEditor:"Open editor", teacherManagementDescription:"Add, edit, delete teachers and assign access levels.", manage:"Manage" }
+};
+let portalLanguage = localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
+
+function applyLanguage() {
+  document.documentElement.lang = portalLanguage;
+  document.querySelectorAll("[data-i18n]").forEach(node => {
+    const text = translations[portalLanguage]?.[node.dataset.i18n];
+    if (text) node.textContent = text;
+  });
+  const button = byId("portalLanguageBtn");
+  if (button) button.textContent = portalLanguage === "ko" ? "English" : "한국어";
+}
+
+function setupLanguage() {
+  applyLanguage();
+  byId("portalLanguageBtn")?.addEventListener("click", () => {
+    portalLanguage = portalLanguage === "ko" ? "en" : "ko";
+    localStorage.setItem(LANGUAGE_KEY, portalLanguage);
+    applyLanguage();
+  });
+}
 
 function setVisible(id, visible) {
   const node = byId(id);
@@ -49,6 +74,11 @@ function showGate(name, message = "") {
 function renderMenu(access) {
   byId("portalTeacherName").textContent = `${access.teacher.name || "선생님"} 선생님`;
   byId("portalTeacherEmail").textContent = access.email;
+  const curriculumAllowed = ["curriculum", "admin"].includes(access.role);
+  setVisible("portalCurriculumShortcut", curriculumAllowed);
+  setVisible("portalManagementArea", curriculumAllowed);
+  setVisible("portalTeacherManageShortcut", access.isAdmin);
+  setVisible("portalTeacherManagementCard", access.isAdmin);
   showGate("portalDashboard");
 }
 
@@ -237,6 +267,9 @@ async function handleAuth(user) {
     const access = await readTeacherPortalAccess(user);
     if (serial !== authSerial) return;
     if (!access.allowed) { showGate("portalDenied", access.reason); return; }
+    const curriculumAllowed = ["curriculum", "admin"].includes(access.role);
+    setVisible("portalCurriculumShortcut", curriculumAllowed);
+    setVisible("portalTeacherManageShortcut", access.isAdmin);
     if (page === "curriculum-checklist") await startChecklist(access, user);
     else renderMenu(access);
   } catch (error) {
@@ -246,5 +279,6 @@ async function handleAuth(user) {
 }
 
 setupYearSelector();
+setupLanguage();
 setupAuthButtons();
 onAuth(handleAuth);

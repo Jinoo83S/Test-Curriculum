@@ -1,4 +1,4 @@
-import { login, logout, onAuth } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { login, logout, onAuth } from "./auth.js?v=r419";
 import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { auth, db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
