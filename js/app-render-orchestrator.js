@@ -5,6 +5,9 @@
 // 화면별 렌더링, Firestore 업데이트 렌더링을 한 곳에서 관리합니다.
 
 import { VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-15-room-availability-separation-r355";
+import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
+import { GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { renderThreeYearCardManager } from "./three-year-board.js?v=r409";
 
 export function createAppRenderOrchestrator(options = {}) {
   const {
@@ -32,6 +35,7 @@ export function createAppRenderOrchestrator(options = {}) {
     board:        document.getElementById("boardView"),
     groups:       document.getElementById("groupManagerView"),
     manager:      document.getElementById("templateManagerView"),
+    threeYearManager: document.getElementById("threeYearCardsView"),
     students:     document.getElementById("studentMgmtView"),
     teachers:     document.getElementById("teacherMgmtView"),
     rooms:        document.getElementById("roomMgmtView"),
@@ -43,6 +47,7 @@ export function createAppRenderOrchestrator(options = {}) {
 
   const content = {
     groupMgrBoard:      document.getElementById("groupManagerBoard"),
+    threeYearCards:     document.getElementById("threeYearCardsContent"),
     teacherContent:     document.getElementById("teacherContent"),
     roomContent:        document.getElementById("roomContent"),
     rosterContent:      document.getElementById("rosterContent"),
@@ -59,8 +64,14 @@ export function createAppRenderOrchestrator(options = {}) {
 
   function setView(view) {
     activeView = view || "board";
+    document.body.classList.toggle("three-year-card-manager-active",
+      activeView === "manager" && getCurriculumMode() === "threeYear");
     Object.entries(views).forEach(([key, el]) => {
-      el?.classList.toggle("hidden", key !== activeView);
+      el?.classList.toggle("hidden", key === "manager"
+        ? activeView !== "manager" || getCurriculumMode() === "threeYear"
+        : key === "threeYearManager"
+          ? activeView !== "manager" || getCurriculumMode() !== "threeYear"
+          : key !== activeView);
     });
   }
 
@@ -74,6 +85,14 @@ export function createAppRenderOrchestrator(options = {}) {
 
   function renderTemplateManagerView() {
     templateUi()?.renderTemplateManagerView?.();
+  }
+
+  function renderThreeYearManager() {
+    return renderThreeYearCardManager(content.threeYearCards,
+      GRADE_GROUPS[boardUi?.getActiveTab?.() || "tab7to9"], tab => {
+        boardUi?.setActiveTab?.(tab);
+        void renderThreeYearManager();
+      });
   }
 
   async function renderTeacherPanel() {
@@ -126,7 +145,9 @@ export function createAppRenderOrchestrator(options = {}) {
   const VIEW_RENDERERS = {
     board:        () => renderBoardTab(),
     groups:       () => renderGroupManagerView(),
-    manager:      () => renderTemplateManagerView(),
+    manager:      () => getCurriculumMode() === "threeYear"
+      ? renderThreeYearManager()
+      : renderTemplateManagerView(),
     students:     () => studentUi?.renderStudentView?.(),
     teachers:     () => renderTeacherPanel(),
     rooms:        () => renderRoomsPanel(),
@@ -141,7 +162,7 @@ export function createAppRenderOrchestrator(options = {}) {
       after: () => renderSidebar(),
     },
     manager: {
-      before: () => templateUi()?.clearStableOrder?.(),
+      before: () => { if (getCurriculumMode() !== "threeYear") templateUi()?.clearStableOrder?.(); },
       after:  () => renderSidebar(),
     },
     students: {
@@ -198,6 +219,7 @@ export function createAppRenderOrchestrator(options = {}) {
   // Master render — called on every Firestore update
   function render(domain) {
     setControlsDisabled(!canEdit?.());
+    if (activeView === "manager") setView(activeView);
 
     const changedDomains = domain instanceof Set
       ? domain
@@ -224,6 +246,11 @@ export function createAppRenderOrchestrator(options = {}) {
     runViewRenderer(activeView);
     renderTabButtons();
   }
+
+  document.addEventListener("his:three-year-changed", () => {
+    if (activeView === "manager" && getCurriculumMode() === "threeYear")
+      void renderThreeYearManager();
+  });
 
   return {
     getActiveView,
