@@ -8477,16 +8477,15 @@ body.his-dev-tools-off .developer-toggle-btn {
 [hidden]{display:none!important}
 @media(max-width:900px){.curriculum-mode-picker{font-size:11px}.curriculum-mode-picker select{min-width:105px}}
 
-/* Linked annual curricula for the three-year cohort view. */
+/* Three-year view shares the annual board columns, rows, cards and summaries. */
 body.three-year-mode .page{grid-template-columns:1fr!important}
 body.three-year-mode #appSidebar,body.three-year-mode #navManagerBtn,
 body.three-year-mode #topbarMainNav [data-section]:not([data-section="curriculum"]){display:none!important}
-.three-year-board{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start;overflow:auto}
-.three-year-column{min-width:0;border:1px solid #dbe3ee;border-radius:10px;background:#fff;padding:10px}
-.three-year-heading{margin:0 0 10px;font-size:17px;color:#123354}
-.three-year-row{display:grid;grid-template-columns:65px 65px 75px minmax(120px,1fr) minmax(120px,1fr) 48px 26px;gap:4px;align-items:center;margin-bottom:5px}
-.three-year-field{box-sizing:border-box;width:100%;min-width:0;padding:5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;font-size:12px}
-.three-year-delete{min-width:24px!important;padding:3px!important}
-.three-year-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
-.three-year-empty{padding:12px;color:#64748b;font-size:14px}
-@media(max-width:1200px){.three-year-board{grid-template-columns:1fr}.three-year-row{grid-template-columns:65px 65px 75px minmax(120px,1fr) minmax(120px,1fr) 48px 26px}}
+body.three-year-mode .drop-cell.empty::after{display:none}
+body.three-year-mode .placed-card{cursor:pointer}
+body.three-year-mode .placed-card[hidden],body.three-year-mode .three-year-card-picker[hidden]{display:none!important}
+.three-year-card-picker{box-sizing:border-box;width:100%;min-width:0;border:0;background:transparent;font-size:11px;color:#526581;cursor:pointer;text-overflow:ellipsis}
+.three-year-card-picker:focus{outline:2px solid #2563eb;background:#fff}
+body.three-year-mode .grade-footer{flex-wrap:wrap}
+body.three-year-mode .grade-footer .secondary-btn{font-size:10px;padding:2px 5px}
+.three-year-empty{padding:8px;color:#64748b;font-size:11px}
