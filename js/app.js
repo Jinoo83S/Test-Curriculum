@@ -14,9 +14,10 @@ import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainS
 import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { versioned } from "./version.js?v=2026-07-15-room-availability-separation-r355";
 import { createAppModuleLoader } from "./app-module-loader.js?v=2026-07-15-room-availability-separation-r355";
-import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=2026-07-15-room-availability-separation-r355";
+import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=r409";
 import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { setupAppBoardUi } from "./app-board-ui.js?v=r408";
+import { setupAppBoardUi } from "./app-board-ui.js?v=r409";
+import { setupCurriculumIntegrityUi } from "./curriculum-integrity-ui.js?v=r409";
 import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-room-availability-separation-r355";
 
 const DEFAULT_VIEW = "board";
@@ -155,12 +156,14 @@ async function bootstrap() {
   });
 
   setupAppSidebarUi();
+  setupCurriculumIntegrityUi({ boardUi, navigateToManager: () => void renderer.navigateTo("manager") });
   const curriculumModeSelect = document.getElementById("curriculumModeSelect");
   if (curriculumModeSelect) {
     curriculumModeSelect.value = getCurriculumMode();
     curriculumModeSelect.addEventListener("change", () => {
       setCurriculumMode(curriculumModeSelect.value);
       boardUi.invalidateTabs();
+      renderer.setView(renderer.getActiveView());
       renderer.render("curriculum");
     });
   }
