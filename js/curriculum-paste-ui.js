@@ -6,7 +6,7 @@ import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-se
 import { getSemesterTemplateData } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { buildBackupFilename, downloadJsonBackup } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
-import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r424";
+import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r425";
 
 const dialog = document.getElementById("curriculumPasteDialog");
 const input = document.getElementById("curriculumPasteSource");
@@ -84,7 +84,7 @@ function analyzeInput() {
     const newCards = new Set(additions.filter(row => !row.templateId).map(row => row.newCardKey)).size;
     const classCountRows = rows.filter(row => /^\d+$/.test(String(row.classCount || "").trim()));
     const teacherLoadRows = rows.filter(row => /^\d+(?:\.\d+)?$/.test(String(row.teacherLoadHours || "").trim()));
-    const reportingRows = rows.filter(row => row.reporting && Object.keys(row.reporting).length);
+    const reportingRows = rows.filter(row => row.semesterReporting?.some(value => value && Object.keys(value).length) || row.reporting && Object.keys(row.reporting).length);
     renderPreview(rows, errors, warnings);
     setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 반 수 반영 ${classCountRows.length}건 · 교사시수 ${teacherLoadRows.length}건 · 성적표 항목 ${reportingRows.length}건 · 중복 제외 ${rows.length - additions.length}행 · 경고 ${warnings.length}건 · 적용 차단 ${errors.length}건`);
     if (errors.length || (!additions.length && !classCountRows.length && !teacherLoadRows.length && !reportingRows.length)) return;
@@ -131,15 +131,25 @@ function createUpdatedDomains(before, rows, plannedRows = rows) {
   synchronizeTeacherIdentityReferences({ teachers: structuredClone(appState.teachers), templates: { templates: created } });
   after.templates.templates.push(...created);
   for (const entry of plannedRows) {
-    if (!entry.reporting || !Object.keys(entry.reporting).length) continue;
     const id = entry.templateId || newCards.get(entry.newCardKey)?.id;
     const template = after.templates.templates.find(item => item.id === id);
     if (template) {
-      template.reportingRequirements = { ...(template.reportingRequirements || {}), ...entry.reporting };
-      template.sem1ReportingRequirements = { ...(template.sem1ReportingRequirements || {}), ...(entry.semesterReporting?.[0] || entry.reporting) };
-      template.sem2ReportingRequirements = { ...(template.sem2ReportingRequirements || {}), ...(entry.semesterReporting?.[1] || entry.reporting) };
+      const imported = curriculumPasteTemplate(entry);
+      template.nameKo = imported.nameKo;
+      template.nameEn = imported.nameEn;
+      template.teacher = imported.teacher;
+      template.language = imported.language;
+      template.schoolLevel = imported.schoolLevel;
+      template.useSemesterOverrides = !!imported.useSemesterOverrides;
+      for (const field of ["sem1NameKo", "sem1NameEn", "sem1Teacher", "sem2NameKo", "sem2NameEn", "sem2Teacher"]) {
+        template[field] = imported.useSemesterOverrides ? String(imported[field] || "") : "";
+      }
+      template.reportingRequirements = { ...(entry.reporting || {}) };
+      template.sem1ReportingRequirements = { ...(entry.semesterReporting?.[0] || entry.reporting || {}) };
+      template.sem2ReportingRequirements = { ...(entry.semesterReporting?.[1] || entry.reporting || {}) };
     }
   }
+  synchronizeTeacherIdentityReferences({ teachers: structuredClone(appState.teachers), templates: after.templates });
   after.rosters ||= { rosters: {}, rosterMeta: {} };
   after.rosters.rosters ||= {};
   after.rosters.rosterMeta ||= {};

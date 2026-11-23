@@ -99,14 +99,20 @@ function semesterInfo(template, semester) {
   const prefix = semester === "sem2" ? "sem2" : "sem1";
   const overrideIds = Array.isArray(template?.[`${prefix}TeacherIds`]) ? template[`${prefix}TeacherIds`] : [];
   const overrideNames = Array.isArray(template?.[`${prefix}TeacherNames`]) ? template[`${prefix}TeacherNames`] : [];
+  const inheritedIds = semester === "sem2" && Array.isArray(template?.sem1TeacherIds) ? template.sem1TeacherIds : [];
+  const inheritedNames = semester === "sem2" && Array.isArray(template?.sem1TeacherNames) ? template.sem1TeacherNames : [];
   const baseIds = Array.isArray(template?.teacherIds) ? template.teacherIds : [];
   const baseNames = Array.isArray(template?.teacherNames) ? template.teacherNames : [];
-  const teacherText = clean(template?.[`${prefix}Teacher`]) || clean(template?.teacher);
+  const semesterTeacherText = clean(template?.[`${prefix}Teacher`]);
+  const hasSemesterTeacher = !!(overrideIds.length || overrideNames.length || semesterTeacherText);
+  const teacherText = semesterTeacherText || (semester === "sem2" ? clean(template?.sem1Teacher) : "") || clean(template?.teacher);
+  const teacherIds = overrideIds.length ? overrideIds : hasSemesterTeacher ? [] : inheritedIds.length ? inheritedIds : baseIds;
+  const teacherNames = overrideNames.length ? overrideNames : hasSemesterTeacher ? [] : inheritedNames.length ? inheritedNames : baseNames;
   return {
     nameKo: clean(template?.[`${prefix}NameKo`]) || clean(template?.nameKo) || clean(template?.nameEn) || "이름 없는 과목",
     nameEn: clean(template?.[`${prefix}NameEn`]) || clean(template?.nameEn),
-    teacherIds: overrideIds.length ? overrideIds.map(clean) : baseIds.map(clean),
-    teacherNames: unique([...(overrideNames.length ? overrideNames : baseNames).map(clean), ...splitTeacherNames(teacherText)]),
+    teacherIds: teacherIds.map(clean),
+    teacherNames: unique([...teacherNames.map(clean), ...splitTeacherNames(teacherText)]),
   };
 }
 
@@ -150,13 +156,50 @@ const blankChecklistItem = () => ({
   safetyEducation: false,
   safetySexEducation: false,
   absentStudentPolicy: false,
-  reportRawScore: false,
-  reportAverage: false,
-  reportStandardDeviation: false,
-  reportAchievementLevels: false,
-  reportEnrollmentCount: false,
-  reportRanking: false,
+  reportCategory: "",
+  reportRawScore: "",
+  reportAverage: "",
+  reportStandardDeviation: "",
+  reportAchievementLevels: "",
+  reportEnrollmentCount: "",
+  reportRanking: "",
 });
+
+const reportFields = [
+  ["reportCategory", "구분", ["", "체육•예술", "진로선택"]],
+  ["reportRawScore", "원점수", ["", "O", "X"]],
+  ["reportAverage", "평균", ["", "O", "X"]],
+  ["reportStandardDeviation", "표준편차", ["", "O", "X", "성취도별 분포비율"]],
+  ["reportAchievementLevels", "성취도", ["", "5 Levels", "3 Levels", "P/F", "P"]],
+  ["reportEnrollmentCount", "수강자수", ["", "O", "X"]],
+  ["reportRanking", "석차", ["", "O", "X"]],
+];
+const normalizeReportValue = value => clean(value).replace(/\s+/g, " ");
+
+function checklistItemForCourse(course, stored) {
+  const item = { ...blankChecklistItem(), ...(stored || {}) };
+  for (const [key] of reportFields) {
+    if (typeof item[key] !== "string" || !(stored && Object.hasOwn(stored, key))) {
+      item[key] = normalizeReportValue(course.reportingRequirements?.[key]);
+    }
+  }
+  return item;
+}
+
+function createValueSelect({ id, name, value, values, disabled, onChange }) {
+  const select = document.createElement("select");
+  select.id = id; select.name = name; select.disabled = disabled;
+  const options = values.includes(value) ? values : [...values, value];
+  for (const optionValue of options) {
+    const option = document.createElement("option");
+    option.value = optionValue;
+    option.textContent = optionValue || "미설정";
+    option.selected = optionValue === value;
+    select.append(option);
+  }
+  select.addEventListener("change", () => onChange(select.value));
+  return select;
+}
 
 function safeUrl(value) {
   try {
@@ -177,6 +220,7 @@ async function startChecklist(access, user) {
   const state = {
     semester: "sem1",
     scope: "all",
+    grade: "all",
     query: "",
     items: { ...(personal.items && typeof personal.items === "object" ? structuredClone(personal.items) : {}), ...(saved.items && typeof saved.items === "object" ? structuredClone(saved.items) : {}) },
     courses: {
@@ -228,6 +272,7 @@ async function startChecklist(access, user) {
     const container = byId("checklistCourses");
     const courses = state.courses[state.semester].filter(course => {
       if (state.scope === "mine" && !course.isOwner) return false;
+      if (state.grade !== "all" && course.grade !== state.grade) return false;
       const haystack = [course.nameKo, course.nameEn, course.group, ...course.teacherNames].join(" ").toLocaleLowerCase();
       return !state.query || haystack.includes(state.query);
     });
@@ -237,60 +282,51 @@ async function startChecklist(access, user) {
       empty.innerHTML = `<div class="portal-state-icon">📭</div><h2>이 학기에 연결된 담당 과목이 없습니다</h2><p>과목카드의 담당 교사와 교사목록 연결을 관리자에게 확인해 주세요.</p>`;
       container.append(empty); updateProgress(); return;
     }
+    const header = document.createElement("div");
+    header.className = "checklist-compact-header";
+    for (const title of ["과목", "Google 폴더", "필수 확인", "성적표 표시 설정", "완료"]) {
+      const cell = document.createElement("span"); cell.textContent = title; header.append(cell);
+    }
+    container.append(header);
     courses.forEach(course => {
       const fieldIdBase = course.key.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const item = { ...blankChecklistItem(), ...(state.items[course.key] || {}) };
+      const item = checklistItemForCourse(course, state.items[course.key]);
       state.items[course.key] = item;
-      const card = document.createElement("article"); card.className = "checklist-course-card" + (item.confirmed ? " complete" : "");
-      const head = document.createElement("div"); head.className = "checklist-course-head";
-      head.innerHTML = `<div class="checklist-course-title"><div class="checklist-badges"><span>${course.grade}</span><span>${course.category}</span><span>${course.track}</span><span>${course.editable ? (access.isAdmin ? "관리자 편집" : "내 담당") : "조회 전용"}</span></div><h2>${escapeHtml(course.nameKo)}</h2><p>${escapeHtml(course.nameEn || "")}</p></div><div class="checklist-course-meta"><strong>${escapeHtml(course.group)}</strong><span>${escapeHtml(course.teacherNames.join(", ") || "담당 교사 미지정")}</span><span>${course.credits ? `${escapeHtml(course.credits)}시수` : "시수 미입력"}</span></div>`;
-      const body = document.createElement("div"); body.className = "checklist-course-body";
-      const folder = document.createElement("div"); folder.className = "checklist-folder-row";
-      const folderLabel = document.createElement("label"); folderLabel.textContent = "Google Folder";
-      const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "https://drive.google.com/..."; folderInput.value = item.folderUrl || "";
-      folderInput.id = `folder-${fieldIdBase}`; folderInput.name = `folder_${fieldIdBase}`;
-      folderInput.disabled = !course.editable;
-      const folderLink = document.createElement("a"); folderLink.className = "portal-btn folder-open"; folderLink.target = "_blank"; folderLink.rel = "noopener noreferrer"; folderLink.textContent = "폴더 열기";
+      const card = document.createElement("article");
+      card.className = `checklist-compact-row${item.confirmed ? " complete" : ""}${course.editable ? " editable" : " readonly"}`;
+
+      const courseCell = document.createElement("div"); courseCell.className = "compact-course-cell";
+      courseCell.innerHTML = `<div class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span>${course.editable ? (access.isAdmin ? "관리자" : "내 담당") : "조회"}</span></div><strong>${escapeHtml(course.nameKo)}</strong><small>${escapeHtml(course.nameEn || "")}</small><em>${escapeHtml(course.group)} · ${escapeHtml(course.teacherNames.join(", ") || "담당 교사 미지정")} · ${course.credits ? `${escapeHtml(course.credits)}시수` : "시수 미입력"}</em>`;
+
+      const folder = document.createElement("div"); folder.className = "compact-folder-cell";
+      const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "Drive 폴더 URL"; folderInput.value = item.folderUrl || "";
+      folderInput.id = `folder-${fieldIdBase}`; folderInput.name = `folder_${fieldIdBase}`; folderInput.disabled = !course.editable;
+      const folderLink = document.createElement("a"); folderLink.className = "compact-folder-open"; folderLink.target = "_blank"; folderLink.rel = "noopener noreferrer"; folderLink.textContent = "열기";
       const syncFolderLink = () => { const url = safeUrl(folderInput.value); folderLink.href = url || "#"; folderLink.classList.toggle("disabled", !url); };
       folderInput.addEventListener("change", () => { if (!course.editable) return; item.folderUrl = folderInput.value.trim(); syncFolderLink(); save(); });
       folderLink.addEventListener("click", event => { if (!safeUrl(folderInput.value)) event.preventDefault(); });
-      syncFolderLink(); folder.append(folderLabel, folderInput, folderLink);
-      const checks = document.createElement("div"); checks.className = "checklist-checkbox-grid";
-      [
-        ["safetyEducation", "Safety Education", "안전교육 반영"],
-        ["safetySexEducation", "Safety (Sex) Education", "성교육 반영"],
-        ["absentStudentPolicy", "Policy for Absent Students", "결석 학생 정책 반영"],
-      ].forEach(([key, title, description]) => {
-        const label = document.createElement("label"); label.className = "checklist-check";
-        const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!item[key];
-        input.id = `${key}-${fieldIdBase}`; input.name = `${key}_${fieldIdBase}`;
-        input.disabled = !course.editable;
+      syncFolderLink(); folder.append(folderInput, folderLink);
+
+      const checks = document.createElement("div"); checks.className = "compact-required-cell";
+      [["safetyEducation", "안전교육"], ["safetySexEducation", "성교육"], ["absentStudentPolicy", "결석정책"]].forEach(([key, title]) => {
+        const label = document.createElement("label"); label.className = "compact-check";
+        const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!item[key]; input.id = `${key}-${fieldIdBase}`; input.name = `${key}_${fieldIdBase}`; input.disabled = !course.editable;
         input.addEventListener("change", () => { item[key] = input.checked; save(); });
-        const copy = document.createElement("span"); copy.innerHTML = `<strong>${title}</strong><small>${description}</small>`;
-        label.append(input, copy); checks.append(label);
+        label.append(input, document.createTextNode(title)); checks.append(label);
       });
-      const reporting = document.createElement("div"); reporting.className = "checklist-reporting";
-      const reportingTitle = document.createElement("h3");
-      const reportCategory = clean(course.reportingRequirements?.reportCategory);
-      reportingTitle.textContent = `성적표 표시 항목 / Report Card Fields${reportCategory ? ` · ${reportCategory}` : ""}`; reporting.append(reportingTitle);
-      const reportingGrid = document.createElement("div"); reportingGrid.className = "checklist-checkbox-grid";
-      [
-        ["reportRawScore", "원점수 / Raw Score"], ["reportAverage", "과목평균 / Average"],
-        ["reportStandardDeviation", "표준편차 / Standard Deviation"], ["reportAchievementLevels", "성취도 / Achievement Levels"],
-        ["reportEnrollmentCount", "수강자수 / Enrollment"], ["reportRanking", "석차등급 / Ranking"],
-      ].forEach(([key, title]) => {
-        const label=document.createElement("label");label.className="checklist-check";const input=document.createElement("input");input.type="checkbox";input.id=`${key}-${fieldIdBase}`;input.name=`${key}_${fieldIdBase}`;input.checked=!!item[key];input.disabled=!course.editable;input.addEventListener("change",()=>{item[key]=input.checked;save();});
-        const source=clean(course.reportingRequirements?.[key]);const copy=document.createElement("span");copy.innerHTML=`<strong>${title}</strong><small>${source ? `붙여넣기 값: ${escapeHtml(source)}` : "확인 후 체크"}</small>`;label.append(input,copy);reportingGrid.append(label);
+
+      const reporting = document.createElement("div"); reporting.className = "compact-reporting-cell";
+      reportFields.forEach(([key, title, values]) => {
+        const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
+        const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(); } });
+        label.append(caption, select); reporting.append(label);
       });
-      reporting.append(reportingGrid);
-      const confirm = document.createElement("label"); confirm.className = "checklist-confirm";
-      const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed;
-      confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`;
-      confirmInput.disabled = !course.editable;
-      const confirmCopy = document.createElement("span"); confirmCopy.innerHTML = "<strong>최종 확인</strong><small>이 과목의 내용을 모두 확인했습니다.</small>";
+
+      const confirm = document.createElement("label"); confirm.className = "compact-confirm-cell";
+      const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed; confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`; confirmInput.disabled = !course.editable;
       confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(); save(); });
-      confirm.append(confirmInput, confirmCopy);
-      body.append(folder, checks, reporting, confirm); card.append(head, body); container.append(card);
+      confirm.append(confirmInput, document.createTextNode("완료"));
+      card.append(courseCell, folder, checks, reporting, confirm); container.append(card);
     });
     updateProgress();
   };
@@ -299,6 +335,7 @@ async function startChecklist(access, user) {
     state.semester = button.dataset.semester; render();
   }));
   byId("courseScopeFilter")?.addEventListener("change", event => { state.scope = event.target.value; render(); });
+  byId("courseGradeFilter")?.addEventListener("change", event => { state.grade = event.target.value; render(); });
   byId("courseSearchInput")?.addEventListener("input", event => { state.query = clean(event.target.value).toLocaleLowerCase(); render(); });
   render();
 }

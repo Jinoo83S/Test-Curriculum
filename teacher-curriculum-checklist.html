@@ -4,7 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS 담당 과목 확인</title>
-  <link rel="stylesheet" href="teacher-portal.css?v=r421" />
+  <link rel="stylesheet" href="teacher-portal.css?v=r425" />
+  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r425" />
 </head>
 <body data-portal-page="curriculum-checklist">
   <header class="portal-header">
@@ -62,12 +63,13 @@
         <button class="semester-tab active" data-semester="sem1" type="button" role="tab">1학기</button>
         <button class="semester-tab" data-semester="sem2" type="button" role="tab">2학기</button>
         <select id="courseScopeFilter" class="checklist-filter" aria-label="과목 범위"><option value="all">전체 과목</option><option value="mine">내 담당만</option></select>
+        <select id="courseGradeFilter" class="checklist-filter" aria-label="학년 선택"><option value="all">전체 학년</option><option value="7학년">7학년</option><option value="8학년">8학년</option><option value="9학년">9학년</option><option value="10학년">10학년</option><option value="11학년">11학년</option><option value="12학년">12학년</option></select>
         <input id="courseSearchInput" class="checklist-search" type="search" placeholder="과목·교사 검색" />
         <span id="checklistSaveStatus" class="checklist-save-status">저장 준비</span>
       </div>
       <div id="checklistCourses" class="checklist-course-list"></div>
     </section>
   </main>
-  <script type="module" src="./js/teacher-portal.js?v=r424"></script>
+  <script type="module" src="./js/teacher-portal.js?v=r425"></script>
 </body>
 </html>

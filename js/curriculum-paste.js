@@ -77,7 +77,7 @@ function columnType(value) {
 
 const REPORT_FIELDS = ["reportRawScore", "reportAverage", "reportStandardDeviation", "reportAchievementLevels", "reportEnrollmentCount", "reportRanking"];
 function reportingRequirements(get) {
-  return Object.fromEntries(REPORT_FIELDS.map(field => [field, clean(get(field))]).filter(([, value]) => value));
+  return Object.fromEntries(REPORT_FIELDS.map(field => [field, clean(get(field)).replace(/\s+/g, " ")]).filter(([, value]) => value));
 }
 
 function nthIndex(values, target, occurrence = 0) {
@@ -176,6 +176,9 @@ function analyzeSchoolSheet(rows, selectedGrades) {
       const names = cells.slice(firstTeacherIndex, firstTeacherIndex + 3).map(clean).filter(Boolean);
       return nameKo || nameEn ? { nameKo, nameEn, teacher: [...new Set(names)].join(", ") } : null;
     });
+    // This sheet records a continuing teacher only in the first-semester columns.
+    // A blank second-semester teacher therefore means "same teacher", not "unassigned".
+    if (semesters[0]?.teacher && semesters[1] && !semesters[1].teacher) semesters[1].teacher = semesters[0].teacher;
     const error = !["교과", "창체"].includes(category) ? "범주를 확인해 주세요."
       : !track || !group ? "구분 또는 교과군이 비어 있습니다."
       : !language ? "수업 언어를 확인해 주세요."
