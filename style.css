@@ -8478,8 +8478,9 @@ body.his-dev-tools-off .developer-toggle-btn {
 @media(max-width:900px){.curriculum-mode-picker{font-size:11px}.curriculum-mode-picker select{min-width:105px}}
 
 /* Three-year view shares the annual board columns, rows, cards and summaries. */
-body.three-year-mode .page{grid-template-columns:1fr!important}
-body.three-year-mode #appSidebar,body.three-year-mode #navManagerBtn,
+body.three-year-mode .page:not(.sidebar-hidden){grid-template-columns:var(--sidebar-width,320px) minmax(0,1fr)!important}
+body.three-year-mode .page.sidebar-hidden{grid-template-columns:0px minmax(0,1fr)!important}
+body.three-year-mode #navManagerBtn,
 body.three-year-mode #topbarMainNav [data-section]:not([data-section="curriculum"]){display:none!important}
 body.three-year-mode .drop-cell.empty::after{display:none}
 body.three-year-mode .placed-card{cursor:pointer}
@@ -8489,3 +8490,21 @@ body.three-year-mode .placed-card[hidden],body.three-year-mode .three-year-card-
 body.three-year-mode .grade-footer{flex-wrap:wrap}
 body.three-year-mode .grade-footer .secondary-btn{font-size:10px;padding:2px 5px}
 .three-year-empty{padding:8px;color:#64748b;font-size:11px}
+
+/* Linked annual subject-card sidebar in the three-year view. */
+.three-year-sidebar-panel{display:none}
+body.three-year-mode #appSidebar > .panel:not(.three-year-sidebar-panel){display:none!important}
+body.three-year-mode #appSidebar > .three-year-sidebar-panel{display:block}
+.three-year-card-year{width:100%;max-width:none}
+.three-year-card-list{max-height:calc(100vh - 225px);overflow-y:auto}
+.three-year-card-hint{padding:6px 9px;color:#526581;font-size:11px;line-height:1.45}
+body.three-year-mode .grade-footer.three-year-drop-ready{background:#dbeafe;outline:2px dashed #2563eb}
+.three-year-card-dialog{width:min(520px,calc(100vw - 24px));max-height:85vh;border:1px solid #c7d2e8;border-radius:12px;padding:0}
+.three-year-card-dialog::backdrop{background:rgba(15,23,42,.55)}
+.three-year-card-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:18px;overflow:auto}
+.three-year-card-form h2,.three-year-card-actions{grid-column:1/-1}
+.three-year-card-form h2{margin:0 0 6px;color:#123354;font-size:17px}
+.three-year-card-field{display:flex;flex-direction:column;gap:4px;color:#334155;font-size:12px;font-weight:600}
+.three-year-card-field input,.three-year-card-field select{width:100%;min-width:0;padding:7px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+.three-year-card-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
+@media(max-width:650px){.three-year-card-form{grid-template-columns:1fr}}
