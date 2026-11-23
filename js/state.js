@@ -696,7 +696,16 @@ function normalizeCurriculumDomain(raw = {}) {
       ? rows.map(r => normalizeRow(r, opts))
       : Array.from({ length: DEFAULT_ROW_COUNT }, () => createRow(opts));
   });
-  return { options: opts, gradeBoards };
+
+  // Planning rows never enter gradeBoards, which feeds rosters and timetables.
+  // Keep an empty plan genuinely empty; missing future years are valid.
+  const plan = raw.threeYear && typeof raw.threeYear === "object" ? raw.threeYear : {};
+  const planOptions = normalizeOptions(plan.options || opts);
+  const planBoards = Object.fromEntries(GRADE_KEYS.map(grade => [
+    grade, (Array.isArray(plan.gradeBoards?.[grade]) ? plan.gradeBoards[grade] : [])
+      .map(row => normalizeRow(row, planOptions))
+  ]));
+  return { options: opts, gradeBoards, threeYear: { options: planOptions, gradeBoards: planBoards } };
 }
 
 // ── Templates ─────────────────────────────────────────────────────
