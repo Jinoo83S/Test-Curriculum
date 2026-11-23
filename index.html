@@ -6,8 +6,8 @@
   <title>HIS Curriculum</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-11-23-three-year-plan-r401";
-    window.HIS_RUNTIME_ASSET_VERSION = "2026-11-23-three-year-plan-r401";
+    window.HIS_APP_VERSION = "2026-11-23-linked-three-year-r402";
+    window.HIS_RUNTIME_ASSET_VERSION = "2026-11-23-linked-three-year-r402";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -121,7 +121,7 @@
 <button class="tab-btn" id="tab10to12Btn" type="button">10 · 11 · 12</button>
 <button class="secondary-btn" id="curriculumPasteOpen" type="button">엑셀 붙여넣어 생성</button>
 </div>
-<p id="threeYearNote" class="three-year-note" hidden>선택한 학년도에 시작하는 7학년·10학년의 3년 계획입니다. 과목카드는 연간 커리큘럼과 공유하며, 이 계획은 명단·세부 구성·시간표에 반영되지 않습니다.</p>
+<p id="threeYearNote" class="three-year-note" hidden>시작 학년도부터 3년간 해당 학년도의 연간 커리큘럼을 함께 보여줍니다. 여기서 수정하면 그 학년도의 연간 보드에도 반영됩니다. 3개년 전용 명단·시간표는 만들지 않습니다.</p>
 <div class="board-scroll">
 <div class="grade-board" id="gradeBoard"></div>
 </div>
@@ -251,7 +251,7 @@
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
-      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r401");
+      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r402");
       openCurriculumPaste();
     } catch (error) {
       console.error("[curriculum paste]", error);
