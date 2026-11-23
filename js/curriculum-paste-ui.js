@@ -1,12 +1,12 @@
 import { ACTIVE_SCHOOL_YEAR, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste, scheduleSave, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { getSemesterTemplateData } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { buildBackupFilename, downloadJsonBackup } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
-import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r413";
+import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r414";
 
 const dialog = document.getElementById("curriculumPasteDialog");
 const input = document.getElementById("curriculumPasteSource");
@@ -18,7 +18,7 @@ const close = document.getElementById("curriculumPasteClose");
 let grades, target, plan, saving = false;
 
 function snapshot() {
-  return structuredClone({ curriculum: appState.curriculum, templates: appState.templates });
+  return structuredClone({ curriculum: appState.curriculum, templates: appState.templates, rosters: appState.rosters });
 }
 
 function planRows(entries, before) {
@@ -40,7 +40,7 @@ function renderPreview(rows, errors, warnings) {
   const table = document.createElement("table");
   table.className = "manager-table";
   const header = table.createTHead().insertRow();
-  for (const title of ["학년", "범주", "구분", "교과군", "언어", "1학기", "2학기", "학점/시간", "처리"]) {
+  for (const title of ["학년", "범주", "구분", "교과군", "언어", "1학기", "2학기", "학점/시간", "반 수", "처리"]) {
     const cell = document.createElement("th");
     cell.scope = "col";
     cell.textContent = title;
@@ -50,7 +50,7 @@ function renderPreview(rows, errors, warnings) {
   for (const row of rows) {
     const display = subject => subject ? [subject.nameKo, subject.nameEn, subject.teacher].filter(Boolean).join(" / ") : "—";
     const values = [row.grade, row.category, row.track, row.group, row.language,
-      ...row.semesters.map(display), row.credits,
+      ...row.semesters.map(display), row.credits, row.classCount || "—",
       row.status === "추가" ? (row.templateId ? "행 추가 · 기존 카드 연결" : "행 추가 · 새 카드 연결") : row.status];
     const tr = body.insertRow();
     for (const value of values) tr.insertCell().textContent = value;
@@ -81,17 +81,18 @@ function analyzeInput() {
     const rows = planRows(entries, snapshot());
     const additions = rows.filter(row => row.status === "추가");
     const newCards = new Set(additions.filter(row => !row.templateId).map(row => row.newCardKey)).size;
+    const classCountRows = rows.filter(row => /^\d+$/.test(String(row.classCount || "").trim()));
     renderPreview(rows, errors, warnings);
-    setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 중복 제외 ${rows.length - additions.length}행 · 경고 ${warnings.length}건 · 적용 차단 ${errors.length}건`);
-    if (errors.length || !additions.length) return;
-    plan = { entries, rows, additions, newCards, warnings };
+    setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 반 수 반영 ${classCountRows.length}건 · 중복 제외 ${rows.length - additions.length}행 · 경고 ${warnings.length}건 · 적용 차단 ${errors.length}건`);
+    if (errors.length || (!additions.length && !classCountRows.length)) return;
+    plan = { entries, rows, additions, newCards, warnings, classCountRows };
     apply.disabled = false;
   } catch (error) {
     setStatus(error.message);
   }
 }
 
-function createUpdatedDomains(before, rows) {
+function createUpdatedDomains(before, rows, plannedRows = rows) {
   const after = structuredClone(before);
   const { options, gradeBoards } = after.curriculum;
   // Remove the four starter rows from grades receiving imported subjects.
@@ -120,7 +121,20 @@ function createUpdatedDomains(before, rows) {
   const created = [...newCards.values()];
   synchronizeTeacherIdentityReferences({ teachers: structuredClone(appState.teachers), templates: { templates: created } });
   after.templates.templates.push(...created);
-  return after;
+  after.rosters ||= { rosters: {}, rosterMeta: {} };
+  after.rosters.rosters ||= {};
+  after.rosters.rosterMeta ||= {};
+  const classCountAssignments = new Map();
+  for (const entry of plannedRows) {
+    const value = String(entry.classCount || "").trim();
+    const id = entry.templateId || newCards.get(entry.newCardKey)?.id;
+    if (!id || !/^\d+$/.test(value)) continue;
+    classCountAssignments.set(id, value);
+  }
+  classCountAssignments.forEach((value, id) => {
+    after.rosters.rosterMeta[id] = { ...(after.rosters.rosterMeta[id] || {}), classCount: value };
+  });
+  return { after, classCountAssignments };
 }
 
 async function applyPreview() {
@@ -132,14 +146,18 @@ async function applyPreview() {
     setStatus("기존 데이터가 변경되었습니다. 갱신된 미리보기를 확인해 주세요.");
     return;
   }
-  const { additions, newCards, warnings } = plan;
-  const warningNote = warnings.length ? `\n시수 공란 ${warnings.length}건은 빈 값으로 저장됩니다.` : "";
-  if (!confirm(`${target}에 ${additions.length}행과 새 과목 카드 ${newCards}개를 추가할까요?${warningNote}\n적용 전에 JSON 백업을 다운로드합니다.`)) return;
+  const { additions, newCards, warnings, classCountRows } = plan;
+  if (classCountRows.length && !initialLoad.rosters) {
+    setStatus("과목 설정 데이터를 불러온 후 다시 적용해 주세요.");
+    return;
+  }
+  const warningNote = warnings.length ? `\n경고 ${warnings.length}건은 안내된 값으로 저장됩니다.` : "";
+  if (!confirm(`${target}에 ${additions.length}행과 새 과목 카드 ${newCards}개를 추가하고, 반 수 ${classCountRows.length}건을 과목 설정에 반영할까요?${warningNote}\n적용 전에 JSON 백업을 다운로드합니다.`)) return;
   saving = true;
   for (const control of [apply, close, analyze, input]) control.disabled = true;
   setStatus("백업 및 저장 중입니다.");
   try {
-    const after = createUpdatedDomains(before, additions);
+    const { after, classCountAssignments } = createUpdatedDomains(before, additions, plan.rows);
     const scope = grades === GRADE_GROUPS.tab7to9 ? "middle-curriculum" : "high-curriculum";
     const filename = buildBackupFilename({ year: ACTIVE_SCHOOL_YEAR, scope, operation: "curriculum-paste" });
     downloadJsonBackup({
@@ -147,8 +165,13 @@ async function applyPreview() {
       schoolYear: ACTIVE_SCHOOL_YEAR, grades, data: before,
     }, filename);
     await saveCurriculumPaste(before, after);
+    if (classCountAssignments.size) {
+      appState.rosters = after.rosters;
+      scheduleSave("rosters", { saveOptions: { force: true, throwOnError: true } });
+      await saveNow("rosters", { force: true, throwOnError: true });
+    }
     resetPreview();
-    setStatus(`${additions.length}행과 새 과목 카드 ${newCards}개를 저장했습니다.`);
+    setStatus(`${additions.length}행과 새 과목 카드 ${newCards}개를 저장하고, 반 수 ${classCountAssignments.size}건을 과목 설정에 반영했습니다.`);
   } catch (error) {
     setStatus(`저장 실패 · ${error.message}`);
   } finally {

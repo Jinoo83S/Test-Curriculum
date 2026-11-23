@@ -8557,7 +8557,11 @@ body.three-year-mode.three-year-card-manager-active #appSidebar{display:none!imp
 .three-year-manager-card.lang-korean{border-left-color:#2563eb}
 .three-year-manager-card.lang-english{border-left-color:#dc2626}
 .three-year-manager-card.lang-both{border-left-color:#7c3aed}
-.three-year-manager-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:7px;margin-bottom:8px}
+.three-year-manager-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:7px;cursor:pointer;list-style:none}
+.three-year-manager-card-heading::-webkit-details-marker{display:none}
+.three-year-manager-card-heading::before{content:"▸";flex:0 0 auto;color:#64748b;font-size:11px;line-height:1.35}
+.three-year-manager-card[open]>.three-year-manager-card-heading{margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid #e2e8f0}
+.three-year-manager-card[open]>.three-year-manager-card-heading::before{content:"▾"}
 .three-year-manager-card-heading strong{min-width:0;overflow:hidden;color:#0f2942;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 .three-year-manager-card-badges{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}
 .three-year-manager-card-fields{display:grid;gap:6px}

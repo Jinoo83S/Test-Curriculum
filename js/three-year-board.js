@@ -24,6 +24,20 @@ const subjectName = card => text(card?.nameKo || card?.sem1NameKo || card?.sem2N
 const yearForGrade = grade => String(Number(ACTIVE_SCHOOL_YEAR) + (Number.parseInt(grade, 10) <= 9 ? Number.parseInt(grade, 10) - 7 : Number.parseInt(grade, 10) - 10));
 const el = (tag, className, label) => { const node = document.createElement(tag); if (className) node.className = className; if (label !== undefined) node.textContent = label; return node; };
 
+function emptyYearSource() {
+  const options = Object.fromEntries(Object.entries(DEFAULT_OPTIONS).map(([key, values]) => [key, [...values]]));
+  const gradeBoards = Object.fromEntries(GRADE_KEYS.map(grade => [grade,
+    Array.from({ length: 4 }, () => ({
+      id: "row-" + crypto.randomUUID(), category: options.category[0], track: options.track[0],
+      group: options.group[0], credits: "", sem1TemplateId: null, sem2TemplateId: null,
+    }))
+  ]));
+  return {
+    curriculum: { options, gradeBoards },
+    templates: { templates: [], templateGroups: [], units: [] },
+  };
+}
+
 export function clearThreeYearCache() { cache.clear(); renderSerial++; }
 
 async function readYear(year) {
@@ -33,11 +47,19 @@ async function readYear(year) {
   if (LOCAL_DEV_MODE) return { exists: false, local: true };
   if (cache.has(year)) return cache.get(year);
   const refs = getSchoolYearRefs(year).domains;
-  const promise = Promise.all([getDoc(refs.curriculum), getDoc(refs.templates)]).then(([curriculum, templates]) => ({
-    exists: curriculum.exists(),
-    curriculum: curriculum.exists() ? curriculum.data() : {},
-    templates: templates.exists() ? templates.data() : {},
-  })).catch(error => { cache.delete(year); throw error; });
+  const workspaceMeta = getSchoolYearRefs(year).workspaceMeta;
+  const promise = Promise.all([
+    getDoc(refs.curriculum), getDoc(refs.templates), workspaceMeta ? getDoc(workspaceMeta) : Promise.resolve(null)
+  ]).then(([curriculum, templates, meta]) => {
+    const empty = emptyYearSource();
+    const exists = curriculum.exists() || !!meta?.exists?.();
+    return {
+      exists,
+      emptyWorkspace: exists && !curriculum.exists(),
+      curriculum: curriculum.exists() ? curriculum.data() : empty.curriculum,
+      templates: templates.exists() ? templates.data() : empty.templates,
+    };
+  }).catch(error => { cache.delete(year); throw error; });
   cache.set(year, promise);
   return promise;
 }
@@ -48,14 +70,17 @@ async function changeYear(year, grade, change) {
     alert("3개 학년도의 공동 자료 편집은 온라인 모드에서 이용해 주세요."); return;
   }
   const refs = getSchoolYearRefs(year).domains;
+  const workspaceMeta = getSchoolYearRefs(year).workspaceMeta;
   try {
     const updated = await runTransaction(db, async transaction => {
-      const [curriculumSnap, templatesSnap] = await Promise.all([
-        transaction.get(refs.curriculum), transaction.get(refs.templates)
+      const [curriculumSnap, templatesSnap, workspaceSnap] = await Promise.all([
+        transaction.get(refs.curriculum), transaction.get(refs.templates),
+        workspaceMeta ? transaction.get(workspaceMeta) : Promise.resolve(null)
       ]);
-      if (!curriculumSnap.exists()) throw new Error(`${year}학년도 작업공간이 없습니다. 학년도 관리에서 먼저 생성해 주세요.`);
-      const current = curriculumSnap.data() || {};
-      const currentTemplates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
+      if (!curriculumSnap.exists() && !workspaceSnap?.exists?.()) throw new Error(`${year}학년도 작업공간이 없습니다. 학년도 관리에서 먼저 생성해 주세요.`);
+      const empty = emptyYearSource();
+      const current = curriculumSnap.exists() ? curriculumSnap.data() || {} : empty.curriculum;
+      const currentTemplates = templatesSnap.exists() ? templatesSnap.data() || {} : empty.templates;
       const curriculum = {
         ...current,
         options: Object.fromEntries(Object.entries(current.options || {
@@ -385,18 +410,22 @@ async function saveCardForYears(entries, original, values, sharedId) {
   const selected = entries.filter(entry => entry.checked);
   if (!selected.length) return false;
   try {
-    const refs = selected.map(entry => ({ ...entry, refs: getSchoolYearRefs(entry.year).domains }));
+    const refs = selected.map(entry => {
+      const yearRefs = getSchoolYearRefs(entry.year);
+      return { ...entry, refs: yearRefs.domains, workspaceMeta: yearRefs.workspaceMeta };
+    });
     const changed = await runTransaction(db, async transaction => {
       // Read every document before performing the first write (Firestore transaction rule).
       const snapshots = await Promise.all(refs.map(async entry => ({
         entry,
         curriculum: await transaction.get(entry.refs.curriculum),
-        templates: await transaction.get(entry.refs.templates)
+        templates: await transaction.get(entry.refs.templates),
+        workspace: entry.workspaceMeta ? await transaction.get(entry.workspaceMeta) : null,
       })));
       const updates = [];
-      for (const { entry, curriculum, templates } of snapshots) {
-        if (!curriculum.exists()) throw new Error(entry.year + "학년도 작업공간이 없습니다.");
-        const domain = templates.exists() ? templates.data() || {} : {};
+      for (const { entry, curriculum, templates, workspace } of snapshots) {
+        if (!curriculum.exists() && !workspace?.exists?.()) throw new Error(entry.year + "학년도 작업공간이 없습니다.");
+        const domain = templates.exists() ? templates.data() || {} : emptyYearSource().templates;
         const cards = [...(domain.templates || [])];
         if (entry.cardId !== "__new__") {
           const index = cards.findIndex(card => card.id === entry.cardId);
@@ -738,13 +767,15 @@ async function saveManagerDrafts(year, grade) {
   const changes = managerDrafts.get(year);
   if (!editable() || !changes?.size) return false;
   const refs = getSchoolYearRefs(year).domains;
+  const workspaceMeta = getSchoolYearRefs(year).workspaceMeta;
   try {
     const updated = await runTransaction(db, async transaction => {
-      const [curriculum, templates] = await Promise.all([
-        transaction.get(refs.curriculum), transaction.get(refs.templates)
+      const [curriculum, templates, workspace] = await Promise.all([
+        transaction.get(refs.curriculum), transaction.get(refs.templates),
+        workspaceMeta ? transaction.get(workspaceMeta) : Promise.resolve(null)
       ]);
-      if (!curriculum.exists() || !templates.exists()) throw new Error(year + "학년도 과목카드 자료가 없습니다.");
-      const domain = templates.data() || {};
+      if (!curriculum.exists() && !workspace?.exists?.()) throw new Error(year + "학년도 작업공간이 없습니다.");
+      const domain = templates.exists() ? templates.data() || {} : emptyYearSource().templates;
       const cards = (domain.templates || []).map(card => ({ ...card }));
       for (const [id, patch] of changes) {
         const card = cards.find(item => item.id === id);
@@ -770,7 +801,7 @@ async function saveManagerDrafts(year, grade) {
 }
 function managerCard(grade, source, card, grades, sources, onDraft) {
   const year = yearForGrade(grade);
-  const item = el("article", "three-year-manager-card " + languageClass(card.language));
+  const item = el("details", "three-year-manager-card " + languageClass(card.language));
   const draft = managerDrafts.get(year)?.get(card.id) || {};
   const cardInput = (field, label) => {
     const wrapper = el("label", "three-year-manager-card-field");
@@ -793,7 +824,7 @@ function managerCard(grade, source, card, grades, sources, onDraft) {
     });
     wrapper.append(input); return wrapper;
   };
-  const heading = el("div", "three-year-manager-card-heading");
+  const heading = el("summary", "three-year-manager-card-heading");
   heading.append(el("strong", "", subjectName(card)));
   const applied = GRADE_KEYS.filter(item => (source.curriculum?.gradeBoards?.[item] || []).some(entry =>
     entry.sem1TemplateId === card.id || entry.sem2TemplateId === card.id));
@@ -839,12 +870,6 @@ export async function renderThreeYearCardManager(container, grades, onTabChange)
   managerVisibleYears = new Set([...managerVisibleYears].filter(year => availableYears.includes(year)));
   if (!managerVisibleYears.size) availableYears.forEach(year => managerVisibleYears.add(year));
   const toolbar = el("div", "three-year-manager-toolbar");
-  for (const [tab, label] of [["tab7to9","중등 7→9"],["tab10to12","고등 10→12"]]) {
-    const toggle = el("button", "secondary-btn" + (Number.parseInt(grades[0],10) <= 9 === (tab === "tab7to9") ? " active" : ""), label);
-    toggle.type = "button";
-    toggle.addEventListener("click", () => { if (typeof onTabChange === "function") onTabChange(tab); });
-    toolbar.append(toggle);
-  }
   const yearPicker = el("fieldset", "three-year-manager-year-picker");
   yearPicker.append(el("legend", "", "표시·편집할 학년도"));
   availableYears.forEach((year, index) => {
@@ -863,14 +888,14 @@ export async function renderThreeYearCardManager(container, grades, onTabChange)
       }
       refresh();
     });
-    label.append(checkbox, el("span", "", year + "학년도 · " + grade));
+    label.append(checkbox, el("span", "", year + "학년도"));
     yearPicker.append(label);
   });
   const search = el("input", "tpl-search-input");
   search.type = "search"; search.placeholder = "과목명 · 교사 검색"; search.value = managerSearch;
   search.setAttribute("aria-label", "3개년 과목카드 검색");
   const filter = el("select");
-  [["all","전체"], ["assigned","해당 학년 배정"], ["unassigned","해당 학년 미배정"]].forEach(([value,label]) => {
+  [["all","전체 카드"], ["assigned","전체 학년 배정"], ["unassigned","전체 학년 미배정"]].forEach(([value,label]) => {
     const option = el("option", "", label); option.value = value; filter.append(option);
   });
   filter.value = managerFilter;
@@ -887,7 +912,7 @@ export async function renderThreeYearCardManager(container, grades, onTabChange)
       const source = sources[grade];
       const column = el("section", "three-year-manager-column");
       const heading = el("div", "three-year-manager-heading");
-      heading.append(el("h3", "", year + "학년도 · " + grade));
+      heading.append(el("h3", "", year + "학년도 · 전체 과목카드"));
       const save = el("button", "primary-btn");
       const syncSave = () => {
         const count = managerDrafts.get(year)?.size || 0;
@@ -917,21 +942,19 @@ export async function renderThreeYearCardManager(container, grades, onTabChange)
         columns.append(column); return;
       }
       const query = managerSearch.trim().toLocaleLowerCase();
-      const cards = (source.templates?.templates || []).filter(card =>
-        !card.schoolLevel || card.schoolLevel === "공통" ||
-        card.schoolLevel === (Number.parseInt(grade, 10) <= 9 ? "중등" : "고등"))
+      const cards = (source.templates?.templates || [])
         .filter(card => !query || [card.nameKo,card.nameEn,card.sem1NameKo,card.sem2NameKo,
           card.teacher,card.sem1Teacher,card.sem2Teacher].some(value =>
           text(value).toLocaleLowerCase().includes(query)))
         .sort((a,b) => subjectName(a).localeCompare(subjectName(b),"ko"));
-      const assigned = cards.filter(card => (source.curriculum?.gradeBoards?.[grade] || []).some(row =>
+      const allRows = GRADE_KEYS.flatMap(item => source.curriculum?.gradeBoards?.[item] || []);
+      const assigned = cards.filter(card => allRows.some(row =>
         row.sem1TemplateId === card.id || row.sem2TemplateId === card.id));
       const assignedIds = new Set(assigned.map(card => card.id));
       const unassigned = cards.filter(card => !assignedIds.has(card.id));
-      const gradeRows = source.curriculum?.gradeBoards?.[grade] || [];
       const groups = new Map();
       assigned.forEach(card => {
-        const tracks = orderedTracks([...new Set(gradeRows.filter(row =>
+        const tracks = orderedTracks([...new Set(allRows.filter(row =>
           row.sem1TemplateId === card.id || row.sem2TemplateId === card.id)
           .map(row => text(row.track) || "구분 없음"))]);
         const track = tracks.length ? tracks.join(" / ") : "구분 없음";
@@ -948,7 +971,7 @@ export async function renderThreeYearCardManager(container, grades, onTabChange)
       }
       if (managerFilter !== "assigned") {
         unassigned.forEach(card => visibleIds.add(card.id));
-        column.append(managerGroup(grade, source, unassigned, grade + " 미배정", grades, sources, syncSave));
+        column.append(managerGroup(grade, source, unassigned, "전체 학년 미배정", grades, sources, syncSave));
       }
       total += visibleIds.size;
       columns.append(column);
