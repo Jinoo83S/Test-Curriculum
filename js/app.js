@@ -16,7 +16,7 @@ import { versioned } from "./version.js?v=2026-07-15-room-availability-separatio
 import { createAppModuleLoader } from "./app-module-loader.js?v=2026-07-15-room-availability-separation-r355";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=2026-07-15-room-availability-separation-r355";
 import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { setupAppBoardUi } from "./app-board-ui.js?v=r407";
+import { setupAppBoardUi } from "./app-board-ui.js?v=r408";
 import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-room-availability-separation-r355";
 
 const DEFAULT_VIEW = "board";
