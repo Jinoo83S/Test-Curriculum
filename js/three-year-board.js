@@ -11,6 +11,8 @@ import { getDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com
 
 const cache = new Map();
 let renderSerial = 0;
+let selectedCardYear = null;
+let draggedCard = null;
 const text = value => String(value ?? "").trim();
 const subjectName = card => text(card?.nameKo || card?.sem1NameKo || card?.sem2NameKo || card?.nameEn || card?.sem1NameEn || card?.sem2NameEn) || "이름 없는 카드";
 const yearForGrade = grade => String(Number(ACTIVE_SCHOOL_YEAR) + (Number.parseInt(grade, 10) <= 9 ? Number.parseInt(grade, 10) - 7 : Number.parseInt(grade, 10) - 10));
@@ -41,7 +43,7 @@ async function changeYear(year, grade, change) {
   }
   const refs = getSchoolYearRefs(year).domains;
   try {
-    await runTransaction(db, async transaction => {
+    const updated = await runTransaction(db, async transaction => {
       const [curriculumSnap, templatesSnap] = await Promise.all([
         transaction.get(refs.curriculum), transaction.get(refs.templates)
       ]);
@@ -60,7 +62,12 @@ async function changeYear(year, grade, change) {
       const templatesChanged = change(curriculum, templates);
       transaction.set(refs.curriculum, { ...curriculum, updatedAt: serverTimestamp() });
       if (templatesChanged) transaction.set(refs.templates, { ...templates, updatedAt: serverTimestamp() });
+      return { rows: curriculum.gradeBoards[grade], templates: templatesChanged ? templates.templates : null };
     });
+    if (year === ACTIVE_SCHOOL_YEAR) {
+      appState.curriculum.gradeBoards[grade] = updated.rows;
+      if (updated.templates) appState.templates.templates = updated.templates;
+    }
     cache.delete(year);
     document.dispatchEvent(new CustomEvent("his:three-year-changed"));
   } catch (error) {
@@ -270,6 +277,24 @@ function cardCell(year, grade, row, sem, source, cards, merged = false) {
   const id = row[sem + "TemplateId"];
   const cell = el("div", merged ? "drop-cell merged-drop-cell" : id ? "drop-cell" : "drop-cell empty");
   if (merged) cell.style.gridColumn = "4 / 6";
+  cell.addEventListener("dragover", event => {
+    if (!editable() || draggedCard?.year !== year) return;
+    event.preventDefault(); cell.classList.add("dragover");
+  });
+  cell.addEventListener("dragleave", () => cell.classList.remove("dragover"));
+  cell.addEventListener("drop", event => {
+    cell.classList.remove("dragover");
+    if (!editable() || draggedCard?.year !== year) return;
+    event.preventDefault();
+    const templateId = draggedCard.id;
+    void changeYear(year, grade, curriculum => {
+      const item = curriculum.gradeBoards[grade].find(current => current.id === row.id);
+      if (!item) throw new Error("행이 변경되었습니다. 새로고침해 주세요.");
+      item[sem + "TemplateId"] = templateId;
+      if (merged) item.sem2TemplateId = templateId;
+      return false;
+    });
+  });
   const template = cards.find(card => card.id === id) ||
     (source?.templates?.templates || []).find(card => card.id === id);
   const picker = templateSelect(year, grade, row, sem, cards, merged);
@@ -361,6 +386,176 @@ function summaryRow(source, grade, category) {
       "Total #Credits " + result.totalCredits));
   return row;
 }
+function cardEditor(year, grade, original = null) {
+  if (!editable()) return;
+  const source = original || {};
+  const dialog = el("dialog", "three-year-card-dialog");
+  const form = el("form", "three-year-card-form");
+  form.method = "dialog";
+  form.append(el("h2", "", original ? year + "학년도 과목카드 수정" : year + "학년도 과목카드 추가"));
+  const fields = [
+    ["nameKo", "과목명 (한글)"], ["nameEn", "과목명 (영문)"],
+    ["teacher", "교사"], ["sem1NameKo", "1학기 과목명 (한글)"],
+    ["sem1NameEn", "1학기 과목명 (영문)"], ["sem1Teacher", "1학기 교사"],
+    ["sem2NameKo", "2학기 과목명 (한글)"], ["sem2NameEn", "2학기 과목명 (영문)"],
+    ["sem2Teacher", "2학기 교사"]
+  ];
+  const inputs = {};
+  fields.forEach(([key, label]) => {
+    const wrapper = el("label", "three-year-card-field", label);
+    const input = el("input");
+    input.value = source[key] || ""; input.name = key;
+    wrapper.append(input); form.append(wrapper); inputs[key] = input;
+  });
+  const levelLabel = el("label", "three-year-card-field", "학교급");
+  const level = el("select");
+  ["중등", "고등", "공통"].forEach(value => {
+    const option = el("option", "", value); option.value = value; level.append(option);
+  });
+  level.value = source.schoolLevel || (Number.parseInt(grade, 10) <= 9 ? "중등" : "고등");
+  levelLabel.append(level); form.append(levelLabel);
+  const languageLabel = el("label", "three-year-card-field", "언어");
+  const language = el("select");
+  ["Both", "Korean", "English"].forEach(value => {
+    const option = el("option", "", value); option.value = value; language.append(option);
+  });
+  language.value = source.language || "Both";
+  languageLabel.append(language); form.append(languageLabel);
+  const actions = el("div", "three-year-card-actions");
+  const cancel = el("button", "secondary-btn", "취소"); cancel.type = "button";
+  cancel.addEventListener("click", () => dialog.close());
+  const save = el("button", "primary-btn", "저장"); save.type = "submit";
+  actions.append(cancel, save); form.append(actions);
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    const values = Object.fromEntries(fields.map(([key]) => [key, inputs[key].value.trim()]));
+    if (!values.nameKo && !values.nameEn && !values.sem1NameKo && !values.sem2NameKo) {
+      alert("과목명을 입력해 주세요."); inputs.nameKo.focus(); return;
+    }
+    const useSemesterOverrides = !!(values.sem1NameKo || values.sem1NameEn || values.sem1Teacher ||
+      values.sem2NameKo || values.sem2NameEn || values.sem2Teacher);
+    void changeYear(year, grade, (_curriculum, templates) => {
+      if (original) {
+        const index = templates.templates.findIndex(card => card.id === original.id);
+        if (index < 0) throw new Error("과목카드가 변경되었습니다. 새로고침해 주세요.");
+        templates.templates[index] = {
+          ...templates.templates[index], ...values, language: language.value,
+          schoolLevel: level.value, useSemesterOverrides
+        };
+      } else {
+        templates.templates.push({
+          id: "tpl-" + crypto.randomUUID(), ...values, language: language.value,
+          schoolLevel: level.value, useSemesterOverrides
+        });
+      }
+      return true;
+    });
+    dialog.close();
+  });
+  dialog.append(form);
+  dialog.addEventListener("close", () => dialog.remove());
+  document.body.append(dialog);
+  dialog.showModal();
+}
+function sidebarCard(year, grade, source, card) {
+  const element = el("div", "template-card compact-card " + languageClass(card.language));
+  element.draggable = editable();
+  element.addEventListener("dragstart", event => {
+    draggedCard = { year, id: card.id };
+    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.setData("text/plain", card.id);
+    element.classList.add("dragging");
+  });
+  element.addEventListener("dragend", () => {
+    draggedCard = null; element.classList.remove("dragging");
+  });
+  const main = el("div", "template-main template-main-one-line");
+  const title = el("div", "template-name-ko", subjectName(card)); title.title = title.textContent;
+  const badges = el("div", "template-applied-grades template-applied-grades-inline");
+  const assigned = GRADE_KEYS.filter(item => (source.curriculum?.gradeBoards?.[item] || []).some(row =>
+    row.sem1TemplateId === card.id || row.sem2TemplateId === card.id));
+  (assigned.length ? assigned : ["미배정"]).forEach(item => {
+    const badge = el("span", "grade-chip" + (item === "미배정" ? " grade-chip-none" : ""), item.replace("학년", ""));
+    badges.append(badge);
+  });
+  const actions = el("div", "template-actions compact-actions");
+  const edit = el("button", "edit-btn", "수정"); edit.type = "button"; edit.disabled = !editable();
+  edit.addEventListener("click", event => { event.stopPropagation(); cardEditor(year, grade, card); });
+  const copy = el("button", "copy-btn", "복사"); copy.type = "button"; copy.disabled = !editable();
+  copy.addEventListener("click", event => {
+    event.stopPropagation();
+    void changeYear(year, grade, (_curriculum, templates) => {
+      const current = templates.templates.find(item => item.id === card.id);
+      if (!current) throw new Error("과목카드가 변경되었습니다. 새로고침해 주세요.");
+      templates.templates.push({ ...current, id: "tpl-" + crypto.randomUUID(), nameKo: subjectName(current) + " (복사)" });
+      return true;
+    });
+  });
+  actions.append(edit, copy); main.append(title, badges, actions);
+  const preview = el("div", "template-semester-preview template-semester-detail");
+  ["sem1", "sem2"].forEach((sem, index) => {
+    const info = getSemesterTemplateData(card, sem);
+    const row = el("div", "semester-preview-item semester-preview-row");
+    const label = el("div", "semester-preview-label", (index + 1) + "학기");
+    const line = el("div", "semester-preview-line");
+    line.append(el("div", "semester-preview-name semester-preview-ko", info.nameKo || "-"),
+      el("div", "semester-preview-en", info.nameEn || ""),
+      el("div", "semester-preview-teacher", info.teacher || "-"));
+    row.append(label, line); preview.append(row);
+  });
+  element.append(main, preview);
+  element.addEventListener("click", event => {
+    if (event.target.closest("button")) return;
+    element.classList.toggle("expanded");
+  });
+  return element;
+}
+function renderThreeYearSidebar(grades, sources) {
+  const sidebar = document.getElementById("appSidebar");
+  if (!sidebar) return;
+  let panel = document.getElementById("threeYearCardSidebar");
+  if (!panel) {
+    panel = el("section", "panel three-year-sidebar-panel");
+    panel.id = "threeYearCardSidebar";
+    sidebar.prepend(panel);
+  }
+  const availableYears = grades.map(yearForGrade);
+  if (!availableYears.includes(selectedCardYear)) selectedCardYear = availableYears[0];
+  const grade = grades.find(value => yearForGrade(value) === selectedCardYear);
+  const source = sources[grade];
+  panel.replaceChildren();
+  const heading = el("div", "section-heading-row subject-card-heading-row");
+  heading.append(el("h2", "", "과목 카드"));
+  const controls = el("div", "sidebar-btn-group");
+  const add = el("button", "secondary-btn sidebar-add-template-btn", "+ 추가");
+  add.type = "button"; add.disabled = !editable() || !source?.exists;
+  add.addEventListener("click", () => cardEditor(selectedCardYear, grade));
+  controls.append(add); heading.append(controls); panel.append(heading);
+  const yearPicker = el("select", "school-level-select three-year-card-year");
+  grades.forEach(item => {
+    const option = el("option", "", yearForGrade(item) + "학년도 · " + item);
+    option.value = yearForGrade(item); yearPicker.append(option);
+  });
+  yearPicker.value = selectedCardYear;
+  yearPicker.setAttribute("aria-label", "과목카드 학년도 선택");
+  yearPicker.addEventListener("change", () => {
+    selectedCardYear = yearPicker.value;
+    renderThreeYearSidebar(grades, sources);
+  });
+  const bar = el("div", "school-level-bar"); bar.append(yearPicker); panel.append(bar);
+  const list = el("div", "template-list three-year-card-list");
+  if (!source?.exists) {
+    list.append(el("p", "three-year-empty", "이 학년도의 과목카드를 불러올 수 없습니다."));
+  } else {
+    const cards = (source.templates?.templates || []).filter(card =>
+      !card.schoolLevel || card.schoolLevel === "공통" ||
+      card.schoolLevel === (Number.parseInt(grade, 10) <= 9 ? "중등" : "고등"))
+      .slice().sort((a, b) => subjectName(a).localeCompare(subjectName(b), "ko"));
+    cards.forEach(card => list.append(sidebarCard(selectedCardYear, grade, source, card)));
+    if (!cards.length) list.append(el("p", "three-year-empty", "과목카드가 없습니다. + 추가로 만들 수 있습니다."));
+  }
+  panel.append(list, el("p", "three-year-card-hint", "카드를 같은 학년도 열의 학기 칸이나 하단에 끌어다 놓으세요."));
+}
 function column(grade, source) {
   const year = yearForGrade(grade);
   const col = el("section", "grade-column");
@@ -424,6 +619,24 @@ export async function renderThreeYearBoard(container, grades) {
       add.className = "add-row-btn";
       add.textContent = grade + " 행 추가";
       footer.append(add, addCardButton(yearForGrade(grade), grade));
+      footer.addEventListener("dragover", event => {
+        if (!editable() || draggedCard?.year !== yearForGrade(grade)) return;
+        event.preventDefault(); footer.classList.add("three-year-drop-ready");
+      });
+      footer.addEventListener("dragleave", () => footer.classList.remove("three-year-drop-ready"));
+      footer.addEventListener("drop", event => {
+        footer.classList.remove("three-year-drop-ready");
+        if (!editable() || draggedCard?.year !== yearForGrade(grade)) return;
+        event.preventDefault();
+        const templateId = draggedCard.id;
+        void changeYear(yearForGrade(grade), grade, curriculum => {
+          curriculum.gradeBoards[grade].push({
+            id: "row-" + crypto.randomUUID(), category: "교과", track: "공통", group: "선택",
+            credits: "", sem1TemplateId: templateId, sem2TemplateId: templateId
+          });
+          return false;
+        });
+      });
     } else {
       footer.append(el("span", "three-year-empty", source?.local ?
         "다른 학년도 자료는 온라인 모드에서 확인할 수 있습니다." :
@@ -432,4 +645,5 @@ export async function renderThreeYearBoard(container, grades) {
     columns[grade].append(footer);
   });
   container.replaceChildren(...grades.map(grade => columns[grade]));
+  renderThreeYearSidebar(grades, sources);
 }
