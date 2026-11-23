@@ -2,7 +2,7 @@ import { login, logout, onAuth } from "./auth.js?v=2026-07-15-room-availability-
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { readTeacherPortalAccess, teacherChecklistDocRef } from "./teacher-portal-auth.js?v=r417";
+import { readTeacherPortalAccess, teacherChecklistDocRef } from "./teacher-portal-auth.js?v=r418";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);

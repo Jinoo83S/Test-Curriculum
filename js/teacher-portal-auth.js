@@ -3,11 +3,22 @@ import { getDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase
 
 export const normalizePortalEmail = value => String(value || "").trim().toLocaleLowerCase();
 export const isSchoolEmail = value => normalizePortalEmail(value).endsWith("@his.sc.kr");
+export const TEACHER_PORTAL_ADMIN_EMAILS = new Set([
+  "jinwoosuk@his.sc.kr",
+]);
 
 export async function readTeacherPortalAccess(user, year = ACTIVE_SCHOOL_YEAR) {
   const email = normalizePortalEmail(user?.email);
   if (!user || !email) return { allowed: false, reason: "Google 로그인이 필요합니다." };
   if (!isSchoolEmail(email)) return { allowed: false, reason: `${email} 계정은 @his.sc.kr 학교 계정이 아닙니다.` };
+  if (TEACHER_PORTAL_ADMIN_EMAILS.has(email)) return {
+    allowed: true,
+    isAdmin: true,
+    user,
+    email,
+    teacher: { id: "teacher-portal-admin", name: user.displayName || "관리자", email },
+    teachers: [],
+  };
   const ref = getSchoolYearRefs(year).domains.teachers;
   const snapshot = await getDoc(ref);
   const teachers = snapshot.exists() && Array.isArray(snapshot.data()?.teachers) ? snapshot.data().teachers : [];
