@@ -8537,17 +8537,33 @@ body.three-year-mode .grade-footer.three-year-drop-ready{background:#dbeafe;outl
 body.three-year-mode.three-year-card-manager-active .page{grid-template-columns:minmax(0,1fr)!important}
 body.three-year-mode.three-year-card-manager-active #appSidebar{display:none!important}
 .three-year-manager-content{padding:9px;overflow:auto;height:100%}
-.three-year-manager-toolbar{display:flex;align-items:center;gap:9px;margin-bottom:10px}
-.three-year-manager-toolbar input{width:min(280px,40vw)}
+.three-year-manager-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:10px}
+.three-year-manager-toolbar > input{width:min(280px,40vw)}
 .three-year-manager-toolbar select{height:30px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:7px}
 .three-year-manager-status{font-size:11px;color:#475569}
-.three-year-manager-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start}
+.three-year-manager-year-picker{display:flex;align-items:center;gap:7px;min-width:0;margin:0;padding:4px 7px;border:1px solid #bfdbfe;border-radius:8px;background:#eff6ff}
+.three-year-manager-year-picker legend{padding:0 4px;color:#1e3a5f;font-size:10px;font-weight:800}
+.three-year-manager-year-option{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:6px;background:#fff;color:#1e3a5f;font-size:11px;font-weight:700;white-space:nowrap;cursor:pointer}
+.three-year-manager-year-option input{width:auto;margin:0;accent-color:#2563eb}
+.three-year-manager-columns{display:grid;grid-template-columns:repeat(var(--three-year-visible-columns,3),minmax(0,1fr));gap:10px;align-items:start}
 .three-year-manager-column{min-width:0;border:1px solid #c7d2e8;border-radius:9px;background:#fff;overflow:hidden}
 .three-year-manager-heading{display:flex;justify-content:space-between;align-items:center;gap:5px;padding:9px;background:#1e3a5f;color:#fff}
 .three-year-manager-heading h3{margin:0;font-size:13px}
 .three-year-manager-heading button{padding:4px 6px!important;font-size:10px}
-.three-year-manager-group{padding:8px;overflow-x:auto}
+.three-year-manager-group{padding:8px}
 .three-year-manager-group h4{margin:0 0 6px;padding:5px 7px;border-radius:5px;background:#e9f2ff;color:#1e3a5f;font-size:11px}
+.three-year-manager-card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px}
+.three-year-manager-card{min-width:0;padding:9px;border:1px solid #cbd5e1;border-left:4px solid #64748b;border-radius:8px;background:#fff;color:#334155;box-shadow:0 1px 3px rgba(15,23,42,.08)}
+.three-year-manager-card.lang-korean{border-left-color:#2563eb}
+.three-year-manager-card.lang-english{border-left-color:#dc2626}
+.three-year-manager-card.lang-both{border-left-color:#7c3aed}
+.three-year-manager-card-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:7px;margin-bottom:8px}
+.three-year-manager-card-heading strong{min-width:0;overflow:hidden;color:#0f2942;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.three-year-manager-card-badges{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}
+.three-year-manager-card-fields{display:grid;gap:6px}
+.three-year-manager-card-field{display:grid;grid-template-columns:70px minmax(0,1fr);align-items:center;gap:6px;color:#475569;font-size:10px;font-weight:700}
+.three-year-manager-card-actions{display:flex;justify-content:flex-end;margin-top:8px}
+.three-year-manager-card-actions button{padding:4px 7px!important;font-size:10px!important}
 .three-year-manager-table{width:100%;border-collapse:collapse;font-size:11px}
 .three-year-manager-table th,.three-year-manager-table td{padding:5px 4px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:middle}
 .three-year-manager-table th{white-space:nowrap;background:#f8fafc;color:#475569}
@@ -8563,3 +8579,5 @@ body.three-year-mode.three-year-card-manager-active #appSidebar{display:none!imp
 .three-year-manager-input{box-sizing:border-box;width:100%;min-width:90px;padding:4px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;font-size:11px}
 .three-year-manager-input:focus{outline:2px solid #2563eb}
 .three-year-manager-table td:nth-child(1),.three-year-manager-table td:nth-child(2){min-width:100px}
+.curriculum-paste-warning{color:#92400e}
+.curriculum-paste-error{color:#9f1239;font-weight:700}

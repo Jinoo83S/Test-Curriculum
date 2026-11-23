@@ -24,7 +24,7 @@ export function getCategoryColor(category) {
 }
 
 // ── Template lookup (reads from templates domain) ─────────────────
-import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=r413";
 
 // ── Row Mutations ─────────────────────────────────────────────────
 /**
@@ -158,18 +158,24 @@ export function placeBothSems(templateId, grade, rowId) {
 export function placeTemplateTo(templateId, grade, rowId, semKey) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
-  const ex = row[`${semKey}TemplateId`];
-  if (ex && ex !== templateId) {
-    const exT = getTemplateById(ex); const nT = getTemplateById(templateId);
-    if (!confirm(`${SEMESTER_LABELS[semKey]}에 이미 "${getTemplateCardTitle(exT)}" 카드가 있습니다.\n"${getTemplateCardTitle(nT)}" 카드로 바꿀까요?`)) return;
+  const existingIds = uniqueOrdered([row.sem1TemplateId, row.sem2TemplateId].filter(Boolean));
+  if (existingIds.some(id => id !== templateId)) {
+    const currentNames = existingIds.map(id => getTemplateCardTitle(getTemplateById(id))).filter(Boolean).join(" / ");
+    const nextName = getTemplateCardTitle(getTemplateById(templateId));
+    if (!confirm(`이 행의 1·2학기 카드 "${currentNames}"를 "${nextName}" 카드로 바꿀까요?`)) return;
   }
-  row[`${semKey}TemplateId`] = templateId; scheduleSave("curriculum"); _onCurriculumChange();
+  autoFillRowFromTemplate(grade, rowId, templateId);
+  row.sem1TemplateId = templateId;
+  row.sem2TemplateId = templateId;
+  scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function clearRowSem(grade, rowId, semKey) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
-  row[`${semKey}TemplateId`] = null; scheduleSave("curriculum"); _onCurriculumChange();
+  row.sem1TemplateId = null;
+  row.sem2TemplateId = null;
+  scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function clearRowBoth(grade, rowId) {
@@ -182,9 +188,12 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   if (!canEdit()) return;
   const sRow = getRowById(sGrade, sRowId); const dRow = getRowById(dGrade, dRowId);
   if (!sRow || !dRow) return;
-  if (sGrade === dGrade && sRowId === dRowId && sSemKey === dSemKey) return;
-  const mv = sRow[`${sSemKey}TemplateId`]; const re = dRow[`${dSemKey}TemplateId`];
-  sRow[`${sSemKey}TemplateId`] = re; dRow[`${dSemKey}TemplateId`] = mv; scheduleSave("curriculum"); _onCurriculumChange();
+  if (sGrade === dGrade && sRowId === dRowId) return;
+  const sourcePair = [sRow.sem1TemplateId || null, sRow.sem2TemplateId || null];
+  const destinationPair = [dRow.sem1TemplateId || null, dRow.sem2TemplateId || null];
+  [dRow.sem1TemplateId, dRow.sem2TemplateId] = sourcePair;
+  [sRow.sem1TemplateId, sRow.sem2TemplateId] = destinationPair;
+  scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 
@@ -579,7 +588,7 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
   const item = getTemplateById(templateId); if (!item) return document.createTextNode("");
   const sd = getSemesterTemplateData(item, semKey);
   const card = document.createElement("div"); card.className = `placed-card ${languageClass(sd.language)}`; card.draggable = canEdit();
-  card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"placed", sourceGrade:grade, sourceRowId:rowData.id, sourceSemKey:semKey, templateId }); card.classList.add("dragging"); });
+  card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"placed", sourceGrade:grade, sourceRowId:rowData.id, sourceSemKey:"paired", templateId }); card.classList.add("dragging"); });
   card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
   const top = document.createElement("div"); top.className = "placed-top";
   const tw = document.createElement("div"); tw.className = "placed-title-wrap";
@@ -587,7 +596,7 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
   const en = document.createElement("div"); en.className = "placed-title-en"; en.textContent = sd.nameEn || "-";
   tw.append(ko, en); top.appendChild(tw);
   if (canEdit()) {
-    const cb = makeBtn("×", "clear-cell-btn", e => { e.stopPropagation(); clearRowSem(grade, rowData.id, semKey); });
+    const cb = makeBtn("×", "clear-cell-btn", e => { e.stopPropagation(); clearRowBoth(grade, rowData.id); });
     cb.addEventListener("mousedown", e => e.stopPropagation()); top.appendChild(cb);
   }
   const oth = semKey === "sem1" ? rowData.sem2TemplateId : rowData.sem1TemplateId;
@@ -600,7 +609,7 @@ function createMergedPlacedCard(templateId, grade, rowData) {
   const item = getTemplateById(templateId); if (!item) return document.createTextNode("");
   const sd = getSemesterTemplateData(item, "sem1");
   const card = document.createElement("div"); card.className = `placed-card placed-card-merged ${languageClass(sd.language)}`; card.draggable = canEdit();
-  card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"placed", sourceGrade:grade, sourceRowId:rowData.id, sourceSemKey:"merged", templateId }); card.classList.add("dragging"); });
+  card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"placed", sourceGrade:grade, sourceRowId:rowData.id, sourceSemKey:"paired", templateId }); card.classList.add("dragging"); });
   card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
   const top = document.createElement("div"); top.className = "placed-top";
   const tw = document.createElement("div"); tw.className = "placed-title-wrap";
@@ -627,10 +636,7 @@ function createDropCell(grade, rowData, semKey, templateId) {
       placeBothSems(drag.templateId, grade, rowData.id); return;
     }
     if (drag.kind === "placed") {
-      if (drag.sourceSemKey === "merged") {
-        const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId);
-        if (dRow) { const rep = dRow[`${semKey}TemplateId`]; dRow[`${semKey}TemplateId`] = mv; if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { sRow.sem1TemplateId = rep; sRow.sem2TemplateId = rep; } scheduleSave("curriculum"); _onCurriculumChange(); }
-      } else { movePlaced(drag.sourceGrade, drag.sourceRowId, drag.sourceSemKey, grade, rowData.id, semKey); }
+      movePlaced(drag.sourceGrade, drag.sourceRowId, drag.sourceSemKey, grade, rowData.id, semKey);
     }
   });
   return cell;
@@ -646,9 +652,7 @@ function createMergedDropCell(grade, rowData, templateId) {
     const drag = currentDrag; if (!drag) return;
     if (drag.kind === "template") { placeBothSems(drag.templateId, grade, rowData.id); return; }
     if (drag.kind === "placed") {
-      const mv = drag.templateId; const dRow = getRowById(grade, rowData.id); const sRow = getRowById(drag.sourceGrade, drag.sourceRowId); if (!dRow) return;
-      if (drag.sourceSemKey === "merged") { if (sRow && !(drag.sourceGrade === grade && drag.sourceRowId === rowData.id)) { const od = dRow.sem1TemplateId; dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; sRow.sem1TemplateId = od; sRow.sem2TemplateId = od; scheduleSave("curriculum"); } }
-      else { dRow.sem1TemplateId = mv; dRow.sem2TemplateId = mv; if (sRow) sRow[`${drag.sourceSemKey}TemplateId`] = null; scheduleSave("curriculum"); }
+      movePlaced(drag.sourceGrade, drag.sourceRowId, drag.sourceSemKey, grade, rowData.id, "merged");
     }
   });
   return cell;

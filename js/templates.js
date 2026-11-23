@@ -51,7 +51,14 @@ export function isSemesterDataSame(item) {
   if (!item.useSemesterOverrides) return true;
   const s1 = getSemesterTemplateData(item, "sem1");
   const s2 = getSemesterTemplateData(item, "sem2");
-  return s1.nameKo === s2.nameKo && s1.nameEn === s2.nameEn && s1.teacher === s2.teacher;
+  const normalized = value => clean(value).normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ");
+  const ko1 = normalized(s1.nameKo), ko2 = normalized(s2.nameKo);
+  const en1 = normalized(s1.nameEn), en2 = normalized(s2.nameEn);
+  // The board card represents one course row across the school year. A teacher
+  // change alone must not split that course into independently moving cards.
+  // Matching either non-empty Korean or English course name is sufficient;
+  // imported sheets sometimes omit only one semester's secondary-language name.
+  return !!((ko1 && ko1 === ko2) || (en1 && en1 === en2));
 }
 
 /** Split a teacher field string into individual names */

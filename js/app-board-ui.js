@@ -4,7 +4,7 @@
 import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
-import { renderThreeYearBoard, clearThreeYearCache } from "./three-year-board.js?v=r409";
+import { renderThreeYearBoard, clearThreeYearCache } from "./three-year-board.js?v=r413";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";

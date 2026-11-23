@@ -6,7 +6,7 @@ import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-se
 import { getSemesterTemplateData } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { buildBackupFilename, downloadJsonBackup } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
-import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r398";
+import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r413";
 
 const dialog = document.getElementById("curriculumPasteDialog");
 const input = document.getElementById("curriculumPasteSource");
@@ -36,7 +36,7 @@ function resetPreview() {
   preview.replaceChildren();
 }
 
-function renderPreview(rows, errors) {
+function renderPreview(rows, errors, warnings) {
   const table = document.createElement("table");
   table.className = "manager-table";
   const header = table.createTHead().insertRow();
@@ -55,11 +55,18 @@ function renderPreview(rows, errors) {
     const tr = body.insertRow();
     for (const value of values) tr.insertCell().textContent = value;
   }
-  if (errors.length) {
+  if (errors.length || warnings.length) {
     const list = document.createElement("ul");
+    for (const { line, grade, message } of warnings) {
+      const item = document.createElement("li");
+      item.className = "curriculum-paste-warning";
+      item.textContent = ["경고", line && `붙여넣기 ${line}줄`, grade, message].filter(Boolean).join(" · ");
+      list.append(item);
+    }
     for (const { line, grade, message } of errors) {
       const item = document.createElement("li");
-      item.textContent = [line && `붙여넣기 ${line}줄`, grade, message].filter(Boolean).join(" · ");
+      item.className = "curriculum-paste-error";
+      item.textContent = ["적용 차단", line && `붙여넣기 ${line}줄`, grade, message].filter(Boolean).join(" · ");
       list.append(item);
     }
     preview.append(list);
@@ -70,14 +77,14 @@ function renderPreview(rows, errors) {
 function analyzeInput() {
   resetPreview();
   try {
-    const { entries, errors } = analyzeCurriculumPaste(input.value, grades);
+    const { entries, errors, warnings } = analyzeCurriculumPaste(input.value, grades);
     const rows = planRows(entries, snapshot());
     const additions = rows.filter(row => row.status === "추가");
     const newCards = new Set(additions.filter(row => !row.templateId).map(row => row.newCardKey)).size;
-    renderPreview(rows, errors);
-    setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 중복 제외 ${rows.length - additions.length}행 · 확인 필요 ${errors.length}건`);
+    renderPreview(rows, errors, warnings);
+    setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 중복 제외 ${rows.length - additions.length}행 · 경고 ${warnings.length}건 · 적용 차단 ${errors.length}건`);
     if (errors.length || !additions.length) return;
-    plan = { entries, rows, additions, newCards };
+    plan = { entries, rows, additions, newCards, warnings };
     apply.disabled = false;
   } catch (error) {
     setStatus(error.message);
@@ -125,8 +132,9 @@ async function applyPreview() {
     setStatus("기존 데이터가 변경되었습니다. 갱신된 미리보기를 확인해 주세요.");
     return;
   }
-  const { additions, newCards } = plan;
-  if (!confirm(`${target}에 ${additions.length}행과 새 과목 카드 ${newCards}개를 추가할까요? 적용 전에 JSON 백업을 다운로드합니다.`)) return;
+  const { additions, newCards, warnings } = plan;
+  const warningNote = warnings.length ? `\n시수 공란 ${warnings.length}건은 빈 값으로 저장됩니다.` : "";
+  if (!confirm(`${target}에 ${additions.length}행과 새 과목 카드 ${newCards}개를 추가할까요?${warningNote}\n적용 전에 JSON 백업을 다운로드합니다.`)) return;
   saving = true;
   for (const control of [apply, close, analyze, input]) control.disabled = true;
   setStatus("백업 및 저장 중입니다.");

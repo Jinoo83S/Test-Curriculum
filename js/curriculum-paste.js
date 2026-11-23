@@ -126,7 +126,7 @@ function isHeading(value) {
 }
 
 function analyzeSchoolSheet(rows, selectedGrades) {
-  const entries = [], errors = [];
+  const entries = [], errors = [], warnings = [];
   for (const { cells, line } of rows.slice(1)) {
     const grade = gradeOf(cells[0]);
     if (!grade || !selectedGrades.includes(grade)) continue;
@@ -145,13 +145,16 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     const error = !["교과", "창체"].includes(category) ? "범주를 확인해 주세요."
       : !track || !group ? "구분 또는 교과군이 비어 있습니다."
       : !language ? "수업 언어를 확인해 주세요."
-      : !/^\d+(?:\.\d+)?$/.test(credits) ? "학급별 시수를 숫자로 입력해 주세요."
+      : credits && !/^\d+(?:\.\d+)?$/.test(credits) ? "학급별 시수를 숫자로 입력해 주세요."
       : !semesters.some(Boolean) ? "과목명을 확인해 주세요." : "";
     if (error) errors.push({ line, grade, message: error });
-    else entries.push({ line, grade, category, track, group, language, credits, semesters });
+    else {
+      if (!credits) warnings.push({ line, grade, message: "학급별 시수가 비어 있어 공란으로 저장됩니다." });
+      entries.push({ line, grade, category, track, group, language, credits, semesters });
+    }
   }
   if (!entries.length && !errors.length) errors.push({ message: "선택한 학년 탭에 해당하는 과목이 없습니다." });
-  return { entries, errors };
+  return { entries, errors, warnings };
 }
 
 export function analyzeCurriculumPaste(source, selectedGrades) {
@@ -161,7 +164,7 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
       && headings[7] === "neis과목명2" && headings[11].includes("credits")) {
     return analyzeSchoolSheet(parsedRows, selectedGrades);
   }
-  const entries = [], errors = [];
+  const entries = [], errors = [], warnings = [];
   let grades = [], blocks = null, foundHeader = false;
   let section = "";
   for (const { cells, line } of parsedRows) {
@@ -239,14 +242,17 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
         : !selectedGrades.includes(currentGrade) ? "선택한 학년 탭의 범위를 벗어났습니다."
         : !track || !prior.group ? "구분 또는 교과군이 비어 있습니다."
         : !language ? "수업 언어를 확인해 주세요."
-        : !/^\d+(?:\.\d+)?$/.test(amount) ? "학점 또는 시간을 숫자로 입력해 주세요." : "";
+        : amount && !/^\d+(?:\.\d+)?$/.test(amount) ? "학점 또는 시간을 숫자로 입력해 주세요." : "";
       if (error) errors.push({ line, grade: currentGrade, message: error });
-      else entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, semesters });
+      else {
+        if (!amount) warnings.push({ line, grade: currentGrade, message: "학점 또는 시간이 비어 있어 공란으로 저장됩니다." });
+        entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, semesters });
+      }
     }
   }
   if (!foundHeader) errors.push({ message: "학년과 열 제목을 찾지 못했습니다. 엑셀에서 학년 및 열 제목까지 포함해 복사해 주세요." });
   else if (!entries.length && !errors.length) errors.push({ message: "생성할 과목이 없습니다." });
-  return { entries, errors };
+  return { entries, errors, warnings };
 }
 
 function sameSubject(a, b) {
