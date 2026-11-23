@@ -5,6 +5,7 @@
 // 화면별 UI, 도메인 구독, 지연 로딩, 렌더링은 전용 모듈로 분리되어 있습니다.
 
 import { onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
+import { getCurriculumMode, setCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-room-availability-separation-r355";
@@ -154,6 +155,15 @@ async function bootstrap() {
   });
 
   setupAppSidebarUi();
+  const curriculumModeSelect = document.getElementById("curriculumModeSelect");
+  if (curriculumModeSelect) {
+    curriculumModeSelect.value = getCurriculumMode();
+    curriculumModeSelect.addEventListener("change", () => {
+      setCurriculumMode(curriculumModeSelect.value);
+      boardUi.invalidateTabs();
+      renderer.render("curriculum");
+    });
+  }
   setupFirestoreRenderDebounce(renderer);
   setupLocalDataChangeHandler({ boardUi, renderer });
   setupAuthStateHandler({ boardUi, renderer });
