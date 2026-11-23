@@ -576,6 +576,7 @@ function getTemplateDuplicateLevelKey(item) {
 
 function getTemplateDuplicateGradeKey(item) {
   const grades = getTemplateAppliedGrades(item.id).map(g => clean(g)).filter(Boolean);
+  if (!grades.length && getCurriculumMode() === "threeYear") return "";
   return grades.length ? grades.join(",") : "학년없음";
 }
 
