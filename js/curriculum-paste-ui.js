@@ -2,6 +2,7 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { canEdit } from "./auth.js?v=r424";
 import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste } from "./state.js?v=r426";
+import { ensureDomains } from "./app-domains.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { getSemesterTemplateData } from "./templates.js?v=r425";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
@@ -181,24 +182,35 @@ function createUpdatedDomains(before, { additions: rows, rows: plannedRows, teac
 
 async function applyPreview() {
   if (saving || !plan || !canEdit()) return;
-  const before = snapshot();
-  const currentRows = planRows(plan.entries, before);
-  if (JSON.stringify(currentRows) !== JSON.stringify(plan.rows)) {
-    analyzeInput();
-    setStatus("기존 데이터가 변경되었습니다. 갱신된 미리보기를 확인해 주세요.");
-    return;
-  }
-  const { additions, newCards, warnings, excluded, classCountRows, teacherLoadRows, reportingRows, teacherRows } = plan;
-  if ((classCountRows.length || teacherLoadRows.length) && !initialLoad.rosters) {
-    setStatus("과목 설정 데이터를 불러온 후 다시 적용해 주세요.");
-    return;
-  }
-  if (!confirm(`${target}\n추가 ${additions.length}행 · 새 과목 카드 ${newCards}개\n반 수 ${classCountRows.length}행 · 교사시수 ${teacherLoadRows.length}행 · 성적표 ${reportingRows.length}행 · 기존 행 담당 교사 교체 ${teacherRows.length}행\n미리보기에 표시된 경고 ${warnings.length}건 및 적용할 수 없는 행 ${excluded}개를 확인해 주세요.\n적용 전에 JSON 백업을 다운로드합니다.`)) return;
+  const pendingPlan = plan;
+  const { additions, newCards, warnings, excluded, classCountRows, teacherLoadRows, reportingRows, teacherRows } = pendingPlan;
   saving = true;
   for (const control of [apply, close, analyze, input, updateTeachers]) control.disabled = true;
-  setStatus("백업 및 저장 중입니다.");
   try {
-    const { after, classCountAssignments } = createUpdatedDomains(before, plan);
+    if (classCountRows.length || teacherLoadRows.length) {
+      setStatus("과목 설정을 불러오는 중입니다.");
+      if (!(await ensureDomains(["rosters"]))) {
+        setStatus("과목 설정을 불러오지 못했습니다. 연결 상태를 확인하고 다시 적용해 주세요.");
+        return;
+      }
+    }
+    if (!canEdit()) {
+      setStatus("편집 권한을 확인한 뒤 다시 적용해 주세요.");
+      return;
+    }
+    const before = snapshot();
+    const currentRows = planRows(pendingPlan.entries, before);
+    if (JSON.stringify(currentRows) !== JSON.stringify(pendingPlan.rows)) {
+      analyzeInput();
+      setStatus("기존 데이터가 변경되었습니다. 갱신된 미리보기를 확인해 주세요.");
+      return;
+    }
+    if (!confirm(`${target}\n추가 ${additions.length}행 · 새 과목 카드 ${newCards}개\n반 수 ${classCountRows.length}행 · 교사시수 ${teacherLoadRows.length}행 · 성적표 ${reportingRows.length}행 · 기존 행 담당 교사 교체 ${teacherRows.length}행\n미리보기에 표시된 경고 ${warnings.length}건 및 적용할 수 없는 행 ${excluded}개를 확인해 주세요.\n적용 전에 JSON 백업을 다운로드합니다.`)) {
+      setStatus("적용을 취소했습니다. 미리보기는 그대로 유지됩니다.");
+      return;
+    }
+    setStatus("백업 및 저장 중입니다.");
+    const { after, classCountAssignments } = createUpdatedDomains(before, pendingPlan);
     const scope = grades === GRADE_GROUPS.tab7to9 ? "middle-curriculum" : "high-curriculum";
     const filename = buildBackupFilename({ year: ACTIVE_SCHOOL_YEAR, scope, operation: "curriculum-paste" });
     downloadJsonBackup({
