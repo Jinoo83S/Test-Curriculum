@@ -1,5 +1,5 @@
 import { login, logout, onAuth } from "./auth.js?v=r424";
-import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=r424";
+import { appState, subscribeDomains, setOnUpdate, initialLoad } from "./state.js?v=r426";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { auth, db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { doc, getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";

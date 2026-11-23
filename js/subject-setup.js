@@ -32,9 +32,9 @@ function renderSetupLevelTabs(onChange) {
 }
 import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
-import { appState } from "./state.js?v=r424";
+import { appState } from "./state.js?v=r426";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=r425";
-import { getRosterMeta, setRosterClassCount, setRosterTeacherLoadHours, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r424";
+import { getRosterMeta, setRosterClassCount, setRosterTeacherLoadHours, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r426";
 
 // ── Build rows from curriculum IN BOARD ORDER ─────────────────────
 function buildRows(gradeKeys = GRADE_KEYS) {
@@ -219,7 +219,11 @@ export function renderSubjectSetupView(container) {
         const totalRow = document.createElement("tr"); totalRow.className = "ss-track-total";
         const totalTd = document.createElement("td"); totalTd.colSpan = COL_COUNT;
         const total = validRows.reduce((s, r) => s + getClassCount(r.tplId), 0);
-        totalTd.innerHTML = `<span class="ss-total-label">↑ ${grp.track} 선택군 합계</span><span class="ss-total-val">${total}반</span>`;
+        const label = document.createElement("span"); label.className = "ss-total-label";
+        label.textContent = `↑ ${grp.track} 선택군 합계`;
+        const totalValue = document.createElement("span"); totalValue.className = "ss-total-val";
+        totalValue.textContent = `${total}반`;
+        totalTd.append(label, totalValue);
         totalRow.appendChild(totalTd); tbody.appendChild(totalRow);
       }
     });

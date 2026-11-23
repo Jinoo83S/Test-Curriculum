@@ -5,12 +5,15 @@
 // HIS_RUNTIME_ASSET_VERSION is intentionally separate: a release may change
 // only a few modules, so unchanged files can keep their previous cache URL.
 // This prevents every patch from containing nearly the entire application.
-export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-07-22-bottom-panel-vertical-scroll-r382");
+export const APP_VERSION = String(globalThis.HIS_APP_VERSION || "2026-11-24-curriculum-paste-r426");
 export const ASSET_VERSION = String(globalThis.HIS_RUNTIME_ASSET_VERSION || APP_VERSION);
 
 export function versioned(path) {
   const raw = String(path || "");
   if (!raw) return raw;
+  if (["./rosters.js", "./ttcards.js", "./timetable-data.js", "./data-cleanup.js", "./app-health-check.js"].includes(raw)) {
+    return `${raw}?v=r426`;
+  }
   const joiner = raw.includes("?") ? "&" : "?";
   return `${raw}${joiner}v=${encodeURIComponent(ASSET_VERSION)}`;
 }

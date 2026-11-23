@@ -1858,228 +1858,229 @@ export function setupCpSatWebappImport(ctx = {}) {
     }
 
     const applySuspendToken = typeof suspendAutoSave === "function" ? suspendAutoSave("cp-sat-apply") : null;
-    const summary = entriesSummary(nextEntries);
-    const rollbackState = {
-      entries: deepClone(asArray(domain.entries)),
-      autoAssignMeta: deepClone(domain.autoAssignMeta || {}),
-      savedSchedules: deepClone(asArray(domain.savedSchedules)),
-      bestAutoAssignSnapshot: deepClone(domain.bestAutoAssignSnapshot || null),
-    };
-    const backup = makeBackupVersion(`CP-SAT API 적용 전 백업 ${new Date().toLocaleString("ko-KR")}`);
-    captureTimetableUndo?.("CP-SAT API 결과 적용");
+    try {
+      const summary = entriesSummary(nextEntries);
+      const rollbackState = {
+        entries: deepClone(asArray(domain.entries)),
+        autoAssignMeta: deepClone(domain.autoAssignMeta || {}),
+        savedSchedules: deepClone(asArray(domain.savedSchedules)),
+        bestAutoAssignSnapshot: deepClone(domain.bestAutoAssignSnapshot || null),
+      };
+      const backup = makeBackupVersion(`CP-SAT API 적용 전 백업 ${new Date().toLocaleString("ko-KR")}`);
+      captureTimetableUndo?.("CP-SAT API 결과 적용");
 
-    const previousMeta = dropStaleAutoAssignMetaFields(domain.autoAssignMeta || {});
+      const previousMeta = dropStaleAutoAssignMetaFields(domain.autoAssignMeta || {});
 
-    let nextMeta = {
-      ...previousMeta,
-      source: CP_SAT_WEBAPP_SOURCE,
-      metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
-      cpSatApplied: true,
-      cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
-      cpSatServerValidationOk: validation.ok !== false,
-      cpSatServerValidationSummary: validation.summary || "",
-      cpSatIssueText: issueText(apiResult, 20),
-      cpSatConstraintPolicy: deepClone(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
-      cpSatConstraintPolicySummary: cpSatConstraintPolicySummary(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
-      cpSatConstraintPolicyAudit: deepClone(policy.constraintPolicyAudit || apiResult?.clientConstraintPolicyAudit || null),
-      cpSatSoftPenalty: Number(policy.constraintPolicyAudit?.softPenalty || apiResult?.clientConstraintPolicyAudit?.softPenalty || 0) || 0,
-      cpSatCapacityPolicy: capacityPolicyMode === "hard" ? "hard-block" : (capacityPolicyMode === "off" ? "off" : "soft-warning-apply-allowed"),
-      cpSatCapacityWarningCount: Number(policy.capacityWarningCount || 0),
-      cpSatCapacityWarnings: asArray(policy.capacityAudit?.details).slice(0, 50),
-      clientCapacityAudit: deepClone(policy.capacityAudit || null),
-      persistenceExpectedAudit: {
-        schemaVersion: "r375-persistence-expected-v1",
-        expectedEntryCount: nextEntries.length,
-        expectedAssignmentCount: nextEntries.reduce((sum, entry) => sum + unique([...(entry.ttcardIds || []), entry.ttcardId]).length, 0),
-        expectedCapacityWarningCount: Number(policy.capacityWarningCount || 0),
-      },
-      strictValidationRequired: true,
-      strictValidationMode: "runtime-recomputed-teacher-room-class",
-      strictValidationNotice: "정상 여부는 저장된 CP-SAT 메타가 아니라 현재 화면의 실시간 교사/교실/학급 충돌 검토 결과만 기준으로 판단합니다.",
-      importedAt: nowIso(),
-      generatedAt: apiResult?.meta?.apiFinishedAt || nowIso(),
-      importedEntryCount: nextEntries.length,
-      importedClassSlotCount: summary.classSlotCount,
-      importedRoomAssignmentEntryCount: assignmentCount,
-      apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,
-      apiStatus: apiResult?.status || "",
-      apiVersion: apiResult?.version || "",
-      apiCounts: deepClone(apiResult?.counts || {}),
-      apiValidationCounts: deepClone(validationCounts(apiResult)),
-      cpSatResultAudit: deepClone(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null)),
-      cpSatScopeAudit: deepClone(apiResult?.clientScopeAudit || null),
-      backupVersionId: backup?.id || null,
-      entryIdReconciliation: { reused: idReconciliation.reused, created: idReconciliation.created, total: idReconciliation.total },
-    };
+      let nextMeta = {
+        ...previousMeta,
+        source: CP_SAT_WEBAPP_SOURCE,
+        metricSource: "currentEntriesAfterCpSatApiNoStudentFields",
+        cpSatApplied: true,
+        cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
+        cpSatServerValidationOk: validation.ok !== false,
+        cpSatServerValidationSummary: validation.summary || "",
+        cpSatIssueText: issueText(apiResult, 20),
+        cpSatConstraintPolicy: deepClone(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+        cpSatConstraintPolicySummary: cpSatConstraintPolicySummary(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+        cpSatConstraintPolicyAudit: deepClone(policy.constraintPolicyAudit || apiResult?.clientConstraintPolicyAudit || null),
+        cpSatSoftPenalty: Number(policy.constraintPolicyAudit?.softPenalty || apiResult?.clientConstraintPolicyAudit?.softPenalty || 0) || 0,
+        cpSatCapacityPolicy: capacityPolicyMode === "hard" ? "hard-block" : (capacityPolicyMode === "off" ? "off" : "soft-warning-apply-allowed"),
+        cpSatCapacityWarningCount: Number(policy.capacityWarningCount || 0),
+        cpSatCapacityWarnings: asArray(policy.capacityAudit?.details).slice(0, 50),
+        clientCapacityAudit: deepClone(policy.capacityAudit || null),
+        persistenceExpectedAudit: {
+          schemaVersion: "r375-persistence-expected-v1",
+          expectedEntryCount: nextEntries.length,
+          expectedAssignmentCount: nextEntries.reduce((sum, entry) => sum + unique([...(entry.ttcardIds || []), entry.ttcardId]).length, 0),
+          expectedCapacityWarningCount: Number(policy.capacityWarningCount || 0),
+        },
+        strictValidationRequired: true,
+        strictValidationMode: "runtime-recomputed-teacher-room-class",
+        strictValidationNotice: "정상 여부는 저장된 CP-SAT 메타가 아니라 현재 화면의 실시간 교사/교실/학급 충돌 검토 결과만 기준으로 판단합니다.",
+        importedAt: nowIso(),
+        generatedAt: apiResult?.meta?.apiFinishedAt || nowIso(),
+        importedEntryCount: nextEntries.length,
+        importedClassSlotCount: summary.classSlotCount,
+        importedRoomAssignmentEntryCount: assignmentCount,
+        apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,
+        apiStatus: apiResult?.status || "",
+        apiVersion: apiResult?.version || "",
+        apiCounts: deepClone(apiResult?.counts || {}),
+        apiValidationCounts: deepClone(validationCounts(apiResult)),
+        cpSatResultAudit: deepClone(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null)),
+        cpSatScopeAudit: deepClone(apiResult?.clientScopeAudit || null),
+        backupVersionId: backup?.id || null,
+        entryIdReconciliation: { reused: idReconciliation.reused, created: idReconciliation.created, total: idReconciliation.total },
+      };
 
-    let currentValidationBody = null;
-    if (validateBase) {
-      const validationStartedPerf = perfNow();
+      let currentValidationBody = null;
+      if (validateBase) {
+        const validationStartedPerf = perfNow();
+        try {
+          currentValidationBody = await validateCurrentEntriesViaApi(validateBase, nextEntries, 45000);
+          nextMeta = {
+            ...buildCurrentValidationMeta(nextMeta, currentValidationBody, nextEntries, "apply-after-cp-sat"),
+            cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
+            rawCpSatServerValidationSummary: validation.summary || "",
+            rawCpSatServerValidationCounts: deepClone(validationCounts(apiResult)),
+            rawCpSatIssueText: issueText(apiResult, 20),
+            importedRoomAssignmentEntryCount: assignmentCount,
+            apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,
+            apiStatus: apiResult?.status || "",
+            apiVersion: apiResult?.version || "",
+            apiCounts: deepClone(apiResult?.counts || currentValidationBody?.counts || {}),
+            backupVersionId: backup?.id || null,
+            cpSatConstraintPolicy: deepClone(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+            cpSatConstraintPolicySummary: cpSatConstraintPolicySummary(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
+            cpSatConstraintPolicyAudit: deepClone(policy.constraintPolicyAudit || apiResult?.clientConstraintPolicyAudit || null),
+            cpSatSoftPenalty: Number(policy.constraintPolicyAudit?.softPenalty || apiResult?.clientConstraintPolicyAudit?.softPenalty || 0) || 0,
+            cpSatCapacityPolicy: capacityPolicyMode === "hard" ? "hard-block" : (capacityPolicyMode === "off" ? "off" : "soft-warning-apply-allowed"),
+          };
+        } catch (err) {
+          console.warn("CP-SAT 적용 후 현재검증 실패", err);
+          nextMeta = {
+            ...nextMeta,
+            currentValidationAt: nowIso(),
+            currentValidationOk: false,
+            currentValidationSummary: `현재 entries 재검증 실패: ${err?.message || err}`,
+            validationSummary: validation.summary || `현재 entries 재검증 실패: ${err?.message || err}`,
+            metaSyncSource: "apply-after-cp-sat-validate-failed",
+          };
+        } finally {
+          applyValidationMs = Math.max(0, perfNow() - validationStartedPerf);
+        }
+      }
+
+      let currentAutoSourceSignature = "";
       try {
-        currentValidationBody = await validateCurrentEntriesViaApi(validateBase, nextEntries, 45000);
-        nextMeta = {
-          ...buildCurrentValidationMeta(nextMeta, currentValidationBody, nextEntries, "apply-after-cp-sat"),
-          cpSatApplyStatus: apiResult?.status || "CP-SAT API 결과 적용",
-          rawCpSatServerValidationSummary: validation.summary || "",
-          rawCpSatServerValidationCounts: deepClone(validationCounts(apiResult)),
-          rawCpSatIssueText: issueText(apiResult, 20),
-          importedRoomAssignmentEntryCount: assignmentCount,
-          apiElapsedSeconds: apiResult?.elapsedSeconds ?? null,
-          apiStatus: apiResult?.status || "",
-          apiVersion: apiResult?.version || "",
-          apiCounts: deepClone(apiResult?.counts || currentValidationBody?.counts || {}),
-          backupVersionId: backup?.id || null,
-          cpSatConstraintPolicy: deepClone(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
-          cpSatConstraintPolicySummary: cpSatConstraintPolicySummary(policy.constraintPolicyAudit?.policy || apiResult?.clientConstraintPolicy || domain?.cpSatConstraintPolicy || {}),
-          cpSatConstraintPolicyAudit: deepClone(policy.constraintPolicyAudit || apiResult?.clientConstraintPolicyAudit || null),
-          cpSatSoftPenalty: Number(policy.constraintPolicyAudit?.softPenalty || apiResult?.clientConstraintPolicyAudit?.softPenalty || 0) || 0,
-          cpSatCapacityPolicy: capacityPolicyMode === "hard" ? "hard-block" : (capacityPolicyMode === "off" ? "off" : "soft-warning-apply-allowed"),
-        };
-      } catch (err) {
-        console.warn("CP-SAT 적용 후 현재검증 실패", err);
+        currentAutoSourceSignature = typeof buildAutoSourceSignature === "function"
+          ? cleanLocal(buildAutoSourceSignature())
+          : "";
+      } catch (signatureError) {
+        console.warn("CP-SAT 최고 결과 source signature 생성 생략", signatureError);
+      }
+      if (currentAutoSourceSignature) {
         nextMeta = {
           ...nextMeta,
-          currentValidationAt: nowIso(),
-          currentValidationOk: false,
-          currentValidationSummary: `현재 entries 재검증 실패: ${err?.message || err}`,
-          validationSummary: validation.summary || `현재 entries 재검증 실패: ${err?.message || err}`,
-          metaSyncSource: "apply-after-cp-sat-validate-failed",
+          autoSourceSignature: currentAutoSourceSignature,
+          autoSourceSummary: `CP-SAT ${nextEntries.length}개 entry · 현재 카드/그룹 구성`,
         };
-      } finally {
-        applyValidationMs = Math.max(0, perfNow() - validationStartedPerf);
       }
-    }
 
-    let currentAutoSourceSignature = "";
-    try {
-      currentAutoSourceSignature = typeof buildAutoSourceSignature === "function"
-        ? cleanLocal(buildAutoSourceSignature())
-        : "";
-    } catch (signatureError) {
-      console.warn("CP-SAT 최고 결과 source signature 생성 생략", signatureError);
-    }
-    if (currentAutoSourceSignature) {
-      nextMeta = {
-        ...nextMeta,
-        autoSourceSignature: currentAutoSourceSignature,
-        autoSourceSummary: `CP-SAT ${nextEntries.length}개 entry · 현재 카드/그룹 구성`,
-      };
-    }
-
-    try {
-      const cpSatBestSnapshot = await buildCpSatBestSnapshot({
-        entries: nextEntries,
-        meta: nextMeta,
-        summary,
-        uidFactory: uid,
-        autoSourceSignature: currentAutoSourceSignature,
-        activeSchoolYear,
-        periodCount: ttConfig?.()?.periodCount || domain?.config?.periodCount || 7,
-      });
-      domain.bestAutoAssignSnapshot = cpSatBestSnapshot || deepClone(rollbackState.bestAutoAssignSnapshot);
-    } catch (snapshotError) {
-      // 최고 결과 보관 실패가 실제 시간표 적용과 저장을 막아서는 안 됩니다.
-      console.warn("CP-SAT 최고 결과 압축 보관 생략", snapshotError);
-      domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
-    }
-    if (appState?.timetable) appState.timetable.bestAutoAssignSnapshot = deepClone(domain.bestAutoAssignSnapshot);
-
-    const saveStartedPerf = perfNow();
-    let saveCommitted = false;
-    let persistenceAudit = null;
-    try {
-      await persistCpSatTimetable({
-        domain,
-        appStateRef: appState,
-        nextEntries,
-        nextMeta,
-        backup,
-        saveNow,
-        recomputeConflicts,
-        renderAll,
-      });
-      saveCommitted = true;
-      if (typeof verifyPersistedTimetableState === "function") {
-        persistenceAudit = await verifyPersistedTimetableState({ expectedEntries: nextEntries, expectedMeta: nextMeta });
-        nextMeta.persistenceReadbackAudit = deepClone(persistenceAudit);
-        syncCpSatTimetableState(domain, appState, nextEntries, nextMeta, null);
-        if (apiResult && typeof apiResult === "object") apiResult.clientPersistenceAudit = deepClone(persistenceAudit);
-        if (!persistenceAudit.ok) {
-          const verificationError = new Error(persistenceAudit.summary || "Firestore 재조회 검증에 실패했습니다.");
-          verificationError.code = "cpsat-persistence-verification-failed";
-          throw verificationError;
-        }
-        // 첫 원자 저장을 재조회한 결과를 autoAssignMeta에 실제 보존합니다.
-        // 변경된 entry/card가 없으므로 두 번째 원자 저장은 meta+revision만 기록합니다.
-        await saveNow("timetable", {
-          force: true,
-          throwOnError: true,
-          revisionReason: "cp-sat-readback-audit",
-          revisionLabel: "CP-SAT 저장 재조회 검증 기록",
+      try {
+        const cpSatBestSnapshot = await buildCpSatBestSnapshot({
+          entries: nextEntries,
+          meta: nextMeta,
+          summary,
+          uidFactory: uid,
+          autoSourceSignature: currentAutoSourceSignature,
+          activeSchoolYear,
+          periodCount: ttConfig?.()?.periodCount || domain?.config?.periodCount || 7,
         });
-        cpSatSaveVerification(domain, nextEntries.length);
+        domain.bestAutoAssignSnapshot = cpSatBestSnapshot || deepClone(rollbackState.bestAutoAssignSnapshot);
+      } catch (snapshotError) {
+        // 최고 결과 보관 실패가 실제 시간표 적용과 저장을 막아서는 안 됩니다.
+        console.warn("CP-SAT 최고 결과 압축 보관 생략", snapshotError);
+        domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
       }
-    } catch (err) {
+      if (appState?.timetable) appState.timetable.bestAutoAssignSnapshot = deepClone(domain.bestAutoAssignSnapshot);
+
+      const saveStartedPerf = perfNow();
+      let saveCommitted = false;
+      let persistenceAudit = null;
+      try {
+        await persistCpSatTimetable({
+          domain,
+          appStateRef: appState,
+          nextEntries,
+          nextMeta,
+          backup,
+          saveNow,
+          recomputeConflicts,
+          renderAll,
+        });
+        saveCommitted = true;
+        if (typeof verifyPersistedTimetableState === "function") {
+          persistenceAudit = await verifyPersistedTimetableState({ expectedEntries: nextEntries, expectedMeta: nextMeta });
+          nextMeta.persistenceReadbackAudit = deepClone(persistenceAudit);
+          syncCpSatTimetableState(domain, appState, nextEntries, nextMeta, null);
+          if (apiResult && typeof apiResult === "object") apiResult.clientPersistenceAudit = deepClone(persistenceAudit);
+          if (!persistenceAudit.ok) {
+            const verificationError = new Error(persistenceAudit.summary || "Firestore 재조회 검증에 실패했습니다.");
+            verificationError.code = "cpsat-persistence-verification-failed";
+            throw verificationError;
+          }
+          // 첫 원자 저장을 재조회한 결과를 autoAssignMeta에 실제 보존합니다.
+          // 변경된 entry/card가 없으므로 두 번째 원자 저장은 meta+revision만 기록합니다.
+          await saveNow("timetable", {
+            force: true,
+            throwOnError: true,
+            revisionReason: "cp-sat-readback-audit",
+            revisionLabel: "CP-SAT 저장 재조회 검증 기록",
+          });
+          cpSatSaveVerification(domain, nextEntries.length);
+        }
+      } catch (err) {
+        applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
+        if (apiResult && typeof apiResult === "object") {
+          apiResult.clientApplyTiming = {
+            applyValidationMs,
+            applySaveMs,
+            applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
+            saved: saveCommitted,
+            persistenceVerified: saveCommitted ? false : null,
+            error: cleanLocal(err?.message || err),
+          };
+        }
+        console.error("CP-SAT 저장/검증 실패", err);
+        if (saveCommitted) {
+          // Firestore 원자 저장은 완료됐지만 재조회 검증이 불일치한 경우입니다.
+          // 이미 저장된 새 시간표를 화면에서 과거 상태로 되돌리면 서버/화면이 달라지므로 유지합니다.
+          syncCpSatTimetableState(domain, appState, nextEntries, nextMeta, null);
+          recomputeConflicts?.();
+          renderAll?.();
+          alert(`CP-SAT 결과는 Firestore에 저장됐지만 저장 직후 재조회 검증에서 불일치가 발견됐습니다.
+
+${err?.message || err}
+
+현재 화면은 저장된 새 시간표를 유지합니다. 진단 JSON을 내려받아 확인해 주세요.`);
+          return false;
+        }
+        syncCpSatTimetableState(domain, appState, rollbackState.entries, rollbackState.autoAssignMeta, null);
+        domain.savedSchedules = deepClone(rollbackState.savedSchedules);
+        domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
+        if (appState?.timetable && appState.timetable !== domain) {
+          appState.timetable.savedSchedules = deepClone(rollbackState.savedSchedules);
+          appState.timetable.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
+        }
+        recomputeConflicts?.();
+        renderAll?.();
+        alert(`CP-SAT 결과 저장에 실패하여 화면도 적용 전 시간표로 복원했습니다.
+
+${err?.message || err}
+
+운영 시간표에는 변경이 저장되지 않았습니다.`);
+        return false;
+      }
+
       applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
       if (apiResult && typeof apiResult === "object") {
         apiResult.clientApplyTiming = {
           applyValidationMs,
           applySaveMs,
           applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
-          saved: saveCommitted,
-          persistenceVerified: saveCommitted ? false : null,
-          error: cleanLocal(err?.message || err),
+          saved: true,
+          persistenceVerified: persistenceAudit?.ok !== false,
+          persistenceAudit: persistenceAudit ? deepClone(persistenceAudit) : null,
         };
       }
-      console.error("CP-SAT 저장/검증 실패", err);
-      if (saveCommitted) {
-        // Firestore 원자 저장은 완료됐지만 재조회 검증이 불일치한 경우입니다.
-        // 이미 저장된 새 시간표를 화면에서 과거 상태로 되돌리면 서버/화면이 달라지므로 유지합니다.
-        syncCpSatTimetableState(domain, appState, nextEntries, nextMeta, null);
-        recomputeConflicts?.();
-        renderAll?.();
-        alert(`CP-SAT 결과는 Firestore에 저장됐지만 저장 직후 재조회 검증에서 불일치가 발견됐습니다.
+      setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
 
-${err?.message || err}
-
-현재 화면은 저장된 새 시간표를 유지합니다. 진단 JSON을 내려받아 확인해 주세요.`);
-        if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
-        return false;
-      }
-      syncCpSatTimetableState(domain, appState, rollbackState.entries, rollbackState.autoAssignMeta, null);
-      domain.savedSchedules = deepClone(rollbackState.savedSchedules);
-      domain.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
-      if (appState?.timetable && appState.timetable !== domain) {
-        appState.timetable.savedSchedules = deepClone(rollbackState.savedSchedules);
-        appState.timetable.bestAutoAssignSnapshot = deepClone(rollbackState.bestAutoAssignSnapshot);
-      }
-      recomputeConflicts?.();
-      renderAll?.();
-      alert(`CP-SAT 결과 저장에 실패하여 화면도 적용 전 시간표로 복원했습니다.
-
-${err?.message || err}
-
-운영 시간표에는 변경이 저장되지 않았습니다.`);
+      alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r378\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
+      return true;
+    } finally {
       if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
-      return false;
     }
-
-    applySaveMs = Math.max(0, perfNow() - saveStartedPerf);
-    if (apiResult && typeof apiResult === "object") {
-      apiResult.clientApplyTiming = {
-        applyValidationMs,
-        applySaveMs,
-        applyTotalMs: Math.max(0, perfNow() - applyStartedPerf),
-        saved: true,
-        persistenceVerified: persistenceAudit?.ok !== false,
-        persistenceAudit: persistenceAudit ? deepClone(persistenceAudit) : null,
-      };
-    }
-    if (applySuspendToken && typeof resumeAutoSave === "function") resumeAutoSave(applySuspendToken, { flush: false });
-    setTimeout(() => { try { recomputeConflicts?.(); renderAll?.(); } catch (_) {} }, 0);
-
-    alert(`${cpSatResultStatusLabel(cpSatTruthAudit(apiResult, nextEntries, apiResult?.clientSolverState || null))} · 적용 및 저장 완료\nentries ${nextEntries.length}개\n학급칸 ${summary.classSlotCount}개\n교실 배정 보존 ${assignmentCount}개 entry\n현재검증: ${nextMeta.currentValidationSummary || nextMeta.validationSummary || "-"}\n문서 ID 재사용 ${idReconciliation.reused}개 / 신규 ${idReconciliation.created}개\n메타 source: cp-sat-webapp-r378\nFirestore 재조회: ${persistenceAudit?.summary || "검증 함수 미연결"}\n백업도 배치 보관에 저장했습니다.`);
-    return true;
   }
 
   function openOverlay() {

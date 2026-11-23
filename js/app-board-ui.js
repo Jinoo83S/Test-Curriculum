@@ -6,7 +6,7 @@ import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { renderThreeYearBoard, clearThreeYearCache } from "./three-year-board.js?v=r414";
 import { canEdit } from "./auth.js?v=r424";
-import { appState, saveNow } from "./state.js?v=r424";
+import { appState, saveNow } from "./state.js?v=r426";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
 
 const DEFAULT_BOARD_OPTIONS = {

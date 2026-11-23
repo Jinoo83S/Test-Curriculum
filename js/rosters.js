@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
-import { appState, scheduleSave } from "./state.js?v=r424";
+import { appState, scheduleSave } from "./state.js?v=r426";
 import { getClasses, getClassById } from "./students.js?v=2026-07-15-room-availability-separation-r355";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=r425";
 
@@ -677,7 +677,12 @@ function renderRosterDetail(panel, container) {
       const cls = getClassById(entry.classId); const stu = cls?.students.find(s => s.id === entry.studentId); if (!stu) return;
       const tr = document.createElement("tr");
       const sc = showSec ? `<td class="roster-class-name">${sectionLabel(entry.sectionIdx ?? 0)}</td>` : "";
-      tr.innerHTML = `<td class="col-num">${idx + 1}</td>${sc}<td class="roster-class-name">${cls.grade}</td><td class="roster-class-name">${cls.name}</td><td>${stu.name}</td><td>${stu.gender}</td>`;
+      tr.innerHTML = `<td class="col-num">${idx + 1}</td>${sc}`;
+      for (const [value, className] of [[cls.grade, "roster-class-name"], [cls.name, "roster-class-name"], [stu.name, ""], [stu.gender, ""]]) {
+        const cell = tr.insertCell();
+        cell.className = className;
+        cell.textContent = value ?? "";
+      }
       const delTd = document.createElement("td"); const delBtn = makeBtn("×", "stu-del-btn", () => { removeFromRoster(selectedRosterTemplateId, entry.classId, entry.studentId); renderRosterView(container); });
       delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd); tbody.appendChild(tr);
     });

@@ -3,9 +3,9 @@
 // ================================================================
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { appState } from "./state.js?v=r424";
+import { appState } from "./state.js?v=r426";
 import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js?v=r425";
-import { getRosterMeta, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r424";
+import { getRosterMeta, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r426";
 
 // ── Data builder ─────────────────────────────────────────────────
 function buildRows() {

@@ -4,7 +4,7 @@
 import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
-import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag, synchronizeTeacherIdentityState } from "./state.js?v=r424";
+import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 
 const tDomain   = () => appState.templates;

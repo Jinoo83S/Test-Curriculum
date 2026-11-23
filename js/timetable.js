@@ -9,11 +9,11 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot,
          listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation,
-         verifyPersistedTimetableState } from "./state.js?v=r424";
+         verifyPersistedTimetableState } from "./state.js?v=r426";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+import { versioned } from "./version.js?v=r426";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
-import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
+import { openAppHealthCheckDialog } from "./app-health-check.js?v=r426";
 import { getTemplateById, getTemplateCardTitle, splitTeacherNames } from "./templates.js?v=r425";
 import { uid, clean, makeBtn, sectionLabel, gradeDisplay, escapeHtml, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getRooms, getRoomById, renderRoomsView, updateRoom, formatHomeRoomClassLabel } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
@@ -54,10 +54,10 @@ const [
   teacherEventsModule,
   cpSatImportModule,
 ] = await Promise.all([
-  import(versioned("./data-cleanup.js")),
-  import(versioned("./ttcards.js")),
+  import("./data-cleanup.js?v=r426"),
+  import("./ttcards.js?v=r426"),
   import(versioned("./timetable-conflicts.js")),
-  import(versioned("./timetable-data.js")),
+  import("./timetable-data.js?v=r426"),
   import(versioned("./timetable-autoassign.js")),
   import(versioned("./timetable-grid.js")),
   import(versioned("./timetable-detail.js")),
@@ -69,15 +69,14 @@ const [
   import(versioned("./timetable-display-density.js")),
   import(versioned("./timetable-card-editor.js")),
   import(versioned("./timetable-excel-import.js")),
-  import(versioned("./timetable-teacher-events.js")),
+  import("./timetable-teacher-events.js?v=2026-08-11-asc-teacher-meetings-r391"),
   import(versioned("./cp-sat-webapp-import.js")).catch(err => {
     console.warn("[CP-SAT import] optional module load failed", err);
     return {};
   }),
 ]);
 
-globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = "r387-13";
-console.info("[HIS runtime:r387-13] card-move duplicate conflict recompute removed");
+globalThis.HIS_TIMETABLE_RUNTIME_RELEASE = globalThis.HIS_RELEASE || "r426";
 
 const { openDataCleanupDialog } = dataCleanupModule;
 const { getTtCards, getTtCardById, refreshTtCardData } = ttCardsModule;

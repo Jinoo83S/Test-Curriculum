@@ -4,7 +4,7 @@
 // ================================================================
 import { canEdit } from "./auth.js?v=r424";
 import { sectionLabel, gradeDisplay } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
+import { getTtCardById } from "./ttcards.js?v=r426";
 import { splitTeacherNames } from "./templates.js?v=r425";
 import { normalizeTeacherEvents, resolveTeacherEventNames, teacherEventSlots } from "./timetable-teacher-events.js?v=2026-08-11-asc-teacher-meetings-r391";
 import {
@@ -12,7 +12,7 @@ import {
   getTtCardClassInfos,
   entryHasGrade,
   entryMatchesClass,
-} from "./timetable-data.js?v=2026-07-15-room-availability-separation-r355";
+} from "./timetable-data.js?v=r426";
 
 const DAYS = ["월", "화", "수", "목", "금"];
 const TT_DRAG_MIME = "application/x-his-timetable-drag";

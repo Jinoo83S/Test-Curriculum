@@ -97,22 +97,20 @@ function splitTeacherNames(value) {
 
 function semesterInfo(template, semester) {
   const prefix = semester === "sem2" ? "sem2" : "sem1";
-  const overrideIds = Array.isArray(template?.[`${prefix}TeacherIds`]) ? template[`${prefix}TeacherIds`] : [];
-  const overrideNames = Array.isArray(template?.[`${prefix}TeacherNames`]) ? template[`${prefix}TeacherNames`] : [];
-  const inheritedIds = semester === "sem2" && Array.isArray(template?.sem1TeacherIds) ? template.sem1TeacherIds : [];
-  const inheritedNames = semester === "sem2" && Array.isArray(template?.sem1TeacherNames) ? template.sem1TeacherNames : [];
-  const baseIds = Array.isArray(template?.teacherIds) ? template.teacherIds : [];
-  const baseNames = Array.isArray(template?.teacherNames) ? template.teacherNames : [];
-  const semesterTeacherText = clean(template?.[`${prefix}Teacher`]);
-  const hasSemesterTeacher = !!(overrideIds.length || overrideNames.length || semesterTeacherText);
-  const teacherText = semesterTeacherText || (semester === "sem2" ? clean(template?.sem1Teacher) : "") || clean(template?.teacher);
-  const teacherIds = overrideIds.length ? overrideIds : hasSemesterTeacher ? [] : inheritedIds.length ? inheritedIds : baseIds;
-  const teacherNames = overrideNames.length ? overrideNames : hasSemesterTeacher ? [] : inheritedNames.length ? inheritedNames : baseNames;
+  const teacherList = field => Array.isArray(template?.[field]) ? template[field].map(clean).filter(Boolean) : [];
+  const assignment = term => ({
+    ids: teacherList(term ? `${term}TeacherIds` : "teacherIds"),
+    names: teacherList(term ? `${term}TeacherNames` : "teacherNames"),
+    text: template?.[term ? `${term}Teacher` : "teacher"],
+  });
+  const base = assignment("");
+  const selected = [assignment(prefix), ...(prefix === "sem2" ? [assignment("sem1")] : []), base]
+    .find(({ ids, names, text }) => ids.length || names.length || clean(text)) || base;
   return {
     nameKo: clean(template?.[`${prefix}NameKo`]) || clean(template?.nameKo) || clean(template?.nameEn) || "이름 없는 과목",
     nameEn: clean(template?.[`${prefix}NameEn`]) || clean(template?.nameEn),
-    teacherIds: teacherIds.map(clean),
-    teacherNames: unique([...teacherNames.map(clean), ...splitTeacherNames(teacherText)]),
+    teacherIds: selected.ids,
+    teacherNames: unique([...selected.names, ...splitTeacherNames(selected.text)]),
   };
 }
 
@@ -140,7 +138,8 @@ function buildTeacherCourses(curriculum, templatesDomain, teacher, semester, isA
         track: clean(row.track) || "구분 없음",
         group: clean(row.group) || "교과군 없음",
         credits: clean(row.credits),
-        reportingRequirements: template[`${semester}ReportingRequirements`] || template.reportingRequirements || {},
+        reportingRequirements: Object.keys(template.sem1ReportingRequirements || {}).length || Object.keys(template.sem2ReportingRequirements || {}).length
+          ? template[`${semester}ReportingRequirements`] || {} : template.reportingRequirements || {},
         isOwner,
         editable: isAdmin || isOwner,
         ...info,
@@ -217,25 +216,33 @@ async function startChecklist(access, user) {
   const templates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
   const saved = savedSnap.exists() ? savedSnap.data() || {} : {};
   const personal = personalSnap.exists() ? personalSnap.data() || {} : {};
+  const items = structuredClone(personal.items || {});
+  for (const [key, fields] of Object.entries(saved.items || {})) items[key] = { ...items[key], ...fields };
   const state = {
     semester: "sem1",
     scope: "all",
     grade: "all",
     query: "",
-    items: { ...(personal.items && typeof personal.items === "object" ? structuredClone(personal.items) : {}), ...(saved.items && typeof saved.items === "object" ? structuredClone(saved.items) : {}) },
+    items,
     courses: {
       sem1: buildTeacherCourses(curriculum, templates, access.teacher, "sem1", access.isAdmin),
       sem2: buildTeacherCourses(curriculum, templates, access.teacher, "sem2", access.isAdmin),
     },
     saveTimer: null,
+    pendingChanges: {},
   };
   byId("checklistYear").textContent = `${ACTIVE_SCHOOL_YEAR}학년도`;
   byId("checklistTeacherName").textContent = access.teacher.name || access.email;
   showGate("checklistApp");
 
-  const save = () => {
+  const save = (course, key, value) => {
+    if (!course.editable) return;
+    state.pendingChanges[course.key] = { ...state.pendingChanges[course.key], [key]: value };
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(async () => {
+      if (currentPortalUser?.uid !== user.uid) return;
+      const changes = state.pendingChanges;
+      state.pendingChanges = {};
       const status = byId("checklistSaveStatus");
       status.textContent = "저장 중…"; status.className = "checklist-save-status saving";
       try {
@@ -246,22 +253,24 @@ async function startChecklist(access, user) {
           teacherId: clean(access.teacher.id),
           teacherName: clean(access.teacher.name),
           updatedBy: access.email,
-          items: state.items,
+          items: changes,
           updatedAt: serverTimestamp(),
         }, { merge: true });
         status.textContent = "저장됨"; status.className = "checklist-save-status saved";
       } catch (error) {
+        for (const [courseKey, fields] of Object.entries(changes)) {
+          state.pendingChanges[courseKey] = { ...fields, ...state.pendingChanges[courseKey] };
+        }
         console.error("[teacher checklist save]", error);
         status.textContent = "저장 실패"; status.className = "checklist-save-status error";
       }
     }, 250);
   };
 
-  const updateProgress = () => {
-    const all = [...state.courses.sem1, ...state.courses.sem2];
-    const completed = all.filter(course => state.items[course.key]?.confirmed).length;
-    byId("checklistProgress").textContent = `${completed} / ${all.length}`;
-    byId("checklistProgressBar").style.width = `${all.length ? Math.round(completed / all.length * 100) : 0}%`;
+  const updateProgress = courses => {
+    const completed = courses.filter(course => state.items[course.key]?.confirmed).length;
+    byId("checklistProgress").textContent = `${completed} / ${courses.length}`;
+    byId("checklistProgressBar").style.width = `${courses.length ? Math.round(completed / courses.length * 100) : 0}%`;
   };
 
   const render = () => {
@@ -279,14 +288,21 @@ async function startChecklist(access, user) {
     container.replaceChildren();
     if (!courses.length) {
       const empty = document.createElement("div"); empty.className = "portal-state-card compact";
-      empty.innerHTML = `<div class="portal-state-icon">📭</div><h2>이 학기에 연결된 담당 과목이 없습니다</h2><p>과목카드의 담당 교사와 교사목록 연결을 관리자에게 확인해 주세요.</p>`;
-      container.append(empty); updateProgress(); return;
+      empty.innerHTML = `<h2>현재 조건에 맞는 과목이 없습니다</h2>`;
+      container.append(empty); updateProgress(courses); return;
     }
     const header = document.createElement("div");
     header.className = "checklist-compact-header";
-    for (const title of ["과목", "Google 폴더", "필수 확인", "성적표 표시 설정", "완료"]) {
+    for (const title of ["과목", "Google 폴더", "필수 확인"]) {
       const cell = document.createElement("span"); cell.textContent = title; header.append(cell);
     }
+    const reportHeader = document.createElement("div");
+    reportHeader.className = "compact-reporting-header";
+    for (const [, title] of reportFields) {
+      const cell = document.createElement("span"); cell.textContent = title; reportHeader.append(cell);
+    }
+    const confirmedHeader = document.createElement("span"); confirmedHeader.textContent = "완료";
+    header.append(reportHeader, confirmedHeader);
     container.append(header);
     courses.forEach(course => {
       const fieldIdBase = course.key.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -300,10 +316,11 @@ async function startChecklist(access, user) {
 
       const folder = document.createElement("div"); folder.className = "compact-folder-cell";
       const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "Drive 폴더 URL"; folderInput.value = item.folderUrl || "";
+      folderInput.setAttribute("aria-label", `${course.nameKo} Google 폴더 URL`);
       folderInput.id = `folder-${fieldIdBase}`; folderInput.name = `folder_${fieldIdBase}`; folderInput.disabled = !course.editable;
       const folderLink = document.createElement("a"); folderLink.className = "compact-folder-open"; folderLink.target = "_blank"; folderLink.rel = "noopener noreferrer"; folderLink.textContent = "열기";
       const syncFolderLink = () => { const url = safeUrl(folderInput.value); folderLink.href = url || "#"; folderLink.classList.toggle("disabled", !url); };
-      folderInput.addEventListener("change", () => { if (!course.editable) return; item.folderUrl = folderInput.value.trim(); syncFolderLink(); save(); });
+      folderInput.addEventListener("change", () => { item.folderUrl = folderInput.value.trim(); syncFolderLink(); save(course, "folderUrl", item.folderUrl); });
       folderLink.addEventListener("click", event => { if (!safeUrl(folderInput.value)) event.preventDefault(); });
       syncFolderLink(); folder.append(folderInput, folderLink);
 
@@ -311,24 +328,25 @@ async function startChecklist(access, user) {
       [["safetyEducation", "안전교육"], ["safetySexEducation", "성교육"], ["absentStudentPolicy", "결석정책"]].forEach(([key, title]) => {
         const label = document.createElement("label"); label.className = "compact-check";
         const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!item[key]; input.id = `${key}-${fieldIdBase}`; input.name = `${key}_${fieldIdBase}`; input.disabled = !course.editable;
-        input.addEventListener("change", () => { item[key] = input.checked; save(); });
+        input.addEventListener("change", () => { item[key] = input.checked; save(course, key, item[key]); });
         label.append(input, document.createTextNode(title)); checks.append(label);
       });
 
       const reporting = document.createElement("div"); reporting.className = "compact-reporting-cell";
       reportFields.forEach(([key, title, values]) => {
         const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
-        const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(); } });
+        const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(course, key, value); } });
+        select.setAttribute("aria-label", `${course.nameKo} ${title}`);
         label.append(caption, select); reporting.append(label);
       });
 
       const confirm = document.createElement("label"); confirm.className = "compact-confirm-cell";
       const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed; confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`; confirmInput.disabled = !course.editable;
-      confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(); save(); });
+      confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(courses); save(course, "confirmed", item.confirmed); });
       confirm.append(confirmInput, document.createTextNode("완료"));
       card.append(courseCell, folder, checks, reporting, confirm); container.append(card);
     });
-    updateProgress();
+    updateProgress(courses);
   };
 
   document.querySelectorAll(".semester-tab").forEach(button => button.addEventListener("click", () => {

@@ -1,7 +1,7 @@
 {
-  "release": "r382",
-  "appVersion": "2026-07-22-bottom-panel-vertical-scroll-r382",
-  "build": "r382-bottom-panel-vertical-scroll-20260722",
+  "release": "r426",
+  "appVersion": "2026-11-24-curriculum-paste-r426",
+  "build": "2026-11-24-curriculum-paste-r426",
   "serverRequired": "2026-07-20-aggregate-capacity-warning-r348",
   "capacityPolicy": "hard-soft-off-by-school-year",
   "validationPolicy": "full-applied-entries-and-constraint-policy-audit",

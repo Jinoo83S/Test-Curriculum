@@ -1,15 +1,15 @@
 // ================================================================
 // timetable-detail.js · Detail modals and context menu
 // ================================================================
-import { appState, scheduleSave } from "./state.js?v=r424";
+import { appState, scheduleSave } from "./state.js?v=r426";
 import { canEdit } from "./auth.js?v=r424";
 import { getRooms } from "./rooms.js?v=2026-07-15-room-availability-separation-r355";
 import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
-} from "./timetable-data.js?v=2026-07-15-room-availability-separation-r355";
-import { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
+} from "./timetable-data.js?v=r426";
+import { getTtCardById } from "./ttcards.js?v=r426";
 
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;
@@ -1431,8 +1431,8 @@ export function createTimetableDetailHandlers(ctx) {
     const unitTitle = getUnitDisplayTitle(unit);
     const { modal, box, closeBtn, setTitle } = makeModal({ maxWidth: 340, minWidth: 260, title: `배치 상세 · ${unitTitle}` });
     setTitle(`배치 상세 · ${unitTitle}`);
-    box.insertAdjacentHTML("beforeend", `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${unitTitle}</div>
-      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">그룹: ${group?.name || "-"}</div>
+    box.insertAdjacentHTML("beforeend", `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#1e3a5f">${escapeHtml(unitTitle)}</div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:4px">그룹: ${escapeHtml(group?.name || "-")}</div>
       <div style="display:flex;gap:4px;flex-wrap:wrap">${gradeKeys.map(g => `<span style="background:${ctx.getGradeColor(g).border};color:white;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px">${gradeDisplay(g)}</span>`).join("")}</div>`);
     box.appendChild(closeBtn);
     document.body.appendChild(modal);

@@ -120,7 +120,7 @@ const dirtyDomains = new Set();
 const queuedSaveOptions = {};
 const activeSavePromises = {};
 const domainEditRevisions = {};
-const curriculumPasteDomains = ["curriculum", "templates"];
+const curriculumPasteDomains = ["curriculum", "templates", "rosters"];
 const curriculumPasteRemoteExists = {};
 let curriculumPasteSaving = false;
 const autoSaveSuspendTokens = new Map();
@@ -578,29 +578,30 @@ export async function flushPendingSaves(options = {}) {
 
 export const savePendingNow = flushPendingSaves;
 
-export async function saveCurriculumPaste(before, after) {
-  if (curriculumPasteSaving || !canEdit() || curriculumPasteDomains.some(domain => !initialLoad[domain])) {
+export async function saveCurriculumPaste(before, after, { includeRosters = false } = {}) {
+  const domains = includeRosters ? curriculumPasteDomains : curriculumPasteDomains.slice(0, 2);
+  if (curriculumPasteSaving || !canEdit() || domains.some(domain => !initialLoad[domain])) {
     throw new Error("커리큘럼과 과목 카드가 모두 로드된 후 다시 시도해 주세요.");
   }
   verifyWriteContext("커리큘럼 엑셀 붙여넣기");
-  if (curriculumPasteDomains.some(domain => dirtyDomains.has(domain) || activeSavePromises[domain])) {
-    throw new Error("커리큘럼 또는 과목 카드의 기존 변경사항을 저장한 후 다시 적용해 주세요.");
+  if (domains.some(domain => dirtyDomains.has(domain) || activeSavePromises[domain])) {
+    throw new Error("커리큘럼·과목 카드·과목 설정의 기존 변경사항을 저장한 후 다시 적용해 주세요.");
   }
 
   const baseline = {}, next = {};
-  for (const domain of curriculumPasteDomains) {
+  for (const domain of domains) {
     if (fp(appState[domain]) !== fp(before[domain])) throw new Error("데이터가 바뀌었습니다. 미리보기를 다시 확인해 주세요.");
     baseline[domain] = fp(normalizedForDomain(domain));
     next[domain] = DOMAIN_NORMALIZERS[domain](after[domain]);
   }
-  const changed = curriculumPasteDomains.filter(domain => baseline[domain] !== fp(next[domain]));
+  const changed = domains.filter(domain => baseline[domain] !== fp(next[domain]));
   const persisted = { ...savedDomainFingerprints };
   curriculumPasteSaving = true;
   try {
     if (LOCAL_DEV_MODE) {
       const store = readLocalStateStore();
       const data = store.data && typeof store.data === "object" ? store.data : store;
-      for (const domain of curriculumPasteDomains) {
+      for (const domain of domains) {
         if (data[domain] && fp(DOMAIN_NORMALIZERS[domain](data[domain])) !== persisted[domain]) {
           throw new Error("다른 탭에서 데이터가 변경되었습니다. 페이지를 새로고침한 후 다시 분석해 주세요.");
         }
@@ -611,29 +612,54 @@ export async function saveCurriculumPaste(before, after) {
         throw new Error("브라우저에 저장할 수 없습니다. 로컬 저장공간을 확인해 주세요.");
       }
     } else {
+      const boardDomains = domains.filter(domain => domain !== "rosters");
       const expectedExists = { ...curriculumPasteRemoteExists };
+      const rosterChanges = includeRosters ? Object.entries(next.rosters.rosterMeta).flatMap(([id, meta]) => {
+        const previous = before.rosters.rosterMeta?.[id] || {};
+        const fields = ["classCount", "teacherLoadHours"].filter(field => clean(previous[field]) !== meta[field]);
+        return fields.length ? [{ id, previous, meta, fields, ref: doc(splitRefs.rosters, id) }] : [];
+      }) : [];
       await runTransaction(db, async transaction => {
         verifyWriteContext("커리큘럼 엑셀 붙여넣기");
         if (!canEdit()) throw new Error("편집 권한을 확인해 주세요.");
-        const snapshots = await Promise.all(curriculumPasteDomains.map(domain => transaction.get(refs[domain])));
-        for (const [index, domain] of curriculumPasteDomains.entries()) {
+        const snapshots = await Promise.all(boardDomains.map(domain => transaction.get(refs[domain])));
+        const rosterSnapshots = await Promise.all(rosterChanges.map(change => transaction.get(change.ref)));
+        for (const [index, domain] of boardDomains.entries()) {
           const snapshot = snapshots[index];
           const stale = snapshot.exists() !== expectedExists[domain] ||
             (snapshot.exists() && fp(DOMAIN_NORMALIZERS[domain](snapshot.data())) !== persisted[domain]);
           if (stale) throw new Error("다른 곳에서 데이터가 변경되었습니다. 최신 데이터를 불러온 뒤 다시 분석해 주세요.");
         }
-        if (curriculumPasteDomains.some(domain => fp(appState[domain]) !== fp(before[domain]))) {
+        if (domains.some(domain => fp(appState[domain]) !== fp(before[domain]))) {
           throw new Error("데이터가 바뀌었습니다. 미리보기를 다시 확인해 주세요.");
         }
-        for (const domain of changed) {
+        for (const domain of changed.filter(domain => domain !== "rosters")) {
           transaction.set(refs[domain], { ...next[domain], updatedAt: serverTimestamp() });
         }
+        for (const [index, change] of rosterChanges.entries()) {
+          const { id, previous, ref, meta, fields } = change;
+          const snapshot = rosterSnapshots[index];
+          const remote = snapshot.data()?.meta || {};
+          if (fields.some(field => clean(remote[field]) !== clean(previous[field]))) {
+            throw new Error("다른 곳에서 과목 설정이 변경되었습니다. 최신 데이터를 불러온 뒤 다시 분석해 주세요.");
+          }
+          const patch = Object.fromEntries(fields.map(field => [field, meta[field]]));
+          transaction.set(ref, {
+            templateId: id,
+            ...(!snapshot.exists() ? { entries: before.rosters.rosters?.[id] || [] } : {}),
+            meta: patch, updatedAt: serverTimestamp(),
+          }, { merge: true });
+        }
       });
-      for (const domain of curriculumPasteDomains) {
+      for (const domain of boardDomains) {
         recordFirestoreUsage("reads", 1, `paste: ${storageLabel.domain(domain)}`, { operation: "getDoc" });
       }
-      for (const domain of changed) {
+      for (const domain of changed.filter(domain => domain !== "rosters")) {
         recordFirestoreUsage("writes", 1, `paste: ${storageLabel.domain(domain)}`, { operation: "setDoc" });
+      }
+      if (rosterChanges.length) {
+        recordFirestoreUsage("reads", rosterChanges.length, `paste: ${storageLabel.rosters}`, { operation: "getDoc" });
+        recordFirestoreUsage("writes", rosterChanges.length, `paste: ${storageLabel.rosters}`, { operation: "setDoc" });
       }
     }
 
@@ -3474,7 +3500,7 @@ function handleSnap(domain, normalizeFn) {
   const usageState = { seen: false };
   return async (snap) => {
     recordDocSnapshotUsage(`listen: ${storageLabel.domain(domain)}`, snap, usageState);
-    if (curriculumPasteDomains.includes(domain)) curriculumPasteRemoteExists[domain] = snap.exists();
+    if (domain === "curriculum" || domain === "templates") curriculumPasteRemoteExists[domain] = snap.exists();
     if (!snap.exists()) {
       const normalized = normalizeFn({});
       appState[domain] = normalized;
@@ -3614,26 +3640,27 @@ const timetableSplitCache = {
   meta: null,
   metaExists: false,
 };
+const timetableSnapshotMaterializations = new WeakMap();
 
-let legacyTemplateGroupMigrationAttempted = false;
-async function loadLegacyTemplateGroupsForTimetable() {
-  if (legacyTemplateGroupMigrationAttempted) return [];
-  legacyTemplateGroupMigrationAttempted = true;
-  try {
-    const snap = await getDoc(refs.templates);
+let legacyTemplateGroupsPromise;
+function loadLegacyTemplateGroupsForTimetable() {
+  return legacyTemplateGroupsPromise ??= getDoc(refs.templates).then(snap => {
     if (!snap.exists()) return [];
     const rawGroups = snap.data()?.templateGroups;
     return Array.isArray(rawGroups)
       ? rawGroups.map(normalizeTemplateGroup).filter(g => g.name)
       : [];
-  } catch (e) {
+  }).catch(e => {
     console.warn("Legacy templateGroups migration skipped.", e);
     return [];
-  }
+  });
 }
 
 async function applyTimetableSplitIfReady() {
   if (!timetableSplitCache.entries || !timetableSplitCache.ttcards || timetableSplitCache.meta === null) return;
+  const { entries, ttcards, meta } = timetableSplitCache;
+  const isCurrent = () => entries === timetableSplitCache.entries &&
+    ttcards === timetableSplitCache.ttcards && meta === timetableSplitCache.meta;
 
   const hasSplitData =
     timetableSplitCache.entries.length > 0 ||
@@ -3652,7 +3679,7 @@ async function applyTimetableSplitIfReady() {
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
       hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || (d.teacherEvents || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
     });
-    if (migrated) return;
+    if (migrated || !isCurrent()) return;
   }
 
   if (!hasSplitData && !splitConfirmed.has("timetable") && !splitFallbackAttempted.timetable) {
@@ -3660,27 +3687,19 @@ async function applyTimetableSplitIfReady() {
     const migrated = await loadLegacyDomainFallback("timetable", normalizeTimetableDomain, {
       hasData: d => (d.entries || []).length > 0 || (d.ttcards || []).length > 0 || (d.ttcardGroups || []).length > 0 || (d.savedSchedules || []).length > 0 || (d.teacherEvents || []).length > 0 || Object.keys(d.teacherConstraints || {}).length > 0
     });
-    if (migrated) return;
+    if (migrated || !isCurrent()) return;
   }
 
   if (!hasSplitData && (splitFallbackAttempted.timetable || splitConfirmed.has("timetable")) && domainHasData("timetable")) return;
 
-  const raw = {
-    config: timetableSplitCache.meta?.config || {},
-    teacherConstraints: timetableSplitCache.meta?.teacherConstraints || {},
-    teacherConstraintsById: timetableSplitCache.meta?.teacherConstraintsById || {},
-    teacherEvents: timetableSplitCache.meta?.teacherEvents || [],
-    roomAvailabilityOrphans: timetableSplitCache.meta?.roomAvailabilityOrphans || {},
-    ttcardTeacherOptions: timetableSplitCache.meta?.ttcardTeacherOptions || {},
-    cpSatConstraintPolicy: timetableSplitCache.meta?.cpSatConstraintPolicy || {},
-    ttcardGroups: timetableSplitCache.meta?.ttcardGroups || timetableSplitCache.meta?.templateGroups || [],
-    savedSchedules: timetableSplitCache.meta?.savedSchedules || [],
-    cardGenerationMeta: timetableSplitCache.meta?.cardGenerationMeta || null,
-    scheduleConditions: timetableSplitCache.meta?.scheduleConditions || timetableSplitCache.meta?.autoAssignMeta?.scheduleConditions || null,
-    autoAssignMeta: timetableSplitCache.meta?.autoAssignMeta || null,
-    bestAutoAssignSnapshot: await materializeStoredBestAutoAssignSnapshot(timetableSplitCache.meta?.bestAutoAssignSnapshot || null),
-    entries: timetableSplitCache.entries,
-    ttcards: timetableSplitCache.ttcards,
+  if (!timetableSnapshotMaterializations.has(meta)) {
+    timetableSnapshotMaterializations.set(meta, materializeStoredBestAutoAssignSnapshot(meta.bestAutoAssignSnapshot || null));
+  }
+  const bestAutoAssignSnapshot = await timetableSnapshotMaterializations.get(meta);
+  if (!isCurrent()) return;
+  const raw = { ...meta, bestAutoAssignSnapshot: bestAutoAssignSnapshot && structuredClone(bestAutoAssignSnapshot), entries, ttcards,
+    ttcardGroups: meta.ttcardGroups || meta.templateGroups || [],
+    scheduleConditions: meta.scheduleConditions || meta.autoAssignMeta?.scheduleConditions || null,
   };
 
   // 기존 운영 데이터는 그룹 정보가 templates.templateGroups에만 있을 수 있습니다.
@@ -3695,10 +3714,11 @@ async function applyTimetableSplitIfReady() {
     }
   }
 
+  if (!isCurrent()) return;
   applyNormalizedDomain("timetable", normalizeTimetableDomain(raw));
 
   // 편집 권한이 있으면 이관한 그룹을 새 위치에 저장해 다음부터는 templates를 읽지 않습니다.
-  if (canEdit() && raw.ttcardGroups.length && !(timetableSplitCache.meta?.ttcardGroups || []).length) {
+  if (canEdit() && raw.ttcardGroups.length && !(meta.ttcardGroups || []).length && !dirtyDomains.has("timetable")) {
     try { await saveSplitDomain("timetable", { force: true }); } catch (e) { console.warn("Timetable group migration save skipped.", e); }
   }
 }

@@ -55,7 +55,7 @@ function columnType(value) {
   if (/^(공통배정선택.*|구분.*|track)$/.test(label)) return "track";
   if (/^(교과군.*|교과group|교과군subject.*|subjectgroup|coursegroup|교과군교과|활동영역|영역)$/.test(label)) return "group";
   if (/^(언어.*|language)$/.test(label)) return "language";
-  if (/^(한글.*|국문.*|nameko|koreanname)$/.test(label)) return "nameKo";
+  if (/^(과목명|한글.*|국문.*|nameko|koreanname)$/.test(label)) return "nameKo";
   if (/^(영문.*|영어명.*|nameen|englishname)$/.test(label)) return "nameEn";
   if (/^(교사|teacher)$/.test(label)) return "teacher";
   if (/^(학점|credits?|학점credits?)$/.test(label)) return "credits";
@@ -95,8 +95,8 @@ function readHeader(cells, grades, priorBlocks) {
   const flat = columns.includes("grade");
   const starts = columns.flatMap((column, i) => column === "track" ? [i] : []);
   const semesterStarts = columns.flatMap((column, i) => column === "s1" || column === "s1Ko" ? [i] : []);
-  if (!columns.some(column => ["amount", "credits", "hours"].includes(column))
-      || !(semesterStarts.length || columns.includes("nameKo") || columns.includes("nameEn") || columns.includes("s2"))) return null;
+  const hasCourseHeading = semesterStarts.length || columns.includes("nameKo") || columns.includes("nameEn") || columns.includes("s2") || columns.includes("s2Ko");
+  if (!hasCourseHeading || !(flat || starts.length || columns.some(column => ["amount", "credits", "hours"].includes(column)))) return null;
   const blockStarts = flat ? [0] : starts.length === grades.length ? starts
     : grades.length === 1 ? [0]
     : semesterStarts.length === grades.length && priorBlocks?.length === grades.length
@@ -151,6 +151,14 @@ function isHeading(value) {
   return /^(?:total\b|sub\s*total\b|합계|소계|총\s*(?:합계|시수|학점)|교육과정\s*합계)/i.test(clean(value));
 }
 
+function optionalNumber(value, label, warn) {
+  const normalized = clean(value).normalize("NFKC");
+  if (!normalized) return "";
+  if (/^\d+(?:\.\d+)?$/.test(normalized) && Number.isFinite(Number(normalized))) return normalized;
+  warn(`${label} 값 ‘${normalized}’은 건너뜁니다. 기존 값은 유지됩니다.`);
+  return "";
+}
+
 function analyzeSchoolSheet(rows, selectedGrades) {
   const entries = [], errors = [], warnings = [];
   const headerTypes = rows[0]?.cells.map(columnType) || [];
@@ -163,12 +171,14 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     const track = trackOf(cells[3]);
     const group = clean(cells[4]);
     const language = languageOf(cells[9]);
-    const credits = clean(cells[11]);
-    const rawClassCount = classCountIndex >= 0 ? clean(cells[classCountIndex]) : "";
+    const warn = message => warnings.push({ line, grade, message });
+    const credits = optionalNumber(cells[11], "학급별 시수", warn);
+    const rawClassCount = optionalNumber(cells[classCountIndex], "반 수", warn);
     const fractionalClassCount = rawClassCount && /^\d+(?:\.\d+)?$/.test(rawClassCount) && !/^\d+$/.test(rawClassCount);
     const classCount = fractionalClassCount ? String(Math.ceil(Number(rawClassCount))) : rawClassCount;
     const teacherLoadIndex = headerTypes.indexOf("teacherLoadHours");
-    const teacherLoadHours = teacherLoadIndex >= 0 ? clean(cells[teacherLoadIndex]) : (fractionalClassCount && credits ? String(Number(rawClassCount) * Number(credits)) : "");
+    const teacherLoadHours = optionalNumber(cells[teacherLoadIndex], "교사시수", warn)
+      || (fractionalClassCount && credits ? String(Number(rawClassCount) * Number(credits)) : "");
     const semesters = [0, 1].map(index => {
       const nameKo = clean(cells[index === 0 ? 5 : 7]);
       const nameEn = clean(cells[index === 0 ? 6 : 8]);
@@ -182,12 +192,10 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     const error = !["교과", "창체"].includes(category) ? "범주를 확인해 주세요."
       : !track || !group ? "구분 또는 교과군이 비어 있습니다."
       : !language ? "수업 언어를 확인해 주세요."
-      : credits && !/^\d+(?:\.\d+)?$/.test(credits) ? "학급별 시수를 숫자로 입력해 주세요."
-      : classCount && !/^\d+(?:\.\d+)?$/.test(classCount) ? "반 수를 숫자로 입력해 주세요."
       : !semesters.some(Boolean) ? "과목명을 확인해 주세요." : "";
     if (error) errors.push({ line, grade, message: error });
     else {
-      if (!credits) warnings.push({ line, grade, message: "학급별 시수가 비어 있어 공란으로 저장됩니다." });
+      if (!clean(cells[11])) warn("학급별 시수가 비어 있어 새 행에는 공란으로 저장됩니다.");
       if (fractionalClassCount) warnings.push({ line, grade, message: `원본 반 수 ${rawClassCount}를 운영 반 수 ${classCount}로 반올림하고 교사시수 ${teacherLoadHours || "미입력"}를 별도로 반영합니다.` });
       const semesterReporting = [0, 1].map(term => {
         const values = reportingRequirements(field => { const index = nthIndex(headerTypes, field, term); return index >= 0 ? cells[index] : ""; });
@@ -222,9 +230,8 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
     const header = readHeader(cells, gradeLabels.length ? gradeLabels : grades, blocks);
     if (header?.length) {
       foundHeader = true;
-      if (header.some(({ indices }) => !["amount", "credits", "hours"].some(column => indices[column] !== undefined)
-          || !["nameKo", "nameEn", "s1", "s1Ko", "s1En", "s2", "s2Ko", "s2En"].some(column => indices[column] !== undefined))) {
-        errors.push({ line, message: "학년별 과목명과 학점 또는 시간 열을 모두 포함해 다시 복사해 주세요." });
+      if (header.some(({ indices }) => !["nameKo", "nameEn", "s1", "s1Ko", "s1En", "s2", "s2Ko", "s2En"].some(column => indices[column] !== undefined))) {
+        errors.push({ line, message: "이 구역은 과목명 열을 찾지 못해 건너뜁니다." });
         blocks = null;
         continue;
       }
@@ -281,22 +288,23 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
       });
       if (!semesters.some(Boolean)) continue;
       const category = prior.category || section || "교과";
-      const amount = category === "창체" ? get("hours") || get("amount") || get("credits") : get("credits") || get("amount");
-      const rawClassCount = get("classCount");
+      const warn = message => warnings.push({ line, grade: currentGrade, message });
+      const rawAmount = category === "창체" ? get("hours") || get("amount") || get("credits") : get("credits") || get("amount");
+      const amount = optionalNumber(rawAmount, "학점 또는 시간", warn);
+      const rawClassCount = optionalNumber(get("classCount"), "반 수", warn);
       const fractionalClassCount = rawClassCount && /^\d+(?:\.\d+)?$/.test(rawClassCount) && !/^\d+$/.test(rawClassCount);
       const classCount = fractionalClassCount ? String(Math.ceil(Number(rawClassCount))) : rawClassCount;
-      const teacherLoadHours = get("teacherLoadHours") || (fractionalClassCount && amount ? String(Number(rawClassCount) * Number(amount)) : "");
+      const teacherLoadHours = optionalNumber(get("teacherLoadHours"), "교사시수", warn)
+        || (fractionalClassCount && amount ? String(Number(rawClassCount) * Number(amount)) : "");
       const track = prior.track || (category === "창체" ? "공통" : "");
       const language = languageOf(get("language"));
       const error = !currentGrade || (explicitGrade && !gradeOf(explicitGrade)) ? "학년을 확인해 주세요."
         : !selectedGrades.includes(currentGrade) ? "선택한 학년 탭의 범위를 벗어났습니다."
         : !track || !prior.group ? "구분 또는 교과군이 비어 있습니다."
-        : !language ? "수업 언어를 확인해 주세요."
-        : amount && !/^\d+(?:\.\d+)?$/.test(amount) ? "학점 또는 시간을 숫자로 입력해 주세요."
-        : classCount && !/^\d+(?:\.\d+)?$/.test(classCount) ? "반 수를 숫자로 입력해 주세요." : "";
+        : !language ? "수업 언어를 확인해 주세요." : "";
       if (error) errors.push({ line, grade: currentGrade, message: error });
       else {
-        if (!amount) warnings.push({ line, grade: currentGrade, message: "학점 또는 시간이 비어 있어 공란으로 저장됩니다." });
+        if (!rawAmount) warn("학점 또는 시간이 비어 있어 새 행에는 공란으로 저장됩니다.");
         if (fractionalClassCount) warnings.push({ line, grade: currentGrade, message: `원본 반 수 ${rawClassCount}를 운영 반 수 ${classCount}로 반올림하고 교사시수 ${teacherLoadHours || "미입력"}를 별도로 반영합니다.` });
         const reporting = reportingRequirements(get);
         entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, classCount, classCountSource: rawClassCount, teacherLoadHours, reporting, semesterReporting: [reporting, reporting], semesters });
@@ -325,29 +333,75 @@ function matchesCard(template, entry, getSemester) {
 
 export function planCurriculumPaste(entries, curriculum, templates, getSemester) {
   const byId = new Map(templates.map(template => [template.id, template]));
-  const pending = [];
-  return entries.map(entry => {
-    const samePlacement = row => ["category", "track", "group"].every(field => key(row[field]) === key(entry[field]));
-    const overlaps = semesters => entry.semesters.some((subject, i) => sameSubject(subject, semesters[i]));
-    const inBoard = (curriculum.gradeBoards[entry.grade] || []).find(row =>
-      samePlacement(row) && overlaps([row.sem1TemplateId, row.sem2TemplateId].map((id, index) => getSemester(byId.get(id), index))));
-    if (inBoard) {
-      const ids = [inBoard.sem1TemplateId, inBoard.sem2TemplateId].filter(Boolean);
-      const matchedId = [inBoard.sem1TemplateId, inBoard.sem2TemplateId].find((id, index) =>
-        id && sameSubject(entry.semesters[index], getSemester(byId.get(id), index)));
-      return { ...entry, status: "기존 행과 중복", templateId: matchedId || ids[0] || null };
+  const usage = new Map();
+  const cardIds = row => [row.sem1TemplateId || null, row.sem2TemplateId || null];
+  for (const boards of [curriculum.gradeBoards, curriculum.threeYear?.gradeBoards]) {
+    for (const row of Object.values(boards || {}).flat()) {
+      for (const id of new Set(cardIds(row).filter(Boolean))) usage.set(id, (usage.get(id) || 0) + 1);
     }
-    const pendingMatch = pending.find(row => row.grade === entry.grade && samePlacement(row) && overlaps(row.semesters));
-    if (pendingMatch) {
-      return { ...entry, status: "붙여넣기 내 중복", newCardKey: JSON.stringify(curriculumPasteTemplate(pendingMatch)) };
+  }
+  const pending = [];
+  const rows = entries.map((entry, index) => {
+    const samePlacement = row => ["category", "track", "group"].every(field => key(row[field]) === key(entry[field]));
+    const exact = semesters => entry.semesters.every((subject, i) => subject
+      ? sameSubject(subject, semesters[i]) : !semesters[i]);
+    const placed = (curriculum.gradeBoards[entry.grade] || []).filter(samePlacement).map(row => {
+      const ids = cardIds(row);
+      return { ids, semesters: ids.map((id, i) => byId.has(id) ? getSemester(byId.get(id), i) : null) };
+    });
+    const boardMatches = placed.filter(match => exact(match.semesters));
+    if (boardMatches.length) {
+      const teachersMatch = boardMatches.filter(({ semesters }) => entry.semesters.every((subject, i) =>
+        !subject?.teacher || key(subject.teacher) === key(semesters[i]?.teacher)));
+      const candidates = teachersMatch.length ? teachersMatch : boardMatches;
+      const match = candidates.length === 1 ? candidates[0] : null;
+      const safe = match?.ids.filter(Boolean).every(id => usage.get(id) === 1 && !byId.get(id)?.sharedCardId && !byId.get(id)?.isCompound);
+      if (!safe) return { ...entry, status: match ? "공유·복합 카드 · 기존 값 유지" : "일치 후보 여러 개 · 건너뜀" };
+      const teacherChanges = entry.semesters.map((subject, i) =>
+        subject?.teacher && key(subject.teacher) !== key(match.semesters[i]?.teacher) ? subject.teacher : "");
+      return { ...entry, status: "기존 행", existingIds: match.ids, teacherChanges, previousSemesters: match.semesters };
+    }
+    if (placed.some(({ semesters }) => entry.semesters.some((subject, i) => sameSubject(subject, semesters[i])))) {
+      return { ...entry, status: "한 학기만 일치 · 건너뜀" };
+    }
+    if (pending.some(row => row.grade === entry.grade && samePlacement(row) && exact(row.semesters) &&
+      row.semesters.every((subject, i) => key(subject?.teacher) === key(entry.semesters[i]?.teacher)))) {
+      return { ...entry, status: "붙여넣기 내 중복" };
     }
     pending.push(entry);
-    const matches = templates.filter(template => matchesCard(template, entry, getSemester));
+    const hasMetadata = entry.classCount || entry.teacherLoadHours || entry.semesterReporting?.some(report => Object.keys(report || {}).length);
+    const matches = hasMetadata ? [] : templates.filter(template => matchesCard(template, entry, getSemester));
     return {
       ...entry, status: "추가", templateId: matches.length === 1 ? matches[0].id : null,
-      newCardKey: JSON.stringify(curriculumPasteTemplate(entry)),
+      newCardKey: index,
     };
   });
+  const claimed = new Map();
+  for (const row of rows) {
+    for (const id of new Set(row.existingIds?.filter(Boolean))) claimed.set(id, (claimed.get(id) || 0) + 1);
+  }
+  return rows.map(row => {
+    if (!row.existingIds) return row;
+    if (row.existingIds.some(id => claimed.get(id) > 1)) {
+      return { ...row, existingIds: null, status: "같은 기존 카드 · 건너뜀" };
+    }
+    return row;
+  });
+}
+
+export function replaceImportedTeachers(template, names) {
+  // Reset old identity snapshots before resolving the imported names.
+  const [first, second] = names;
+  const sharedTeacher = first === second;
+  template.teacher = sharedTeacher ? first : "";
+  template.sem1Teacher = sharedTeacher ? "" : first;
+  template.sem2Teacher = sharedTeacher ? "" : second;
+  for (const prefix of ["", "sem1", "sem2"]) {
+    template[prefix ? `${prefix}TeacherIds` : "teacherIds"] = [];
+    template[prefix ? `${prefix}TeacherNames` : "teacherNames"] = [];
+  }
+  template.useSemesterOverrides = !sharedTeacher ||
+    ["sem1NameKo", "sem1NameEn", "sem2NameKo", "sem2NameEn"].some(field => clean(template[field]));
 }
 
 export function curriculumPasteTemplate(entry) {
