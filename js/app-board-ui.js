@@ -4,6 +4,7 @@
 import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
+import { renderThreeYearBoard, clearThreeYearCache } from "./three-year-board.js?v=r402";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
@@ -51,6 +52,11 @@ export function setupAppBoardUi({
     if (!gradeBoard || typeof buildTabBoard !== "function") return;
 
     const tab = activeTab;
+    if (getCurriculumMode() === "threeYear") {
+      void renderThreeYearBoard(gradeBoard, GRADE_GROUPS[tab]);
+      return;
+    }
+    gradeBoard.classList.remove("three-year-board");
     if (!dirtyTabs.has(tab) && tabBoardCache[tab]) {
       gradeBoard.innerHTML = "";
       tabBoardCache[tab].forEach(el => gradeBoard.appendChild(el));
@@ -71,6 +77,7 @@ export function setupAppBoardUi({
 
   function renderTabButtons() {
     const planning = getCurriculumMode() === "threeYear";
+    document.body.classList.toggle("three-year-mode", planning);
     tab7to9Btn?.classList.toggle("active", activeTab === "tab7to9");
     tab10to12Btn?.classList.toggle("active", activeTab === "tab10to12");
     if (tab7to9Btn) tab7to9Btn.textContent = planning ? "중학교 3개년 · 7→9학년" : "7 · 8 · 9";
@@ -215,6 +222,10 @@ ${error?.message || error}`);
     });
   }
 
+  document.addEventListener("his:three-year-changed", () => {
+    clearThreeYearCache();
+    if (getCurriculumMode() === "threeYear") renderBoardTab();
+  });
   resetBoardBtn?.addEventListener("click", () => { void resetBoard(); });
   exportXlsxBtn?.addEventListener("click", () => {
     if (typeof exportXLSX === "function") exportXLSX(activeTab);
