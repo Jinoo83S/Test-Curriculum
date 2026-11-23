@@ -8480,7 +8480,6 @@ body.his-dev-tools-off .developer-toggle-btn {
 /* Three-year view shares the annual board columns, rows, cards and summaries. */
 body.three-year-mode .page:not(.sidebar-hidden){grid-template-columns:var(--sidebar-width,320px) minmax(0,1fr)!important}
 body.three-year-mode .page.sidebar-hidden{grid-template-columns:0px minmax(0,1fr)!important}
-body.three-year-mode #navManagerBtn,
 body.three-year-mode #topbarMainNav [data-section]:not([data-section="curriculum"]){display:none!important}
 body.three-year-mode .drop-cell.empty::after{display:none}
 body.three-year-mode .placed-card{cursor:pointer}
@@ -8521,3 +8520,46 @@ body.three-year-mode .grade-footer.three-year-drop-ready{background:#dbeafe;outl
 .three-year-card-year-target{min-width:0;width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px}
 .three-year-card-year-status{grid-column:2;color:#475569;font-size:10px}
 @media(max-width:650px){.three-year-card-year-row{grid-template-columns:1fr}.three-year-card-year-status{grid-column:1}}
+
+/* Curriculum board integrity results. */
+.curriculum-audit-panel{margin:5px 10px 9px;padding:10px 12px;border:1px solid #bfdbfe;border-radius:10px;background:#f8fbff;max-height:260px;overflow:auto}
+.curriculum-audit-panel h2{margin:0 0 6px;font-size:15px;color:#1e3a5f}
+.curriculum-audit-panel h3{margin:9px 0 5px;font-size:12px;color:#334155}
+.curriculum-audit-description{margin:3px 0 6px;color:#64748b;font-size:11px}
+.curriculum-audit-issues{margin:5px 0;padding-left:20px;display:grid;gap:4px}
+.curriculum-audit-issues li{padding:4px 6px;font-size:11px;line-height:1.5}
+.curriculum-audit-issues li.audit-error{background:#fff1f2;color:#9f1239}
+.curriculum-audit-issues li.audit-warning{background:#fffbeb;color:#92400e}
+.curriculum-audit-issues button{margin-left:8px;padding:3px 7px!important;font-size:10px!important}
+.curriculum-audit-year-link{display:inline-flex;margin:5px 0;padding:5px 8px;text-decoration:none;font-size:11px}
+.curriculum-audit-highlight{outline:3px solid #f59e0b!important;outline-offset:-2px;background:#fffbeb!important}
+/* Three-year subject cards by academic year and assigned state. */
+body.three-year-mode.three-year-card-manager-active .page{grid-template-columns:minmax(0,1fr)!important}
+body.three-year-mode.three-year-card-manager-active #appSidebar{display:none!important}
+.three-year-manager-content{padding:9px;overflow:auto;height:100%}
+.three-year-manager-toolbar{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.three-year-manager-toolbar input{width:min(280px,40vw)}
+.three-year-manager-toolbar select{height:30px;padding:4px 7px;border:1px solid #cbd5e1;border-radius:7px}
+.three-year-manager-status{font-size:11px;color:#475569}
+.three-year-manager-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start}
+.three-year-manager-column{min-width:0;border:1px solid #c7d2e8;border-radius:9px;background:#fff;overflow:hidden}
+.three-year-manager-heading{display:flex;justify-content:space-between;align-items:center;gap:5px;padding:9px;background:#1e3a5f;color:#fff}
+.three-year-manager-heading h3{margin:0;font-size:13px}
+.three-year-manager-heading button{padding:4px 6px!important;font-size:10px}
+.three-year-manager-group{padding:8px;overflow-x:auto}
+.three-year-manager-group h4{margin:0 0 6px;padding:5px 7px;border-radius:5px;background:#e9f2ff;color:#1e3a5f;font-size:11px}
+.three-year-manager-table{width:100%;border-collapse:collapse;font-size:11px}
+.three-year-manager-table th,.three-year-manager-table td{padding:5px 4px;border-bottom:1px solid #e2e8f0;text-align:left;vertical-align:middle}
+.three-year-manager-table th{white-space:nowrap;background:#f8fafc;color:#475569}
+.three-year-manager-table td strong{display:block;min-width:65px;overflow:hidden;text-overflow:ellipsis}
+.three-year-manager-table td small{display:block;color:#64748b}
+.three-year-manager-table td button{padding:3px 5px!important;font-size:10px!important}
+@media(max-width:1150px){.three-year-manager-columns{grid-template-columns:1fr}}
+
+.three-year-manager-toolbar button.active{background:#1d4ed8!important;color:#fff!important}
+
+.three-year-manager-heading{flex-wrap:wrap}
+.three-year-manager-heading button{white-space:nowrap}
+.three-year-manager-input{box-sizing:border-box;width:100%;min-width:90px;padding:4px 5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;font-size:11px}
+.three-year-manager-input:focus{outline:2px solid #2563eb}
+.three-year-manager-table td:nth-child(1),.three-year-manager-table td:nth-child(2){min-width:100px}
