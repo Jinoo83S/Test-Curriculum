@@ -31,10 +31,10 @@ function renderSetupLevelTabs(onChange) {
   return tabs;
 }
 import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=r419";
-import { appState } from "./state.js?v=r423";
+import { canEdit } from "./auth.js?v=r424";
+import { appState } from "./state.js?v=r424";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
-import { getRosterMeta, setRosterClassCount, getClassCount } from "./rosters.js?v=2026-07-15-room-availability-separation-r355";
+import { getRosterMeta, setRosterClassCount, setRosterTeacherLoadHours, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r424";
 
 // ── Build rows from curriculum IN BOARD ORDER ─────────────────────
 function buildRows(gradeKeys = GRADE_KEYS) {
@@ -107,11 +107,12 @@ export function renderSubjectSetupView(container) {
     <th class="ss-th-teacher">교사</th>
     <th class="ss-th-credits">시수</th>
     <th class="ss-th-count">반 수</th>
+    <th class="ss-th-count">교사시수</th>
     <th class="ss-th-preview">반</th>
   </tr></thead>`;
 
   const tbody = document.createElement("tbody");
-  const COL_COUNT = 8;
+  const COL_COUNT = 9;
   const grouped = groupByGradeTrack(rows);
 
   activeGrades.forEach(gradeKey => {
@@ -184,6 +185,7 @@ export function renderSubjectSetupView(container) {
         const tdCnt = document.createElement("td"); tdCnt.className = "ss-td-count";
         const inp = document.createElement("input"); inp.type = "number"; inp.min = "0"; inp.max = "20";
         inp.className = "ss-count-input"; inp.disabled = !canEdit();
+        inp.id = `class-count-${r.tplId}`; inp.name = `classCount_${r.tplId}`;
         inp.value = getRosterMeta(r.tplId).classCount || ""; inp.placeholder = "0";
         const preview = document.createElement("td"); preview.className = "ss-td-preview";
         inp.addEventListener("change", e => {
@@ -195,6 +197,15 @@ export function renderSubjectSetupView(container) {
         tdCnt.appendChild(inp);
         updateMissingClassCountState(tr, tdCnt, r.tplId);
         tr.appendChild(tdCnt);
+
+        const tdLoad = document.createElement("td"); tdLoad.className = "ss-td-count";
+        const loadInput = document.createElement("input"); loadInput.type = "number"; loadInput.min = "0"; loadInput.step = "0.5";
+        loadInput.className = "ss-count-input"; loadInput.disabled = !canEdit();
+        loadInput.value = getRosterMeta(r.tplId).teacherLoadHours || "";
+        loadInput.placeholder = String(getTeacherLoadHours(r.tplId, r.credits) || "자동");
+        loadInput.id = `teacher-load-${r.tplId}`; loadInput.name = `teacherLoad_${r.tplId}`;
+        loadInput.addEventListener("change", event => setRosterTeacherLoadHours(r.tplId, event.target.value));
+        tdLoad.appendChild(loadInput); tr.appendChild(tdLoad);
 
         // 반 preview
         renderPreview(preview, r.tplId);

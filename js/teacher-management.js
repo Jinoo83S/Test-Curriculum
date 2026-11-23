@@ -1,10 +1,14 @@
-import { login, logout, onAuth } from "./auth.js?v=r419";
+import { login, logout, onAuth } from "./auth.js?v=r424";
 import { ACTIVE_SCHOOL_YEAR, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
-import { readTeacherPortalAccess, normalizePortalRole } from "./teacher-portal-auth.js?v=r419";
+import { readTeacherPortalAccess, normalizePortalRole } from "./teacher-portal-auth.js?v=r424";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const byId = id => document.getElementById(id);
+const withTimeout = (promise, milliseconds, message) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(message)), milliseconds)),
+]);
 const clean = value => String(value || "").trim();
 const normalizeEmail = value => clean(value).toLocaleLowerCase();
 let teachers = [];
@@ -32,9 +36,9 @@ function renderRows() {
   teachers.forEach((teacher, index) => {
     const row = document.createElement("tr");
     const fields = [["name","이름","text"],["email","name@his.sc.kr","email"],["note","메모","text"]];
-    fields.forEach(([key, placeholder, type]) => { const td=document.createElement("td"); const input=document.createElement("input"); input.type=type; input.value=teacher[key]||""; input.placeholder=placeholder; input.addEventListener("input",()=>{ teacher[key]=input.value; markDirty(); }); td.append(input); row.append(td); });
-    const roleTd=document.createElement("td"); const role=document.createElement("select"); [["basic","기본"],["curriculum","커리큘럼"],["admin","관리자"]].forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;option.selected=normalizePortalRole(teacher.accessRole)===value;role.append(option);}); role.addEventListener("change",()=>{teacher.accessRole=role.value;markDirty();});roleTd.append(role);row.append(roleTd);
-    const statusTd=document.createElement("td"); const statusLabel=document.createElement("label"); statusLabel.className="teacher-status"; const enabled=document.createElement("input");enabled.type="checkbox";enabled.checked=!teacher.portalDisabled;enabled.addEventListener("change",()=>{teacher.portalDisabled=!enabled.checked;markDirty();});statusLabel.append(enabled,document.createTextNode("사용"));statusTd.append(statusLabel);row.append(statusTd);
+    fields.forEach(([key, placeholder, type]) => { const td=document.createElement("td"); const input=document.createElement("input"); input.type=type; input.id=`teacher-${key}-${teacher.id}`; input.name=`teacher_${key}_${teacher.id}`; input.value=teacher[key]||""; input.placeholder=placeholder; input.addEventListener("input",()=>{ teacher[key]=input.value; markDirty(); }); td.append(input); row.append(td); });
+    const roleTd=document.createElement("td"); const role=document.createElement("select"); role.id=`teacher-role-${teacher.id}`;role.name=`teacher_role_${teacher.id}`; [["basic","기본"],["curriculum","커리큘럼"],["admin","관리자"]].forEach(([value,label])=>{const option=document.createElement("option");option.value=value;option.textContent=label;option.selected=normalizePortalRole(teacher.accessRole)===value;role.append(option);}); role.addEventListener("change",()=>{teacher.accessRole=role.value;markDirty();});roleTd.append(role);row.append(roleTd);
+    const statusTd=document.createElement("td"); const statusLabel=document.createElement("label"); statusLabel.className="teacher-status"; const enabled=document.createElement("input");enabled.type="checkbox";enabled.id=`teacher-enabled-${teacher.id}`;enabled.name=`teacher_enabled_${teacher.id}`;enabled.checked=!teacher.portalDisabled;enabled.addEventListener("change",()=>{teacher.portalDisabled=!enabled.checked;markDirty();});statusLabel.append(enabled,document.createTextNode("사용"));statusTd.append(statusLabel);row.append(statusTd);
     const deleteTd=document.createElement("td"); const remove=document.createElement("button");remove.type="button";remove.className="portal-btn teacher-delete-btn";remove.textContent="삭제";remove.addEventListener("click",()=>{if(!confirm(`${teacher.name||teacher.email||"이 교사"}를 교사목록에서 삭제할까요?\n연결된 과목이 있다면 담당 교사 연결을 다시 확인해야 합니다.`))return;teachers.splice(index,1);markDirty();renderRows();});deleteTd.append(remove);row.append(deleteTd); body.append(row);
   });
 }
@@ -64,6 +68,6 @@ setupYearSelector();setupControls();
 onAuth(async user => {
   byId("portalAuthStatus").textContent=user?.email||"로그인 필요";setVisible("portalLoginBtn",!user);setVisible("portalLogoutBtn",!!user);
   if(!user){showGate("portalSignedOut");return;}showGate("portalLoading");
-  try { const access=await readTeacherPortalAccess(user);if(!access.allowed||!access.isAdmin){showGate("portalDenied",access.reason||"관리자 권한이 필요합니다.");return;}const snapshot=await getDoc(getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains.teachers);teachers=snapshot.exists()&&Array.isArray(snapshot.data()?.teachers)?structuredClone(snapshot.data().teachers):[];teachers.forEach(t=>{t.accessRole=normalizePortalRole(t.accessRole);t.portalDisabled=t.portalDisabled===true;});renderRows();setStatus(`총 ${teachers.length}명`);showGate("teacherAdminApp"); }
+  try { const access=await readTeacherPortalAccess(user);if(!access.allowed||!access.isAdmin){showGate("portalDenied",access.reason||"관리자 권한이 필요합니다.");return;}const snapshot=await withTimeout(getDoc(getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains.teachers),12000,"Firebase 교사목록을 불러오는 시간이 초과되었습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.");teachers=snapshot.exists()&&Array.isArray(snapshot.data()?.teachers)?structuredClone(snapshot.data().teachers):[];teachers.forEach(t=>{t.accessRole=normalizePortalRole(t.accessRole);t.portalDisabled=t.portalDisabled===true;});renderRows();setStatus(`총 ${teachers.length}명`);showGate("teacherAdminApp"); }
   catch(error){console.error("[teacher management]",error);showGate("portalDenied",`자료를 불러오지 못했습니다: ${error?.message||error}`);}
 });

@@ -1,7 +1,7 @@
 // ================================================================
 // app-students-ui.js · Student Management UI Coordinator
 // ================================================================
-import { scheduleSave } from "./state.js?v=r423";
+import { scheduleSave } from "./state.js?v=r424";
 
 const $ = id => document.getElementById(id);
 

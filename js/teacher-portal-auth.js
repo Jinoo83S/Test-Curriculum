@@ -7,6 +7,10 @@ export const normalizePortalRole = value => ["basic", "curriculum", "admin"].inc
 export const TEACHER_PORTAL_ADMIN_EMAILS = new Set([
   "jinwoosuk@his.sc.kr",
 ]);
+const withTimeout = (promise, milliseconds, message) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(message)), milliseconds)),
+]);
 
 export async function readTeacherPortalAccess(user, year = ACTIVE_SCHOOL_YEAR) {
   const email = normalizePortalEmail(user?.email);
@@ -22,7 +26,7 @@ export async function readTeacherPortalAccess(user, year = ACTIVE_SCHOOL_YEAR) {
     teachers: [],
   };
   const ref = getSchoolYearRefs(year).domains.teachers;
-  const snapshot = await getDoc(ref);
+  const snapshot = await withTimeout(getDoc(ref), 10000, "교사목록을 불러오는 시간이 초과되었습니다. 새로고침 후 다시 시도해 주세요.");
   const teachers = snapshot.exists() && Array.isArray(snapshot.data()?.teachers) ? snapshot.data().teachers : [];
   const teacher = teachers.find(item => normalizePortalEmail(item?.email) === email) || null;
   if (teacher?.portalDisabled) return { allowed: false, reason: `${email} 계정의 포털 접근이 중지되었습니다.`, teachers };

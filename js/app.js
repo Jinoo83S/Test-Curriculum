@@ -4,14 +4,14 @@
 // 이 파일은 앱 전체 초기화만 담당합니다.
 // 화면별 UI, 도메인 구독, 지연 로딩, 렌더링은 전용 모듈로 분리되어 있습니다.
 
-import { onAuth, canEdit } from "./auth.js?v=r419";
+import { onAuth, canEdit } from "./auth.js?v=r424";
 import { getCurriculumMode, setCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=r423";
+import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=r424";
 import { versioned } from "./version.js?v=2026-07-15-room-availability-separation-r355";
 import { createAppModuleLoader } from "./app-module-loader.js?v=2026-07-15-room-availability-separation-r355";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=r414";

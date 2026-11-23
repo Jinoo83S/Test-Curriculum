@@ -61,6 +61,7 @@ function columnType(value) {
   if (/^(학점|credits?|학점credits?)$/.test(label)) return "credits";
   if (/^(시간|hours?|시간hours?)$/.test(label)) return "hours";
   if (/^(시수|수업시수|학점시수|시수학점)$/.test(label)) return "amount";
+  if (/^(과목별시수(?:totalclasshours)?|totalclasshours|teachertotalhours|교사시수)$/.test(label)) return "teacherLoadHours";
   if (/^(원점수(?:rawscore)?|rawscore)$/.test(label)) return "reportRawScore";
   if (/^((?:과목평균|평균)(?:average)?|average|subjectaverage)$/.test(label)) return "reportAverage";
   if (/^(표준편차(?:standarddeviation)?|standarddeviation|stddev)$/.test(label)) return "reportStandardDeviation";
@@ -163,7 +164,11 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     const group = clean(cells[4]);
     const language = languageOf(cells[9]);
     const credits = clean(cells[11]);
-    const classCount = classCountIndex >= 0 ? clean(cells[classCountIndex]) : "";
+    const rawClassCount = classCountIndex >= 0 ? clean(cells[classCountIndex]) : "";
+    const fractionalClassCount = rawClassCount && /^\d+(?:\.\d+)?$/.test(rawClassCount) && !/^\d+$/.test(rawClassCount);
+    const classCount = fractionalClassCount ? String(Math.ceil(Number(rawClassCount))) : rawClassCount;
+    const teacherLoadIndex = headerTypes.indexOf("teacherLoadHours");
+    const teacherLoadHours = teacherLoadIndex >= 0 ? clean(cells[teacherLoadIndex]) : (fractionalClassCount && credits ? String(Number(rawClassCount) * Number(credits)) : "");
     const semesters = [0, 1].map(index => {
       const nameKo = clean(cells[index === 0 ? 5 : 7]);
       const nameEn = clean(cells[index === 0 ? 6 : 8]);
@@ -171,7 +176,6 @@ function analyzeSchoolSheet(rows, selectedGrades) {
       const names = cells.slice(firstTeacherIndex, firstTeacherIndex + 3).map(clean).filter(Boolean);
       return nameKo || nameEn ? { nameKo, nameEn, teacher: [...new Set(names)].join(", ") } : null;
     });
-    const fractionalClassCount = classCount && /^\d+(?:\.\d+)?$/.test(classCount) && !/^\d+$/.test(classCount);
     const error = !["교과", "창체"].includes(category) ? "범주를 확인해 주세요."
       : !track || !group ? "구분 또는 교과군이 비어 있습니다."
       : !language ? "수업 언어를 확인해 주세요."
@@ -181,7 +185,7 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     if (error) errors.push({ line, grade, message: error });
     else {
       if (!credits) warnings.push({ line, grade, message: "학급별 시수가 비어 있어 공란으로 저장됩니다." });
-      if (fractionalClassCount) warnings.push({ line, grade, message: `반 수 ${classCount}는 정수가 아니므로 과목 설정 반 수 반영에서만 제외됩니다.` });
+      if (fractionalClassCount) warnings.push({ line, grade, message: `원본 반 수 ${rawClassCount}를 운영 반 수 ${classCount}로 반올림하고 교사시수 ${teacherLoadHours || "미입력"}를 별도로 반영합니다.` });
       const semesterReporting = [0, 1].map(term => {
         const values = reportingRequirements(field => { const index = nthIndex(headerTypes, field, term); return index >= 0 ? cells[index] : ""; });
         const categoryIndex = nthIndex(headerLabels, "구분category", term);
@@ -189,7 +193,7 @@ function analyzeSchoolSheet(rows, selectedGrades) {
         return values;
       });
       const reporting = semesterReporting[0];
-      entries.push({ line, grade, category, track, group, language, credits, classCount, reporting, semesterReporting, semesters });
+      entries.push({ line, grade, category, track, group, language, credits, classCount, classCountSource: rawClassCount, teacherLoadHours, reporting, semesterReporting, semesters });
     }
   }
   if (!entries.length && !errors.length) errors.push({ message: "선택한 학년 탭에 해당하는 과목이 없습니다." });
@@ -275,10 +279,12 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
       if (!semesters.some(Boolean)) continue;
       const category = prior.category || section || "교과";
       const amount = category === "창체" ? get("hours") || get("amount") || get("credits") : get("credits") || get("amount");
-      const classCount = get("classCount");
+      const rawClassCount = get("classCount");
+      const fractionalClassCount = rawClassCount && /^\d+(?:\.\d+)?$/.test(rawClassCount) && !/^\d+$/.test(rawClassCount);
+      const classCount = fractionalClassCount ? String(Math.ceil(Number(rawClassCount))) : rawClassCount;
+      const teacherLoadHours = get("teacherLoadHours") || (fractionalClassCount && amount ? String(Number(rawClassCount) * Number(amount)) : "");
       const track = prior.track || (category === "창체" ? "공통" : "");
       const language = languageOf(get("language"));
-      const fractionalClassCount = classCount && /^\d+(?:\.\d+)?$/.test(classCount) && !/^\d+$/.test(classCount);
       const error = !currentGrade || (explicitGrade && !gradeOf(explicitGrade)) ? "학년을 확인해 주세요."
         : !selectedGrades.includes(currentGrade) ? "선택한 학년 탭의 범위를 벗어났습니다."
         : !track || !prior.group ? "구분 또는 교과군이 비어 있습니다."
@@ -288,9 +294,9 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
       if (error) errors.push({ line, grade: currentGrade, message: error });
       else {
         if (!amount) warnings.push({ line, grade: currentGrade, message: "학점 또는 시간이 비어 있어 공란으로 저장됩니다." });
-        if (fractionalClassCount) warnings.push({ line, grade: currentGrade, message: `반 수 ${classCount}는 정수가 아니므로 과목 설정 반 수 반영에서만 제외됩니다.` });
+        if (fractionalClassCount) warnings.push({ line, grade: currentGrade, message: `원본 반 수 ${rawClassCount}를 운영 반 수 ${classCount}로 반올림하고 교사시수 ${teacherLoadHours || "미입력"}를 별도로 반영합니다.` });
         const reporting = reportingRequirements(get);
-        entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, classCount, reporting, semesterReporting: [reporting, reporting], semesters });
+        entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, classCount, classCountSource: rawClassCount, teacherLoadHours, reporting, semesterReporting: [reporting, reporting], semesters });
       }
     }
   }

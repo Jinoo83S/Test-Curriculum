@@ -3,8 +3,8 @@
 // ================================================================
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=r419";
-import { appState, scheduleSave } from "./state.js?v=r423";
+import { canEdit } from "./auth.js?v=r424";
+import { appState, scheduleSave } from "./state.js?v=r424";
 import { getClasses, getClassById } from "./students.js?v=2026-07-15-room-availability-separation-r355";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 
@@ -71,10 +71,15 @@ export function getRosterSection(templateId, sIdx, gradeKey = null) {
 }
 export function getRosterMeta(templateId) {
   const meta = rosterMeta()[templateId] || {};
-  return { classCount: cleanMetaValue(meta.classCount), missingExcluded: !!meta.missingExcluded };
+  return { classCount: cleanMetaValue(meta.classCount), teacherLoadHours: cleanMetaValue(meta.teacherLoadHours), missingExcluded: !!meta.missingExcluded };
 }
 function cleanMetaValue(value) { return String(value ?? "").trim(); }
 export function getClassCount(templateId) { return Math.max(0, parseInt(getRosterMeta(templateId).classCount, 10) || 0); }
+export function getTeacherLoadHours(templateId, credits = 0) {
+  const explicit = Number(getRosterMeta(templateId).teacherLoadHours);
+  if (Number.isFinite(explicit) && explicit >= 0 && getRosterMeta(templateId).teacherLoadHours !== "") return explicit;
+  return getClassCount(templateId) * (Number(credits) || 0);
+}
 export function isMissingRosterExcluded(templateId) { return !!getRosterMeta(templateId).missingExcluded; }
 export function isRosterMissing(templateId) {
   return filterRosterEntriesByActiveLevel(getRoster(templateId)).length <= 0 && !isMissingRosterExcluded(templateId);
@@ -83,6 +88,12 @@ export function setRosterClassCount(templateId, value) {
   if (!canEdit()) return;
   if (!rosterMeta()[templateId]) rosterMeta()[templateId] = {};
   rosterMeta()[templateId].classCount = value;
+  scheduleSave("rosters");
+}
+export function setRosterTeacherLoadHours(templateId, value) {
+  if (!canEdit()) return;
+  if (!rosterMeta()[templateId]) rosterMeta()[templateId] = {};
+  rosterMeta()[templateId].teacherLoadHours = value;
   scheduleSave("rosters");
 }
 export function setMissingRosterExcluded(templateId, excluded) {

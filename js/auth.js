@@ -13,6 +13,10 @@ const FIXED_PORTAL_ADMINS = new Set(["jinwoosuk@his.sc.kr"]);
 const normalizeEmail = value => String(value || "").trim().toLocaleLowerCase();
 const normalizeRole = value => ["basic", "curriculum", "admin"].includes(value) ? value : "basic";
 let currentAccessRole = LOCAL_DEV_MODE ? "admin" : "none";
+const withTimeout = (promise, milliseconds, message) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(message)), milliseconds)),
+]);
 
 export const getCurrentAccessRole = () => currentAccessRole;
 export const canAccessCurriculum = () => LOCAL_DEV_MODE || ["curriculum", "admin"].includes(currentAccessRole);
@@ -25,7 +29,7 @@ async function resolveAccessRole(user) {
   if (FIXED_PORTAL_ADMINS.has(email)) return "admin";
   if (!email.endsWith("@his.sc.kr")) return "none";
   try {
-    const snapshot = await getDoc(getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains.teachers);
+    const snapshot = await withTimeout(getDoc(getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains.teachers), 10000, "교사 권한 확인 시간이 초과되었습니다.");
     const teachers = snapshot.exists() && Array.isArray(snapshot.data()?.teachers) ? snapshot.data().teachers : [];
     const teacher = teachers.find(item => normalizeEmail(item?.email) === email);
     if (!teacher || teacher.portalDisabled) return "none";

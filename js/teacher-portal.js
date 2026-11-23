@@ -1,11 +1,15 @@
-import { login, logout, onAuth } from "./auth.js?v=r419";
+import { login, logout, onAuth } from "./auth.js?v=r424";
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r421";
+import { readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);
+const withTimeout = (promise, milliseconds, message) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(message)), milliseconds)),
+]);
 const clean = value => String(value ?? "").trim();
 const unique = values => [...new Set(values.filter(Boolean))];
 let authSerial = 0;
@@ -163,9 +167,9 @@ function safeUrl(value) {
 
 async function startChecklist(access, user) {
   const refs = getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains;
-  const [curriculumSnap, templatesSnap, savedSnap, personalSnap] = await Promise.all([
+  const [curriculumSnap, templatesSnap, savedSnap, personalSnap] = await withTimeout(Promise.all([
     getDoc(refs.curriculum), getDoc(refs.templates), getDoc(teacherChecklistSharedDocRef()), getDoc(teacherChecklistDocRef(user)),
-  ]);
+  ]), 12000, "Firebase 자료를 불러오는 시간이 초과되었습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.");
   const curriculum = curriculumSnap.exists() ? curriculumSnap.data() || {} : {};
   const templates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
   const saved = savedSnap.exists() ? savedSnap.data() || {} : {};
@@ -234,6 +238,7 @@ async function startChecklist(access, user) {
       container.append(empty); updateProgress(); return;
     }
     courses.forEach(course => {
+      const fieldIdBase = course.key.replace(/[^a-zA-Z0-9_-]/g, "_");
       const item = { ...blankChecklistItem(), ...(state.items[course.key] || {}) };
       state.items[course.key] = item;
       const card = document.createElement("article"); card.className = "checklist-course-card" + (item.confirmed ? " complete" : "");
@@ -243,6 +248,7 @@ async function startChecklist(access, user) {
       const folder = document.createElement("div"); folder.className = "checklist-folder-row";
       const folderLabel = document.createElement("label"); folderLabel.textContent = "Google Folder";
       const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "https://drive.google.com/..."; folderInput.value = item.folderUrl || "";
+      folderInput.id = `folder-${fieldIdBase}`; folderInput.name = `folder_${fieldIdBase}`;
       folderInput.disabled = !course.editable;
       const folderLink = document.createElement("a"); folderLink.className = "portal-btn folder-open"; folderLink.target = "_blank"; folderLink.rel = "noopener noreferrer"; folderLink.textContent = "폴더 열기";
       const syncFolderLink = () => { const url = safeUrl(folderInput.value); folderLink.href = url || "#"; folderLink.classList.toggle("disabled", !url); };
@@ -257,6 +263,7 @@ async function startChecklist(access, user) {
       ].forEach(([key, title, description]) => {
         const label = document.createElement("label"); label.className = "checklist-check";
         const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!item[key];
+        input.id = `${key}-${fieldIdBase}`; input.name = `${key}_${fieldIdBase}`;
         input.disabled = !course.editable;
         input.addEventListener("change", () => { item[key] = input.checked; save(); });
         const copy = document.createElement("span"); copy.innerHTML = `<strong>${title}</strong><small>${description}</small>`;
@@ -272,12 +279,13 @@ async function startChecklist(access, user) {
         ["reportStandardDeviation", "표준편차 / Standard Deviation"], ["reportAchievementLevels", "성취도 / Achievement Levels"],
         ["reportEnrollmentCount", "수강자수 / Enrollment"], ["reportRanking", "석차등급 / Ranking"],
       ].forEach(([key, title]) => {
-        const label=document.createElement("label");label.className="checklist-check";const input=document.createElement("input");input.type="checkbox";input.checked=!!item[key];input.disabled=!course.editable;input.addEventListener("change",()=>{item[key]=input.checked;save();});
+        const label=document.createElement("label");label.className="checklist-check";const input=document.createElement("input");input.type="checkbox";input.id=`${key}-${fieldIdBase}`;input.name=`${key}_${fieldIdBase}`;input.checked=!!item[key];input.disabled=!course.editable;input.addEventListener("change",()=>{item[key]=input.checked;save();});
         const source=clean(course.reportingRequirements?.[key]);const copy=document.createElement("span");copy.innerHTML=`<strong>${title}</strong><small>${source ? `붙여넣기 값: ${escapeHtml(source)}` : "확인 후 체크"}</small>`;label.append(input,copy);reportingGrid.append(label);
       });
       reporting.append(reportingGrid);
       const confirm = document.createElement("label"); confirm.className = "checklist-confirm";
       const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed;
+      confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`;
       confirmInput.disabled = !course.editable;
       const confirmCopy = document.createElement("span"); confirmCopy.innerHTML = "<strong>최종 확인</strong><small>이 과목의 내용을 모두 확인했습니다.</small>";
       confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(); save(); });

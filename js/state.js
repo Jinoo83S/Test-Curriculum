@@ -4,7 +4,7 @@
 import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAULT_ROW_COUNT, colWidthsKey, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR, IS_LEGACY_SCHOOL_YEAR, schoolYearDomainPath, assertSchoolYearWriteContext } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=r419";
+import { canEdit } from "./auth.js?v=r424";
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
@@ -940,7 +940,7 @@ function normalizeRostersDomain(raw = {}) {
   const rosterMeta = {};
   if (raw.rosterMeta && typeof raw.rosterMeta === "object") {
     Object.entries(raw.rosterMeta).forEach(([tid, meta]) => {
-      rosterMeta[tid] = { classCount: clean(meta?.classCount), missingExcluded: !!meta?.missingExcluded };
+      rosterMeta[tid] = { classCount: clean(meta?.classCount), teacherLoadHours: clean(meta?.teacherLoadHours), missingExcluded: !!meta?.missingExcluded };
     });
   }
   return { rosters, rosterMeta };

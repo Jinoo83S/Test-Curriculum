@@ -2,7 +2,7 @@
 // timetable-grid.js · Timetable Grid Rendering
 // r380: manual replacement drag + visible red/yellow border legend.
 // ================================================================
-import { canEdit } from "./auth.js?v=r419";
+import { canEdit } from "./auth.js?v=r424";
 import { sectionLabel, gradeDisplay } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
 import { splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";

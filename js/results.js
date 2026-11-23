@@ -3,9 +3,9 @@
 // ================================================================
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { appState } from "./state.js?v=r423";
+import { appState } from "./state.js?v=r424";
 import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
-import { getRosterMeta, getClassCount } from "./rosters.js?v=2026-07-15-room-availability-separation-r355";
+import { getRosterMeta, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r424";
 
 // ── Data builder ─────────────────────────────────────────────────
 function buildRows() {
@@ -49,7 +49,7 @@ function buildRows() {
       const mainTplId = t1id || t2id;
       const classCount = getClassCount(mainTplId);
       const credits    = getEffectiveCredit(row);
-      const total      = classCount > 0 ? classCount * credits : 0;
+      const total      = getTeacherLoadHours(mainTplId, credits);
 
       rows.push({
         grade, category: row.category, track: row.track, group: row.group,

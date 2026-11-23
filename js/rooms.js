@@ -2,8 +2,8 @@
 // rooms.js · Room CRUD + View Rendering
 // ================================================================
 import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=r419";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=r423";
+import { canEdit } from "./auth.js?v=r424";
+import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=r424";
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 
 const rDomain = () => appState.rooms;

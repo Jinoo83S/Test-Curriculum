@@ -1,7 +1,7 @@
 // ================================================================
 // save-status-ui.js · Unified save button + quota/local-dev controls
 // ================================================================
-import { canEdit } from "./auth.js?v=r419";
+import { canEdit } from "./auth.js?v=r424";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import {
   setOnSaveStatus,
@@ -13,7 +13,7 @@ import {
   importLocalSnapshot,
   resetLocalSnapshot,
   exportFirestoreDiagnosticSnapshot,
-} from "./state.js?v=r423";
+} from "./state.js?v=r424";
 import { openDataCleanupDialog } from "./data-cleanup.js?v=2026-07-15-room-availability-separation-r355";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
 import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-room-availability-separation-r355";
