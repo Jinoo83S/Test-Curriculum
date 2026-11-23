@@ -792,6 +792,8 @@ export function normalizeTemplate(item = {}) {
     sem2TeacherNames: Array.isArray(item.sem2TeacherNames) ? uniqueOrdered(item.sem2TeacherNames.map(clean).filter(Boolean)) : [],
     calcGroupId: clean(item.calcGroupId) || null,
     reportingRequirements: Object.fromEntries(Object.entries(item.reportingRequirements || {}).map(([key, value]) => [clean(key), clean(value)]).filter(([key, value]) => key && value)),
+    sem1ReportingRequirements: Object.fromEntries(Object.entries(item.sem1ReportingRequirements || {}).map(([key, value]) => [clean(key), clean(value)]).filter(([key, value]) => key && value)),
+    sem2ReportingRequirements: Object.fromEntries(Object.entries(item.sem2ReportingRequirements || {}).map(([key, value]) => [clean(key), clean(value)]).filter(([key, value]) => key && value)),
     schoolLevel: ["중등","고등","공통"].includes(item.schoolLevel) ? item.schoolLevel : "공통",
     // 복합 과목: 하나의 커리큘럼 카드/수강명단을 여러 실제 시간표 카드로 분할 생성합니다.
     // 예: 심화물리(2) 2시수 + 미적분(2) 2시수 = 선택5 1과목 4시수

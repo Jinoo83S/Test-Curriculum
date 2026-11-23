@@ -1,7 +1,7 @@
 // ================================================================
 // data-cleanup.js · Firestore/Local data diagnosis & cleanup helpers · r205
 // ================================================================
-import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js?v=r421";
+import { appState, subscribeDomains, initialLoad, saveNow } from "./state.js?v=r423";
 import { canEdit } from "./auth.js?v=r419";
 import { clean, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { buildOperationalConstraintModel } from "./timetable-constraint-model.js?v=2026-07-20-initial-load-conflict-hotfix-r371";

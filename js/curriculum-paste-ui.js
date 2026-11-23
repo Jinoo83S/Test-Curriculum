@@ -1,12 +1,12 @@
 import { ACTIVE_SCHOOL_YEAR, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { canEdit } from "./auth.js?v=r419";
-import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste, scheduleSave, saveNow } from "./state.js?v=r421";
+import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste, scheduleSave, saveNow } from "./state.js?v=r423";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { getSemesterTemplateData } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { buildBackupFilename, downloadJsonBackup } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
-import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r421";
+import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate } from "./curriculum-paste.js?v=r423";
 
 const dialog = document.getElementById("curriculumPasteDialog");
 const input = document.getElementById("curriculumPasteSource");
@@ -115,6 +115,8 @@ function createUpdatedDomains(before, rows, plannedRows = rows) {
     const linkedTemplate = newCards.get(entry.newCardKey) || after.templates.templates.find(template => template.id === id);
     if (linkedTemplate && entry.reporting && Object.keys(entry.reporting).length) {
       linkedTemplate.reportingRequirements = { ...(linkedTemplate.reportingRequirements || {}), ...entry.reporting };
+      linkedTemplate.sem1ReportingRequirements = { ...(linkedTemplate.sem1ReportingRequirements || {}), ...(entry.semesterReporting?.[0] || entry.reporting) };
+      linkedTemplate.sem2ReportingRequirements = { ...(linkedTemplate.sem2ReportingRequirements || {}), ...(entry.semesterReporting?.[1] || entry.reporting) };
     }
     for (const field of ["category", "track", "group"]) {
       if (!options[field].includes(entry[field])) options[field].push(entry[field]);
@@ -131,7 +133,11 @@ function createUpdatedDomains(before, rows, plannedRows = rows) {
     if (!entry.reporting || !Object.keys(entry.reporting).length) continue;
     const id = entry.templateId || newCards.get(entry.newCardKey)?.id;
     const template = after.templates.templates.find(item => item.id === id);
-    if (template) template.reportingRequirements = { ...(template.reportingRequirements || {}), ...entry.reporting };
+    if (template) {
+      template.reportingRequirements = { ...(template.reportingRequirements || {}), ...entry.reporting };
+      template.sem1ReportingRequirements = { ...(template.sem1ReportingRequirements || {}), ...(entry.semesterReporting?.[0] || entry.reporting) };
+      template.sem2ReportingRequirements = { ...(template.sem2ReportingRequirements || {}), ...(entry.semesterReporting?.[1] || entry.reporting) };
+    }
   }
   after.rosters ||= { rosters: {}, rosterMeta: {} };
   after.rosters.rosters ||= {};

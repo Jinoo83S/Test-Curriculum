@@ -67,7 +67,7 @@
       <p>2. 확인 문구에 현재 학년도를 포함한 문구를 입력해야 삭제 버튼이 활성화됩니다.</p>
       <div class="row">
         <button id="previewBtn" type="button">삭제 대상 확인</button>
-        <input id="confirmText" type="text" placeholder="학년도초기화 확인 문구" />
+        <input id="confirmText" type="text" placeholder="보드초기화 입력" />
       </div>
       <div class="row">
         <label><input id="confirmCheck" type="checkbox" /> 백업을 완료했고 온라인 데이터를 모두 삭제하는 것을 이해했습니다.</label>
@@ -140,9 +140,7 @@
     ["분리 문서", spec.labels.timetableMeta, "시간표 설정/조건/그룹"],
   ].map(row => `<tr><td>${row[0]}</td><td>${row[1]}</td><td>${row[2]}</td></tr>`).join("");
 
-  const confirmPhrase = IS_LEGACY_SCHOOL_YEAR
-    ? `${ACTIVE_SCHOOL_YEAR}-운영데이터-학년도전체초기화`
-    : `${ACTIVE_SCHOOL_YEAR}-학년도전체초기화`;
+  const confirmPhrase = "보드초기화";
   $("confirmText").placeholder = `${confirmPhrase} 입력`;
 
   function appendLog(msg) {

@@ -6,8 +6,8 @@
   <title>HIS Curriculum · 관리자 편집</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-11-23-compact-checklist-r421";
-    window.HIS_RUNTIME_ASSET_VERSION = "2026-11-23-compact-checklist-r421";
+    window.HIS_APP_VERSION = "2026-11-23-paste-fractional-classes-r423";
+    window.HIS_RUNTIME_ASSET_VERSION = "2026-11-23-paste-fractional-classes-r423";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -259,7 +259,7 @@
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
-      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r421");
+      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r423");
       openCurriculumPaste();
     } catch (error) {
       console.error("[curriculum paste]", error);

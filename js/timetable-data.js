@@ -2,7 +2,7 @@
 // timetable-data.js · Timetable Data Helpers
 // ================================================================
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { appState } from "./state.js?v=r421";
+import { appState } from "./state.js?v=r423";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
 import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
 export { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";

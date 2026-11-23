@@ -1,7 +1,7 @@
 // Three-year cohort view: each column reads and writes the actual annual
 // curriculum and template documents for its own academic year.
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, CATEGORY_PALETTE, DEFAULT_OPTIONS, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { appState, initialLoad } from "./state.js?v=r421";
+import { appState, initialLoad } from "./state.js?v=r423";
 import { getKnownSchoolYears } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r419";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";

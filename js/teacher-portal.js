@@ -130,7 +130,7 @@ function buildTeacherCourses(curriculum, templatesDomain, teacher, semester, isA
         track: clean(row.track) || "구분 없음",
         group: clean(row.group) || "교과군 없음",
         credits: clean(row.credits),
-        reportingRequirements: template.reportingRequirements || {},
+        reportingRequirements: template[`${semester}ReportingRequirements`] || template.reportingRequirements || {},
         isOwner,
         editable: isAdmin || isOwner,
         ...info,
@@ -263,7 +263,9 @@ async function startChecklist(access, user) {
         label.append(input, copy); checks.append(label);
       });
       const reporting = document.createElement("div"); reporting.className = "checklist-reporting";
-      const reportingTitle = document.createElement("h3"); reportingTitle.textContent = "성적표 표시 항목 / Report Card Fields"; reporting.append(reportingTitle);
+      const reportingTitle = document.createElement("h3");
+      const reportCategory = clean(course.reportingRequirements?.reportCategory);
+      reportingTitle.textContent = `성적표 표시 항목 / Report Card Fields${reportCategory ? ` · ${reportCategory}` : ""}`; reporting.append(reportingTitle);
       const reportingGrid = document.createElement("div"); reportingGrid.className = "checklist-checkbox-grid";
       [
         ["reportRawScore", "원점수 / Raw Score"], ["reportAverage", "과목평균 / Average"],

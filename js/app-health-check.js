@@ -7,7 +7,7 @@ import {
   getDirtyDomains,
   isAutoSaveEnabled,
   getFirestoreUsageStats,
-} from "./state.js?v=r421";
+} from "./state.js?v=r423";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { APP_VERSION, versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { buildTeacherIdentityIndex } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";

@@ -6,7 +6,7 @@ import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { renderThreeYearBoard, clearThreeYearCache } from "./three-year-board.js?v=r414";
 import { canEdit } from "./auth.js?v=r419";
-import { appState, saveNow } from "./state.js?v=r421";
+import { appState, saveNow } from "./state.js?v=r423";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
 
 const DEFAULT_BOARD_OPTIONS = {
@@ -109,12 +109,9 @@ export function setupAppBoardUi({
     }
 
     const targetGrades = [...(GRADE_GROUPS[activeTab] || [])];
-    const levelKey = activeTab === "tab7to9" ? "중등" : "고등";
     const levelLabel = activeTab === "tab7to9" ? "중등(7·8·9학년)" : "고등(10·11·12학년)";
     const targetPath = schoolYearDomainPath("curriculum");
-    const phrase = ACTIVE_SCHOOL_YEAR === LEGACY_SCHOOL_YEAR
-      ? `${ACTIVE_SCHOOL_YEAR}-운영데이터-${levelKey}-보드초기화`
-      : `${ACTIVE_SCHOOL_YEAR}-${levelKey}-보드초기화`;
+    const phrase = "보드초기화";
 
     try {
       assertDestructiveTarget({ year: ACTIVE_SCHOOL_YEAR, expectedPath: targetPath, context: "커리큘럼 보드 초기화" });
