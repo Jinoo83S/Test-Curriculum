@@ -21,7 +21,7 @@
   <span id="authStatus">로그인 확인 중…</span>
   <button id="loginBtn" type="button">Google 로그인</button>
   <button id="logoutBtn" type="button" hidden>로그아웃</button>
-  <a href="index.html">커리큘럼으로 돌아가기</a>
+  <a href="curriculum.html">커리큘럼으로 돌아가기</a>
 </header>
 <main>
   <section class="card notice">
@@ -244,7 +244,7 @@ function switchYear(year) {
   }
   if (!confirm(`${schoolYearLabel(year)}로 전환할까요?\n커리큘럼 화면이 새 작업공간으로 다시 열립니다.`)) return;
   setActiveSchoolYear(year, { reload:false });
-  location.href = "index.html";
+  location.href = "curriculum.html";
 }
 async function loadServerYears() {
   if (LOCAL_DEV_MODE) { serverYearsLoaded = true; serverYears = getKnownSchoolYears(); refreshSelectors(); return; }
@@ -458,7 +458,7 @@ ${error?.message || error}`);
     alert(`${year}학년도 작업공간을 삭제했습니다.`);
     if (wasActive) {
       setActiveSchoolYear(LEGACY_SCHOOL_YEAR, { reload:false });
-      location.href = "index.html";
+      location.href = "curriculum.html";
       return;
     }
     refreshSelectors();
