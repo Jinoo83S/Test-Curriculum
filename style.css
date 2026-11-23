@@ -8508,3 +8508,16 @@ body.three-year-mode .grade-footer.three-year-drop-ready{background:#dbeafe;outl
 .three-year-card-field input,.three-year-card-field select{width:100%;min-width:0;padding:7px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
 .three-year-card-actions{display:flex;justify-content:flex-end;gap:6px;margin-top:8px}
 @media(max-width:650px){.three-year-card-form{grid-template-columns:1fr}}
+
+/* Visible year membership and target card selection in the card editor. */
+.three-year-card-year-note,.three-year-card-years{grid-column:1/-1}
+.three-year-card-year-note{margin:0;color:#475569;font-size:12px}
+.three-year-card-years{min-width:0;margin:0 0 5px;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+.three-year-card-years legend{padding:0 5px;color:#1e3a5f;font-size:13px;font-weight:700}
+.three-year-card-years .three-year-card-hint{margin:0 0 8px;padding:0}
+.three-year-card-year-row{display:grid;grid-template-columns:125px minmax(0,1fr);align-items:center;gap:5px;margin:5px 0}
+.three-year-card-year-check{display:flex;align-items:center;gap:5px;font-size:12px;white-space:nowrap}
+.three-year-card-year-check input{width:auto}
+.three-year-card-year-target{min-width:0;width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:5px;font-size:11px}
+.three-year-card-year-status{grid-column:2;color:#475569;font-size:10px}
+@media(max-width:650px){.three-year-card-year-row{grid-template-columns:1fr}.three-year-card-year-status{grid-column:1}}
