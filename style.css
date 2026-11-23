@@ -8469,3 +8469,10 @@ body.his-dev-tools-off .developer-toggle-btn {
 .group-pool-area-label {
   margin-bottom: 4px;
 }
+
+/* Three-year planning switch shares course cards with the annual board. */
+.curriculum-mode-picker{display:inline-flex;align-items:center;gap:6px;color:#fff;font-size:12px;font-weight:700;white-space:nowrap}
+.curriculum-mode-picker select{height:28px;min-width:130px;border:1px solid rgba(255,255,255,.35);border-radius:8px;background:#fff;color:#0f2946;padding:0 7px;font:inherit;cursor:pointer}
+.three-year-note{margin:8px 12px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;color:#334155;font-size:13px;line-height:1.5}
+[hidden]{display:none!important}
+@media(max-width:900px){.curriculum-mode-picker{font-size:11px}.curriculum-mode-picker select{min-width:105px}}
