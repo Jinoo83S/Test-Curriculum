@@ -1,23 +1,13 @@
 // ================================================================
 // curriculum.js · Curriculum Board Mutations + Rendering
 // ================================================================
-import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS, ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
+import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 
 // ── Helpers ───────────────────────────────────────────────────────
-const curriculum = () => {
-  if (getCurriculumMode() !== "threeYear") return appState.curriculum;
-  if (!appState.curriculum.threeYear) {
-    appState.curriculum.threeYear = {
-      options: structuredClone(appState.curriculum.options),
-      gradeBoards: Object.fromEntries(GRADE_KEYS.map(grade => [grade, []])),
-    };
-  }
-  return appState.curriculum.threeYear;
-};
+const curriculum = () => appState.curriculum;
 const opts       = () => curriculum().options;
 
 // Callback for sidebar re-render after board mutations
@@ -738,7 +728,7 @@ function orderTrackValues(tracks) {
 
 function getVisibleGradeRows(grade) {
   const rows = curriculum().gradeBoards[grade] || [];
-  if (getCurriculumMode() === "threeYear" || !rows.some(row => row.sem1TemplateId || row.sem2TemplateId)) return rows;
+  if (!rows.some(row => row.sem1TemplateId || row.sem2TemplateId)) return rows;
   // A new workspace starts with four empty common rows; keep them in storage but
   // hide them once imported subjects exist. Rows added later remain editable.
   return rows.filter((row, index) => index >= 4 ||
@@ -760,9 +750,7 @@ export function buildTabBoard(visibleGrades, onUpdate) {
     const col = document.createElement("section"); col.className = "grade-column";
     const gs = getGradeSummary(grade);
     const titleEl = document.createElement("div"); titleEl.className = "grade-title";
-    const yearOffset = Number.parseInt(grade, 10) <= 9 ? Number.parseInt(grade, 10) - 7 : Number.parseInt(grade, 10) - 10;
-    const gradeLabel = getCurriculumMode() === "threeYear" ? `${Number(ACTIVE_SCHOOL_YEAR) + yearOffset}학년도 · ${grade}` : grade;
-    titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${gradeLabel}</span><div class="grade-title-totals"><span class="grade-title-badge">Total #Courses ${gs.totalCourses}</span><span class="grade-title-badge">Total #Credits ${gs.totalCredits}</span></div></div>`;
+    titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">Total #Courses ${gs.totalCourses}</span><span class="grade-title-badge">Total #Credits ${gs.totalCredits}</span></div></div>`;
     col.appendChild(titleEl);
     const hr = createGradeHeader(); col.appendChild(hr);
     columns.push({ grade, col, hr });
