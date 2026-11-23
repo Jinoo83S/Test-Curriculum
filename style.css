@@ -8476,3 +8476,17 @@ body.his-dev-tools-off .developer-toggle-btn {
 .three-year-note{margin:8px 12px;padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;background:#f8fafc;color:#334155;font-size:13px;line-height:1.5}
 [hidden]{display:none!important}
 @media(max-width:900px){.curriculum-mode-picker{font-size:11px}.curriculum-mode-picker select{min-width:105px}}
+
+/* Linked annual curricula for the three-year cohort view. */
+body.three-year-mode .page{grid-template-columns:1fr!important}
+body.three-year-mode #appSidebar,body.three-year-mode #navManagerBtn,
+body.three-year-mode #topbarMainNav [data-section]:not([data-section="curriculum"]){display:none!important}
+.three-year-board{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:start;overflow:auto}
+.three-year-column{min-width:0;border:1px solid #dbe3ee;border-radius:10px;background:#fff;padding:10px}
+.three-year-heading{margin:0 0 10px;font-size:17px;color:#123354}
+.three-year-row{display:grid;grid-template-columns:65px 65px 75px minmax(120px,1fr) minmax(120px,1fr) 48px 26px;gap:4px;align-items:center;margin-bottom:5px}
+.three-year-field{box-sizing:border-box;width:100%;min-width:0;padding:5px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;font-size:12px}
+.three-year-delete{min-width:24px!important;padding:3px!important}
+.three-year-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.three-year-empty{padding:12px;color:#64748b;font-size:14px}
+@media(max-width:1200px){.three-year-board{grid-template-columns:1fr}.three-year-row{grid-template-columns:65px 65px 75px minmax(120px,1fr) minmax(120px,1fr) 48px 26px}}
