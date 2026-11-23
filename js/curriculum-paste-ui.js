@@ -1,4 +1,5 @@
 import { ACTIVE_SCHOOL_YEAR, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, initialLoad, createRow, normalizeTemplate, saveCurriculumPaste } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
@@ -150,6 +151,7 @@ async function applyPreview() {
 }
 
 export function openCurriculumPaste() {
+  if (getCurriculumMode() === "threeYear") return;
   if (!canEdit() || !initialLoad.curriculum || !initialLoad.templates) {
     alert("편집 권한을 확인하고 커리큘럼과 과목 카드가 로드된 후 다시 시도해 주세요.");
     return;
