@@ -658,6 +658,7 @@ function shouldRenderMerged(r) { return !!(r?.sem1TemplateId && r?.sem2TemplateI
 
 function createGradeRow(grade, rowData, onUpdate) {
   const row = document.createElement("div"); row.className = "grade-data-row";
+  row.dataset.grade = grade; row.dataset.rowId = rowData.id;
   const cat = createSelect(opts().category, rowData.category, v => { updateRowField(grade, rowData.id, "category", v); });
   const catColor = getCategoryColor(rowData.category); cat.classList.add("category-select"); cat.style.backgroundColor = catColor.bg; cat.style.color = catColor.text;
   row.appendChild(cat);
