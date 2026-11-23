@@ -5,6 +5,7 @@ import { GRADE_KEYS, SEMESTER_LABELS } from "./config.js?v=2026-07-15-room-avail
 import { uid, clean, uniqueOrdered, makeBtn, languageClass, escapeHtml, cloneJson } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, scheduleSave, saveNow, ensureConsistency, normalizeTemplate, normalizeTemplateGroup, setCurrentDrag, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 
 const tDomain   = () => appState.templates;
 const templates = () => tDomain().templates;
@@ -97,7 +98,11 @@ function getCommonTeacherCandidate(item) {
 }
 
 export function getTemplateAppliedGrades(templateId) {
-  return GRADE_KEYS.filter(grade => (appState.curriculum.gradeBoards[grade] || []).some(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId)).map(g => g.replace("학년",""));
+  const boards = getCurriculumMode() === "threeYear"
+    ? appState.curriculum.threeYear?.gradeBoards || {}
+    : appState.curriculum.gradeBoards;
+  return GRADE_KEYS.filter(grade => (boards[grade] || []).some(r =>
+    r.sem1TemplateId === templateId || r.sem2TemplateId === templateId)).map(g => g.replace("학년",""));
 }
 
 export function getTemplateCredits(templateId) {
@@ -156,6 +161,10 @@ export function getSubjectsForTeacher(teacherIdentity) {
 // ── Template Mutations ────────────────────────────────────────────
 export function deleteTemplate(templateId) {
   if (!canEdit()) return;
+  if (getCurriculumMode() === "threeYear") {
+    alert("과목카드는 연간 커리큘럼과 공유됩니다. 카드를 삭제하려면 연간 커리큘럼에서 삭제해 주세요. 3개년 계획에서는 행 또는 학기 배정만 제거할 수 있습니다.");
+    return;
+  }
   const item = getTemplateById(templateId); if (!item) return;
   if (!confirm(`"${getTemplateCardTitle(item)}" 카드를 삭제할까요?\n\n커리큘럼, 수강명단, 시간표 카드, 시간표 배치에서도 제거됩니다.`)) return;
 
@@ -173,6 +182,14 @@ export function deleteTemplate(templateId) {
   // 2. curriculum boards
   GRADE_KEYS.forEach(grade => {
     (appState.curriculum.gradeBoards[grade] || []).forEach(row => {
+      if (row.sem1TemplateId === templateId) row.sem1TemplateId = null;
+      if (row.sem2TemplateId === templateId) row.sem2TemplateId = null;
+    });
+  });
+
+  // Planning rows share card IDs but never feed operational rosters or timetables.
+  GRADE_KEYS.forEach(grade => {
+    (appState.curriculum.threeYear?.gradeBoards?.[grade] || []).forEach(row => {
       if (row.sem1TemplateId === templateId) row.sem1TemplateId = null;
       if (row.sem2TemplateId === templateId) row.sem2TemplateId = null;
     });
