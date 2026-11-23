@@ -780,7 +780,7 @@ export function normalizeTemplate(item = {}) {
     : [];
   const isCompound = !!item.isCompound || compoundParts.length > 0;
   return {
-    id: item.id || uid("tpl"), language, useSemesterOverrides,
+    id: item.id || uid("tpl"), ...(clean(item.sharedCardId) ? { sharedCardId:clean(item.sharedCardId) } : {}), language, useSemesterOverrides,
     nameKo: clean(item.nameKo), nameEn: clean(item.nameEn), teacher: clean(item.teacher),
     teacherIds: Array.isArray(item.teacherIds) ? uniqueOrdered(item.teacherIds.map(clean).filter(Boolean)) : [],
     teacherNames: Array.isArray(item.teacherNames) ? uniqueOrdered(item.teacherNames.map(clean).filter(Boolean)) : [],
