@@ -22,14 +22,15 @@ async function readSnapshot(year) {
     const saved = localStorage.getItem(key);
     const parsed = saved ? JSON.parse(saved) : {};
     const data = parsed?.data && typeof parsed.data === "object" ? parsed.data : parsed;
-    return { year, domains: Object.fromEntries(DOMAIN_NAMES.map(name => [name, data?.[name] || {}])),
+    return { year, missing: !data?.curriculum,
+      domains: Object.fromEntries(DOMAIN_NAMES.map(name => [name, data?.[name] || {}])),
       workspaceMeta: { createMode: parsed.createMode || "local" } };
   }
   const refs = getSchoolYearRefs(year);
   const [documents, collections, meta] = await Promise.all([
     Promise.all(DOMAIN_NAMES.map(async name => {
       const doc = await getDoc(refs.domains[name]);
-      return [name, doc.exists() ? doc.data() || {} : {}];
+      return [name, doc.exists() ? doc.data() || {} : {}, doc.exists()];
     })),
     Promise.all(COLLECTION_NAMES.map(async name => {
       const collection = await getDocs(refs.collections[name]);
@@ -37,7 +38,8 @@ async function readSnapshot(year) {
     })),
     refs.workspaceMeta ? getDoc(refs.workspaceMeta) : Promise.resolve(null),
   ]);
-  return { year, domains: Object.fromEntries(documents),
+  return { year, missing: !documents.find(([name]) => name === "curriculum")?.[2],
+    domains: Object.fromEntries(documents.map(([name, data]) => [name, data])),
     ...Object.fromEntries(collections), workspaceMeta: meta?.exists() ? meta.data() || {} : {} };
 }
 export function setupCurriculumIntegrityUi({ boardUi, navigateToManager } = {}) {
@@ -116,16 +118,20 @@ export function setupCurriculumIntegrityUi({ boardUi, navigateToManager } = {}) 
     try {
       const results = await Promise.all(years.map(async year => {
         const snapshot = await readSnapshot(year);
-        return { year, report:validateWorkspaceSnapshot(snapshot, {
-          year, allowEmpty:snapshot.workspaceMeta?.createMode === "empty"
-        }) };
+        return snapshot.missing ? { year, missing:true } : { year,
+          report:validateWorkspaceSnapshot(snapshot, {
+            year, allowEmpty:snapshot.workspaceMeta?.createMode === "empty"
+          }) };
       }));
       if (serial !== run) return;
       panel.replaceChildren(el("h2", "", plan ? "3개년 커리큘럼·과목카드 검사" : "학년도 전체 정합성 검사"));
       panel.append(el("p", "curriculum-audit-description", plan ?
         "선택한 3개 학년도의 커리큘럼 행과 과목카드 참조를 검사합니다. 명단·시간표 오류는 이 화면에 표시하지 않습니다." :
         "학년도 관리와 같은 정합성 검사입니다. 보드 행과 과목카드 문제는 아래에서 바로 이동해 수정할 수 있습니다."));
-      results.forEach(({ year, report }) => panel.append(renderIssues(year,report,plan)));
+      results.forEach(({ year, report, missing }) => {
+        if (missing) panel.append(el("p", "three-year-empty", year + "학년도 자료가 아직 없습니다."));
+        else panel.append(renderIssues(year,report,plan));
+      });
       panel.append(el("p", "curriculum-audit-description", "검사 시각: " + new Date().toLocaleString("ko-KR")));
     } catch (error) {
       panel.replaceChildren(el("p", "audit-error", "검사 실패 · " + (error?.message || error)));
