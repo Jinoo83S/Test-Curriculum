@@ -3,6 +3,7 @@
 // ================================================================
 import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
+import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { appState, saveNow } from "./state.js?v=2026-07-15-room-availability-separation-r355";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
@@ -69,8 +70,16 @@ export function setupAppBoardUi({
   }
 
   function renderTabButtons() {
+    const planning = getCurriculumMode() === "threeYear";
     tab7to9Btn?.classList.toggle("active", activeTab === "tab7to9");
     tab10to12Btn?.classList.toggle("active", activeTab === "tab10to12");
+    if (tab7to9Btn) tab7to9Btn.textContent = planning ? "중학교 3개년 · 7→9학년" : "7 · 8 · 9";
+    if (tab10to12Btn) tab10to12Btn.textContent = planning ? "고등학교 3개년 · 10→12학년" : "10 · 11 · 12";
+    if (resetBoardBtn) resetBoardBtn.hidden = planning;
+    const pasteButton = document.getElementById("curriculumPasteOpen");
+    if (pasteButton) pasteButton.hidden = planning;
+    const note = document.getElementById("threeYearNote");
+    if (note) note.hidden = !planning;
   }
 
   function setActiveTab(nextTab) {
@@ -81,7 +90,7 @@ export function setupAppBoardUi({
   }
 
   async function resetBoard() {
-    if (!canEdit()) return;
+    if (!canEdit() || getCurriculumMode() === "threeYear") return;
 
     try {
       assertSchoolYearWriteContext("커리큘럼 보드 초기화");
@@ -163,7 +172,7 @@ ${error?.message || error}`);
       gradeBoards[grade] = Array.from({ length: 4 }, () => makeEmptyBoardRow(options));
     });
 
-    appState.curriculum = { options, gradeBoards };
+    appState.curriculum = { ...previousCurriculum, options, gradeBoards };
     invalidateTabs();
     try {
       const saved = await saveNow("curriculum", { throwOnError: true });
