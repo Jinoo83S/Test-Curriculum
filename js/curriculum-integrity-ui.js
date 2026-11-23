@@ -1,15 +1,14 @@
-// Curriculum-board entry point for the same workspace integrity rules used in school-year management.
+// Curriculum and subject-card references only. Later workflow data is outside this check.
 // Checks are read-only. Issues link to the relevant board row or card editor.
 import { ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, getSchoolYearRefs, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { validateWorkspaceSnapshot } from "./school-year-integrity.js?v=2026-07-15-room-availability-separation-r355";
-import { getDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-const DOMAIN_NAMES = ["curriculum","templates","classes","teachers","rosters","rooms","timetable"];
-const COLLECTION_NAMES = ["classes","rosters","timetableEntries","ttcards"];
-const PLAN_CODES = new Set(["duplicate-template-id","duplicate-curriculum-row-id",
-  "curriculum-template-missing","templates-empty","templates-empty-draft"]);
+const DOMAIN_NAMES = ["curriculum","templates"];
+const CURRICULUM_CODES = new Set(["duplicate-template-id","duplicate-curriculum-row-id",
+  "curriculum-template-missing"]);
 const el = (tag, className, value) => {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -27,20 +26,12 @@ async function readSnapshot(year) {
       workspaceMeta: { createMode: parsed.createMode || "local" } };
   }
   const refs = getSchoolYearRefs(year);
-  const [documents, collections, meta] = await Promise.all([
-    Promise.all(DOMAIN_NAMES.map(async name => {
-      const doc = await getDoc(refs.domains[name]);
-      return [name, doc.exists() ? doc.data() || {} : {}, doc.exists()];
-    })),
-    Promise.all(COLLECTION_NAMES.map(async name => {
-      const collection = await getDocs(refs.collections[name]);
-      return [name, collection.docs.map(doc => ({ id: doc.id, data: doc.data() || {} }))];
-    })),
-    refs.workspaceMeta ? getDoc(refs.workspaceMeta) : Promise.resolve(null),
-  ]);
+  const documents = await Promise.all(DOMAIN_NAMES.map(async name => {
+    const snapshot = await getDoc(refs.domains[name]);
+    return [name, snapshot.exists() ? snapshot.data() || {} : {}, snapshot.exists()];
+  }));
   return { year, missing: !documents.find(([name]) => name === "curriculum")?.[2],
-    domains: Object.fromEntries(documents.map(([name, data]) => [name, data])),
-    ...Object.fromEntries(collections), workspaceMeta: meta?.exists() ? meta.data() || {} : {} };
+    domains: Object.fromEntries(documents.map(([name, data]) => [name, data])) };
 }
 export function setupCurriculumIntegrityUi({ boardUi, navigateToManager } = {}) {
   const button = document.getElementById("curriculumIntegrityBtn");
@@ -68,9 +59,10 @@ export function setupCurriculumIntegrityUi({ boardUi, navigateToManager } = {}) 
     const cohortGrade = (GRADE_GROUPS[boardUi?.getActiveTab?.() || "tab7to9"] || [])
       .find(grade => String(Number(ACTIVE_SCHOOL_YEAR) + (Number.parseInt(grade,10) <= 9
         ? Number.parseInt(grade,10) - 7 : Number.parseInt(grade,10) - 10)) === year);
-    const inScope = item => PLAN_CODES.has(item.code) && (!item.grade || item.grade === cohortGrade);
-    const errors = plan ? report.errors.filter(inScope) : report.errors;
-    const warnings = plan ? report.warnings.filter(inScope) : report.warnings;
+    const inScope = item => CURRICULUM_CODES.has(item.code) &&
+      (!plan || !item.grade || item.grade === cohortGrade);
+    const errors = report.errors.filter(inScope);
+    const warnings = report.warnings.filter(inScope);
     const section = el("section", "curriculum-audit-year");
     section.append(el("h3", "", year + "학년도 · " +
       (errors.length ? "오류 " + errors.length + "건" : "커리큘럼 오류 없음") +
@@ -98,10 +90,6 @@ export function setupCurriculumIntegrityUi({ boardUi, navigateToManager } = {}) 
       }
     }
     section.append(list);
-    if (!plan && (errors.length || warnings.length)) {
-      const link = el("a", "secondary-btn curriculum-audit-year-link", "학년도 관리에서 전체 결과 보기");
-      link.href = "school-years.html"; section.append(link);
-    }
     return section;
   };
   async function check() {
@@ -119,15 +107,13 @@ export function setupCurriculumIntegrityUi({ boardUi, navigateToManager } = {}) 
       const results = await Promise.all(years.map(async year => {
         const snapshot = await readSnapshot(year);
         return snapshot.missing ? { year, missing:true } : { year,
-          report:validateWorkspaceSnapshot(snapshot, {
-            year, allowEmpty:snapshot.workspaceMeta?.createMode === "empty"
-          }) };
+          report:validateWorkspaceSnapshot(snapshot, { year, allowEmpty:true }) };
       }));
       if (serial !== run) return;
-      panel.replaceChildren(el("h2", "", plan ? "3개년 커리큘럼·과목카드 검사" : "학년도 전체 정합성 검사"));
+      panel.replaceChildren(el("h2", "", plan ? "3개년 커리큘럼 검사" : "연간 커리큘럼 검사"));
       panel.append(el("p", "curriculum-audit-description", plan ?
-        "선택한 3개 학년도의 커리큘럼 행과 과목카드 참조를 검사합니다. 명단·시간표 오류는 이 화면에 표시하지 않습니다." :
-        "학년도 관리와 같은 정합성 검사입니다. 보드 행과 과목카드 문제는 아래에서 바로 이동해 수정할 수 있습니다."));
+        "선택한 3개 학년도의 편제 행과 과목카드 연결만 검사합니다. 학급·명단·시간표는 검사 대상이 아닙니다." :
+        "이 학년도의 편제 행과 과목카드 연결만 검사합니다. 학급·명단·시간표는 검사 대상이 아닙니다."));
       results.forEach(({ year, report, missing }) => {
         if (missing) panel.append(el("p", "three-year-empty", year + "학년도 자료가 아직 없습니다."));
         else panel.append(renderIssues(year,report,plan));
