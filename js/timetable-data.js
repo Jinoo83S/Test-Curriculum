@@ -3,7 +3,7 @@
 // ================================================================
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { appState } from "./state.js?v=r424";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=r425";
 import { getTtCards, getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
 export { getTtCardById } from "./ttcards.js?v=2026-07-15-room-availability-separation-r355";
 import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";

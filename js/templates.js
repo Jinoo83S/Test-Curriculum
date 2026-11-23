@@ -33,15 +33,19 @@ export function getSemesterTemplateData(tplOrId, semKey) {
   if (!item) return { nameKo:"", nameEn:"", teacher:"", language:"Both" };
   const p = semKey === "sem2" ? "sem2" : "sem1";
   const overrideIds = Array.isArray(item[`${p}TeacherIds`]) ? item[`${p}TeacherIds`] : [];
+  const inheritedIds = p === "sem2" && Array.isArray(item.sem1TeacherIds) ? item.sem1TeacherIds : [];
   const baseIds = Array.isArray(item.teacherIds) ? item.teacherIds : [];
   const overrideNames = Array.isArray(item[`${p}TeacherNames`]) ? item[`${p}TeacherNames`] : [];
+  const inheritedNames = p === "sem2" && Array.isArray(item.sem1TeacherNames) ? item.sem1TeacherNames : [];
   const baseNames = Array.isArray(item.teacherNames) ? item.teacherNames : [];
+  const semesterTeacher = clean(item[`${p}Teacher`]);
+  const hasSemesterTeacher = !!(overrideIds.length || overrideNames.length || semesterTeacher);
   return {
     nameKo:   clean(item[`${p}NameKo`])  || clean(item.nameKo)  || clean(item.nameEn),
     nameEn:   clean(item[`${p}NameEn`])  || clean(item.nameEn)  || clean(item.nameKo),
-    teacher:  clean(item[`${p}Teacher`]) || clean(item.teacher),
-    teacherIds: overrideIds.length ? [...overrideIds] : [...baseIds],
-    teacherNames: overrideNames.length ? [...overrideNames] : [...baseNames],
+    teacher:  semesterTeacher || (p === "sem2" ? clean(item.sem1Teacher) : "") || clean(item.teacher),
+    teacherIds: [...(overrideIds.length ? overrideIds : hasSemesterTeacher ? [] : inheritedIds.length ? inheritedIds : baseIds)],
+    teacherNames: [...(overrideNames.length ? overrideNames : hasSemesterTeacher ? [] : inheritedNames.length ? inheritedNames : baseNames)],
     language: item.language || "Both"
   };
 }

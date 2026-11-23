@@ -6,7 +6,7 @@ import { makeBtn, sectionLabel, gradeDisplay, clean } from "./utils.js?v=2026-07
 import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave } from "./state.js?v=r424";
 import { getClasses, getClassById } from "./students.js?v=2026-07-15-room-availability-separation-r355";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=r425";
 
 const ROSTER_LEVELS = {
   middle: { label: "중등", hint: "7–9학년", grades: ["7학년", "8학년", "9학년"] },

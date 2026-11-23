@@ -14,7 +14,7 @@ import {
   setSidebarLevel,
   copyTemplate, setOnTemplateChange, updateTeacherDatalist, syncSchoolLevels,
   clearStableOrder, parseTemplatePaste, addParsedTemplates
-} from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+} from "./templates.js?v=r425";
 const $ = id => document.getElementById(id);
 
 export function setupAppTemplatesUi({

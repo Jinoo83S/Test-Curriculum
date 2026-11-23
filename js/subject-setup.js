@@ -33,7 +33,7 @@ function renderSetupLevelTabs(onChange) {
 import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
 import { appState } from "./state.js?v=r424";
-import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=r425";
 import { getRosterMeta, setRosterClassCount, setRosterTeacherLoadHours, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r424";
 
 // ── Build rows from curriculum IN BOARD ORDER ─────────────────────

@@ -7,7 +7,7 @@ import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup, synchronizeTeacherIdentityState } from "./state.js?v=r424";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
-} from "./templates.js?v=2026-07-15-room-availability-separation-r355";
+} from "./templates.js?v=r425";
 import { getClassCount } from "./rosters.js?v=r424";
 
 const TTCARD_TEACHER_MODES = new Set(["homeroom", "representative", "none"]);
