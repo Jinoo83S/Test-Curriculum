@@ -61,7 +61,10 @@ function columnType(value) {
   if (/^(학점|credits?|학점credits?)$/.test(label)) return "credits";
   if (/^(시간|hours?|시간hours?)$/.test(label)) return "hours";
   if (/^(시수|수업시수|학점시수|시수학점)$/.test(label)) return "amount";
-  if (/^(반수|반개수|분반수|학급수|학급개수|학급반수|과목반수|수업반|수업반수|개설반수|classcount|numberofclasses|numberofsections|sectioncount|sections|classes)$/.test(label)) return "classCount";
+  if (/(?:반수|반개수|분반수|학급수|학급개수|학급반수|과목반수|수업반수|개설반수)/.test(label)
+      || /^(?:수업반|classes|sections)$/.test(label)
+      || /(?:class|section)(?:es)?(?:count|number|no|qty)/.test(label)
+      || /(?:count|number|no|qty)(?:of)?(?:classes|sections)/.test(label)) return "classCount";
   return "";
 }
 
