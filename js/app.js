@@ -6,7 +6,7 @@
 
 import { onAuth, canEdit } from "./auth.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode, setCurriculumMode } from "./curriculum-mode.js?v=r401";
-import { clearThreeYearCache } from "./three-year-board.js?v=r402";
+import { clearThreeYearCache } from "./three-year-board.js?v=r404";
 import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-room-availability-separation-r355";
@@ -17,7 +17,7 @@ import { versioned } from "./version.js?v=2026-07-15-room-availability-separatio
 import { createAppModuleLoader } from "./app-module-loader.js?v=2026-07-15-room-availability-separation-r355";
 import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=2026-07-15-room-availability-separation-r355";
 import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { setupAppBoardUi } from "./app-board-ui.js?v=r402";
+import { setupAppBoardUi } from "./app-board-ui.js?v=r404";
 import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-room-availability-separation-r355";
 
 const DEFAULT_VIEW = "board";
