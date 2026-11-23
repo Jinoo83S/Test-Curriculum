@@ -4,7 +4,7 @@
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r419";
-import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup, synchronizeTeacherIdentityState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup, synchronizeTeacherIdentityState } from "./state.js?v=r421";
 import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
 } from "./templates.js?v=2026-07-15-room-availability-separation-r355";

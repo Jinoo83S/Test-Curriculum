@@ -13,7 +13,7 @@ import {
   importLocalSnapshot,
   resetLocalSnapshot,
   exportFirestoreDiagnosticSnapshot,
-} from "./state.js?v=2026-07-15-room-availability-separation-r355";
+} from "./state.js?v=r421";
 import { openDataCleanupDialog } from "./data-cleanup.js?v=2026-07-15-room-availability-separation-r355";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";
 import { openAppHealthCheckDialog } from "./app-health-check.js?v=2026-07-15-room-availability-separation-r355";

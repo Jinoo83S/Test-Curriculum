@@ -61,11 +61,22 @@ function columnType(value) {
   if (/^(학점|credits?|학점credits?)$/.test(label)) return "credits";
   if (/^(시간|hours?|시간hours?)$/.test(label)) return "hours";
   if (/^(시수|수업시수|학점시수|시수학점)$/.test(label)) return "amount";
+  if (/^(원점수(?:rawscore)?|rawscore)$/.test(label)) return "reportRawScore";
+  if (/^((?:과목평균|평균)(?:average)?|average|subjectaverage)$/.test(label)) return "reportAverage";
+  if (/^(표준편차(?:standarddeviation)?|standarddeviation|stddev)$/.test(label)) return "reportStandardDeviation";
+  if (/^((?:성취도|성취수준)(?:achievementlevels?)?|achievementlevels?|achievement)$/.test(label)) return "reportAchievementLevels";
+  if (/^((?:수강자수|수강인원)(?:enrollmentcount)?|enrollmentcount|numberofstudents)$/.test(label)) return "reportEnrollmentCount";
+  if (/^((?:석차등급|석차)(?:ranking)?|ranking|rankgrade)$/.test(label)) return "reportRanking";
   if (/(?:반수|반개수|분반수|학급수|학급개수|학급반수|과목반수|수업반수|개설반수)/.test(label)
       || /^(?:수업반|classes|sections)$/.test(label)
       || /(?:class|section)(?:es)?(?:count|number|no|qty)/.test(label)
       || /(?:count|number|no|qty)(?:of)?(?:classes|sections)/.test(label)) return "classCount";
   return "";
+}
+
+const REPORT_FIELDS = ["reportRawScore", "reportAverage", "reportStandardDeviation", "reportAchievementLevels", "reportEnrollmentCount", "reportRanking"];
+function reportingRequirements(get) {
+  return Object.fromEntries(REPORT_FIELDS.map(field => [field, clean(get(field))]).filter(([, value]) => value));
 }
 
 function readHeader(cells, grades, priorBlocks) {
@@ -131,7 +142,8 @@ function isHeading(value) {
 
 function analyzeSchoolSheet(rows, selectedGrades) {
   const entries = [], errors = [], warnings = [];
-  const classCountIndex = rows[0]?.cells.findIndex(value => columnType(value) === "classCount") ?? -1;
+  const headerTypes = rows[0]?.cells.map(columnType) || [];
+  const classCountIndex = headerTypes.indexOf("classCount");
   for (const { cells, line } of rows.slice(1)) {
     const grade = gradeOf(cells[0]);
     if (!grade || !selectedGrades.includes(grade)) continue;
@@ -157,7 +169,8 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     if (error) errors.push({ line, grade, message: error });
     else {
       if (!credits) warnings.push({ line, grade, message: "학급별 시수가 비어 있어 공란으로 저장됩니다." });
-      entries.push({ line, grade, category, track, group, language, credits, classCount, semesters });
+      const reporting = reportingRequirements(field => { const index = headerTypes.indexOf(field); return index >= 0 ? cells[index] : ""; });
+      entries.push({ line, grade, category, track, group, language, credits, classCount, reporting, semesters });
     }
   }
   if (!entries.length && !errors.length) errors.push({ message: "선택한 학년 탭에 해당하는 과목이 없습니다." });
@@ -255,7 +268,7 @@ export function analyzeCurriculumPaste(source, selectedGrades) {
       if (error) errors.push({ line, grade: currentGrade, message: error });
       else {
         if (!amount) warnings.push({ line, grade: currentGrade, message: "학점 또는 시간이 비어 있어 공란으로 저장됩니다." });
-        entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, classCount, semesters });
+        entries.push({ line, grade: currentGrade, category, track, group: prior.group, language, credits: amount, classCount, reporting: reportingRequirements(get), semesters });
       }
     }
   }
@@ -315,6 +328,7 @@ export function curriculumPasteTemplate(entry) {
     nameEn: separate && !second.nameEn ? "" : base.nameEn,
     teacher: separate ? "" : base.teacher,
     language: entry.language, schoolLevel: Number.parseInt(entry.grade, 10) <= 9 ? "중등" : "고등",
+    reportingRequirements: entry.reporting || {},
     ...(separate && {
       useSemesterOverrides: true,
       sem1NameKo: first.nameKo, sem1NameEn: first.nameEn, sem1Teacher: first.teacher,

@@ -1,7 +1,7 @@
 // ================================================================
 // app-students-ui.js · Student Management UI Coordinator
 // ================================================================
-import { scheduleSave } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+import { scheduleSave } from "./state.js?v=r421";
 
 const $ = id => document.getElementById(id);
 

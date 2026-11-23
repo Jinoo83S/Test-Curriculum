@@ -42,4 +42,10 @@ export function teacherChecklistDocRef(user, year = ACTIVE_SCHOOL_YEAR) {
     : doc(db, "schoolYears", String(year), "teacherChecklist", user.uid);
 }
 
+export function teacherChecklistSharedDocRef(year = ACTIVE_SCHOOL_YEAR) {
+  return year === LEGACY_SCHOOL_YEAR
+    ? doc(db, "boards", "teacherChecklist_shared")
+    : doc(db, "schoolYears", String(year), "teacherChecklist", "shared");
+}
+
 export { auth };

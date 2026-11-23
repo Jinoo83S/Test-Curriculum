@@ -9,7 +9,7 @@ import { appState, subscribeDomains, unsubscribeAll, setOnUpdate, scheduleSave, 
          suspendAutoSave, resumeAutoSave, isAutoSaveSuspended,
          exportLocalSnapshot, importLocalSnapshot, resetLocalSnapshot, exportFirestoreDiagnosticSnapshot,
          listTimetableSaveRevisions, restoreTimetableSaveRevision, getTimetableRevisionRestoreConfirmation,
-         verifyPersistedTimetableState } from "./state.js?v=2026-07-15-room-availability-separation-r355";
+         verifyPersistedTimetableState } from "./state.js?v=r421";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { versioned } from "./version.js?v=2026-07-20-initial-load-conflict-hotfix-r371";
 import { openFirestoreUsageDialog } from "./firestore-usage.js?v=2026-07-15-room-availability-separation-r355";

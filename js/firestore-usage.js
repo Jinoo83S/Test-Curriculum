@@ -5,7 +5,7 @@ import {
   getFirestoreUsageStats,
   resetFirestoreUsageStats,
   exportFirestoreUsageSnapshot
-} from "./state.js?v=2026-07-15-room-availability-separation-r355";
+} from "./state.js?v=r421";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 
 function pct(value, limit) {

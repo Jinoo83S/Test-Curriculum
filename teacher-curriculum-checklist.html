@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS 담당 과목 확인</title>
-  <link rel="stylesheet" href="teacher-portal.css?v=r419" />
+  <link rel="stylesheet" href="teacher-portal.css?v=r421" />
 </head>
 <body data-portal-page="curriculum-checklist">
   <header class="portal-header">
@@ -48,8 +48,8 @@
       <div class="checklist-heading">
         <div>
           <p class="portal-kicker"><span id="checklistYear"></span> CURRICULUM DOCUMENTS</p>
-          <h1><span id="checklistTeacherName"></span> 선생님 담당 과목</h1>
-          <p>각 과목의 폴더 링크와 교과계획서 필수 항목을 확인한 뒤 ‘최종 확인’을 체크하세요.</p>
+          <h1>전체 담당 과목 확인</h1>
+          <p><span id="checklistTeacherName"></span> 계정으로 조회 중입니다. 모든 과목을 볼 수 있으며 본인 담당 과목만 편집할 수 있습니다.</p>
         </div>
         <div class="checklist-summary">
           <strong id="checklistProgress">0 / 0</strong>
@@ -61,11 +61,13 @@
       <div class="semester-tabs" role="tablist" aria-label="학기 선택">
         <button class="semester-tab active" data-semester="sem1" type="button" role="tab">1학기</button>
         <button class="semester-tab" data-semester="sem2" type="button" role="tab">2학기</button>
+        <select id="courseScopeFilter" class="checklist-filter" aria-label="과목 범위"><option value="all">전체 과목</option><option value="mine">내 담당만</option></select>
+        <input id="courseSearchInput" class="checklist-search" type="search" placeholder="과목·교사 검색" />
         <span id="checklistSaveStatus" class="checklist-save-status">저장 준비</span>
       </div>
       <div id="checklistCourses" class="checklist-course-list"></div>
     </section>
   </main>
-  <script type="module" src="./js/teacher-portal.js?v=r419"></script>
+  <script type="module" src="./js/teacher-portal.js?v=r421"></script>
 </body>
 </html>
