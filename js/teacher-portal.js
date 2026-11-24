@@ -312,7 +312,8 @@ async function startChecklist(access, user) {
       card.className = `checklist-compact-row${item.confirmed ? " complete" : ""}${course.editable ? " editable" : " readonly"}`;
 
       const courseCell = document.createElement("div"); courseCell.className = "compact-course-cell";
-      courseCell.innerHTML = `<div class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span>${course.editable ? (access.isAdmin ? "관리자" : "내 담당") : "조회"}</span></div><strong>${escapeHtml(course.nameKo)}</strong><small>${escapeHtml(course.nameEn || "")}</small><em>${escapeHtml(course.group)} · ${escapeHtml(course.teacherNames.join(", ") || "담당 교사 미지정")} · ${course.credits ? `${escapeHtml(course.credits)}시수` : "시수 미입력"}</em>`;
+      const subtitle = [course.group, course.teacherNames.join(", ") || "담당 교사 미지정", course.credits ? `${course.credits}시수` : "시수 미입력"].join(" · ");
+      courseCell.innerHTML = `<div class="compact-course-title"><strong>${escapeHtml(course.nameKo)}</strong><div class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span>${course.editable ? (access.isAdmin ? "관리자" : "내 담당") : "조회"}</span></div></div><small title="${escapeHtml(course.nameEn)}">${escapeHtml(course.nameEn)}</small><em title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</em>`;
 
       const folder = document.createElement("div"); folder.className = "compact-folder-cell";
       const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "Drive 폴더 URL"; folderInput.value = item.folderUrl || "";
@@ -343,7 +344,9 @@ async function startChecklist(access, user) {
       const confirm = document.createElement("label"); confirm.className = "compact-confirm-cell";
       const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed; confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`; confirmInput.disabled = !course.editable;
       confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(courses); save(course, "confirmed", item.confirmed); });
-      confirm.append(confirmInput, document.createTextNode("완료"));
+      const confirmLabel = document.createElement("span"); confirmLabel.textContent = "완료";
+      confirmInput.setAttribute("aria-label", `${course.nameKo} 최종 확인`);
+      confirm.append(confirmInput, confirmLabel);
       card.append(courseCell, folder, checks, reporting, confirm); container.append(card);
     });
     updateProgress(courses);
