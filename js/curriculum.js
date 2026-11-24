@@ -6,7 +6,8 @@ import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } f
 import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
-import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r441";
+import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r442";
+import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r442";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -43,6 +44,7 @@ export function updateRowField(grade, rowId, field, value) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
   row[field] = value;
+  if ((field === "category" && value !== "교과") || (field === "track" && value !== "공통")) clearAcademicGroup(row);
   enforceChanCheCredit(row);
   scheduleSave("curriculum");
 }
@@ -152,6 +154,7 @@ export function placeBothSems(templateId, grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
   autoFillRowFromTemplate(grade, rowId, templateId);
+  if (row.sem1TemplateId !== templateId || row.sem2TemplateId !== templateId) clearAcademicGroup(row);
   row.sem1TemplateId = templateId; row.sem2TemplateId = templateId;
   enforceChanCheCredit(row);
   scheduleSave("curriculum");
@@ -166,6 +169,7 @@ export function placeTemplateTo(templateId, grade, rowId, semKey) {
     const currentNames = existingIds.map(id => getTemplateCardTitle(getTemplateById(id))).filter(Boolean).join(" / ");
     const nextName = getTemplateCardTitle(getTemplateById(templateId));
     if (!confirm(`이 행의 1·2학기 카드 "${currentNames}"를 "${nextName}" 카드로 바꿀까요?`)) return;
+    clearAcademicGroup(row);
   }
   autoFillRowFromTemplate(grade, rowId, templateId);
   row.sem1TemplateId = templateId;
@@ -178,13 +182,14 @@ export function clearRowSem(grade, rowId, semKey) {
   const row = getRowById(grade, rowId); if (!row) return;
   row.sem1TemplateId = null;
   row.sem2TemplateId = null;
+  clearAcademicGroup(row);
   scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function clearRowBoth(grade, rowId) {
   if (!canEdit()) return;
   const row = getRowById(grade, rowId); if (!row) return;
-  row.sem1TemplateId = null; row.sem2TemplateId = null; scheduleSave("curriculum"); _onCurriculumChange();
+  row.sem1TemplateId = null; row.sem2TemplateId = null; clearAcademicGroup(row); scheduleSave("curriculum"); _onCurriculumChange();
 }
 
 export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
@@ -193,6 +198,7 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   if (!sRow || !dRow) return;
   if (sGrade === dGrade && sRowId === dRowId) return;
   swapSemesterPair(sRow, dRow);
+  moveAcademicGroups(sRow, dRow, sGrade === dGrade);
   scheduleSave("curriculum"); _onCurriculumChange();
 }
 
@@ -747,6 +753,17 @@ export function buildTabBoard(visibleGrades, onUpdate) {
     const gs = getCategorySummary(grade, "교과");
     const titleEl = document.createElement("div"); titleEl.className = "grade-title";
     titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">교과 ${gs.totalCourses}과목</span><span class="grade-title-badge">${gs.totalCredits}이수단위</span></div></div>`;
+    if (canEdit()) titleEl.firstElementChild.append(makeBtn("과목 묶음", "academic-groups-button", () => {
+      openAcademicGroups({
+        label: grade, rows: curriculum().gradeBoards[grade] || [], getTemplate: getTemplateById,
+        save: change => {
+          if (!canEdit()) return false;
+          updateAcademicGroup(curriculum().gradeBoards[grade] || [], change);
+          scheduleSave("curriculum");
+          _onCurriculumChange();
+        },
+      });
+    }));
     col.appendChild(titleEl);
     const hr = createGradeHeader(); col.appendChild(hr);
     columns.push({ grade, col, hr });

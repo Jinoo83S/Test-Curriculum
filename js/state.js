@@ -699,7 +699,12 @@ export function normalizeRow(row = {}, opts = DEFAULT_OPTIONS) {
   const legId = row.templateId ?? row.sem1 ?? row.sem2 ?? null;
   const s1id  = row.sem1TemplateId !== undefined ? (row.sem1TemplateId ?? null) : legId;
   const s2id  = row.sem2TemplateId !== undefined ? (row.sem2TemplateId ?? null) : legId;
-  return { id: row.id || uid("row"), category: safeC, track: safeT, group: safeG, credits: clean(row.credits), sem1TemplateId: s1id, sem2TemplateId: s2id };
+  const groupId = clean(row.academicGroupId);
+  return {
+    id: row.id || uid("row"), category: safeC, track: safeT, group: safeG, credits: clean(row.credits),
+    sem1TemplateId: s1id, sem2TemplateId: s2id,
+    ...(groupId ? { academicGroupId: groupId, academicGroupName: clean(row.academicGroupName), academicGroupCredits: clean(row.academicGroupCredits) } : {}),
+  };
 }
 
 export function createRow(opts = DEFAULT_OPTIONS, seed = {}) {

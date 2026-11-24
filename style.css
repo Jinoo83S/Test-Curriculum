@@ -8616,3 +8616,20 @@ body.three-year-mode.three-year-card-manager-active #appSidebar{display:none!imp
 .three-year-manager-table td:nth-child(1),.three-year-manager-table td:nth-child(2){min-width:100px}
 .curriculum-paste-warning{color:#92400e}
 .curriculum-paste-error{color:#9f1239;font-weight:700}
+.academic-groups-button {
+  color: #fff; background: transparent; border: 1px solid currentColor; border-radius: 5px;
+  padding: 2px 5px; font-size: .7rem; font-weight: 700; white-space: nowrap; cursor: pointer;
+}
+.academic-groups-dialog {
+  width: min(32rem, calc(100% - 24px)); max-height: 85vh; padding: 18px;
+  border: 1px solid #b7c9da; border-radius: 10px; color: #173456;
+}
+.academic-groups-dialog::backdrop { background: #132d4f66; }
+.academic-groups-dialog form { display: grid; gap: 8px; }
+.academic-groups-dialog h2, .academic-groups-dialog p { margin: 0; }
+.academic-groups-dialog form > label { display: grid; gap: 4px; }
+.academic-groups-dialog :is(select, input:not([type="checkbox"])) { min-height: 28px; }
+.academic-groups-courses { max-height: 40vh; overflow: auto; display: grid; }
+.academic-groups-courses label { display: flex; align-items: center; gap: 7px; padding: 5px; }
+.academic-groups-courses label:nth-child(odd) { background: #edf3fa; }
+.academic-groups-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }

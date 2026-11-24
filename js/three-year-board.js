@@ -9,7 +9,8 @@ import { db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { languageClass, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getSemesterTemplateData } from "./templates.js?v=r425";
 import { pairedSemesterTitles, swapSemesterPair } from "./curriculum-semester-pair.js?v=r429";
-import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r441";
+import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r442";
+import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r442";
 import { getDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const cache = new Map();
@@ -72,9 +73,9 @@ async function readYear(year) {
 }
 
 async function changeYear(year, grade, change) {
-  if (!canEdit()) return;
+  if (!canEdit()) return false;
   if (LOCAL_DEV_MODE) {
-    alert("3개 학년도의 공동 자료 편집은 온라인 모드에서 이용해 주세요."); return;
+    alert("3개 학년도의 공동 자료 편집은 온라인 모드에서 이용해 주세요."); return false;
   }
   const refs = getSchoolYearRefs(year).domains;
   const workspaceMeta = getSchoolYearRefs(year).workspaceMeta;
@@ -109,8 +110,10 @@ async function changeYear(year, grade, change) {
     }
     cache.set(year, Promise.resolve(updated));
     document.dispatchEvent(new CustomEvent("his:three-year-changed"));
+    return true;
   } catch (error) {
     alert(`저장하지 못했습니다. ${error?.message || error}`);
+    return false;
   }
 }
 
@@ -235,6 +238,7 @@ function categorySelect(year, grade, row, field, source) {
       const item = curriculum.gradeBoards[grade].find(current => current.id === row.id);
       if (!item) throw new Error("행이 변경되었습니다. 새로고침해 주세요.");
       item[field] = value;
+      if ((field === "category" && value !== "교과") || (field === "track" && value !== "공통")) clearAcademicGroup(item);
       if (!curriculum.options[field]?.includes(value)) curriculum.options[field]?.push(value);
       return false;
     });
@@ -263,7 +267,9 @@ function cardCell(year, grade, row, sem, cards, grades, sources, merged = false)
         if (!sourceRow) throw new Error("이동할 행이 변경되었습니다. 새로고침해 주세요.");
         if (sourceRow.id === destination.id) return false;
         swapSemesterPair(sourceRow, destination);
+        moveAcademicGroups(sourceRow, destination, true);
       } else {
+        if (destination.sem1TemplateId !== drag.id || destination.sem2TemplateId !== drag.id) clearAcademicGroup(destination);
         destination.sem1TemplateId = drag.id;
         destination.sem2TemplateId = drag.id;
       }
@@ -302,6 +308,7 @@ function cardCell(year, grade, row, sem, cards, grades, sources, merged = false)
         if (!item) throw new Error("행이 변경되었습니다. 새로고침해 주세요.");
         item.sem1TemplateId = null;
         item.sem2TemplateId = null;
+        clearAcademicGroup(item);
         return false;
       });
     });
@@ -661,6 +668,22 @@ function column(grade, source) {
   totals.append(el("span", "grade-title-badge", `교과 ${total.totalCourses}과목`),
     el("span", "grade-title-badge", `${total.totalCredits}이수단위`));
   top.append(el("span", "grade-title-name", grade + " · " + year + "학년도"), totals);
+  if (editable() && source?.exists) {
+    const button = el("button", "academic-groups-button", "과목 묶음");
+    button.type = "button";
+    button.addEventListener("click", () => {
+      const templates = new Map((source.templates?.templates || []).map(card => [card.id, card]));
+      openAcademicGroups({
+        label: `${year}학년도 ${grade}`, rows: source.curriculum?.gradeBoards?.[grade] || [],
+        getTemplate: id => templates.get(id),
+        save: change => changeYear(year, grade, curriculum => {
+          updateAcademicGroup(curriculum.gradeBoards[grade], change);
+          return false;
+        }),
+      });
+    });
+    top.append(button);
+  }
   title.append(top); col.append(title, header());
   return col;
 }

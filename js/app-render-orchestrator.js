@@ -7,7 +7,7 @@
 import { VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
-import { renderThreeYearCardManager } from "./three-year-board.js?v=r441";
+import { renderThreeYearCardManager } from "./three-year-board.js?v=r442";
 
 export function createAppRenderOrchestrator(options = {}) {
   const {

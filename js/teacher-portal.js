@@ -4,7 +4,7 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
 import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r440";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r441";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r442";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 import { REPORT_FIELDS, normalizeChecklistReportOptions, normalizeReportValue } from "./checklist-report-options.js?v=r440";

@@ -1,7 +1,7 @@
 import { buildTeacherIdentityIndex, normalizeTeacherAssignment, teacherNameById } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { assignedTeachers } from "./teacher-year-directory.js?v=r433";
 import { getEffectiveCredit, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { getCurriculumCalculationGroup, getCurriculumSemesterTitles, summarizeAcademicCourses } from "./curriculum-academic-summary.js?v=r441";
+import { getCurriculumCalculationGroup, getCurriculumSemesterTitles, summarizeAcademicCourses } from "./curriculum-academic-summary.js?v=r442";
 
 const text = value => String(value ?? "").trim();
 const key = value => text(value).normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
@@ -29,7 +29,7 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
       const sem1 = semester(row, "sem1"), sem2 = semester(row, "sem2");
       const calcGroupId = getCurriculumCalculationGroup([cards.get(row.sem1TemplateId), cards.get(row.sem2TemplateId)]);
       return sem1 || sem2 ? [{ grade, category: row.category, track: row.track, group: row.group,
-        calcGroupId,
+        calcGroupId, academicGroupId: row.academicGroupId, academicGroupCredits: row.academicGroupCredits,
         credits: getEffectiveCredit(row), boardHours: parseCreditValue(row.credits), sem1, sem2 }] : [];
     }));
 }
