@@ -1,6 +1,6 @@
 import { buildTeacherIdentityIndex, normalizeTeacherAssignment, teacherNameById } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { assignedTeachers } from "./teacher-year-directory.js?v=r433";
-import { getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { getEffectiveCredit, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 
 const text = value => String(value ?? "").trim();
 const key = value => text(value).normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
@@ -27,9 +27,44 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
   return Object.entries(curriculum?.gradeBoards || {}).sort(([a], [b]) => parseInt(a, 10) - parseInt(b, 10))
     .flatMap(([grade, rows]) => (Array.isArray(rows) ? rows : []).flatMap(row => {
       const sem1 = semester(row, "sem1"), sem2 = semester(row, "sem2");
+      const calcGroupIds = new Set([row.sem1TemplateId, row.sem2TemplateId].map(id => text(cards.get(id)?.calcGroupId)).filter(Boolean));
       return sem1 || sem2 ? [{ grade, category: row.category, track: row.track, group: row.group,
-        credits: getEffectiveCredit(row), sem1, sem2 }] : [];
+        calcGroupId: calcGroupIds.size === 1 ? [...calcGroupIds][0] : "",
+        credits: getEffectiveCredit(row), boardHours: parseCreditValue(row.credits), sem1, sem2 }] : [];
     }));
+}
+
+export function summarizeCurriculumGrades(rows, templateGroups = []) {
+  const groups = new Map(templateGroups.map(group => [group.id, group.creditValue]));
+  const byGrade = new Map();
+  for (const row of rows) {
+    if (!byGrade.has(row.grade)) byGrade.set(row.grade, []);
+    byGrade.get(row.grade).push(row);
+  }
+  return new Map([...byGrade].map(([grade, gradeRows]) => {
+    const lessons = { courses: 0, hours: 0 };
+    const buckets = new Map();
+    for (const row of gradeRows) {
+      const category = text(row.category);
+      const track = text(row.track).replace(/\s+/g, "");
+      if (category !== "교과" || !track || (track === "공통" && !row.calcGroupId)) {
+        lessons.courses++;
+        lessons.hours += row.boardHours;
+        continue;
+      }
+      const bucket = track === "공통" ? `common:${row.calcGroupId}` : `track:${track}`;
+      if (!buckets.has(bucket)) buckets.set(bucket, []);
+      buckets.get(bucket).push(row);
+    }
+    for (const bucket of buckets.values()) {
+      const ids = new Set(bucket.map(row => row.calcGroupId).filter(Boolean));
+      const configured = ids.size === 1 ? groups.get([...ids][0]) : null;
+      lessons.courses++;
+      lessons.hours += text(configured) ? parseCreditValue(configured) : Math.max(...bucket.map(row => row.boardHours), 0);
+    }
+    lessons.hours = Number(lessons.hours.toFixed(8));
+    return [grade, lessons];
+  }));
 }
 
 export function groupTeacherAssignments(rows, term, currentTeacher) {
@@ -119,12 +154,20 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
     const summary = en ? `${group.rows.length} courses` : `${group.rows.length}과목`;
     header.append(small(summary));
     if (workload) {
-      const totals = ["sem1", "sem2"].map((term, index) => {
-        const { total, missing } = teacherSemesterSummary(group, term);
+      const semesters = ["sem1", "sem2"].map(term => teacherSemesterSummary(group, term));
+      const hasHours = semesters.some(item => item.total !== null);
+      const totalHours = hasHours ? Number(semesters.reduce((sum, item) => sum + (item.total ?? 0), 0).toFixed(8)) : "—";
+      const missing = semesters.reduce((sum, item) => sum + item.missing, 0);
+      const status = !hasHours ? (en ? " (unset)" : " (미설정)") :
+        missing ? (en ? " (partial)" : " (확인분)") : "";
+      const overall = create("strong", `${en ? "Annual teaching hours" : "교사 전체 시수"} ${totalHours}${status}`);
+      overall.className = "faculty-workload-overall";
+      header.append(overall);
+      const totals = semesters.map(({ total, missing }, index) => {
         const status = missing ? (en ? ` (${missing} unset)` : ` (미설정 ${missing}과목)`) : "";
         return `${en ? `S${index + 1}` : `${index + 1}학기`} ${total ?? "—"}${status}`;
       });
-      const badge = create("span", `${en ? "Teacher hours" : "교사 총시수"} · ${totals.join(" / ")}`);
+      const badge = create("span", totals.join(" / "));
       badge.className = "faculty-workload-badge";
       header.append(badge);
     }
@@ -160,7 +203,7 @@ function appendCourse(cell, subject, includeTeacher = false) {
   }
 }
 
-export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...new Set(rows.map(row => row.grade))]) {
+export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...new Set(rows.map(row => row.grade))], summaries = summarizeCurriculumGrades(rows)) {
   const en = language === "en";
   const { table, wrap } = makeTable([]);
   table.classList.add("faculty-annual-board");
@@ -176,7 +219,12 @@ export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...
   const head = table.tHead.rows[0];
   const subhead = table.tHead.insertRow();
   for (const grade of grades) {
-    const label = create("th", en ? `Grade ${parseInt(grade, 10)}` : grade);
+    const label = create("th");
+    const { courses, hours } = summaries.get(grade) || { courses: 0, hours: 0 };
+    label.append(create("strong", en ? `Grade ${parseInt(grade, 10)}` : grade));
+    const totals = create("span", en ? `${courses} courses · ${hours} hours` : `${courses}과목 · 총 ${hours}시수`);
+    totals.className = "faculty-grade-totals";
+    label.append(totals);
     label.colSpan = 5;
     label.scope = "colgroup";
     head.append(label);
@@ -211,7 +259,7 @@ export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...
           row.insertCell().textContent = item.group || "—";
           appendCourse(row.insertCell(), item.sem1, true);
           appendCourse(row.insertCell(), item.sem2, true);
-          row.insertCell().textContent = item.credits || "—";
+          row.insertCell().textContent = item.boardHours || "—";
         }
       }
     }

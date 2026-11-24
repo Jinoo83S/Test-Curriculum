@@ -4,7 +4,7 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { readTeacherPortalAccess, normalizePortalRole } from "./teacher-portal-auth.js?v=r424";
 import { setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { appliedYearsForTeacher, buildTeacherYearRoster, schoolEmailKey } from "./teacher-year-directory.js?v=r431";
-import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload } from "./school-portal-settings-data.js?v=r434";
+import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload } from "./school-portal-settings-data.js?v=r435";
 
 const byId = id => document.getElementById(id);
 const clean = value => String(value || "").trim();

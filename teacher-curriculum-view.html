@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HIS 커리큘럼 열람</title>
   <link rel="stylesheet" href="teacher-portal.css?v=r425">
-  <link rel="stylesheet" href="teacher-curriculum-view.css?v=r434">
+  <link rel="stylesheet" href="teacher-curriculum-view.css?v=r435">
 </head>
 <body data-portal-page="curriculum-view">
   <header class="portal-header">
@@ -22,6 +22,11 @@
     </div>
   </header>
   <main class="portal-shell faculty-view-shell">
+    <div class="faculty-page-return">
+      <a class="portal-btn faculty-back-link" href="index.html">
+        <span aria-hidden="true">←</span><span data-i18n="backToWorkPage">업무 메뉴로 돌아가기</span>
+      </a>
+    </div>
     <section id="portalLoading" class="portal-state-card compact"><h2 data-i18n="checkingAccess">접근 권한을 확인하고 있습니다</h2></section>
     <section id="portalSignedOut" class="portal-state-card compact" hidden>
       <h2 data-i18n="signInTitle">학교 Google 계정으로 로그인해 주세요</h2>
@@ -44,6 +49,6 @@
       <div id="facultyViewContent"></div>
     </section>
   </main>
-  <script type="module" src="./js/teacher-portal.js?v=r434"></script>
+  <script type="module" src="./js/teacher-portal.js?v=r435"></script>
 </body>
 </html>

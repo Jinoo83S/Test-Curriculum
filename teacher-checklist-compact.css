@@ -10,7 +10,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand-mark {
 body[data-portal-page="curriculum-checklist"] .portal-brand small { display: none; }
 
 .checklist-shell {
-  width: min(85rem, calc(100% - 20px));
+  width: calc(100% - 20px);
   margin: 8px auto 16px;
 }
 .checklist-heading {
@@ -69,7 +69,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   --report-gap: 4px;
   display: block;
   overflow: auto;
-  max-height: max(20rem, calc(100dvh - 166px));
+  max-height: max(20rem, calc(100dvh - 205px));
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;

@@ -26,6 +26,7 @@ export async function readTeacherYearSources(year, { teachersOnly = false } = {}
     teachers: Array.isArray(values.teachers?.teachers) ? values.teachers.teachers.filter(Boolean) : [],
     curriculum: values.curriculum,
     templates: Array.isArray(values.templates?.templates) ? values.templates.templates.filter(Boolean) : [],
+    templateGroups: Array.isArray(values.templates?.templateGroups) ? values.templates.templateGroups.filter(Boolean) : [],
   };
 }
 
@@ -65,13 +66,18 @@ export async function saveCurriculumPublication(year, published) {
 export async function readFacultyWorkloadFromRosters(year) {
   if (!/^20[2-9]\d$/.test(year)) throw new Error("학년도를 확인해 주세요.");
   const { collections, domains } = getSchoolYearRefs(year);
-  const current = await withDeadline(getDocsFromServer(collections.rosters), "학급 수와 교사시수 조회 시간이 초과되었습니다.");
-  let entries = current.docs.map(item => {
-    const data = item.data();
-    return { id: data.templateId || item.id, meta: data.meta };
-  });
-  if (current.empty) {
+  let splitError;
+  const current = await withDeadline(getDocsFromServer(collections.rosters), "학급 수와 교사시수 조회 시간이 초과되었습니다.")
+    .catch(error => { splitError = error; });
+  let entries;
+  if (current && !current.empty) {
+    entries = current.docs.map(item => {
+      const data = item.data();
+      return { id: data.templateId || item.id, meta: data.meta };
+    });
+  } else {
     const legacy = await withDeadline(getDocFromServer(domains.rosters), "과목 설정 조회 시간이 초과되었습니다.");
+    if (splitError && !legacy.data()?.rosterMeta) throw splitError;
     entries = Object.entries(legacy.data()?.rosterMeta || {}).map(([id, meta]) => ({ id, meta }));
   }
   return summarizeFacultyWorkload(entries).map(([id, meta]) => ({ id, ...meta }));

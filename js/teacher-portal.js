@@ -3,8 +3,8 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
-import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r434";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r434";
+import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r435";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r435";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 const page = document.body.dataset.portalPage || "menu";
@@ -28,12 +28,12 @@ Object.assign(translations.en, { settings: "Settings", settingsDescription: "Man
 Object.assign(translations.ko, {
   facultyCurriculum: "커리큘럼 열람", facultyCurriculumDescription: "공개된 연간 커리큘럼을 학년별로 확인합니다.",
   facultyAssignments: "교사별 담당 현황", facultyAssignmentsDescription: "1·2학기 담당 과목과 시수를 나란히 확인합니다. 내 담당은 목록 위에 표시됩니다.",
-  backToWork: "업무 메뉴", readOnly: "보기 전용", facultyUnavailable: "열람할 수 없습니다",
+  backToWork: "업무 메뉴", backToWorkPage: "업무 메뉴로 돌아가기", readOnly: "보기 전용", facultyUnavailable: "열람할 수 없습니다",
 });
 Object.assign(translations.en, {
   facultyCurriculum: "View Curriculum", facultyCurriculumDescription: "Browse the published annual curriculum by grade.",
   facultyAssignments: "Teacher Assignments", facultyAssignmentsDescription: "Compare course assignments across both semesters. Your courses appear first.",
-  backToWork: "Faculty Menu", readOnly: "Read only", facultyUnavailable: "This page is unavailable",
+  backToWork: "Faculty Menu", backToWorkPage: "Back to Faculty Menu", readOnly: "Read only", facultyUnavailable: "This page is unavailable",
 });
 let portalLanguage = localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
 
@@ -444,6 +444,7 @@ async function startFacultyCurriculum(access, serial) {
   const rows = buildReadOnlyCurriculumRows(source.curriculum, source.templates, source.teachers,
     (id, credits) => facultyCourseWorkload(workload.get(id), credits));
   const self = source.teachers.find(teacher => normalizePortalEmail(teacher.email) === access.email) || access.teacher;
+  const gradeSummaries = teachersView ? null : summarizeCurriculumGrades(rows, source.templateGroups);
   const titleKey = teachersView ? "facultyAssignments" : "facultyCurriculum";
   const activeLink = byId("facultyCurriculumApp").querySelector(`[data-i18n="${titleKey}"].portal-btn`);
   activeLink?.setAttribute("aria-current", "page");
@@ -479,7 +480,7 @@ async function startFacultyCurriculum(access, serial) {
         row.category, row.track, row.group, ...[row.sem1, row.sem2].flatMap(subject =>
           subject ? [subject.name, subject.english, ...subject.teachers.map(teacher => teacher.name)] : []),
       ]));
-      table = () => renderAnnualCurriculumTable(visible, portalLanguage, grades);
+      table = () => renderAnnualCurriculumTable(visible, portalLanguage, grades, gradeSummaries);
     }
     if (visible.length) content.replaceChildren(table());
     else {
