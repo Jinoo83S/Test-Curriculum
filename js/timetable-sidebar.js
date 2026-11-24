@@ -2,6 +2,8 @@
 // timetable-sidebar.js · Bottom Subject/Card Panel Rendering
 // ================================================================
 
+import { CHAPEL_PERIODS, isChapelTemplate, isSchoolChapelCard } from "./chapel-schedule.js?v=r439";
+
 /**
  * Creates handlers for the timetable bottom card panel.
  * The module is intentionally dependency-injected so timetable.js can keep
@@ -183,7 +185,9 @@ export function createTimetableSidebarHandlers(deps) {
         alert("시간표 카드 원본 데이터가 아직 로딩되지 않았습니다. 잠시 후 다시 시도해 주세요.");
         return;
       }
-      alert(`${n}개 카드 데이터를 갱신했습니다.`);
+      const chapelNotes = (appState.timetable?.cardGenerationMeta?.issues || [])
+        .filter(issue => issue.type === "chapel-existing-references").map(issue => issue.message);
+      alert([`${n}개 카드 데이터를 갱신했습니다.`, ...chapelNotes].join("\n\n"));
       renderAll();
       refreshSubjectViews();
     });
@@ -1009,7 +1013,7 @@ export function createTimetableSidebarHandlers(deps) {
     card.label = String(values.label || "").trim();
     card.teacherName = String(values.teacherName || "").trim();
     card.teachers = splitEditorTeachers(card.teacherName);
-    card.credits = parseFloat(values.credits) || 0;
+    card.credits = isSchoolChapelCard(card) ? CHAPEL_PERIODS : (parseFloat(values.credits) || 0);
     card.category = String(values.category || "").trim();
     card.track = String(values.track || "").trim();
     card.group = String(values.group || "").trim();
@@ -1021,7 +1025,7 @@ export function createTimetableSidebarHandlers(deps) {
     card.fixedRoomId = values.roomRule === "fixed" ? (values.fixedRoomId || null) : (values.fixedRoomId || null);
     const gradeClassCount = countGradeClassesForCard(card);
     const targetClassCount = card.classKeys.length || card.classLabels.length;
-    card.isWholeGrade = !!values.isWholeGrade && (!gradeClassCount || targetClassCount >= gradeClassCount);
+    card.isWholeGrade = !isSchoolChapelCard(card) && !!values.isWholeGrade && (!gradeClassCount || targetClassCount >= gradeClassCount);
     card.manualEdited = true;
     card.editedAt = new Date().toISOString();
     normalizeManualCardAudienceFlags(card);
@@ -1816,7 +1820,10 @@ export function createTimetableSidebarHandlers(deps) {
         templateIds.forEach(templateId => {
           seenTemplateGrades.add(diagnosticKey(templateId, gradeKey));
           const template = templateMap.get(templateId);
-          const actualCards = cardsByTemplateGrade.get(diagnosticKey(templateId, gradeKey)) || [];
+          const legacyCards = cardsByTemplateGrade.get(diagnosticKey(templateId, gradeKey)) || [];
+          const sharedChapel = isChapelTemplate(template) && cards.find(card =>
+            isSchoolChapelCard(card) && card.classKeys?.some(key => key.startsWith(`${gradeDisplay(gradeKey)}:`)));
+          const actualCards = sharedChapel ? [sharedChapel] : legacyCards;
           const item = makeCurriculumDiagRow({ gradeKey, row, rowIndex, template, actualCards, rosters, rosterMeta, groups, actualEntries });
           rows.push(item);
           updateGradeCounters(gradeSummary, item);
@@ -1888,7 +1895,8 @@ export function createTimetableSidebarHandlers(deps) {
     const category = row?.category || "";
     const track = row?.track || "";
     const group = row?.group || "";
-    const isZeroCreative = category === "창체" && rawCredits <= 0;
+    const chapel = isChapelTemplate(template);
+    const isZeroCreative = !chapel && category === "창체" && rawCredits <= 0;
     const isCreative = category === "창체";
     const isCompound = !!template?.isCompound && Array.isArray(template?.compoundParts) && template.compoundParts.length > 0;
     const compoundPartCount = isCompound ? Math.max(1, template.compoundParts.length) : 1;
@@ -1913,8 +1921,8 @@ export function createTimetableSidebarHandlers(deps) {
     // 진단 화면에서도 학생 수를 카드의 studentKeys로 판단하지 않고,
     // 수강명단 원본(rosterCount)이 있을 때만 참고값으로 표시합니다.
     const diagnosticRosterStudentCount = rosterCount;
-    const expectedCredits = isZeroCreative ? 0 : isCreative ? 1 : rawCredits;
-    const expectedCardMode = isZeroCreative ? "제외" : isCompound ? "복합 분할" : isCreative ? "창체 1시수" : "일반";
+    const expectedCredits = chapel ? CHAPEL_PERIODS : isZeroCreative ? 0 : isCreative ? 1 : rawCredits;
+    const expectedCardMode = chapel ? "학교급 공통 채플" : isZeroCreative ? "제외" : isCompound ? "복합 분할" : isCreative ? "창체 1시수" : "일반";
 
     let level = "ok";
     let status = "normal";
@@ -1924,6 +1932,12 @@ export function createTimetableSidebarHandlers(deps) {
 
     if (!template) {
       level = "error"; status = "missing-template"; note = "연결된 과목카드 템플릿을 찾지 못했습니다.";
+    } else if (chapel) {
+      const shared = actualCards.some(isSchoolChapelCard);
+      level = shared ? "info" : "warn";
+      status = shared ? "shared-chapel" : "chapel-refresh";
+      note = shared ? "학교급 공통 카드에서 함께 편성합니다." : "학교급 공통 채플 카드 갱신이 필요합니다.";
+      transformNote = `시간표 ${CHAPEL_PERIODS}시수`;
     } else if (isZeroCreative) {
       level = actualCardCount ? "warn" : "info";
       status = actualCardCount ? "excluded-but-card-exists" : "excluded";

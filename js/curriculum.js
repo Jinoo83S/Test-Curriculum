@@ -5,6 +5,7 @@ import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OP
 import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=r426";
+import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -669,6 +670,14 @@ function createGradeRow(grade, rowData, onUpdate) {
   if (shouldRenderMerged(rowData)) { row.appendChild(createMergedDropCell(grade, rowData, rowData.sem1TemplateId)); }
   else { row.appendChild(createDropCell(grade, rowData, "sem1", rowData.sem1TemplateId)); row.appendChild(createDropCell(grade, rowData, "sem2", rowData.sem2TemplateId)); }
   const ci = document.createElement("input"); ci.className = "credit-input"; ci.type = "text"; ci.value = rowData.credits; ci.placeholder = "0"; ci.disabled = !canEdit();
+  const semesterTitles = ["sem1", "sem2"].flatMap(term => {
+    const title = getSemesterTemplateData(rowData[term + "TemplateId"], term);
+    return [title.nameKo, title.nameEn];
+  });
+  if (isChapelTitle(...semesterTitles)) {
+    ci.title = `${rowData.category === "창체" ? "창체 기록 시간" : "교과 이수단위"} · 시간표 편성 ${CHAPEL_PERIODS}시수`;
+    ci.setAttribute("aria-label", ci.title);
+  }
   ci.addEventListener("change", e => updateRowField(grade, rowData.id, "credits", e.target.value)); row.appendChild(ci);
   const db = makeBtn("×", "row-delete-btn", () => { deleteRow(grade, rowData.id); if (typeof onUpdate === "function") onUpdate(); }); db.disabled = !canEdit(); row.appendChild(db);
   return row;

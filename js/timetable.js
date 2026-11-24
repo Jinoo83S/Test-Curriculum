@@ -33,6 +33,7 @@ import { getGradeColor, CONFLICT_DISPLAY, CONFLICT_PRIORITY, getOrderedConflictT
 import { createTimetableUndoHandlers } from "./timetable-undo.js?v=2026-07-15-room-availability-separation-r355";
 import { createTimetableAuthUi } from "./timetable-auth-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { createTimetableRevisionHistoryUi } from "./timetable-revision-history.js?v=2026-07-15-timetable-revision-restore-r357";
+import { CHAPEL_PERIODS, isSchoolChapelCard } from "./chapel-schedule.js?v=r439";
 
 
 const [
@@ -55,9 +56,9 @@ const [
   cpSatImportModule,
 ] = await Promise.all([
   import("./data-cleanup.js?v=r426"),
-  import("./ttcards.js?v=r426"),
+  import("./ttcards.js?v=r439"),
   import(versioned("./timetable-conflicts.js")),
-  import("./timetable-data.js?v=r426"),
+  import("./timetable-data.js?v=r439"),
   import(versioned("./timetable-autoassign.js")),
   import(versioned("./timetable-grid.js")),
   import(versioned("./timetable-detail.js")),
@@ -1612,7 +1613,8 @@ async function applyTimetableCardEditorPatch(cardId, patch = {}) {
     const teacherIds = [...new Set((patch.teacherIds || []).map(clean).filter(Boolean))];
     const classKeys = [...new Set((patch.classKeys || []).map(clean).filter(Boolean))];
     const classLabels = [...new Set((patch.classLabels || []).map(clean).filter(Boolean))];
-    const credits = Number(patch.credits);
+    const schoolChapel = isSchoolChapelCard(card);
+    const credits = schoolChapel ? CHAPEL_PERIODS : Number(patch.credits);
     if (!classKeys.length) throw new Error("대상 학급이 비어 있습니다.");
     if (!Number.isFinite(credits) || credits < 0) throw new Error("주당 시수가 올바르지 않습니다.");
 
@@ -1624,7 +1626,7 @@ async function applyTimetableCardEditorPatch(cardId, patch = {}) {
     card.classLabels = classLabels;
     card.studentKeys = [];
     card.credits = credits;
-    card.isWholeGrade = !!patch.isWholeGrade;
+    card.isWholeGrade = !schoolChapel && !!patch.isWholeGrade;
     card.roomRule = clean(patch.roomRule || "teacher") || "teacher";
     card.fixedRoomId = card.roomRule === "fixed" ? (clean(patch.fixedRoomId) || null) : null;
     card.allowedSlots = (patch.allowedSlots || []).map(slot => ({ day: Number(slot.day), period: Number(slot.period) }));

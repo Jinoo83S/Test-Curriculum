@@ -1,7 +1,7 @@
 // ================================================================
 // ttcards.js · Timetable Card Generation + Group Manager UI
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { GRADE_KEYS, GRADE_GROUPS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, makeBtn, languageClass, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel, parseCreditValue, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, saveNow, normalizeTtCard, normalizeTemplateGroup, synchronizeTeacherIdentityState } from "./state.js?v=r426";
@@ -9,6 +9,7 @@ import {
   getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary, splitTeacherNames,
 } from "./templates.js?v=r425";
 import { getClassCount } from "./rosters.js?v=r426";
+import { CHAPEL_PERIODS, isChapelTemplate, isSchoolChapelCard } from "./chapel-schedule.js?v=r439";
 
 const TTCARD_TEACHER_MODES = new Set(["homeroom", "representative", "none"]);
 const TTCARD_TEACHER_MODE_LABELS = {
@@ -513,16 +514,24 @@ function buildGeneratedCardsForTemplate({ templateId, gradeKey, sectionIdx, exis
 function buildAllGeneratedTtCards(existing = new Map()) {
   const cards = [];
   const seen = new Set();
+  const chapelSources = new Map();
   GRADE_KEYS.forEach(gradeKey => {
     const board = appState.curriculum?.gradeBoards?.[gradeKey] || [];
     const seenTpl = new Set();
     board.forEach(row => {
-      if (shouldSkipTimetableCardRow(row)) return;
       [row.sem1TemplateId, row.sem2TemplateId].filter(Boolean).forEach(tplId => {
         if (seenTpl.has(tplId)) return;
-        seenTpl.add(tplId);
-
         const tpl = getTemplateById(tplId);
+        if (isChapelTemplate(tpl)) {
+          const level = GRADE_GROUPS.tab7to9.includes(gradeKey) ? "middle" : "high";
+          const sources = chapelSources.get(level) || [];
+          sources.push({ templateId: tplId, gradeKey, row });
+          chapelSources.set(level, sources);
+          seenTpl.add(tplId);
+          return;
+        }
+        if (shouldSkipTimetableCardRow(row)) return;
+        seenTpl.add(tplId);
         // 카드 개수는 커리큘럼 원본 + 수강명단 sectionIdx 구조에서만 결정합니다.
         // 분류명이 창체/자율/진로/동아리라는 이유만으로 반별 수업을 통합하지 않습니다.
         const cc = getGeneratedSectionCountForRow(tplId, gradeKey, row, tpl);
@@ -538,7 +547,50 @@ function buildAllGeneratedTtCards(existing = new Map()) {
       });
     });
   });
-  return cards;
+  const deferredChapels = [];
+  const placed = appState.timetable.entries || [];
+  const references = new Set(placed.flatMap(entry => [entry.ttcardId, ...(entry.ttcardIds || [])]));
+  for (const group of appState.timetable.ttcardGroups || []) {
+    for (const id of [...(group.poolCardIds || []), ...(group.units || []).flatMap(unit => unit.ttcardIds || [])]) {
+      references.add(id);
+    }
+  }
+  for (const [level, sources] of chapelSources) {
+    const id = `ttc_school_chapel_${level}`;
+    const title = level === "middle" ? "중등 채플" : "고등 채플";
+    const grades = level === "middle" ? GRADE_GROUPS.tab7to9 : GRADE_GROUPS.tab10to12;
+    const legacy = [...existing.values()].filter(card => !isManualTtCard(card) && !isSchoolChapelCard(card) &&
+      sources.some(source => source.gradeKey === card.gradeKey && source.templateId === card.templateId));
+    // Keep already referenced cards intact until their placements and group references are removed.
+    if (legacy.some(card => references.has(card.id)) || placed.some(entry =>
+      !entry.ttcardId && !entry.ttcardIds?.length && sources.some(source =>
+        (entry.gradeKey === source.gradeKey || entry.gradeKeys?.includes(source.gradeKey)) &&
+        (entry.templateId === source.templateId || entry.templateIds?.includes(source.templateId))))) {
+      cards.push(...legacy.map(card => ({ ...card })));
+      deferredChapels.push(title);
+      continue;
+    }
+    const previous = existing.get(id);
+    const anchor = sources.find(source => source.templateId === previous?.templateId && source.gradeKey === previous?.gradeKey) || sources[0];
+    const audience = grades.flatMap(grade => getGradeClasses(grade));
+    const classKeys = audience.map(cls => classKeyOf(cls.grade, cls.name)).filter(Boolean);
+    const classLabels = audience.map(cls => classLabelOf(cls.grade, cls.name)).filter(Boolean);
+    const teachers = uniqueNames(sources.flatMap(source => splitTeacherNames(getTemplateTeacherSummary(getTemplateById(source.templateId)))));
+    const roomSource = previous || legacy.find(card => card.fixedRoomId);
+    cards.push(normalizeTtCard({
+      ...previous, id, templateId: anchor.templateId, gradeKey: anchor.gradeKey, sectionIdx: 0,
+      subject: title, subjectEn: level === "middle" ? "Middle School Chapel" : "High School Chapel",
+      teacherName: previous?.manualEdited ? previous.teacherName : teachers.join(", "),
+      teachers: previous?.manualEdited ? previous.teachers : teachers,
+      teacherIds: previous?.manualEdited ? previous.teacherIds : teacherIdsForNames(teachers),
+      teacherMode: previous?.manualEdited ? previous.teacherMode : teachers.length ? "" : "none",
+      category: anchor.row.category, track: anchor.row.track, group: anchor.row.group,
+      credits: CHAPEL_PERIODS, classKeys, classLabels, isWholeGrade: false,
+      roomRule: roomSource?.roomRule || "teacher", fixedRoomId: roomSource?.fixedRoomId || null,
+      generatedAt: new Date().toISOString(),
+    }));
+  }
+  return { cards, deferredChapels };
 }
 
 function countTimetableSourceRows() {
@@ -654,7 +706,8 @@ function repairTtCardIntegrity(card, meta, { action = "refresh" } = {}) {
   if (!card) return null;
   const tpl = getTemplateById(card.templateId);
   const row = getCurriculumRowForCard(card.gradeKey, card.templateId);
-  const expectedWhole = row ? isWholeGradeRow(row, tpl, card.gradeKey, card.sectionIdx ?? 0) : false;
+  const schoolChapel = isSchoolChapelCard(card);
+  const expectedWhole = !schoolChapel && row ? isWholeGradeRow(row, tpl, card.gradeKey, card.sectionIdx ?? 0) : false;
   const manual = isManualTtCard(card) || !!card.isManual;
   const beforeKeys = [...(card.classKeys || [])];
   const beforeLabels = [...(card.classLabels || [])];
@@ -671,7 +724,7 @@ function repairTtCardIntegrity(card, meta, { action = "refresh" } = {}) {
   card.studentKeys = [];
 
   // 2) 생성 카드인데 대상 반이 비었거나 원본과 불일치하는 경우, 생성 규칙에서 다시 계산합니다.
-  const expectedAudience = (card.templateId && card.gradeKey)
+  const expectedAudience = (!schoolChapel && card.templateId && card.gradeKey)
     ? resolveCardAudience({ templateId: card.templateId, gradeKey: card.gradeKey, sectionIdx: card.sectionIdx ?? 0 })
     : { classKeys: [], classLabels: [] };
   const shouldFollowGeneratedAudience = !manual && !card.manualEdited;
@@ -1100,7 +1153,7 @@ function repairTimetableEntryAudienceFromCards(cards, meta) {
   });
 }
 
-function validateAndRepairTtCardGeneration(cards = [], { action = "refresh", previous = [] } = {}) {
+function validateAndRepairTtCardGeneration(cards = [], { action = "refresh", previous = [], deferredChapels = [] } = {}) {
   const meta = {
     schemaVersion: CARD_GENERATION_META_VERSION,
     action,
@@ -1116,6 +1169,10 @@ function validateAndRepairTtCardGeneration(cards = [], { action = "refresh", pre
     repairedGroupIds: new Set(),
     issues: [],
   };
+  for (const title of deferredChapels) {
+    pushCardGenerationIssue(meta, "warning", "chapel-existing-references",
+      `${title}: 기존 시간표 배치 또는 묶음에 연결된 학년별 카드를 유지했습니다. 연결을 정리한 뒤 카드를 갱신하면 학교급 공통 카드가 생성됩니다.`);
+  }
 
   const seenIds = new Set();
   const repairedCards = (cards || []).map(card => {
@@ -1156,10 +1213,8 @@ function cardGenerationMetaAlertSuffix() {
   if (meta.warningCount) parts.push(`경고 ${meta.warningCount}건`);
   if (meta.errorCount) parts.push(`오류 ${meta.errorCount}건`);
   if (!parts.length) return "\n\n생성검증: 정상";
-  if (!meta.errorCount) {
-    return `\n\n생성검증: 자동 정리 ${meta.repairCount || meta.warningCount}건 · 오류 없음\n자세한 내용은 내보낸 JSON의 data.timetable.cardGenerationMeta에서 확인할 수 있습니다.`;
-  }
-  return `\n\n생성검증: ${parts.join(" · ")}\n자세한 내용은 내보낸 JSON의 data.timetable.cardGenerationMeta에서 확인할 수 있습니다.`;
+  const chapelNotes = (meta.issues || []).filter(issue => issue.type === "chapel-existing-references").map(issue => issue.message);
+  return `\n\n생성검증: ${parts.join(" · ")}\n${chapelNotes.length ? chapelNotes.join("\n") + "\n" : ""}자세한 내용은 내보낸 JSON의 data.timetable.cardGenerationMeta에서 확인할 수 있습니다.`;
 }
 
 export function refreshTtCardData() {
@@ -1169,12 +1224,12 @@ export function refreshTtCardData() {
   // 원본 도메인이 아직 로딩되지 않은 상태에서는 절대 빈 배열을 저장하지 않습니다.
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
-  const generatedCards = buildAllGeneratedTtCards(existing);
+  const { cards: generatedCards, deferredChapels } = buildAllGeneratedTtCards(existing);
   const mergedCards = mergeGeneratedAndManualCards(generatedCards, before);
   const guard = guardGeneratedCards(generatedCards, before.length, "refresh");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
 
-  const { cards: nextCards } = validateAndRepairTtCardGeneration(mergedCards, { action: "refresh", previous: before });
+  const { cards: nextCards } = validateAndRepairTtCardGeneration(mergedCards, { action: "refresh", previous: before, deferredChapels });
   appState.timetable.ttcards = nextCards;
   pruneObsoleteGeneratedTtCardRefs(nextCards, before);
   synchronizeTeacherIdentityState({ persist:false, reason:"ttcard-refresh" });
@@ -1205,7 +1260,7 @@ function updateTtCardField(cardId, field, value) {
     card.teachers = splitTeacherNames(card.teacherName);
     card.teacherIds = [];
   } else if (field === "credits") {
-    card[field] = isChanCheCategory(card.category) ? 1 : (parseFloat(value) || 0);
+    card[field] = isSchoolChapelCard(card) ? CHAPEL_PERIODS : isChanCheCategory(card.category) ? 1 : (parseFloat(value) || 0);
   } else if (field === "isWholeGrade") {
     card[field] = !!value;
   } else {
@@ -1378,11 +1433,11 @@ export function generateTtCards() {
   if (!canEdit()) return 0;
   const before = getTtCards();
   const existing = new Map(before.map(c => [c.id, c]));
-  const generated = buildAllGeneratedTtCards(existing);
+  const { cards: generated, deferredChapels } = buildAllGeneratedTtCards(existing);
   const mergedCards = mergeGeneratedAndManualCards(generated, before);
   const guard = guardGeneratedCards(generated, before.length, "generate");
   if (!guard.ok) return guard.code === "source-not-ready" ? -1 : before.length;
-  const { cards } = validateAndRepairTtCardGeneration(mergedCards, { action: "generate", previous: before });
+  const { cards } = validateAndRepairTtCardGeneration(mergedCards, { action: "generate", previous: before, deferredChapels });
   appState.timetable.ttcards = cards;
   pruneObsoleteGeneratedTtCardRefs(cards, before);
   void saveNow("timetable", { force: true });
@@ -1626,6 +1681,7 @@ function formatGmCreditValue(value) {
 
 function getGmCardCredit(card) {
   if (!card) return 0;
+  if (isSchoolChapelCard(card)) return CHAPEL_PERIODS;
   // 시간표 카드에 저장된 스냅샷을 우선 사용합니다.
   // 창체는 시간표상 1시수 카드로 배치되므로 표시도 1로 통일합니다.
   if (isChanCheCategory(card.category)) return 1;

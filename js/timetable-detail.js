@@ -8,8 +8,8 @@ import { sectionLabel, gradeDisplay, clean, escapeHtml } from "./utils.js?v=2026
 import {
   entryTitle, entryTeachers, entryGradeKeys, getTtCardClassLabels, getUnitDisplayTitle,
   describeTtCard
-} from "./timetable-data.js?v=r426";
-import { getTtCardById } from "./ttcards.js?v=r426";
+} from "./timetable-data.js?v=r439";
+import { getTtCardById } from "./ttcards.js?v=r439";
 
 let detailModalSeq = 0;
 let detailModalTopZ = 10000;

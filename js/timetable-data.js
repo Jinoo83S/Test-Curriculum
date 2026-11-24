@@ -4,9 +4,10 @@
 import { GRADE_KEYS, CATEGORY_PALETTE } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { appState } from "./state.js?v=r426";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherIds, splitTeacherNames } from "./templates.js?v=r425";
-import { getTtCards, getTtCardById } from "./ttcards.js?v=r426";
-export { getTtCardById } from "./ttcards.js?v=r426";
+import { getTtCards, getTtCardById } from "./ttcards.js?v=r439";
+export { getTtCardById } from "./ttcards.js?v=r439";
 import { clean, sectionLabel, gradeDisplay, getEffectiveCredit, isChanCheCategory, isProtectedWholeGradeLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { CHAPEL_PERIODS, isChapelTemplate, isSchoolChapelCard } from "./chapel-schedule.js?v=r439";
 
 const ttDomain  = () => appState.timetable;
 const entries   = () => ttDomain().entries || [];
@@ -52,6 +53,7 @@ export function getCreditsForTemplate(gradeKey, templateId) {
   if (card) return getCreditsForTtCard(card);
   const row = (appState.curriculum.gradeBoards[gradeKey] || [])
     .find(r => r.sem1TemplateId === templateId || r.sem2TemplateId === templateId);
+  if (row && isChapelTemplate(getTemplateById(templateId))) return CHAPEL_PERIODS;
   return row ? getEffectiveCredit(row) : 0;
 }
 
@@ -77,6 +79,7 @@ export function getGroupNameForTemplate(gradeKey, templateId) {
 
 export function isWholeGradeTtCard(card) {
   if (!card?.templateId || !card?.gradeKey) return false;
+  if (isSchoolChapelCard(card)) return false;
   if (card.isWholeGrade) return true;
 
   // 카드가 이미 특정 반 대상(classKeys/classLabels)을 가지고 있으면 그 저장값을 우선합니다.
@@ -127,6 +130,7 @@ export function getSectionCount(templateId) {
 
 export function getCreditsForTtCard(card) {
   if (!card) return 0;
+  if (isSchoolChapelCard(card)) return CHAPEL_PERIODS;
   // 저장된 시간표 카드 스냅샷을 우선합니다. 커리큘럼 원본 수정이 시간표에 즉시 반영되지 않도록 분리합니다.
   if (isChanCheCategory(card.category)) return 1;
   const stored = parseFloat(card.credits);
@@ -315,13 +319,15 @@ export function getTtCardClassInfos(card) {
 }
 
 export function getTtCardClassLabels(card) {
+  if (isSchoolChapelCard(card)) return card.classLabels || [];
   return uniqueStrings(getTtCardClassInfos(card).map(info => info.section || sectionLabel(info.sectionIdx ?? 0)));
 }
 
 export function ttCardCoversClass(card, cls) {
-  if (!card || !cls || card.gradeKey !== cls.gradeKey) return false;
+  if (!card || !cls) return false;
   const infos = getTtCardClassInfos(card);
   return infos.some(info => {
+    if (info.gradeKey !== cls.gradeKey) return false;
     if (cls.section && info.section) return info.section === cls.section;
     return (info.sectionIdx ?? 0) === (cls.sectionIdx ?? 0);
   });
@@ -336,7 +342,7 @@ export function describeTtCard(card) {
   const cc = Math.max(1, parseInt(appState.rosters?.rosterMeta?.[card?.templateId]?.classCount) || 1);
   const classLabels = getTtCardClassLabels(card);
   const sec = classLabels.length ? classLabels.join(", ") : sectionLabel(card?.sectionIdx ?? 0);
-  const shouldShowSection = cc > 1 || classLabels.length > 1;
+  const shouldShowSection = !isSchoolChapelCard(card) && (cc > 1 || classLabels.length > 1);
   return {
     id: card?.id || "",
     ttcardId: card?.id || "",
@@ -359,7 +365,10 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
   if (!validCards.length) return null;
   const first = validCards[0];
   const templateIds = [...new Set(validCards.map(c => c.templateId).filter(Boolean))];
-  const gradeKeys = [...new Set(validCards.map(c => c.gradeKey).filter(Boolean))];
+  const classInfos = validCards.flatMap(getTtCardClassInfos);
+  const gradeKeys = [...new Set(validCards.flatMap(card =>
+    isSchoolChapelCard(card) ? getTtCardClassInfos(card).map(info => info.gradeKey) : [card.gradeKey]
+  ).filter(Boolean))];
   const teacherIds = [...new Set(validCards.flatMap(c => getTeacherIdsForTtCard(c)).map(clean).filter(Boolean))];
   const teacherNames = [...new Set(validCards.flatMap(c => getTeachersForTtCard(c)).filter(Boolean))];
   const teacherName = teacherNames.join(",");
@@ -378,7 +387,7 @@ export function buildEntryDataFromTtCards(cards, { day, period, groupId = null, 
     teacherIds,
     teacherNames,
     teacherName,
-    audienceClassKeys: [...new Set(validCards.flatMap(c => getTtCardClassInfos(c).map(classKey)).filter(Boolean))],
+    audienceClassKeys: [...new Set(classInfos.map(classKey).filter(Boolean))],
     // 학생 key는 시간표 배치/충돌 기준에서 제외합니다.
     audienceStudentKeys: [],
     roomId: null
@@ -418,6 +427,7 @@ export function entryMatchesClass(entry, cls) {
     return cardIds.some(id => {
       const card = getTtCardById(id);
       if (!card) return false;
+      if (isSchoolChapelCard(card)) return ttCardCoversClass(card, cls);
       // Grade must match
       if (card.gradeKey !== cls.gradeKey) return false;
       // Try roster-based class infos

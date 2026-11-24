@@ -6,6 +6,7 @@ import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, 
 import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r435";
 import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r437";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
+import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 
 const page = document.body.dataset.portalPage || "menu";
 const teachersView = page === "curriculum-view" && new URLSearchParams(location.search).get("view") === "teachers";
@@ -350,8 +351,12 @@ async function startChecklist(access, user) {
       card.classList.toggle("own-course", !!course.isOwner);
 
       const courseCell = document.createElement("div"); courseCell.className = "compact-course-cell";
+      const creative = course.category === "창체";
+      const amount = course.credits ? `${course.credits}${creative ? "시간" : "시수"}` : "";
+      const chapel = isChapelTitle(course.nameKo, course.nameEn);
       const subtitle = [course.nameEn !== course.nameKo ? course.nameEn : "", course.group,
-        course.teacherNames.join(", ") || "담당 교사 미지정", course.credits ? `${course.credits}시수` : "시수 미입력"]
+        course.teacherNames.join(", ") || "담당 교사 미지정", amount,
+        chapel ? `시간표 편성 ${CHAPEL_PERIODS}시수` : (!amount ? "시수 미입력" : "")]
         .filter(Boolean).join(" · ");
       const accessBadge = course.isOwner ? "내 담당" : access.isAdmin ? "관리자" : "조회";
       courseCell.innerHTML = `<strong>${escapeHtml(course.nameKo)}</strong> <small>· ${escapeHtml(subtitle)}</small>
