@@ -14,9 +14,9 @@ import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainS
 import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=r426";
 import { versioned } from "./version.js?v=r426";
 import { createAppModuleLoader } from "./app-module-loader.js?v=r426";
-import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=r414";
+import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=r429";
 import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { setupAppBoardUi } from "./app-board-ui.js?v=r414";
+import { setupAppBoardUi } from "./app-board-ui.js?v=r429";
 import { setupCurriculumIntegrityUi } from "./curriculum-integrity-ui.js?v=r411";
 import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-room-availability-separation-r355";
 

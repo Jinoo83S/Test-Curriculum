@@ -7,10 +7,12 @@ import { canEdit } from "./auth.js?v=r424";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { languageClass, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { getSemesterTemplateData, isSemesterDataSame } from "./templates.js?v=r425";
+import { getSemesterTemplateData } from "./templates.js?v=r425";
+import { pairedSemesterTitles, swapSemesterPair } from "./curriculum-semester-pair.js?v=r429";
 import { getDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const cache = new Map();
+const renderedBoards = new WeakMap();
 let renderSerial = 0;
 let managerSerial = 0;
 let managerSearch = "";
@@ -38,7 +40,8 @@ function emptyYearSource() {
   };
 }
 
-export function clearThreeYearCache() { cache.clear(); renderSerial++; }
+export function cancelThreeYearBoardRender() { renderSerial++; }
+export function clearThreeYearCache() { cache.clear(); cancelThreeYearBoardRender(); }
 
 async function readYear(year) {
   if (year === ACTIVE_SCHOOL_YEAR && initialLoad.curriculum && initialLoad.templates) {
@@ -59,7 +62,10 @@ async function readYear(year) {
       curriculum: curriculum.exists() ? curriculum.data() : empty.curriculum,
       templates: templates.exists() ? templates.data() : empty.templates,
     };
-  }).catch(error => { cache.delete(year); throw error; });
+  }).catch(error => {
+    if (cache.get(year) === promise) cache.delete(year);
+    throw error;
+  });
   cache.set(year, promise);
   return promise;
 }
@@ -93,13 +99,14 @@ async function changeYear(year, grade, change) {
       const templatesChanged = change(curriculum, templates);
       transaction.set(refs.curriculum, { ...curriculum, updatedAt: serverTimestamp() });
       if (templatesChanged) transaction.set(refs.templates, { ...templates, updatedAt: serverTimestamp() });
-      return { rows: curriculum.gradeBoards[grade], templates: templatesChanged ? templates.templates : null };
+      return { exists: true, curriculum, templates, templatesChanged };
     });
     if (year === ACTIVE_SCHOOL_YEAR) {
-      appState.curriculum.gradeBoards[grade] = updated.rows;
-      if (updated.templates) appState.templates.templates = updated.templates;
+      appState.curriculum.gradeBoards[grade] = updated.curriculum.gradeBoards[grade];
+      appState.curriculum.options = updated.curriculum.options;
+      if (updated.templatesChanged) appState.templates.templates = updated.templates.templates;
     }
-    cache.delete(year);
+    cache.set(year, Promise.resolve(updated));
     document.dispatchEvent(new CustomEvent("his:three-year-changed"));
   } catch (error) {
     alert(`저장하지 못했습니다. ${error?.message || error}`);
@@ -261,7 +268,7 @@ function categorySelect(year, grade, row, field, source) {
   });
   return select;
 }
-function cardCell(year, grade, row, sem, source, cards, grades, sources, merged = false) {
+function cardCell(year, grade, row, sem, cards, grades, sources, merged = false) {
   const id = row[sem + "TemplateId"];
   const cell = el("div", merged ? "drop-cell merged-drop-cell" : id ? "drop-cell" : "drop-cell empty");
   if (merged) cell.style.gridColumn = "4 / 6";
@@ -282,10 +289,7 @@ function cardCell(year, grade, row, sem, source, cards, grades, sources, merged 
         const sourceRow = curriculum.gradeBoards[grade].find(current => current.id === drag.rowId);
         if (!sourceRow) throw new Error("이동할 행이 변경되었습니다. 새로고침해 주세요.");
         if (sourceRow.id === destination.id) return false;
-        const sourcePair = [sourceRow.sem1TemplateId || null, sourceRow.sem2TemplateId || null];
-        const destinationPair = [destination.sem1TemplateId || null, destination.sem2TemplateId || null];
-        [destination.sem1TemplateId, destination.sem2TemplateId] = sourcePair;
-        [sourceRow.sem1TemplateId, sourceRow.sem2TemplateId] = destinationPair;
+        swapSemesterPair(sourceRow, destination);
       } else {
         destination.sem1TemplateId = drag.id;
         destination.sem2TemplateId = drag.id;
@@ -293,8 +297,7 @@ function cardCell(year, grade, row, sem, source, cards, grades, sources, merged 
       return false;
     });
   });
-  const template = cards.find(card => card.id === id) ||
-    (source?.templates?.templates || []).find(card => card.id === id);
+  const template = cards.find(card => card.id === id);
   if (!template) return cell;
   const data = getSemesterTemplateData(template, sem);
   const card = el("div", "placed-card " + (merged ? "placed-card-merged " : "") + languageClass(data.language));
@@ -314,7 +317,8 @@ function cardCell(year, grade, row, sem, source, cards, grades, sources, merged 
   const title = el("div", "placed-title-wrap");
   title.append(el("div", "placed-title-ko", data.nameKo || data.nameEn || "-"),
     el("div", "placed-title-en", data.nameEn || "-"));
-  top.append(title);
+  const secondTemplate = merged ? cards.find(item => item.id === row.sem2TemplateId) : null;
+  top.append(secondTemplate ? pairedSemesterTitles(data, getSemesterTemplateData(secondTemplate, "sem2"), template.id === secondTemplate.id) : title);
   if (editable()) {
     const clear = el("button", "clear-cell-btn", "×");
     clear.type = "button"; clear.title = "과목카드 제거";
@@ -333,7 +337,8 @@ function cardCell(year, grade, row, sem, source, cards, grades, sources, merged 
   card.append(top);
   card.addEventListener("click", event => {
     if (!editable() || event.target.closest("button")) return;
-    void cardEditor(year, grade, template, grades, sources);
+    const secondSelected = event.target.closest("[data-semester]")?.dataset.semester === "sem2";
+    void cardEditor(year, grade, (secondSelected && secondTemplate) || template, grades, sources);
   });
   cell.append(card);
   return cell;
@@ -343,16 +348,12 @@ function gradeRow(grade, source, row, grades, sources) {
   const result = el("div", "grade-data-row");
   result.dataset.grade = grade; result.dataset.rowId = row.id;
   for (const field of ["category", "track", "group"]) result.append(categorySelect(year, grade, row, field, source));
-  const cards = (source?.templates?.templates || []).filter(card =>
-    !card.schoolLevel || card.schoolLevel === "공통" ||
-    card.schoolLevel === (Number.parseInt(grade, 10) <= 9 ? "중등" : "고등")
-  ).slice().sort((a, b) => subjectName(a).localeCompare(subjectName(b), "ko"));
-  const card = cards.find(item => item.id === row.sem1TemplateId);
-  const merged = !!(row.sem1TemplateId && row.sem1TemplateId === row.sem2TemplateId &&
-    card && isSemesterDataSame(card));
-  if (merged) result.append(cardCell(year, grade, row, "sem1", source, cards, grades, sources, true));
-  else result.append(cardCell(year, grade, row, "sem1", source, cards, grades, sources),
-    cardCell(year, grade, row, "sem2", source, cards, grades, sources));
+  const cards = source?.templates?.templates || [];
+  const merged = !!(row.sem1TemplateId && row.sem2TemplateId &&
+    cards.some(item => item.id === row.sem1TemplateId) && cards.some(item => item.id === row.sem2TemplateId));
+  if (merged) result.append(cardCell(year, grade, row, "sem1", cards, grades, sources, true));
+  else result.append(cardCell(year, grade, row, "sem1", cards, grades, sources),
+    cardCell(year, grade, row, "sem2", cards, grades, sources));
   const credit = el("input", "credit-input");
   credit.type = "text"; credit.value = row.credits ?? ""; credit.placeholder = "0";
   credit.disabled = !editable();
@@ -439,13 +440,17 @@ async function saveCardForYears(entries, original, values, sharedId) {
           if (duplicate) throw new Error(entry.year + "학년도에 같은 과목명이 있습니다. 기존 카드를 선택해 주세요.");
           cards.push({ id: "tpl-" + crypto.randomUUID(), ...values, sharedCardId: sharedId });
         }
-        updates.push({ year: entry.year, cards });
+        updates.push({
+          year: entry.year, cards, exists: true,
+          curriculum: curriculum.exists() ? curriculum.data() : emptyYearSource().curriculum,
+          templates: { ...domain, templates: cards },
+        });
         transaction.set(entry.refs.templates, { ...domain, templates: cards, updatedAt: serverTimestamp() });
       }
       return updates;
     });
     changed.forEach(entry => {
-      cache.delete(entry.year);
+      cache.set(entry.year, Promise.resolve(entry));
       if (entry.year === ACTIVE_SCHOOL_YEAR && appState.templates) {
         appState.templates.templates = entry.cards;
       }
@@ -638,6 +643,7 @@ function renderThreeYearSidebar(grades, sources) {
   if (!availableYears.includes(selectedCardYear)) selectedCardYear = availableYears[0];
   const grade = grades.find(value => yearForGrade(value) === selectedCardYear);
   const source = sources[grade];
+  const listScroll = panel.querySelector(".three-year-card-list")?.scrollTop || 0;
   panel.replaceChildren();
   const heading = el("div", "section-heading-row subject-card-heading-row");
   heading.append(el("h2", "", "과목 카드"));
@@ -670,6 +676,7 @@ function renderThreeYearSidebar(grades, sources) {
     if (!cards.length) list.append(el("p", "three-year-empty", "과목카드가 없습니다. + 추가로 만들 수 있습니다."));
   }
   panel.append(list, el("p", "three-year-card-hint", "카드를 같은 학년도 열의 학기 칸이나 하단에 끌어다 놓으세요."));
+  list.scrollTop = listScroll;
 }
 function column(grade, source) {
   const year = yearForGrade(grade);
@@ -693,13 +700,19 @@ function column(grade, source) {
 }
 export async function renderThreeYearBoard(container, grades) {
   const serial = ++renderSerial;
-  container.classList.remove("three-year-board");
-  container.replaceChildren(el("p", "three-year-empty", "3개 학년도 커리큘럼을 불러오는 중입니다…"));
+  if (!container.classList.contains("three-year-board") && container.firstChild?.className !== "three-year-empty") {
+    container.replaceChildren(el("p", "three-year-empty", "3개 학년도 커리큘럼을 불러오는 중입니다…"));
+  }
   const results = await Promise.all(grades.map(async grade => {
     try { return await readYear(yearForGrade(grade)); }
     catch (error) { console.warn("[three-year] annual read failed", grade, error); return { exists: false, error: true }; }
   }));
   if (serial !== renderSerial || !container.isConnected) return;
+  const fingerprint = JSON.stringify([editable(), grades, ...results.map(source => [
+    source.exists, source.error, source.local, source.curriculum?.options,
+    source.curriculum?.gradeBoards, source.templates?.templates, source.templates?.templateGroups,
+  ])]);
+  if (container.classList.contains("three-year-board") && renderedBoards.get(container) === fingerprint) return;
   const sources = Object.fromEntries(grades.map((grade, index) => [grade, results[index]]));
   const columns = Object.fromEntries(grades.map(grade => [grade, column(grade, sources[grade])]));
   const categories = [...new Set(grades.flatMap(grade => [
@@ -759,8 +772,22 @@ export async function renderThreeYearBoard(container, grades) {
     }
     columns[grade].append(footer);
   });
-  container.replaceChildren(...grades.map(grade => columns[grade]));
+  replaceWithScroll(container, ...grades.map(grade => columns[grade]));
+  container.classList.add("three-year-board");
+  renderedBoards.set(container, fingerprint);
   renderThreeYearSidebar(grades, sources);
+}
+
+function replaceWithScroll(container, ...children) {
+  const scrollPositions = [];
+  for (let node = container; node; node = node.parentElement) {
+    if (node.scrollTop || node.scrollLeft) scrollPositions.push([node, node.scrollTop, node.scrollLeft]);
+  }
+  container.replaceChildren(...children);
+  for (const [node, top, left] of scrollPositions) {
+    node.scrollTop = top;
+    node.scrollLeft = left;
+  }
 }
 
 async function saveManagerDrafts(year, grade) {
@@ -787,10 +814,13 @@ async function saveManagerDrafts(year, grade) {
         }
       }
       transaction.set(refs.templates, { ...domain, templates: cards, updatedAt: serverTimestamp() });
-      return cards;
+      return {
+        exists: true, curriculum: curriculum.exists() ? curriculum.data() : emptyYearSource().curriculum,
+        templates: { ...domain, templates: cards },
+      };
     });
-    if (year === ACTIVE_SCHOOL_YEAR && appState.templates) appState.templates.templates = updated;
-    cache.delete(year);
+    if (year === ACTIVE_SCHOOL_YEAR && appState.templates) appState.templates.templates = updated.templates.templates;
+    cache.set(year, Promise.resolve(updated));
     managerDrafts.delete(year);
     document.dispatchEvent(new CustomEvent("his:three-year-changed"));
     return true;
@@ -802,6 +832,7 @@ async function saveManagerDrafts(year, grade) {
 function managerCard(grade, source, card, grades, sources, onDraft) {
   const year = yearForGrade(grade);
   const item = el("details", "three-year-manager-card " + languageClass(card.language));
+  item.dataset.cardKey = `${year}:${card.id}`;
   const draft = managerDrafts.get(year)?.get(card.id) || {};
   const cardInput = (field, label) => {
     const wrapper = el("label", "three-year-manager-card-field");
@@ -859,7 +890,7 @@ function managerGroup(grade, source, cards, label, grades, sources, onDraft) {
 export async function renderThreeYearCardManager(container, grades, onTabChange) {
   if (!container) return;
   const serial = ++managerSerial;
-  container.replaceChildren(el("p", "three-year-empty", "학년도별 과목카드를 불러오는 중입니다…"));
+  if (!container.firstChild) container.append(el("p", "three-year-empty", "학년도별 과목카드를 불러오는 중입니다…"));
   const results = await Promise.all(grades.map(async grade => {
     try { return await readYear(yearForGrade(grade)); }
     catch (error) { console.warn("[three-year] card manager read failed", grade, error); return { exists: false, error: true }; }
@@ -980,6 +1011,10 @@ export async function renderThreeYearCardManager(container, grades, onTabChange)
   }
   search.addEventListener("input", () => { managerSearch = search.value; refresh(); });
   filter.addEventListener("change", () => { managerFilter = filter.value; refresh(); });
-  container.replaceChildren(toolbar, columns);
+  const openCards = new Set([...container.querySelectorAll("details[open][data-card-key]")].map(card => card.dataset.cardKey));
+  for (const card of columns.querySelectorAll("details[data-card-key]")) {
+    if (openCards.has(card.dataset.cardKey)) card.open = true;
+  }
+  replaceWithScroll(container, toolbar, columns);
   refresh();
 }

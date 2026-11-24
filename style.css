@@ -8490,6 +8490,21 @@ body.three-year-mode .grade-footer{flex-wrap:wrap}
 body.three-year-mode .grade-footer .secondary-btn{font-size:10px;padding:2px 5px}
 .three-year-empty{padding:8px;color:#64748b;font-size:11px}
 
+.placed-card .paired-semester-titles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  width: 100%;
+}
+.paired-semester-title {
+  min-width: 0;
+  padding-inline-end: 5px;
+}
+.paired-semester-title + .paired-semester-title {
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid #c7d2e5;
+}
+
 /* Linked annual subject-card sidebar in the three-year view. */
 .three-year-sidebar-panel{display:none}
 body.three-year-mode #appSidebar > .panel:not(.three-year-sidebar-panel){display:none!important}

@@ -24,7 +24,8 @@ export function getCategoryColor(category) {
 }
 
 // ── Template lookup (reads from templates domain) ─────────────────
-import { getTemplateById, getSemesterTemplateData, isSemesterDataSame, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=r425";
+import { getTemplateById, getSemesterTemplateData, getTemplateGroupById, getTemplateCardTitle, getTemplateAppliedGrades } from "./templates.js?v=r425";
+import { pairedSemesterTitles, swapSemesterPair } from "./curriculum-semester-pair.js?v=r429";
 
 // ── Row Mutations ─────────────────────────────────────────────────
 /**
@@ -189,10 +190,7 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   const sRow = getRowById(sGrade, sRowId); const dRow = getRowById(dGrade, dRowId);
   if (!sRow || !dRow) return;
   if (sGrade === dGrade && sRowId === dRowId) return;
-  const sourcePair = [sRow.sem1TemplateId || null, sRow.sem2TemplateId || null];
-  const destinationPair = [dRow.sem1TemplateId || null, dRow.sem2TemplateId || null];
-  [dRow.sem1TemplateId, dRow.sem2TemplateId] = sourcePair;
-  [sRow.sem1TemplateId, sRow.sem2TemplateId] = destinationPair;
+  swapSemesterPair(sRow, dRow);
   scheduleSave("curriculum"); _onCurriculumChange();
 }
 
@@ -327,7 +325,7 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
   const h3 = document.createElement("h3");
   h3.textContent = isNew ? "새 과목카드 추가" : getTemplateCardTitle(item);
   const sub = document.createElement("p");
-  const semLabel = semKey === "merged" ? "1·2학기 동일" : (SEMESTER_LABELS[semKey] || "");
+  const semLabel = semKey === "merged" ? "1·2학기 연결" : (SEMESTER_LABELS[semKey] || "");
   if (grade || rowData) {
     sub.textContent = `${grade || "-"} · ${rowData?.category || "-"} / ${rowData?.track || "-"} / ${rowData?.group || "-"} · ${semLabel || "과목카드"}`;
   } else {
@@ -574,7 +572,11 @@ function attachExpandClick(card, meta, context = {}) {
   card.addEventListener("click", e => {
     if (e.target.closest("button")) return;
     if (context.templateId) {
-      openTemplateCardPopup(context.templateId, { grade: context.grade, rowData: context.rowData, semKey: context.semKey });
+      const semester = e.target.closest("[data-semester]")?.dataset.semester;
+      const separateTemplates = context.rowData?.sem1TemplateId !== context.rowData?.sem2TemplateId;
+      const selectedKey = separateTemplates && semester ? semester : context.semKey;
+      const selectedId = separateTemplates && semester ? context.rowData[`${semester}TemplateId`] : context.templateId;
+      openTemplateCardPopup(selectedId, { grade: context.grade, rowData: context.rowData, semKey: selectedKey });
       return;
     }
     if (!meta.children.length) return;
@@ -606,21 +608,19 @@ function createPlacedCard(templateId, grade, rowData, semKey) {
 }
 
 function createMergedPlacedCard(templateId, grade, rowData) {
-  const item = getTemplateById(templateId); if (!item) return document.createTextNode("");
-  const sd = getSemesterTemplateData(item, "sem1");
+  const first = getTemplateById(templateId);
+  const second = getTemplateById(rowData.sem2TemplateId);
+  const sd = getSemesterTemplateData(first, "sem1");
   const card = document.createElement("div"); card.className = `placed-card placed-card-merged ${languageClass(sd.language)}`; card.draggable = canEdit();
   card.addEventListener("dragstart", () => { setCurrentDrag({ kind:"placed", sourceGrade:grade, sourceRowId:rowData.id, sourceSemKey:"paired", templateId }); card.classList.add("dragging"); });
   card.addEventListener("dragend",   () => { setCurrentDrag(null); card.classList.remove("dragging"); });
   const top = document.createElement("div"); top.className = "placed-top";
-  const tw = document.createElement("div"); tw.className = "placed-title-wrap";
-  const ko = document.createElement("div"); ko.className = "placed-title-ko"; ko.textContent = sd.nameKo || sd.nameEn || "-";
-  const en = document.createElement("div"); en.className = "placed-title-en"; en.textContent = sd.nameEn || "-";
-  tw.append(ko, en); top.appendChild(tw);
+  top.append(pairedSemesterTitles(sd, getSemesterTemplateData(second, "sem2"), first === second));
   if (canEdit()) {
     const cb = makeBtn("×", "clear-cell-btn", e => { e.stopPropagation(); clearRowBoth(grade, rowData.id); });
     cb.addEventListener("mousedown", e => e.stopPropagation()); top.appendChild(cb);
   }
-  const meta = buildExpandedMeta(item, item); card.append(top, meta); attachExpandClick(card, meta, { templateId, grade, rowData, semKey: "merged" }); return card;
+  const meta = buildExpandedMeta(first, second); card.append(top, meta); attachExpandClick(card, meta, { templateId, grade, rowData, semKey: "merged" }); return card;
 }
 
 function createDropCell(grade, rowData, semKey, templateId) {
@@ -658,7 +658,9 @@ function createMergedDropCell(grade, rowData, templateId) {
   return cell;
 }
 
-function shouldRenderMerged(r) { return !!(r?.sem1TemplateId && r?.sem2TemplateId && r.sem1TemplateId === r.sem2TemplateId && isSemesterDataSame(getTemplateById(r.sem1TemplateId))); }
+function shouldRenderMerged(row) {
+  return !!(row.sem1TemplateId && row.sem2TemplateId && getTemplateById(row.sem1TemplateId) && getTemplateById(row.sem2TemplateId));
+}
 
 function createGradeRow(grade, rowData, onUpdate) {
   const row = document.createElement("div"); row.className = "grade-data-row";

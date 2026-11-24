@@ -4,7 +4,7 @@
 import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
-import { renderThreeYearBoard, clearThreeYearCache } from "./three-year-board.js?v=r414";
+import { renderThreeYearBoard, clearThreeYearCache, cancelThreeYearBoardRender } from "./three-year-board.js?v=r429";
 import { canEdit } from "./auth.js?v=r424";
 import { appState, saveNow } from "./state.js?v=r426";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
@@ -56,6 +56,7 @@ export function setupAppBoardUi({
       void renderThreeYearBoard(gradeBoard, GRADE_GROUPS[tab]);
       return;
     }
+    cancelThreeYearBoardRender();
     gradeBoard.classList.remove("three-year-board");
     if (!dirtyTabs.has(tab) && tabBoardCache[tab]) {
       gradeBoard.innerHTML = "";
@@ -222,11 +223,11 @@ ${error?.message || error}`);
   }
 
   document.addEventListener("his:three-year-changed", () => {
-    clearThreeYearCache();
     if (getCurriculumMode() === "threeYear") renderBoardTab();
   });
   window.addEventListener("focus", () => {
     if (getCurriculumMode() !== "threeYear") return;
+    if (document.querySelector(".three-year-mode .dragging, .three-year-card-dialog[open]")) return;
     clearThreeYearCache();
     renderBoardTab();
   });
