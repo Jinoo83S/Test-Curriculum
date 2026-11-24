@@ -51,9 +51,11 @@ export function buildTeacherYearRoster({ curriculum, templates, teachers } = {},
     const identity = schoolEmailKey(profile?.email) || nameKey(displayName);
     if (!generated.has(identity)) generated.set(identity, {
       id: id || profile?.id || "", name: displayName, email: clean(profile?.email),
-      note: clean(profile?.note), automatic: true, subjects: [],
+      note: clean(profile?.note), aliases: [...list(profile?.aliases)], automatic: true, subjects: [],
     });
-    return generated.get(identity);
+    const entry = generated.get(identity);
+    if (name && nameKey(name) !== nameKey(entry.name) && !entry.aliases.includes(name)) entry.aliases.push(name);
+    return entry;
   };
   for (const gradeRows of Object.values(curriculum?.gradeBoards || {})) {
     for (const row of list(gradeRows)) {

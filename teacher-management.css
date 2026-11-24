@@ -20,5 +20,6 @@
 .teacher-automatic-row { background: #f5f8fc; font-size: .85rem; }
 .publication-table { min-width: 360px; }
 .publication-table select { min-width: 100px; max-width: 160px; }
+.publication-workload-btn { margin-inline-start: 8px; }
 .publication-table [data-published="true"] { color: #166534; font-weight: 750; }
 .publication-table [data-published="false"] { color: #475569; font-weight: 750; }

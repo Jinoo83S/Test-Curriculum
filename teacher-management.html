@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS 설정</title>
   <link rel="stylesheet" href="teacher-portal.css?v=r421" />
-  <link rel="stylesheet" href="teacher-management.css?v=r431" />
+  <link rel="stylesheet" href="teacher-management.css?v=r433" />
 </head>
 <body>
   <header class="portal-header">
@@ -39,12 +39,12 @@
       </section>
       <section id="publicationSettingsPanel" hidden>
         <div class="teacher-admin-heading"><div><h1>커리큘럼 공개/비공개</h1><p>학년도별로 교사용 커리큘럼 열람, 교사별 담당 현황 및 담당과목 확인의 공개 여부를 설정합니다.</p></div></div>
-        <p class="settings-scope-note">이 설정은 교사용 포털 화면에 적용됩니다. 커리큘럼 편집 권한과 Firestore 자체 접근 권한은 별도로 관리됩니다.</p>
+        <p class="settings-scope-note">교사용 시수 공개는 학급 수와 시수만 반영합니다. 과목 설정을 바꾼 뒤 이곳에서 시수를 갱신하세요. 커리큘럼 편집 권한과 Firestore 자체 접근 권한은 별도로 관리됩니다.</p>
         <p id="publicationStatus" class="teacher-admin-status" role="status" aria-live="polite"></p>
         <div class="teacher-admin-table-wrap"><table class="teacher-admin-table publication-table"><thead><tr><th scope="col">학년도</th><th scope="col">현재 상태</th><th scope="col">열람 설정</th></tr></thead><tbody id="publicationRows"></tbody></table></div>
       </section>
     </section>
   </main>
-  <script type="module" src="./js/teacher-management.js?v=r431"></script>
+  <script type="module" src="./js/teacher-management.js?v=r433"></script>
 </body>
 </html>

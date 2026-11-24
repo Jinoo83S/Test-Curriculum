@@ -1,6 +1,7 @@
 import { db, getSchoolYearRefs, LEGACY_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, registerKnownSchoolYears } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
-import { doc, getDoc, getDocFromServer, getDocs, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { deleteField, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { summarizeFacultyWorkload } from "./faculty-workload.js?v=r433";
 
 function withDeadline(promise, message) {
   let timer;
@@ -41,9 +42,10 @@ function publicationRef(year) {
 
 export async function readCurriculumPublication(year) {
   const snapshot = await withDeadline(getDocFromServer(publicationRef(year)), "커리큘럼 공개 상태 조회 시간이 초과되었습니다.");
-  const value = snapshot.data()?.curriculumPublished;
+  const data = snapshot.data();
+  const value = data?.curriculumPublished;
   // Workspaces without a saved preference retain their existing portal visibility.
-  return { published: value !== false, configured: typeof value === "boolean" };
+  return { published: value !== false, configured: typeof value === "boolean", workload: Array.isArray(data?.facultyWorkload) ? data.facultyWorkload : null };
 }
 
 export async function saveCurriculumPublication(year, published) {
@@ -52,6 +54,34 @@ export async function saveCurriculumPublication(year, published) {
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists() && year !== LEGACY_SCHOOL_YEAR) throw new Error("이 학년도가 삭제되었거나 등록되지 않았습니다.");
-    transaction.set(ref, { curriculumPublished: published, curriculumPublicationUpdatedAt: serverTimestamp() }, { merge: true });
+    transaction.set(ref, {
+      curriculumPublished: published,
+      curriculumPublicationUpdatedAt: serverTimestamp(),
+      ...(!published ? { facultyWorkload: deleteField() } : {}),
+    }, { merge: true });
   });
+}
+
+export async function syncPublishedFacultyWorkload(year) {
+  if (!/^20[2-9]\d$/.test(year)) throw new Error("학년도를 확인해 주세요.");
+  const { collections, domains } = getSchoolYearRefs(year);
+  const current = await withDeadline(getDocsFromServer(collections.rosters), "학급 수와 교사시수 조회 시간이 초과되었습니다.");
+  let entries = current.docs.map(item => {
+    const data = item.data();
+    return { id: data.templateId || item.id, meta: data.meta };
+  });
+  if (current.empty) {
+    const legacy = await withDeadline(getDocFromServer(domains.rosters), "과목 설정 조회 시간이 초과되었습니다.");
+    entries = Object.entries(legacy.data()?.rosterMeta || {}).map(([id, meta]) => ({ id, meta }));
+  }
+  const workload = summarizeFacultyWorkload(entries);
+  const ref = publicationRef(year);
+  await runTransaction(db, async transaction => {
+    const setting = await transaction.get(ref);
+    if ((!setting.exists() && year !== LEGACY_SCHOOL_YEAR) || setting.data()?.curriculumPublished === false) {
+      throw new Error("등록된 공개 학년도만 시수를 갱신할 수 있습니다.");
+    }
+    transaction.set(ref, { facultyWorkload: workload.map(([id, meta]) => ({ id, ...meta })), facultyWorkloadUpdatedAt: serverTimestamp() }, { merge: true });
+  });
+  return workload.length;
 }

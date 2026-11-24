@@ -3,8 +3,9 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
-import { readCurriculumPublication, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r431";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r432";
+import { readCurriculumPublication, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r433";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r433";
+import { facultyCourseWorkload } from "./faculty-workload.js?v=r433";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);
@@ -26,12 +27,12 @@ Object.assign(translations.ko, { settings: "설정", settingsDescription: "교�
 Object.assign(translations.en, { settings: "Settings", settingsDescription: "Manage teachers and curriculum visibility by school year." });
 Object.assign(translations.ko, {
   facultyCurriculum: "커리큘럼 열람", facultyCurriculumDescription: "공개된 연간 커리큘럼을 학년별로 확인합니다.",
-  facultyAssignments: "교사별 담당 현황", facultyAssignmentsDescription: "학기별 담당 과목을 확인합니다. 내 담당은 목록 위에 표시됩니다.",
+  facultyAssignments: "교사별 담당 현황", facultyAssignmentsDescription: "1·2학기 담당 과목과 시수를 나란히 확인합니다. 내 담당은 목록 위에 표시됩니다.",
   backToWork: "업무 메뉴", readOnly: "보기 전용", facultyUnavailable: "열람할 수 없습니다",
 });
 Object.assign(translations.en, {
   facultyCurriculum: "View Curriculum", facultyCurriculumDescription: "Browse the published annual curriculum by grade.",
-  facultyAssignments: "Teacher Assignments", facultyAssignmentsDescription: "See course assignments by semester. Your courses appear first.",
+  facultyAssignments: "Teacher Assignments", facultyAssignmentsDescription: "Compare course assignments across both semesters. Your courses appear first.",
   backToWork: "Faculty Menu", readOnly: "Read only", facultyUnavailable: "This page is unavailable",
 });
 let portalLanguage = localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
@@ -430,7 +431,9 @@ async function startFacultyCurriculum(access, serial) {
   }
   const source = await readTeacherYearSources(ACTIVE_SCHOOL_YEAR);
   if (serial !== authSerial) return;
-  const rows = buildReadOnlyCurriculumRows(source.curriculum, source.templates, source.teachers);
+  const workload = new Map((publication.workload || []).map(item => [item.id, item]));
+  const rows = buildReadOnlyCurriculumRows(source.curriculum, source.templates, source.teachers,
+    (id, credits) => facultyCourseWorkload(workload.get(id), credits));
   const self = source.teachers.find(teacher => normalizePortalEmail(teacher.email) === access.email) || access.teacher;
   const teachersView = new URLSearchParams(location.search).get("view") === "teachers";
   const titleKey = teachersView ? "facultyAssignments" : "facultyCurriculum";
@@ -448,21 +451,25 @@ async function startFacultyCurriculum(access, serial) {
   own.type = "checkbox";
   const ownText = document.createElement("span");
   ownLabel.append(own, ownText);
-  controls.replaceChildren(filter, search, ...(teachersView ? [ownLabel] : []));
+  const workloadNote = document.createElement("small");
+  controls.replaceChildren(...(teachersView ? [search, ownLabel, workloadNote] : [filter, search]));
   const show = () => {
     const query = clean(search.value).toLowerCase();
     const hasMatch = values => !query || values.some(value => clean(value).toLowerCase().includes(query));
     let visible, table;
     if (teachersView) {
-      visible = groupTeacherAssignments(rows, filter.value, self).filter(group =>
-        (!own.checked || group.own) && (hasMatch([group.name]) || group.rows.some(row => hasMatch([row.subject.name, row.subject.english, row.grade]))));
-      table = () => renderTeacherAssignmentTable(visible, { language: portalLanguage });
+      visible = groupTeacherAssignments(rows, null, self).filter(group =>
+        (!own.checked || group.own) && (hasMatch([group.name]) || group.rows.some(row => hasMatch([
+          row.sem1?.name, row.sem1?.english, row.sem2?.name, row.sem2?.english, row.grade,
+        ]))));
+      table = () => renderTeacherAssignmentTable(visible, { language: portalLanguage, workload: true });
     } else {
-      visible = rows.filter(row => (!filter.value || filter.value === row.grade) && hasMatch([
+      const grades = filter.value === "high" ? ["10학년", "11학년", "12학년"] : ["7학년", "8학년", "9학년"];
+      visible = rows.filter(row => grades.includes(row.grade) && hasMatch([
         row.category, row.track, row.group, ...[row.sem1, row.sem2].flatMap(subject =>
           subject ? [subject.name, subject.english, ...subject.teachers.map(teacher => teacher.name)] : []),
       ]));
-      table = () => renderAnnualCurriculumTable(visible, portalLanguage);
+      table = () => renderAnnualCurriculumTable(visible, portalLanguage, grades);
     }
     if (visible.length) content.replaceChildren(table());
     else {
@@ -477,15 +484,16 @@ async function startFacultyCurriculum(access, serial) {
     byId("facultyViewTitle").textContent = translations[portalLanguage][titleKey];
     byId("facultyViewYear").textContent = en ? `School Year ${ACTIVE_SCHOOL_YEAR}` : `${ACTIVE_SCHOOL_YEAR}학년도`;
     const value = filter.value;
-    const options = teachersView
-      ? [["sem1", en ? "Semester 1" : "1학기"], ["sem2", en ? "Semester 2" : "2학기"]]
-      : [["", en ? "All grades" : "전체 학년"], ...unique(rows.map(row => row.grade)).map(grade => [grade, grade])];
+    const options = [["middle", en ? "Middle School · Grades 7–9" : "중등 · 7~9학년"], ["high", en ? "High School · Grades 10–12" : "고등 · 10~12학년"]];
     filter.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
-    filter.value = teachersView && !value ? "sem1" : value;
-    filter.setAttribute("aria-label", teachersView ? (en ? "Semester" : "학기") : (en ? "Grade" : "학년"));
+    filter.value = value || (!rows.some(row => parseInt(row.grade, 10) <= 9) ? "high" : "middle");
+    filter.setAttribute("aria-label", en ? "School level" : "학교급");
     search.placeholder = en ? "Search courses or teachers" : "과목·교사 검색";
     search.setAttribute("aria-label", search.placeholder);
     ownText.textContent = en ? "My courses only" : "내 담당만";
+    workloadNote.textContent = publication.workload
+      ? (en ? "If values differ, S1 / S2 is shown." : "학기별 값이 다르면 1학기 / 2학기 순으로 표시합니다.")
+      : (en ? "Class counts and totals will appear when published by an administrator." : "학급 수와 총 시수는 관리자가 교사용 시수를 갱신하면 표시됩니다.");
     show();
   };
   search.addEventListener("input", show);

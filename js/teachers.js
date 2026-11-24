@@ -2,12 +2,12 @@
 // teachers.js · Teacher Mutations + Teacher View Rendering
 // ================================================================
 import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
-import { canEdit } from "./auth.js?v=r424";
-import { appState, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=r426";
+import { canEdit, canManageTeachers } from "./auth.js?v=r424";
+import { appState, initialLoad, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { countTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
-import { buildTeacherYearRoster } from "./teacher-year-directory.js?v=r431";
+import { buildTeacherYearRoster } from "./teacher-year-directory.js?v=r433";
 import { readSavedTeacherDirectory } from "./school-portal-settings-data.js?v=r431";
 
 const tDomain   = () => appState.teachers;
@@ -19,8 +19,8 @@ const rosterRows = () => buildTeacherYearRoster({
   curriculum: appState.curriculum,
   templates: appState.templates?.templates,
   teachers: getTeachers(),
-}, savedDirectory);
-const teacherNameKey = value => clean(value).replace(/\s+/g, " ").toLocaleLowerCase("ko");
+}, savedDirectory).sort((a, b) => a.name.localeCompare(b.name, "ko", { numeric: true, sensitivity: "base" }));
+const teacherNameKey = value => clean(value).normalize("NFKC").replace(/\s+/g, " ").toLocaleLowerCase("ko");
 const findTeacherByName = (name, exceptId = "") => {
   const key = teacherNameKey(name);
   return key ? getTeachers().find(t => t.id !== exceptId && teacherNameKey(t.name) === key) || null : null;
@@ -58,6 +58,36 @@ export function updateTeacher(id, field, value) {
   }
   t[field] = value;
   scheduleSave("teachers");
+}
+
+function saveTeacherContact(row, savedId, field, value) {
+  if (!canEdit() || !initialLoad.teachers) throw new Error("교사 명단을 불러온 후 다시 시도해 주세요.");
+  const current = savedId ? getTeacherById(savedId) : null;
+  if (savedId && !current) throw new Error("교사 명단이 변경되었습니다. 새로고침 후 다시 시도해 주세요.");
+  const next = clean(value);
+  const email = clean(field === "email" ? next : current?.email ?? row.email).toLowerCase();
+  if (field === "email" && current && ["admin", "curriculum"].includes(current.accessRole) && !canManageTeachers()) {
+    throw new Error("편집 권한이 있는 계정의 이메일은 관리자가 변경할 수 있습니다.");
+  }
+  if ((!current || field === "email") && email && getTeachers().some(teacher =>
+    teacher.id !== current?.id && clean(teacher.email).toLowerCase() === email)) {
+    throw new Error("이 이메일을 사용하는 교사가 현재 학년도에 이미 등록되어 있습니다.");
+  }
+  if (current) {
+    current[field] = field === "email" ? email : next;
+    scheduleSave("teachers");
+    return current;
+  }
+  if (findTeacherByName(row.name)) throw new Error("교사 명단이 변경되었습니다. 새로고침 후 다시 시도해 주세요.");
+  const teacher = normalizeTeacher({
+    id: row.id && !getTeacherById(row.id) ? row.id : uid("tch"),
+    name: row.name, aliases: row.aliases, email,
+    note: field === "note" ? next : row.note,
+    accessRole: "basic", portalDisabled: true,
+  });
+  getTeachers().push(teacher);
+  scheduleSave("teachers");
+  return teacher;
 }
 export function deleteTeacher(id) {
   if (!canEdit()) return;
@@ -200,16 +230,35 @@ export function renderTeacherView(container) {
 
   displayedTeachers.forEach(t => {
     const tr = document.createElement("tr");
+    let savedId = t.automatic ? "" : t.id;
     [
       { key:"name",  ph:"이름",  type:"text"  },
       { key:"email", ph:"이메일", type:"email" },
       { key:"note",  ph:"메모",  type:"text"  }
     ].forEach(f => {
       const td = document.createElement("td");
-      const inp = document.createElement("input"); inp.type = f.type; inp.disabled = !canEdit() || t.automatic;
+      const inp = document.createElement("input"); inp.type = f.type;
+      inp.disabled = !canEdit() || (f.key === "name" && t.automatic) ||
+        (f.key === "email" && ["admin", "curriculum"].includes(t.accessRole) && !canManageTeachers());
       inp.value = t[f.key] || "";
       inp.placeholder = f.ph;
-      inp.addEventListener("change", e => updateTeacher(t.id, f.key, e.target.value));
+      inp.addEventListener("change", () => {
+        if (f.key === "name") {
+          updateTeacher(t.id, f.key, inp.value);
+          renderTeacherView(container);
+          return;
+        }
+        if (!inp.reportValidity()) return;
+        try {
+          const teacher = saveTeacherContact(t, savedId, f.key, inp.value);
+          savedId = teacher.id;
+          inp.value = teacher[f.key] || "";
+          if (t.automatic) delTd.textContent = "등록";
+        } catch (error) {
+          alert(error.message);
+          inp.value = getTeacherById(savedId)?.[f.key] ?? t[f.key] ?? "";
+        }
+      });
       td.appendChild(inp); tr.appendChild(td);
     });
 

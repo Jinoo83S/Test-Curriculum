@@ -4,7 +4,7 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { readTeacherPortalAccess, normalizePortalRole } from "./teacher-portal-auth.js?v=r424";
 import { setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { appliedYearsForTeacher, buildTeacherYearRoster, schoolEmailKey } from "./teacher-year-directory.js?v=r431";
-import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication } from "./school-portal-settings-data.js?v=r431";
+import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload } from "./school-portal-settings-data.js?v=r433";
 
 const byId = id => document.getElementById(id);
 const clean = value => String(value || "").trim();
@@ -130,24 +130,47 @@ async function renderPublicationRows() {
     const cell = row.insertCell();
     badge.textContent = "불러오는 중";
     try {
-      let { published, configured } = await readCurriculumPublication(year);
+      let { published, configured, workload } = await readCurriculumPublication(year);
       const select = document.createElement("select");
       select.setAttribute("aria-label", `${year}학년도 커리큘럼 공개 여부`);
       select.append(new Option("공개", "true"), new Option("비공개", "false"));
+      const sync = document.createElement("button");
+      sync.type = "button";
+      sync.className = "portal-btn publication-workload-btn";
+      sync.setAttribute("aria-label", `${year}학년도 교사용 시수 갱신`);
       const update = () => {
         select.value = String(published);
         badge.textContent = published ? (configured ? "공개" : "공개 (기본값)") : "비공개";
         badge.dataset.published = String(published);
+        sync.disabled = !published;
+        sync.textContent = workload ? "교사용 시수 갱신" : "교사용 시수 공개";
       };
       update();
+      sync.addEventListener("click", async () => {
+        if (!settingsAuthorized || !published) return;
+        sync.disabled = select.disabled = true;
+        status.textContent = `${year}학년도 교사용 시수를 반영하는 중입니다.`;
+        try {
+          const count = await syncPublishedFacultyWorkload(year);
+          workload = true;
+          status.textContent = `${year}학년도 과목 설정 ${count}건을 반영했습니다.`;
+        } catch (error) {
+          status.textContent = `${year}학년도 시수 반영 실패 · ${error.message}`;
+        } finally {
+          select.disabled = false;
+          update();
+        }
+      });
       select.addEventListener("change", async () => {
         if (!settingsAuthorized) { update(); return; }
         const next = select.value === "true";
         select.disabled = true;
+        sync.disabled = true;
         try {
           await saveCurriculumPublication(year, next);
           published = next;
           configured = true;
+          if (!next) workload = null;
           status.textContent = `${year}학년도 상태를 저장했습니다.`;
         } catch (error) {
           status.textContent = `${year}학년도 저장 실패 · ${error.message}`;
@@ -156,7 +179,7 @@ async function renderPublicationRows() {
           select.disabled = false;
         }
       });
-      cell.append(select);
+      cell.append(select, sync);
     } catch (error) {
       badge.textContent = "조회 실패";
       cell.textContent = error.message;

@@ -1,5 +1,5 @@
 import { buildTeacherIdentityIndex, normalizeTeacherAssignment, teacherNameById } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
-import { assignedTeachers } from "./teacher-year-directory.js?v=r432";
+import { assignedTeachers } from "./teacher-year-directory.js?v=r433";
 import { getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 
 const text = value => String(value ?? "").trim();
@@ -19,6 +19,7 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
     return {
       name: text(card[term + "NameKo"] || card.nameKo || card[term + "NameEn"] || card.nameEn),
       english: text(card[term + "NameEn"] || card.nameEn),
+      language: text(card.language),
       teachers: [...teachers, ...identity.names.filter(name => !matched.has(key(name))).map(name => ({ name, id: "" }))],
       ...workload?.(id, credits, term),
     };
@@ -36,17 +37,26 @@ export function groupTeacherAssignments(rows, term, currentTeacher) {
     .map(key).filter(Boolean));
   const groups = new Map();
   for (const row of rows) {
-    const subject = row[term];
-    if (!subject) continue;
-    const teachers = subject.teachers.length ? subject.teachers : [{ name: "", id: "" }];
-    for (const teacher of teachers) {
-      const groupKey = teacher.id || key(teacher.name);
+    const assigned = new Map();
+    for (const semester of term ? [term] : ["sem1", "sem2"]) {
+      const subject = row[semester];
+      if (!subject) continue;
+      const teachers = subject.teachers.length ? subject.teachers : [{ name: "", id: "" }];
+      for (const teacher of teachers) {
+        const groupKey = teacher.id ? `id:${teacher.id}` : `name:${key(teacher.name)}`;
+        if (!assigned.has(groupKey)) assigned.set(groupKey, { teacher, row: { ...row, sem1: null, sem2: null } });
+        const entry = assigned.get(groupKey).row;
+        entry[semester] = subject;
+        if (term) entry.subject = subject;
+      }
+    }
+    for (const [groupKey, { teacher, row }] of assigned) {
       if (!groups.has(groupKey)) groups.set(groupKey, {
         name: teacher.name,
         own: !!(currentTeacher && (teacher.id ? teacher.id === currentTeacher.id : names.has(key(teacher.name)))),
         rows: [],
       });
-      groups.get(groupKey).rows.push({ ...row, subject });
+      groups.get(groupKey).rows.push(row);
     }
   }
   return [...groups.values()].sort((a, b) =>
@@ -59,6 +69,12 @@ const create = (tag, label = "") => {
   return node;
 };
 const small = label => create("small", label);
+export function teacherSemesterTotal(group, term) {
+  const subjects = group.rows.map(row => row[term]).filter(Boolean);
+  return subjects.length && subjects.every(subject => Number.isFinite(subject.total))
+    ? subjects.reduce((sum, subject) => sum + subject.total, 0) : null;
+}
+
 function makeTable(labels) {
   const table = create("table");
   table.className = "faculty-curriculum-table";
@@ -77,9 +93,9 @@ function makeTable(labels) {
 export function renderTeacherAssignmentTable(groups, { language = "ko", workload = false } = {}) {
   const en = language === "en";
   const { table, wrap } = makeTable(en
-    ? ["Grade", "Category", "Course", "Hours / class", ...(workload ? ["Classes", "Total hours"] : [])]
-    : ["학년", "범주", "과목명", "학급별 시수", ...(workload ? ["학급 수", "총 시수"] : [])]);
-  const width = workload ? 6 : 4;
+    ? ["Grade", "Category", "Semester 1 · NEIS", "Semester 2 · NEIS", "Hours / class", ...(workload ? ["Classes", "Course hours"] : [])]
+    : ["학년", "범주", "1학기 과목명 (NEIS)", "2학기 과목명 (NEIS)", "학급별 시수", ...(workload ? ["학급 수", "과목별 총 시수"] : [])]);
+  const width = workload ? 7 : 5;
   for (const group of groups) {
     const body = table.createTBody();
     body.className = group.own ? "faculty-teacher-group own" : "faculty-teacher-group";
@@ -93,42 +109,103 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
       header.append(label);
     }
     const summary = en ? `${group.rows.length} courses` : `${group.rows.length}과목`;
-    const total = group.rows.reduce((sum, row) => sum + (row.subject.total || 0), 0);
-    header.append(small(workload ? `${summary} · ${en ? "Total" : "합계"} ${total}${en ? " hours" : "시수"}` : summary));
+    header.append(small(summary));
+    if (workload) {
+      const totals = ["sem1", "sem2"].map((term, index) => {
+        const total = teacherSemesterTotal(group, term) ?? "—";
+        return `${en ? `S${index + 1}` : `${index + 1}학기`} ${total}`;
+      });
+      const badge = create("span", `${en ? "Total hours" : "총 시수"} · ${totals.join(" / ")}`);
+      badge.className = "faculty-workload-badge";
+      header.append(badge);
+    }
     body.insertRow().append(header);
-    for (const { grade, category, credits, subject } of group.rows) {
+    for (const { grade, category, credits, sem1, sem2 } of group.rows) {
       const row = body.insertRow();
       row.insertCell().textContent = grade;
       row.insertCell().textContent = category;
-      const course = row.insertCell();
-      course.append(create("strong", subject.name));
-      if (subject.english && subject.english !== subject.name) course.append(small(subject.english));
+      appendCourse(row.insertCell(), sem1);
+      appendCourse(row.insertCell(), sem2);
       row.insertCell().textContent = credits || "—";
       if (workload) {
-        row.insertCell().textContent = subject.classCount || "—";
-        row.insertCell().textContent = subject.total || "—";
+        for (const field of ["classCount", "total"]) {
+          const first = sem1?.[field], second = sem2?.[field];
+          row.insertCell().textContent = sem1 && sem2 && first !== second
+            ? `${first ?? "—"} / ${second ?? "—"}` : first ?? second ?? "—";
+        }
       }
     }
   }
   return wrap;
 }
 
-export function renderAnnualCurriculumTable(rows, language = "ko") {
+function appendCourse(cell, subject, includeTeacher = false) {
+  cell.className = "faculty-course-cell";
+  if (["Korean", "English", "Both"].includes(subject?.language)) cell.dataset.language = subject.language;
+  cell.append(create("strong", subject?.name || "—"));
+  if (subject?.english && subject.english !== subject.name) cell.append(small(subject.english));
+  if (includeTeacher && subject?.teachers.length) {
+    const teacher = small(subject.teachers.map(item => item.name).join(", "));
+    teacher.className = "faculty-course-teacher";
+    cell.append(teacher);
+  }
+}
+
+export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...new Set(rows.map(row => row.grade))]) {
   const en = language === "en";
-  const { table, wrap } = makeTable(en
-    ? ["Grade", "Category", "Track", "Subject Area", "Semester 1", "Semester 2", "Hours / class"]
-    : ["학년", "범주", "구분", "교과군", "1학기", "2학기", "학급별 시수"]);
-  const body = table.createTBody();
-  for (const item of rows) {
-    const row = body.insertRow();
-    for (const field of ["grade", "category", "track", "group"]) row.insertCell().textContent = item[field] || "—";
-    for (const subject of [item.sem1, item.sem2]) {
-      const cell = row.insertCell();
-      cell.append(create("strong", subject?.name || "—"));
-      if (subject?.english && subject.english !== subject.name) cell.append(small(subject.english));
-      if (subject?.teachers.length) cell.append(small(subject.teachers.map(teacher => teacher.name).join(", ")));
+  const { table, wrap } = makeTable([]);
+  table.classList.add("faculty-annual-board");
+  for (const _grade of grades) {
+    const columns = create("colgroup");
+    for (const proportion of [.15, .15, .29, .29, .12]) {
+      const col = create("col");
+      col.style.width = `${100 * proportion / grades.length}%`;
+      columns.append(col);
     }
-    row.insertCell().textContent = item.credits || "—";
+    table.insertBefore(columns, table.tHead);
+  }
+  const head = table.tHead.rows[0];
+  const subhead = table.tHead.insertRow();
+  for (const grade of grades) {
+    const label = create("th", en ? `Grade ${parseInt(grade, 10)}` : grade);
+    label.colSpan = 5;
+    label.scope = "colgroup";
+    head.append(label);
+    (en ? ["Track", "Area", "Semester 1", "Semester 2", "Hours"] : ["구분", "교과군", "1학기", "2학기", "시수"])
+      .forEach((name, index) => {
+        const th = create("th", name);
+        th.scope = "col";
+        th.classList.toggle("faculty-grade-start", index === 0);
+        subhead.append(th);
+      });
+  }
+  const body = table.createTBody();
+  const categories = [...new Set(rows.map(row => row.category))];
+  for (const category of categories) {
+    const section = create("th", category || (en ? "Other" : "기타"));
+    section.colSpan = grades.length * 5;
+    section.className = "faculty-board-category";
+    body.insertRow().append(section);
+    const categoryRows = rows.filter(row => row.category === category);
+    for (const track of new Set(categoryRows.map(row => row.track))) {
+      const byGrade = grades.map(grade => categoryRows.filter(row => row.grade === grade && row.track === track));
+      const count = Math.max(...byGrade.map(items => items.length), 0);
+      for (let position = 0; position < count; position++) {
+        const row = body.insertRow();
+        if (position === 0) row.className = "faculty-track-start";
+        for (const items of byGrade) {
+          const item = items[position];
+          const cell = row.insertCell();
+          cell.className = "faculty-grade-start";
+          if (!item) { cell.colSpan = 5; cell.classList.add("faculty-board-blank"); continue; }
+          cell.textContent = item.track || "—";
+          row.insertCell().textContent = item.group || "—";
+          appendCourse(row.insertCell(), item.sem1, true);
+          appendCourse(row.insertCell(), item.sem2, true);
+          row.insertCell().textContent = item.credits || "—";
+        }
+      }
+    }
   }
   return wrap;
 }

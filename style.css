@@ -5971,6 +5971,22 @@ a.topbar-nav-link {
 .room-type-item input { width: 92px !important; font-size: 11px !important; }
 .room-type-count { height: 18px !important; min-width: 28px !important; font-size: 10px !important; }
 .room-type-del { width: 20px !important; height: 20px !important; }
+
+.room-year-import-dialog {
+  width: min(31rem, calc(100% - 24px));
+  padding: 16px;
+  border: 1px solid #bdcde1;
+  border-radius: 10px;
+  color: #263a54;
+  background: white;
+}
+.room-year-import-dialog::backdrop { background: rgb(20 37 62 / 40%); }
+.room-year-import-dialog h2 { margin: 0 0 8px; font-size: 1.02rem; }
+.room-year-import-dialog p, .room-year-import-dialog label { margin: 6px 0; font-size: .85rem; }
+.room-year-import-dialog select { max-width: 100%; padding: 4px 7px; }
+.room-year-import-preview { max-height: min(34vh, 15rem); overflow: auto; padding-inline-start: 22px; font-size: .82rem; }
+.room-year-import-preview:empty { display: none; }
+.room-year-import-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .rooms-table-wrap {
   max-height: 380px;
   overflow: auto;

@@ -3,7 +3,7 @@
 // ================================================================
 import { uid, clean, makeBtn } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
-import { appState, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=r426";
+import { appState, initialLoad, scheduleSave, normalizeRoom, ROOM_TYPES, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 
 const rDomain = () => appState.rooms;
@@ -898,6 +898,33 @@ function renderRoomsFullPageView(container, onUpdate, options = {}) {
     }
   });
   resetBtn.disabled = !canEdit();
+  if (container.id === "roomContent") {
+    const canApplyImport = () => canEdit() && initialLoad.rooms;
+    const importBtn = makeBtn("다른 학년도 가져오기", "his-ui-btn his-ui-btn-secondary his-ui-btn-compact", async () => {
+      if (!canApplyImport()) return;
+      importBtn.disabled = true;
+      try {
+        const { openRoomYearImport } = await import("./room-year-import.js?v=r433");
+        await openRoomYearImport({
+          existing: getRooms,
+          canApply: canApplyImport,
+          onApply: rooms => {
+            getRooms().push(...rooms.map(room => normalizeRoom(room)));
+            getRoomTypes();
+            scheduleSave("rooms");
+            if (onUpdate) onUpdate();
+            else renderRoomsView(container, onUpdate, options);
+          },
+        });
+      } catch (error) {
+        alert(`교실 가져오기를 열 수 없습니다. ${error.message}`);
+      } finally {
+        importBtn.disabled = !canApplyImport();
+      }
+    });
+    importBtn.disabled = !canApplyImport();
+    actions.append(importBtn);
+  }
   actions.append(addBtn, resetBtn);
   hdr.append(titleWrap, actions);
   container.appendChild(hdr);

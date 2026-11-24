@@ -19,3 +19,23 @@
 .faculty-teacher-group.own th[scope="rowgroup"] { border-top-color: #6999cf; background: #d9eaff; }
 .faculty-curriculum-table .faculty-teacher-group.own td { background: #f0f6ff; }
 .faculty-view-empty { color: #526581; padding: 14px 0; }
+.faculty-workload-badge { display: inline-block; margin-inline-start: 8px; color: #28476a; font-size: .8rem; }
+.faculty-view-filters small { color: #526581; }
+.faculty-annual-board { min-width: 1040px; table-layout: fixed; }
+.faculty-annual-board thead tr:first-child th {
+  height: 30px; padding-block: 4px; background: #e9b0ae; color: #442d42; text-align: center; border-inline-end: 2px solid #b77b83;
+}
+.faculty-annual-board thead tr:nth-child(2) th { top: 30px; text-align: center; background: #f7e7e5; }
+.faculty-annual-board td, .faculty-annual-board thead th { padding: 4px 5px; border-inline-end: 1px solid #e1e6ec; }
+.faculty-annual-board :is(td, th).faculty-grade-start { border-inline-start: 2px solid #c38b8f; }
+.faculty-annual-board td { vertical-align: top; }
+.faculty-annual-board td:nth-child(5n) { text-align: center; }
+.faculty-annual-board .faculty-board-category { background: #e5efdf; color: #31502e; border-top: 1px solid #c6d7be; }
+.faculty-annual-board .faculty-track-start td { border-top: 2px solid #ded4ae; }
+.faculty-annual-board tbody tr td.faculty-board-blank { background: #e9edf1; }
+.faculty-annual-board .faculty-course-cell > strong { font-weight: 700; }
+.faculty-annual-board .faculty-course-cell > small { line-height: 1.35; }
+.faculty-annual-board .faculty-course-teacher { margin-top: 2px; color: #586a80; }
+.faculty-annual-board [data-language="Korean"] :is(strong, small:not(.faculty-course-teacher)) { color: #234e9c; }
+.faculty-annual-board [data-language="English"] :is(strong, small:not(.faculty-course-teacher)) { color: #a53139; }
+.faculty-annual-board [data-language="Both"] :is(strong, small:not(.faculty-course-teacher)) { color: #6835a4; }
