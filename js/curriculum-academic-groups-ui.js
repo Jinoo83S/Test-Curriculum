@@ -40,18 +40,20 @@ export function updateAcademicGroup(rows, { id, name, credits, rowIds }) {
   }
 }
 
-export function openAcademicGroups({ label, rows, getTemplate, save }) {
+export function openAcademicGroups(targets, initialIndex = 0) {
+  if (!targets.length) return;
   const dialog = document.createElement("dialog");
   dialog.className = "academic-groups-dialog";
   const form = document.createElement("form");
   const heading = document.createElement("h2");
-  heading.textContent = `${label} 과목 묶음`;
-  const groups = new Map(rows.filter(row => row.academicGroupId)
-    .map(row => [row.academicGroupId, row]));
+  heading.textContent = "과목 묶음";
+  const gradeSelect = document.createElement("select");
+  gradeSelect.append(...targets.map(({ label }, index) => new Option(label, String(index))));
+  gradeSelect.selectedIndex = Math.max(0, initialIndex);
+  const currentTarget = () => targets[gradeSelect.selectedIndex];
+  let groups;
   const select = document.createElement("select");
   select.setAttribute("aria-label", "편집할 과목 묶음");
-  select.append(new Option("새 묶음", ""));
-  for (const [id, row] of groups) select.append(new Option(row.academicGroupName || "과목 묶음", id));
   const name = document.createElement("input");
   name.type = "text"; name.name = "groupName"; name.placeholder = "예: 공통 체육"; name.required = true;
   const credits = document.createElement("input");
@@ -78,6 +80,7 @@ export function openAcademicGroups({ label, rows, getTemplate, save }) {
   close.type = "button"; close.className = "secondary-btn"; close.textContent = "닫기";
   actions.append(remove, close, saveButton);
   const render = () => {
+    const { rows, getTemplate } = currentTarget();
     const id = select.value;
     const group = groups.get(id);
     name.value = group?.academicGroupName || "";
@@ -98,16 +101,25 @@ export function openAcademicGroups({ label, rows, getTemplate, save }) {
       return label;
     }));
   };
+  const renderGrade = () => {
+    groups = new Map(currentTarget().rows.filter(row => row.academicGroupId)
+      .map(row => [row.academicGroupId, row]));
+    select.replaceChildren(new Option("새 묶음", ""), ...[...groups].map(([id, row]) =>
+      new Option(row.academicGroupName || "과목 묶음", id)));
+    render();
+  };
   const persist = async change => {
-    saveButton.disabled = remove.disabled = close.disabled = true;
+    const { save } = currentTarget();
+    gradeSelect.disabled = select.disabled = saveButton.disabled = remove.disabled = close.disabled = true;
     try {
       if (await save(change) !== false) dialog.close();
     } catch (error) {
       status.textContent = error.message;
     } finally {
-      saveButton.disabled = remove.disabled = close.disabled = false;
+      gradeSelect.disabled = select.disabled = saveButton.disabled = remove.disabled = close.disabled = false;
     }
   };
+  gradeSelect.addEventListener("change", renderGrade);
   select.addEventListener("change", render);
   close.addEventListener("click", () => dialog.close());
   remove.addEventListener("click", () => void persist({ id: select.value, rowIds: [] }));
@@ -120,10 +132,11 @@ export function openAcademicGroups({ label, rows, getTemplate, save }) {
     }
     void persist({ id: select.value || crypto.randomUUID(), name: name.value.trim(), credits: credits.value, rowIds });
   });
-  form.append(heading, select, labelInput("묶음 이름", name), labelInput("묶음 이수단위", credits), hint, list, status, actions);
+  form.append(heading, labelInput("학년", gradeSelect), select, labelInput("묶음 이름", name),
+    labelInput("묶음 이수단위", credits), hint, list, status, actions);
   dialog.append(form);
   dialog.addEventListener("close", () => dialog.remove(), { once: true });
   document.body.append(dialog);
-  render();
+  renderGrade();
   dialog.showModal();
 }

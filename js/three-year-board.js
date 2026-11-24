@@ -10,7 +10,7 @@ import { languageClass, parseCreditValue } from "./utils.js?v=2026-07-15-room-av
 import { getSemesterTemplateData } from "./templates.js?v=r425";
 import { pairedSemesterTitles, swapSemesterPair } from "./curriculum-semester-pair.js?v=r429";
 import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r442";
-import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r442";
+import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r443";
 import { getDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const cache = new Map();
@@ -631,7 +631,28 @@ function renderThreeYearSidebar(grades, sources) {
   const add = el("button", "secondary-btn sidebar-add-template-btn", "+ 추가");
   add.type = "button"; add.disabled = !editable() || !source?.exists;
   add.addEventListener("click", () => cardEditor(selectedCardYear, grade, null, grades, sources));
-  controls.append(add); heading.append(controls); panel.append(heading);
+  const groups = el("button", "secondary-btn sidebar-add-template-btn", "과목 묶음");
+  groups.type = "button";
+  const editableGrades = grades.filter(item => sources[item]?.exists);
+  groups.disabled = !editable() || !editableGrades.length;
+  groups.addEventListener("click", () => {
+    if (!editable()) return;
+    const targets = editableGrades.map(item => {
+      const year = yearForGrade(item);
+      const gradeSource = sources[item];
+      const templates = new Map((gradeSource.templates?.templates || []).map(card => [card.id, card]));
+      return {
+        label: `${year}학년도 ${item}`, rows: gradeSource.curriculum?.gradeBoards?.[item] || [],
+        getTemplate: id => templates.get(id),
+        save: change => changeYear(year, item, curriculum => {
+          updateAcademicGroup(curriculum.gradeBoards[item], change);
+          return false;
+        }),
+      };
+    });
+    openAcademicGroups(targets, editableGrades.indexOf(grade));
+  });
+  controls.append(groups, add); heading.append(controls); panel.append(heading);
   const yearPicker = el("select", "school-level-select three-year-card-year");
   grades.forEach(item => {
     const option = el("option", "", yearForGrade(item) + "학년도 · " + item);
@@ -668,22 +689,6 @@ function column(grade, source) {
   totals.append(el("span", "grade-title-badge", `교과 ${total.totalCourses}과목`),
     el("span", "grade-title-badge", `${total.totalCredits}이수단위`));
   top.append(el("span", "grade-title-name", grade + " · " + year + "학년도"), totals);
-  if (editable() && source?.exists) {
-    const button = el("button", "academic-groups-button", "과목 묶음");
-    button.type = "button";
-    button.addEventListener("click", () => {
-      const templates = new Map((source.templates?.templates || []).map(card => [card.id, card]));
-      openAcademicGroups({
-        label: `${year}학년도 ${grade}`, rows: source.curriculum?.gradeBoards?.[grade] || [],
-        getTemplate: id => templates.get(id),
-        save: change => changeYear(year, grade, curriculum => {
-          updateAcademicGroup(curriculum.gradeBoards[grade], change);
-          return false;
-        }),
-      });
-    });
-    top.append(button);
-  }
   title.append(top); col.append(title, header());
   return col;
 }

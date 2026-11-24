@@ -7,7 +7,7 @@ import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r442";
-import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r442";
+import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r443";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -746,6 +746,19 @@ function getOrderedTracks(grades, category) {
   return orderTrackValues(tracks);
 }
 
+export function openBoardAcademicGroups(grades) {
+  if (!canEdit()) return;
+  openAcademicGroups(grades.map(grade => ({
+    label: grade, rows: curriculum().gradeBoards[grade] || [], getTemplate: getTemplateById,
+    save: change => {
+      if (!canEdit()) return false;
+      updateAcademicGroup(curriculum().gradeBoards[grade] || [], change);
+      scheduleSave("curriculum");
+      _onCurriculumChange();
+    },
+  })));
+}
+
 export function buildTabBoard(visibleGrades, onUpdate) {
   const columns = [];
   visibleGrades.forEach(grade => {
@@ -753,17 +766,6 @@ export function buildTabBoard(visibleGrades, onUpdate) {
     const gs = getCategorySummary(grade, "교과");
     const titleEl = document.createElement("div"); titleEl.className = "grade-title";
     titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">교과 ${gs.totalCourses}과목</span><span class="grade-title-badge">${gs.totalCredits}이수단위</span></div></div>`;
-    if (canEdit()) titleEl.firstElementChild.append(makeBtn("과목 묶음", "academic-groups-button", () => {
-      openAcademicGroups({
-        label: grade, rows: curriculum().gradeBoards[grade] || [], getTemplate: getTemplateById,
-        save: change => {
-          if (!canEdit()) return false;
-          updateAcademicGroup(curriculum().gradeBoards[grade] || [], change);
-          scheduleSave("curriculum");
-          _onCurriculumChange();
-        },
-      });
-    }));
     col.appendChild(titleEl);
     const hr = createGradeHeader(); col.appendChild(hr);
     columns.push({ grade, col, hr });

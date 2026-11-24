@@ -8616,10 +8616,6 @@ body.three-year-mode.three-year-card-manager-active #appSidebar{display:none!imp
 .three-year-manager-table td:nth-child(1),.three-year-manager-table td:nth-child(2){min-width:100px}
 .curriculum-paste-warning{color:#92400e}
 .curriculum-paste-error{color:#9f1239;font-weight:700}
-.academic-groups-button {
-  color: #fff; background: transparent; border: 1px solid currentColor; border-radius: 5px;
-  padding: 2px 5px; font-size: .7rem; font-weight: 700; white-space: nowrap; cursor: pointer;
-}
 .academic-groups-dialog {
   width: min(32rem, calc(100% - 24px)); max-height: 85vh; padding: 18px;
   border: 1px solid #b7c9da; border-radius: 10px; color: #173456;

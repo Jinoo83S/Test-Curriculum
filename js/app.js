@@ -14,9 +14,9 @@ import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainS
 import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=r426";
 import { versioned } from "./version.js?v=r426";
 import { createAppModuleLoader } from "./app-module-loader.js?v=r439";
-import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=r442";
+import { createAppRenderOrchestrator } from "./app-render-orchestrator.js?v=r443";
 import { setupStudentManagementUi } from "./app-students-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { setupAppBoardUi } from "./app-board-ui.js?v=r442";
+import { setupAppBoardUi } from "./app-board-ui.js?v=r443";
 import { setupCurriculumIntegrityUi } from "./curriculum-integrity-ui.js?v=r411";
 import { setupAppTemplatesUi } from "./app-templates-ui.js?v=2026-07-15-room-availability-separation-r355";
 
@@ -102,7 +102,7 @@ async function createCurriculumApi() {
 async function bootstrap() {
   const initialView = resolveInitialView();
   const curriculumApi = await createCurriculumApi();
-  const { buildTabBoard, exportXLSX } = curriculumApi;
+  const { buildTabBoard, openBoardAcademicGroups, exportXLSX } = curriculumApi;
   const loaders = createLazyLoaders();
 
   let renderer = null;
@@ -116,6 +116,7 @@ async function bootstrap() {
 
   const boardUi = setupAppBoardUi({
     buildTabBoard,
+    openBoardAcademicGroups,
     exportXLSX,
     renderSidebar: () => renderer?.renderSidebar?.(),
     renderApp: () => renderer?.render?.(),

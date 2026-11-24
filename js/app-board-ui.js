@@ -4,7 +4,7 @@
 import { GRADE_GROUPS, ACTIVE_SCHOOL_YEAR, LEGACY_SCHOOL_YEAR, assertSchoolYearWriteContext, schoolYearDomainPath } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { schoolYearLabel } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
-import { renderThreeYearBoard, clearThreeYearCache, cancelThreeYearBoardRender } from "./three-year-board.js?v=r442";
+import { renderThreeYearBoard, clearThreeYearCache, cancelThreeYearBoardRender } from "./three-year-board.js?v=r443";
 import { canEdit } from "./auth.js?v=r424";
 import { appState, saveNow } from "./state.js?v=r426";
 import { assertDestructiveTarget, buildBackupFilename, downloadJsonBackup, recordDestructiveOperation } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
@@ -29,11 +29,13 @@ function makeEmptyBoardRow(options) {
 
 export function setupAppBoardUi({
   buildTabBoard,
+  openBoardAcademicGroups,
   exportXLSX,
   renderSidebar,
   renderApp,
 } = {}) {
   const gradeBoard = document.getElementById("gradeBoard");
+  const sidebarAcademicGroupsBtn = document.getElementById("sidebarAcademicGroupsBtn");
   const resetBoardBtn = document.getElementById("resetBoardBtn");
   const exportXlsxBtn = document.getElementById("exportXlsxBtn");
   const tab7to9Btn = document.getElementById("tab7to9Btn");
@@ -52,6 +54,7 @@ export function setupAppBoardUi({
     if (!gradeBoard || typeof buildTabBoard !== "function") return;
 
     const tab = activeTab;
+    if (sidebarAcademicGroupsBtn) sidebarAcademicGroupsBtn.disabled = !canEdit();
     if (getCurriculumMode() === "threeYear") {
       void renderThreeYearBoard(gradeBoard, GRADE_GROUPS[tab]);
       return;
@@ -232,6 +235,7 @@ ${error?.message || error}`);
     renderBoardTab();
   });
   resetBoardBtn?.addEventListener("click", () => { void resetBoard(); });
+  sidebarAcademicGroupsBtn?.addEventListener("click", () => openBoardAcademicGroups?.(GRADE_GROUPS[activeTab]));
   exportXlsxBtn?.addEventListener("click", () => {
     if (typeof exportXLSX === "function") exportXLSX(activeTab);
   });
