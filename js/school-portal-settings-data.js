@@ -1,7 +1,7 @@
 import { db, getSchoolYearRefs, LEGACY_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, registerKnownSchoolYears } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { deleteField, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { summarizeFacultyWorkload } from "./faculty-workload.js?v=r433";
+import { summarizeFacultyWorkload } from "./faculty-workload.js?v=r434";
 
 function withDeadline(promise, message) {
   let timer;
@@ -62,7 +62,7 @@ export async function saveCurriculumPublication(year, published) {
   });
 }
 
-export async function syncPublishedFacultyWorkload(year) {
+export async function readFacultyWorkloadFromRosters(year) {
   if (!/^20[2-9]\d$/.test(year)) throw new Error("학년도를 확인해 주세요.");
   const { collections, domains } = getSchoolYearRefs(year);
   const current = await withDeadline(getDocsFromServer(collections.rosters), "학급 수와 교사시수 조회 시간이 초과되었습니다.");
@@ -74,14 +74,28 @@ export async function syncPublishedFacultyWorkload(year) {
     const legacy = await withDeadline(getDocFromServer(domains.rosters), "과목 설정 조회 시간이 초과되었습니다.");
     entries = Object.entries(legacy.data()?.rosterMeta || {}).map(([id, meta]) => ({ id, meta }));
   }
-  const workload = summarizeFacultyWorkload(entries);
+  return summarizeFacultyWorkload(entries).map(([id, meta]) => ({ id, ...meta }));
+}
+
+export async function publishFacultyWorkload(year, workload) {
+  if (!/^20[2-9]\d$/.test(year)) throw new Error("학년도를 확인해 주세요.");
+  const cleanWorkload = records => summarizeFacultyWorkload(records.map(({ id, classCount, teacherLoadHours }) =>
+    ({ id, meta: { classCount, teacherLoadHours } })))
+    .map(([id, meta]) => ({ id, ...meta })).sort((a, b) => a.id.localeCompare(b.id));
+  const next = cleanWorkload(workload);
   const ref = publicationRef(year);
   await runTransaction(db, async transaction => {
     const setting = await transaction.get(ref);
-    if ((!setting.exists() && year !== LEGACY_SCHOOL_YEAR) || setting.data()?.curriculumPublished === false) {
+    const data = setting.data();
+    if ((!setting.exists() && year !== LEGACY_SCHOOL_YEAR) || data?.curriculumPublished === false) {
       throw new Error("등록된 공개 학년도만 시수를 갱신할 수 있습니다.");
     }
-    transaction.set(ref, { facultyWorkload: workload.map(([id, meta]) => ({ id, ...meta })), facultyWorkloadUpdatedAt: serverTimestamp() }, { merge: true });
+    if (Array.isArray(data?.facultyWorkload) && JSON.stringify(cleanWorkload(data.facultyWorkload)) === JSON.stringify(next)) return;
+    transaction.set(ref, { facultyWorkload: next, facultyWorkloadUpdatedAt: serverTimestamp() }, { merge: true });
   });
-  return workload.length;
+  return next.length;
+}
+
+export async function syncPublishedFacultyWorkload(year) {
+  return publishFacultyWorkload(year, await readFacultyWorkloadFromRosters(year));
 }

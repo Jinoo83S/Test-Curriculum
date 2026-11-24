@@ -69,10 +69,18 @@ const create = (tag, label = "") => {
   return node;
 };
 const small = label => create("small", label);
-export function teacherSemesterTotal(group, term) {
+function teacherSemesterSummary(group, term) {
   const subjects = group.rows.map(row => row[term]).filter(Boolean);
-  return subjects.length && subjects.every(subject => Number.isFinite(subject.total))
-    ? subjects.reduce((sum, subject) => sum + subject.total, 0) : null;
+  const known = subjects.map(subject => subject.teacherTotal).filter(Number.isFinite);
+  return {
+    total: known.length ? Number(known.reduce((sum, hours) => sum + hours, 0).toFixed(8)) : null,
+    missing: subjects.length - known.length,
+  };
+}
+
+export function teacherSemesterTotal(group, term) {
+  const { total, missing } = teacherSemesterSummary(group, term);
+  return missing ? null : total;
 }
 
 function makeTable(labels) {
@@ -112,10 +120,11 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
     header.append(small(summary));
     if (workload) {
       const totals = ["sem1", "sem2"].map((term, index) => {
-        const total = teacherSemesterTotal(group, term) ?? "—";
-        return `${en ? `S${index + 1}` : `${index + 1}학기`} ${total}`;
+        const { total, missing } = teacherSemesterSummary(group, term);
+        const status = missing ? (en ? ` (${missing} unset)` : ` (미설정 ${missing}과목)`) : "";
+        return `${en ? `S${index + 1}` : `${index + 1}학기`} ${total ?? "—"}${status}`;
       });
-      const badge = create("span", `${en ? "Total hours" : "총 시수"} · ${totals.join(" / ")}`);
+      const badge = create("span", `${en ? "Teacher hours" : "교사 총시수"} · ${totals.join(" / ")}`);
       badge.className = "faculty-workload-badge";
       header.append(badge);
     }

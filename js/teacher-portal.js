@@ -3,9 +3,9 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
-import { readCurriculumPublication, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r433";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r433";
-import { facultyCourseWorkload } from "./faculty-workload.js?v=r433";
+import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r434";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r434";
+import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);
@@ -429,13 +429,21 @@ async function startFacultyCurriculum(access, serial) {
     showGate("portalDenied", `${ACTIVE_SCHOOL_YEAR}학년도는 비공개입니다. 상단에서 공개된 학년도를 선택해 주세요.`);
     return;
   }
-  const source = await readTeacherYearSources(ACTIVE_SCHOOL_YEAR);
+  const teachersView = new URLSearchParams(location.search).get("view") === "teachers";
+  // Only administrators read the roster source. A teacher sees the aggregate
+  // fields published for this year, without downloading roster documents.
+  const liveWorkloadRequest = teachersView && access.isAdmin
+    ? readFacultyWorkloadFromRosters(ACTIVE_SCHOOL_YEAR).catch(error => {
+      console.warn("[faculty workload] live read failed", error);
+      return null;
+    }) : Promise.resolve(null);
+  const [source, liveWorkload] = await Promise.all([readTeacherYearSources(ACTIVE_SCHOOL_YEAR), liveWorkloadRequest]);
   if (serial !== authSerial) return;
-  const workload = new Map((publication.workload || []).map(item => [item.id, item]));
+  const workloadRows = liveWorkload ?? publication.workload;
+  const workload = new Map((workloadRows || []).map(item => [item.id, item]));
   const rows = buildReadOnlyCurriculumRows(source.curriculum, source.templates, source.teachers,
     (id, credits) => facultyCourseWorkload(workload.get(id), credits));
   const self = source.teachers.find(teacher => normalizePortalEmail(teacher.email) === access.email) || access.teacher;
-  const teachersView = new URLSearchParams(location.search).get("view") === "teachers";
   const titleKey = teachersView ? "facultyAssignments" : "facultyCurriculum";
   const activeLink = byId("facultyCurriculumApp").querySelector(`[data-i18n="${titleKey}"].portal-btn`);
   activeLink?.setAttribute("aria-current", "page");
@@ -452,7 +460,9 @@ async function startFacultyCurriculum(access, serial) {
   const ownText = document.createElement("span");
   ownLabel.append(own, ownText);
   const workloadNote = document.createElement("small");
-  controls.replaceChildren(...(teachersView ? [search, ownLabel, workloadNote] : [filter, search]));
+  const syncNote = document.createElement("small");
+  syncNote.setAttribute("role", "status");
+  controls.replaceChildren(...(teachersView ? [search, ownLabel, workloadNote, syncNote] : [filter, search]));
   const show = () => {
     const query = clean(search.value).toLowerCase();
     const hasMatch = values => !query || values.some(value => clean(value).toLowerCase().includes(query));
@@ -491,9 +501,11 @@ async function startFacultyCurriculum(access, serial) {
     search.placeholder = en ? "Search courses or teachers" : "과목·교사 검색";
     search.setAttribute("aria-label", search.placeholder);
     ownText.textContent = en ? "My courses only" : "내 담당만";
-    workloadNote.textContent = publication.workload
-      ? (en ? "If values differ, S1 / S2 is shown." : "학기별 값이 다르면 1학기 / 2학기 순으로 표시합니다.")
-      : (en ? "Class counts and totals will appear when published by an administrator." : "학급 수와 총 시수는 관리자가 교사용 시수를 갱신하면 표시됩니다.");
+    workloadNote.textContent = workloadRows?.length
+      ? (en ? "Different values appear as S1 / S2. Teacher totals use saved workload overrides." : "학기별 값은 1학기 / 2학기 순입니다. 교사 합계에는 별도 교사시수 설정을 우선 반영합니다.")
+      : workloadRows
+        ? (en ? "No class counts or teacher hours have been set for this year." : "이 학년도에 설정된 학급 수와 교사시수가 없습니다.")
+        : (en ? "Class counts and hours will appear after an administrator opens this report." : "관리자가 이 학년도의 담당 현황을 열면 학급 수와 시수가 자동으로 반영됩니다.");
     show();
   };
   search.addEventListener("input", show);
@@ -501,6 +513,17 @@ async function startFacultyCurriculum(access, serial) {
   own.addEventListener("change", show);
   redrawFacultyView();
   showGate("facultyCurriculumApp");
+  if (liveWorkload) {
+    void publishFacultyWorkload(ACTIVE_SCHOOL_YEAR, liveWorkload).catch(error => {
+      if (serial !== authSerial) return;
+      console.warn("[faculty workload] publication refresh failed", error);
+      syncNote.textContent = portalLanguage === "ko"
+        ? "관리자 화면에는 최신 시수가 표시됩니다. 교사용 공개 자료 갱신은 실패했습니다."
+        : "The administrator view is current. Updating the shared figures failed.";
+    });
+  } else if (teachersView && access.isAdmin) {
+    syncNote.textContent = portalLanguage === "ko" ? "최신 과목 설정을 읽지 못했습니다." : "The latest workload settings could not be read.";
+  }
 }
 
 async function handleAuth(user) {

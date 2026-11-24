@@ -16,5 +16,7 @@ export function summarizeFacultyWorkload(records) {
 export function facultyCourseWorkload(record, credits) {
   const classCount = numberOrNull(record?.classCount, true);
   const override = numberOrNull(record?.teacherLoadHours);
-  return { classCount, total: override ?? (classCount !== null && credits > 0 ? classCount * credits : null) };
+  const total = classCount !== null && Number.isFinite(credits) && credits > 0
+    ? Number((classCount * credits).toFixed(8)) : null;
+  return { classCount, total, teacherTotal: override ?? total };
 }

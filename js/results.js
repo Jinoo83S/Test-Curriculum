@@ -5,9 +5,9 @@ import { auth, GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-sep
 import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { appState } from "./state.js?v=r426";
 import { getTemplateById, getSemesterTemplateData } from "./templates.js?v=r425";
-import { getClassCount, getRosterMeta, getTeacherLoadHours } from "./rosters.js?v=r426";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable, teacherSemesterTotal } from "./curriculum-read-view.js?v=r433";
-import { facultyCourseWorkload } from "./faculty-workload.js?v=r433";
+import { getClassCount, getRosterMeta } from "./rosters.js?v=r426";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable, teacherSemesterTotal } from "./curriculum-read-view.js?v=r434";
+import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 // ── Data builder ─────────────────────────────────────────────────
 function buildRows() {
@@ -50,7 +50,7 @@ function buildRows() {
       const mainTplId = t1?.id || t2?.id;
       const classCount = getClassCount(mainTplId);
       const credits    = getEffectiveCredit(row);
-      const total      = getTeacherLoadHours(mainTplId, credits);
+      const total      = facultyCourseWorkload(getRosterMeta(mainTplId), credits).total;
 
       rows.push({
         grade, category: row.category, track: row.track, group: row.group,
@@ -178,7 +178,7 @@ function buildTable1(rows) {
       td.rowSpan = gradeGroups[r.grade]; td.textContent = r.grade;
       tr.appendChild(td); prevGrade = r.grade;
     }
-    const totalClass = r.total > 0 ? "results-total-cell" : "";
+    const totalClass = r.total !== null ? "results-total-cell" : "";
     const nameSuffix = r.isSplit ? ' <span class="results-split-badge">학기분리</span>' : "";
     [
       mkTd("results-category", escapeHtml(r.category)),
@@ -190,7 +190,7 @@ function buildTable1(rows) {
       mkTd("results-teacher", escapeHtml(r.teacher)),
       mkTd("results-num", String(r.credits || "-")),
       mkTd("results-num", r.classCount > 0 ? String(r.classCount) : "-"),
-      mkTd("results-num " + totalClass, r.total > 0 ? String(r.total) : "-"),
+      mkTd("results-num " + totalClass, String(r.total ?? "-")),
     ].forEach(td => tr.appendChild(td));
     tbody.appendChild(tr);
   });
@@ -206,7 +206,7 @@ export function exportResultsXlsx() {
 
   // Sheet 1
   const s1data = [["학년","범주","구분","교과군","과목(한글)","과목(영어)","언어","교사","학급별시수","학급수","과목총시수"]];
-  rows.forEach(r => s1data.push([r.grade, r.category, r.track, r.group, r.nameKo, r.nameEn, r.language, r.teacher, r.credits, r.classCount || "", r.total || ""]));
+  rows.forEach(r => s1data.push([r.grade, r.category, r.track, r.group, r.nameKo, r.nameEn, r.language, r.teacher, r.credits, r.classCount || "", r.total ?? ""]));
   const ws1 = XLSX.utils.aoa_to_sheet(s1data);
   ws1["!cols"] = [8,6,6,8,20,24,8,14,8,6,8].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws1, "전체 커리큘럼");
