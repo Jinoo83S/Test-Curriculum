@@ -1,11 +1,10 @@
 import { buildTeacherIdentityIndex, normalizeTeacherAssignment, teacherNameById } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { assignedTeachers } from "./teacher-year-directory.js?v=r433";
 import { getEffectiveCredit, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { getCurriculumCalculationGroup, getCurriculumSemesterTitles, summarizeAcademicCourses } from "./curriculum-academic-summary.js?v=r441";
 
 const text = value => String(value ?? "").trim();
 const key = value => text(value).normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
-const trackKey = row => key(row.track).replace(/\s+/g, "");
-const genderMarker = /\[\s*(남|여|m|f)\s*\]/g;
 
 export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = [], workload) {
   const cards = new Map(templates.map(card => [card.id, card]));
@@ -19,8 +18,7 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
     const matched = new Set(teachers.map(entry => key(entry.name)));
     const credits = getEffectiveCredit(row);
     return {
-      name: text(card[term + "NameKo"] || card.nameKo || card[term + "NameEn"] || card.nameEn),
-      english: text(card[term + "NameEn"] || card.nameEn),
+      ...getCurriculumSemesterTitles(card, term),
       language: text(card.language),
       teachers: [...teachers, ...identity.names.filter(name => !matched.has(key(name))).map(name => ({ name, id: "" }))],
       ...workload?.(id, credits, term),
@@ -29,42 +27,11 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
   return Object.entries(curriculum?.gradeBoards || {}).sort(([a], [b]) => parseInt(a, 10) - parseInt(b, 10))
     .flatMap(([grade, rows]) => (Array.isArray(rows) ? rows : []).flatMap(row => {
       const sem1 = semester(row, "sem1"), sem2 = semester(row, "sem2");
-      const calcGroupIds = new Set([row.sem1TemplateId, row.sem2TemplateId].map(id => text(cards.get(id)?.calcGroupId)).filter(Boolean));
+      const calcGroupId = getCurriculumCalculationGroup([cards.get(row.sem1TemplateId), cards.get(row.sem2TemplateId)]);
       return sem1 || sem2 ? [{ grade, category: row.category, track: row.track, group: row.group,
-        calcGroupId: calcGroupIds.size === 1 ? [...calcGroupIds][0] : "",
+        calcGroupId,
         credits: getEffectiveCredit(row), boardHours: parseCreditValue(row.credits), sem1, sem2 }] : [];
     }));
-}
-
-function pairCommonPhysicalEducation(rows) {
-  const candidates = { male: [], female: [] };
-  for (const row of rows) {
-    if (trackKey(row) !== "공통" || !["체육", "pe", "physical education"].includes(key(row.group))) continue;
-    const titles = [row.sem1, row.sem2].flatMap(subject => [key(subject?.name), key(subject?.english)]).filter(Boolean);
-    const genders = new Set(titles.flatMap(title => Array.from(title.matchAll(genderMarker), ([, gender]) =>
-      gender === "남" || gender === "m" ? "male" : "female")));
-    if (genders.size !== 1) continue;
-    candidates[[...genders][0]].push({ row, names: titles.map(title => title.replace(genderMarker, "").replace(/\s+/g, "")) });
-  }
-
-  const pairs = new Map();
-  const pair = (male, female) => {
-    const group = Symbol("physical education");
-    pairs.set(male.row, group);
-    pairs.set(female.row, group);
-  };
-  const matches = (first, second) => first.names.some(name => name && second.names.includes(name));
-  for (const male of candidates.male) {
-    const matching = candidates.female.filter(female => matches(male, female));
-    if (matching.length === 1 && candidates.male.filter(other => matches(other, matching[0])).length === 1) {
-      pair(male, matching[0]);
-    }
-  }
-  const male = candidates.male.filter(item => !pairs.has(item.row));
-  const female = candidates.female.filter(item => !pairs.has(item.row));
-  // One parallel pair can use different NEIS course names for boys and girls.
-  if (male.length === 1 && female.length === 1) pair(male[0], female[0]);
-  return pairs;
 }
 
 export function summarizeCurriculumGrades(rows, templateGroups = []) {
@@ -76,30 +43,8 @@ export function summarizeCurriculumGrades(rows, templateGroups = []) {
     byGrade.get(row.grade).push(row);
   }
   return new Map([...byGrade].map(([grade, gradeRows]) => {
-    const lessons = { courses: 0, credits: 0 };
-    const physicalEducation = pairCommonPhysicalEducation(gradeRows);
-    const buckets = new Map();
-    for (const row of gradeRows) {
-      const track = trackKey(row);
-      const common = track === "공통";
-      const group = physicalEducation.get(row) ??
-        (common && row.calcGroupId ? `common:${row.calcGroupId}` : !common && track ? `track:${track}` : null);
-      if (!group) {
-        lessons.courses++;
-        lessons.credits += row.boardHours;
-        continue;
-      }
-      if (!buckets.has(group)) buckets.set(group, []);
-      buckets.get(group).push(row);
-    }
-    for (const bucket of buckets.values()) {
-      const ids = new Set(bucket.map(row => row.calcGroupId).filter(Boolean));
-      const configured = ids.size === 1 ? groups.get([...ids][0]) : null;
-      lessons.courses++;
-      lessons.credits += text(configured) ? parseCreditValue(configured) : Math.max(...bucket.map(row => row.boardHours), 0);
-    }
-    lessons.credits = Number(lessons.credits.toFixed(8));
-    return [grade, lessons];
+    const { totalCourses, totalCredits } = summarizeAcademicCourses(gradeRows, id => groups.get(id));
+    return [grade, { courses: totalCourses, credits: totalCredits }];
   }));
 }
 

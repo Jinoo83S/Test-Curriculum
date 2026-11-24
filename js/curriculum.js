@@ -6,6 +6,7 @@ import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } f
 import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
+import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r441";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -197,14 +198,6 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
 
 
 // ── Summary Calculations ──────────────────────────────────────────
-function getRepresentativeTrackCredit(rows) { return rows.reduce((mx, r) => Math.max(mx, parseCreditValue(r.credits)), 0); }
-
-function getRowTemplateGroupId(row) {
-  const ids = uniqueOrdered([row.sem1TemplateId, row.sem2TemplateId].filter(Boolean));
-  const gids = uniqueOrdered(ids.map(id => getTemplateById(id)?.calcGroupId).filter(Boolean));
-  return gids.length === 1 ? gids[0] : null;
-}
-
 function summarizeCategoryRows(category, rows) {
   const active = (rows || []).filter(r => r.sem1TemplateId || r.sem2TemplateId);
   if (clean(category) === "창체") {
@@ -212,16 +205,7 @@ function summarizeCategoryRows(category, rows) {
     return { totalCourses: active.length, totalCredits: active.length, totalHours };
   }
   if (clean(category) === "교과") {
-    const cRows = active.filter(r => clean(r.track) === "공통");
-    const ncRows = active.filter(r => clean(r.track) !== "공통");
-    const cgMap = new Map(); const cUng = [];
-    cRows.forEach(r => { const gid = getRowTemplateGroupId(r); gid ? (cgMap.has(gid) ? cgMap.get(gid).push(r) : cgMap.set(gid, [r])) : cUng.push(r); });
-    const gtMap = new Map(); ncRows.forEach(r => { const k = clean(r.track) || r.id; (gtMap.get(k) || gtMap.set(k, []).get(k)).push(r); });
-    const totalCourses = cUng.length + cgMap.size + gtMap.size;
-    const cc  = cUng.reduce((s, r) => s + parseCreditValue(r.credits), 0);
-    const cgc = Array.from(cgMap.entries()).reduce((s, [gid, grs]) => { const g = getTemplateGroupById(gid); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); }, 0);
-    const gtc = Array.from(gtMap.values()).reduce((s, grs) => { const tgids = uniqueOrdered(grs.map(getRowTemplateGroupId).filter(Boolean)); if (tgids.length === 1) { const g = getTemplateGroupById(tgids[0]); return s + (clean(g?.creditValue) ? parseCreditValue(g.creditValue) : getRepresentativeTrackCredit(grs)); } return s + getRepresentativeTrackCredit(grs); }, 0);
-    return { totalCourses, totalCredits: cc + cgc + gtc };
+    return summarizeAcademicBoardRows(active, getTemplateById, id => getTemplateGroupById(id)?.creditValue);
   }
   return { totalCourses: active.length, totalCredits: active.length, totalHours: active.reduce((s, r) => s + parseCreditValue(r.credits), 0) };
 }

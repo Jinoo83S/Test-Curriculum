@@ -9,6 +9,7 @@ import { db } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { languageClass, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getSemesterTemplateData } from "./templates.js?v=r425";
 import { pairedSemesterTitles, swapSemesterPair } from "./curriculum-semester-pair.js?v=r429";
+import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r441";
 import { getDoc, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const cache = new Map();
@@ -201,37 +202,9 @@ function summary(source, grade, category) {
   };
   const templates = source?.templates?.templates || [];
   const groups = source?.templates?.templateGroups || [];
-  const groupId = row => {
-    const ids = [...new Set([row.sem1TemplateId, row.sem2TemplateId].filter(Boolean))];
-    const gids = [...new Set(ids.map(id => templates.find(card => card.id === id)?.calcGroupId).filter(Boolean))];
-    return gids.length === 1 ? gids[0] : null;
-  };
-  const common = rows.filter(row => text(row.track) === "공통");
-  const choices = rows.filter(row => text(row.track) !== "공통");
-  const commonGrouped = new Map(), commonUngrouped = [];
-  common.forEach(row => {
-    const gid = groupId(row);
-    if (!gid) commonUngrouped.push(row);
-    else { if (!commonGrouped.has(gid)) commonGrouped.set(gid, []); commonGrouped.get(gid).push(row); }
-  });
-  const trackGroups = new Map();
-  choices.forEach(row => {
-    const key = text(row.track) || row.id;
-    if (!trackGroups.has(key)) trackGroups.set(key, []);
-    trackGroups.get(key).push(row);
-  });
-  const creditFor = (groupRows, gid) => {
-    const configured = groups.find(group => group.id === gid)?.creditValue;
-    return text(configured) ? parseCreditValue(configured) :
-      Math.max(0, ...groupRows.map(row => parseCreditValue(row.credits)));
-  };
-  const totalCredits = commonUngrouped.reduce((n, row) => n + parseCreditValue(row.credits), 0) +
-    [...commonGrouped].reduce((n, [gid, groupRows]) => n + creditFor(groupRows, gid), 0) +
-    [...trackGroups.values()].reduce((n, groupRows) => {
-      const gids = [...new Set(groupRows.map(groupId).filter(Boolean))];
-      return n + creditFor(groupRows, gids.length === 1 ? gids[0] : null);
-    }, 0);
-  return { totalCourses: commonUngrouped.length + commonGrouped.size + trackGroups.size, totalCredits };
+  const cardsById = new Map(templates.map(card => [card.id, card]));
+  const groupsById = new Map(groups.map(group => [group.id, group.creditValue]));
+  return summarizeAcademicBoardRows(rows, id => cardsById.get(id), id => groupsById.get(id));
 }
 function header() {
   const row = el("div", "grade-header-row");
