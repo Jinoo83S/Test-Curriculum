@@ -1,2 +1,24 @@
 .teacher-admin-shell{width:min(1280px,calc(100% - 32px))}.teacher-admin-heading{display:flex;align-items:end;justify-content:space-between;gap:24px;padding:28px 34px;border-radius:22px;background:linear-gradient(125deg,var(--navy),#24598f);color:#fff}.teacher-admin-heading h1{margin:0;font-size:2rem}.teacher-admin-heading p:last-child{margin:8px 0 0;color:#dceafb}.teacher-admin-actions{display:flex;gap:8px;flex-wrap:wrap}.role-guide{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0}.role-guide span,.fixed-admin-note{padding:13px 15px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--muted);font-size:.88rem}.role-guide strong{display:block;margin-bottom:3px;color:var(--navy)}.fixed-admin-note{border-color:#c4b5fd;background:#f5f3ff;color:#5b21b6}.fixed-admin-note strong{margin-right:8px}.teacher-admin-status{min-height:28px;padding:7px 2px;color:var(--muted);font-size:.86rem;font-weight:800}.teacher-admin-status.saved{color:#15803d}.teacher-admin-status.error{color:#b42318}.teacher-admin-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff}.teacher-admin-table{width:100%;border-collapse:collapse;min-width:930px}.teacher-admin-table th{padding:12px;background:#edf3fa;color:var(--navy);font-size:.82rem;text-align:left}.teacher-admin-table td{padding:9px;border-top:1px solid #e6edf5}.teacher-admin-table input,.teacher-admin-table select{width:100%;height:38px;border:1px solid #cbd5e1;border-radius:8px;padding:0 9px;background:#fff}.teacher-admin-table .teacher-status{display:flex;align-items:center;gap:7px;white-space:nowrap}.teacher-admin-table .teacher-status input{width:18px;height:18px}.teacher-delete-btn{border-color:#fecaca!important;color:#b42318!important}@media(max-width:760px){.teacher-admin-heading{align-items:flex-start;flex-direction:column;padding:24px}.role-guide{grid-template-columns:1fr}}
 .teacher-admin-shell{width:min(1240px,calc(100% - 24px))}.teacher-admin-heading{padding:16px 22px;border-radius:14px}.teacher-admin-heading h1{font-size:1.45rem}.teacher-admin-heading p:last-child{margin-top:4px;font-size:.85rem}.role-guide{gap:7px;margin:10px 0}.role-guide span,.fixed-admin-note{padding:8px 11px;border-radius:8px;font-size:.78rem}.teacher-admin-table-wrap{border-radius:10px}.teacher-admin-table th{padding:8px}.teacher-admin-table td{padding:5px 7px}.teacher-admin-table input,.teacher-admin-table select{height:32px;font-size:.82rem}.teacher-admin-status{min-height:22px;padding:4px 2px}
+.settings-menu {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+}
+.settings-scope-note {
+  margin: 8px 2px;
+  color: var(--muted);
+  font-size: .82rem;
+  line-height: 1.45;
+}
+.teacher-applied-years {
+  max-width: 140px;
+  color: #244a77;
+  font-variant-numeric: tabular-nums;
+}
+.teacher-automatic-row { background: #f5f8fc; font-size: .85rem; }
+.publication-table { min-width: 360px; }
+.publication-table select { min-width: 100px; max-width: 160px; }
+.publication-table [data-published="true"] { color: #166534; font-weight: 750; }
+.publication-table [data-published="false"] { color: #475569; font-weight: 750; }

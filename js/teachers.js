@@ -5,11 +5,21 @@ import { uid, clean, makeBtn, escapeHtml } from "./utils.js?v=2026-07-15-room-av
 import { canEdit } from "./auth.js?v=r424";
 import { appState, scheduleSave, normalizeTeacher, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { countTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
-import { getSubjectsForTeacher } from "./templates.js?v=r425";
+import { ACTIVE_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
+import { buildTeacherYearRoster } from "./teacher-year-directory.js?v=r431";
+import { readSavedTeacherDirectory } from "./school-portal-settings-data.js?v=r431";
 
 const tDomain   = () => appState.teachers;
 export const getTeachers    = () => tDomain().teachers;
 export const getTeacherById = id => getTeachers().find(t => t.id === id) || null;
+let savedDirectory = [];
+let directoryRequest;
+const rosterRows = () => buildTeacherYearRoster({
+  curriculum: appState.curriculum,
+  templates: appState.templates?.templates,
+  teachers: getTeachers(),
+}, savedDirectory);
 const teacherNameKey = value => clean(value).replace(/\s+/g, " ").toLocaleLowerCase("ko");
 const findTeacherByName = (name, exceptId = "") => {
   const key = teacherNameKey(name);
@@ -97,6 +107,7 @@ export function parseTeacherPaste(raw) {
 
 // ── Teacher View Rendering ────────────────────────────────────────
 export function renderTeacherView(container) {
+  const displayedTeachers = rosterRows();
   container.innerHTML = "";
 
   // ── Header ──────────────────────────────────────────────────────
@@ -116,8 +127,17 @@ export function renderTeacherView(container) {
 
   // ── Count ────────────────────────────────────────────────────────
   const cnt = document.createElement("div"); cnt.className = "teacher-count";
-  cnt.textContent = `총 ${getTeachers().length}명`;
+  const automaticCount = displayedTeachers.filter(teacher => teacher.automatic).length;
+  cnt.textContent = `총 ${displayedTeachers.length}명 · 담당 과목에서 자동 표시 ${automaticCount}명`;
   container.appendChild(cnt);
+  if (automaticCount && canEdit() && !LOCAL_DEV_MODE && !directoryRequest) {
+    directoryRequest = readSavedTeacherDirectory(ACTIVE_SCHOOL_YEAR).then(result => {
+      savedDirectory = result;
+      if (container.isConnected && container.contains(cnt) && !container.contains(document.activeElement)) {
+        renderTeacherView(container);
+      }
+    }).catch(error => console.warn("[teachers] saved directory unavailable", error));
+  }
 
   // ── Paste area ───────────────────────────────────────────────────
   const pasteWrap = document.createElement("div"); pasteWrap.className = "paste-area-wrap";
@@ -162,7 +182,7 @@ export function renderTeacherView(container) {
   container.appendChild(pasteWrap);
 
   // ── Table ────────────────────────────────────────────────────────
-  if (!getTeachers().length) {
+  if (!displayedTeachers.length) {
     const empty = document.createElement("div"); empty.className = "manager-empty";
     empty.textContent = "선생님 명단이 없습니다."; container.appendChild(empty); return;
   }
@@ -178,7 +198,7 @@ export function renderTeacherView(container) {
   </tr></thead>`;
   const tbody = document.createElement("tbody");
 
-  getTeachers().forEach(t => {
+  displayedTeachers.forEach(t => {
     const tr = document.createElement("tr");
     [
       { key:"name",  ph:"이름",  type:"text"  },
@@ -186,7 +206,7 @@ export function renderTeacherView(container) {
       { key:"note",  ph:"메모",  type:"text"  }
     ].forEach(f => {
       const td = document.createElement("td");
-      const inp = document.createElement("input"); inp.type = f.type; inp.disabled = !canEdit();
+      const inp = document.createElement("input"); inp.type = f.type; inp.disabled = !canEdit() || t.automatic;
       inp.value = t[f.key] || "";
       inp.placeholder = f.ph;
       inp.addEventListener("change", e => updateTeacher(t.id, f.key, e.target.value));
@@ -195,7 +215,7 @@ export function renderTeacherView(container) {
 
     // Auto-derived subjects (read-only)
     const subTd = document.createElement("td"); subTd.className = "teacher-subjects-cell";
-    const derivedSubjects = getSubjectsForTeacher(t.id);
+    const derivedSubjects = t.subjects;
     if (derivedSubjects.length) {
       derivedSubjects.forEach(s => {
         const chip = document.createElement("span"); chip.className = "teacher-subject-chip"; chip.textContent = s;
@@ -207,8 +227,14 @@ export function renderTeacherView(container) {
     tr.appendChild(subTd);
 
     const delTd = document.createElement("td"); delTd.className = "col-del";
-    const delBtn = makeBtn("×", "stu-del-btn", () => { if (deleteTeacher(t.id)) renderTeacherView(container); });
-    delBtn.disabled = !canEdit(); delTd.appendChild(delBtn); tr.appendChild(delTd);
+    if (t.automatic) {
+      delTd.textContent = "자동";
+      delTd.title = "커리큘럼의 담당 교사에서 가져온 항목입니다.";
+    } else {
+      const delBtn = makeBtn("×", "stu-del-btn", () => { if (deleteTeacher(t.id)) renderTeacherView(container); });
+      delBtn.disabled = !canEdit(); delTd.appendChild(delBtn);
+    }
+    tr.appendChild(delTd);
     tbody.appendChild(tr);
   });
 
@@ -218,7 +244,7 @@ export function renderTeacherView(container) {
 export function exportTeachersXlsx() {
   const wb = XLSX.utils.book_new();
   const rows = [["교사 ID","이름","담당 과목","이메일","메모"]];
-  getTeachers().forEach(t => rows.push([t.id, t.name, getSubjectsForTeacher(t.id).join(", "), t.email, t.note]));
+  rosterRows().forEach(t => rows.push([t.id, t.name, t.subjects.join(", "), t.email, t.note]));
   const ws = XLSX.utils.aoa_to_sheet(rows);
   ws["!cols"] = [{ wch:28 },{ wch:16 },{ wch:30 },{ wch:24 },{ wch:30 }];
   XLSX.utils.book_append_sheet(wb, ws, "선생님 명단");

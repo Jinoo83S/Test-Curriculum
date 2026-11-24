@@ -9,7 +9,7 @@ import { initialLoad, subscribeDomains, unsubscribeAll, unsubscribeDomains } fro
 export const VIEW_DOMAIN_SETS = {
   board:        ["curriculum", "templates", "teachers"],
   manager:      ["curriculum", "templates", "teachers"],
-  teachers:     ["templates", "teachers"],
+  teachers:     ["curriculum", "templates", "teachers"],
   students:     ["classes", "rosters"],
   rooms:        ["rooms", "teachers", "classes"],
   subjectsetup: ["curriculum", "templates", "rosters"],
