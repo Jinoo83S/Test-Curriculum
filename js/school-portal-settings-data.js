@@ -2,7 +2,7 @@ import { auth, db, getSchoolYearRefs, LEGACY_SCHOOL_YEAR } from "./config.js?v=2
 import { getKnownSchoolYears, registerKnownSchoolYears } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { deleteField, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { summarizeFacultyWorkload } from "./faculty-workload.js?v=r434";
-import { normalizeChecklistReportOptions } from "./checklist-report-options.js?v=r440";
+import { normalizeChecklistReportOptions } from "./checklist-report-options.js?v=r444";
 import { readTeacherPortalAccess } from "./teacher-portal-auth.js?v=r424";
 
 function withDeadline(promise, message) {

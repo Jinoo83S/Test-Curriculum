@@ -3,11 +3,12 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
-import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r440";
+import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r444";
 import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r442";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
-import { REPORT_FIELDS, normalizeChecklistReportOptions, normalizeReportValue } from "./checklist-report-options.js?v=r440";
+import { CHECKLIST_REPORT_SECTIONS, REPORT_FIELDS, localizedReportValue,
+  normalizeChecklistReportOptions, normalizeReportValue } from "./checklist-report-options.js?v=r444";
 
 const page = document.body.dataset.portalPage || "menu";
 const teachersView = page === "curriculum-view" && new URLSearchParams(location.search).get("view") === "teachers";
@@ -20,7 +21,7 @@ const clean = value => String(value ?? "").trim();
 const unique = values => [...new Set(values.filter(Boolean))];
 let authSerial = 0;
 let currentPortalUser = null;
-let redrawFacultyView = null;
+let redrawPortalPage = null;
 const LANGUAGE_KEY = "his_portal_language_v1";
 const translations = {
   ko: { curriculumShortcut:"커리큘럼 편집", teacherManagement:"교사관리", schoolYear:"학년도", schoolYearShort:"학년도", googleLogin:"Google 로그인", logout:"로그아웃", checkingAccess:"접근 권한을 확인하고 있습니다", checkingAccessDescription:"교사목록의 학교 이메일과 로그인 계정을 대조합니다.", signInTitle:"학교 Google 계정으로 로그인해 주세요", signInDescription:"교사목록에 등록된 @his.sc.kr 계정만 이용할 수 있습니다.", accessDenied:"교사용 메뉴 접근 권한이 없습니다", portalTitle:"교직원 업무 메뉴", portalDescription:"본인 계정으로 로그인하면 담당 과목과 필요한 확인 업무만 표시됩니다.", welcome:"환영합니다", facultyArea:"교사 업무", facultyAreaDescription:"일반 교사가 사용하는 확인·제출 페이지입니다.", courseChecklist:"담당 과목 확인", courseChecklistDescription:"학기별 담당 과목, Google 폴더, 교과계획서 필수 항목을 확인합니다.", openTask:"업무 열기", moreTasks:"추가 교직원 업무", moreTasksDescription:"새로운 확인 페이지가 이 메뉴에 순차적으로 추가됩니다.", operationsArea:"커리큘럼·시간표 관리", operationsAreaDescription:"권한이 있는 교직원만 접근하는 편집 영역입니다.", curriculumEditor:"커리큘럼 편집", curriculumEditorDescription:"연간·3개년 커리큘럼과 과목카드를 편집합니다.", timetable:"시간표", timetableDescription:"시간표 사전작업, 자동배치와 결과를 관리합니다.", openEditor:"편집 열기", teacherManagementDescription:"교사를 등록·편집·삭제하고 접근 권한을 설정합니다.", manage:"관리하기" },
@@ -40,6 +41,28 @@ Object.assign(translations.en, {
 });
 let portalLanguage = localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
 
+Object.assign(translations.ko, {
+  checklistTitle: "전체 담당 과목 확인", checklistHelp: "모든 과목을 볼 수 있으며 본인 담당 과목을 편집할 수 있습니다.",
+  checklistAdminHelp: "관리자는 모든 과목을 편집할 수 있습니다.", checklistProgress: "현재 목록 최종 확인",
+  semester1: "1학기", semester2: "2학기", allCourses: "전체 과목", myCourses: "내 담당만", allGrades: "전체 학년",
+  checklistCourse: "과목", checklistFolder: "Google 폴더", checklistFolderUrl: "Drive 폴더 URL", checklistOpen: "열기",
+  syllabus: "실라버스", safetyEducation: "안전교육", safetySexEducation: "성교육", absentStudentPolicy: "결석 학생 정책",
+  checklistConfirm: "확인", checklistEmpty: "현재 조건에 맞는 과목이 없습니다", checklistSearch: "과목·교사 검색",
+  checklistReady: "저장 준비", checklistSaving: "저장 중…", checklistSaved: "저장됨", checklistError: "저장 실패",
+  previousReportValue: "기존 값",
+});
+Object.assign(translations.en, {
+  checklistTitle: "Assigned Course Checklist", checklistHelp: "You can view all courses and edit your assigned courses.",
+  checklistAdminHelp: "Administrators can edit all courses.", checklistProgress: "Confirmed in this view",
+  semester1: "Semester 1", semester2: "Semester 2", allCourses: "All courses", myCourses: "My courses", allGrades: "All grades",
+  checklistCourse: "Course", checklistFolder: "Google Folder", checklistFolderUrl: "Drive folder URL", checklistOpen: "Open",
+  syllabus: "Syllabus", safetyEducation: "Safety Education", safetySexEducation: "Safety (Sex) Education", absentStudentPolicy: "Policy for Absent Students",
+  checklistConfirm: "Confirm", checklistEmpty: "No courses match the current filters", checklistSearch: "Search courses or teachers",
+  checklistReady: "Ready to save", checklistSaving: "Saving…", checklistSaved: "Saved", checklistError: "Save failed",
+  previousReportValue: "Previous value",
+});
+const translate = key => translations[portalLanguage][key];
+
 function applyLanguage() {
   document.documentElement.lang = portalLanguage;
   document.querySelectorAll("[data-i18n]").forEach(node => {
@@ -54,7 +77,7 @@ function applyLanguage() {
   if (button) button.textContent = portalLanguage === "ko" ? "English" : "한국어";
   const status = byId("portalAuthStatus");
   if (status && !currentPortalUser) status.textContent = portalLanguage === "ko" ? "로그인 필요" : "Sign-in required";
-  redrawFacultyView?.();
+  redrawPortalPage?.();
 }
 
 function setupLanguage() {
@@ -205,7 +228,8 @@ function createValueSelect({ id, name, value, values, disabled, onChange }) {
     const option = document.createElement("option");
     option.value = optionValue;
     const existingOnly = !values.includes(optionValue);
-    option.textContent = existingOnly ? `${optionValue} (기존 값)` : (optionValue || "미설정");
+    const label = localizedReportValue(optionValue, portalLanguage);
+    option.textContent = existingOnly ? `${label} (${translate("previousReportValue")})` : label;
     option.disabled = existingOnly;
     option.selected = optionValue === value;
     select.append(option);
@@ -260,10 +284,20 @@ async function startChecklist(access, user, reportOptions, serial) {
     saveTimer: null,
     pendingChanges: {},
   };
-  byId("checklistYear").textContent = `${ACTIVE_SCHOOL_YEAR}학년도`;
   byId("checklistTeacherName").textContent = access.teacher.name || access.email;
   showGate("checklistApp");
 
+  let saveStatus = ["checklistReady", ""];
+  const renderSaveStatus = () => {
+    const [label, type] = saveStatus;
+    const node = byId("checklistSaveStatus");
+    node.textContent = translate(label);
+    node.className = `checklist-save-status ${type}`;
+  };
+  const setSaveStatus = (label, type) => {
+    saveStatus = [label, type];
+    renderSaveStatus();
+  };
   const save = (course, key, value) => {
     if (!course.editable) return;
     state.pendingChanges[course.key] = { ...state.pendingChanges[course.key], [key]: value };
@@ -272,8 +306,7 @@ async function startChecklist(access, user, reportOptions, serial) {
       if (currentPortalUser?.uid !== user.uid) return;
       const changes = state.pendingChanges;
       state.pendingChanges = {};
-      const status = byId("checklistSaveStatus");
-      status.textContent = "저장 중…"; status.className = "checklist-save-status saving";
+      setSaveStatus("checklistSaving", "saving");
       try {
         await setDoc(teacherChecklistSharedDocRef(), {
           schoolYear: ACTIVE_SCHOOL_YEAR,
@@ -285,13 +318,13 @@ async function startChecklist(access, user, reportOptions, serial) {
           items: changes,
           updatedAt: serverTimestamp(),
         }, { merge: true });
-        status.textContent = "저장됨"; status.className = "checklist-save-status saved";
+        setSaveStatus("checklistSaved", "saved");
       } catch (error) {
         for (const [courseKey, fields] of Object.entries(changes)) {
           state.pendingChanges[courseKey] = { ...fields, ...state.pendingChanges[courseKey] };
         }
         console.error("[teacher checklist save]", error);
-        status.textContent = "저장 실패"; status.className = "checklist-save-status error";
+        setSaveStatus("checklistError", "error");
       }
     }, 250);
   };
@@ -303,6 +336,16 @@ async function startChecklist(access, user, reportOptions, serial) {
   };
 
   const render = () => {
+    const english = portalLanguage === "en";
+    byId("checklistYear").textContent = english ? `School Year ${ACTIVE_SCHOOL_YEAR}` : `${ACTIVE_SCHOOL_YEAR}학년도`;
+    byId("checklistEditHelp").textContent = translate(access.isAdmin ? "checklistAdminHelp" : "checklistHelp");
+    const search = byId("courseSearchInput");
+    search.placeholder = translate("checklistSearch");
+    search.setAttribute("aria-label", search.placeholder);
+    byId("courseGradeFilter").querySelectorAll("option[value$='학년']").forEach(option => {
+      option.textContent = english ? `Grade ${parseInt(option.value, 10)}` : option.value;
+    });
+    renderSaveStatus();
     document.querySelectorAll(".semester-tab").forEach(button => {
       const active = button.dataset.semester === state.semester;
       button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active));
@@ -317,21 +360,23 @@ async function startChecklist(access, user, reportOptions, serial) {
     container.replaceChildren();
     if (!courses.length) {
       const empty = document.createElement("div"); empty.className = "portal-state-card compact";
-      empty.innerHTML = `<h2>현재 조건에 맞는 과목이 없습니다</h2>`;
+      const title = document.createElement("h2"); title.textContent = translate("checklistEmpty"); empty.append(title);
       container.append(empty); updateProgress(courses); return;
     }
     const header = document.createElement("div");
     header.className = "checklist-compact-header";
-    for (const title of ["과목", "Google 폴더", "필수 확인"]) {
-      const cell = document.createElement("span"); cell.textContent = title; header.append(cell);
+    const headerText = (parent, title, className = "") => {
+      const cell = document.createElement("span"); cell.textContent = title; cell.className = className; parent.append(cell);
+    };
+    headerText(header, translate("checklistCourse"));
+    for (const [section, korean, englishTitle, fields] of CHECKLIST_REPORT_SECTIONS) {
+      const group = document.createElement("div");
+      group.className = `compact-reporting-header report-${section}`;
+      headerText(group, english ? englishTitle : korean, "compact-section-title");
+      for (const [, title, , englishField] of fields) headerText(group, english ? englishField : title);
+      header.append(group);
     }
-    const reportHeader = document.createElement("div");
-    reportHeader.className = "compact-reporting-header";
-    for (const [, title] of REPORT_FIELDS) {
-      const cell = document.createElement("span"); cell.textContent = title; reportHeader.append(cell);
-    }
-    const confirmedHeader = document.createElement("span"); confirmedHeader.textContent = "완료";
-    header.append(reportHeader, confirmedHeader);
+    for (const key of ["checklistFolder", "syllabus", "checklistConfirm"]) headerText(header, translate(key));
     container.append(header);
     courses.forEach(course => {
       const fieldIdBase = course.key.replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -356,39 +401,45 @@ async function startChecklist(access, user, reportOptions, serial) {
         <span class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span class="compact-access-badge">${accessBadge}</span></span>`;
 
       const folder = document.createElement("div"); folder.className = "compact-folder-cell";
-      const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "Drive 폴더 URL"; folderInput.value = item.folderUrl || "";
-      folderInput.setAttribute("aria-label", `${course.nameKo} Google 폴더 URL`);
+      const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = translate("checklistFolderUrl"); folderInput.value = item.folderUrl || "";
+      folderInput.setAttribute("aria-label", `${course.nameKo} ${folderInput.placeholder}`);
       folderInput.id = `folder-${fieldIdBase}`; folderInput.name = `folder_${fieldIdBase}`; folderInput.disabled = !course.editable;
-      const folderLink = document.createElement("a"); folderLink.className = "compact-folder-open"; folderLink.target = "_blank"; folderLink.rel = "noopener noreferrer"; folderLink.textContent = "열기";
+      const folderLink = document.createElement("a"); folderLink.className = "compact-folder-open"; folderLink.target = "_blank"; folderLink.rel = "noopener noreferrer"; folderLink.textContent = translate("checklistOpen");
       const syncFolderLink = () => { const url = safeUrl(folderInput.value); folderLink.href = url || "#"; folderLink.classList.toggle("disabled", !url); };
       folderInput.addEventListener("change", () => { item.folderUrl = folderInput.value.trim(); syncFolderLink(); save(course, "folderUrl", item.folderUrl); });
       folderLink.addEventListener("click", event => { if (!safeUrl(folderInput.value)) event.preventDefault(); });
       syncFolderLink(); folder.append(folderInput, folderLink);
 
       const checks = document.createElement("div"); checks.className = "compact-required-cell";
-      [["safetyEducation", "안전교육"], ["safetySexEducation", "성교육"], ["absentStudentPolicy", "결석정책"]].forEach(([key, title]) => {
+      headerText(checks, translate("syllabus"), "compact-section-title compact-row-section");
+      for (const key of ["safetyEducation", "safetySexEducation", "absentStudentPolicy"]) {
         const label = document.createElement("label"); label.className = "compact-check";
         const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!item[key]; input.id = `${key}-${fieldIdBase}`; input.name = `${key}_${fieldIdBase}`; input.disabled = !course.editable;
         input.addEventListener("change", () => { item[key] = input.checked; save(course, key, item[key]); });
-        label.append(input, document.createTextNode(title)); checks.append(label);
-      });
+        label.append(input, document.createTextNode(translate(key))); checks.append(label);
+      }
 
-      const reporting = document.createElement("div"); reporting.className = "compact-reporting-cell";
-      REPORT_FIELDS.forEach(([key, title]) => {
-        const values = ["", ...reportOptions[key]];
-        const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
-        const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(course, key, value); } });
-        select.setAttribute("aria-label", `${course.nameKo} ${title}`);
-        label.append(caption, select); reporting.append(label);
+      const reporting = CHECKLIST_REPORT_SECTIONS.map(([section, korean, englishTitle, fields]) => {
+        const group = document.createElement("div"); group.className = `compact-reporting-cell report-${section}`;
+        headerText(group, english ? englishTitle : korean, "compact-section-title compact-row-section");
+        for (const [key, koreanField, , englishField] of fields) {
+          const title = english ? englishField : koreanField;
+          const values = ["", ...reportOptions[key]];
+          const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
+          const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(course, key, value); } });
+          select.setAttribute("aria-label", `${course.nameKo} ${english ? englishTitle : korean} ${title}`);
+          label.append(caption, select); group.append(label);
+        }
+        return group;
       });
 
       const confirm = document.createElement("label"); confirm.className = "compact-confirm-cell";
       const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed; confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`; confirmInput.disabled = !course.editable;
       confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(courses); save(course, "confirmed", item.confirmed); });
-      const confirmLabel = document.createElement("span"); confirmLabel.textContent = "완료";
-      confirmInput.setAttribute("aria-label", `${course.nameKo} 최종 확인`);
+      const confirmLabel = document.createElement("span"); confirmLabel.textContent = translate("checklistConfirm");
+      confirmInput.setAttribute("aria-label", `${course.nameKo} ${confirmLabel.textContent}`);
       confirm.append(confirmInput, confirmLabel);
-      card.append(courseCell, folder, checks, reporting, confirm); container.append(card);
+      card.append(courseCell, ...reporting, folder, checks, confirm); container.append(card);
     });
     updateProgress(courses);
   };
@@ -399,6 +450,7 @@ async function startChecklist(access, user, reportOptions, serial) {
   byId("courseScopeFilter")?.addEventListener("change", event => { state.scope = event.target.value; render(); });
   byId("courseGradeFilter")?.addEventListener("change", event => { state.grade = event.target.value; render(); });
   byId("courseSearchInput")?.addEventListener("input", event => { state.query = clean(event.target.value).toLocaleLowerCase(); render(); });
+  redrawPortalPage = render;
   render();
 }
 
@@ -492,7 +544,7 @@ async function startFacultyCurriculum(access, serial) {
       content.replaceChildren(empty);
     }
   };
-  redrawFacultyView = () => {
+  redrawPortalPage = () => {
     const en = portalLanguage === "en";
     byId("facultyViewTitle").textContent = translations[portalLanguage][titleKey];
     byId("facultyViewYear").textContent = en ? `School Year ${ACTIVE_SCHOOL_YEAR}` : `${ACTIVE_SCHOOL_YEAR}학년도`;
@@ -514,7 +566,7 @@ async function startFacultyCurriculum(access, serial) {
   search.addEventListener("input", show);
   filter.addEventListener("change", show);
   own.addEventListener("change", show);
-  redrawFacultyView();
+  redrawPortalPage();
   showGate("facultyCurriculumApp");
   if (liveWorkload) {
     void publishFacultyWorkload(ACTIVE_SCHOOL_YEAR, liveWorkload).catch(error => {
@@ -531,7 +583,7 @@ async function startFacultyCurriculum(access, serial) {
 
 async function handleAuth(user) {
   const serial = ++authSerial;
-  redrawFacultyView = null;
+  redrawPortalPage = null;
   if (page === "curriculum-view") {
     byId("portalYearSelect").disabled = true;
     byId("facultyViewFilters").replaceChildren();

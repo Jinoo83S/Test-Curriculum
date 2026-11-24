@@ -65,9 +65,9 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-shell .checklist-filter { height: 28px; }
 
 .checklist-course-list {
-  --report-columns: 4.8rem 3.65rem 3.65rem 8rem 5rem 3.85rem 3.65rem;
   --report-gap: 4px;
   --required-width: 13rem;
+  --checklist-table-width: 108rem;
   display: block;
   overflow: auto;
   max-height: max(20rem, calc(100dvh - 166px));
@@ -75,10 +75,15 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   border-radius: 8px;
   background: #fff;
 }
+:lang(en) .checklist-course-list { --required-width: 18rem; --checklist-table-width: 113rem; }
+.report-neis { --report-columns: 4.5rem 5.5rem 5rem 3.5rem 3.5rem 4.4rem 6.5rem 3.5rem 3.7rem; }
+.report-transcript { --report-columns: 4.5rem 4rem 4.7rem; }
+.report-assessment { --report-columns: 4.8rem 5.3rem; }
 .checklist-compact-header,
 .checklist-compact-row {
   display: grid;
-  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, 11rem) var(--required-width) max-content 2.6rem;
+  grid-template-columns: minmax(13rem, 1fr) max-content max-content max-content 8rem var(--required-width) 3rem;
+  min-width: var(--checklist-table-width);
   gap: 8px;
   align-items: center;
   border-left: 3px solid transparent;
@@ -97,6 +102,11 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 }
 .checklist-compact-header > span:last-child,
 .compact-reporting-header > span { text-align: center; }
+.compact-section-title {
+  grid-column: 1 / -1; padding: 3px 5px; border-radius: 4px;
+  background: #dee9f6; color: #294b70; font-size: .73rem; font-weight: 800;
+}
+.compact-reporting-header > span { line-height: 1.15; overflow-wrap: anywhere; }
 .checklist-compact-row {
   padding-block: 4px;
   border-bottom: 1px solid #e4ebf3;
@@ -118,7 +128,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 
 .compact-folder-cell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 30px;
+  grid-template-columns: minmax(0, 1fr) 32px;
   gap: 4px;
   align-items: center;
 }
@@ -154,10 +164,11 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   color: #34475f;
   font-size: .72rem;
   line-height: 1.2;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .compact-check input,
 .compact-confirm-cell input {
+  flex: none;
   width: 14px;
   height: 14px;
   margin: 0;
@@ -186,12 +197,17 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 
 @media (min-width: 75rem) {
   .compact-reporting-cell label > span,
+  .compact-row-section,
   .compact-confirm-cell > span { display: none; }
 }
 @media (max-width: 74.999rem) {
   .checklist-compact-header { display: none; }
-  .checklist-compact-row { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) var(--required-width) auto; }
-  .compact-reporting-cell { grid-column: 1 / -1; grid-template-columns: var(--report-columns); }
+  .checklist-compact-row { min-width: 0; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(10rem, var(--required-width)) auto; }
+  .compact-folder-cell { grid-column: 2; grid-row: 1; }
+  .compact-required-cell { grid-column: 3; grid-row: 1; }
+  .compact-confirm-cell { grid-column: 4; grid-row: 1; }
+  .compact-reporting-cell { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); }
+  .compact-required-cell .compact-section-title { flex-basis: 100%; }
 }
 @media (max-width: 39rem) {
   .checklist-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
@@ -200,6 +216,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   .checklist-compact-row { grid-template-columns: minmax(0, 1fr) auto; }
   .compact-confirm-cell { grid-column: 2; grid-row: 1; }
   .compact-folder-cell, .compact-required-cell { grid-column: 1 / -1; }
+  .compact-folder-cell, .compact-required-cell { grid-row: auto; }
   .compact-required-cell { display: flex; flex-wrap: wrap; gap: 8px; }
   .compact-reporting-cell { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

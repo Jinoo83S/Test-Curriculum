@@ -32,6 +32,7 @@
   background: #fff; border: 1px solid var(--line); border-radius: 8px;
   color: var(--navy); font-size: .82rem; font-weight: 800;
 }
+.report-options-fields h2 { grid-column: 1 / -1; color: var(--navy); font-size: .95rem; margin: 6px 0 0; }
 .report-options-fields textarea {
   width: 100%; min-height: 5.2rem; padding: 6px 8px; resize: vertical;
   background: #fff; border: 1px solid #cbd5e1; border-radius: 5px;

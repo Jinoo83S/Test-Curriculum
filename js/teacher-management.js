@@ -4,8 +4,8 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { readTeacherPortalAccess, normalizePortalRole } from "./teacher-portal-auth.js?v=r424";
 import { setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { appliedYearsForTeacher, buildTeacherYearRoster, schoolEmailKey } from "./teacher-year-directory.js?v=r431";
-import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload, saveChecklistReportOptions } from "./school-portal-settings-data.js?v=r440";
-import { REPORT_FIELDS } from "./checklist-report-options.js?v=r440";
+import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload, saveChecklistReportOptions } from "./school-portal-settings-data.js?v=r444";
+import { CHECKLIST_REPORT_SECTIONS } from "./checklist-report-options.js?v=r444";
 
 const byId = id => document.getElementById(id);
 const clean = value => String(value || "").trim();
@@ -131,16 +131,22 @@ function setReportOptionsStatus(message, type = "") {
 
 function renderReportOptions() {
   const fields = byId("reportOptionsFields");
-  fields.replaceChildren(...REPORT_FIELDS.map(([key, title]) => {
-    const label = document.createElement("label");
-    const input = document.createElement("textarea");
-    input.id = `report-options-${key}`;
-    input.name = key;
-    input.rows = 4;
-    input.value = reportOptions[key].join("\n");
-    label.append(document.createTextNode(title), input);
-    return label;
-  }));
+  fields.replaceChildren();
+  for (const [, title, , sectionFields] of CHECKLIST_REPORT_SECTIONS) {
+    const heading = document.createElement("h2");
+    heading.textContent = title;
+    fields.append(heading);
+    for (const [key, fieldTitle] of sectionFields) {
+      const label = document.createElement("label");
+      const input = document.createElement("textarea");
+      input.id = `report-options-${key}`;
+      input.name = key;
+      input.rows = 4;
+      input.value = reportOptions[key].join("\n");
+      label.append(document.createTextNode(fieldTitle), input);
+      fields.append(label);
+    }
+  }
 }
 
 async function loadReportOptions() {

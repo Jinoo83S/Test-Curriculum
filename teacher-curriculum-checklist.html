@@ -6,7 +6,7 @@
   <title>HIS 담당 과목 확인</title>
   <link rel="stylesheet" href="teacher-portal.css?v=r425" />
   <link rel="stylesheet" href="teacher-curriculum-view.css?v=r436" />
-  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r440" />
+  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r444" />
 </head>
 <body data-portal-page="curriculum-checklist">
   <header class="portal-header">
@@ -20,60 +20,60 @@
       </a>
     </div>
     <div class="portal-header-actions">
-      <a id="portalCurriculumShortcut" class="portal-btn" href="curriculum.html" hidden>커리큘럼 편집</a>
+      <a id="portalCurriculumShortcut" class="portal-btn" href="curriculum.html" data-i18n="curriculumShortcut" hidden>커리큘럼 편집</a>
       <a id="portalTeacherManageShortcut" class="portal-btn" href="teacher-management.html" hidden data-i18n="settings">설정</a>
       <button id="portalLanguageBtn" class="portal-btn" type="button">English</button>
-      <label class="portal-year-label">학년도
+      <label class="portal-year-label"><span data-i18n="schoolYear">학년도</span>
         <select id="portalYearSelect" aria-label="학년도 선택"></select>
       </label>
       <span id="portalAuthStatus" class="portal-auth-status">로그인 확인 중…</span>
-      <button id="portalLoginBtn" class="portal-btn primary" type="button" hidden>Google 로그인</button>
-      <button id="portalLogoutBtn" class="portal-btn" type="button" hidden>로그아웃</button>
+      <button id="portalLoginBtn" class="portal-btn primary" type="button" data-i18n="googleLogin" hidden>Google 로그인</button>
+      <button id="portalLogoutBtn" class="portal-btn" type="button" data-i18n="logout" hidden>로그아웃</button>
     </div>
   </header>
 
   <main class="portal-shell checklist-shell">
     <section id="portalLoading" class="portal-state-card">
       <div class="portal-spinner" aria-hidden="true"></div>
-      <h2>담당 과목을 불러오고 있습니다</h2>
-      <p>교사목록과 커리큘럼의 담당 교사를 확인합니다.</p>
+      <h2 data-i18n="checkingAccess">접근 권한을 확인하고 있습니다</h2>
+      <p data-i18n="checkingAccessDescription">교사목록의 학교 이메일과 로그인 계정을 대조합니다.</p>
     </section>
     <section id="portalSignedOut" class="portal-state-card" hidden>
       <div class="portal-state-icon">🔐</div>
-      <h2>학교 Google 계정으로 로그인해 주세요</h2>
-      <p>교사목록에 등록된 <strong>@his.sc.kr</strong> 계정만 이용할 수 있습니다.</p>
-      <button id="portalLoginMainBtn" class="portal-btn primary large" type="button">Google 로그인</button>
+      <h2 data-i18n="signInTitle">학교 Google 계정으로 로그인해 주세요</h2>
+      <p data-i18n="signInDescription">교사목록에 등록된 @his.sc.kr 계정만 이용할 수 있습니다.</p>
+      <button id="portalLoginMainBtn" class="portal-btn primary large" type="button" data-i18n="googleLogin">Google 로그인</button>
     </section>
     <section id="portalDenied" class="portal-state-card denied" hidden>
       <div class="portal-state-icon">⛔</div>
-      <h2>접근 권한이 없습니다</h2>
+      <h2 data-i18n="accessDenied">접근 권한이 없습니다</h2>
       <p id="portalDeniedMessage"></p>
     </section>
 
     <section id="checklistApp" hidden>
       <div class="checklist-heading">
         <div>
-          <div class="checklist-title-line"><h1>전체 담당 과목 확인</h1><span id="checklistYear"></span></div>
-          <p><span id="checklistTeacherName"></span> 계정으로 조회 중입니다. 모든 과목을 볼 수 있으며 본인 담당 과목만 편집할 수 있습니다.</p>
+          <div class="checklist-title-line"><h1 data-i18n="checklistTitle">전체 담당 과목 확인</h1><span id="checklistYear"></span></div>
+          <p><span id="checklistTeacherName"></span> · <span id="checklistEditHelp"></span></p>
         </div>
         <div class="checklist-summary">
           <strong id="checklistProgress">0 / 0</strong>
-          <span>현재 목록 최종 확인</span>
+          <span data-i18n="checklistProgress">현재 목록 최종 확인</span>
           <div class="checklist-progress-track"><i id="checklistProgressBar"></i></div>
         </div>
       </div>
 
       <div class="semester-tabs" role="tablist" aria-label="학기 선택">
-        <button class="semester-tab active" data-semester="sem1" type="button" role="tab">1학기</button>
-        <button class="semester-tab" data-semester="sem2" type="button" role="tab">2학기</button>
-        <select id="courseScopeFilter" class="checklist-filter" aria-label="과목 범위"><option value="all">전체 과목</option><option value="mine">내 담당만</option></select>
-        <select id="courseGradeFilter" class="checklist-filter" aria-label="학년 선택"><option value="all">전체 학년</option><option value="7학년">7학년</option><option value="8학년">8학년</option><option value="9학년">9학년</option><option value="10학년">10학년</option><option value="11학년">11학년</option><option value="12학년">12학년</option></select>
+        <button class="semester-tab active" data-semester="sem1" data-i18n="semester1" type="button" role="tab">1학기</button>
+        <button class="semester-tab" data-semester="sem2" data-i18n="semester2" type="button" role="tab">2학기</button>
+        <select id="courseScopeFilter" class="checklist-filter" aria-label="과목 범위"><option value="all" data-i18n="allCourses">전체 과목</option><option value="mine" data-i18n="myCourses">내 담당만</option></select>
+        <select id="courseGradeFilter" class="checklist-filter" aria-label="학년 선택"><option value="all" data-i18n="allGrades">전체 학년</option><option value="7학년">7학년</option><option value="8학년">8학년</option><option value="9학년">9학년</option><option value="10학년">10학년</option><option value="11학년">11학년</option><option value="12학년">12학년</option></select>
         <input id="courseSearchInput" class="checklist-search" type="search" placeholder="과목·교사 검색" />
         <span id="checklistSaveStatus" class="checklist-save-status">저장 준비</span>
       </div>
       <div id="checklistCourses" class="checklist-course-list"></div>
     </section>
   </main>
-  <script type="module" src="./js/teacher-portal.js?v=r440"></script>
+  <script type="module" src="./js/teacher-portal.js?v=r444"></script>
 </body>
 </html>
