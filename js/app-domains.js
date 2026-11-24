@@ -16,7 +16,7 @@ export const VIEW_DOMAIN_SETS = {
   rosters:      ["curriculum", "templates", "classes", "rosters"],
   ttcards:      ["curriculum", "templates", "classes", "rosters", "rooms", "timetable"],
   groups:       ["curriculum", "templates", "classes", "rosters", "rooms", "timetable"],
-  results:      ["curriculum", "templates", "rosters"],
+  results:      ["curriculum", "templates", "rosters", "teachers"],
 };
 
 let activeDomainSubscriptions = new Set();

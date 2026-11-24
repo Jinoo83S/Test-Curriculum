@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HIS 커리큘럼 열람</title>
+  <link rel="stylesheet" href="teacher-portal.css?v=r425">
+  <link rel="stylesheet" href="teacher-curriculum-view.css?v=r432">
+</head>
+<body data-portal-page="curriculum-view">
+  <header class="portal-header">
+    <a class="portal-brand" href="index.html"><span class="portal-brand-mark">HIS</span><strong data-i18n="facultyCurriculum">커리큘럼 열람</strong></a>
+    <div class="portal-header-actions">
+      <a class="portal-btn" href="index.html" data-i18n="backToWork">업무 메뉴</a>
+      <button id="portalLanguageBtn" class="portal-btn" type="button">English</button>
+      <label class="portal-year-label"><span data-i18n="schoolYear">학년도</span>
+        <select id="portalYearSelect" aria-label="학년도 선택" disabled></select>
+      </label>
+      <span id="portalAuthStatus" class="portal-auth-status"></span>
+      <button id="portalLoginBtn" class="portal-btn primary" type="button" data-i18n="googleLogin" hidden>Google 로그인</button>
+      <button id="portalLogoutBtn" class="portal-btn" type="button" data-i18n="logout" hidden>로그아웃</button>
+    </div>
+  </header>
+  <main class="portal-shell faculty-view-shell">
+    <section id="portalLoading" class="portal-state-card compact"><h2 data-i18n="checkingAccess">접근 권한을 확인하고 있습니다</h2></section>
+    <section id="portalSignedOut" class="portal-state-card compact" hidden>
+      <h2 data-i18n="signInTitle">학교 Google 계정으로 로그인해 주세요</h2>
+      <button id="portalLoginMainBtn" class="portal-btn primary" type="button" data-i18n="googleLogin">Google 로그인</button>
+    </section>
+    <section id="portalDenied" class="portal-state-card compact denied" hidden>
+      <h2 data-i18n="facultyUnavailable">열람할 수 없습니다</h2><p id="portalDeniedMessage"></p>
+    </section>
+    <section id="facultyCurriculumApp" hidden>
+      <div class="faculty-view-heading">
+        <h1 id="facultyViewTitle">커리큘럼 열람</h1>
+        <span id="facultyViewYear"></span>
+        <span class="faculty-readonly" data-i18n="readOnly">보기 전용</span>
+      </div>
+      <nav class="faculty-view-nav" aria-label="커리큘럼 열람 메뉴">
+        <a class="portal-btn" href="?view=teachers" data-i18n="facultyAssignments">교사별 담당 현황</a>
+        <a class="portal-btn" href="?view=curriculum" data-i18n="facultyCurriculum">커리큘럼 열람</a>
+      </nav>
+      <div id="facultyViewFilters" class="faculty-view-filters"></div>
+      <div id="facultyViewContent"></div>
+    </section>
+  </main>
+  <script type="module" src="./js/teacher-portal.js?v=r432"></script>
+</body>
+</html>

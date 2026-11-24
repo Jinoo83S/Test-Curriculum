@@ -3,7 +3,8 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
-import { readCurriculumPublication } from "./school-portal-settings-data.js?v=r431";
+import { readCurriculumPublication, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r431";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r432";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);
@@ -15,6 +16,7 @@ const clean = value => String(value ?? "").trim();
 const unique = values => [...new Set(values.filter(Boolean))];
 let authSerial = 0;
 let currentPortalUser = null;
+let redrawFacultyView = null;
 const LANGUAGE_KEY = "his_portal_language_v1";
 const translations = {
   ko: { curriculumShortcut:"커리큘럼 편집", teacherManagement:"교사관리", schoolYear:"학년도", schoolYearShort:"학년도", googleLogin:"Google 로그인", logout:"로그아웃", checkingAccess:"접근 권한을 확인하고 있습니다", checkingAccessDescription:"교사목록의 학교 이메일과 로그인 계정을 대조합니다.", signInTitle:"학교 Google 계정으로 로그인해 주세요", signInDescription:"교사목록에 등록된 @his.sc.kr 계정만 이용할 수 있습니다.", accessDenied:"교사용 메뉴 접근 권한이 없습니다", portalTitle:"교직원 업무 메뉴", portalDescription:"본인 계정으로 로그인하면 담당 과목과 필요한 확인 업무만 표시됩니다.", welcome:"환영합니다", facultyArea:"교사 업무", facultyAreaDescription:"일반 교사가 사용하는 확인·제출 페이지입니다.", courseChecklist:"담당 과목 확인", courseChecklistDescription:"학기별 담당 과목, Google 폴더, 교과계획서 필수 항목을 확인합니다.", openTask:"업무 열기", moreTasks:"추가 교직원 업무", moreTasksDescription:"새로운 확인 페이지가 이 메뉴에 순차적으로 추가됩니다.", operationsArea:"커리큘럼·시간표 관리", operationsAreaDescription:"권한이 있는 교직원만 접근하는 편집 영역입니다.", curriculumEditor:"커리큘럼 편집", curriculumEditorDescription:"연간·3개년 커리큘럼과 과목카드를 편집합니다.", timetable:"시간표", timetableDescription:"시간표 사전작업, 자동배치와 결과를 관리합니다.", openEditor:"편집 열기", teacherManagementDescription:"교사를 등록·편집·삭제하고 접근 권한을 설정합니다.", manage:"관리하기" },
@@ -22,6 +24,16 @@ const translations = {
 };
 Object.assign(translations.ko, { settings: "설정", settingsDescription: "교사와 학년도별 커리큘럼 공개 여부를 관리합니다." });
 Object.assign(translations.en, { settings: "Settings", settingsDescription: "Manage teachers and curriculum visibility by school year." });
+Object.assign(translations.ko, {
+  facultyCurriculum: "커리큘럼 열람", facultyCurriculumDescription: "공개된 연간 커리큘럼을 학년별로 확인합니다.",
+  facultyAssignments: "교사별 담당 현황", facultyAssignmentsDescription: "학기별 담당 과목을 확인합니다. 내 담당은 목록 위에 표시됩니다.",
+  backToWork: "업무 메뉴", readOnly: "보기 전용", facultyUnavailable: "열람할 수 없습니다",
+});
+Object.assign(translations.en, {
+  facultyCurriculum: "View Curriculum", facultyCurriculumDescription: "Browse the published annual curriculum by grade.",
+  facultyAssignments: "Teacher Assignments", facultyAssignmentsDescription: "See course assignments by semester. Your courses appear first.",
+  backToWork: "Faculty Menu", readOnly: "Read only", facultyUnavailable: "This page is unavailable",
+});
 let portalLanguage = localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
 
 function applyLanguage() {
@@ -30,11 +42,15 @@ function applyLanguage() {
     const text = translations[portalLanguage]?.[node.dataset.i18n];
     if (text) node.textContent = text;
   });
-  document.querySelectorAll("#portalYearSelect option").forEach(option => { option.textContent = portalLanguage === "ko" ? `${option.value}학년도` : `School Year ${option.value}`; });
+  document.querySelectorAll("#portalYearSelect option").forEach(option => {
+    if (option.value) option.textContent = portalLanguage === "ko" ? `${option.value}학년도` : `School Year ${option.value}`;
+    else option.textContent = portalLanguage === "ko" ? "공개 학년도 선택" : "Select a published year";
+  });
   const button = byId("portalLanguageBtn");
   if (button) button.textContent = portalLanguage === "ko" ? "English" : "한국어";
   const status = byId("portalAuthStatus");
   if (status && !currentPortalUser) status.textContent = portalLanguage === "ko" ? "로그인 필요" : "Sign-in required";
+  redrawFacultyView?.();
 }
 
 function setupLanguage() {
@@ -60,7 +76,7 @@ function setupYearSelector() {
     option.value = year; option.textContent = `${year}학년도`; option.selected = year === ACTIVE_SCHOOL_YEAR;
     return option;
   }));
-  select.addEventListener("change", () => setActiveSchoolYear(select.value));
+  select.addEventListener("change", () => { if (select.value) setActiveSchoolYear(select.value); });
   if (byId("portalHeroYear")) byId("portalHeroYear").textContent = ACTIVE_SCHOOL_YEAR;
 }
 
@@ -79,7 +95,7 @@ function renderAuthChrome(user) {
 }
 
 function showGate(name, message = "") {
-  ["portalLoading", "portalSignedOut", "portalDenied", "portalDashboard", "checklistApp"].forEach(id => setVisible(id, id === name));
+  ["portalLoading", "portalSignedOut", "portalDenied", "portalDashboard", "checklistApp", "facultyCurriculumApp"].forEach(id => setVisible(id, id === name));
   if (name === "portalDenied" && byId("portalDeniedMessage")) byId("portalDeniedMessage").textContent = message;
 }
 
@@ -386,19 +402,126 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, char => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", "'":"&#39;", '"':"&quot;" }[char]));
 }
 
+async function showPublishedYearOptions(currentPublication, serial) {
+  const years = await readRegisteredPortalYears().catch(() => getKnownSchoolYears());
+  const statuses = await Promise.all(years.map(year => year === ACTIVE_SCHOOL_YEAR ? currentPublication :
+    readCurriculumPublication(year).catch(() => ({ published: false }))));
+  if (serial !== authSerial) return;
+  const select = byId("portalYearSelect");
+  const publishedYears = years.filter((_, index) => statuses[index].published);
+  const options = publishedYears.map(year => new Option(year, year, false, year === ACTIVE_SCHOOL_YEAR));
+  if (!publishedYears.includes(ACTIVE_SCHOOL_YEAR)) {
+    const placeholder = new Option("", "", true, true);
+    placeholder.disabled = true;
+    options.unshift(placeholder);
+  }
+  select.replaceChildren(...options);
+  select.disabled = !publishedYears.length;
+  applyLanguage();
+}
+
+async function startFacultyCurriculum(access, serial) {
+  const publication = await readCurriculumPublication(ACTIVE_SCHOOL_YEAR);
+  if (serial !== authSerial) return;
+  void showPublishedYearOptions(publication, serial);
+  if (!publication.published) {
+    showGate("portalDenied", `${ACTIVE_SCHOOL_YEAR}학년도는 비공개입니다. 상단에서 공개된 학년도를 선택해 주세요.`);
+    return;
+  }
+  const source = await readTeacherYearSources(ACTIVE_SCHOOL_YEAR);
+  if (serial !== authSerial) return;
+  const rows = buildReadOnlyCurriculumRows(source.curriculum, source.templates, source.teachers);
+  const self = source.teachers.find(teacher => normalizePortalEmail(teacher.email) === access.email) || access.teacher;
+  const teachersView = new URLSearchParams(location.search).get("view") === "teachers";
+  const titleKey = teachersView ? "facultyAssignments" : "facultyCurriculum";
+  const activeLink = byId("facultyCurriculumApp").querySelector(`[data-i18n="${titleKey}"].portal-btn`);
+  activeLink?.setAttribute("aria-current", "page");
+  activeLink?.classList.add("primary");
+  const controls = byId("facultyViewFilters");
+  const content = byId("facultyViewContent");
+  const filter = document.createElement("select");
+  const search = document.createElement("input");
+  search.type = "search";
+  search.id = "facultyCourseSearch";
+  const ownLabel = document.createElement("label");
+  const own = document.createElement("input");
+  own.type = "checkbox";
+  const ownText = document.createElement("span");
+  ownLabel.append(own, ownText);
+  controls.replaceChildren(filter, search, ...(teachersView ? [ownLabel] : []));
+  const show = () => {
+    const query = clean(search.value).toLowerCase();
+    const hasMatch = values => !query || values.some(value => clean(value).toLowerCase().includes(query));
+    let visible, table;
+    if (teachersView) {
+      visible = groupTeacherAssignments(rows, filter.value, self).filter(group =>
+        (!own.checked || group.own) && (hasMatch([group.name]) || group.rows.some(row => hasMatch([row.subject.name, row.subject.english, row.grade]))));
+      table = () => renderTeacherAssignmentTable(visible, { language: portalLanguage });
+    } else {
+      visible = rows.filter(row => (!filter.value || filter.value === row.grade) && hasMatch([
+        row.category, row.track, row.group, ...[row.sem1, row.sem2].flatMap(subject =>
+          subject ? [subject.name, subject.english, ...subject.teachers.map(teacher => teacher.name)] : []),
+      ]));
+      table = () => renderAnnualCurriculumTable(visible, portalLanguage);
+    }
+    if (visible.length) content.replaceChildren(table());
+    else {
+      const empty = document.createElement("p");
+      empty.className = "faculty-view-empty";
+      empty.textContent = portalLanguage === "ko" ? "표시할 과목이 없습니다." : "No courses to show.";
+      content.replaceChildren(empty);
+    }
+  };
+  redrawFacultyView = () => {
+    const en = portalLanguage === "en";
+    byId("facultyViewTitle").textContent = translations[portalLanguage][titleKey];
+    byId("facultyViewYear").textContent = en ? `School Year ${ACTIVE_SCHOOL_YEAR}` : `${ACTIVE_SCHOOL_YEAR}학년도`;
+    const value = filter.value;
+    const options = teachersView
+      ? [["sem1", en ? "Semester 1" : "1학기"], ["sem2", en ? "Semester 2" : "2학기"]]
+      : [["", en ? "All grades" : "전체 학년"], ...unique(rows.map(row => row.grade)).map(grade => [grade, grade])];
+    filter.replaceChildren(...options.map(([value, label]) => new Option(label, value)));
+    filter.value = teachersView && !value ? "sem1" : value;
+    filter.setAttribute("aria-label", teachersView ? (en ? "Semester" : "학기") : (en ? "Grade" : "학년"));
+    search.placeholder = en ? "Search courses or teachers" : "과목·교사 검색";
+    search.setAttribute("aria-label", search.placeholder);
+    ownText.textContent = en ? "My courses only" : "내 담당만";
+    show();
+  };
+  search.addEventListener("input", show);
+  filter.addEventListener("change", show);
+  own.addEventListener("change", show);
+  redrawFacultyView();
+  showGate("facultyCurriculumApp");
+}
+
 async function handleAuth(user) {
   const serial = ++authSerial;
+  redrawFacultyView = null;
+  if (page === "curriculum-view") {
+    byId("portalYearSelect").disabled = true;
+    byId("facultyViewFilters").replaceChildren();
+    byId("facultyViewContent").replaceChildren();
+  }
   renderAuthChrome(user);
   if (!user) { showGate("portalSignedOut"); return; }
   showGate("portalLoading");
   try {
     const access = await readTeacherPortalAccess(user);
     if (serial !== authSerial) return;
-    if (!access.allowed) { showGate("portalDenied", access.reason); return; }
+    if (!access.allowed) {
+      showGate("portalDenied", access.reason);
+      if (page === "curriculum-view" && normalizePortalEmail(user.email).endsWith("@his.sc.kr")) {
+        void showPublishedYearOptions({ published: false }, serial);
+      }
+      return;
+    }
     const curriculumAllowed = ["curriculum", "admin"].includes(access.role);
     setVisible("portalCurriculumShortcut", curriculumAllowed);
     setVisible("portalTeacherManageShortcut", access.isAdmin);
-    if (page === "curriculum-checklist") {
+    if (page === "curriculum-view") {
+      await startFacultyCurriculum(access, serial);
+    } else if (page === "curriculum-checklist") {
       if (!access.isAdmin) {
         const { published } = await readCurriculumPublication(ACTIVE_SCHOOL_YEAR);
         if (serial !== authSerial) return;
@@ -410,6 +533,7 @@ async function handleAuth(user) {
       await startChecklist(access, user);
     } else renderMenu(access);
   } catch (error) {
+    if (serial !== authSerial) return;
     console.error("[teacher portal]", error);
     showGate("portalDenied", `자료를 불러오지 못했습니다: ${error?.message || error}`);
   }

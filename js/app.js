@@ -10,7 +10,7 @@ import { setupAuthUi, setAuthCheckingUI, updateAuthUI } from "./app-auth-ui.js?v
 import { setupSaveStatusUi } from "./save-status-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppSidebarUi } from "./app-sidebar-ui.js?v=2026-07-15-room-availability-separation-r355";
 import { setupAppNavigationUi, VIEW_TO_SECTION } from "./app-navigation-ui.js?v=2026-07-15-room-availability-separation-r355";
-import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js?v=r431";
+import { domainsForView, ensureDomains, resetDomainSubscriptions, stopAllDomainSubscriptions, syncDomainSubscriptionsForView, waitForDomainsLoaded } from "./app-domains.js?v=r432";
 import { appState, setOnUpdate, migrateFromLegacy } from "./state.js?v=r426";
 import { versioned } from "./version.js?v=r426";
 import { createAppModuleLoader } from "./app-module-loader.js?v=r426";

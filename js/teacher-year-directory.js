@@ -14,7 +14,7 @@ function assignment(card, term) {
   };
 }
 
-function assignedTeachers(card, term) {
+export function assignedTeachers(card, term) {
   const candidates = [assignment(card, term)];
   if (term === "sem2") candidates.push(assignment(card, "sem1"));
   candidates.push(assignment(card, ""));

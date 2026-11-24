@@ -1,0 +1,21 @@
+.faculty-view-shell { width: min(79rem, calc(100% - 24px)); }
+.faculty-view-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px; }
+.faculty-view-heading h1 { margin: 0; font-size: 1.25rem; color: #173456; }
+.faculty-view-heading span { color: #526581; font-size: .82rem; }
+.faculty-readonly, .faculty-own-badge { padding: 2px 7px; border-radius: 5px; background: #e9f2ff; color: #27486e; }
+.faculty-view-nav, .faculty-view-filters, .faculty-results-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 10px; }
+.faculty-view-filters input, .faculty-view-filters select, .faculty-results-controls select {
+  min-height: 30px; border: 1px solid #aebfd4; background: white; border-radius: 6px; padding: 3px 7px; font: inherit; font-size: .85rem;
+}
+.faculty-table-wrap { overflow: auto; max-height: min(73vh, 52rem); border: 1px solid #c9d6e5; border-radius: 8px; }
+.faculty-curriculum-table { width: 100%; border-collapse: separate; border-spacing: 0; min-width: 530px; font-size: .82rem; background: white; color: #263950; }
+.faculty-curriculum-table th, .faculty-curriculum-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #e2e9f1; }
+.faculty-curriculum-table thead th { position: sticky; top: 0; z-index: 1; background: #eaf0f7; color: #173456; white-space: nowrap; }
+.faculty-curriculum-table td small { display: block; color: #526581; }
+.faculty-curriculum-table tbody tr:nth-child(even) td { background: #f8fafc; }
+.faculty-teacher-group th[scope="rowgroup"] { border-top: 2px solid #9fb2c8; border-bottom-color: #c4d1e0; background: #edf3fa; font-size: .92rem; }
+.faculty-teacher-group th strong, .faculty-teacher-group th span { margin-inline-end: 8px; }
+.faculty-teacher-group th small { color: #526581; font-weight: 500; }
+.faculty-teacher-group.own th[scope="rowgroup"] { border-top-color: #6999cf; background: #d9eaff; }
+.faculty-curriculum-table .faculty-teacher-group.own td { background: #f0f6ff; }
+.faculty-view-empty { color: #526581; padding: 14px 0; }

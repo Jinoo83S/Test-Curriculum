@@ -1,11 +1,12 @@
 // ================================================================
 // results.js · Curriculum Result Tables
 // ================================================================
-import { GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { auth, GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { appState } from "./state.js?v=r426";
-import { getTemplateById, getTemplateCardTitle, getSemesterTemplateData, getTemplateTeacherSummary, splitTeacherNames } from "./templates.js?v=r425";
-import { getRosterMeta, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r426";
+import { getTemplateById, getSemesterTemplateData } from "./templates.js?v=r425";
+import { getClassCount, getTeacherLoadHours } from "./rosters.js?v=r426";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable } from "./curriculum-read-view.js?v=r432";
 
 // ── Data builder ─────────────────────────────────────────────────
 function buildRows() {
@@ -18,18 +19,17 @@ function buildRows() {
       const t2 = t2id ? getTemplateById(t2id) : null;
       const tpl = t1 || t2;
       if (!tpl) return;
-      const merged = t1id && t2id && t1id === t2id;
       const s1 = t1 ? getSemesterTemplateData(t1, "sem1") : null;
       const s2 = t2 ? getSemesterTemplateData(t2, "sem2") : null;
 
       // Subject display
       let nameKo, nameEn, teacher, language;
-      if (merged || (!t2id)) {
+      if (s1 && !s2) {
         nameKo   = clean(s1.nameKo)  || clean(s1.nameEn);
         nameEn   = clean(s1.nameEn)  || clean(s1.nameKo);
         teacher  = clean(s1.teacher);
         language = t1.language;
-      } else if (!t1id) {
+      } else if (!s1) {
         nameKo   = clean(s2.nameKo)  || clean(s2.nameEn);
         nameEn   = clean(s2.nameEn)  || clean(s2.nameKo);
         teacher  = clean(s2.teacher);
@@ -46,7 +46,7 @@ function buildRows() {
       }
 
       // classCount: prefer from the primary template (sem1 if exists, else sem2)
-      const mainTplId = t1id || t2id;
+      const mainTplId = t1?.id || t2?.id;
       const classCount = getClassCount(mainTplId);
       const credits    = getEffectiveCredit(row);
       const total      = getTeacherLoadHours(mainTplId, credits);
@@ -54,7 +54,7 @@ function buildRows() {
       rows.push({
         grade, category: row.category, track: row.track, group: row.group,
         nameKo, nameEn, language, teacher, credits, classCount, total,
-        isSplit: !merged && t1id && t2id
+        isSplit: !!(s1 && s2 && (t1id !== t2id || s1.nameKo !== s2.nameKo || s1.nameEn !== s2.nameEn))
       });
     });
   });
@@ -63,6 +63,41 @@ function buildRows() {
 
 // ── Render ────────────────────────────────────────────────────────
 let activeResultsTab = "full";
+let activeTeacherTerm = "sem1";
+
+function teacherAssignmentRows() {
+  return buildReadOnlyCurriculumRows(appState.curriculum, appState.templates.templates, appState.teachers?.teachers,
+    (id, credits) => ({ classCount: getClassCount(id), total: getTeacherLoadHours(id, credits) }));
+}
+
+function teacherResultsPanel() {
+  const panel = document.createElement("div");
+  const controls = document.createElement("div");
+  controls.className = "faculty-results-controls";
+  const term = document.createElement("select");
+  term.setAttribute("aria-label", "학기");
+  term.append(new Option("1학기", "sem1"), new Option("2학기", "sem2"));
+  term.value = activeTeacherTerm;
+  controls.append(term);
+  const content = document.createElement("div");
+  panel.append(controls, content);
+  const rows = teacherAssignmentRows();
+  const email = clean(auth.currentUser?.email).toLowerCase();
+  const self = email && appState.teachers?.teachers?.find(teacher => clean(teacher.email).toLowerCase() === email);
+  const render = () => {
+    activeTeacherTerm = term.value;
+    const groups = groupTeacherAssignments(rows, activeTeacherTerm, self || null);
+    if (groups.length) content.replaceChildren(renderTeacherAssignmentTable(groups, { workload: true }));
+    else {
+      const empty = document.createElement("p");
+      empty.textContent = "이 학기에 배치된 과목이 없습니다.";
+      content.replaceChildren(empty);
+    }
+  };
+  term.addEventListener("change", render);
+  render();
+  return panel;
+}
 
 export function renderResultsView(container) {
   container.innerHTML = "";
@@ -117,7 +152,7 @@ function renderResultsTabContent(container, rows) {
     const t2Wrap = document.createElement("div"); t2Wrap.className = "results-table-section";
     const t2Title = document.createElement("h3"); t2Title.className = "results-table-title"; t2Title.textContent = "교사별 담당 현황";
     t2Wrap.appendChild(t2Title);
-    t2Wrap.appendChild(buildTable2(rows));
+    t2Wrap.appendChild(teacherResultsPanel());
     container.appendChild(t2Wrap);
     return;
   }
@@ -186,62 +221,6 @@ function buildTable1(rows) {
   table.appendChild(tbody); wrap.appendChild(table); return wrap;
 }
 
-function buildTable2(rows) {
-  // Group rows by teacher
-  const byTeacher = {};
-  rows.forEach(r => {
-    const rawNames = r.teacher
-      ? r.teacher.split("/").flatMap(seg => splitTeacherNames(seg.replace(/^(1학기:|2학기:|Sem\d:)\s*/i, "")))
-      : [];
-    const teacherKeys = rawNames.length ? [...new Set(rawNames)] : ["(미배정)"];
-    teacherKeys.forEach(teacher => {
-      if (!byTeacher[teacher]) byTeacher[teacher] = [];
-      byTeacher[teacher].push(r);
-    });
-  });
-
-  const wrap = document.createElement("div"); wrap.className = "results-scroll";
-  const table = document.createElement("table"); table.className = "results-table";
-  table.innerHTML = `<thead><tr>
-    <th>교사</th>
-    <th>학년</th>
-    <th>범주</th>
-    <th colspan="2">과목명</th>
-    <th>학급별<br>시수</th>
-    <th>학급 수</th>
-    <th>교사 담당<br>총 시수</th>
-  </tr>
-  <tr><th></th><th></th><th></th><th>한글</th><th>English</th><th></th><th></th><th></th></tr></thead>`;
-  const tbody = document.createElement("tbody");
-
-  Object.keys(byTeacher).sort((a, b) => a.localeCompare(b, "ko")).forEach(teacher => {
-    const tRows = byTeacher[teacher];
-    const teacherTotal = tRows.reduce((s, r) => s + (r.total || 0), 0);
-
-    tRows.forEach((r, idx) => {
-      const tr = document.createElement("tr");
-      if (idx === 0) {
-        const teacherTd = document.createElement("td"); teacherTd.className = "results-teacher-name-cell";
-        teacherTd.rowSpan = tRows.length; teacherTd.innerHTML = `${escapeHtml(teacher)}<br><span class="results-teacher-total">총 ${teacherTotal}시수</span>`;
-        tr.appendChild(teacherTd);
-      }
-      tr.innerHTML += `
-        <td class="results-grade-cell-sm">${escapeHtml(r.grade)}</td>
-        <td class="results-category">${escapeHtml(r.category)}</td>
-        <td class="results-name-ko">${escapeHtml(r.nameKo)}${r.isSplit ? ' <span class="results-split-badge">학기분리</span>' : ""}</td>
-        <td class="results-name-en">${escapeHtml(r.nameEn)}</td>
-        <td class="results-num">${r.credits || "-"}</td>
-        <td class="results-num">${r.classCount > 0 ? r.classCount : "-"}</td>
-        <td class="results-num results-total-cell">${r.total > 0 ? r.total : "-"}</td>`;
-      tbody.appendChild(tr);
-    });
-
-    // Separator row
-    const sep = document.createElement("tr"); sep.className = "results-teacher-sep"; tbody.appendChild(sep);
-  });
-
-  table.appendChild(tbody); wrap.appendChild(table); return wrap;
-}
 
 // ── Excel Export ──────────────────────────────────────────────────
 export function exportResultsXlsx() {
@@ -255,22 +234,21 @@ export function exportResultsXlsx() {
   ws1["!cols"] = [8,6,6,8,20,24,8,14,8,6,8].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws1, "전체 커리큘럼");
 
-  // Sheet 2: teacher view
-  const byT = {};
-  rows.forEach(r => {
-    const rawNames2 = r.teacher
-      ? r.teacher.split("/").flatMap(seg => splitTeacherNames(seg.replace(/^(1학기:|2학기:|Sem\d:)\s*/i, "")))
-      : [];
-    const tk = rawNames2.length ? [...new Set(rawNames2)] : ["(미배정)"];
-    tk.forEach(t => { if (!byT[t]) byT[t] = []; byT[t].push(r); });
-  });
-  const s2data = [["교사","학년","범주","과목(한글)","과목(영어)","학급별시수","학급수","담당총시수","교사합계시수"]];
-  Object.keys(byT).sort((a,b) => a.localeCompare(b,"ko")).forEach(teacher => {
-    const tRows = byT[teacher]; const total = tRows.reduce((s,r) => s+(r.total||0),0);
-    tRows.forEach((r,i) => s2data.push([i===0?teacher:"", r.grade, r.category, r.nameKo, r.nameEn, r.credits, r.classCount||"", r.total||"", i===0?total:""]));
-  });
+  // Use the same semester assignments in the Excel sheet as on screen.
+  const assignments = teacherAssignmentRows();
+  const s2data = [["학기","교사","학년","범주","과목(한글)","과목(영어)","학급별시수","학급수","담당총시수","교사합계시수"]];
+  for (const [term, label] of [["sem1", "1학기"], ["sem2", "2학기"]]) {
+    for (const teacher of groupTeacherAssignments(assignments, term)) {
+      const total = teacher.rows.reduce((sum, row) => sum + (row.subject.total || 0), 0);
+      teacher.rows.forEach((row, index) => {
+        const subject = row.subject;
+        s2data.push([label, teacher.name || "미배정", row.grade, row.category, subject.name, subject.english,
+          row.credits, subject.classCount || "", subject.total || "", index === 0 ? total : ""]);
+      });
+    }
+  }
   const ws2 = XLSX.utils.aoa_to_sheet(s2data);
-  ws2["!cols"] = [14,8,6,20,24,8,6,8,10].map(w => ({ wch: w }));
+  ws2["!cols"] = [8,14,8,6,20,24,8,6,8,10].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws2, "교사별 현황");
 
   XLSX.writeFile(wb, "HIS_CurriculumResults.xlsx");
