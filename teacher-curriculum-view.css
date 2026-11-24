@@ -43,8 +43,8 @@ body[data-portal-page="menu"] > .portal-shell {
 .faculty-annual-board thead tr:nth-child(2) th { top: 30px; text-align: center; background: #f7e7e5; }
 .faculty-annual-board td, .faculty-annual-board thead th { padding: 4px 5px; border-inline-end: 1px solid #e1e6ec; }
 .faculty-annual-board :is(td, th).faculty-grade-start { border-inline-start: 2px solid #c38b8f; }
-.faculty-annual-board td { vertical-align: top; }
-.faculty-annual-board td:nth-child(5n) { text-align: center; }
+.faculty-annual-board td { vertical-align: top; overflow-wrap: anywhere; }
+.faculty-annual-board .faculty-board-credit { text-align: center; }
 .faculty-annual-board .faculty-board-category { background: #e5efdf; color: #31502e; border-top: 1px solid #c6d7be; }
 .faculty-annual-board .faculty-track-start td { border-top: 2px solid #ded4ae; }
 .faculty-annual-board tbody tr td.faculty-board-blank { background: #e9edf1; }

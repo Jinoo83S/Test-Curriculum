@@ -4,6 +4,8 @@ import { getEffectiveCredit, parseCreditValue } from "./utils.js?v=2026-07-15-ro
 
 const text = value => String(value ?? "").trim();
 const key = value => text(value).normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
+const trackKey = row => key(row.track).replace(/\s+/g, "");
+const genderMarker = /\[\s*(남|여|m|f)\s*\]/g;
 
 export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = [], workload) {
   const cards = new Map(templates.map(card => [card.id, card]));
@@ -34,41 +36,69 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
     }));
 }
 
+function pairCommonPhysicalEducation(rows) {
+  const candidates = { male: [], female: [] };
+  for (const row of rows) {
+    if (trackKey(row) !== "공통" || !["체육", "pe", "physical education"].includes(key(row.group))) continue;
+    const titles = [row.sem1, row.sem2].flatMap(subject => [key(subject?.name), key(subject?.english)]).filter(Boolean);
+    const genders = new Set(titles.flatMap(title => Array.from(title.matchAll(genderMarker), ([, gender]) =>
+      gender === "남" || gender === "m" ? "male" : "female")));
+    if (genders.size !== 1) continue;
+    candidates[[...genders][0]].push({ row, names: titles.map(title => title.replace(genderMarker, "").replace(/\s+/g, "")) });
+  }
+
+  const pairs = new Map();
+  const pair = (male, female) => {
+    const group = Symbol("physical education");
+    pairs.set(male.row, group);
+    pairs.set(female.row, group);
+  };
+  const matches = (first, second) => first.names.some(name => name && second.names.includes(name));
+  for (const male of candidates.male) {
+    const matching = candidates.female.filter(female => matches(male, female));
+    if (matching.length === 1 && candidates.male.filter(other => matches(other, matching[0])).length === 1) {
+      pair(male, matching[0]);
+    }
+  }
+  const male = candidates.male.filter(item => !pairs.has(item.row));
+  const female = candidates.female.filter(item => !pairs.has(item.row));
+  // One parallel pair can use different NEIS course names for boys and girls.
+  if (male.length === 1 && female.length === 1) pair(male[0], female[0]);
+  return pairs;
+}
+
 export function summarizeCurriculumGrades(rows, templateGroups = []) {
   const groups = new Map(templateGroups.map(group => [group.id, group.creditValue]));
   const byGrade = new Map();
   for (const row of rows) {
+    if (key(row.category) !== "교과") continue;
     if (!byGrade.has(row.grade)) byGrade.set(row.grade, []);
     byGrade.get(row.grade).push(row);
   }
   return new Map([...byGrade].map(([grade, gradeRows]) => {
-    const lessons = { courses: 0, hours: 0, activityHours: 0 };
+    const lessons = { courses: 0, credits: 0 };
+    const physicalEducation = pairCommonPhysicalEducation(gradeRows);
     const buckets = new Map();
     for (const row of gradeRows) {
-      const category = text(row.category);
-      const track = key(row.track).replace(/\s+/g, "");
-      if (category === "창체") {
+      const track = trackKey(row);
+      const common = track === "공통";
+      const group = physicalEducation.get(row) ??
+        (common && row.calcGroupId ? `common:${row.calcGroupId}` : !common && track ? `track:${track}` : null);
+      if (!group) {
         lessons.courses++;
-        lessons.activityHours += row.boardHours;
+        lessons.credits += row.boardHours;
         continue;
       }
-      if (category !== "교과" || !track || (track === "공통" && !row.calcGroupId)) {
-        lessons.courses++;
-        lessons.hours += row.boardHours;
-        continue;
-      }
-      const bucket = track === "공통" ? `common:${row.calcGroupId}` : `track:${track}`;
-      if (!buckets.has(bucket)) buckets.set(bucket, []);
-      buckets.get(bucket).push(row);
+      if (!buckets.has(group)) buckets.set(group, []);
+      buckets.get(group).push(row);
     }
     for (const bucket of buckets.values()) {
       const ids = new Set(bucket.map(row => row.calcGroupId).filter(Boolean));
       const configured = ids.size === 1 ? groups.get([...ids][0]) : null;
       lessons.courses++;
-      lessons.hours += text(configured) ? parseCreditValue(configured) : Math.max(...bucket.map(row => row.boardHours), 0);
+      lessons.credits += text(configured) ? parseCreditValue(configured) : Math.max(...bucket.map(row => row.boardHours), 0);
     }
-    lessons.hours = Number(lessons.hours.toFixed(8));
-    lessons.activityHours = Number(lessons.activityHours.toFixed(8));
+    lessons.credits = Number(lessons.credits.toFixed(8));
     return [grade, lessons];
   }));
 }
@@ -209,9 +239,9 @@ export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...
   table.classList.add("faculty-annual-board");
   for (const _grade of grades) {
     const columns = create("colgroup");
-    for (const proportion of [.15, .15, .29, .29, .12]) {
+    for (const width of [52, 62, null, null, 62]) {
       const col = create("col");
-      col.style.width = `${100 * proportion / grades.length}%`;
+      if (width !== null) col.style.width = `${width}px`;
       columns.append(col);
     }
     table.insertBefore(columns, table.tHead);
@@ -220,17 +250,17 @@ export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...
   const subhead = table.tHead.insertRow();
   for (const grade of grades) {
     const label = create("th");
-    const { courses = 0, hours = 0, activityHours = 0 } = summaries.get(grade) || {};
+    const { courses = 0, credits = 0 } = summaries.get(grade) || {};
     label.append(create("strong", en ? `Grade ${parseInt(grade, 10)}` : grade));
     const totals = create("span", en
-      ? `${courses} courses · ${hours} class hrs · ${activityHours} activity hrs`
-      : `${courses}과목 · 교과 ${hours}시수 · 창체 ${activityHours}시간`);
+      ? `${courses} courses · ${credits} credits`
+      : `${courses}과목 · ${credits}이수단위`);
     totals.className = "faculty-grade-totals";
     label.append(totals);
     label.colSpan = 5;
     label.scope = "colgroup";
     head.append(label);
-    (en ? ["Track", "Area", "Semester 1", "Semester 2", "Hours"] : ["구분", "교과군", "1학기", "2학기", "시수"])
+    (en ? ["Track", "Area", "Semester 1", "Semester 2", "Credits"] : ["구분", "교과군", "1학기", "2학기", "이수단위"])
       .forEach((name, index) => {
         const th = create("th", name);
         th.scope = "col";
@@ -261,7 +291,11 @@ export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...
           row.insertCell().textContent = item.group || "—";
           appendCourse(row.insertCell(), item.sem1, true);
           appendCourse(row.insertCell(), item.sem2, true);
-          row.insertCell().textContent = item.boardHours || "—";
+          const amount = row.insertCell();
+          amount.className = "faculty-board-credit";
+          amount.textContent = item.boardHours
+            ? key(category) === "창체" ? `${item.boardHours} ${en ? "hrs" : "시간"}` : item.boardHours
+            : "—";
         }
       }
     }

@@ -4,7 +4,7 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
 import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r435";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r436";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r437";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 const page = document.body.dataset.portalPage || "menu";
