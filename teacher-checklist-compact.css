@@ -67,6 +67,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-course-list {
   --report-columns: 4.8rem 3.65rem 3.65rem 8rem 5rem 3.85rem 3.65rem;
   --report-gap: 4px;
+  --required-width: 13rem;
   display: block;
   overflow: auto;
   max-height: max(20rem, calc(100dvh - 166px));
@@ -77,7 +78,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-compact-header,
 .checklist-compact-row {
   display: grid;
-  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, 11rem) 5.4rem max-content 2.6rem;
+  grid-template-columns: minmax(13rem, 1fr) minmax(8rem, 11rem) var(--required-width) max-content 2.6rem;
   gap: 8px;
   align-items: center;
   border-left: 3px solid transparent;
@@ -145,7 +146,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   text-decoration: none;
 }
 .compact-folder-open.disabled { opacity: .35; pointer-events: none; }
-.compact-required-cell { display: grid; gap: 1px; }
+.compact-required-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; }
 .compact-check {
   display: flex;
   align-items: center;
@@ -183,13 +184,13 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 }
 .compact-confirm-cell input { width: 16px; height: 16px; accent-color: #16a34a; }
 
-@media (min-width: 70rem) {
+@media (min-width: 75rem) {
   .compact-reporting-cell label > span,
   .compact-confirm-cell > span { display: none; }
 }
-@media (max-width: 69.999rem) {
+@media (max-width: 74.999rem) {
   .checklist-compact-header { display: none; }
-  .checklist-compact-row { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 5.4rem auto; }
+  .checklist-compact-row { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) var(--required-width) auto; }
   .compact-reporting-cell { grid-column: 1 / -1; grid-template-columns: var(--report-columns); }
 }
 @media (max-width: 39rem) {

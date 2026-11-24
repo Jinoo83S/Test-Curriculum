@@ -4,7 +4,8 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { readTeacherPortalAccess, normalizePortalRole } from "./teacher-portal-auth.js?v=r424";
 import { setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { appliedYearsForTeacher, buildTeacherYearRoster, schoolEmailKey } from "./teacher-year-directory.js?v=r431";
-import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload } from "./school-portal-settings-data.js?v=r435";
+import { readRegisteredPortalYears, readTeacherYearSources, readCurriculumPublication, saveCurriculumPublication, syncPublishedFacultyWorkload, saveChecklistReportOptions } from "./school-portal-settings-data.js?v=r440";
+import { REPORT_FIELDS } from "./checklist-report-options.js?v=r440";
 
 const byId = id => document.getElementById(id);
 const clean = value => String(value || "").trim();
@@ -15,6 +16,8 @@ let settingsYears = getKnownSchoolYears();
 let yearSources = new Map();
 let yearLoadErrors = [];
 let publicationLoad;
+let reportOptions = null;
+let reportOptionsDirty = false;
 let settingsAuthorized = false;
 let authRequest = 0;
 
@@ -108,14 +111,90 @@ async function saveTeachers() {
   finally{button.disabled=false;}
 }
 
-function openSettingsPanel(publication) {
-  for (const [id, active] of [["teacherSettingsTab", !publication], ["publicationSettingsTab", publication]]) {
-    byId(id).classList.toggle("primary", active);
-    byId(id).setAttribute("aria-pressed", String(active));
+function openSettingsPanel(panel) {
+  for (const name of ["teacher", "publication", "reportOptions"]) {
+    const active = name === panel;
+    byId(`${name}SettingsTab`).classList.toggle("primary", active);
+    byId(`${name}SettingsTab`).setAttribute("aria-pressed", String(active));
+    setVisible(`${name}SettingsPanel`, active);
   }
-  setVisible("teacherSettingsPanel", !publication);
-  setVisible("publicationSettingsPanel", publication);
-  if (publication && settingsAuthorized && !publicationLoad) publicationLoad = renderPublicationRows();
+  if (!settingsAuthorized) return;
+  if (panel === "publication" && !publicationLoad) publicationLoad = renderPublicationRows();
+  if (panel === "reportOptions" && !reportOptions && !byId("reloadReportOptionsBtn").disabled) void loadReportOptions();
+}
+
+function setReportOptionsStatus(message, type = "") {
+  const status = byId("reportOptionsStatus");
+  status.className = `teacher-admin-status ${type}`;
+  status.textContent = message;
+}
+
+function renderReportOptions() {
+  const fields = byId("reportOptionsFields");
+  fields.replaceChildren(...REPORT_FIELDS.map(([key, title]) => {
+    const label = document.createElement("label");
+    const input = document.createElement("textarea");
+    input.id = `report-options-${key}`;
+    input.name = key;
+    input.rows = 4;
+    input.value = reportOptions[key].join("\n");
+    label.append(document.createTextNode(title), input);
+    return label;
+  }));
+}
+
+async function loadReportOptions() {
+  if (!settingsAuthorized || (reportOptionsDirty && !confirm("저장하지 않은 선택지 변경을 버리고 다시 불러올까요?"))) return;
+  const request = authRequest;
+  const reload = byId("reloadReportOptionsBtn");
+  const fields = byId("reportOptionsFields");
+  const save = byId("saveReportOptionsBtn");
+  reload.disabled = fields.disabled = save.disabled = true;
+  byId("reportOptionsYear").textContent = `${ACTIVE_SCHOOL_YEAR}학년도 담당 과목 확인에 적용됩니다.`;
+  setReportOptionsStatus("선택지를 불러오는 중입니다.");
+  try {
+    const result = await readCurriculumPublication(ACTIVE_SCHOOL_YEAR);
+    if (request !== authRequest) return;
+    reportOptions = result.reportOptions;
+    reportOptionsDirty = false;
+    renderReportOptions();
+    setReportOptionsStatus("");
+  } catch (error) {
+    if (request === authRequest) setReportOptionsStatus(`조회 실패 · ${error.message}`, "error");
+  } finally {
+    if (request === authRequest) {
+      reload.disabled = false;
+      fields.disabled = !reportOptions;
+      save.disabled = !reportOptionsDirty;
+    }
+  }
+}
+
+async function saveReportOptions(event) {
+  event.preventDefault();
+  if (!settingsAuthorized || !reportOptionsDirty || !reportOptions) return;
+  const request = authRequest;
+  const fields = byId("reportOptionsFields");
+  const save = byId("saveReportOptionsBtn");
+  const reload = byId("reloadReportOptionsBtn");
+  const draft = Object.fromEntries([...new FormData(event.currentTarget)].map(([key, value]) => [key, value.split(/\r?\n/)]));
+  reload.disabled = fields.disabled = save.disabled = byId("portalYearSelect").disabled = true;
+  setReportOptionsStatus("선택지를 저장하는 중입니다.");
+  try {
+    const result = await saveChecklistReportOptions(ACTIVE_SCHOOL_YEAR, draft, reportOptions);
+    if (request !== authRequest) return;
+    reportOptions = result;
+    reportOptionsDirty = false;
+    renderReportOptions();
+    setReportOptionsStatus(`${ACTIVE_SCHOOL_YEAR}학년도 선택지를 저장했습니다.`, "saved");
+  } catch (error) {
+    if (request === authRequest) setReportOptionsStatus(`저장 실패 · ${error.message}`, "error");
+  } finally {
+    if (request === authRequest) {
+      reload.disabled = fields.disabled = byId("portalYearSelect").disabled = false;
+      save.disabled = !reportOptionsDirty;
+    }
+  }
 }
 
 async function renderPublicationRows() {
@@ -194,10 +273,18 @@ function setupControls() {
   byId("portalLoginBtn").addEventListener("click",login);byId("portalLoginMainBtn").addEventListener("click",login);byId("portalLogoutBtn").addEventListener("click",logout);
   byId("addTeacherBtn").addEventListener("click",()=>{teachers.push({id:uid(),name:"",email:"",note:"",accessRole:"basic",portalDisabled:false});markDirty();renderRows();});
   byId("saveTeachersBtn").addEventListener("click",saveTeachers);
-  byId("teacherSettingsTab").addEventListener("click", () => openSettingsPanel(false));
-  byId("publicationSettingsTab").addEventListener("click", () => openSettingsPanel(true));
+  byId("teacherSettingsTab").addEventListener("click", () => openSettingsPanel("teacher"));
+  byId("publicationSettingsTab").addEventListener("click", () => openSettingsPanel("publication"));
+  byId("reportOptionsSettingsTab").addEventListener("click", () => openSettingsPanel("reportOptions"));
+  byId("reloadReportOptionsBtn").addEventListener("click", loadReportOptions);
+  byId("reportOptionsForm").addEventListener("submit", saveReportOptions);
+  byId("reportOptionsFields").addEventListener("input", () => {
+    reportOptionsDirty = true;
+    byId("saveReportOptionsBtn").disabled = false;
+    setReportOptionsStatus("저장되지 않은 변경사항이 있습니다.");
+  });
   const select = byId("portalYearSelect");
-  select.addEventListener("change", () => { if (!dirty || confirm("저장하지 않은 변경사항을 버리고 학년도를 바꿀까요?")) setActiveSchoolYear(select.value); else select.value = ACTIVE_SCHOOL_YEAR; });
+  select.addEventListener("change", () => { if ((!dirty && !reportOptionsDirty) || confirm("저장하지 않은 변경사항을 버리고 학년도를 바꿀까요?")) setActiveSchoolYear(select.value); else select.value = ACTIVE_SCHOOL_YEAR; });
   const lang=byId("portalLanguageBtn");lang.addEventListener("click",()=>{const english=document.documentElement.lang!=="en";document.documentElement.lang=english?"en":"ko";lang.textContent=english?"한국어":"English";});
 }
 
@@ -206,6 +293,11 @@ onAuth(async user => {
   const request = ++authRequest;
   settingsAuthorized = false;
   publicationLoad = null;
+  reportOptions = null;
+  reportOptionsDirty = false;
+  byId("reloadReportOptionsBtn").disabled = byId("portalYearSelect").disabled = false;
+  byId("reportOptionsFields").replaceChildren();
+  byId("reportOptionsFields").disabled = byId("saveReportOptionsBtn").disabled = true;
   byId("portalAuthStatus").textContent=user?.email||"로그인 필요";setVisible("portalLoginBtn",!user);setVisible("portalLogoutBtn",!!user);
   if(!user){showGate("portalSignedOut");return;}showGate("portalLoading");
   try {
@@ -221,7 +313,7 @@ onAuth(async user => {
     if (request !== authRequest) return;
     renderYearSelector();
     showGate("teacherAdminApp");
-    openSettingsPanel(false);
+    openSettingsPanel("teacher");
     setStatus("학년도별 교사와 담당 과목을 불러오는 중입니다.");
     byId("teacherAdminRows").replaceChildren();
     byId("addTeacherBtn").disabled = byId("saveTeachersBtn").disabled = true;

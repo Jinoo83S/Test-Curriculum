@@ -1,7 +1,9 @@
-import { db, getSchoolYearRefs, LEGACY_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
+import { auth, db, getSchoolYearRefs, LEGACY_SCHOOL_YEAR } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, registerKnownSchoolYears } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { deleteField, doc, getDoc, getDocFromServer, getDocs, getDocsFromServer, runTransaction, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { summarizeFacultyWorkload } from "./faculty-workload.js?v=r434";
+import { normalizeChecklistReportOptions } from "./checklist-report-options.js?v=r440";
+import { readTeacherPortalAccess } from "./teacher-portal-auth.js?v=r424";
 
 function withDeadline(promise, message) {
   let timer;
@@ -46,7 +48,32 @@ export async function readCurriculumPublication(year) {
   const data = snapshot.data();
   const value = data?.curriculumPublished;
   // Workspaces without a saved preference retain their existing portal visibility.
-  return { published: value !== false, configured: typeof value === "boolean", workload: Array.isArray(data?.facultyWorkload) ? data.facultyWorkload : null };
+  return {
+    published: value !== false,
+    configured: typeof value === "boolean",
+    workload: Array.isArray(data?.facultyWorkload) ? data.facultyWorkload : null,
+    reportOptions: normalizeChecklistReportOptions(data?.checklistReportOptions),
+  };
+}
+
+export async function saveChecklistReportOptions(year, draft, baseline) {
+  if (!/^20[2-9]\d$/.test(year)) throw new Error("학년도를 확인해 주세요.");
+  const access = await readTeacherPortalAccess(auth.currentUser, year);
+  if (!access.allowed || !access.isAdmin || access.user.uid !== auth.currentUser?.uid) {
+    throw new Error("관리자 권한이 필요합니다.");
+  }
+  const reportOptions = normalizeChecklistReportOptions(draft);
+  const expected = JSON.stringify(normalizeChecklistReportOptions(baseline));
+  const ref = publicationRef(year);
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (!snapshot.exists() && year !== LEGACY_SCHOOL_YEAR) throw new Error("등록된 학년도가 아닙니다.");
+    if (access.user.uid !== auth.currentUser?.uid) throw new Error("로그인 계정이 변경되었습니다.");
+    const current = normalizeChecklistReportOptions(snapshot.data()?.checklistReportOptions);
+    if (JSON.stringify(current) !== expected) throw new Error("다른 곳에서 선택지가 변경됐습니다. 다시 불러온 뒤 수정해 주세요.");
+    transaction.set(ref, { checklistReportOptions: reportOptions }, { merge: true });
+  });
+  return reportOptions;
 }
 
 export async function saveCurriculumPublication(year, published) {

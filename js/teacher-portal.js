@@ -3,10 +3,11 @@ import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
-import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r435";
+import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r440";
 import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r437";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
+import { REPORT_FIELDS, normalizeChecklistReportOptions, normalizeReportValue } from "./checklist-report-options.js?v=r440";
 
 const page = document.body.dataset.portalPage || "menu";
 const teachersView = page === "curriculum-view" && new URLSearchParams(location.search).get("view") === "teachers";
@@ -186,20 +187,9 @@ const blankChecklistItem = () => ({
   reportRanking: "",
 });
 
-const reportFields = [
-  ["reportCategory", "구분", ["", "체육•예술", "진로선택"]],
-  ["reportRawScore", "원점수", ["", "O", "X"]],
-  ["reportAverage", "평균", ["", "O", "X"]],
-  ["reportStandardDeviation", "표준편차", ["", "O", "X", "성취도별 분포비율"]],
-  ["reportAchievementLevels", "성취도", ["", "5 Levels", "3 Levels", "P/F", "P"]],
-  ["reportEnrollmentCount", "수강자수", ["", "O", "X"]],
-  ["reportRanking", "석차", ["", "O", "X"]],
-];
-const normalizeReportValue = value => clean(value).replace(/\s+/g, " ");
-
 function checklistItemForCourse(course, stored) {
   const item = { ...blankChecklistItem(), ...(stored || {}) };
-  for (const [key] of reportFields) {
+  for (const [key] of REPORT_FIELDS) {
     if (typeof item[key] !== "string" || !(stored && Object.hasOwn(stored, key))) {
       item[key] = normalizeReportValue(course.reportingRequirements?.[key]);
     }
@@ -214,7 +204,9 @@ function createValueSelect({ id, name, value, values, disabled, onChange }) {
   for (const optionValue of options) {
     const option = document.createElement("option");
     option.value = optionValue;
-    option.textContent = optionValue || "미설정";
+    const existingOnly = !values.includes(optionValue);
+    option.textContent = existingOnly ? `${optionValue} (기존 값)` : (optionValue || "미설정");
+    option.disabled = existingOnly;
     option.selected = optionValue === value;
     select.append(option);
   }
@@ -229,7 +221,7 @@ function safeUrl(value) {
   } catch (_) { return ""; }
 }
 
-async function startChecklist(access, user) {
+async function startChecklist(access, user, reportOptions, serial) {
   const refs = getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains;
   // The fixed portal admin may also be listed as a teacher in this school year.
   const rosterTeacher = access.teacher.id === "teacher-portal-admin"
@@ -247,6 +239,7 @@ async function startChecklist(access, user) {
     getDoc(refs.curriculum), getDoc(refs.templates), getDoc(teacherChecklistSharedDocRef()), getDoc(teacherChecklistDocRef(user)),
     rosterTeacher,
   ]), 12000, "Firebase 자료를 불러오는 시간이 초과되었습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.");
+  if (serial !== authSerial) return;
   const assignedTeacher = listedTeacher || access.teacher;
   const curriculum = curriculumSnap.exists() ? curriculumSnap.data() || {} : {};
   const templates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
@@ -334,7 +327,7 @@ async function startChecklist(access, user) {
     }
     const reportHeader = document.createElement("div");
     reportHeader.className = "compact-reporting-header";
-    for (const [, title] of reportFields) {
+    for (const [, title] of REPORT_FIELDS) {
       const cell = document.createElement("span"); cell.textContent = title; reportHeader.append(cell);
     }
     const confirmedHeader = document.createElement("span"); confirmedHeader.textContent = "완료";
@@ -381,7 +374,8 @@ async function startChecklist(access, user) {
       });
 
       const reporting = document.createElement("div"); reporting.className = "compact-reporting-cell";
-      reportFields.forEach(([key, title, values]) => {
+      REPORT_FIELDS.forEach(([key, title]) => {
+        const values = ["", ...reportOptions[key]];
         const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
         const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(course, key, value); } });
         select.setAttribute("aria-label", `${course.nameKo} ${title}`);
@@ -562,15 +556,17 @@ async function handleAuth(user) {
     if (page === "curriculum-view") {
       await startFacultyCurriculum(access, serial);
     } else if (page === "curriculum-checklist") {
-      if (!access.isAdmin) {
-        const { published } = await readCurriculumPublication(ACTIVE_SCHOOL_YEAR);
-        if (serial !== authSerial) return;
-        if (!published) {
-          showGate("portalDenied", `${ACTIVE_SCHOOL_YEAR}학년도 커리큘럼은 교사용 포털에 비공개 상태입니다.`);
-          return;
-        }
+      const publication = await readCurriculumPublication(ACTIVE_SCHOOL_YEAR).catch(error => {
+        if (!access.isAdmin) throw error;
+        console.warn("[teacher checklist] report options fallback", error);
+        return { reportOptions: normalizeChecklistReportOptions() };
+      });
+      if (serial !== authSerial) return;
+      if (!access.isAdmin && !publication.published) {
+        showGate("portalDenied", `${ACTIVE_SCHOOL_YEAR}학년도 커리큘럼은 교사용 포털에 비공개 상태입니다.`);
+        return;
       }
-      await startChecklist(access, user);
+      await startChecklist(access, user, publication.reportOptions, serial);
     } else renderMenu(access);
   } catch (error) {
     if (serial !== authSerial) return;
