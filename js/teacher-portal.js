@@ -49,7 +49,8 @@ Object.assign(translations.ko, {
   syllabus: "실라버스", safetyEducation: "안전교육", safetySexEducation: "성교육", absentStudentPolicy: "결석 학생 정책",
   checklistConfirm: "확인", checklistEmpty: "현재 조건에 맞는 과목이 없습니다", checklistSearch: "과목·교사 검색",
   checklistReady: "저장 준비", checklistSaving: "저장 중…", checklistSaved: "저장됨", checklistError: "저장 실패",
-  previousReportValue: "기존 값",
+  previousReportValue: "기존 값", previousReportCheck: "이전 확인 완료", checklistReportSections: "확인 항목", checklistBasic: "폴더·실라버스",
+  checklistNeis: "나이스 성적표", checklistTranscript: "영문 성적표", checklistAssessment: "평가",
 });
 Object.assign(translations.en, {
   checklistTitle: "Assigned Course Checklist", checklistHelp: "You can view all courses and edit your assigned courses.",
@@ -59,7 +60,8 @@ Object.assign(translations.en, {
   syllabus: "Syllabus", safetyEducation: "Safety Education", safetySexEducation: "Safety (Sex) Education", absentStudentPolicy: "Policy for Absent Students",
   checklistConfirm: "Confirm", checklistEmpty: "No courses match the current filters", checklistSearch: "Search courses or teachers",
   checklistReady: "Ready to save", checklistSaving: "Saving…", checklistSaved: "Saved", checklistError: "Save failed",
-  previousReportValue: "Previous value",
+  previousReportValue: "Previous value", previousReportCheck: "Previously checked", checklistReportSections: "Checklist sections", checklistBasic: "Folder & Syllabus",
+  checklistNeis: "NEIS Report Card", checklistTranscript: "English Transcript", checklistAssessment: "Assessments",
 });
 const translate = key => translations[portalLanguage][key];
 
@@ -177,6 +179,10 @@ function buildTeacherCourses(curriculum, templatesDomain, teacher, semester, isA
       if (!template) return;
       const info = semesterInfo(template, semester);
       const isOwner = teacherMatches(info, teacher);
+      const termRequirements = template[`${semester}ReportingRequirements`] || {};
+      const otherRequirements = template[semester === "sem1" ? "sem2ReportingRequirements" : "sem1ReportingRequirements"] || {};
+      const legacyRequirements = Object.fromEntries(Object.entries(template.reportingRequirements || {})
+        .filter(([key, value]) => !Object.hasOwn(otherRequirements, key) || otherRequirements[key] !== value));
       courses.push({
         key: `${semester}|${grade}|${clean(row.id) || templateId}|${templateId}`,
         semester, grade, templateId,
@@ -184,8 +190,7 @@ function buildTeacherCourses(curriculum, templatesDomain, teacher, semester, isA
         track: clean(row.track) || "구분 없음",
         group: clean(row.group) || "교과군 없음",
         credits: clean(row.credits),
-        reportingRequirements: Object.keys(template.sem1ReportingRequirements || {}).length || Object.keys(template.sem2ReportingRequirements || {}).length
-          ? template[`${semester}ReportingRequirements`] || {} : template.reportingRequirements || {},
+        reportingRequirements: { ...legacyRequirements, ...termRequirements },
         isOwner,
         editable: isAdmin || isOwner,
         ...info,
@@ -220,7 +225,33 @@ function checklistItemForCourse(course, stored) {
   return item;
 }
 
-function createValueSelect({ id, name, value, values, disabled, onChange }) {
+function readChecklistItems(courses, personal, shared) {
+  const items = structuredClone(personal || {});
+  for (const [key, fields] of Object.entries(shared || {})) items[key] = { ...items[key], ...fields };
+  const currentKeys = new Set(courses.map(course => course.key));
+  const sourceKey = key => {
+    const [semester, grade, , template, extra] = key.split("|");
+    return template && extra === undefined ? `${semester}|${grade}|${template}` : "";
+  };
+  const currentCounts = new Map();
+  for (const key of currentKeys) {
+    const source = sourceKey(key);
+    if (source) currentCounts.set(source, (currentCounts.get(source) || 0) + 1);
+  }
+  const previousKeys = new Map();
+  for (const key of Object.keys(items)) {
+    const source = sourceKey(key);
+    if (!source || currentKeys.has(key) || currentCounts.get(source) !== 1) continue;
+    previousKeys.set(source, previousKeys.has(source) ? null : key);
+  }
+  for (const key of currentKeys) {
+    const previous = previousKeys.get(sourceKey(key));
+    if (previous) items[key] = { ...items[previous], ...items[key] };
+  }
+  return items;
+}
+
+function createValueSelect({ id, name, value, values, disabled, previouslyChecked, onChange }) {
   const select = document.createElement("select");
   select.id = id; select.name = name; select.disabled = disabled;
   const options = values.includes(value) ? values : [...values, value];
@@ -234,7 +265,15 @@ function createValueSelect({ id, name, value, values, disabled, onChange }) {
     option.selected = optionValue === value;
     select.append(option);
   }
-  select.addEventListener("change", () => onChange(select.value));
+  select.value = value;
+  const updateTitle = () => {
+    select.title = [select.selectedOptions[0]?.textContent, previouslyChecked && translate("previousReportCheck")].filter(Boolean).join(" · ");
+  };
+  updateTitle();
+  select.addEventListener("change", () => {
+    updateTitle();
+    onChange(select.value);
+  });
   return select;
 }
 
@@ -269,18 +308,18 @@ async function startChecklist(access, user, reportOptions, serial) {
   const templates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
   const saved = savedSnap.exists() ? savedSnap.data() || {} : {};
   const personal = personalSnap.exists() ? personalSnap.data() || {} : {};
-  const items = structuredClone(personal.items || {});
-  for (const [key, fields] of Object.entries(saved.items || {})) items[key] = { ...items[key], ...fields };
+  const coursesBySemester = {
+    sem1: buildTeacherCourses(curriculum, templates, assignedTeacher, "sem1", access.isAdmin),
+    sem2: buildTeacherCourses(curriculum, templates, assignedTeacher, "sem2", access.isAdmin),
+  };
   const state = {
     semester: "sem1",
+    section: "neis",
     scope: "all",
     grade: "all",
     query: "",
-    items,
-    courses: {
-      sem1: buildTeacherCourses(curriculum, templates, assignedTeacher, "sem1", access.isAdmin),
-      sem2: buildTeacherCourses(curriculum, templates, assignedTeacher, "sem2", access.isAdmin),
-    },
+    items: readChecklistItems(Object.values(coursesBySemester).flat(), personal.items, saved.items),
+    courses: coursesBySemester,
     saveTimer: null,
     pendingChanges: {},
   };
@@ -297,9 +336,16 @@ async function startChecklist(access, user, reportOptions, serial) {
   const setSaveStatus = (label, type) => {
     saveStatus = [label, type];
     renderSaveStatus();
+    byId("checklistSections").setAttribute("aria-label", translate("checklistReportSections"));
+    document.querySelectorAll("[data-checklist-section]").forEach(button => {
+      const active = button.dataset.checklistSection === state.section;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
   };
   const save = (course, key, value) => {
     if (!course.editable) return;
+    state.items[course.key] = { ...state.items[course.key], [key]: value };
     state.pendingChanges[course.key] = { ...state.pendingChanges[course.key], [key]: value };
     clearTimeout(state.saveTimer);
     state.saveTimer = setTimeout(async () => {
@@ -351,6 +397,8 @@ async function startChecklist(access, user, reportOptions, serial) {
       button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active));
     });
     const container = byId("checklistCourses");
+    container.dataset.section = state.section;
+    const reportSection = CHECKLIST_REPORT_SECTIONS.find(([section]) => section === state.section);
     const courses = state.courses[state.semester].filter(course => {
       if (state.scope === "mine" && !course.isOwner) return false;
       if (state.grade !== "all" && course.grade !== state.grade) return false;
@@ -369,19 +417,23 @@ async function startChecklist(access, user, reportOptions, serial) {
       const cell = document.createElement("span"); cell.textContent = title; cell.className = className; parent.append(cell);
     };
     headerText(header, translate("checklistCourse"));
-    for (const [section, korean, englishTitle, fields] of CHECKLIST_REPORT_SECTIONS) {
+    if (reportSection) {
+      const [section, korean, englishTitle, fields] = reportSection;
       const group = document.createElement("div");
       group.className = `compact-reporting-header report-${section}`;
       headerText(group, english ? englishTitle : korean, "compact-section-title");
       for (const [, title, , englishField] of fields) headerText(group, english ? englishField : title);
       header.append(group);
+    } else {
+      headerText(header, translate("checklistFolder"));
+      headerText(header, translate("syllabus"));
     }
-    for (const key of ["checklistFolder", "syllabus", "checklistConfirm"]) headerText(header, translate(key));
+    headerText(header, translate("checklistConfirm"));
     container.append(header);
     courses.forEach(course => {
       const fieldIdBase = course.key.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const item = checklistItemForCourse(course, state.items[course.key]);
-      state.items[course.key] = item;
+      const stored = state.items[course.key];
+      const item = checklistItemForCourse(course, stored);
       const card = document.createElement("article");
       card.className = "checklist-compact-row";
       card.classList.toggle("complete", !!item.confirmed);
@@ -419,19 +471,25 @@ async function startChecklist(access, user, reportOptions, serial) {
         label.append(input, document.createTextNode(translate(key))); checks.append(label);
       }
 
-      const reporting = CHECKLIST_REPORT_SECTIONS.map(([section, korean, englishTitle, fields]) => {
+      const content = [folder, checks];
+      if (reportSection) {
+        const [section, korean, englishTitle, fields] = reportSection;
         const group = document.createElement("div"); group.className = `compact-reporting-cell report-${section}`;
         headerText(group, english ? englishTitle : korean, "compact-section-title compact-row-section");
         for (const [key, koreanField, , englishField] of fields) {
           const title = english ? englishField : koreanField;
           const values = ["", ...reportOptions[key]];
           const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
-          const select = createValueSelect({ id:`${key}-${fieldIdBase}`, name:`${key}_${fieldIdBase}`, value:normalizeReportValue(item[key]), values, disabled:!course.editable, onChange:value=>{ item[key]=value; save(course, key, value); } });
+          const select = createValueSelect({
+            id: `${key}-${fieldIdBase}`, name: `${key}_${fieldIdBase}`, value: normalizeReportValue(item[key]),
+            values, disabled: !course.editable, previouslyChecked: stored?.[key] === true,
+            onChange: value => { item[key] = value; save(course, key, value); },
+          });
           select.setAttribute("aria-label", `${course.nameKo} ${english ? englishTitle : korean} ${title}`);
           label.append(caption, select); group.append(label);
         }
-        return group;
-      });
+        content.splice(0, content.length, group);
+      }
 
       const confirm = document.createElement("label"); confirm.className = "compact-confirm-cell";
       const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed; confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`; confirmInput.disabled = !course.editable;
@@ -439,13 +497,17 @@ async function startChecklist(access, user, reportOptions, serial) {
       const confirmLabel = document.createElement("span"); confirmLabel.textContent = translate("checklistConfirm");
       confirmInput.setAttribute("aria-label", `${course.nameKo} ${confirmLabel.textContent}`);
       confirm.append(confirmInput, confirmLabel);
-      card.append(courseCell, ...reporting, folder, checks, confirm); container.append(card);
+      card.append(courseCell, ...content, confirm); container.append(card);
     });
     updateProgress(courses);
   };
 
   document.querySelectorAll(".semester-tab").forEach(button => button.addEventListener("click", () => {
     state.semester = button.dataset.semester; render();
+  }));
+  document.querySelectorAll("[data-checklist-section]").forEach(button => button.addEventListener("click", () => {
+    state.section = button.dataset.checklistSection;
+    render();
   }));
   byId("courseScopeFilter")?.addEventListener("change", event => { state.scope = event.target.value; render(); });
   byId("courseGradeFilter")?.addEventListener("change", event => { state.grade = event.target.value; render(); });

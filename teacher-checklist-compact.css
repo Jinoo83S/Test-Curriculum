@@ -64,40 +64,45 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-shell .checklist-search,
 .checklist-shell .checklist-filter { height: 28px; }
 
+.checklist-sections { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
+.checklist-sections button { min-height: 30px; }
+.checklist-sections button.active { color: #fff; background: #235bb8; border-color: #235bb8; }
 .checklist-course-list {
-  --report-gap: 4px;
-  --required-width: 13rem;
-  --checklist-table-width: 108rem;
+  --report-gap: 6px;
   display: block;
   overflow: auto;
-  max-height: max(20rem, calc(100dvh - 166px));
+  max-height: max(20rem, calc(100dvh - 204px));
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
 }
-:lang(en) .checklist-course-list { --required-width: 18rem; --checklist-table-width: 113rem; }
-.report-neis { --report-columns: 4.5rem 5.5rem 5rem 3.5rem 3.5rem 4.4rem 6.5rem 3.5rem 3.7rem; }
-.report-transcript { --report-columns: 4.5rem 4rem 4.7rem; }
-.report-assessment { --report-columns: 4.8rem 5.3rem; }
+.report-neis { --report-columns: 1.1fr 1.45fr 1.4fr .75fr .75fr 1.05fr 1.7fr .85fr .85fr; }
+.report-transcript { --report-columns: repeat(3, minmax(0, 1fr)); }
+.report-assessment { --report-columns: repeat(2, minmax(0, 1fr)); }
 .checklist-compact-header,
 .checklist-compact-row {
   display: grid;
-  grid-template-columns: minmax(13rem, 1fr) max-content max-content max-content 8rem var(--required-width) 3rem;
-  min-width: var(--checklist-table-width);
-  gap: 8px;
+  grid-template-columns: minmax(14rem, 1.25fr) minmax(0, 4fr) 4.5rem;
+  gap: 12px;
   align-items: center;
   border-left: 3px solid transparent;
   padding-inline: 8px;
+}
+.checklist-course-list[data-section="basic"] :is(.checklist-compact-header, .checklist-compact-row) {
+  grid-template-columns: minmax(14rem, 1.4fr) minmax(11rem, 1fr) minmax(19rem, 1.2fr) 4.5rem;
+}
+.checklist-course-list:is([data-section="transcript"], [data-section="assessment"]) :is(.checklist-compact-header, .checklist-compact-row) {
+  grid-template-columns: minmax(14rem, 1.3fr) minmax(0, 2fr) 4.5rem;
 }
 .checklist-compact-header {
   position: sticky;
   top: 0;
   z-index: 7;
-  padding-block: 5px;
+  padding-block: 7px;
   border-bottom: 1px solid #cbd8e8;
   background: #eaf1f9;
   color: #294b70;
-  font-size: .75rem;
+  font-size: .8rem;
   font-weight: 800;
 }
 .checklist-compact-header > span:last-child,
@@ -106,9 +111,9 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   grid-column: 1 / -1; padding: 3px 5px; border-radius: 4px;
   background: #dee9f6; color: #294b70; font-size: .73rem; font-weight: 800;
 }
-.compact-reporting-header > span { line-height: 1.15; overflow-wrap: anywhere; }
+.compact-reporting-header > span { line-height: 1.3; min-width: 0; hyphens: auto; }
 .checklist-compact-row {
-  padding-block: 4px;
+  padding-block: 5px;
   border-bottom: 1px solid #e4ebf3;
   border-left-color: #94a3b8;
   background: #fff;
@@ -128,7 +133,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 
 .compact-folder-cell {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px;
   align-items: center;
 }
@@ -136,18 +141,19 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .compact-reporting-cell select {
   width: 100%;
   min-width: 0;
-  height: 27px;
+  height: 30px;
   border: 1px solid #cbd5e1;
   border-radius: 5px;
   padding: 0 5px;
   background: #fff;
   color: #172033;
-  font-size: .75rem;
+  font-size: .82rem;
 }
 .compact-folder-open {
   display: grid;
   place-items: center;
-  height: 27px;
+  height: 30px;
+  padding-inline: 7px;
   border: 1px solid #b8c9dc;
   border-radius: 5px;
   color: var(--blue);
@@ -156,13 +162,13 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   text-decoration: none;
 }
 .compact-folder-open.disabled { opacity: .35; pointer-events: none; }
-.compact-required-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 6px; }
+.compact-required-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
 .compact-check {
   display: flex;
   align-items: center;
   gap: 4px;
   color: #34475f;
-  font-size: .72rem;
+  font-size: .8rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
 }
@@ -195,17 +201,16 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 }
 .compact-confirm-cell input { width: 16px; height: 16px; accent-color: #16a34a; }
 
-@media (min-width: 75rem) {
+@media (min-width: 70rem) {
   .compact-reporting-cell label > span,
   .compact-row-section,
   .compact-confirm-cell > span { display: none; }
 }
-@media (max-width: 74.999rem) {
+@media (max-width: 69.999rem) {
   .checklist-compact-header { display: none; }
-  .checklist-compact-row { min-width: 0; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(10rem, var(--required-width)) auto; }
-  .compact-folder-cell { grid-column: 2; grid-row: 1; }
-  .compact-required-cell { grid-column: 3; grid-row: 1; }
-  .compact-confirm-cell { grid-column: 4; grid-row: 1; }
+  .checklist-course-list[data-section] .checklist-compact-row { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
+  .compact-confirm-cell { grid-column: 2; grid-row: 1; }
+  .compact-folder-cell, .compact-required-cell { grid-column: 1 / -1; }
   .compact-reporting-cell { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); }
   .compact-required-cell .compact-section-title { flex-basis: 100%; }
 }
@@ -213,10 +218,6 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   .checklist-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .checklist-summary { width: auto; }
   .checklist-course-list { max-height: none; overflow: visible; }
-  .checklist-compact-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .compact-confirm-cell { grid-column: 2; grid-row: 1; }
-  .compact-folder-cell, .compact-required-cell { grid-column: 1 / -1; }
-  .compact-folder-cell, .compact-required-cell { grid-row: auto; }
   .compact-required-cell { display: flex; flex-wrap: wrap; gap: 8px; }
   .compact-reporting-cell { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
