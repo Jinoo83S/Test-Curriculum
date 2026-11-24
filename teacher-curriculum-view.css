@@ -2,10 +2,10 @@
 body[data-portal-page="menu"] > .portal-shell {
   width: calc(100% - clamp(20px, 3vw, 48px));
 }
-.faculty-page-return { margin-bottom: 8px; }
-.faculty-back-link { gap: 6px; min-height: 30px; color: #204976; }
+.faculty-header-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.faculty-back-link { gap: 5px; min-height: 26px; color: #204976; white-space: nowrap; }
 .faculty-back-link > [aria-hidden="true"] { font-size: 1rem; line-height: 1; }
-.faculty-back-link:focus-visible { outline: 2px solid #285b99; outline-offset: 2px; }
+.faculty-back-link:focus-visible { outline: 2px solid #b9d8ff; outline-offset: 2px; }
 .faculty-view-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 10px; margin-bottom: 8px; }
 .faculty-view-heading h1 { margin: 0; font-size: 1.25rem; color: #173456; }
 .faculty-view-heading span { color: #526581; font-size: .82rem; }
@@ -19,6 +19,7 @@ body[data-portal-page="menu"] > .portal-shell {
 .faculty-curriculum-table th, .faculty-curriculum-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid #e2e9f1; }
 .faculty-curriculum-table thead th { position: sticky; top: 0; z-index: 1; background: #eaf0f7; color: #173456; white-space: nowrap; }
 .faculty-curriculum-table td small { display: block; color: #526581; }
+.faculty-teacher-group .faculty-course-cell small { display: inline; }
 .faculty-curriculum-table tbody tr:nth-child(even) td { background: #f8fafc; }
 .faculty-teacher-group th[scope="rowgroup"] { border-top: 2px solid #9fb2c8; border-bottom-color: #c4d1e0; background: #edf3fa; font-size: .92rem; }
 .faculty-teacher-group th strong, .faculty-teacher-group th span { margin-inline-end: 8px; }
@@ -26,8 +27,7 @@ body[data-portal-page="menu"] > .portal-shell {
 .faculty-teacher-group.own th[scope="rowgroup"] { border-top-color: #6999cf; background: #d9eaff; }
 .faculty-curriculum-table .faculty-teacher-group.own td { background: #f0f6ff; }
 .faculty-view-empty { color: #526581; padding: 14px 0; }
-.faculty-workload-badge { display: inline-block; margin-inline-start: 8px; color: #28476a; font-size: .8rem; }
-.faculty-workload-overall {
+.faculty-workload-badge {
   display: inline-block; margin-inline-start: 8px; padding: 2px 7px; border-radius: 5px;
   background: #dceafd; color: #183e66; font-size: .84rem;
 }

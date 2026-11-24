@@ -5,17 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>HIS 담당 과목 확인</title>
   <link rel="stylesheet" href="teacher-portal.css?v=r425" />
-  <link rel="stylesheet" href="teacher-curriculum-view.css?v=r435" />
-  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r435" />
+  <link rel="stylesheet" href="teacher-curriculum-view.css?v=r436" />
+  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r436" />
 </head>
 <body data-portal-page="curriculum-checklist">
   <header class="portal-header">
-    <a class="portal-brand" href="index.html">
-      <span class="portal-brand-mark">HIS</span>
-      <span><strong>담당 과목 확인</strong><small>교직원 업무 메뉴</small></span>
-    </a>
+    <div class="faculty-header-title">
+      <a class="portal-brand" href="index.html">
+        <span class="portal-brand-mark">HIS</span>
+        <strong data-i18n="courseChecklist">담당 과목 확인</strong>
+      </a>
+      <a class="portal-btn faculty-back-link" href="index.html">
+        <span aria-hidden="true">←</span><span data-i18n="backToWorkPage">업무 메뉴로 돌아가기</span>
+      </a>
+    </div>
     <div class="portal-header-actions">
-      <a class="portal-btn" href="index.html" data-i18n="backToWork">업무 메뉴</a>
       <a id="portalCurriculumShortcut" class="portal-btn" href="curriculum.html" hidden>커리큘럼 편집</a>
       <a id="portalTeacherManageShortcut" class="portal-btn" href="teacher-management.html" hidden data-i18n="settings">설정</a>
       <button id="portalLanguageBtn" class="portal-btn" type="button">English</button>
@@ -29,11 +33,6 @@
   </header>
 
   <main class="portal-shell checklist-shell">
-    <div class="faculty-page-return">
-      <a class="portal-btn faculty-back-link" href="index.html">
-        <span aria-hidden="true">←</span><span data-i18n="backToWorkPage">업무 메뉴로 돌아가기</span>
-      </a>
-    </div>
     <section id="portalLoading" class="portal-state-card">
       <div class="portal-spinner" aria-hidden="true"></div>
       <h2>담당 과목을 불러오고 있습니다</h2>
@@ -75,6 +74,6 @@
       <div id="checklistCourses" class="checklist-course-list"></div>
     </section>
   </main>
-  <script type="module" src="./js/teacher-portal.js?v=r435"></script>
+  <script type="module" src="./js/teacher-portal.js?v=r436"></script>
 </body>
 </html>

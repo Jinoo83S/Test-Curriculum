@@ -6,7 +6,7 @@ import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-r
 import { appState } from "./state.js?v=r426";
 import { getTemplateById, getSemesterTemplateData } from "./templates.js?v=r425";
 import { getClassCount, getRosterMeta } from "./rosters.js?v=r426";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable, teacherSemesterTotal } from "./curriculum-read-view.js?v=r435";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable, teacherSemesterTotal } from "./curriculum-read-view.js?v=r436";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 // ── Data builder ─────────────────────────────────────────────────

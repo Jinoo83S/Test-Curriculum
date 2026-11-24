@@ -4,10 +4,11 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
 import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r435";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r435";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r436";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 const page = document.body.dataset.portalPage || "menu";
+const teachersView = page === "curriculum-view" && new URLSearchParams(location.search).get("view") === "teachers";
 const byId = id => document.getElementById(id);
 const withTimeout = (promise, milliseconds, message) => Promise.race([
   promise,
@@ -28,12 +29,12 @@ Object.assign(translations.en, { settings: "Settings", settingsDescription: "Man
 Object.assign(translations.ko, {
   facultyCurriculum: "커리큘럼 열람", facultyCurriculumDescription: "공개된 연간 커리큘럼을 학년별로 확인합니다.",
   facultyAssignments: "교사별 담당 현황", facultyAssignmentsDescription: "1·2학기 담당 과목과 시수를 나란히 확인합니다. 내 담당은 목록 위에 표시됩니다.",
-  backToWork: "업무 메뉴", backToWorkPage: "업무 메뉴로 돌아가기", readOnly: "보기 전용", facultyUnavailable: "열람할 수 없습니다",
+  backToWorkPage: "업무 메뉴로 돌아가기", readOnly: "보기 전용", facultyUnavailable: "열람할 수 없습니다",
 });
 Object.assign(translations.en, {
   facultyCurriculum: "View Curriculum", facultyCurriculumDescription: "Browse the published annual curriculum by grade.",
   facultyAssignments: "Teacher Assignments", facultyAssignmentsDescription: "Compare course assignments across both semesters. Your courses appear first.",
-  backToWork: "Faculty Menu", backToWorkPage: "Back to Faculty Menu", readOnly: "Read only", facultyUnavailable: "This page is unavailable",
+  backToWorkPage: "Back to Faculty Menu", readOnly: "Read only", facultyUnavailable: "This page is unavailable",
 });
 let portalLanguage = localStorage.getItem(LANGUAGE_KEY) === "en" ? "en" : "ko";
 
@@ -349,9 +350,12 @@ async function startChecklist(access, user) {
       card.classList.toggle("own-course", !!course.isOwner);
 
       const courseCell = document.createElement("div"); courseCell.className = "compact-course-cell";
-      const subtitle = [course.group, course.teacherNames.join(", ") || "담당 교사 미지정", course.credits ? `${course.credits}시수` : "시수 미입력"].join(" · ");
+      const subtitle = [course.nameEn !== course.nameKo ? course.nameEn : "", course.group,
+        course.teacherNames.join(", ") || "담당 교사 미지정", course.credits ? `${course.credits}시수` : "시수 미입력"]
+        .filter(Boolean).join(" · ");
       const accessBadge = course.isOwner ? "내 담당" : access.isAdmin ? "관리자" : "조회";
-      courseCell.innerHTML = `<div class="compact-course-title"><strong>${escapeHtml(course.nameKo)}</strong><div class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span class="compact-access-badge">${accessBadge}</span></div></div><small title="${escapeHtml(course.nameEn)}">${escapeHtml(course.nameEn)}</small><em title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</em>`;
+      courseCell.innerHTML = `<strong>${escapeHtml(course.nameKo)}</strong> <small>· ${escapeHtml(subtitle)}</small>
+        <span class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span class="compact-access-badge">${accessBadge}</span></span>`;
 
       const folder = document.createElement("div"); folder.className = "compact-folder-cell";
       const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "Drive 폴더 URL"; folderInput.value = item.folderUrl || "";
@@ -429,7 +433,6 @@ async function startFacultyCurriculum(access, serial) {
     showGate("portalDenied", `${ACTIVE_SCHOOL_YEAR}학년도는 비공개입니다. 상단에서 공개된 학년도를 선택해 주세요.`);
     return;
   }
-  const teachersView = new URLSearchParams(location.search).get("view") === "teachers";
   // Only administrators read the roster source. A teacher sees the aggregate
   // fields published for this year, without downloading roster documents.
   const liveWorkloadRequest = teachersView && access.isAdmin
@@ -572,6 +575,7 @@ async function handleAuth(user) {
 }
 
 setupYearSelector();
+if (teachersView) byId("facultyHeaderTitle").dataset.i18n = "facultyAssignments";
 setupLanguage();
 setupAuthButtons();
 onAuth(handleAuth);

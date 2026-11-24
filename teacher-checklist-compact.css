@@ -69,7 +69,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   --report-gap: 4px;
   display: block;
   overflow: auto;
-  max-height: max(20rem, calc(100dvh - 205px));
+  max-height: max(20rem, calc(100dvh - 166px));
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -110,25 +110,9 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .own-course .checklist-badges .compact-access-badge { background: #dbe9fb; color: #27486e; }
 
 .compact-course-cell { min-width: 0; line-height: 1.25; }
-.compact-course-title {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 2px 6px;
-}
-.compact-course-title > strong { min-width: 0; overflow-wrap: anywhere; color: var(--navy); font-size: .83rem; }
-.compact-course-cell > small,
-.compact-course-cell > em {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: .73rem;
-}
-.compact-course-cell > small { color: #50657d; }
-.compact-course-cell > small:empty { display: none; }
-.compact-course-cell > em { color: var(--muted); font-style: normal; }
-.compact-course-cell .checklist-badges { gap: 3px; }
+.compact-course-cell > strong { color: var(--navy); font-size: .83rem; overflow-wrap: anywhere; }
+.compact-course-cell > small { color: #50657d; font-size: .73rem; overflow-wrap: anywhere; }
+.compact-course-cell .checklist-badges { display: inline-flex; gap: 3px; vertical-align: middle; }
 .compact-course-cell .checklist-badges span { padding: 1px 4px; font-size: .66rem; line-height: 1.15; }
 
 .compact-folder-cell {

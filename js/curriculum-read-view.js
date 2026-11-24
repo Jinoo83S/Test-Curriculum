@@ -42,11 +42,16 @@ export function summarizeCurriculumGrades(rows, templateGroups = []) {
     byGrade.get(row.grade).push(row);
   }
   return new Map([...byGrade].map(([grade, gradeRows]) => {
-    const lessons = { courses: 0, hours: 0 };
+    const lessons = { courses: 0, hours: 0, activityHours: 0 };
     const buckets = new Map();
     for (const row of gradeRows) {
       const category = text(row.category);
-      const track = text(row.track).replace(/\s+/g, "");
+      const track = key(row.track).replace(/\s+/g, "");
+      if (category === "창체") {
+        lessons.courses++;
+        lessons.activityHours += row.boardHours;
+        continue;
+      }
       if (category !== "교과" || !track || (track === "공통" && !row.calcGroupId)) {
         lessons.courses++;
         lessons.hours += row.boardHours;
@@ -63,6 +68,7 @@ export function summarizeCurriculumGrades(rows, templateGroups = []) {
       lessons.hours += text(configured) ? parseCreditValue(configured) : Math.max(...bucket.map(row => row.boardHours), 0);
     }
     lessons.hours = Number(lessons.hours.toFixed(8));
+    lessons.activityHours = Number(lessons.activityHours.toFixed(8));
     return [grade, lessons];
   }));
 }
@@ -154,20 +160,12 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
     const summary = en ? `${group.rows.length} courses` : `${group.rows.length}과목`;
     header.append(small(summary));
     if (workload) {
-      const semesters = ["sem1", "sem2"].map(term => teacherSemesterSummary(group, term));
-      const hasHours = semesters.some(item => item.total !== null);
-      const totalHours = hasHours ? Number(semesters.reduce((sum, item) => sum + (item.total ?? 0), 0).toFixed(8)) : "—";
-      const missing = semesters.reduce((sum, item) => sum + item.missing, 0);
-      const status = !hasHours ? (en ? " (unset)" : " (미설정)") :
-        missing ? (en ? " (partial)" : " (확인분)") : "";
-      const overall = create("strong", `${en ? "Annual teaching hours" : "교사 전체 시수"} ${totalHours}${status}`);
-      overall.className = "faculty-workload-overall";
-      header.append(overall);
-      const totals = semesters.map(({ total, missing }, index) => {
+      const totals = ["sem1", "sem2"].map((term, index) => {
+        const { total, missing } = teacherSemesterSummary(group, term);
         const status = missing ? (en ? ` (${missing} unset)` : ` (미설정 ${missing}과목)`) : "";
         return `${en ? `S${index + 1}` : `${index + 1}학기`} ${total ?? "—"}${status}`;
       });
-      const badge = create("span", totals.join(" / "));
+      const badge = create("span", `${en ? "Teaching hours" : "교사 시수"} · ${totals.join(" / ")}`);
       badge.className = "faculty-workload-badge";
       header.append(badge);
     }
@@ -195,7 +193,9 @@ function appendCourse(cell, subject, includeTeacher = false) {
   cell.className = "faculty-course-cell";
   if (["Korean", "English", "Both"].includes(subject?.language)) cell.dataset.language = subject.language;
   cell.append(create("strong", subject?.name || "—"));
-  if (subject?.english && subject.english !== subject.name) cell.append(small(subject.english));
+  if (subject?.english && subject.english !== subject.name) {
+    cell.append(small(includeTeacher ? subject.english : ` · ${subject.english}`));
+  }
   if (includeTeacher && subject?.teachers.length) {
     const teacher = small(subject.teachers.map(item => item.name).join(", "));
     teacher.className = "faculty-course-teacher";
@@ -220,9 +220,11 @@ export function renderAnnualCurriculumTable(rows, language = "ko", grades = [...
   const subhead = table.tHead.insertRow();
   for (const grade of grades) {
     const label = create("th");
-    const { courses, hours } = summaries.get(grade) || { courses: 0, hours: 0 };
+    const { courses = 0, hours = 0, activityHours = 0 } = summaries.get(grade) || {};
     label.append(create("strong", en ? `Grade ${parseInt(grade, 10)}` : grade));
-    const totals = create("span", en ? `${courses} courses · ${hours} hours` : `${courses}과목 · 총 ${hours}시수`);
+    const totals = create("span", en
+      ? `${courses} courses · ${hours} class hrs · ${activityHours} activity hrs`
+      : `${courses}과목 · 교과 ${hours}시수 · 창체 ${activityHours}시간`);
     totals.className = "faculty-grade-totals";
     label.append(totals);
     label.colSpan = 5;
