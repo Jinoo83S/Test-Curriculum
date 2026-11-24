@@ -2,7 +2,7 @@ import { login, logout, onAuth } from "./auth.js?v=r424";
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS, getSchoolYearRefs } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=2026-07-15-room-availability-separation-r355";
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
+import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
 
 const page = document.body.dataset.portalPage || "menu";
 const byId = id => document.getElementById(id);
@@ -209,9 +209,23 @@ function safeUrl(value) {
 
 async function startChecklist(access, user) {
   const refs = getSchoolYearRefs(ACTIVE_SCHOOL_YEAR).domains;
-  const [curriculumSnap, templatesSnap, savedSnap, personalSnap] = await withTimeout(Promise.all([
+  // The fixed portal admin may also be listed as a teacher in this school year.
+  const rosterTeacher = access.teacher.id === "teacher-portal-admin"
+    ? withTimeout(getDoc(refs.teachers), 4500, "교사목록 조회 시간 초과").then(snapshot => {
+      const teachers = snapshot.data()?.teachers;
+      return Array.isArray(teachers)
+        ? teachers.find(teacher => normalizePortalEmail(teacher?.email) === access.email)
+        : null;
+    }).catch(error => {
+      console.warn("[teacher checklist] admin teacher lookup failed", error);
+      return null;
+    })
+    : Promise.resolve(null);
+  const [curriculumSnap, templatesSnap, savedSnap, personalSnap, listedTeacher] = await withTimeout(Promise.all([
     getDoc(refs.curriculum), getDoc(refs.templates), getDoc(teacherChecklistSharedDocRef()), getDoc(teacherChecklistDocRef(user)),
+    rosterTeacher,
   ]), 12000, "Firebase 자료를 불러오는 시간이 초과되었습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.");
+  const assignedTeacher = listedTeacher || access.teacher;
   const curriculum = curriculumSnap.exists() ? curriculumSnap.data() || {} : {};
   const templates = templatesSnap.exists() ? templatesSnap.data() || {} : {};
   const saved = savedSnap.exists() ? savedSnap.data() || {} : {};
@@ -225,8 +239,8 @@ async function startChecklist(access, user) {
     query: "",
     items,
     courses: {
-      sem1: buildTeacherCourses(curriculum, templates, access.teacher, "sem1", access.isAdmin),
-      sem2: buildTeacherCourses(curriculum, templates, access.teacher, "sem2", access.isAdmin),
+      sem1: buildTeacherCourses(curriculum, templates, assignedTeacher, "sem1", access.isAdmin),
+      sem2: buildTeacherCourses(curriculum, templates, assignedTeacher, "sem2", access.isAdmin),
     },
     saveTimer: null,
     pendingChanges: {},
@@ -309,11 +323,15 @@ async function startChecklist(access, user) {
       const item = checklistItemForCourse(course, state.items[course.key]);
       state.items[course.key] = item;
       const card = document.createElement("article");
-      card.className = `checklist-compact-row${item.confirmed ? " complete" : ""}${course.editable ? " editable" : " readonly"}`;
+      card.className = "checklist-compact-row";
+      card.classList.toggle("complete", !!item.confirmed);
+      card.classList.toggle("readonly", !course.editable);
+      card.classList.toggle("own-course", !!course.isOwner);
 
       const courseCell = document.createElement("div"); courseCell.className = "compact-course-cell";
       const subtitle = [course.group, course.teacherNames.join(", ") || "담당 교사 미지정", course.credits ? `${course.credits}시수` : "시수 미입력"].join(" · ");
-      courseCell.innerHTML = `<div class="compact-course-title"><strong>${escapeHtml(course.nameKo)}</strong><div class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span>${course.editable ? (access.isAdmin ? "관리자" : "내 담당") : "조회"}</span></div></div><small title="${escapeHtml(course.nameEn)}">${escapeHtml(course.nameEn)}</small><em title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</em>`;
+      const accessBadge = course.isOwner ? "내 담당" : access.isAdmin ? "관리자" : "조회";
+      courseCell.innerHTML = `<div class="compact-course-title"><strong>${escapeHtml(course.nameKo)}</strong><div class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span class="compact-access-badge">${accessBadge}</span></div></div><small title="${escapeHtml(course.nameEn)}">${escapeHtml(course.nameEn)}</small><em title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</em>`;
 
       const folder = document.createElement("div"); folder.className = "compact-folder-cell";
       const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = "Drive 폴더 URL"; folderInput.value = item.folderUrl || "";

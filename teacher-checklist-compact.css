@@ -104,7 +104,10 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 }
 .checklist-compact-row:last-child { border-bottom: 0; }
 .checklist-compact-row.readonly { background: #fafbfd; }
+.checklist-compact-row.own-course { border-left-color: #a0bde4; background: #eef5ff; }
 .checklist-compact-row.complete { border-left-color: #16a34a; background: #f8fff9; }
+.checklist-compact-row.own-course.complete { background: #eef5ff; }
+.own-course .checklist-badges .compact-access-badge { background: #dbe9fb; color: #27486e; }
 
 .compact-course-cell { min-width: 0; line-height: 1.25; }
 .compact-course-title {
