@@ -227,10 +227,6 @@ function summarizeCategoryRows(category, rows) {
 
 function getCategorySummary(grade, category) { return summarizeCategoryRows(category, (curriculum().gradeBoards[grade] || []).filter(r => r.category === category)); }
 
-function getGradeSummary(grade) {
-  return opts().category.reduce((acc, cat) => { const s = getCategorySummary(grade, cat); acc.totalCourses += s.totalCourses; acc.totalCredits += s.totalCredits; return acc; }, { totalCourses:0, totalCredits:0 });
-}
-
 // ── Column Resize ──────────────────────────────────────────────────
 export function initColResize(col, headerRow, grade) {
   const widths = loadColWidths(grade);
@@ -755,9 +751,9 @@ export function buildTabBoard(visibleGrades, onUpdate) {
   const columns = [];
   visibleGrades.forEach(grade => {
     const col = document.createElement("section"); col.className = "grade-column";
-    const gs = getGradeSummary(grade);
+    const gs = getCategorySummary(grade, "교과");
     const titleEl = document.createElement("div"); titleEl.className = "grade-title";
-    titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">Total #Courses ${gs.totalCourses}</span><span class="grade-title-badge">Total #Credits ${gs.totalCredits}</span></div></div>`;
+    titleEl.innerHTML = `<div class="grade-title-top"><span class="grade-title-name">${grade}</span><div class="grade-title-totals"><span class="grade-title-badge">교과 ${gs.totalCourses}과목</span><span class="grade-title-badge">${gs.totalCredits}이수단위</span></div></div>`;
     col.appendChild(titleEl);
     const hr = createGradeHeader(); col.appendChild(hr);
     columns.push({ grade, col, hr });

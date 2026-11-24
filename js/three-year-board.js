@@ -681,19 +681,12 @@ function renderThreeYearSidebar(grades, sources) {
 function column(grade, source) {
   const year = yearForGrade(grade);
   const col = el("section", "grade-column");
-  const categories = [...new Set([...(source?.curriculum?.options?.category || DEFAULT_OPTIONS.category),
-    ...(source?.curriculum?.gradeBoards?.[grade] || []).map(row => row.category).filter(Boolean)])];
-  const total = categories.reduce((result, category) => {
-    const categoryTotal = summary(source, grade, category);
-    result.totalCourses += categoryTotal.totalCourses;
-    result.totalCredits += categoryTotal.totalCredits;
-    return result;
-  }, { totalCourses: 0, totalCredits: 0 });
+  const total = summary(source, grade, "교과");
   const title = el("div", "grade-title");
   const top = el("div", "grade-title-top");
   const totals = el("div", "grade-title-totals");
-  totals.append(el("span", "grade-title-badge", "Total #Courses " + total.totalCourses),
-    el("span", "grade-title-badge", "Total #Credits " + total.totalCredits));
+  totals.append(el("span", "grade-title-badge", `교과 ${total.totalCourses}과목`),
+    el("span", "grade-title-badge", `${total.totalCredits}이수단위`));
   top.append(el("span", "grade-title-name", grade + " · " + year + "학년도"), totals);
   title.append(top); col.append(title, header());
   return col;
