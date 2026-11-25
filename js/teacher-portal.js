@@ -276,6 +276,15 @@ function createValueSelect({ id, name, value, values, disabled, previouslyChecke
 }
 
 const syllabusFields = ["safetyEducation", "safetySexEducation", "absentStudentPolicy"];
+const compactChecklistLabels = {
+  reportCurricularCategory: ["편제명", "Category"],
+  reportStandardDeviation: ["표준편차 / 분포비율", "SD / Level Dist."],
+  transcriptGpa: ["평점 평균", "GPA"],
+  writtenAssessmentCount: ["지필평가 횟수", "Written Exams"],
+  singleAssessmentAllowed: ["1회 평가 허용", "Single Assessment"],
+  safetySexEducation: ["성교육", "Sex Education"],
+  absentStudentPolicy: ["결석 정책", "Absence Policy"],
+};
 
 function createChecklistTable(english) {
   const table = document.createElement("table");
@@ -319,7 +328,12 @@ function createChecklistTable(english) {
       groupLabel.textContent = title;
       th.replaceChildren(groupLabel);
       labels.forEach((label, index) => {
-        const leaf = headerCell(headings, label, `${className}${index === 0 ? " sheet-group-start" : ""}`);
+        const shortLabel = compactChecklistLabels[keys[index]]?.[english ? 1 : 0] || label;
+        const leaf = headerCell(headings, shortLabel, `${className}${index === 0 ? " sheet-group-start" : ""}`);
+        if (shortLabel !== label) {
+          leaf.title = label;
+          leaf.setAttribute("aria-label", label);
+        }
         leaf.scope = "col";
       });
     } else {

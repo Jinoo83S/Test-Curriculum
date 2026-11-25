@@ -65,43 +65,45 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-shell .checklist-filter { height: 28px; }
 
 .checklist-course-list {
-  --course-width: 16rem;
-  --confirm-width: 4rem;
+  --course-width: 13.5rem;
+  --confirm-width: 3rem;
+  --course-pin-offset: max(var(--course-width), 14.95cqw);
   max-height: max(18rem, calc(100dvh - 166px));
+  container-type: inline-size;
   overflow: auto;
-  scroll-padding-inline: var(--course-width) var(--confirm-width);
+  scroll-padding-inline: var(--course-pin-offset) max(var(--confirm-width), 3.33cqw);
   border: 1px solid #c7d5e4;
   border-radius: 8px;
   background: #fff;
 }
 .checklist-course-list:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 .checklist-sheet {
-  width: max(100%, 122rem);
+  width: 100%;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   color: #24364d;
   font-size: .83rem;
 }
-.checklist-sheet col { width: 4.7rem; }
+.checklist-sheet col { width: 3.05rem; }
 .checklist-sheet .sheet-col-course { width: var(--course-width); }
 .checklist-sheet .sheet-col-confirmed { width: var(--confirm-width); }
 .checklist-sheet .sheet-col-reportCourseGroup,
 .checklist-sheet .sheet-col-reportAchievementLevels,
-.checklist-sheet .sheet-col-transcriptAchievementLevels { width: 5.7rem; }
+.checklist-sheet .sheet-col-transcriptAchievementLevels { width: 4.25rem; }
 .checklist-sheet .sheet-col-reportCurricularCategory,
 .checklist-sheet .sheet-col-reportCategory,
-.checklist-sheet .sheet-col-reportStandardDeviation { width: 7.5rem; }
-.checklist-sheet .sheet-col-writtenAssessmentCount { width: 6.5rem; }
-.checklist-sheet .sheet-col-singleAssessmentAllowed { width: 8rem; }
-.checklist-sheet .sheet-col-transcriptGpa,
+.checklist-sheet .sheet-col-reportStandardDeviation { width: 4.9rem; }
+.checklist-sheet .sheet-col-writtenAssessmentCount { width: 4.5rem; }
+.checklist-sheet .sheet-col-singleAssessmentAllowed { width: 5.25rem; }
+.checklist-sheet .sheet-col-transcriptGpa { width: 4rem; }
 .checklist-sheet .sheet-col-safetyEducation,
 .checklist-sheet .sheet-col-safetySexEducation,
-.checklist-sheet .sheet-col-absentStudentPolicy { width: 5.5rem; }
-.checklist-sheet .sheet-col-folder { width: 10rem; }
+.checklist-sheet .sheet-col-absentStudentPolicy { width: 3.3rem; }
+.checklist-sheet .sheet-col-folder { width: 7.5rem; }
 
 .checklist-sheet :is(th, td) {
-  padding: 4px 6px;
+  padding: 3px 4px;
   border-inline-end: 1px solid #e2e9f1;
   border-bottom: 1px solid #dce5ef;
 }
@@ -119,20 +121,20 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   text-align: center;
   line-height: 1.2;
   word-break: keep-all;
-  overflow-wrap: normal;
+  overflow-wrap: anywhere;
 }
 .checklist-sheet thead tr:first-child th {
-  padding-block: 7px;
+  padding-block: 5px;
   border-bottom-color: #becfe0;
   font-weight: 800;
 }
 .checklist-sheet thead th[scope="colgroup"] { text-align: start; padding-inline-start: 10px; }
 .checklist-sheet thead th[scope="colgroup"] > span {
   position: sticky;
-  left: calc(var(--course-width) + 10px);
+  left: calc(var(--course-pin-offset) + 10px);
   display: inline-block;
 }
-.checklist-sheet thead tr + tr th { padding-block: 6px; font-size: .78rem; font-weight: 650; }
+.checklist-sheet thead tr + tr th { padding-block: 4px; font-size: .74rem; font-weight: 650; }
 .checklist-sheet thead .sheet-neis { background: #e4eef9; }
 .checklist-sheet thead .sheet-transcript { background: #dfefe9; }
 .checklist-sheet thead .sheet-assessment { background: #f6ead8; }
@@ -170,17 +172,17 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-sheet tbody .complete .sheet-course { border-inline-start-color: #379760; }
 .sheet-course > strong { color: #173456; overflow-wrap: anywhere; }
 .sheet-course > small { color: #50657d; font-size: .75rem; overflow-wrap: anywhere; }
-.sheet-course .checklist-badges { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+.sheet-course .checklist-badges { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 1px; }
 .sheet-course .checklist-badges span { padding: 1px 4px; font-size: .67rem; line-height: 1.15; }
 
-.compact-folder-cell { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.compact-folder-cell { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px; align-items: center; }
 .checklist-sheet :is(select, input[type="url"]) {
   width: 100%;
   min-width: 0;
-  height: 29px;
+  height: 25px;
   border: 1px solid #bfcddc;
   border-radius: 4px;
-  padding-inline: 5px;
+  padding-inline: 3px;
   background: #fff;
   color: #172c45;
   font: inherit;
@@ -188,7 +190,7 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-sheet :is(select, input[type="url"]):disabled { background: #f2f5f8; color: #4b5d72; }
 .checklist-sheet :is(input, select, a):focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
 .compact-folder-open {
-  display: grid; place-items: center; height: 29px; padding-inline: 6px;
+  display: grid; place-items: center; height: 25px; padding-inline: 4px;
   border: 1px solid #b8c9dc; border-radius: 4px; background: #fff;
   color: var(--blue); font-size: .75rem; font-weight: 750; text-decoration: none;
 }
@@ -200,6 +202,6 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 @media (max-width: 42rem) {
   .checklist-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .checklist-summary { width: auto; }
-  .checklist-course-list { --course-width: 11rem; scroll-padding-inline-end: 0; }
+  .checklist-course-list { --course-width: 9.5rem; scroll-padding-inline-end: 0; }
   .checklist-sheet .sheet-confirm { position: static; box-shadow: none; }
 }
