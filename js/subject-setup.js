@@ -33,6 +33,7 @@ function renderSetupLevelTabs(onChange) {
 import { makeBtn, gradeDisplay, sectionLabel } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
 import { appState } from "./state.js?v=r426";
+import { openJointLessonSettings } from "./joint-lesson-settings.js?v=r451";
 import { getTemplateById, getTemplateCardTitle, getTemplateTeacherSummary } from "./templates.js?v=r425";
 import { getRosterMeta, setRosterClassCount, setRosterTeacherLoadHours, getClassCount, getTeacherLoadHours } from "./rosters.js?v=r426";
 
@@ -84,6 +85,14 @@ export function renderSubjectSetupView(container) {
   const titleWrap = document.createElement("div"); titleWrap.className = "ss-title-wrap";
   const title = document.createElement("h2"); title.textContent = "과목 설정";
   titleWrap.appendChild(title);
+  if (canEdit()) {
+    const jointLessons = document.createElement("button");
+    jointLessons.type = "button";
+    jointLessons.className = "secondary-btn";
+    jointLessons.textContent = "합동수업 묶음 관리";
+    jointLessons.addEventListener("click", openJointLessonSettings);
+    titleWrap.appendChild(jointLessons);
+  }
   const tabs = renderSetupLevelTabs(() => renderSubjectSetupView(container));
   hdr.append(titleWrap, tabs); container.appendChild(hdr);
 

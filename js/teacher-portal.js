@@ -4,7 +4,7 @@ import { getKnownSchoolYears, setActiveSchoolYear } from "./school-year.js?v=202
 import { getDoc, setDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { normalizePortalEmail, readTeacherPortalAccess, teacherChecklistDocRef, teacherChecklistSharedDocRef } from "./teacher-portal-auth.js?v=r424";
 import { publishFacultyWorkload, readCurriculumPublication, readFacultyWorkloadFromRosters, readRegisteredPortalYears, readTeacherYearSources } from "./school-portal-settings-data.js?v=r444";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r442";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderAnnualCurriculumTable, renderTeacherAssignmentTable, summarizeCurriculumGrades } from "./curriculum-read-view.js?v=r451";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 import { CHECKLIST_REPORT_SECTIONS, REPORT_FIELDS, localizedReportValue,
@@ -632,7 +632,7 @@ async function startFacultyCurriculum(access, serial) {
     if (teachersView) {
       visible = groupTeacherAssignments(rows, null, self).filter(group =>
         (!own.checked || group.own) && (hasMatch([group.name]) || group.rows.some(row => hasMatch([
-          row.sem1?.name, row.sem1?.english, row.sem2?.name, row.sem2?.english, row.grade,
+          row.sem1?.name, row.sem1?.english, row.sem2?.name, row.sem2?.english, row.grade, ...(row.subjects || []),
         ]))));
       table = () => renderTeacherAssignmentTable(visible, { language: portalLanguage, workload: true });
     } else {

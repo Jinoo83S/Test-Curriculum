@@ -2,14 +2,16 @@ import { buildTeacherIdentityIndex, normalizeTeacherAssignment, teacherNameById 
 import { assignedTeachers } from "./teacher-year-directory.js?v=r433";
 import { getEffectiveCredit, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { getCurriculumCalculationGroup, getCurriculumSemesterTitles, summarizeAcademicCourses } from "./curriculum-academic-summary.js?v=r442";
+import { JOINT_LESSON_TERMS, indexJointLessons, jointLessonRowKey } from "./joint-lessons.js?v=r451";
 
 const text = value => String(value ?? "").trim();
 const key = value => text(value).normalize("NFKC").replace(/\s+/g, " ").toLowerCase();
 
 export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = [], workload) {
   const cards = new Map(templates.map(card => [card.id, card]));
+  const jointLessons = indexJointLessons(curriculum, cards);
   const index = buildTeacherIdentityIndex(teachers);
-  const semester = (row, term) => {
+  const semester = (row, term, rowKey) => {
     const id = row[term + "TemplateId"];
     const card = cards.get(id);
     if (!card) return null;
@@ -22,11 +24,13 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
       language: text(card.language),
       teachers: [...teachers, ...identity.names.filter(name => !matched.has(key(name))).map(name => ({ name, id: "" }))],
       ...workload?.(id, credits, term),
+      jointLesson: jointLessons[term].get(rowKey),
     };
   };
   return Object.entries(curriculum?.gradeBoards || {}).sort(([a], [b]) => parseInt(a, 10) - parseInt(b, 10))
     .flatMap(([grade, rows]) => (Array.isArray(rows) ? rows : []).flatMap(row => {
-      const sem1 = semester(row, "sem1"), sem2 = semester(row, "sem2");
+      const rowKey = jointLessonRowKey(grade, row.id);
+      const sem1 = semester(row, "sem1", rowKey), sem2 = semester(row, "sem2", rowKey);
       const calcGroupId = getCurriculumCalculationGroup([cards.get(row.sem1TemplateId), cards.get(row.sem2TemplateId)]);
       return sem1 || sem2 ? [{ grade, category: row.category, track: row.track, group: row.group,
         calcGroupId, academicGroupId: row.academicGroupId, academicGroupCredits: row.academicGroupCredits,
@@ -75,8 +79,40 @@ export function groupTeacherAssignments(rows, term, currentTeacher) {
       groups.get(groupKey).rows.push(row);
     }
   }
+  for (const group of groups.values()) group.rows = combineJointAssignments(group.rows, term);
   return [...groups.values()].sort((a, b) =>
     Number(b.own) - Number(a.own) || Number(!a.name) - Number(!b.name) || a.name.localeCompare(b.name, "ko"));
+}
+
+function combineJointAssignments(rows, selectedTerm) {
+  const jointRows = new Map();
+  const output = [];
+  for (const row of rows) {
+    const ordinary = { ...row };
+    for (const term of selectedTerm ? [selectedTerm] : JOINT_LESSON_TERMS) {
+      const subject = row[term];
+      const lesson = subject?.jointLesson;
+      if (!lesson) continue;
+      if (!jointRows.has(lesson.id)) {
+        const joint = { grade: "", category: "합동수업", credits: "", sem1: null, sem2: null, joint: true, grades: new Set(), subjects: new Set() };
+        jointRows.set(lesson.id, joint);
+        output.push(joint);
+      }
+      const joint = jointRows.get(lesson.id);
+      for (const grade of lesson.grades) joint.grades.add(grade);
+      for (const name of [subject.name, subject.english].filter(Boolean)) joint.subjects.add(name);
+      joint[term] ||= { name: lesson.name, total: lesson.hours, teacherTotal: lesson.hours };
+      if (selectedTerm) joint.subject = joint[term];
+      ordinary[term] = null;
+    }
+    if (ordinary.sem1 || ordinary.sem2) output.push(ordinary);
+  }
+  for (const joint of jointRows.values()) {
+    joint.grade = [...joint.grades].map(grade => parseInt(grade, 10)).sort((a, b) => a - b).join("·") + "학년";
+    joint.subjects = [...joint.subjects];
+    delete joint.grades;
+  }
+  return output;
 }
 
 const create = (tag, label = "") => {
@@ -145,10 +181,10 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
       header.append(badge);
     }
     body.insertRow().append(header);
-    for (const { grade, category, credits, sem1, sem2 } of group.rows) {
+    for (const { grade, category, credits, sem1, sem2, joint } of group.rows) {
       const row = body.insertRow();
       row.insertCell().textContent = grade;
-      row.insertCell().textContent = category;
+      row.insertCell().textContent = joint && en ? "Joint lesson" : category;
       appendCourse(row.insertCell(), sem1);
       appendCourse(row.insertCell(), sem2);
       row.insertCell().textContent = credits || "—";

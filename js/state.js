@@ -5,6 +5,7 @@ import { refs, db, auth, activeWorkspaceRefs, GRADE_KEYS, DEFAULT_OPTIONS, DEFAU
 import { uid, clean, uniqueOrdered, parseCreditValue } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { TIMETABLE_VALIDATOR_VERSION, validatorSafeEntryFilter, stripStaleResidualPuzzleReport, canonicalizeAutoAssignMeta } from "./timetable-validator.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
+import { normalizeJointLessons } from "./joint-lessons.js?v=r451";
 import { LOCAL_DEV_MODE, readLocalStateStore, writeLocalStateStore, clearLocalStateStore } from "./local-dev.js?v=2026-07-15-room-availability-separation-r355";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { normalizeRoomUnavailableSlots, normalizeRoomAvailabilityOrphans, migrateLegacyRoomAvailability } from "./room-availability.js?v=2026-07-15-room-availability-separation-r355";
@@ -745,7 +746,11 @@ function normalizeCurriculumDomain(raw = {}) {
     grade, (Array.isArray(plan.gradeBoards?.[grade]) ? plan.gradeBoards[grade] : [])
       .map(row => normalizeRow(row, planOptions))
   ]));
-  return { options: opts, gradeBoards, threeYear: { options: planOptions, gradeBoards: planBoards } };
+  const jointLessons = normalizeJointLessons(raw.jointLessons);
+  return {
+    options: opts, gradeBoards, threeYear: { options: planOptions, gradeBoards: planBoards },
+    ...(jointLessons.length ? { jointLessons } : {}),
+  };
 }
 
 // ── Templates ─────────────────────────────────────────────────────

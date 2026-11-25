@@ -8,6 +8,7 @@ import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loa
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r442";
 import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r443";
+import { moveJointLessonMembers } from "./joint-lessons.js?v=r451";
 
 // ── Helpers ───────────────────────────────────────────────────────
 const curriculum = () => appState.curriculum;
@@ -201,6 +202,7 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   if (sGrade === dGrade) {
     [sRow.sem1Reporting, dRow.sem1Reporting] = [dRow.sem1Reporting, sRow.sem1Reporting];
     [sRow.sem2Reporting, dRow.sem2Reporting] = [dRow.sem2Reporting, sRow.sem2Reporting];
+    moveJointLessonMembers(appState.curriculum.jointLessons, sGrade, sRow, dRow);
   }
   moveAcademicGroups(sRow, dRow, sGrade === dGrade);
   scheduleSave("curriculum"); _onCurriculumChange();
