@@ -49,8 +49,7 @@ Object.assign(translations.ko, {
   syllabus: "실라버스", safetyEducation: "안전교육", safetySexEducation: "성교육", absentStudentPolicy: "결석 학생 정책",
   checklistConfirm: "확인", checklistEmpty: "현재 조건에 맞는 과목이 없습니다", checklistSearch: "과목·교사 검색",
   checklistReady: "저장 준비", checklistSaving: "저장 중…", checklistSaved: "저장됨", checklistError: "저장 실패",
-  previousReportValue: "기존 값", previousReportCheck: "이전 확인 완료", checklistReportSections: "확인 항목", checklistBasic: "폴더·실라버스",
-  checklistNeis: "나이스 성적표", checklistTranscript: "영문 성적표", checklistAssessment: "평가",
+  previousReportValue: "기존 값", previousReportCheck: "이전 확인 완료", checklistTable: "담당 과목 확인표",
 });
 Object.assign(translations.en, {
   checklistTitle: "Assigned Course Checklist", checklistHelp: "You can view all courses and edit your assigned courses.",
@@ -60,8 +59,7 @@ Object.assign(translations.en, {
   syllabus: "Syllabus", safetyEducation: "Safety Education", safetySexEducation: "Safety (Sex) Education", absentStudentPolicy: "Policy for Absent Students",
   checklistConfirm: "Confirm", checklistEmpty: "No courses match the current filters", checklistSearch: "Search courses or teachers",
   checklistReady: "Ready to save", checklistSaving: "Saving…", checklistSaved: "Saved", checklistError: "Save failed",
-  previousReportValue: "Previous value", previousReportCheck: "Previously checked", checklistReportSections: "Checklist sections", checklistBasic: "Folder & Syllabus",
-  checklistNeis: "NEIS Report Card", checklistTranscript: "English Transcript", checklistAssessment: "Assessments",
+  previousReportValue: "Previous value", previousReportCheck: "Previously checked", checklistTable: "Assigned course checklist table",
 });
 const translate = key => translations[portalLanguage][key];
 
@@ -277,6 +275,58 @@ function createValueSelect({ id, name, value, values, disabled, previouslyChecke
   return select;
 }
 
+const syllabusFields = ["safetyEducation", "safetySexEducation", "absentStudentPolicy"];
+
+function createChecklistTable(english) {
+  const table = document.createElement("table");
+  table.className = "checklist-sheet";
+  const columnGroups = [
+    { keys: ["course"], title: translate("checklistCourse"), className: "sheet-course" },
+    ...CHECKLIST_REPORT_SECTIONS.map(([section, ko, en, fields]) => ({
+      keys: fields.map(([key]) => key),
+      labels: fields.map(([, nameKo, , nameEn]) => english ? nameEn : nameKo),
+      title: english ? en : ko, className: `sheet-${section}`,
+    })),
+    { keys: ["folder"], title: translate("checklistFolder"), className: "sheet-folder" },
+    { keys: syllabusFields, labels: syllabusFields.map(translate), title: translate("syllabus"), className: "sheet-syllabus" },
+    { keys: ["confirmed"], title: translate("checklistConfirm"), className: "sheet-confirm" },
+  ];
+  for (const { keys } of columnGroups) {
+    const columns = document.createElement("colgroup");
+    for (const key of keys) {
+      const col = document.createElement("col");
+      col.className = `sheet-col-${key}`;
+      columns.append(col);
+    }
+    table.append(columns);
+  }
+  const head = table.createTHead();
+  const groups = head.insertRow();
+  const headings = head.insertRow();
+  const headerCell = (row, text, className) => {
+    const th = document.createElement("th");
+    th.textContent = text;
+    th.className = className;
+    row.append(th);
+    return th;
+  };
+  for (const { keys, labels, title, className } of columnGroups) {
+    const th = headerCell(groups, title, className);
+    if (labels) {
+      th.colSpan = keys.length;
+      th.scope = "colgroup";
+      labels.forEach((label, index) => {
+        const leaf = headerCell(headings, label, `${className}${index === 0 ? " sheet-group-start" : ""}`);
+        leaf.scope = "col";
+      });
+    } else {
+      th.rowSpan = 2;
+      th.scope = "col";
+    }
+  }
+  return { table, body: table.createTBody() };
+}
+
 function safeUrl(value) {
   try {
     const url = new URL(clean(value));
@@ -314,7 +364,6 @@ async function startChecklist(access, user, reportOptions, serial) {
   };
   const state = {
     semester: "sem1",
-    section: "neis",
     scope: "all",
     grade: "all",
     query: "",
@@ -336,12 +385,6 @@ async function startChecklist(access, user, reportOptions, serial) {
   const setSaveStatus = (label, type) => {
     saveStatus = [label, type];
     renderSaveStatus();
-    byId("checklistSections").setAttribute("aria-label", translate("checklistReportSections"));
-    document.querySelectorAll("[data-checklist-section]").forEach(button => {
-      const active = button.dataset.checklistSection === state.section;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
   };
   const save = (course, key, value) => {
     if (!course.editable) return;
@@ -397,8 +440,8 @@ async function startChecklist(access, user, reportOptions, serial) {
       button.classList.toggle("active", active); button.setAttribute("aria-selected", String(active));
     });
     const container = byId("checklistCourses");
-    container.dataset.section = state.section;
-    const reportSection = CHECKLIST_REPORT_SECTIONS.find(([section]) => section === state.section);
+    container.setAttribute("aria-label", translate("checklistTable"));
+    const scrollLeft = container.scrollLeft;
     const courses = state.courses[state.semester].filter(course => {
       if (state.scope === "mine" && !course.isOwner) return false;
       if (state.grade !== "all" && course.grade !== state.grade) return false;
@@ -411,36 +454,19 @@ async function startChecklist(access, user, reportOptions, serial) {
       const title = document.createElement("h2"); title.textContent = translate("checklistEmpty"); empty.append(title);
       container.append(empty); updateProgress(courses); return;
     }
-    const header = document.createElement("div");
-    header.className = "checklist-compact-header";
-    const headerText = (parent, title, className = "") => {
-      const cell = document.createElement("span"); cell.textContent = title; cell.className = className; parent.append(cell);
-    };
-    headerText(header, translate("checklistCourse"));
-    if (reportSection) {
-      const [section, korean, englishTitle, fields] = reportSection;
-      const group = document.createElement("div");
-      group.className = `compact-reporting-header report-${section}`;
-      headerText(group, english ? englishTitle : korean, "compact-section-title");
-      for (const [, title, , englishField] of fields) headerText(group, english ? englishField : title);
-      header.append(group);
-    } else {
-      headerText(header, translate("checklistFolder"));
-      headerText(header, translate("syllabus"));
-    }
-    headerText(header, translate("checklistConfirm"));
-    container.append(header);
+    const { table, body } = createChecklistTable(english);
     courses.forEach(course => {
       const fieldIdBase = course.key.replace(/[^a-zA-Z0-9_-]/g, "_");
       const stored = state.items[course.key];
       const item = checklistItemForCourse(course, stored);
-      const card = document.createElement("article");
-      card.className = "checklist-compact-row";
+      const card = body.insertRow();
       card.classList.toggle("complete", !!item.confirmed);
       card.classList.toggle("readonly", !course.editable);
       card.classList.toggle("own-course", !!course.isOwner);
 
-      const courseCell = document.createElement("div"); courseCell.className = "compact-course-cell";
+      const courseCell = document.createElement("th");
+      courseCell.className = "sheet-course";
+      courseCell.scope = "row";
       const creative = course.category === "창체";
       const amount = course.credits ? `${course.credits}${creative ? "시간" : "시수"}` : "";
       const chapel = isChapelTitle(course.nameKo, course.nameEn);
@@ -451,7 +477,24 @@ async function startChecklist(access, user, reportOptions, serial) {
       const accessBadge = course.isOwner ? "내 담당" : access.isAdmin ? "관리자" : "조회";
       courseCell.innerHTML = `<strong>${escapeHtml(course.nameKo)}</strong> <small>· ${escapeHtml(subtitle)}</small>
         <span class="checklist-badges"><span>${escapeHtml(course.grade)}</span><span>${escapeHtml(course.category)}</span><span>${escapeHtml(course.track)}</span><span class="compact-access-badge">${accessBadge}</span></span>`;
+      card.append(courseCell);
 
+      for (const [section, korean, englishTitle, fields] of CHECKLIST_REPORT_SECTIONS) {
+        for (const [index, [key, koreanField, , englishField]] of fields.entries()) {
+          const cell = card.insertCell();
+          if (index === 0) cell.className = "sheet-group-start";
+          const select = createValueSelect({
+            id: `${key}-${fieldIdBase}`, name: `${key}_${fieldIdBase}`, value: normalizeReportValue(item[key]),
+            values: ["", ...reportOptions[key]], disabled: !course.editable, previouslyChecked: stored?.[key] === true,
+            onChange: value => save(course, key, value),
+          });
+          const title = english ? englishField : koreanField;
+          select.setAttribute("aria-label", `${course.nameKo} ${english ? englishTitle : korean} ${title}`);
+          cell.append(select);
+        }
+      }
+
+      const folderCell = card.insertCell(); folderCell.className = "sheet-group-start";
       const folder = document.createElement("div"); folder.className = "compact-folder-cell";
       const folderInput = document.createElement("input"); folderInput.type = "url"; folderInput.placeholder = translate("checklistFolderUrl"); folderInput.value = item.folderUrl || "";
       folderInput.setAttribute("aria-label", `${course.nameKo} ${folderInput.placeholder}`);
@@ -460,54 +503,34 @@ async function startChecklist(access, user, reportOptions, serial) {
       const syncFolderLink = () => { const url = safeUrl(folderInput.value); folderLink.href = url || "#"; folderLink.classList.toggle("disabled", !url); };
       folderInput.addEventListener("change", () => { item.folderUrl = folderInput.value.trim(); syncFolderLink(); save(course, "folderUrl", item.folderUrl); });
       folderLink.addEventListener("click", event => { if (!safeUrl(folderInput.value)) event.preventDefault(); });
-      syncFolderLink(); folder.append(folderInput, folderLink);
+      syncFolderLink(); folder.append(folderInput, folderLink); folderCell.append(folder);
 
-      const checks = document.createElement("div"); checks.className = "compact-required-cell";
-      headerText(checks, translate("syllabus"), "compact-section-title compact-row-section");
-      for (const key of ["safetyEducation", "safetySexEducation", "absentStudentPolicy"]) {
-        const label = document.createElement("label"); label.className = "compact-check";
+      for (const [index, key] of syllabusFields.entries()) {
+        const cell = card.insertCell();
+        cell.className = index === 0 ? "sheet-check sheet-group-start" : "sheet-check";
         const input = document.createElement("input"); input.type = "checkbox"; input.checked = !!item[key]; input.id = `${key}-${fieldIdBase}`; input.name = `${key}_${fieldIdBase}`; input.disabled = !course.editable;
-        input.addEventListener("change", () => { item[key] = input.checked; save(course, key, item[key]); });
-        label.append(input, document.createTextNode(translate(key))); checks.append(label);
+        input.setAttribute("aria-label", `${course.nameKo} ${translate(key)}`);
+        input.addEventListener("change", () => save(course, key, input.checked));
+        cell.append(input);
       }
 
-      const content = [folder, checks];
-      if (reportSection) {
-        const [section, korean, englishTitle, fields] = reportSection;
-        const group = document.createElement("div"); group.className = `compact-reporting-cell report-${section}`;
-        headerText(group, english ? englishTitle : korean, "compact-section-title compact-row-section");
-        for (const [key, koreanField, , englishField] of fields) {
-          const title = english ? englishField : koreanField;
-          const values = ["", ...reportOptions[key]];
-          const label = document.createElement("label"); const caption = document.createElement("span"); caption.textContent = title;
-          const select = createValueSelect({
-            id: `${key}-${fieldIdBase}`, name: `${key}_${fieldIdBase}`, value: normalizeReportValue(item[key]),
-            values, disabled: !course.editable, previouslyChecked: stored?.[key] === true,
-            onChange: value => { item[key] = value; save(course, key, value); },
-          });
-          select.setAttribute("aria-label", `${course.nameKo} ${english ? englishTitle : korean} ${title}`);
-          label.append(caption, select); group.append(label);
-        }
-        content.splice(0, content.length, group);
-      }
-
-      const confirm = document.createElement("label"); confirm.className = "compact-confirm-cell";
+      const confirm = card.insertCell(); confirm.className = "sheet-check sheet-confirm";
       const confirmInput = document.createElement("input"); confirmInput.type = "checkbox"; confirmInput.checked = !!item.confirmed; confirmInput.id = `confirmed-${fieldIdBase}`; confirmInput.name = `confirmed_${fieldIdBase}`; confirmInput.disabled = !course.editable;
-      confirmInput.addEventListener("change", () => { item.confirmed = confirmInput.checked; card.classList.toggle("complete", item.confirmed); updateProgress(courses); save(course, "confirmed", item.confirmed); });
-      const confirmLabel = document.createElement("span"); confirmLabel.textContent = translate("checklistConfirm");
-      confirmInput.setAttribute("aria-label", `${course.nameKo} ${confirmLabel.textContent}`);
-      confirm.append(confirmInput, confirmLabel);
-      card.append(courseCell, ...content, confirm); container.append(card);
+      confirmInput.addEventListener("change", () => {
+        save(course, "confirmed", confirmInput.checked);
+        card.classList.toggle("complete", confirmInput.checked);
+        updateProgress(courses);
+      });
+      confirmInput.setAttribute("aria-label", `${course.nameKo} ${translate("checklistConfirm")}`);
+      confirm.append(confirmInput);
     });
+    container.append(table);
+    container.scrollLeft = scrollLeft;
     updateProgress(courses);
   };
 
   document.querySelectorAll(".semester-tab").forEach(button => button.addEventListener("click", () => {
     state.semester = button.dataset.semester; render();
-  }));
-  document.querySelectorAll("[data-checklist-section]").forEach(button => button.addEventListener("click", () => {
-    state.section = button.dataset.checklistSection;
-    render();
   }));
   byId("courseScopeFilter")?.addEventListener("change", event => { state.scope = event.target.value; render(); });
   byId("courseGradeFilter")?.addEventListener("change", event => { state.grade = event.target.value; render(); });

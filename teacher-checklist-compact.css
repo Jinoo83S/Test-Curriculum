@@ -64,160 +64,136 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
 .checklist-shell .checklist-search,
 .checklist-shell .checklist-filter { height: 28px; }
 
-.checklist-sections { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0; }
-.checklist-sections button { min-height: 30px; }
-.checklist-sections button.active { color: #fff; background: #235bb8; border-color: #235bb8; }
 .checklist-course-list {
-  --report-gap: 6px;
-  display: block;
+  --course-width: 16rem;
+  --confirm-width: 4rem;
+  max-height: max(18rem, calc(100dvh - 166px));
   overflow: auto;
-  max-height: max(20rem, calc(100dvh - 204px));
-  border: 1px solid var(--line);
+  scroll-padding-inline: var(--course-width) var(--confirm-width);
+  border: 1px solid #c7d5e4;
   border-radius: 8px;
   background: #fff;
 }
-.report-neis { --report-columns: 1.1fr 1.45fr 1.4fr .75fr .75fr 1.05fr 1.7fr .85fr .85fr; }
-.report-transcript { --report-columns: repeat(3, minmax(0, 1fr)); }
-.report-assessment { --report-columns: repeat(2, minmax(0, 1fr)); }
-.checklist-compact-header,
-.checklist-compact-row {
-  display: grid;
-  grid-template-columns: minmax(14rem, 1.25fr) minmax(0, 4fr) 4.5rem;
-  gap: 12px;
-  align-items: center;
-  border-left: 3px solid transparent;
-  padding-inline: 8px;
+.checklist-course-list:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+.checklist-sheet {
+  width: max(100%, 122rem);
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: #24364d;
+  font-size: .83rem;
 }
-.checklist-course-list[data-section="basic"] :is(.checklist-compact-header, .checklist-compact-row) {
-  grid-template-columns: minmax(14rem, 1.4fr) minmax(11rem, 1fr) minmax(19rem, 1.2fr) 4.5rem;
+.checklist-sheet col { width: 4.7rem; }
+.checklist-sheet .sheet-col-course { width: var(--course-width); }
+.checklist-sheet .sheet-col-confirmed { width: var(--confirm-width); }
+.checklist-sheet .sheet-col-reportCourseGroup,
+.checklist-sheet .sheet-col-reportAchievementLevels,
+.checklist-sheet .sheet-col-transcriptAchievementLevels { width: 5.7rem; }
+.checklist-sheet .sheet-col-reportCurricularCategory,
+.checklist-sheet .sheet-col-reportCategory,
+.checklist-sheet .sheet-col-reportStandardDeviation { width: 7.5rem; }
+.checklist-sheet .sheet-col-writtenAssessmentCount { width: 6.5rem; }
+.checklist-sheet .sheet-col-singleAssessmentAllowed { width: 8rem; }
+.checklist-sheet .sheet-col-transcriptGpa,
+.checklist-sheet .sheet-col-safetyEducation,
+.checklist-sheet .sheet-col-safetySexEducation,
+.checklist-sheet .sheet-col-absentStudentPolicy { width: 5.5rem; }
+.checklist-sheet .sheet-col-folder { width: 10rem; }
+
+.checklist-sheet :is(th, td) {
+  padding: 4px 6px;
+  border-inline-end: 1px solid #e2e9f1;
+  border-bottom: 1px solid #dce5ef;
 }
-.checklist-course-list:is([data-section="transcript"], [data-section="assessment"]) :is(.checklist-compact-header, .checklist-compact-row) {
-  grid-template-columns: minmax(14rem, 1.3fr) minmax(0, 2fr) 4.5rem;
-}
-.checklist-compact-header {
+.checklist-sheet thead {
   position: sticky;
   top: 0;
-  z-index: 7;
+  z-index: 4;
+  background: #e7eff8;
+  color: #183651;
+}
+.checklist-sheet thead th {
+  background: #e7eff8;
+  color: inherit;
+  vertical-align: middle;
+  text-align: center;
+  line-height: 1.2;
+  word-break: keep-all;
+  overflow-wrap: normal;
+}
+.checklist-sheet thead tr:first-child th {
   padding-block: 7px;
-  border-bottom: 1px solid #cbd8e8;
-  background: #eaf1f9;
-  color: #294b70;
-  font-size: .8rem;
+  border-bottom-color: #becfe0;
   font-weight: 800;
 }
-.checklist-compact-header > span:last-child,
-.compact-reporting-header > span { text-align: center; }
-.compact-section-title {
-  grid-column: 1 / -1; padding: 3px 5px; border-radius: 4px;
-  background: #dee9f6; color: #294b70; font-size: .73rem; font-weight: 800;
-}
-.compact-reporting-header > span { line-height: 1.3; min-width: 0; hyphens: auto; }
-.checklist-compact-row {
-  padding-block: 5px;
-  border-bottom: 1px solid #e4ebf3;
-  border-left-color: #94a3b8;
-  background: #fff;
-}
-.checklist-compact-row:last-child { border-bottom: 0; }
-.checklist-compact-row.readonly { background: #fafbfd; }
-.checklist-compact-row.own-course { border-left-color: #a0bde4; background: #eef5ff; }
-.checklist-compact-row.complete { border-left-color: #16a34a; background: #f8fff9; }
-.checklist-compact-row.own-course.complete { background: #eef5ff; }
-.own-course .checklist-badges .compact-access-badge { background: #dbe9fb; color: #27486e; }
+.checklist-sheet thead tr + tr th { padding-block: 6px; font-size: .78rem; font-weight: 650; }
+.checklist-sheet thead .sheet-neis { background: #e4eef9; }
+.checklist-sheet thead .sheet-transcript { background: #dfefe9; }
+.checklist-sheet thead .sheet-assessment { background: #f6ead8; }
+.checklist-sheet thead .sheet-syllabus,
+.checklist-sheet thead .sheet-folder { background: #eee8f7; }
+.checklist-sheet .sheet-group-start { border-inline-start: 1px solid #b6c8d9; }
 
-.compact-course-cell { min-width: 0; line-height: 1.25; }
-.compact-course-cell > strong { color: var(--navy); font-size: .83rem; overflow-wrap: anywhere; }
-.compact-course-cell > small { color: #50657d; font-size: .73rem; overflow-wrap: anywhere; }
-.compact-course-cell .checklist-badges { display: inline-flex; gap: 3px; vertical-align: middle; }
-.compact-course-cell .checklist-badges span { padding: 1px 4px; font-size: .66rem; line-height: 1.15; }
-
-.compact-folder-cell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 4px;
-  align-items: center;
+.checklist-sheet tbody tr { --row-bg: #fff; }
+.checklist-sheet tbody tr:nth-child(even) { --row-bg: #f7faff; }
+.checklist-sheet tbody tr.readonly { --row-bg: #f5f7fa; }
+.checklist-sheet tbody tr.own-course { --row-bg: #eaf3ff; }
+.checklist-sheet tbody tr.complete { --row-bg: #eff9f1; }
+.checklist-sheet tbody tr:focus-within { --row-bg: #edf4fd; }
+.checklist-sheet tbody :is(th, td) { background: var(--row-bg); }
+.checklist-sheet .sheet-course {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  box-shadow: 2px 0 4px #203b591a;
+  text-align: start;
 }
-.compact-folder-cell input,
-.compact-reporting-cell select {
+.checklist-sheet .sheet-confirm {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  box-shadow: -2px 0 4px #203b591a;
+}
+.checklist-sheet thead :is(.sheet-course, .sheet-confirm) { z-index: 5; }
+.checklist-sheet tbody .sheet-course {
+  border-inline-start: 3px solid transparent;
+  line-height: 1.3;
+  font-weight: 400;
+}
+.checklist-sheet tbody .own-course .sheet-course { border-inline-start-color: #6996cc; }
+.checklist-sheet tbody .complete .sheet-course { border-inline-start-color: #379760; }
+.sheet-course > strong { color: #173456; overflow-wrap: anywhere; }
+.sheet-course > small { color: #50657d; font-size: .75rem; overflow-wrap: anywhere; }
+.sheet-course .checklist-badges { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+.sheet-course .checklist-badges span { padding: 1px 4px; font-size: .67rem; line-height: 1.15; }
+
+.compact-folder-cell { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; }
+.checklist-sheet :is(select, input[type="url"]) {
   width: 100%;
   min-width: 0;
-  height: 30px;
-  border: 1px solid #cbd5e1;
-  border-radius: 5px;
-  padding: 0 5px;
+  height: 29px;
+  border: 1px solid #bfcddc;
+  border-radius: 4px;
+  padding-inline: 5px;
   background: #fff;
-  color: #172033;
-  font-size: .82rem;
+  color: #172c45;
+  font: inherit;
 }
+.checklist-sheet :is(select, input[type="url"]):disabled { background: #f2f5f8; color: #4b5d72; }
+.checklist-sheet :is(input, select, a):focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
 .compact-folder-open {
-  display: grid;
-  place-items: center;
-  height: 30px;
-  padding-inline: 7px;
-  border: 1px solid #b8c9dc;
-  border-radius: 5px;
-  color: var(--blue);
-  font-size: .72rem;
-  font-weight: 800;
-  text-decoration: none;
+  display: grid; place-items: center; height: 29px; padding-inline: 6px;
+  border: 1px solid #b8c9dc; border-radius: 4px; background: #fff;
+  color: var(--blue); font-size: .75rem; font-weight: 750; text-decoration: none;
 }
-.compact-folder-open.disabled { opacity: .35; pointer-events: none; }
-.compact-required-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; }
-.compact-check {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #34475f;
-  font-size: .8rem;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-.compact-check input,
-.compact-confirm-cell input {
-  flex: none;
-  width: 14px;
-  height: 14px;
-  margin: 0;
-  accent-color: #2563eb;
-}
-.compact-reporting-header,
-.compact-reporting-cell {
-  display: grid;
-  grid-template-columns: var(--report-columns);
-  gap: var(--report-gap);
-}
-.compact-reporting-cell label { display: grid; gap: 2px; min-width: 0; }
-.compact-reporting-cell label > span { color: #52667d; font-size: .72rem; font-weight: 800; }
-.compact-reporting-cell select:disabled,
-.compact-folder-cell input:disabled { opacity: .72; background: #f2f5f8; }
-.compact-confirm-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  color: #476079;
-  font-size: .72rem;
-  font-weight: 800;
-}
-.compact-confirm-cell input { width: 16px; height: 16px; accent-color: #16a34a; }
+.compact-folder-open.disabled { opacity: .4; pointer-events: none; }
+.sheet-check { text-align: center; }
+.sheet-check input { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: #2563eb; }
+.sheet-confirm input { accent-color: #167343; }
 
-@media (min-width: 70rem) {
-  .compact-reporting-cell label > span,
-  .compact-row-section,
-  .compact-confirm-cell > span { display: none; }
-}
-@media (max-width: 69.999rem) {
-  .checklist-compact-header { display: none; }
-  .checklist-course-list[data-section] .checklist-compact-row { grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
-  .compact-confirm-cell { grid-column: 2; grid-row: 1; }
-  .compact-folder-cell, .compact-required-cell { grid-column: 1 / -1; }
-  .compact-reporting-cell { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr)); }
-  .compact-required-cell .compact-section-title { flex-basis: 100%; }
-}
-@media (max-width: 39rem) {
+@media (max-width: 42rem) {
   .checklist-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .checklist-summary { width: auto; }
-  .checklist-course-list { max-height: none; overflow: visible; }
-  .compact-required-cell { display: flex; flex-wrap: wrap; gap: 8px; }
-  .compact-reporting-cell { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .checklist-course-list { --course-width: 11rem; scroll-padding-inline-end: 0; }
+  .checklist-sheet .sheet-confirm { position: static; box-shadow: none; }
 }

@@ -6,7 +6,7 @@
   <title>HIS 담당 과목 확인</title>
   <link rel="stylesheet" href="teacher-portal.css?v=r425" />
   <link rel="stylesheet" href="teacher-curriculum-view.css?v=r436" />
-  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r445" />
+  <link rel="stylesheet" href="teacher-checklist-compact.css?v=r446" />
 </head>
 <body data-portal-page="curriculum-checklist">
   <header class="portal-header">
@@ -71,15 +71,9 @@
         <input id="courseSearchInput" class="checklist-search" type="search" placeholder="과목·교사 검색" />
         <span id="checklistSaveStatus" class="checklist-save-status">저장 준비</span>
       </div>
-      <nav id="checklistSections" class="checklist-sections" aria-label="확인 항목">
-        <button class="portal-btn" type="button" data-checklist-section="basic" data-i18n="checklistBasic" aria-pressed="false">폴더·실라버스</button>
-        <button class="portal-btn active" type="button" data-checklist-section="neis" data-i18n="checklistNeis" aria-pressed="true">나이스 성적표</button>
-        <button class="portal-btn" type="button" data-checklist-section="transcript" data-i18n="checklistTranscript" aria-pressed="false">영문 성적표</button>
-        <button class="portal-btn" type="button" data-checklist-section="assessment" data-i18n="checklistAssessment" aria-pressed="false">평가</button>
-      </nav>
-      <div id="checklistCourses" class="checklist-course-list"></div>
+      <div id="checklistCourses" class="checklist-course-list" role="region" aria-label="담당 과목 확인표" tabindex="0"></div>
     </section>
   </main>
-  <script type="module" src="./js/teacher-portal.js?v=r445"></script>
+  <script type="module" src="./js/teacher-portal.js?v=r446"></script>
 </body>
 </html>
