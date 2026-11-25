@@ -126,6 +126,12 @@ body[data-portal-page="curriculum-checklist"] .portal-brand small { display: non
   border-bottom-color: #becfe0;
   font-weight: 800;
 }
+.checklist-sheet thead th[scope="colgroup"] { text-align: start; padding-inline-start: 10px; }
+.checklist-sheet thead th[scope="colgroup"] > span {
+  position: sticky;
+  left: calc(var(--course-width) + 10px);
+  display: inline-block;
+}
 .checklist-sheet thead tr + tr th { padding-block: 6px; font-size: .78rem; font-weight: 650; }
 .checklist-sheet thead .sheet-neis { background: #e4eef9; }
 .checklist-sheet thead .sheet-transcript { background: #dfefe9; }

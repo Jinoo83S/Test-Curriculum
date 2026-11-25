@@ -315,6 +315,9 @@ function createChecklistTable(english) {
     if (labels) {
       th.colSpan = keys.length;
       th.scope = "colgroup";
+      const groupLabel = document.createElement("span");
+      groupLabel.textContent = title;
+      th.replaceChildren(groupLabel);
       labels.forEach((label, index) => {
         const leaf = headerCell(headings, label, `${className}${index === 0 ? " sheet-group-start" : ""}`);
         leaf.scope = "col";
