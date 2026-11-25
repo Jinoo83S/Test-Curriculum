@@ -351,6 +351,16 @@ function matchesCard(template, entry, getSemester) {
     && entry.semesters.every((subject, i) => !subject || namesOnly(subject, getSemester(template, i)));
 }
 
+function compatibleSubjectNames(a, b) {
+  return sameSubject(a, b) && ["nameKo", "nameEn"].every(field =>
+    !key(a[field]) || !key(b[field]) || key(a[field]) === key(b[field]));
+}
+
+function sameImportedTeacher(subject, existing) {
+  const names = value => clean(value).split(/[,，·]+/).map(key).filter(Boolean).sort().join(",");
+  return names(subject?.teacher) === names(existing?.teacher || existing?.teacherNames?.join(", "));
+}
+
 export function planCurriculumPaste(entries, curriculum, templates, getSemester) {
   const byId = new Map(templates.map(template => [template.id, template]));
   const usage = new Map();
@@ -362,50 +372,78 @@ export function planCurriculumPaste(entries, curriculum, templates, getSemester)
   }
   const pending = [];
   const rows = entries.map((entry, index) => {
-    const samePlacement = row => ["category", "track", "group"].every(field => key(row[field]) === key(entry[field]));
-    const exact = semesters => entry.semesters.every((subject, i) => subject
-      ? sameSubject(subject, semesters[i]) : !semesters[i]);
-    const placed = (curriculum.gradeBoards[entry.grade] || []).filter(samePlacement).map(row => {
+    const sameTrack = row => ["category", "track"].every(field => key(row[field]) === key(entry[field]));
+    const samePlacement = row => sameTrack(row) && key(row.group) === key(entry.group);
+    const exact = (semesters, compare = sameSubject) => entry.semesters.every((subject, i) => subject
+      ? compare(subject, semesters[i]) : !semesters[i]);
+    const gradeRows = (curriculum.gradeBoards[entry.grade] || []).filter(sameTrack).map(row => {
       const ids = cardIds(row);
-      return { ids, semesters: ids.map((id, i) => byId.has(id) ? getSemester(byId.get(id), i) : null) };
+      return { row, ids, semesters: ids.map((id, i) => byId.has(id) ? getSemester(byId.get(id), i) : null) };
     });
+    const placed = gradeRows.filter(({ row }) => samePlacement(row));
+    const hasReports = entry.semesterReporting?.some(report => Object.keys(report || {}).length);
+    const targetsFor = matches => hasReports
+      ? matches.map(({ row, ids }) => ({ rowId: row.id, templateIds: ids })) : [];
+    const sameTeachers = ({ semesters }) => entry.semesters.every((subject, i) =>
+      !subject?.teacher || sameImportedTeacher(subject, semesters[i]));
+    const otherGroupMatches = gradeRows.filter(match => !samePlacement(match.row)
+      && exact(match.semesters, compatibleSubjectNames) && sameTeachers(match));
     const boardMatches = placed.filter(match => exact(match.semesters));
     if (boardMatches.length) {
-      const teachersMatch = boardMatches.filter(({ semesters }) => entry.semesters.every((subject, i) =>
-        !subject?.teacher || key(subject.teacher) === key(semesters[i]?.teacher)));
-      const candidates = teachersMatch.length ? teachersMatch : boardMatches;
-      const match = candidates.length === 1 ? candidates[0] : null;
-      const safe = match?.ids.filter(Boolean).every(id => usage.get(id) === 1 && !byId.get(id)?.sharedCardId && !byId.get(id)?.isCompound);
-      if (!safe) return { ...entry, status: match ? "공유·복합 카드 · 기존 값 유지" : "일치 후보 여러 개 · 건너뜀" };
+      const nameMatches = boardMatches.filter(({ semesters }) => exact(semesters, compatibleSubjectNames));
+      const matchingNames = nameMatches.length ? nameMatches : boardMatches;
+      const teacherMatches = matchingNames.filter(sameTeachers);
+      const candidates = teacherMatches.length ? teacherMatches : matchingNames;
+      if (candidates.length !== 1) return { ...entry, status: "일치 후보 여러 개 · 건너뜀" };
+      const [match] = candidates;
+      // Older imports could append the same course under the source group.
+      // Fill both rows when names and named teachers agree and the match is unique in each group.
+      const duplicate = otherGroupMatches.length === 1 && nameMatches.includes(match) && sameTeachers(match)
+        && entry.semesters.every(subject => !subject || subject.teacher) ? otherGroupMatches : [];
+      const reportTargets = targetsFor([match, ...duplicate]);
+      const safe = match.ids.filter(Boolean).every(id => usage.get(id) === 1 && !byId.get(id)?.sharedCardId && !byId.get(id)?.isCompound);
+      if (!safe) return { ...entry, reportTargets, status: reportTargets.length ? "공유·복합 카드 · 성적표 보완" : "공유·복합 카드 · 기존 값 유지" };
       const teacherChanges = entry.semesters.map((subject, i) =>
-        subject?.teacher && key(subject.teacher) !== key(match.semesters[i]?.teacher) ? subject.teacher : "");
-      return { ...entry, status: "기존 행", existingIds: match.ids, teacherChanges, previousSemesters: match.semesters };
+        subject?.teacher && !sameImportedTeacher(subject, match.semesters[i]) ? subject.teacher : "");
+      return { ...entry, status: "기존 행", existingIds: match.ids, teacherChanges, previousSemesters: match.semesters, reportTargets };
     }
     if (placed.some(({ semesters }) => entry.semesters.some((subject, i) => sameSubject(subject, semesters[i])))) {
       return { ...entry, status: "한 학기만 일치 · 건너뜀" };
+    }
+    if (otherGroupMatches.length) {
+      if (otherGroupMatches.length !== 1) return { ...entry, status: "다른 교과군에 일치 후보 여러 개 · 건너뜀" };
+      const reportTargets = targetsFor(otherGroupMatches);
+      return { ...entry, reportTargets, status: reportTargets.length ? "기존 교과군 유지 · 성적표 보완" : "기존 교과군 유지" };
     }
     if (pending.some(row => row.grade === entry.grade && samePlacement(row) && exact(row.semesters) &&
       row.semesters.every((subject, i) => key(subject?.teacher) === key(entry.semesters[i]?.teacher)))) {
       return { ...entry, status: "붙여넣기 내 중복" };
     }
     pending.push(entry);
-    const hasMetadata = entry.classCount || entry.teacherLoadHours || entry.semesterReporting?.some(report => Object.keys(report || {}).length);
+    const hasMetadata = entry.classCount || entry.teacherLoadHours || hasReports;
     const matches = hasMetadata ? [] : templates.filter(template => matchesCard(template, entry, getSemester));
     return {
       ...entry, status: "추가", templateId: matches.length === 1 ? matches[0].id : null,
       newCardKey: index,
     };
   });
-  const claimed = new Map();
+  const claimed = new Map(), claimedReports = new Map();
+  const reportKey = (row, target) => JSON.stringify([row.grade, target.rowId]);
   for (const row of rows) {
     for (const id of new Set(row.existingIds?.filter(Boolean))) claimed.set(id, (claimed.get(id) || 0) + 1);
+    for (const target of row.reportTargets || []) {
+      const claim = reportKey(row, target);
+      claimedReports.set(claim, (claimedReports.get(claim) || 0) + 1);
+    }
   }
   return rows.map(row => {
-    if (!row.existingIds) return row;
-    if (row.existingIds.some(id => claimed.get(id) > 1)) {
-      return { ...row, existingIds: null, status: "같은 기존 카드 · 건너뜀" };
+    const reportTargets = row.reportTargets?.filter(target => claimedReports.get(reportKey(row, target)) === 1);
+    if (row.existingIds?.some(id => claimed.get(id) > 1)) {
+      return { ...row, reportTargets, existingIds: null, status: reportTargets?.length ? "같은 기존 카드 · 성적표 보완" : "같은 기존 카드 · 건너뜀" };
     }
-    return row;
+    if (!reportTargets || reportTargets.length === row.reportTargets.length) return row;
+    const status = reportTargets.length ? row.status : "같은 기존 행의 성적표 후보 여러 개 · 성적표 건너뜀";
+    return { ...row, reportTargets, status };
   });
 }
 

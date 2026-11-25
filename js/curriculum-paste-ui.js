@@ -7,7 +7,7 @@ import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-se
 import { getSemesterTemplateData } from "./templates.js?v=r425";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { buildBackupFilename, downloadJsonBackup } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
-import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate, replaceImportedTeachers } from "./curriculum-paste.js?v=r448";
+import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate, replaceImportedTeachers } from "./curriculum-paste.js?v=r450";
 
 const dialog = document.getElementById("curriculumPasteDialog");
 const input = document.getElementById("curriculumPasteSource");
@@ -17,6 +17,7 @@ const apply = document.getElementById("curriculumPasteApply");
 const analyze = document.getElementById("curriculumPasteAnalyze");
 const close = document.getElementById("curriculumPasteClose");
 const updateTeachers = document.getElementById("curriculumPasteUpdateTeachers");
+const reportsOnly = document.getElementById("curriculumPasteReportsOnly");
 let grades, target, plan, saving = false;
 
 function snapshot() {
@@ -24,8 +25,20 @@ function snapshot() {
 }
 
 function planRows(entries, before) {
-  return planCurriculumPaste(entries, before.curriculum, before.templates.templates,
+  const rows = planCurriculumPaste(entries, before.curriculum, before.templates.templates,
     (template, index) => getSemesterTemplateData(template, index === 0 ? "sem1" : "sem2"));
+  if (!reportsOnly.checked) return rows;
+  return rows.map(row => ({
+    ...row,
+    existingIds: null,
+    status: row.status === "추가" ? "기존 행 없음 · 건너뜀"
+      : row.status === "기존 행" ? (row.reportTargets.length ? "기존 행 · 성적표 보완" : "원본에 성적표 값 없음")
+      : row.status,
+  }));
+}
+
+function syncImportOptions() {
+  updateTeachers.disabled = reportsOnly.checked;
 }
 
 function setStatus(message) {
@@ -55,7 +68,8 @@ function renderPreview(rows, errors, warnings) {
     const values = [row.grade, row.category, row.track, row.group, row.language,
       ...row.semesters.map(display), row.credits, row.classCountSource && row.classCountSource !== row.classCount ? `${row.classCount} (원본 ${row.classCountSource})` : row.classCount || "—", row.teacherLoadHours || "—", reportCount ? `${reportCount}개` : "—",
       row.status === "추가" ? (row.templateId ? "행 추가 · 기존 카드 연결" : "행 추가 · 새 카드 연결")
-        : row.existingIds ? (updateTeachers.checked && row.teacherChanges.some(Boolean) ? "기존 행 · 설정 보완 및 담당 교사 변경" : "기존 행 · 입력된 설정만 보완") : row.status];
+        : row.status === "기존 행" ? (updateTeachers.checked && row.teacherChanges.some(Boolean) ? "기존 행 · 설정 보완 및 담당 교사 변경" : "기존 행 · 입력된 설정만 보완") : row.status];
+    if (row.reportTargets?.length > 1) values[values.length - 1] += ` · 성적표 ${row.reportTargets.length}행 보완`;
     const tr = body.insertRow();
     for (const value of values) tr.insertCell().textContent = value;
   }
@@ -87,15 +101,16 @@ function analyzeInput() {
     const rows = planRows(entries, snapshot());
     const additions = rows.filter(row => row.status === "추가");
     const newCards = new Set(additions.filter(row => !row.templateId).map(row => row.newCardKey)).size;
-    const applicable = rows.filter(row => row.status === "추가" || row.existingIds);
-    const classCountRows = applicable.filter(row => row.classCount !== "");
-    const teacherLoadRows = applicable.filter(row => row.teacherLoadHours !== "");
-    const reportingRows = applicable.filter(row => reportCountFor(row));
-    const teacherRows = updateTeachers.checked ? applicable.filter(row => row.teacherChanges?.some(Boolean)) : [];
+    const cardRows = rows.filter(row => row.status === "추가" || row.existingIds);
+    const classCountRows = cardRows.filter(row => row.classCount !== "");
+    const teacherLoadRows = cardRows.filter(row => row.teacherLoadHours !== "");
+    const reportingRows = rows.filter(row => row.status === "추가" ? reportCountFor(row) : row.reportTargets?.length);
+    const teacherRows = updateTeachers.checked ? cardRows.filter(row => row.teacherChanges?.some(Boolean)) : [];
+    const applicable = new Set([...cardRows, ...reportingRows]);
     const excluded = errors.filter(error => error.line).length;
     const blocking = errors.length - excluded;
     renderPreview(rows, errors, warnings);
-    setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 기존 행 ${applicable.length - additions.length}행 · 반 수 ${classCountRows.length}건 · 교사시수 ${teacherLoadRows.length}건 · 성적표 ${reportingRows.length}건 · 교사 변경 ${teacherRows.length}행 · 제외 ${rows.length - applicable.length + excluded}행 · 경고 ${warnings.length}건 · 적용 차단 ${blocking}건`);
+    setStatus(`추가 ${additions.length}행 · 새 과목 카드 ${newCards}개 · 기존 행 ${applicable.size - additions.length}행 · 반 수 ${classCountRows.length}건 · 교사시수 ${teacherLoadRows.length}건 · 성적표 ${reportingRows.length}건 · 교사 변경 ${teacherRows.length}행 · 제외 ${rows.length - applicable.size + excluded}행 · 경고 ${warnings.length}건 · 적용 차단 ${blocking}건`);
     if (blocking || !(additions.length || classCountRows.length || teacherLoadRows.length || reportingRows.length || teacherRows.length)) return;
     plan = { entries, rows, additions, newCards, warnings, excluded, classCountRows, teacherLoadRows, reportingRows, teacherRows };
     apply.disabled = false;
@@ -135,21 +150,21 @@ function createUpdatedDomains(before, { additions: rows, rows: plannedRows, teac
     gradeBoards[entry.grade].push(row);
   }
   for (const entry of plannedRows) {
-    if (!entry.existingIds) continue;
+    for (const { rowId, templateIds } of entry.reportTargets || []) {
+      const row = gradeBoards[entry.grade].find(row => row.id === rowId);
+      templateIds.forEach((templateId, i) => {
+        const semester = `sem${i + 1}`;
+        const values = entry.semesterReporting[i];
+        if (!templateId || row?.[`${semester}TemplateId`] !== templateId || !Object.keys(values || {}).length) return;
+        const field = `${semester}Reporting`;
+        const previous = row[field]?.templateId === templateId ? row[field].values : {};
+        row[field] = { templateId, values: { ...previous, ...values } };
+      });
+    }
+    if (!teacherRows.includes(entry)) continue;
     for (const id of new Set(entry.existingIds.filter(Boolean))) {
       const template = cards.get(id);
-      const reports = entry.semesterReporting || [entry.reporting, entry.reporting];
-      const legacy = !Object.keys(template.sem1ReportingRequirements || {}).length && !Object.keys(template.sem2ReportingRequirements || {}).length;
-      if (legacy && entry.existingIds.some((slot, i) => slot === id && Object.keys(reports[i] || {}).length)) {
-        template.sem1ReportingRequirements = { ...template.reportingRequirements };
-        template.sem2ReportingRequirements = { ...template.reportingRequirements };
-      }
-      entry.existingIds.forEach((slot, i) => {
-        if (slot !== id || !Object.keys(reports[i] || {}).length) return;
-        const field = `sem${i + 1}ReportingRequirements`;
-        template[field] = { ...template[field], ...reports[i] };
-      });
-      if (teacherRows.includes(entry) && entry.existingIds.some((slot, i) => slot === id && entry.teacherChanges[i])) {
+      if (entry.existingIds.some((slot, i) => slot === id && entry.teacherChanges[i])) {
         const names = entry.existingIds.map((slot, i) => {
           const previous = entry.previousSemesters[i];
           return slot === id ? entry.teacherChanges[i] || previous?.teacher || previous?.teacherNames?.join(", ") || "" : "";
@@ -185,7 +200,7 @@ async function applyPreview() {
   const pendingPlan = plan;
   const { additions, newCards, warnings, excluded, classCountRows, teacherLoadRows, reportingRows, teacherRows } = pendingPlan;
   saving = true;
-  for (const control of [apply, close, analyze, input, updateTeachers]) control.disabled = true;
+  for (const control of [apply, close, analyze, input, updateTeachers, reportsOnly]) control.disabled = true;
   try {
     if (classCountRows.length || teacherLoadRows.length) {
       setStatus("과목 설정을 불러오는 중입니다.");
@@ -224,7 +239,8 @@ async function applyPreview() {
     setStatus(`저장 실패 · ${error.message}`);
   } finally {
     saving = false;
-    for (const control of [close, analyze, input, updateTeachers]) control.disabled = false;
+    for (const control of [close, analyze, input, reportsOnly]) control.disabled = false;
+    syncImportOptions();
     apply.disabled = !plan;
   }
 }
@@ -239,6 +255,8 @@ export function openCurriculumPaste() {
   target = `${ACTIVE_SCHOOL_YEAR}학년도 ${grades.join(" · ")} (${LOCAL_DEV_MODE ? "로컬" : "온라인"})`;
   document.getElementById("curriculumPasteTarget").textContent = target;
   updateTeachers.checked = false;
+  reportsOnly.checked = false;
+  syncImportOptions();
   setStatus("");
   resetPreview();
   dialog.showModal();
@@ -246,6 +264,10 @@ export function openCurriculumPaste() {
 
 input.addEventListener("input", () => { resetPreview(); setStatus(""); });
 updateTeachers.addEventListener("change", () => { if (input.value.trim()) analyzeInput(); });
+reportsOnly.addEventListener("change", () => {
+  syncImportOptions();
+  if (input.value.trim()) analyzeInput();
+});
 analyze.addEventListener("click", analyzeInput);
 apply.addEventListener("click", () => { void applyPreview(); });
 close.addEventListener("click", () => dialog.close());

@@ -181,6 +181,7 @@ function buildTeacherCourses(curriculum, templatesDomain, teacher, semester, isA
       const otherRequirements = template[semester === "sem1" ? "sem2ReportingRequirements" : "sem1ReportingRequirements"] || {};
       const legacyRequirements = Object.fromEntries(Object.entries(template.reportingRequirements || {})
         .filter(([key, value]) => !Object.hasOwn(otherRequirements, key) || otherRequirements[key] !== value));
+      const rowReport = row[`${semester}Reporting`];
       courses.push({
         key: `${semester}|${grade}|${clean(row.id) || templateId}|${templateId}`,
         semester, grade, templateId,
@@ -188,7 +189,11 @@ function buildTeacherCourses(curriculum, templatesDomain, teacher, semester, isA
         track: clean(row.track) || "구분 없음",
         group: clean(row.group) || "교과군 없음",
         credits: clean(row.credits),
-        reportingRequirements: { ...legacyRequirements, ...termRequirements },
+        reportingRequirements: {
+          ...legacyRequirements,
+          ...termRequirements,
+          ...(rowReport?.templateId === templateId ? rowReport.values : {}),
+        },
         isOwner,
         editable: isAdmin || isOwner,
         ...info,

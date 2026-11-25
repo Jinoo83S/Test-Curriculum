@@ -198,6 +198,10 @@ export function movePlaced(sGrade, sRowId, sSemKey, dGrade, dRowId, dSemKey) {
   if (!sRow || !dRow) return;
   if (sGrade === dGrade && sRowId === dRowId) return;
   swapSemesterPair(sRow, dRow);
+  if (sGrade === dGrade) {
+    [sRow.sem1Reporting, dRow.sem1Reporting] = [dRow.sem1Reporting, sRow.sem1Reporting];
+    [sRow.sem2Reporting, dRow.sem2Reporting] = [dRow.sem2Reporting, sRow.sem2Reporting];
+  }
   moveAcademicGroups(sRow, dRow, sGrade === dGrade);
   scheduleSave("curriculum"); _onCurriculumChange();
 }

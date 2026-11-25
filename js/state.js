@@ -700,9 +700,18 @@ export function normalizeRow(row = {}, opts = DEFAULT_OPTIONS) {
   const s1id  = row.sem1TemplateId !== undefined ? (row.sem1TemplateId ?? null) : legId;
   const s2id  = row.sem2TemplateId !== undefined ? (row.sem2TemplateId ?? null) : legId;
   const groupId = clean(row.academicGroupId);
+  const reports = {};
+  for (const [field, templateId] of [["sem1Reporting", s1id], ["sem2Reporting", s2id]]) {
+    const report = row[field];
+    if (!templateId || report?.templateId !== templateId) continue;
+    const values = Object.fromEntries(Object.entries(report.values || {})
+      .map(([name, value]) => [clean(name), clean(value)]).filter(([name, value]) => name && value));
+    if (Object.keys(values).length) reports[field] = { templateId, values };
+  }
   return {
     id: row.id || uid("row"), category: safeC, track: safeT, group: safeG, credits: clean(row.credits),
     sem1TemplateId: s1id, sem2TemplateId: s2id,
+    ...reports,
     ...(groupId ? { academicGroupId: groupId, academicGroupName: clean(row.academicGroupName), academicGroupCredits: clean(row.academicGroupCredits) } : {}),
   };
 }
