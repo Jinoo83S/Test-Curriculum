@@ -1,4 +1,6 @@
 // Analyze Excel clipboard TSV without touching the current curriculum.
+import { REPORT_FIELDS, normalizeReportValue } from "./checklist-report-options.js?v=r444";
+
 const gradePattern = "(1[0-2]|[7-9])";
 const clean = value => String(value ?? "").trim();
 const key = value => clean(value).normalize("NFKC").toLowerCase().replace(/\s+/g, " ");
@@ -75,19 +77,41 @@ function columnType(value) {
   return "";
 }
 
-const REPORT_FIELDS = ["reportRawScore", "reportAverage", "reportStandardDeviation", "reportAchievementLevels", "reportEnrollmentCount", "reportRanking"];
 function reportingRequirements(get) {
-  return Object.fromEntries(REPORT_FIELDS.map(field => [field, clean(get(field)).replace(/\s+/g, " ")]).filter(([, value]) => value));
+  return Object.fromEntries(REPORT_FIELDS.map(([field]) => [field, normalizeReportValue(get(field))]).filter(([, value]) => value));
 }
 
-function nthIndex(values, target, occurrence = 0) {
-  let seen = 0;
-  for (let index = 0; index < values.length; index++) {
-    if (values[index] !== target) continue;
-    if (seen === occurrence) return index;
-    seen++;
-  }
-  return -1;
+const schoolReportHeaders = new Map([
+  ["교과군coursegroup", "reportCourseGroup"],
+  ["교과군curriculumarea", "reportCourseGroup"],
+  ["구분category", "reportCategory"],
+  ["평점평균gradepointsaveragegpa", "transcriptGpa"],
+]);
+for (const [field, korean, , english] of REPORT_FIELDS) {
+  // The source repeats the achievement heading. The English one precedes grade points.
+  // A plain 교과군 header can also denote the curriculum board's subject group.
+  if (field === "transcriptAchievementLevels" || field === "reportCourseGroup") continue;
+  for (const label of [korean, english, korean + english]) schoolReportHeaders.set(headerKey(label), field);
+}
+
+function schoolReportColumns(headers, columnTypes) {
+  const reportKeys = new Set(REPORT_FIELDS.map(([field]) => field));
+  const types = headers.map((label, index) => {
+    const type = columnTypes[index];
+    return schoolReportHeaders.get(headerKey(label)) || (reportKeys.has(type) ? type : "");
+  });
+  const courseGroups = types.flatMap((type, index) => type === "reportCourseGroup" ? [index] : []);
+  const starts = courseGroups.length === 2 ? courseGroups : null;
+  const termColumns = [new Map(), new Map()];
+  types.forEach((type, index) => {
+    if (!type) return;
+    const field = type === "reportAchievementLevels" && types[index + 1] === "transcriptGradePoints"
+      ? "transcriptAchievementLevels" : type;
+    if (starts && index < starts[0]) return;
+    const term = starts ? Number(index >= starts[1]) : Number(termColumns[0].has(field));
+    if (!termColumns[term].has(field)) termColumns[term].set(field, index);
+  });
+  return termColumns;
 }
 
 function readHeader(cells, grades, priorBlocks) {
@@ -161,9 +185,11 @@ function optionalNumber(value, label, warn) {
 
 function analyzeSchoolSheet(rows, selectedGrades) {
   const entries = [], errors = [], warnings = [];
-  const headerTypes = rows[0]?.cells.map(columnType) || [];
-  const headerLabels = rows[0]?.cells.map(headerKey) || [];
+  const headers = rows[0].cells;
+  const headerTypes = headers.map(columnType);
+  const reportColumns = schoolReportColumns(headers, headerTypes);
   const classCountIndex = headerTypes.indexOf("classCount");
+  const teacherLoadIndex = headerTypes.indexOf("teacherLoadHours");
   for (const { cells, line } of rows.slice(1)) {
     const grade = gradeOf(cells[0]);
     if (!grade || !selectedGrades.includes(grade)) continue;
@@ -176,7 +202,6 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     const rawClassCount = optionalNumber(cells[classCountIndex], "반 수", warn);
     const fractionalClassCount = rawClassCount && /^\d+(?:\.\d+)?$/.test(rawClassCount) && !/^\d+$/.test(rawClassCount);
     const classCount = fractionalClassCount ? String(Math.ceil(Number(rawClassCount))) : rawClassCount;
-    const teacherLoadIndex = headerTypes.indexOf("teacherLoadHours");
     const teacherLoadHours = optionalNumber(cells[teacherLoadIndex], "교사시수", warn)
       || (fractionalClassCount && credits ? String(Number(rawClassCount) * Number(credits)) : "");
     const semesters = [0, 1].map(index => {
@@ -197,12 +222,7 @@ function analyzeSchoolSheet(rows, selectedGrades) {
     else {
       if (!clean(cells[11])) warn("학급별 시수가 비어 있어 새 행에는 공란으로 저장됩니다.");
       if (fractionalClassCount) warnings.push({ line, grade, message: `원본 반 수 ${rawClassCount}를 운영 반 수 ${classCount}로 반올림하고 교사시수 ${teacherLoadHours || "미입력"}를 별도로 반영합니다.` });
-      const semesterReporting = [0, 1].map(term => {
-        const values = reportingRequirements(field => { const index = nthIndex(headerTypes, field, term); return index >= 0 ? cells[index] : ""; });
-        const categoryIndex = nthIndex(headerLabels, "구분category", term);
-        if (categoryIndex >= 0 && clean(cells[categoryIndex])) values.reportCategory = clean(cells[categoryIndex]);
-        return values;
-      });
+      const semesterReporting = reportColumns.map(columns => reportingRequirements(field => cells[columns.get(field)]));
       const reporting = semesterReporting[0];
       entries.push({ line, grade, category, track, group, language, credits, classCount, classCountSource: rawClassCount, teacherLoadHours, reporting, semesterReporting, semesters });
     }

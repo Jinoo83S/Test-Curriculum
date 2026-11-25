@@ -7,7 +7,7 @@ import { LOCAL_DEV_MODE } from "./local-dev.js?v=2026-07-15-room-availability-se
 import { getSemesterTemplateData } from "./templates.js?v=r425";
 import { synchronizeTeacherIdentityReferences } from "./teacher-identity.js?v=2026-07-15-room-availability-separation-r355";
 import { buildBackupFilename, downloadJsonBackup } from "./destructive-operation-guard.js?v=2026-07-15-room-availability-separation-r355";
-import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate, replaceImportedTeachers } from "./curriculum-paste.js?v=r426";
+import { analyzeCurriculumPaste, planCurriculumPaste, curriculumPasteTemplate, replaceImportedTeachers } from "./curriculum-paste.js?v=r448";
 
 const dialog = document.getElementById("curriculumPasteDialog");
 const input = document.getElementById("curriculumPasteSource");

@@ -261,7 +261,7 @@
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
-      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r432");
+      const { openCurriculumPaste } = await import("./js/curriculum-paste-ui.js?v=r448");
       openCurriculumPaste();
     } catch (error) {
       console.error("[curriculum paste]", error);
