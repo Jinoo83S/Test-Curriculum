@@ -5,6 +5,7 @@ import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals, rowFields, termFields, terms } from "./assignment-editor-model.js?v=1";
+import { renderAssignmentMatrix } from "./assignment-matrix.js?v=1";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
@@ -59,9 +60,14 @@ export function attachAssignmentEditor() {
   const save = dialog.querySelector("[data-save]");
   const message = dialog.querySelector("[role=status]");
   const grid = dialog.querySelector("[data-grid]");
+  const matrix = dialog.querySelector("[data-matrix]");
+  const semester = dialog.querySelector("[data-term]");
+  const editMode = dialog.querySelector("[data-edit-mode]");
+  const matrixMode = dialog.querySelector("[data-matrix-mode]");
+  const editHelp = dialog.querySelector("[data-edit-help]");
   const output = dialog.querySelector("[data-output]");
   const drafts = new Map();
-  let before, teachers, rows, preview, saving = false;
+  let before, teachers, rows, preview, selectedRow, editing = false, saving = false;
   for (const grade of GRADE_KEYS) {
     const option = make("option", grade);
     option.value = grade;
@@ -94,8 +100,37 @@ export function attachAssignmentEditor() {
   }
 
   function draw() {
+    matrix.hidden = editing;
+    grid.hidden = editHelp.hidden = !editing;
+    semester.disabled = editing;
+    editMode.setAttribute("aria-pressed", String(editing));
+    matrixMode.setAttribute("aria-pressed", String(!editing));
+    if (editing) {
+      drawEditor();
+      return;
+    }
+    let shown = before;
+    if (drafts.size) {
+      try {
+        shown = planAssignments(before, teachers, drafts).after;
+      } catch (error) {
+        message.textContent = error.message + " 저장된 수업배정을 표시합니다.";
+      }
+    }
+    matrix.replaceChildren(renderAssignmentMatrix(shown, teachers, {
+      term: semester.value, grade: filter.value, query: search.value,
+      edit: key => {
+        selectedRow = key;
+        editing = true;
+        draw();
+        grid.querySelector("input")?.focus();
+      }
+    }));
+  }
+
+  function drawEditor() {
     const needle = search.value.trim().toLocaleLowerCase();
-    const visible = rows.filter(entry => (!filter.value || entry.grade === filter.value) && (!needle ||
+    const visible = rows.filter(entry => selectedRow ? entry.key === selectedRow : (!filter.value || entry.grade === filter.value) && (!needle ||
       [courseName(entry), ...terms.flatMap(term => [entry[term]?.nameKo, entry[term]?.nameEn, fieldValue(entry, term + ".teacher")])]
         .join(" ").toLocaleLowerCase().includes(needle)));
     const header = ["학년", "과목", ...columns.map(titleFor), ...terms.flatMap((_, i) =>
@@ -153,7 +188,13 @@ export function attachAssignmentEditor() {
       }));
       invalidate();
     });
-    grid.replaceChildren(node);
+    if (selectedRow) {
+      const all = make("button", "표시 범위 전체 편집");
+      all.type = "button";
+      all.className = "secondary-btn";
+      all.addEventListener("click", () => { selectedRow = undefined; draw(); });
+      grid.replaceChildren(all, node);
+    } else grid.replaceChildren(node);
   }
 
   function workloadTable(oldTotals, newTotals = oldTotals, changedOnly = false) {
@@ -184,6 +225,9 @@ export function attachAssignmentEditor() {
       rows = assignmentRows(before, teachers);
       drafts.clear();
       filter.value = search.value = "";
+      semester.value = "sem1";
+      selectedRow = undefined;
+      editing = false;
       dialog.querySelector("[data-year]").textContent = ACTIVE_SCHOOL_YEAR + "학년도 · 연간 커리큘럼";
       invalidate();
       draw();
@@ -222,8 +266,12 @@ export function attachAssignmentEditor() {
   }
 
   open.addEventListener("click", start);
-  filter.addEventListener("change", draw);
-  search.addEventListener("input", draw);
+  semester.addEventListener("change", draw);
+  for (const [control, event] of [[filter, "change"], [search, "input"]]) {
+    control.addEventListener(event, () => { selectedRow = undefined; draw(); });
+  }
+  editMode.addEventListener("click", () => { editing = true; selectedRow = undefined; draw(); });
+  matrixMode.addEventListener("click", () => { editing = false; selectedRow = undefined; draw(); });
   close.addEventListener("click", () => {
     if (!saving && (!drafts.size || confirm("저장하지 않은 변경을 취소할까요?"))) dialog.close();
   });
@@ -243,7 +291,7 @@ export function attachAssignmentEditor() {
     if (!preview || saving || !canEdit()) return;
     saving = true;
     close.disabled = previewButton.disabled = save.disabled = true;
-    grid.inert = true;
+    grid.inert = matrix.inert = editMode.disabled = matrixMode.disabled = filter.disabled = search.disabled = true;
     try {
       if (JSON.stringify(teachers) !== JSON.stringify(appState.teachers)) throw new Error("교사 데이터가 변경되었습니다. 화면을 다시 열어 주세요.");
       await saveCurriculumPaste(before, preview.after, { includeRosters: preview.includeRosters });
@@ -257,7 +305,8 @@ export function attachAssignmentEditor() {
       message.textContent = error.message;
       save.disabled = false;
     } finally {
-      saving = close.disabled = previewButton.disabled = grid.inert = false;
+      saving = close.disabled = previewButton.disabled = grid.inert = matrix.inert =
+        editMode.disabled = matrixMode.disabled = filter.disabled = search.disabled = false;
     }
   });
 }
