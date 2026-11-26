@@ -293,6 +293,25 @@
   #assignmentEditor [data-grid] input{width:125px}
   #assignmentEditor input.assignment-changed{background:#fff4c9;border-color:#b38a26}
   #assignmentEditor [data-output]{max-height:38vh}
+  #assignmentEditor [aria-pressed="true"]{background:#1c476d;color:#fff;border-color:#1c476d}
+  #assignmentEditor .assignment-matrix-summary{display:flex;align-items:baseline;gap:6px 16px;flex-wrap:wrap;margin:8px 0;color:#42566a;font-size:13px}
+  #assignmentEditor .assignment-matrix-summary strong{color:#183951;font-size:16px}
+  #assignmentEditor .assignment-matrix-scroll{overflow:auto;max-height:62vh;border:1px solid #c4d2df;border-radius:8px}
+  #assignmentEditor .assignment-matrix :is(th,td){padding:8px 9px;text-align:center;border-right:1px solid #e0e7ef}
+  #assignmentEditor .assignment-matrix thead th{position:sticky;top:0;z-index:2;background:#e9f1f8;color:#193b56}
+  #assignmentEditor .assignment-matrix tr>*:first-child{position:sticky;left:0;width:66px;min-width:66px;max-width:66px;box-sizing:border-box;background:#f0f5f9}
+  #assignmentEditor .assignment-matrix tr>*:nth-child(2){position:sticky;left:66px;width:188px;min-width:188px;max-width:188px;box-sizing:border-box;background:#f0f5f9;text-align:left;overflow-wrap:anywhere}
+  #assignmentEditor .assignment-matrix tbody tr>*:nth-child(-n+2){z-index:1}
+  #assignmentEditor .assignment-matrix thead tr>*:nth-child(-n+2){z-index:3}
+  #assignmentEditor .assignment-matrix .assignment-teacher-head{min-width:86px;white-space:nowrap}
+  #assignmentEditor .assignment-teacher-head strong{display:block;font-size:18px;margin-top:3px}
+  #assignmentEditor .assignment-matrix small{display:block;color:#4b6175;font-size:11px;font-weight:400}
+  #assignmentEditor .assignment-matrix tbody tr:nth-child(even) td:empty{background:#f6f9fc}
+  #assignmentEditor .assignment-matrix .assignment-course-hours{background:#fef1d3;color:#64430f;font-weight:700}
+  #assignmentEditor .assignment-matrix .assignment-hours-filled{background:#d2eddf;color:#124b35;font-weight:700}
+  #assignmentEditor .assignment-matrix .assignment-hours-muted{background:#eef2f7;color:#466077;font-size:12px}
+  #assignmentEditor .assignment-course-link{display:block;padding:0;text-align:left;background:transparent;color:#164d79;border:0;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;overflow-wrap:anywhere}
+  @media(max-width:650px){#assignmentEditor .assignment-matrix tr>*:nth-child(2){min-width:120px;width:120px;max-width:120px}}
   @media(max-width:650px){#assignmentEditor [data-grid] tr>*:nth-child(2){position:static}#assignmentEditor [data-grid] th:nth-child(2){position:sticky;left:auto}}
 </style>
 <dialog id="assignmentEditor" aria-labelledby="assignmentEditorTitle">
@@ -302,18 +321,22 @@
   </div>
   <div class="assignment-toolbar">
     <label>학년 <select data-grade><option value="">전체</option></select></label>
+    <label>학기 <select data-term><option value="sem1">1학기</option><option value="sem2">2학기</option></select></label>
     <label>검색 <input type="search" data-search placeholder="과목명 또는 담당교사"></label>
-    <button type="button" class="secondary-btn" data-summary>교사별 배정</button>
+    <button type="button" class="secondary-btn" data-matrix-mode aria-pressed="true">배정표</button>
+    <button type="button" class="secondary-btn" data-edit-mode aria-pressed="false">셀 편집</button>
+    <button type="button" class="secondary-btn" data-summary>교사별 요약</button>
     <button type="button" class="secondary-btn" data-preview>변경 내용 확인</button>
     <button type="button" class="primary-btn" data-save disabled>저장</button>
   </div>
-  <p>엑셀에서 복사한 여러 셀은 시작 칸을 선택해 붙여넣으세요. 새 과목은 연간 커리큘럼의 ‘엑셀 붙여넣어 생성’에서 추가할 수 있습니다.</p>
-  <div data-grid tabindex="0" aria-label="수업배정 편집표"></div>
+  <p data-edit-help hidden>여러 셀을 수정할 때는 엑셀에서 복사해 시작 칸에 붙여넣으세요.</p>
+  <div data-matrix></div>
+  <div hidden data-grid tabindex="0" aria-label="수업배정 편집표"></div>
   <p role="status" aria-live="polite"></p>
   <div data-output></div>
 </dialog>
 <script type="module">
-  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=1";
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=2";
   attachAssignmentEditor();
 </script>
 </body>
