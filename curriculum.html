@@ -325,6 +325,18 @@
   #assignmentEditor .assignment-matrix tr>*:first-child{position:sticky;left:0;background:#f0f5f9}
   #assignmentEditor .assignment-matrix tr>*:nth-child(2){position:sticky;left:var(--assignment-grade-width);background:#f0f5f9;text-align:left}
   #assignmentEditor .assignment-matrix tbody tr>*:nth-child(-n+2){z-index:1}
+  #assignmentEditor .assignment-matrix tbody .assignment-grade-start>*{border-top:2px solid #66829e}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade]>td:first-child{font-weight:700;color:#213b52}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade="7"]>td:first-child{background:#dcecff}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade="8"]>td:first-child{background:#dbf2ed}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade="9"]>td:first-child{background:#f0e7fb}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade="10"]>td:first-child{background:#f9ead7}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade="11"]>td:first-child{background:#f8e2e7}
+  #assignmentEditor .assignment-matrix tbody tr[data-grade="12"]>td:first-child{background:#e9edcd}
+  #assignmentEditor .assignment-matrix td.assignment-creative-time{position:relative;padding-right:22px}
+  #assignmentEditor .assignment-time-unit{position:absolute;right:4px;top:50%;transform:translateY(-50%);color:#47627c;font-size:9px;pointer-events:none}
+  #assignmentReport .assignment-report-issues td:last-child{background:#fff0e7;color:#8c2d20;white-space:normal}
+
   #assignmentEditor .assignment-matrix thead tr>*:nth-child(-n+2){z-index:3}
   #assignmentEditor .assignment-teacher-head > :is(span,strong){display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #assignmentEditor .assignment-teacher-head strong{font-size:10px;color:#28536e}
@@ -355,7 +367,7 @@
 </style>
 
 <script type="module">
-  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=6";
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=7";
   attachAssignmentEditor();
 </script>
 </body>

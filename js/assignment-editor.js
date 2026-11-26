@@ -5,14 +5,15 @@ import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals } from "./assignment-editor-model.js?v=1";
-import { renderAssignmentMatrix } from "./assignment-matrix.js?v=5";
+import { assignmentHourIssues, renderAssignmentMatrix } from "./assignment-matrix.js?v=6";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
   nameKo: "국문 과목명", nameEn: "영문 과목명", teacher: "담당교사", language: "수업 언어",
   classCount: "학급수", teacherLoadHours: "교사시수"
 };
-const titleFor = field => {
+const titleFor = (field, entry) => {
+  if (field === "credits" && entry?.row.category === "창체") return "창체 시간";
   const [term, name] = field.split(".");
   return name ? (term === "sem1" ? "1학기 " : "2학기 ") + labels[name] : labels[field];
 };
@@ -118,7 +119,7 @@ export function attachAssignmentEditor() {
       field: (key, name, placeholder) => {
         const entry = displayed.get(key);
         const draft = drafts.get(key)?.[name];
-        const label = entry.grade + " " + courseName(entry) + " " + titleFor(name);
+        const label = entry.grade + " " + courseName(entry) + " " + titleFor(name, entry);
         const control = make("input");
         control.value = draft ?? valueFor(entry, name);
         control.placeholder = placeholder || "—";
@@ -235,11 +236,22 @@ export function attachAssignmentEditor() {
     if (!report.open) report.showModal();
   }
 
+  function showHourIssues(data, scope, title) {
+    const issues = assignmentHourIssues(data, teachers, scope);
+    output.append(make("h4", title + " · " + issues.length + "건"));
+    if (issues.length) {
+      const issueTable = table(["학년", "과목", "학기", "항목", "확인 사항"], issues);
+      issueTable.classList.add("assignment-report-issues");
+      output.append(issueTable);
+    } else output.append(make("p", "시수 차이 없음"));
+  }
+
   function showPreview() {
     invalidate();
     openReport("변경 확인");
     if (!drafts.size) {
       output.append(make("p", "저장할 변경 사항이 없습니다."));
+      showHourIssues(before, { term: semester.value, grade: filter.value }, "선택 학기·학년 시수 확인");
       return;
     }
     try {
@@ -250,7 +262,8 @@ export function attachAssignmentEditor() {
       }
       output.append(make("h4", "변경될 커리큘럼 행"), table(["학년", "과목", "항목", "현재", "변경 후"],
         plan.rows.flatMap(({ original, next, fields }) => fields.map(field =>
-          [original.grade, courseName(original), titleFor(field), valueFor(original, field), valueFor(next, field)]))));
+          [original.grade, courseName(original), titleFor(field, next), valueFor(original, field), valueFor(next, field)]))));
+      showHourIssues(plan.after, { keys: new Set(plan.rows.map(({ next }) => next.key)) }, "변경 후 시수 확인");
       output.append(make("h4", "교사별 시수 변화"), workloadTable(teacherTotals(before, teachers), teacherTotals(plan.after, teachers), true));
       reportStatus.textContent = "변경 " + plan.rows.length + "행 · 연결된 행 포함" +
         (plan.planningRows ? " · 같은 과목카드를 참조하는 3개년 계획 " + plan.planningRows + "행에도 반영" : "");
@@ -258,7 +271,7 @@ export function attachAssignmentEditor() {
       save.disabled = reportSave.disabled = reportSave.hidden = false;
       draw();
     } catch (error) {
-      reportStatus.textContent = error.message;
+      reportStatus.textContent = "저장 불가 · " + error.message;
     }
   }
 
