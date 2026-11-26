@@ -25,6 +25,7 @@
   <nav class="topbar-nav" id="topbarMainNav">
     <a href="index.html" class="topbar-nav-btn topbar-nav-link">← 업무 메뉴</a>
     <a href="curriculum.html" data-section="curriculum" class="topbar-nav-btn topbar-nav-link active">📋 커리큘럼</a>
+    <button id="assignmentEditorOpen" type="button" class="topbar-nav-btn" aria-controls="assignmentEditor" aria-pressed="false">수업배정 통합 편집</button>
 <a href="roster.html" data-section="roster" class="topbar-nav-btn topbar-nav-link">👥 명단</a>
 <a href="setup.html" data-section="setup" class="topbar-nav-btn topbar-nav-link">⚙️ 세부 구성</a>
 <a href="prework.html" data-section="prework" class="topbar-nav-btn topbar-nav-link">🗂 시간표 사전작업</a>
@@ -122,7 +123,6 @@
 <button class="tab-btn active" id="tab7to9Btn" type="button">7 · 8 · 9</button>
 <button class="tab-btn" id="tab10to12Btn" type="button">10 · 11 · 12</button>
 <button class="secondary-btn" id="curriculumPasteOpen" type="button">엑셀 붙여넣어 생성</button>
-<button class="secondary-btn" id="assignmentEditorOpen" type="button">수업배정 통합 편집</button>
 <button class="secondary-btn" id="curriculumIntegrityBtn" type="button">정합성 검사</button>
 </div>
 <section id="curriculumIntegrityPanel" class="curriculum-audit-panel" hidden></section>
@@ -224,6 +224,24 @@
 </section>
 </div>
 </div>
+<section id="assignmentEditor" hidden aria-labelledby="assignmentEditorTitle">
+  <div class="assignment-heading">
+    <div><h2 id="assignmentEditorTitle" tabindex="-1">수업배정 통합 편집</h2><span data-year></span></div>
+    <button type="button" class="secondary-btn" data-close>커리큘럼으로 돌아가기</button>
+  </div>
+  <div class="assignment-toolbar">
+    <label>학년 <select data-grade><option value="">전체</option></select></label>
+    <label>학기 <select data-term><option value="sem1">1학기</option><option value="sem2">2학기</option></select></label>
+    <label>검색 <input type="search" data-search placeholder="과목명 또는 담당교사"></label>
+    <button type="button" class="secondary-btn" data-summary>교사별 요약</button>
+    <button type="button" class="secondary-btn" data-preview>변경 내용 확인</button>
+    <button type="button" class="primary-btn" data-save disabled>저장</button>
+  </div>
+  <p class="assignment-inline-help">과목명, 시수, 학급수, 교사 칸을 클릭해 수정할 수 있습니다. 초록색 칸의 교사시수는 같은 과목카드의 담당 교사에게 함께 적용됩니다.</p>
+  <div data-matrix></div>
+  <p role="status" aria-live="polite"></p>
+  <div data-output></div>
+</section>
   </section>
 </main>
 <dialog id="curriculumPasteDialog" aria-labelledby="curriculumPasteTitle"
@@ -275,22 +293,26 @@
 </script>
 
 <style>
-  #assignmentEditor{width:min(96vw,1500px);max-width:none;max-height:92vh;padding:18px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#17263d}
-  #assignmentEditor::backdrop{background:#0f213899}
+  #assignmentEditor[hidden]{display:none}
+  body.assignment-workspace-active .page{grid-template-columns:minmax(0,1fr)}
+  body.assignment-workspace-active #appSidebar,body.assignment-workspace-active .main-panel > .main-view{display:none}
+  body.assignment-workspace-active .main-panel{min-width:0;overflow:auto}
+  #assignmentEditor{padding:clamp(10px,1vw,18px);background:#fff;color:#17263d;min-width:0}
+  #assignmentEditorOpen[aria-pressed="true"]{background:#2563eb;color:#fff;border-color:#1d4ed8}
+  #assignmentEditor .assignment-inline-help{color:#42566a;font-size:13px;margin:8px 0}
+  #assignmentEditor .assignment-inline-field{display:block;min-width:0;width:100%;box-sizing:border-box;border:1px solid transparent;background:transparent;color:inherit;padding:3px 4px;border-radius:4px}
+  #assignmentEditor .assignment-inline-field:is(:hover,:focus){border-color:#5584af;background:#fff;outline-offset:1px}
+  #assignmentEditor .assignment-inline-field::placeholder{color:inherit;opacity:.75}
+  #assignmentEditor .assignment-course-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));font-size:11px;color:#42566a}
+  #assignmentEditor .assignment-teacher-names{min-width:114px;max-width:180px}
+  #assignmentEditor td:is(.assignment-hours-filled,.assignment-hours-muted) input{text-align:center}
   #assignmentEditor h2{margin:0}
   #assignmentEditor .assignment-heading,#assignmentEditor .assignment-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
   #assignmentEditor .assignment-heading{justify-content:space-between}
   #assignmentEditor label{display:flex;gap:5px;align-items:center}
   #assignmentEditor input,#assignmentEditor select{padding:6px;border:1px solid #bac7d6;border-radius:5px;font:inherit}
-  #assignmentEditor [data-grid],#assignmentEditor [data-output]{overflow:auto;max-width:100%}
-  #assignmentEditor [data-grid]{max-height:49vh;border:1px solid #d6dfe9}
   #assignmentEditor table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
   #assignmentEditor table :is(th,td){text-align:left;padding:6px;border-bottom:1px solid #d6dfe9;vertical-align:middle}
-  #assignmentEditor [data-grid] tr>*:nth-child(1){position:sticky;left:0;width:66px;min-width:66px;max-width:66px;box-sizing:border-box;z-index:1;background:#f4f7fb}
-  #assignmentEditor [data-grid] tr>*:nth-child(2){position:sticky;left:66px;width:160px;min-width:160px;max-width:160px;box-sizing:border-box;z-index:1;background:#f4f7fb;overflow-wrap:anywhere}
-  #assignmentEditor [data-grid] th{position:sticky;top:0;z-index:2;background:#edf3fa;white-space:nowrap}
-  #assignmentEditor [data-grid] th:nth-child(-n+2){z-index:3}
-  #assignmentEditor [data-grid] input{width:125px}
   #assignmentEditor input.assignment-changed{background:#fff4c9;border-color:#b38a26}
   #assignmentEditor [data-output]{max-height:38vh}
   #assignmentEditor [aria-pressed="true"]{background:#1c476d;color:#fff;border-color:#1c476d}
@@ -300,7 +322,7 @@
   #assignmentEditor .assignment-matrix :is(th,td){padding:8px 9px;text-align:center;border-right:1px solid #e0e7ef}
   #assignmentEditor .assignment-matrix thead th{position:sticky;top:0;z-index:2;background:#e9f1f8;color:#193b56}
   #assignmentEditor .assignment-matrix tr>*:first-child{position:sticky;left:0;width:66px;min-width:66px;max-width:66px;box-sizing:border-box;background:#f0f5f9}
-  #assignmentEditor .assignment-matrix tr>*:nth-child(2){position:sticky;left:66px;width:188px;min-width:188px;max-width:188px;box-sizing:border-box;background:#f0f5f9;text-align:left;overflow-wrap:anywhere}
+  #assignmentEditor .assignment-matrix tr>*:nth-child(2){position:sticky;left:66px;width:208px;min-width:208px;max-width:208px;box-sizing:border-box;background:#f0f5f9;text-align:left;overflow-wrap:anywhere}
   #assignmentEditor .assignment-matrix tbody tr>*:nth-child(-n+2){z-index:1}
   #assignmentEditor .assignment-matrix thead tr>*:nth-child(-n+2){z-index:3}
   #assignmentEditor .assignment-matrix .assignment-teacher-head{min-width:86px;white-space:nowrap}
@@ -311,32 +333,11 @@
   #assignmentEditor .assignment-matrix .assignment-hours-filled{background:#d2eddf;color:#124b35;font-weight:700}
   #assignmentEditor .assignment-matrix .assignment-hours-muted{background:#eef2f7;color:#466077;font-size:12px}
   #assignmentEditor .assignment-course-link{display:block;padding:0;text-align:left;background:transparent;color:#164d79;border:0;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;overflow-wrap:anywhere}
-  @media(max-width:650px){#assignmentEditor .assignment-matrix tr>*:nth-child(2){min-width:120px;width:120px;max-width:120px}}
-  @media(max-width:650px){#assignmentEditor [data-grid] tr>*:nth-child(2){position:static}#assignmentEditor [data-grid] th:nth-child(2){position:sticky;left:auto}}
+  @media(max-width:650px){#assignmentEditor .assignment-matrix tr>*:nth-child(2){min-width:145px;width:145px;max-width:145px}}
 </style>
-<dialog id="assignmentEditor" aria-labelledby="assignmentEditorTitle">
-  <div class="assignment-heading">
-    <div><h2 id="assignmentEditorTitle">수업배정 통합 편집</h2><span data-year></span></div>
-    <button type="button" class="secondary-btn" data-close>닫기</button>
-  </div>
-  <div class="assignment-toolbar">
-    <label>학년 <select data-grade><option value="">전체</option></select></label>
-    <label>학기 <select data-term><option value="sem1">1학기</option><option value="sem2">2학기</option></select></label>
-    <label>검색 <input type="search" data-search placeholder="과목명 또는 담당교사"></label>
-    <button type="button" class="secondary-btn" data-matrix-mode aria-pressed="true">배정표</button>
-    <button type="button" class="secondary-btn" data-edit-mode aria-pressed="false">셀 편집</button>
-    <button type="button" class="secondary-btn" data-summary>교사별 요약</button>
-    <button type="button" class="secondary-btn" data-preview>변경 내용 확인</button>
-    <button type="button" class="primary-btn" data-save disabled>저장</button>
-  </div>
-  <p data-edit-help hidden>여러 셀을 수정할 때는 엑셀에서 복사해 시작 칸에 붙여넣으세요.</p>
-  <div data-matrix></div>
-  <div hidden data-grid tabindex="0" aria-label="수업배정 편집표"></div>
-  <p role="status" aria-live="polite"></p>
-  <div data-output></div>
-</dialog>
+
 <script type="module">
-  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=2";
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=3";
   attachAssignmentEditor();
 </script>
 </body>
