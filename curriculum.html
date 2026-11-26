@@ -240,7 +240,15 @@
   </div>
   <div data-matrix></div>
   <p role="status" aria-live="polite"></p>
-  <div data-output></div>
+  <dialog id="assignmentReport" data-assignment-report aria-labelledby="assignmentReportTitle">
+    <header class="assignment-report-header">
+      <h3 id="assignmentReportTitle"></h3>
+      <button type="button" class="secondary-btn" data-report-close autofocus>닫기</button>
+    </header>
+    <p data-report-status aria-live="polite"></p>
+    <div data-output></div>
+    <div class="assignment-report-footer"><button type="button" class="primary-btn" data-report-save hidden disabled>저장</button></div>
+  </dialog>
 </section>
   </section>
 </main>
@@ -331,11 +339,23 @@
   #assignmentEditor input.assignment-changed{background:#fff4c9;border-color:#b38a26}
   #assignmentEditor [role="status"]{margin:3px 0;font-size:11px}
   #assignmentEditor :is([data-output],[role="status"]):empty{display:none}
-  #assignmentEditor [data-output]{overflow:auto;max-height:30vh}
+  #assignmentEditor [data-counts].assignment-warning-count{color:#9d2d21;font-weight:700}
+  #assignmentEditor .assignment-matrix .assignment-english-name{color:#42566a;text-align:left}
+  #assignmentEditor .assignment-matrix .assignment-hours-difference{position:relative;background:#ffe5d9;color:#8c2d20;font-weight:700}
+  #assignmentEditor .assignment-hours-difference::after{content:"";position:absolute;top:0;right:0;border-top:6px solid #b33c27;border-left:6px solid transparent;pointer-events:none}
+  #assignmentReport{width:min(880px,calc(100vw - 24px));max-width:none;max-height:85dvh;box-sizing:border-box;padding:14px;border:1px solid #bac7d6;border-radius:8px;background:#fff;color:#17263d}
+  #assignmentReport::backdrop{background:#132f48a6}
+  #assignmentReport .assignment-report-header,#assignmentReport .assignment-report-footer{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  #assignmentReport .assignment-report-footer{justify-content:flex-end;margin-top:8px}
+  #assignmentReport .assignment-report-footer:has(button[hidden]){display:none}
+  #assignmentReport :is(h3,h4){margin:0 0 8px}
+  #assignmentReport [data-report-status]:empty{display:none}
+  #assignmentReport [data-output]{overflow:auto;max-height:62dvh}
+  #assignmentReport [data-output] .manager-table{min-width:0;width:100%;margin-bottom:10px}
 </style>
 
 <script type="module">
-  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=5";
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=6";
   attachAssignmentEditor();
 </script>
 </body>
