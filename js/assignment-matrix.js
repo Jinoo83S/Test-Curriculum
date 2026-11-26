@@ -66,9 +66,24 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
   const wrap = node("div", undefined, "assignment-matrix-scroll");
   wrap.tabIndex = 0;
   wrap.setAttribute("aria-label", "과목별·교사별 수업배정표");
+  const columns = [
+    ["학년", 46], ["과목", 208], ["수업 시수", 48], ["학급수", 43],
+    ["과목 총시수", 58], ["학생수", 43], ["담당교사", 100], ["교사수", 43]
+  ];
+  const teacherWidth = 66;
   const table = node("table", undefined, "assignment-matrix");
+  const colgroup = node("colgroup");
+  const widths = [...columns.map(([, width]) => width), ...matrix.teachers.map(() => teacherWidth)];
+  for (const width of widths) {
+    const col = node("col");
+    col.style.width = width + "px";
+    colgroup.append(col);
+  }
+  table.style.width = widths.reduce((sum, width) => sum + width, 0) + "px";
+  table.style.setProperty("--assignment-grade-width", columns[0][1] + "px");
+  table.append(colgroup);
   const header = table.createTHead().insertRow();
-  for (const label of ["학년", "과목", "수업 시수", "학급수", "과목 총시수", "학생수", "담당교사", "교사수"]) {
+  for (const [label] of columns) {
     const cell = node("th", label);
     cell.scope = "col";
     header.append(cell);
@@ -77,8 +92,10 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     const cell = node("th", undefined, "assignment-teacher-head");
     cell.scope = "col";
     const total = teacher.count === teacher.missing ? "미설정" : format.format(teacher.hours) + " 시수";
+    cell.title = teacher.name + " · " + total + " · " + teacher.count + "개 수업" +
+      (teacher.missing ? " · 미설정 " + teacher.missing : "");
     cell.append(node("span", teacher.name), node("strong", total),
-      node("small", teacher.count + "개 수업" + (teacher.missing ? " · 미설정 " + teacher.missing : "")));
+      node("small", teacher.count + "개" + (teacher.missing ? " · 미설정 " + teacher.missing : "")));
     header.append(cell);
   }
 
@@ -94,7 +111,10 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     const options = node("div", undefined, "assignment-course-options");
     for (const name of ["category", "track", "group", term + ".language"]) options.append(field(rowKey, name));
     subjectCell.append(options);
-    if (subject.jointLesson?.name) subjectCell.append(node("small", subject.jointLesson.name));
+    if (subject.jointLesson?.name) {
+      gradeCell.append(node("small", "합동"));
+      gradeCell.title = subject.jointLesson.name;
+    }
     tr.append(subjectCell);
     tr.insertCell().append(field(rowKey, "credits"));
     tr.insertCell().append(field(rowKey, term + ".classCount"));
