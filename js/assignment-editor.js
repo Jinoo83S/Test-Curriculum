@@ -5,7 +5,7 @@ import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals } from "./assignment-editor-model.js?v=1";
-import { renderAssignmentMatrix } from "./assignment-matrix.js?v=4";
+import { renderAssignmentMatrix } from "./assignment-matrix.js?v=5";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
@@ -62,7 +62,11 @@ export function attachAssignmentEditor() {
   const semester = workspace.querySelector("[data-term]");
   const details = workspace.querySelector("[data-details]");
   const counts = workspace.querySelector("[data-counts]");
-  const output = workspace.querySelector("[data-output]");
+  const report = workspace.querySelector("[data-assignment-report]");
+  const reportTitle = report.querySelector("h3");
+  const reportSave = report.querySelector("[data-report-save]");
+  const reportStatus = report.querySelector("[data-report-status]");
+  const output = report.querySelector("[data-output]");
   const drafts = new Map();
   let before, teachers, originals, preview, saving = false, redrawPending = false;
   for (const grade of GRADE_KEYS) {
@@ -73,7 +77,7 @@ export function attachAssignmentEditor() {
 
   function invalidate() {
     preview = null;
-    save.disabled = true;
+    save.disabled = reportSave.disabled = true;
     output.replaceChildren();
     message.textContent = drafts.size ? "수정 " + drafts.size + "행 · 변경 사항을 확인한 뒤 저장하세요." : "";
   }
@@ -107,7 +111,10 @@ export function attachAssignmentEditor() {
     const displayed = new Map(assignmentRows(shown, teachers).map(entry => [entry.key, entry]));
     matrix.replaceChildren(renderAssignmentMatrix(shown, teachers, {
       term: semester.value, grade: filter.value, query: search.value, details: details.checked,
-      onCounts: (courses, teachers) => { counts.textContent = courses + "수업 · " + teachers + "교사"; },
+      onCounts: (courses, teachers, differences) => {
+        counts.textContent = courses + "수업 · " + teachers + "교사" + (differences ? " · 시수 차이 " + differences + "행" : "");
+        counts.classList.toggle("assignment-warning-count", differences > 0);
+      },
       field: (key, name, placeholder) => {
         const entry = displayed.get(key);
         const draft = drafts.get(key)?.[name];
@@ -220,29 +227,38 @@ export function attachAssignmentEditor() {
     }
   }
 
+  function openReport(title, showSave = false) {
+    reportTitle.textContent = title;
+    reportSave.hidden = !showSave;
+    reportStatus.textContent = "";
+    output.scrollTop = 0;
+    if (!report.open) report.showModal();
+  }
+
   function showPreview() {
     invalidate();
+    openReport("변경 확인");
     if (!drafts.size) {
-      message.textContent = "저장할 변경 사항이 없습니다.";
+      output.append(make("p", "저장할 변경 사항이 없습니다."));
       return;
     }
     try {
       const plan = planAssignments(before, teachers, drafts);
       if (!plan.rows.length) {
-        message.textContent = "저장할 변경 사항이 없습니다.";
+        output.append(make("p", "저장할 변경 사항이 없습니다."));
         return;
       }
-      output.append(make("h3", "변경될 커리큘럼 행"), table(["학년", "과목", "항목", "현재", "변경 후"],
+      output.append(make("h4", "변경될 커리큘럼 행"), table(["학년", "과목", "항목", "현재", "변경 후"],
         plan.rows.flatMap(({ original, next, fields }) => fields.map(field =>
           [original.grade, courseName(original), titleFor(field), valueFor(original, field), valueFor(next, field)]))));
-      output.append(make("h3", "교사별 시수 변화"), workloadTable(teacherTotals(before, teachers), teacherTotals(plan.after, teachers), true));
-      message.textContent = `변경 ${plan.rows.length}행 · 연결된 행 포함` +
-        (plan.planningRows ? ` · 같은 과목카드를 참조하는 3개년 계획 ${plan.planningRows}행에도 과목카드 변경이 표시됩니다.` : "");
+      output.append(make("h4", "교사별 시수 변화"), workloadTable(teacherTotals(before, teachers), teacherTotals(plan.after, teachers), true));
+      reportStatus.textContent = "변경 " + plan.rows.length + "행 · 연결된 행 포함" +
+        (plan.planningRows ? " · 같은 과목카드를 참조하는 3개년 계획 " + plan.planningRows + "행에도 반영" : "");
       preview = plan;
-      save.disabled = false;
-      output.scrollIntoView({ block: "nearest" });
+      save.disabled = reportSave.disabled = reportSave.hidden = false;
+      draw();
     } catch (error) {
-      message.textContent = error.message;
+      reportStatus.textContent = error.message;
     }
   }
 
@@ -282,18 +298,27 @@ export function attachAssignmentEditor() {
     }
   });
   summary.addEventListener("click", () => {
-    if (preview) {
-      showPreview();
-      return;
+    let current = before, note = "";
+    if (drafts.size) {
+      try {
+        current = planAssignments(before, teachers, drafts).after;
+        note = "수정 중인 값 포함";
+      } catch (error) {
+        note = "저장된 값 기준 · " + error.message;
+      }
     }
-    output.replaceChildren(make("h3", "현재 교사별 배정"), workloadTable(teacherTotals(before, teachers)));
-    output.scrollIntoView({ block: "nearest" });
+    output.replaceChildren(workloadTable(teacherTotals(current, teachers)));
+    openReport("교사별 요약");
+    reportStatus.textContent = note;
   });
   previewButton.addEventListener("click", showPreview);
-  save.addEventListener("click", async () => {
+  report.querySelector("[data-report-close]").addEventListener("click", () => { if (!saving) report.close(); });
+  report.addEventListener("cancel", event => { if (saving) event.preventDefault(); });
+
+  async function saveChanges() {
     if (!preview || saving || !canEdit()) return;
     saving = true;
-    close.disabled = previewButton.disabled = save.disabled = true;
+    close.disabled = previewButton.disabled = save.disabled = reportSave.disabled = true;
     matrix.inert = open.disabled = semester.disabled = details.disabled = filter.disabled = search.disabled = true;
     try {
       if (JSON.stringify(teachers) !== JSON.stringify(appState.teachers)) throw new Error("교사 데이터가 변경되었습니다. 화면을 다시 열어 주세요.");
@@ -303,13 +328,16 @@ export function attachAssignmentEditor() {
       drafts.clear();
       invalidate();
       draw();
+      if (report.open) report.close();
       message.textContent = "수업배정을 저장했습니다.";
     } catch (error) {
-      message.textContent = error.message;
-      save.disabled = false;
+      (report.open ? reportStatus : message).textContent = error.message;
+      save.disabled = reportSave.disabled = false;
     } finally {
       saving = close.disabled = previewButton.disabled = matrix.inert =
         open.disabled = semester.disabled = details.disabled = filter.disabled = search.disabled = false;
     }
-  });
+  }
+  save.addEventListener("click", saveChanges);
+  reportSave.addEventListener("click", saveChanges);
 }
