@@ -32,7 +32,7 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
       const rowKey = jointLessonRowKey(grade, row.id);
       const sem1 = semester(row, "sem1", rowKey), sem2 = semester(row, "sem2", rowKey);
       const calcGroupId = getCurriculumCalculationGroup([cards.get(row.sem1TemplateId), cards.get(row.sem2TemplateId)]);
-      return sem1 || sem2 ? [{ grade, category: row.category, track: row.track, group: row.group,
+      return sem1 || sem2 ? [{ id: row.id, grade, category: row.category, track: row.track, group: row.group,
         calcGroupId, academicGroupId: row.academicGroupId, academicGroupCredits: row.academicGroupCredits,
         credits: getEffectiveCredit(row), boardHours: parseCreditValue(row.credits), sem1, sem2 }] : [];
     }));
