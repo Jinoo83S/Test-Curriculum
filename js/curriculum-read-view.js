@@ -72,6 +72,7 @@ export function groupTeacherAssignments(rows, term, currentTeacher) {
     }
     for (const [groupKey, { teacher, row }] of assigned) {
       if (!groups.has(groupKey)) groups.set(groupKey, {
+        key: groupKey,
         name: teacher.name,
         own: !!(currentTeacher && (teacher.id ? teacher.id === currentTeacher.id : names.has(key(teacher.name)))),
         rows: [],
