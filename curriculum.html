@@ -122,6 +122,7 @@
 <button class="tab-btn active" id="tab7to9Btn" type="button">7 · 8 · 9</button>
 <button class="tab-btn" id="tab10to12Btn" type="button">10 · 11 · 12</button>
 <button class="secondary-btn" id="curriculumPasteOpen" type="button">엑셀 붙여넣어 생성</button>
+<button class="secondary-btn" id="assignmentEditorOpen" type="button">수업배정 통합 편집</button>
 <button class="secondary-btn" id="curriculumIntegrityBtn" type="button">정합성 검사</button>
 </div>
 <section id="curriculumIntegrityPanel" class="curriculum-audit-panel" hidden></section>
@@ -271,6 +272,49 @@
       button.disabled = false;
     }
   });
+</script>
+
+<style>
+  #assignmentEditor{width:min(96vw,1500px);max-width:none;max-height:92vh;padding:18px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#17263d}
+  #assignmentEditor::backdrop{background:#0f213899}
+  #assignmentEditor h2{margin:0}
+  #assignmentEditor .assignment-heading,#assignmentEditor .assignment-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  #assignmentEditor .assignment-heading{justify-content:space-between}
+  #assignmentEditor label{display:flex;gap:5px;align-items:center}
+  #assignmentEditor input,#assignmentEditor select{padding:6px;border:1px solid #bac7d6;border-radius:5px;font:inherit}
+  #assignmentEditor [data-grid],#assignmentEditor [data-output]{overflow:auto;max-width:100%}
+  #assignmentEditor [data-grid]{max-height:49vh;border:1px solid #d6dfe9}
+  #assignmentEditor table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}
+  #assignmentEditor table :is(th,td){text-align:left;padding:6px;border-bottom:1px solid #d6dfe9;vertical-align:middle}
+  #assignmentEditor [data-grid] tr>*:nth-child(1){position:sticky;left:0;width:66px;min-width:66px;max-width:66px;box-sizing:border-box;z-index:1;background:#f4f7fb}
+  #assignmentEditor [data-grid] tr>*:nth-child(2){position:sticky;left:66px;width:160px;min-width:160px;max-width:160px;box-sizing:border-box;z-index:1;background:#f4f7fb;overflow-wrap:anywhere}
+  #assignmentEditor [data-grid] th{position:sticky;top:0;z-index:2;background:#edf3fa;white-space:nowrap}
+  #assignmentEditor [data-grid] th:nth-child(-n+2){z-index:3}
+  #assignmentEditor [data-grid] input{width:125px}
+  #assignmentEditor input.assignment-changed{background:#fff4c9;border-color:#b38a26}
+  #assignmentEditor [data-output]{max-height:38vh}
+  @media(max-width:650px){#assignmentEditor [data-grid] tr>*:nth-child(2){position:static}#assignmentEditor [data-grid] th:nth-child(2){position:sticky;left:auto}}
+</style>
+<dialog id="assignmentEditor" aria-labelledby="assignmentEditorTitle">
+  <div class="assignment-heading">
+    <div><h2 id="assignmentEditorTitle">수업배정 통합 편집</h2><span data-year></span></div>
+    <button type="button" class="secondary-btn" data-close>닫기</button>
+  </div>
+  <div class="assignment-toolbar">
+    <label>학년 <select data-grade><option value="">전체</option></select></label>
+    <label>검색 <input type="search" data-search placeholder="과목명 또는 담당교사"></label>
+    <button type="button" class="secondary-btn" data-summary>교사별 배정</button>
+    <button type="button" class="secondary-btn" data-preview>변경 내용 확인</button>
+    <button type="button" class="primary-btn" data-save disabled>저장</button>
+  </div>
+  <p>엑셀에서 복사한 여러 셀은 시작 칸을 선택해 붙여넣으세요. 새 과목은 연간 커리큘럼의 ‘엑셀 붙여넣어 생성’에서 추가할 수 있습니다.</p>
+  <div data-grid tabindex="0" aria-label="수업배정 편집표"></div>
+  <p role="status" aria-live="polite"></p>
+  <div data-output></div>
+</dialog>
+<script type="module">
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=1";
+  attachAssignmentEditor();
 </script>
 </body>
 </html>
