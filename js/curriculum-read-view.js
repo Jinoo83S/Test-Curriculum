@@ -22,6 +22,7 @@ export function buildReadOnlyCurriculumRows(curriculum, templates, teachers = []
     return {
       ...getCurriculumSemesterTitles(card, term),
       language: text(card.language),
+      compound: Boolean(card.isCompound),
       teachers: [...teachers, ...identity.names.filter(name => !matched.has(key(name))).map(name => ({ name, id: "" }))],
       ...workload?.(id, credits, term),
       jointLesson: jointLessons[term].get(rowKey),
