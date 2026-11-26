@@ -1,5 +1,6 @@
 import { buildReadOnlyCurriculumRows } from "./curriculum-read-view.js?v=r451-inline";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
+import { isChanCheCategory } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 
 const format = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
 const hoursLabel = value => Number.isFinite(value) ? format.format(value) : "—";
@@ -10,18 +11,22 @@ const differs = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a
 export function assignmentHourDifferences(row, subject) {
   const { credits, boardHours } = row;
   const { classCount, total } = subject;
-  const inputTotal = Number.isFinite(boardHours) && Number.isFinite(classCount) ? boardHours * classCount : null;
+  const creative = isChanCheCategory(row.category);
+  const inputTotal = !creative && Number.isFinite(boardHours) && Number.isFinite(classCount) ? boardHours * classCount : null;
   const calculatedTotal = Number.isFinite(credits) && Number.isFinite(classCount) ? credits * classCount : null;
   const teacherHours = subject.jointLesson ? subject.jointLesson.hours : subject.teacherTotal;
   return {
-    credits: differs(boardHours, credits)
+    credits: !creative && differs(boardHours, credits)
       ? "입력 시수 " + hoursLabel(boardHours) + " · 계산에 적용된 시수 " + hoursLabel(credits) : "",
     course: differs(calculatedTotal, total)
       ? "계산 기준 총시수 " + hoursLabel(calculatedTotal) + " · 표시 총시수 " + hoursLabel(total)
       : differs(inputTotal, total) ? "입력 시수 × 학급수 " + hoursLabel(inputTotal) + " · 표시 총시수 " + hoursLabel(total) : "",
-    teacher: differs(teacherHours, total)
-      ? (subject.jointLesson ? "합동수업 교사시수 " : "교사시수 ") + hoursLabel(teacherHours) +
-        " · 과목 총시수 " + hoursLabel(total) : ""
+    teacher: subject.jointLesson && creative
+      ? (subject.hasTeacherOverride && differs(subject.teacherTotal, teacherHours)
+        ? "입력 교사시수 " + hoursLabel(subject.teacherTotal) + " · 합동수업 적용 시수 " + hoursLabel(teacherHours) : "")
+      : differs(teacherHours, total)
+        ? (subject.jointLesson ? "합동수업 교사시수 " : "교사시수 ") + hoursLabel(teacherHours) +
+          " · 과목 총시수 " + hoursLabel(total) : ""
   };
 }
 
@@ -72,15 +77,35 @@ function flagDifference(cell, message) {
   } else cell.setAttribute("aria-description", message);
 }
 
-export function renderAssignmentMatrix(data, teachers, { term, grade, query, field, details = false, onCounts = () => {} }) {
-  const needle = query.trim().toLocaleLowerCase();
-  const rows = buildReadOnlyCurriculumRows(data.curriculum, data.templates.templates, teachers.teachers, (id, credits) => {
+function assignmentMatrixRows(data, teachers) {
+  return buildReadOnlyCurriculumRows(data.curriculum, data.templates.templates, teachers.teachers, (id, credits) => {
     const roster = data.rosters.rosters?.[id];
+    const meta = data.rosters.rosterMeta?.[id];
+    const input = String(meta?.teacherLoadHours ?? "").trim();
     return {
-      ...facultyCourseWorkload(data.rosters.rosterMeta?.[id], credits),
+      ...facultyCourseWorkload(meta, credits),
+      hasTeacherOverride: /^\d+(?:\.\d+)?$/.test(input) && Number.isFinite(Number(input)),
       students: Array.isArray(roster) ? new Set(roster.map(item => item.classId + ":" + item.studentId)).size : null
     };
-  }).filter(row => (!grade || row.grade === grade) && (!needle ||
+  });
+}
+
+export function assignmentHourIssues(data, teachers, { keys, term, grade } = {}) {
+  const fields = { credits: "시수", course: "총시수", teacher: "교사시수" };
+  return assignmentMatrixRows(data, teachers)
+    .filter(row => (!keys || keys.has(row.grade + ":" + row.id)) && (!grade || row.grade === grade))
+    .flatMap(row => (term ? [term] : ["sem1", "sem2"]).flatMap(semester => {
+      const subject = row[semester];
+      if (!subject) return [];
+      return Object.entries(assignmentHourDifferences(row, subject))
+        .filter(([, message]) => message)
+        .map(([field, message]) => [row.grade, subject.name || subject.english, semester === "sem1" ? "1학기" : "2학기", fields[field], message]);
+    }));
+}
+
+export function renderAssignmentMatrix(data, teachers, { term, grade, query, field, details = false, onCounts = () => {} }) {
+  const needle = query.trim().toLocaleLowerCase();
+  const rows = assignmentMatrixRows(data, teachers).filter(row => (!grade || row.grade === grade) && (!needle ||
       [row.grade, row.group, row.track, row[term]?.name, row[term]?.english, ...(row[term]?.teachers.map(t => t.name) || [])]
       .join(" ").toLocaleLowerCase().includes(needle)));
   const matrix = summarizeMatrix(rows, term);
@@ -100,7 +125,7 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     ["교과군", 64, "group"], ["언어", 58, term + ".language"]
   ] : [];
   const columns = [
-    ["학년", 42], ["국문 과목명", 155], ["영문 과목명", 155], ...detailColumns, ["시수", 40], ["학급수", 40],
+    ["학년", 42], ["국문 과목명", 155], ["영문 과목명", 155], ...detailColumns, ["시수/시간", 56], ["학급수", 40],
     ["총시수", 47], ["학생수", 42], ["담당교사", 94], ["교사수", 40]
   ];
   const teacherWidth = 46;
@@ -134,8 +159,12 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
   }
 
   const body = table.createTBody();
+  let previousGrade;
   for (const { row, subject, cells, differences } of matrix.courses) {
     const tr = body.insertRow();
+    tr.dataset.grade = String(parseInt(row.grade, 10));
+    if (row.grade !== previousGrade) tr.classList.add("assignment-grade-start");
+    previousGrade = row.grade;
     const gradeCell = tr.insertCell();
     gradeCell.textContent = row.grade;
     const subjectCell = node("th");
@@ -156,7 +185,15 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     english.append(field(rowKey, term + ".nameEn"));
     for (const [, , key] of detailColumns) tr.insertCell().append(field(rowKey, key));
     const creditsCell = tr.insertCell();
-    creditsCell.append(field(rowKey, "credits"));
+    const credit = field(rowKey, "credits");
+    const creative = isChanCheCategory(row.category);
+    if (creative) {
+      creditsCell.classList.add("assignment-creative-time");
+      credit.title = "창체 시간 · 시간표 적용 시수 " + hoursLabel(row.credits);
+      credit.setAttribute("aria-label", row.grade + " " + (subject.name || subject.english) + " 창체 시간");
+    }
+    creditsCell.append(credit);
+    if (creative) creditsCell.append(node("span", "시간", "assignment-time-unit"));
     flagDifference(creditsCell, differences.credits);
     tr.insertCell().append(field(rowKey, term + ".classCount"));
     const courseHours = tr.insertCell();
