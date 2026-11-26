@@ -5,7 +5,7 @@ import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals, rowFields, termFields } from "./assignment-editor-model.js?v=1";
-import { renderAssignmentMatrix } from "./assignment-matrix.js?v=2";
+import { renderAssignmentMatrix } from "./assignment-matrix.js?v=3";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
@@ -116,7 +116,7 @@ export function attachAssignmentEditor() {
         control.dataset.row = key;
         control.dataset.field = name;
         control.setAttribute("aria-label", label);
-        control.title = label;
+        control.title = control.value ? label + " · " + control.value : label;
         if (/credits|classCount|teacherLoadHours/.test(name)) control.inputMode = "decimal";
         if (name.endsWith(".teacherLoadHours")) control.title += " · 동일 과목카드의 담당 교사에게 공통 적용";
         control.classList.toggle("assignment-changed", draft !== undefined);
