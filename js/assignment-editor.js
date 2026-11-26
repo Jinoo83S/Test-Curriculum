@@ -3,6 +3,7 @@ import { canEdit } from "./auth.js?v=r424";
 import { appState, saveCurriculumPaste } from "./state.js?v=r426";
 import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
+import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals, rowFields, termFields, terms } from "./assignment-editor-model.js?v=1";
 
 const labels = {
@@ -132,7 +133,13 @@ export function attachAssignmentEditor() {
       if (!first || !plain || !/[\t\r\n]/.test(plain.replace(/\r?\n$/, ""))) return;
       event.preventDefault();
       const [startRow, startCol] = first.split(":").map(Number);
-      const values = plain.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n").map(line => line.split("\t"));
+      let values;
+      try {
+        values = readTsv(plain).map(row => row.cells);
+      } catch (error) {
+        message.textContent = error.message;
+        return;
+      }
       if (values.some((line, i) => !visible[startRow + i] || line.some((_, j) =>
         !columns[startCol + j] || !editable(visible[startRow + i], columns[startCol + j])))) {
         message.textContent = "붙여넣기 범위에 편집할 수 없는 셀이 있습니다. 범위를 줄여 다시 시도해 주세요.";
