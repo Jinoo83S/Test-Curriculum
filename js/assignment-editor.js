@@ -4,8 +4,8 @@ import { appState, saveCurriculumPaste } from "./state.js?v=r426";
 import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
-import { assignmentRows, planAssignments, teacherTotals, rowFields, termFields } from "./assignment-editor-model.js?v=1";
-import { renderAssignmentMatrix } from "./assignment-matrix.js?v=3";
+import { assignmentRows, planAssignments, teacherTotals } from "./assignment-editor-model.js?v=1";
+import { renderAssignmentMatrix } from "./assignment-matrix.js?v=4";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
@@ -60,6 +60,8 @@ export function attachAssignmentEditor() {
   const message = workspace.querySelector("[role=status]");
   const matrix = workspace.querySelector("[data-matrix]");
   const semester = workspace.querySelector("[data-term]");
+  const details = workspace.querySelector("[data-details]");
+  const counts = workspace.querySelector("[data-counts]");
   const output = workspace.querySelector("[data-output]");
   const drafts = new Map();
   let before, teachers, originals, preview, saving = false, redrawPending = false;
@@ -104,7 +106,8 @@ export function attachAssignmentEditor() {
     }
     const displayed = new Map(assignmentRows(shown, teachers).map(entry => [entry.key, entry]));
     matrix.replaceChildren(renderAssignmentMatrix(shown, teachers, {
-      term: semester.value, grade: filter.value, query: search.value,
+      term: semester.value, grade: filter.value, query: search.value, details: details.checked,
+      onCounts: (courses, teachers) => { counts.textContent = courses + "수업 · " + teachers + "교사"; },
       field: (key, name, placeholder) => {
         const entry = displayed.get(key);
         const draft = drafts.get(key)?.[name];
@@ -149,21 +152,23 @@ export function attachAssignmentEditor() {
     const plain = event.clipboardData?.getData("text/plain");
     if (!startField || !plain || !/[\t\r\n]/.test(plain.replace(/\r?\n$/, ""))) return;
     event.preventDefault();
-    const fields = [...rowFields, ...termFields.map(field => semester.value + "." + field)];
     const rows = Array.from(matrix.querySelectorAll("tbody tr"));
     const startRow = rows.indexOf(input.closest("tr"));
-    const startColumn = fields.indexOf(startField);
+    const startColumn = input.closest("td, th").cellIndex;
     try {
       const changes = new Map();
       for (const [i, { cells }] of readTsv(plain).entries()) {
         for (const [j, value] of cells.entries()) {
-          const field = fields[startColumn + j];
-          const control = rows[startRow + i]?.querySelector('[data-field="' + field + '"]');
+          const control = rows[startRow + i]?.cells[startColumn + j]?.querySelector("[data-field]");
           if (!control) throw new Error("붙여넣기에 편집할 수 없는 셀이 포함되어 있습니다.");
-          changes.set(control, value);
+          const key = JSON.stringify([control.dataset.row, control.dataset.field]);
+          if (changes.has(key) && changes.get(key).value !== value) {
+            throw new Error("같은 과목의 교사시수에는 하나의 값만 입력할 수 있습니다.");
+          }
+          changes.set(key, { control, value });
         }
       }
-      for (const [control, value] of changes) {
+      for (const { control, value } of changes.values()) {
         control.value = value;
         edit(control.dataset.row, control.dataset.field, value, control);
       }
@@ -201,7 +206,7 @@ export function attachAssignmentEditor() {
       drafts.clear();
       filter.value = search.value = "";
       semester.value = "sem1";
-      workspace.querySelector("[data-year]").textContent = ACTIVE_SCHOOL_YEAR + "학년도 · 연간 커리큘럼";
+      workspace.querySelector("[data-year]").textContent = ACTIVE_SCHOOL_YEAR + "학년도";
       invalidate();
       workspace.hidden = false;
       document.body.classList.add("assignment-workspace-active");
@@ -256,6 +261,7 @@ export function attachAssignmentEditor() {
   });
   close.addEventListener("click", () => { if (leave()) open.focus(); });
   semester.addEventListener("change", draw);
+  details.addEventListener("change", draw);
   filter.addEventListener("change", draw);
   search.addEventListener("input", draw);
   for (const id of ["navBoardBtn", "navManagerBtn"]) {
@@ -288,7 +294,7 @@ export function attachAssignmentEditor() {
     if (!preview || saving || !canEdit()) return;
     saving = true;
     close.disabled = previewButton.disabled = save.disabled = true;
-    matrix.inert = open.disabled = semester.disabled = filter.disabled = search.disabled = true;
+    matrix.inert = open.disabled = semester.disabled = details.disabled = filter.disabled = search.disabled = true;
     try {
       if (JSON.stringify(teachers) !== JSON.stringify(appState.teachers)) throw new Error("교사 데이터가 변경되었습니다. 화면을 다시 열어 주세요.");
       await saveCurriculumPaste(before, preview.after, { includeRosters: preview.includeRosters });
@@ -303,7 +309,7 @@ export function attachAssignmentEditor() {
       save.disabled = false;
     } finally {
       saving = close.disabled = previewButton.disabled = matrix.inert =
-        open.disabled = semester.disabled = filter.disabled = search.disabled = false;
+        open.disabled = semester.disabled = details.disabled = filter.disabled = search.disabled = false;
     }
   });
 }

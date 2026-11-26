@@ -225,21 +225,19 @@
 </div>
 </div>
 <section id="assignmentEditor" hidden aria-labelledby="assignmentEditorTitle">
-  <div class="assignment-tools-row">
-  <div class="assignment-heading">
-    <div><h2 id="assignmentEditorTitle" tabindex="-1">수업배정 통합 편집</h2><span data-year></span></div>
-    <button type="button" class="secondary-btn" data-close>커리큘럼으로 돌아가기</button>
-  </div>
   <div class="assignment-toolbar">
+    <h2 id="assignmentEditorTitle" tabindex="-1">수업배정</h2>
+    <span data-year></span>
     <label>학년 <select data-grade><option value="">전체</option></select></label>
     <label>학기 <select data-term><option value="sem1">1학기</option><option value="sem2">2학기</option></select></label>
-    <label>검색 <input type="search" data-search placeholder="과목명 또는 담당교사"></label>
+    <input type="search" data-search aria-label="과목명 또는 담당교사 검색" placeholder="과목·교사 검색">
+    <label><input type="checkbox" data-details>과목 상세</label>
+    <span data-counts></span>
     <button type="button" class="secondary-btn" data-summary>교사별 요약</button>
-    <button type="button" class="secondary-btn" data-preview>변경 내용 확인</button>
+    <button type="button" class="secondary-btn" data-preview>변경 확인</button>
     <button type="button" class="primary-btn" data-save disabled>저장</button>
+    <button type="button" class="secondary-btn" data-close>커리큘럼</button>
   </div>
-  </div>
-  <p class="assignment-inline-help">셀을 클릭해 수정 · 초록색 시수 수정은 같은 과목카드의 담당교사에게 공통 적용</p>
   <div data-matrix></div>
   <p role="status" aria-live="polite"></p>
   <div data-output></div>
@@ -304,27 +302,24 @@
   #assignmentEditor{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0;padding:3px 4px;background:#fff;color:#17263d}
   #assignmentEditorOpen[aria-pressed="true"]{background:#2563eb;color:#fff;border-color:#1d4ed8}
   #assignmentEditor h2{margin:0;font-size:15px;line-height:1.2}
-  #assignmentEditor [data-year]{font-size:11px}
-  #assignmentEditor .assignment-heading,#assignmentEditor .assignment-toolbar,#assignmentEditor .assignment-tools-row{display:flex;align-items:center;gap:5px 8px;flex-wrap:wrap}
-  #assignmentEditor .assignment-tools-row{margin-bottom:3px}
-  #assignmentEditor .assignment-heading{justify-content:space-between}
+  #assignmentEditor :is([data-year],[data-counts]){font-size:11px;color:#42566a;white-space:nowrap}
+  #assignmentEditor .assignment-toolbar{display:flex;align-items:center;gap:3px 7px;flex-wrap:wrap;margin-bottom:4px}
+  #assignmentEditor .assignment-toolbar button{min-height:22px!important;padding:2px 6px!important;font-size:11px!important}
+  #assignmentEditor .assignment-toolbar [data-search]{width:115px}
   #assignmentEditor .assignment-toolbar label{display:flex;gap:4px;align-items:center;font-size:11px}
   #assignmentEditor .assignment-toolbar input,#assignmentEditor .assignment-toolbar select{padding:2px 4px;border:1px solid #bac7d6;border-radius:4px;font:inherit}
-  #assignmentEditor .assignment-inline-help,#assignmentEditor .assignment-matrix-summary{color:#42566a;font-size:11px;margin:3px 0}
-  #assignmentEditor .assignment-matrix-summary{display:flex;align-items:baseline;gap:3px 9px;flex-wrap:wrap}
-  #assignmentEditor .assignment-matrix-summary strong{color:#183951;font-size:12px}
   #assignmentEditor [data-matrix],#assignmentEditor [data-matrix] > div{display:flex;flex:1;flex-direction:column;min-height:0;min-width:0}
   #assignmentEditor .assignment-matrix-scroll{flex:1;min-height:0;overflow:auto;border:1px solid #c4d2df;border-radius:4px}
   #assignmentEditor .assignment-matrix{table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:11px;line-height:1.18}
   #assignmentEditor .assignment-matrix :is(th,td){padding:2px 3px;text-align:center;border:0;border-right:1px solid #e0e7ef;border-bottom:1px solid #d6dfe9;vertical-align:middle;overflow:hidden}
-  #assignmentEditor .assignment-matrix thead th{position:sticky;top:0;z-index:2;background:#e9f1f8;color:#193b56;font-size:11px;white-space:normal}
+  #assignmentEditor .assignment-matrix thead th{position:sticky;top:0;z-index:2;background:#e9f1f8;color:#193b56;font-size:10px;white-space:nowrap;height:27px;box-sizing:border-box}
+  #assignmentEditor .assignment-matrix tbody :is(th,td){height:20px;box-sizing:border-box;white-space:nowrap;text-overflow:ellipsis;padding-block:0}
   #assignmentEditor .assignment-matrix tr>*:first-child{position:sticky;left:0;background:#f0f5f9}
   #assignmentEditor .assignment-matrix tr>*:nth-child(2){position:sticky;left:var(--assignment-grade-width);background:#f0f5f9;text-align:left}
   #assignmentEditor .assignment-matrix tbody tr>*:nth-child(-n+2){z-index:1}
   #assignmentEditor .assignment-matrix thead tr>*:nth-child(-n+2){z-index:3}
-  #assignmentEditor .assignment-teacher-head > :is(span,strong,small){display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  #assignmentEditor .assignment-teacher-head strong{font-size:13px;margin:1px 0}
-  #assignmentEditor .assignment-matrix small{display:block;color:#4b6175;font-size:9px;font-weight:400}
+  #assignmentEditor .assignment-teacher-head > :is(span,strong){display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #assignmentEditor .assignment-teacher-head strong{font-size:10px;color:#28536e}
   #assignmentEditor .assignment-matrix tbody tr:nth-child(even) td:empty{background:#f6f9fc}
   #assignmentEditor .assignment-matrix .assignment-course-hours{background:#fef1d3;color:#64430f;font-weight:700}
   #assignmentEditor .assignment-matrix .assignment-hours-filled{background:#d2eddf;color:#124b35;font-weight:700}
@@ -334,15 +329,13 @@
   #assignmentEditor .assignment-inline-field:focus{text-overflow:clip}
   #assignmentEditor .assignment-inline-field::placeholder{color:inherit;opacity:.75}
   #assignmentEditor input.assignment-changed{background:#fff4c9;border-color:#b38a26}
-  #assignmentEditor .assignment-course-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;font-size:9px;color:#42566a}
-  #assignmentEditor .assignment-course-options .assignment-inline-field{height:12px;line-height:10px}
   #assignmentEditor [role="status"]{margin:3px 0;font-size:11px}
   #assignmentEditor :is([data-output],[role="status"]):empty{display:none}
   #assignmentEditor [data-output]{overflow:auto;max-height:30vh}
 </style>
 
 <script type="module">
-  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=4";
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=5";
   attachAssignmentEditor();
 </script>
 </body>

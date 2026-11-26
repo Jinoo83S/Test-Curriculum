@@ -41,7 +41,7 @@ function node(tag, text, className) {
   return result;
 }
 
-export function renderAssignmentMatrix(data, teachers, { term, grade, query, field }) {
+export function renderAssignmentMatrix(data, teachers, { term, grade, query, field, details = false, onCounts = () => {} }) {
   const needle = query.trim().toLocaleLowerCase();
   const rows = buildReadOnlyCurriculumRows(data.curriculum, data.templates.templates, teachers.teachers, (id, credits) => {
     const roster = data.rosters.rosters?.[id];
@@ -54,10 +54,7 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
       .join(" ").toLocaleLowerCase().includes(needle)));
   const matrix = summarizeMatrix(rows, term);
   const panel = node("div");
-  const heading = node("p", undefined, "assignment-matrix-summary");
-  heading.append(node("strong", matrix.courses.length + "개 수업"), node("span", matrix.teachers.length + "명 배정"),
-    node("span", "교사 합계는 현재 표시 범위 기준 · — 미설정 · 합동 수업은 교사별 한 번 합산"));
-  panel.append(heading);
+  onCounts(matrix.courses.length, matrix.teachers.length);
   if (!matrix.courses.length) {
     panel.append(node("p", "표시할 수업이 없습니다."));
     return panel;
@@ -66,9 +63,13 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
   const wrap = node("div", undefined, "assignment-matrix-scroll");
   wrap.tabIndex = 0;
   wrap.setAttribute("aria-label", "과목별·교사별 수업배정표");
+  const detailColumns = details ? [
+    ["영문 과목명", 165, term + ".nameEn"], ["범주", 46, "category"], ["구분", 50, "track"],
+    ["교과군", 64, "group"], ["언어", 58, term + ".language"]
+  ] : [];
   const columns = [
-    ["학년", 46], ["과목", 208], ["수업 시수", 48], ["학급수", 43],
-    ["과목 총시수", 58], ["학생수", 43], ["담당교사", 100], ["교사수", 43]
+    ["학년", 42], ["과목", 174], ...detailColumns, ["시수", 40], ["학급수", 40],
+    ["총시수", 47], ["학생수", 42], ["담당교사", 94], ["교사수", 40]
   ];
   const teacherWidth = 66;
   const table = node("table", undefined, "assignment-matrix");
@@ -94,8 +95,9 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     const total = teacher.count === teacher.missing ? "미설정" : format.format(teacher.hours) + " 시수";
     cell.title = teacher.name + " · " + total + " · " + teacher.count + "개 수업" +
       (teacher.missing ? " · 미설정 " + teacher.missing : "");
-    cell.append(node("span", teacher.name), node("strong", total),
-      node("small", teacher.count + "개" + (teacher.missing ? " · 미설정 " + teacher.missing : "")));
+    cell.append(node("span", teacher.name),
+      node("strong", (teacher.count === teacher.missing ? "—" : format.format(teacher.hours)) +
+        " / " + teacher.count + (teacher.missing ? "*" : "")));
     header.append(cell);
   }
 
@@ -107,15 +109,17 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     const subjectCell = node("th");
     subjectCell.scope = "row";
     const rowKey = row.grade + ":" + row.id;
-    subjectCell.append(field(rowKey, term + ".nameKo"), field(rowKey, term + ".nameEn"));
-    const options = node("div", undefined, "assignment-course-options");
-    for (const name of ["category", "track", "group", term + ".language"]) options.append(field(rowKey, name));
-    subjectCell.append(options);
+    const name = field(rowKey, term + ".nameKo");
+    const note = [subject.english, row.category, row.track, row.group, subject.language, subject.jointLesson?.name]
+      .filter(Boolean).join(" · ");
+    if (note) name.title += " · " + note;
+    subjectCell.append(name);
     if (subject.jointLesson?.name) {
-      gradeCell.append(node("small", "합동"));
-      gradeCell.title = subject.jointLesson.name;
+      gradeCell.textContent = row.grade.replace("학년", "") + "·합";
+      gradeCell.title = row.grade + " · 합동수업 · " + subject.jointLesson.name;
     }
     tr.append(subjectCell);
+    for (const [, , key] of detailColumns) tr.insertCell().append(field(rowKey, key));
     tr.insertCell().append(field(rowKey, "credits"));
     tr.insertCell().append(field(rowKey, term + ".classCount"));
     const courseHours = tr.insertCell();
