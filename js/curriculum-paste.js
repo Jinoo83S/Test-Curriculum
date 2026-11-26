@@ -15,7 +15,7 @@ function gradeOf(value, allowBareNumber = true) {
   return match ? match[1] + "학년" : "";
 }
 
-function readTsv(source) {
+export function readTsv(source) {
   const rows = [];
   let row = [], cell = "", quoted = false, line = 1, start = 1;
   const finishCell = () => { row.push(clean(cell)); cell = ""; };
