@@ -4,15 +4,14 @@ import { appState, saveCurriculumPaste } from "./state.js?v=r426";
 import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
-import { assignmentRows, planAssignments, teacherTotals, rowFields, termFields, terms } from "./assignment-editor-model.js?v=1";
-import { renderAssignmentMatrix } from "./assignment-matrix.js?v=1";
+import { assignmentRows, planAssignments, teacherTotals, rowFields, termFields } from "./assignment-editor-model.js?v=1";
+import { renderAssignmentMatrix } from "./assignment-matrix.js?v=2";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
   nameKo: "국문 과목명", nameEn: "영문 과목명", teacher: "담당교사", language: "수업 언어",
   classCount: "학급수", teacherLoadHours: "교사시수"
 };
-const columns = [...rowFields, ...terms.flatMap(term => termFields.map(field => term + "." + field))];
 const titleFor = field => {
   const [term, name] = field.split(".");
   return name ? (term === "sem1" ? "1학기 " : "2학기 ") + labels[name] : labels[field];
@@ -51,23 +50,19 @@ function table(headers, rows) {
 
 export function attachAssignmentEditor() {
   const open = document.getElementById("assignmentEditorOpen");
-  const dialog = document.getElementById("assignmentEditor");
-  const close = dialog.querySelector("[data-close]");
-  const filter = dialog.querySelector("[data-grade]");
-  const search = dialog.querySelector("[data-search]");
-  const summary = dialog.querySelector("[data-summary]");
-  const previewButton = dialog.querySelector("[data-preview]");
-  const save = dialog.querySelector("[data-save]");
-  const message = dialog.querySelector("[role=status]");
-  const grid = dialog.querySelector("[data-grid]");
-  const matrix = dialog.querySelector("[data-matrix]");
-  const semester = dialog.querySelector("[data-term]");
-  const editMode = dialog.querySelector("[data-edit-mode]");
-  const matrixMode = dialog.querySelector("[data-matrix-mode]");
-  const editHelp = dialog.querySelector("[data-edit-help]");
-  const output = dialog.querySelector("[data-output]");
+  const workspace = document.getElementById("assignmentEditor");
+  const close = workspace.querySelector("[data-close]");
+  const filter = workspace.querySelector("[data-grade]");
+  const search = workspace.querySelector("[data-search]");
+  const summary = workspace.querySelector("[data-summary]");
+  const previewButton = workspace.querySelector("[data-preview]");
+  const save = workspace.querySelector("[data-save]");
+  const message = workspace.querySelector("[role=status]");
+  const matrix = workspace.querySelector("[data-matrix]");
+  const semester = workspace.querySelector("[data-term]");
+  const output = workspace.querySelector("[data-output]");
   const drafts = new Map();
-  let before, teachers, rows, preview, selectedRow, editing = false, saving = false;
+  let before, teachers, originals, preview, saving = false, redrawPending = false;
   for (const grade of GRADE_KEYS) {
     const option = make("option", grade);
     option.value = grade;
@@ -81,121 +76,101 @@ export function attachAssignmentEditor() {
     message.textContent = drafts.size ? "수정 " + drafts.size + "행 · 변경 사항을 확인한 뒤 저장하세요." : "";
   }
 
-  function fieldValue(entry, field) {
-    return drafts.get(entry.key)?.[field] ?? valueFor(entry, field);
-  }
-
-  function edit(entry, field, value, control) {
-    const changes = drafts.get(entry.key) || {};
+  function edit(key, field, value, control) {
+    const entry = originals.get(key);
+    const changes = drafts.get(key) || {};
     if (value.trim() === valueFor(entry, field).trim()) delete changes[field];
     else changes[field] = value;
-    if (Object.keys(changes).length) drafts.set(entry.key, changes);
-    else drafts.delete(entry.key);
-    control?.classList.toggle("assignment-changed", Object.hasOwn(changes, field));
-  }
-
-  function editable(entry, field) {
-    const [term, name] = field.split(".");
-    return !name || (entry[term] && !(name === "teacher" && entry[term].compound));
+    if (Object.keys(changes).length) drafts.set(key, changes);
+    else drafts.delete(key);
+    control.classList.toggle("assignment-changed", Object.hasOwn(changes, field));
+    redrawPending = true;
+    invalidate();
   }
 
   function draw() {
-    matrix.hidden = editing;
-    grid.hidden = editHelp.hidden = !editing;
-    semester.disabled = editing;
-    editMode.setAttribute("aria-pressed", String(editing));
-    matrixMode.setAttribute("aria-pressed", String(!editing));
-    if (editing) {
-      drawEditor();
-      return;
-    }
+    if (workspace.hidden || !before) return;
+    redrawPending = false;
+    const scroll = matrix.querySelector(".assignment-matrix-scroll");
+    const left = scroll?.scrollLeft || 0, top = scroll?.scrollTop || 0;
     let shown = before;
     if (drafts.size) {
       try {
         shown = planAssignments(before, teachers, drafts).after;
+        if (!preview) message.textContent = "수정 " + drafts.size + "행 · 변경 사항을 확인한 뒤 저장하세요.";
       } catch (error) {
-        message.textContent = error.message + " 저장된 수업배정을 표시합니다.";
+        message.textContent = error.message + " 합계는 저장된 값을 표시합니다.";
       }
     }
+    const displayed = new Map(assignmentRows(shown, teachers).map(entry => [entry.key, entry]));
     matrix.replaceChildren(renderAssignmentMatrix(shown, teachers, {
       term: semester.value, grade: filter.value, query: search.value,
-      edit: key => {
-        selectedRow = key;
-        editing = true;
-        draw();
-        grid.querySelector("input")?.focus();
+      field: (key, name, placeholder) => {
+        const entry = displayed.get(key);
+        const draft = drafts.get(key)?.[name];
+        const label = entry.grade + " " + courseName(entry) + " " + titleFor(name);
+        const control = make("input");
+        control.value = draft ?? valueFor(entry, name);
+        control.placeholder = placeholder || "—";
+        control.className = "assignment-inline-field";
+        control.dataset.row = key;
+        control.dataset.field = name;
+        control.setAttribute("aria-label", label);
+        control.title = label;
+        if (/credits|classCount|teacherLoadHours/.test(name)) control.inputMode = "decimal";
+        if (name.endsWith(".teacherLoadHours")) control.title += " · 동일 과목카드의 담당 교사에게 공통 적용";
+        control.classList.toggle("assignment-changed", draft !== undefined);
+        control.addEventListener("input", () => edit(key, name, control.value, control));
+        control.addEventListener("keydown", event => {
+          if (event.key === "Enter" && !event.isComposing) {
+            event.preventDefault();
+            control.blur();
+          }
+        });
+        return control;
       }
     }));
+    const nextScroll = matrix.querySelector(".assignment-matrix-scroll");
+    if (nextScroll) {
+      nextScroll.scrollLeft = left;
+      nextScroll.scrollTop = top;
+    }
   }
 
-  function drawEditor() {
-    const needle = search.value.trim().toLocaleLowerCase();
-    const visible = rows.filter(entry => selectedRow ? entry.key === selectedRow : (!filter.value || entry.grade === filter.value) && (!needle ||
-      [courseName(entry), ...terms.flatMap(term => [entry[term]?.nameKo, entry[term]?.nameEn, fieldValue(entry, term + ".teacher")])]
-        .join(" ").toLocaleLowerCase().includes(needle)));
-    const header = ["학년", "과목", ...columns.map(titleFor), ...terms.flatMap((_, i) =>
-      [`${i + 1}학기 과목시수`, `${i + 1}학기 명단 인원`, `${i + 1}학기 과목카드 ID`])];
-    const node = table(header, []);
-    for (const [index, entry] of visible.entries()) {
-      const tr = node.tBodies[0].insertRow();
-      tr.insertCell().textContent = entry.grade;
-      tr.insertCell().textContent = courseName(entry);
-      for (const [col, field] of columns.entries()) {
-        const td = tr.insertCell();
-        if (!editable(entry, field)) {
-          td.textContent = valueFor(entry, field) || "—";
-          continue;
+  matrix.addEventListener("focusout", () => {
+    setTimeout(() => {
+      if (redrawPending && !preview && !saving && !matrix.contains(document.activeElement)) draw();
+    }, 0);
+  });
+
+  matrix.addEventListener("paste", event => {
+    const input = event.target;
+    const startField = input.dataset.field;
+    const plain = event.clipboardData?.getData("text/plain");
+    if (!startField || !plain || !/[\t\r\n]/.test(plain.replace(/\r?\n$/, ""))) return;
+    event.preventDefault();
+    const fields = [...rowFields, ...termFields.map(field => semester.value + "." + field)];
+    const rows = Array.from(matrix.querySelectorAll("tbody tr"));
+    const startRow = rows.indexOf(input.closest("tr"));
+    const startColumn = fields.indexOf(startField);
+    try {
+      const changes = new Map();
+      for (const [i, { cells }] of readTsv(plain).entries()) {
+        for (const [j, value] of cells.entries()) {
+          const field = fields[startColumn + j];
+          const control = rows[startRow + i]?.querySelector('[data-field="' + field + '"]');
+          if (!control) throw new Error("붙여넣기에 편집할 수 없는 셀이 포함되어 있습니다.");
+          changes.set(control, value);
         }
-        const control = make("input");
-        control.value = fieldValue(entry, field);
-        control.dataset.cell = index + ":" + col;
-        control.setAttribute("aria-label", entry.grade + " " + courseName(entry) + " " + titleFor(field));
-        if (drafts.get(entry.key)?.[field] !== undefined) control.classList.add("assignment-changed");
-        control.addEventListener("input", () => {
-          edit(entry, field, control.value, control);
-          invalidate();
-        });
-        td.append(control);
       }
-      for (const term of terms) {
-        const subject = entry[term];
-        for (const value of [subject?.workload.total, subject?.students, subject?.id]) tr.insertCell().textContent = text(value);
-      }
-    }
-    node.addEventListener("paste", event => {
-      const first = event.target.dataset.cell;
-      const plain = event.clipboardData?.getData("text/plain");
-      if (!first || !plain || !/[\t\r\n]/.test(plain.replace(/\r?\n$/, ""))) return;
-      event.preventDefault();
-      const [startRow, startCol] = first.split(":").map(Number);
-      let values;
-      try {
-        values = readTsv(plain).map(row => row.cells);
-      } catch (error) {
-        message.textContent = error.message;
-        return;
-      }
-      if (values.some((line, i) => !visible[startRow + i] || line.some((_, j) =>
-        !columns[startCol + j] || !editable(visible[startRow + i], columns[startCol + j])))) {
-        message.textContent = "붙여넣기 범위에 편집할 수 없는 셀이 있습니다. 범위를 줄여 다시 시도해 주세요.";
-        return;
-      }
-      values.forEach((line, i) => line.forEach((value, j) => {
-        const row = startRow + i, col = startCol + j;
-        const control = node.querySelector('[data-cell="' + row + ":" + col + '"]');
+      for (const [control, value] of changes) {
         control.value = value;
-        edit(visible[row], columns[col], value, control);
-      }));
-      invalidate();
-    });
-    if (selectedRow) {
-      const all = make("button", "표시 범위 전체 편집");
-      all.type = "button";
-      all.className = "secondary-btn";
-      all.addEventListener("click", () => { selectedRow = undefined; draw(); });
-      grid.replaceChildren(all, node);
-    } else grid.replaceChildren(node);
-  }
+        edit(control.dataset.row, control.dataset.field, value, control);
+      }
+    } catch (error) {
+      message.textContent = error.message;
+    }
+  });
 
   function workloadTable(oldTotals, newTotals = oldTotals, changedOnly = false) {
     const changes = [];
@@ -222,16 +197,17 @@ export function attachAssignmentEditor() {
       if (!(await ensureDomains(domains)) || !canEdit()) throw new Error("커리큘럼과 수강명단을 불러오지 못했습니다.");
       before = snapshot();
       teachers = structuredClone(appState.teachers);
-      rows = assignmentRows(before, teachers);
+      originals = new Map(assignmentRows(before, teachers).map(entry => [entry.key, entry]));
       drafts.clear();
       filter.value = search.value = "";
       semester.value = "sem1";
-      selectedRow = undefined;
-      editing = false;
-      dialog.querySelector("[data-year]").textContent = ACTIVE_SCHOOL_YEAR + "학년도 · 연간 커리큘럼";
+      workspace.querySelector("[data-year]").textContent = ACTIVE_SCHOOL_YEAR + "학년도 · 연간 커리큘럼";
       invalidate();
+      workspace.hidden = false;
+      document.body.classList.add("assignment-workspace-active");
+      open.setAttribute("aria-pressed", "true");
       draw();
-      dialog.showModal();
+      workspace.querySelector("h2").focus();
     } catch (error) {
       alert(error.message);
     } finally {
@@ -265,18 +241,39 @@ export function attachAssignmentEditor() {
     }
   }
 
-  open.addEventListener("click", start);
-  semester.addEventListener("change", draw);
-  for (const [control, event] of [[filter, "change"], [search, "input"]]) {
-    control.addEventListener(event, () => { selectedRow = undefined; draw(); });
+  function leave() {
+    if (saving || (drafts.size && !confirm("저장하지 않은 변경을 취소할까요?"))) return false;
+    drafts.clear();
+    workspace.hidden = true;
+    document.body.classList.remove("assignment-workspace-active");
+    open.setAttribute("aria-pressed", "false");
+    return true;
   }
-  editMode.addEventListener("click", () => { editing = true; selectedRow = undefined; draw(); });
-  matrixMode.addEventListener("click", () => { editing = false; selectedRow = undefined; draw(); });
-  close.addEventListener("click", () => {
-    if (!saving && (!drafts.size || confirm("저장하지 않은 변경을 취소할까요?"))) dialog.close();
+
+  open.addEventListener("click", () => {
+    if (workspace.hidden) void start();
+    else if (leave()) open.focus();
   });
-  dialog.addEventListener("cancel", event => {
-    if (saving || (drafts.size && !confirm("저장하지 않은 변경을 취소할까요?"))) event.preventDefault();
+  close.addEventListener("click", () => { if (leave()) open.focus(); });
+  semester.addEventListener("change", draw);
+  filter.addEventListener("change", draw);
+  search.addEventListener("input", draw);
+  for (const id of ["navBoardBtn", "navManagerBtn"]) {
+    document.getElementById(id)?.addEventListener("click", event => {
+      if (!workspace.hidden && !leave()) event.stopImmediatePropagation();
+    }, true);
+  }
+  document.getElementById("curriculumModeSelect")?.addEventListener("change", event => {
+    if (!workspace.hidden && event.target.value === "threeYear" && !leave()) {
+      event.target.value = "annual";
+      event.stopImmediatePropagation();
+    }
+  }, true);
+  window.addEventListener("beforeunload", event => {
+    if (!workspace.hidden && drafts.size) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
   });
   summary.addEventListener("click", () => {
     if (preview) {
@@ -291,12 +288,12 @@ export function attachAssignmentEditor() {
     if (!preview || saving || !canEdit()) return;
     saving = true;
     close.disabled = previewButton.disabled = save.disabled = true;
-    grid.inert = matrix.inert = editMode.disabled = matrixMode.disabled = filter.disabled = search.disabled = true;
+    matrix.inert = open.disabled = semester.disabled = filter.disabled = search.disabled = true;
     try {
       if (JSON.stringify(teachers) !== JSON.stringify(appState.teachers)) throw new Error("교사 데이터가 변경되었습니다. 화면을 다시 열어 주세요.");
       await saveCurriculumPaste(before, preview.after, { includeRosters: preview.includeRosters });
       before = snapshot();
-      rows = assignmentRows(before, teachers);
+      originals = new Map(assignmentRows(before, teachers).map(entry => [entry.key, entry]));
       drafts.clear();
       invalidate();
       draw();
@@ -305,8 +302,8 @@ export function attachAssignmentEditor() {
       message.textContent = error.message;
       save.disabled = false;
     } finally {
-      saving = close.disabled = previewButton.disabled = grid.inert = matrix.inert =
-        editMode.disabled = matrixMode.disabled = filter.disabled = search.disabled = false;
+      saving = close.disabled = previewButton.disabled = matrix.inert =
+        open.disabled = semester.disabled = filter.disabled = search.disabled = false;
     }
   });
 }
