@@ -5,7 +5,7 @@ import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals } from "./assignment-editor-model.js?v=1";
-import { assignmentHourIssues, renderAssignmentMatrix } from "./assignment-matrix.js?v=6";
+import { assignmentHourIssues, renderAssignmentMatrix } from "./assignment-matrix.js?v=7";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
@@ -63,6 +63,17 @@ export function attachAssignmentEditor() {
   const semester = workspace.querySelector("[data-term]");
   const details = workspace.querySelector("[data-details]");
   const counts = workspace.querySelector("[data-counts]");
+  const resetWidths = workspace.querySelector("[data-reset-widths]");
+  const widthPreferenceKey = "his-curriculum-assignment-column-widths";
+  const columnWidths = new Map();
+  try {
+    const stored = JSON.parse(localStorage.getItem(widthPreferenceKey) || "{}");
+    for (const [id, width] of Object.entries(stored || {})) {
+      if (Number.isFinite(width)) columnWidths.set(id, width);
+    }
+  } catch {
+    // The table remains usable when browser storage is unavailable.
+  }
   const report = workspace.querySelector("[data-assignment-report]");
   const reportTitle = report.querySelector("h3");
   const reportSave = report.querySelector("[data-report-save]");
@@ -112,6 +123,15 @@ export function attachAssignmentEditor() {
     const displayed = new Map(assignmentRows(shown, teachers).map(entry => [entry.key, entry]));
     matrix.replaceChildren(renderAssignmentMatrix(shown, teachers, {
       term: semester.value, grade: filter.value, query: search.value, details: details.checked,
+      columnWidths,
+      onResize: (id, width) => {
+        columnWidths.set(id, width);
+        try {
+          localStorage.setItem(widthPreferenceKey, JSON.stringify(Object.fromEntries(columnWidths)));
+        } catch {
+          // Keep the width for the current page even without storage.
+        }
+      },
       onCounts: (courses, teachers, differences) => {
         counts.textContent = courses + "수업 · " + teachers + "교사" + (differences ? " · 시수 차이 " + differences + "행" : "");
         counts.classList.toggle("assignment-warning-count", differences > 0);
@@ -291,6 +311,11 @@ export function attachAssignmentEditor() {
   close.addEventListener("click", () => { if (leave()) open.focus(); });
   semester.addEventListener("change", draw);
   details.addEventListener("change", draw);
+  resetWidths.addEventListener("click", () => {
+    columnWidths.clear();
+    try { localStorage.removeItem(widthPreferenceKey); } catch { /* In-memory widths are already reset. */ }
+    draw();
+  });
   filter.addEventListener("change", draw);
   search.addEventListener("input", draw);
   for (const id of ["navBoardBtn", "navManagerBtn"]) {
@@ -332,7 +357,7 @@ export function attachAssignmentEditor() {
     if (!preview || saving || !canEdit()) return;
     saving = true;
     close.disabled = previewButton.disabled = save.disabled = reportSave.disabled = true;
-    matrix.inert = open.disabled = semester.disabled = details.disabled = filter.disabled = search.disabled = true;
+    matrix.inert = open.disabled = semester.disabled = details.disabled = resetWidths.disabled = filter.disabled = search.disabled = true;
     try {
       if (JSON.stringify(teachers) !== JSON.stringify(appState.teachers)) throw new Error("교사 데이터가 변경되었습니다. 화면을 다시 열어 주세요.");
       await saveCurriculumPaste(before, preview.after, { includeRosters: preview.includeRosters });
@@ -348,7 +373,7 @@ export function attachAssignmentEditor() {
       save.disabled = reportSave.disabled = false;
     } finally {
       saving = close.disabled = previewButton.disabled = matrix.inert =
-        open.disabled = semester.disabled = details.disabled = filter.disabled = search.disabled = false;
+        open.disabled = semester.disabled = details.disabled = resetWidths.disabled = filter.disabled = search.disabled = false;
     }
   }
   save.addEventListener("click", saveChanges);
