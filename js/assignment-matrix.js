@@ -21,8 +21,8 @@ export function assignmentHourDifferences(row, subject) {
     course: differs(calculatedTotal, total)
       ? "계산 기준 총시수 " + hoursLabel(calculatedTotal) + " · 표시 총시수 " + hoursLabel(total)
       : differs(inputTotal, total) ? "입력 시수 × 학급수 " + hoursLabel(inputTotal) + " · 표시 총시수 " + hoursLabel(total) : "",
-    teacher: subject.jointLesson && creative
-      ? (subject.hasTeacherOverride && differs(subject.teacherTotal, teacherHours)
+    teacher: creative
+      ? (subject.jointLesson && subject.hasTeacherOverride && differs(subject.teacherTotal, teacherHours)
         ? "입력 교사시수 " + hoursLabel(subject.teacherTotal) + " · 합동수업 적용 시수 " + hoursLabel(teacherHours) : "")
       : differs(teacherHours, total)
         ? (subject.jointLesson ? "합동수업 교사시수 " : "교사시수 ") + hoursLabel(teacherHours) +
@@ -103,7 +103,10 @@ export function assignmentHourIssues(data, teachers, { keys, term, grade } = {})
     }));
 }
 
-export function renderAssignmentMatrix(data, teachers, { term, grade, query, field, details = false, onCounts = () => {} }) {
+export function renderAssignmentMatrix(data, teachers, {
+  term, grade, query, field, details = false, onCounts = () => {},
+  columnWidths = new Map(), onResize = () => {}
+}) {
   const needle = query.trim().toLocaleLowerCase();
   const rows = assignmentMatrixRows(data, teachers).filter(row => (!grade || row.grade === grade) && (!needle ||
       [row.grade, row.group, row.track, row[term]?.name, row[term]?.english, ...(row[term]?.teachers.map(t => t.name) || [])]
@@ -121,40 +124,88 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
   wrap.tabIndex = 0;
   wrap.setAttribute("aria-label", "과목별·교사별 수업배정표");
   const detailColumns = details ? [
-    ["범주", 46, "category"], ["구분", 50, "track"],
-    ["교과군", 64, "group"], ["언어", 58, term + ".language"]
+    ["범주", 46, "category"], ["구분", 50, "track"], ["교과군", 64, "group"],
+    ["언어", 58, "language"], ["창체 시간", 54, "creative"]
   ] : [];
   const columns = [
-    ["학년", 42], ["국문 과목명", 155], ["영문 과목명", 155], ...detailColumns, ["시수/시간", 56], ["학급수", 40],
-    ["총시수", 47], ["학생수", 42], ["담당교사", 94], ["교사수", 40]
+    ["학년", 42, "grade"], ["국문 과목명", 155, "nameKo"], ["영문 과목명", 155, "nameEn"], ...detailColumns,
+    ["시수", 44, "credits"], ["학급수", 40, "classCount"], ["총시수", 47, "total"], ["학생수", 42, "students"],
+    ["담당교사", 94, "teacher"], ["교사수", 40, "teacherCount"],
+    ...matrix.teachers.map(teacher => [teacher.name, 46, teacher.key, teacher])
   ];
-  const teacherWidth = 46;
   const table = node("table", undefined, "assignment-matrix");
   const colgroup = node("colgroup");
-  const widths = [...columns.map(([, width]) => width), ...matrix.teachers.map(() => teacherWidth)];
-  for (const width of widths) {
+  const clampWidth = value => Math.max(32, Math.min(520, Math.round(value)));
+  const widths = columns.map(([, width, id]) => {
+    const saved = columnWidths.get(id);
+    return Number.isFinite(saved) ? clampWidth(saved) : width;
+  });
+  const cols = widths.map(width => {
     const col = node("col");
     col.style.width = width + "px";
     colgroup.append(col);
-  }
-  table.style.width = widths.reduce((sum, width) => sum + width, 0) + "px";
-  table.style.setProperty("--assignment-grade-width", columns[0][1] + "px");
+    return col;
+  });
+  const updateTableWidth = () => {
+    table.style.width = widths.reduce((sum, width) => sum + width, 0) + "px";
+    table.style.setProperty("--assignment-grade-width", widths[0] + "px");
+  };
+  updateTableWidth();
   table.append(colgroup);
   const header = table.createTHead().insertRow();
-  for (const [label] of columns) {
-    const cell = node("th", label);
+  for (const [index, [label, , id, teacher]] of columns.entries()) {
+    const cell = node("th", teacher ? undefined : label, teacher ? "assignment-teacher-head" : undefined);
     cell.scope = "col";
-    header.append(cell);
-  }
-  for (const teacher of matrix.teachers) {
-    const cell = node("th", undefined, "assignment-teacher-head");
-    cell.scope = "col";
-    const total = teacher.count === teacher.missing ? "미설정" : format.format(teacher.hours) + " 시수";
-    cell.title = teacher.name + " · " + total + " · " + teacher.count + "개 수업" +
-      (teacher.missing ? " · 미설정 " + teacher.missing : "");
-    cell.append(node("span", teacher.name),
-      node("strong", (teacher.count === teacher.missing ? "—" : format.format(teacher.hours)) +
-        " / " + teacher.count + (teacher.missing ? "*" : "")));
+    if (teacher) {
+      const total = teacher.count === teacher.missing ? "미설정" : format.format(teacher.hours) + " 시수";
+      cell.title = teacher.name + " · " + total + " · " + teacher.count + "개 수업" +
+        (teacher.missing ? " · 미설정 " + teacher.missing : "");
+      const number = node("strong", (teacher.count === teacher.missing ? "—" : format.format(teacher.hours)) +
+        " / " + teacher.count + (teacher.missing ? "*" : ""));
+      if (teacher.hours - 20 > 1e-8) {
+        number.classList.add("assignment-teacher-overload");
+        cell.title += " · 20시수 초과";
+      }
+      cell.append(node("span", teacher.name), number);
+    }
+
+    const grip = node("span", undefined, "assignment-column-resizer");
+    grip.tabIndex = 0;
+    grip.setAttribute("role", "separator");
+    grip.setAttribute("aria-orientation", "vertical");
+    grip.setAttribute("aria-label", label + " 열 너비");
+    grip.setAttribute("aria-valuemin", "32");
+    grip.setAttribute("aria-valuemax", "520");
+    grip.setAttribute("aria-valuenow", String(widths[index]));
+    const resize = value => {
+      widths[index] = clampWidth(value);
+      cols[index].style.width = widths[index] + "px";
+      grip.setAttribute("aria-valuenow", String(widths[index]));
+      updateTableWidth();
+    };
+    let drag;
+    grip.addEventListener("pointerdown", event => {
+      if (event.button !== 0 || drag) return;
+      event.preventDefault();
+      drag = { pointer: event.pointerId, left: event.clientX, width: widths[index] };
+      grip.setPointerCapture(event.pointerId);
+    });
+    grip.addEventListener("pointermove", event => {
+      if (drag?.pointer === event.pointerId) resize(drag.width + event.clientX - drag.left);
+    });
+    grip.addEventListener("lostpointercapture", event => {
+      if (drag?.pointer !== event.pointerId) return;
+      if (widths[index] !== drag.width) onResize(id, widths[index]);
+      drag = undefined;
+    });
+    grip.addEventListener("keydown", event => {
+      const move = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+      if (!move) return;
+      event.preventDefault();
+      resize(widths[index] + move * (event.shiftKey ? 16 : 4));
+      onResize(id, widths[index]);
+    });
+    cell.append(grip);
     header.append(cell);
   }
 
@@ -183,17 +234,23 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, fie
     const english = tr.insertCell();
     english.className = "assignment-english-name";
     english.append(field(rowKey, term + ".nameEn"));
-    for (const [, , key] of detailColumns) tr.insertCell().append(field(rowKey, key));
-    const creditsCell = tr.insertCell();
-    const credit = field(rowKey, "credits");
     const creative = isChanCheCategory(row.category);
-    if (creative) {
-      creditsCell.classList.add("assignment-creative-time");
-      credit.title = "창체 시간 · 시간표 적용 시수 " + hoursLabel(row.credits);
-      credit.setAttribute("aria-label", row.grade + " " + (subject.name || subject.english) + " 창체 시간");
+    for (const [, , id] of detailColumns) {
+      const detail = tr.insertCell();
+      if (id === "creative") {
+        if (creative) {
+          const time = field(rowKey, "credits");
+          time.title = "창체 교육과정 시간 · 시간표 시수 " + hoursLabel(row.credits);
+          time.setAttribute("aria-label", row.grade + " " + (subject.name || subject.english) + " 창체 교육과정 시간");
+          detail.append(time);
+        }
+      } else detail.append(field(rowKey, id === "language" ? term + ".language" : id));
     }
-    creditsCell.append(credit);
-    if (creative) creditsCell.append(node("span", "시간", "assignment-time-unit"));
+    const creditsCell = tr.insertCell();
+    if (creative) {
+      creditsCell.textContent = hoursLabel(row.credits);
+      creditsCell.title = "창체 시간표 시수 · 교육과정 시간은 과목 상세에서 확인";
+    } else creditsCell.append(field(rowKey, "credits"));
     flagDifference(creditsCell, differences.credits);
     tr.insertCell().append(field(rowKey, term + ".classCount"));
     const courseHours = tr.insertCell();
