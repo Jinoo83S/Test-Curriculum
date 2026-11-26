@@ -1,4 +1,4 @@
-import { buildReadOnlyCurriculumRows } from "./curriculum-read-view.js?v=r451-matrix";
+import { buildReadOnlyCurriculumRows } from "./curriculum-read-view.js?v=r451-inline";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 const format = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 2 });
@@ -41,7 +41,7 @@ function node(tag, text, className) {
   return result;
 }
 
-export function renderAssignmentMatrix(data, teachers, { term, grade, query, edit }) {
+export function renderAssignmentMatrix(data, teachers, { term, grade, query, field }) {
   const needle = query.trim().toLocaleLowerCase();
   const rows = buildReadOnlyCurriculumRows(data.curriculum, data.templates.templates, teachers.teachers, (id, credits) => {
     const roster = data.rosters.rosters?.[id];
@@ -68,7 +68,7 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, edi
   wrap.setAttribute("aria-label", "과목별·교사별 수업배정표");
   const table = node("table", undefined, "assignment-matrix");
   const header = table.createTHead().insertRow();
-  for (const label of ["학년", "과목", "수업 시수", "학급수", "과목 총시수", "학생수", "교사수"]) {
+  for (const label of ["학년", "과목", "수업 시수", "학급수", "과목 총시수", "학생수", "담당교사", "교사수"]) {
     const cell = node("th", label);
     cell.scope = "col";
     header.append(cell);
@@ -89,25 +89,32 @@ export function renderAssignmentMatrix(data, teachers, { term, grade, query, edi
     gradeCell.textContent = row.grade;
     const subjectCell = node("th");
     subjectCell.scope = "row";
-    const button = node("button", subject.name || subject.english, "assignment-course-link");
-    button.type = "button";
-    button.addEventListener("click", () => edit(row.grade + ":" + row.id));
-    subjectCell.append(button);
-    if (subject.english && subject.english !== subject.name) subjectCell.append(node("small", subject.english));
-    subjectCell.append(node("small", [row.group, row.track, subject.jointLesson?.name].filter(Boolean).join(" · ")));
+    const rowKey = row.grade + ":" + row.id;
+    subjectCell.append(field(rowKey, term + ".nameKo"), field(rowKey, term + ".nameEn"));
+    const options = node("div", undefined, "assignment-course-options");
+    for (const name of ["category", "track", "group", term + ".language"]) options.append(field(rowKey, name));
+    subjectCell.append(options);
+    if (subject.jointLesson?.name) subjectCell.append(node("small", subject.jointLesson.name));
     tr.append(subjectCell);
-    for (const [index, value] of [row.credits, subject.classCount, subject.total, subject.students, cells.size].entries()) {
-      const cell = tr.insertCell();
-      cell.textContent = hoursLabel(value);
-      if (index === 2) cell.className = "assignment-course-hours";
-    }
+    tr.insertCell().append(field(rowKey, "credits"));
+    tr.insertCell().append(field(rowKey, term + ".classCount"));
+    const courseHours = tr.insertCell();
+    courseHours.textContent = hoursLabel(subject.total);
+    courseHours.className = "assignment-course-hours";
+    tr.insertCell().textContent = hoursLabel(subject.students);
+    const assigned = tr.insertCell();
+    assigned.className = "assignment-teacher-names";
+    if (subject.compound) assigned.textContent = subject.teachers.map(teacher => teacher.name).join(", ") || "—";
+    else assigned.append(field(rowKey, term + ".teacher"));
+    tr.insertCell().textContent = hoursLabel(cells.size);
     for (const { key } of matrix.teachers) {
       const cell = tr.insertCell();
       const value = cells.get(key);
       if (!value) continue;
       const known = Number.isFinite(value.hours);
       cell.className = value.shared || !known ? "assignment-hours-muted" : "assignment-hours-filled";
-      cell.textContent = value.shared ? "합동" : known ? hoursLabel(value.hours) : "미설정";
+      if (subject.jointLesson) cell.textContent = value.shared ? "합동" : hoursLabel(value.hours);
+      else cell.append(field(rowKey, term + ".teacherLoadHours", known ? hoursLabel(value.hours) : "미설정"));
     }
   }
   wrap.append(table);
