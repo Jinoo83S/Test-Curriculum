@@ -32,7 +32,7 @@ function currentCourses() {
   return courses;
 }
 
-export function openJointLessonSettings() {
+export function openJointLessonSettings(onSave) {
   if (!canEdit() || !initialLoad.curriculum || !initialLoad.templates) return;
   const dialog = make("dialog");
   dialog.className = "joint-lesson-dialog";
@@ -139,8 +139,9 @@ export function openJointLessonSettings() {
     status.textContent = "저장 중…";
     appState.curriculum.jointLessons = next;
     scheduleSave("curriculum");
+    let saved = false;
     try {
-      const saved = await saveNow("curriculum");
+      saved = await saveNow("curriculum");
       load(id);
       status.textContent = saved ? "저장했습니다." : "서버에 저장하지 못했습니다. 다시 저장해 주세요.";
     } catch (_) {
@@ -150,6 +151,7 @@ export function openJointLessonSettings() {
       saving = false;
       controls.forEach(([control, wasDisabled]) => { control.disabled = wasDisabled; });
     }
+    if (saved) onSave?.();
   }
 
   function latestGroups() {
