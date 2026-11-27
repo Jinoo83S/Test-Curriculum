@@ -7,7 +7,7 @@
   <title>HIS Curriculum · 관리자 편집</title>
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <script>
-    window.HIS_APP_VERSION = "2026-11-25-joint-lessons-r451";
+    window.HIS_APP_VERSION = "2026-11-27-course-editing-r452";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
@@ -238,6 +238,7 @@
     <label><input type="checkbox" data-details>과목 상세</label>
     <span data-counts></span>
     <button type="button" class="secondary-btn" data-reset-widths>열 너비 초기화</button>
+    <button type="button" class="secondary-btn" data-academic-groups>과목 묶음</button>
     <button type="button" class="secondary-btn" data-summary>교사별 요약</button>
     <button type="button" class="secondary-btn" data-preview>변경 확인</button>
     <button type="button" class="primary-btn" data-save disabled>저장</button>
@@ -379,7 +380,7 @@
 </style>
 
 <script type="module">
-  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=9";
+  import { attachAssignmentEditor } from "./js/assignment-editor.js?v=10";
   attachAssignmentEditor();
 </script>
 </body>
