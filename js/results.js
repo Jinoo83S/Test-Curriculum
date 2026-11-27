@@ -3,10 +3,12 @@
 // ================================================================
 import { auth, GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { clean, escapeHtml, getEffectiveCredit } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
+import { canEdit } from "./auth.js?v=r424";
+import { versioned } from "./version.js?v=r426";
 import { appState } from "./state.js?v=r426";
 import { getTemplateById, getSemesterTemplateData } from "./templates.js?v=r425";
 import { getClassCount, getRosterMeta } from "./rosters.js?v=r426";
-import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable, teacherSemesterTotal } from "./curriculum-read-view.js?v=r451";
+import { buildReadOnlyCurriculumRows, groupTeacherAssignments, renderTeacherAssignmentTable, teacherSemesterTotal } from "./curriculum-read-view.js?v=r452";
 import { facultyCourseWorkload } from "./faculty-workload.js?v=r434";
 
 // ── Data builder ─────────────────────────────────────────────────
@@ -53,7 +55,8 @@ function buildRows() {
       const total      = facultyCourseWorkload(getRosterMeta(mainTplId), credits).total;
 
       rows.push({
-        grade, category: row.category, track: row.track, group: row.group,
+        grade, rowId: row.id, category: row.category, track: row.track, group: row.group,
+        separateCards: t1 && t2 && t1id !== t2id ? [s1, s2] : null,
         nameKo, nameEn, language, teacher, credits, classCount, total,
         isSplit: !!(s1 && s2 && (t1id !== t2id || s1.nameKo !== s2.nameKo || s1.nameEn !== s2.nameEn))
       });
@@ -69,11 +72,11 @@ function teacherAssignmentRows() {
     (id, credits) => facultyCourseWorkload(getRosterMeta(id), credits));
 }
 
-function teacherResultsPanel() {
+function teacherResultsPanel(makeCourseControl) {
   const rows = teacherAssignmentRows();
   const email = clean(auth.currentUser?.email).toLowerCase();
   const self = email && appState.teachers?.teachers?.find(teacher => clean(teacher.email).toLowerCase() === email);
-  return renderTeacherAssignmentTable(groupTeacherAssignments(rows, null, self || null), { workload: true });
+  return renderTeacherAssignmentTable(groupTeacherAssignments(rows, null, self || null), { workload: true, makeCourseControl });
 }
 
 export function renderResultsView(container) {
@@ -99,6 +102,32 @@ export function renderResultsView(container) {
   const content = document.createElement("div");
   content.className = "results-tab-content";
 
+  const makeCourseControl = canEdit() ? (label, grade, rowId, term) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "results-course-button";
+    button.textContent = label;
+    button.title = "과목카드 편집";
+    button.addEventListener("click", async () => {
+      if (!canEdit()) return;
+      try {
+        const { openTemplateCardPopup } = await import(versioned("./curriculum.js"));
+        if (!canEdit() || !button.isConnected) return;
+        const rowData = appState.curriculum.gradeBoards[grade]?.find(row => row.id === rowId);
+        if (!rowData) return;
+        const { sem1TemplateId, sem2TemplateId } = rowData;
+        const templateId = term ? rowData[term + "TemplateId"] : sem1TemplateId || sem2TemplateId;
+        if (!templateId) return;
+        const semKey = term || (sem1TemplateId && sem2TemplateId ? "merged" : sem1TemplateId ? "sem1" : "sem2");
+        openTemplateCardPopup(templateId, { grade, rowData, semKey, onSave: renderTab });
+      } catch (error) {
+        alert("과목카드 편집을 열지 못했습니다. " + error.message);
+      }
+    });
+    return button;
+  } : undefined;
+  const renderTab = () => renderResultsTabContent(content, buildRows(), makeCourseControl);
+
   const makeTabBtn = (key, label) => {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -107,7 +136,7 @@ export function renderResultsView(container) {
     btn.addEventListener("click", () => {
       activeResultsTab = key;
       [...tabBar.children].forEach(child => child.classList.toggle("active", child.dataset.tab === key));
-      renderResultsTabContent(content, rows);
+      renderTab();
     });
     btn.dataset.tab = key;
     return btn;
@@ -119,17 +148,17 @@ export function renderResultsView(container) {
   );
   container.appendChild(tabBar);
   container.appendChild(content);
-  renderResultsTabContent(content, rows);
+  renderTab();
 }
 
-function renderResultsTabContent(container, rows) {
+function renderResultsTabContent(container, rows, makeCourseControl) {
   container.innerHTML = "";
 
   if (activeResultsTab === "teacher") {
     const t2Wrap = document.createElement("div"); t2Wrap.className = "results-table-section";
     const t2Title = document.createElement("h3"); t2Title.className = "results-table-title"; t2Title.textContent = "교사별 담당 현황";
     t2Wrap.appendChild(t2Title);
-    t2Wrap.appendChild(teacherResultsPanel());
+    t2Wrap.appendChild(teacherResultsPanel(makeCourseControl));
     container.appendChild(t2Wrap);
     return;
   }
@@ -137,11 +166,11 @@ function renderResultsTabContent(container, rows) {
   const t1Wrap = document.createElement("div"); t1Wrap.className = "results-table-section";
   const t1Title = document.createElement("h3"); t1Title.className = "results-table-title"; t1Title.textContent = "전체 커리큘럼";
   t1Wrap.appendChild(t1Title);
-  t1Wrap.appendChild(buildTable1(rows));
+  t1Wrap.appendChild(buildTable1(rows, makeCourseControl));
   container.appendChild(t1Wrap);
 }
 
-function buildTable1(rows) {
+function buildTable1(rows, makeCourseControl) {
   const wrap = document.createElement("div"); wrap.className = "results-scroll";
   const table = document.createElement("table"); table.className = "results-table";
   table.innerHTML = `<thead><tr>
@@ -179,13 +208,37 @@ function buildTable1(rows) {
       tr.appendChild(td); prevGrade = r.grade;
     }
     const totalClass = r.total !== null ? "results-total-cell" : "";
-    const nameSuffix = r.isSplit ? ' <span class="results-split-badge">학기분리</span>' : "";
+    function subjectCell(language) {
+      const td = document.createElement("td");
+      td.className = "results-name-" + language;
+      const ko = language === "ko";
+      const name = ko ? r.nameKo : r.nameEn;
+      if (makeCourseControl && r.separateCards) {
+        r.separateCards.forEach((subject, index) => {
+          const term = index === 0 ? "sem1" : "sem2";
+          const label = ko ? clean(subject.nameKo) || clean(subject.nameEn) : clean(subject.nameEn) || clean(subject.nameKo);
+          if (index) td.append(" / ");
+          td.append(makeCourseControl(ko ? `${index + 1}학기: ${label}` : `Sem${index + 1}: ${label}`, r.grade, r.rowId, term));
+        });
+      } else if (makeCourseControl && name) {
+        td.append(makeCourseControl(name, r.grade, r.rowId));
+      } else {
+        td.textContent = name;
+      }
+      if (ko && r.isSplit) {
+        const badge = document.createElement("span");
+        badge.className = "results-split-badge";
+        badge.textContent = "학기분리";
+        td.append(" ", badge);
+      }
+      return td;
+    }
     [
       mkTd("results-category", escapeHtml(r.category)),
       mkTd("", escapeHtml(r.track)),
       mkTd("", escapeHtml(r.group)),
-      mkTd("results-name-ko", escapeHtml(r.nameKo) + nameSuffix),
-      mkTd("results-name-en", escapeHtml(r.nameEn)),
+      subjectCell("ko"),
+      subjectCell("en"),
       mkTd("results-lang", escapeHtml(r.language)),
       mkTd("results-teacher", escapeHtml(r.teacher)),
       mkTd("results-num", String(r.credits || "-")),
