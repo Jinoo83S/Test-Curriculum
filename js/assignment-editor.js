@@ -5,7 +5,7 @@ import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
 import { assignmentRows, planAssignments, teacherTotals } from "./assignment-editor-model.js?v=1";
-import { assignmentHourIssues, renderAssignmentMatrix } from "./assignment-matrix.js?v=7";
+import { assignmentHourIssues, renderAssignmentMatrix } from "./assignment-matrix.js?v=8";
 
 const labels = {
   category: "범주", track: "구분", group: "교과군", credits: "학급별 시수",
