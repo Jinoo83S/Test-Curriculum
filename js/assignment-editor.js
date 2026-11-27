@@ -349,9 +349,9 @@ export function attachAssignmentEditor() {
     }
     academicGroups.disabled = true;
     try {
-      const { openBoardAcademicGroups } = await import(versioned("./curriculum.js"));
+      const { openJointLessonSettings } = await import(versioned("./joint-lesson-settings.js"));
       if (workspace.hidden || saving || !canEdit() || drafts.size) return;
-      openBoardAcademicGroups(filter.value ? [filter.value] : GRADE_KEYS, () => {
+      openJointLessonSettings(() => {
         refreshSource();
         invalidate();
         draw();

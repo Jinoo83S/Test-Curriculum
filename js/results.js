@@ -53,11 +53,14 @@ function buildRows() {
       const classCount = getClassCount(mainTplId);
       const credits    = getEffectiveCredit(row);
       const total      = facultyCourseWorkload(getRosterMeta(mainTplId), credits).total;
+      const secondWorkload = t1 && t2 && t1id !== t2id
+        ? { classCount: getClassCount(t2.id), total: facultyCourseWorkload(getRosterMeta(t2.id), credits).total }
+        : null;
 
       rows.push({
         grade, rowId: row.id, category: row.category, track: row.track, group: row.group,
         separateCards: t1 && t2 && t1id !== t2id ? [s1, s2] : null,
-        nameKo, nameEn, language, teacher, credits, classCount, total,
+        nameKo, nameEn, language, teacher, credits, classCount, total, secondWorkload,
         isSplit: !!(s1 && s2 && (t1id !== t2id || s1.nameKo !== s2.nameKo || s1.nameEn !== s2.nameEn))
       });
     });
@@ -119,7 +122,7 @@ export function renderResultsView(container) {
         const templateId = term ? rowData[term + "TemplateId"] : sem1TemplateId || sem2TemplateId;
         if (!templateId) return;
         const semKey = term || (sem1TemplateId && sem2TemplateId ? "merged" : sem1TemplateId ? "sem1" : "sem2");
-        openTemplateCardPopup(templateId, { grade, rowData, semKey, onSave: renderTab });
+        openTemplateCardPopup(templateId, { grade, rowData, semKey, editClassCount: true, onSave: renderTab });
       } catch (error) {
         alert("과목카드 편집을 열지 못했습니다. " + error.message);
       }
@@ -207,7 +210,13 @@ function buildTable1(rows, makeCourseControl) {
       td.rowSpan = gradeGroups[r.grade]; td.textContent = r.grade;
       tr.appendChild(td); prevGrade = r.grade;
     }
-    const totalClass = r.total !== null ? "results-total-cell" : "";
+    const totalClass = (r.total ?? r.secondWorkload?.total) != null ? "results-total-cell" : "";
+    const formatWorkload = field => {
+      const first = r[field] ?? "-";
+      const second = r.secondWorkload?.[field] ?? "-";
+      const display = value => field === "classCount" && value === 0 ? "-" : String(value);
+      return r.secondWorkload && first !== second ? `${display(first)} / ${display(second)}` : display(first);
+    };
     function subjectCell(language) {
       const td = document.createElement("td");
       td.className = "results-name-" + language;
@@ -242,8 +251,8 @@ function buildTable1(rows, makeCourseControl) {
       mkTd("results-lang", escapeHtml(r.language)),
       mkTd("results-teacher", escapeHtml(r.teacher)),
       mkTd("results-num", String(r.credits || "-")),
-      mkTd("results-num", r.classCount > 0 ? String(r.classCount) : "-"),
-      mkTd("results-num " + totalClass, String(r.total ?? "-")),
+      mkTd("results-num", formatWorkload("classCount")),
+      mkTd("results-num " + totalClass, formatWorkload("total")),
     ].forEach(td => tr.appendChild(td));
     tbody.appendChild(tr);
   });
