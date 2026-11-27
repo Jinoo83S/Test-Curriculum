@@ -4,7 +4,7 @@
 import { GRADE_KEYS, GRADE_GROUPS, SEMESTER_LABELS, CATEGORY_PALETTE, DEFAULT_OPTIONS, DEFAULT_COL_WIDTHS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { uid, clean, uniqueOrdered, parseCreditValue, makeBtn, languageClass } from "./utils.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
-import { appState, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=r426";
+import { appState, initialLoad, saveCurriculumPaste, scheduleSave, ensureConsistency, createRow, normalizeRow, loadColWidths, saveColWidths, currentDrag, setCurrentDrag, normalizeTemplate, synchronizeTeacherIdentityState } from "./state.js?v=r426";
 import { CHAPEL_PERIODS, isChapelTitle } from "./chapel-schedule.js?v=r439";
 import { summarizeAcademicBoardRows } from "./curriculum-academic-summary.js?v=r442";
 import { clearAcademicGroup, moveAcademicGroups, openAcademicGroups, updateAcademicGroup } from "./curriculum-academic-groups-ui.js?v=r443";
@@ -294,7 +294,7 @@ function createPopupSelect(value, options, disabled = false) {
 }
 
 export function openTemplateCardPopup(templateId = null, context = {}) {
-  const { grade = "", rowData = null, semKey = "", onSave } = context || {};
+  const { grade = "", rowData = null, semKey = "", onSave, editClassCount = false } = context || {};
   const isNew = !templateId;
   const item = isNew
     ? normalizeTemplate({ id: uid("tpl"), language: "Korean", schoolLevel: "공통" })
@@ -304,6 +304,7 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
   document.querySelector(".tpl-popup-backdrop")?.remove();
 
   const editable = canEdit();
+  let saving = false;
   const backdrop = document.createElement("div");
   backdrop.className = "tpl-popup-backdrop";
 
@@ -326,7 +327,15 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
     sub.textContent = isNew ? "사이드바에서 새 과목카드를 추가합니다." : `사이드바 과목카드 편집${applied ? ` · 적용 학년 ${applied}` : " · 미배정"}`;
   }
   titleWrap.append(h3, sub);
-  const closeBtn = makeBtn("×", "tpl-popup-close", () => backdrop.remove());
+  const closePopup = () => {
+    if (saving) return;
+    backdrop.remove();
+    document.removeEventListener("keydown", onEsc);
+  };
+  function onEsc(event) {
+    if (event.key === "Escape") closePopup();
+  }
+  const closeBtn = makeBtn("×", "tpl-popup-close", closePopup);
   header.append(titleWrap, closeBtn);
 
   const body = document.createElement("div");
@@ -354,6 +363,17 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
     createPopupField("언어", language),
     createPopupField("과정", schoolLevel)
   );
+  const storedClassCount = () => clean(appState.rosters?.rosterMeta?.[templateId]?.classCount);
+  const originalClassCount = storedClassCount();
+  const classCount = editClassCount && !isNew && initialLoad.rosters
+    ? createPopupInput(originalClassCount, !editable) : null;
+  if (classCount) {
+    classCount.type = "number";
+    classCount.min = "0";
+    classCount.step = "1";
+    classCount.placeholder = "미설정";
+    baseGrid.append(createPopupField("학급수", classCount));
+  }
   baseSection.append(baseTitle, baseGrid);
 
   const sepSection = document.createElement("div");
@@ -496,12 +516,19 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
 
   const footer = document.createElement("div");
   footer.className = "tpl-popup-footer";
-  const cancelBtn = makeBtn("닫기", "secondary-btn", () => backdrop.remove());
+  const cancelBtn = makeBtn("닫기", "secondary-btn", closePopup);
   footer.appendChild(cancelBtn);
 
   if (editable) {
-    const saveBtn = makeBtn("저장", "primary-btn", () => {
-      if (!canEdit()) return;
+    const saveBtn = makeBtn("저장", "primary-btn", async () => {
+      if (saving || !canEdit()) return;
+      if (classCount && !classCount.reportValidity()) return;
+      const count = classCount?.value.trim();
+      const countChanged = classCount && count !== originalClassCount;
+      if (countChanged && count && (!/^\d+$/.test(count) || !Number.isSafeInteger(Number(count)))) {
+        alert("학급수는 0 이상의 정수로 입력해 주세요.");
+        return;
+      }
       const draft = { ...item };
       draft.nameKo = nameKo.value.trim();
       draft.nameEn = nameEn.value.trim();
@@ -545,24 +572,42 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
           if (!confirm(`복합 과목 구성 시수 합계(${actual})가 보드 시수(${expected})와 다릅니다. 그대로 저장할까요?`)) return;
         }
       }
-      if (isNew) {
-        appState.templates.templates.push(draft);
+      if (countChanged) {
+        if (originalClassCount !== storedClassCount() || getTemplateById(templateId) !== item) {
+          alert("과목 설정이 변경되었습니다. 과목카드를 다시 열어 주세요.");
+          return;
+        }
+        saving = body.inert = closeBtn.disabled = cancelBtn.disabled = saveBtn.disabled = true;
+        try {
+          const before = structuredClone({ curriculum: appState.curriculum, templates: appState.templates, rosters: appState.rosters });
+          const after = structuredClone(before);
+          const card = after.templates.templates.find(template => template.id === templateId);
+          if (!card) throw new Error("과목카드를 찾지 못했습니다.");
+          Object.assign(card, draft);
+          const meta = (after.rosters.rosterMeta[templateId] ??= {});
+          meta.classCount = count === "" ? "" : String(Number(count));
+          await saveCurriculumPaste(before, after, { includeRosters: true });
+        } catch (error) {
+          alert("학급수를 저장하지 못했습니다. " + error.message);
+          return;
+        } finally {
+          saving = body.inert = closeBtn.disabled = cancelBtn.disabled = saveBtn.disabled = false;
+        }
       } else {
-        Object.assign(item, draft);
+        if (isNew) appState.templates.templates.push(draft);
+        else Object.assign(item, draft);
+        scheduleSave("templates");
       }
-      scheduleSave("templates");
       document.dispatchEvent(new CustomEvent("his:template-updated", { detail: { templateId: draft.id, isNew } }));
-      backdrop.remove();
+      closePopup();
       onSave?.();
     });
     footer.appendChild(saveBtn);
   }
 
   modal.append(header, body, footer);
-  backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.remove(); });
-  document.addEventListener("keydown", function onEsc(e) {
-    if (e.key === "Escape") { backdrop.remove(); document.removeEventListener("keydown", onEsc); }
-  });
+  backdrop.addEventListener("click", event => { if (event.target === backdrop) closePopup(); });
+  document.addEventListener("keydown", onEsc);
   document.body.appendChild(backdrop);
 }
 
@@ -757,7 +802,7 @@ function getOrderedTracks(grades, category) {
   return orderTrackValues(tracks);
 }
 
-export function openBoardAcademicGroups(grades, onSave) {
+export function openBoardAcademicGroups(grades) {
   if (!canEdit()) return;
   openAcademicGroups(grades.map(grade => ({
     label: grade, rows: curriculum().gradeBoards[grade] || [], getTemplate: getTemplateById,
@@ -766,7 +811,6 @@ export function openBoardAcademicGroups(grades, onSave) {
       updateAcademicGroup(curriculum().gradeBoards[grade] || [], change);
       scheduleSave("curriculum");
       _onCurriculumChange();
-      onSave?.();
     },
   })));
 }
