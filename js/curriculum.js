@@ -294,7 +294,7 @@ function createPopupSelect(value, options, disabled = false) {
 }
 
 export function openTemplateCardPopup(templateId = null, context = {}) {
-  const { grade = "", rowData = null, semKey = "", mode = "edit" } = context || {};
+  const { grade = "", rowData = null, semKey = "", onSave } = context || {};
   const isNew = !templateId;
   const item = isNew
     ? normalizeTemplate({ id: uid("tpl"), language: "Korean", schoolLevel: "공통" })
@@ -501,20 +501,22 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
 
   if (editable) {
     const saveBtn = makeBtn("저장", "primary-btn", () => {
-      item.nameKo = nameKo.value.trim();
-      item.nameEn = nameEn.value.trim();
-      item.teacher = teacher.value.trim();
-      item.language = language.value;
-      item.schoolLevel = schoolLevel.value;
-      item.useSemesterOverrides = sepCheck.checked;
-      item.sem1NameKo = sem1NameKo.value.trim();
-      item.sem1NameEn = sem1NameEn.value.trim();
-      item.sem1Teacher = sem1Teacher.value.trim();
-      item.sem2NameKo = sem2NameKo.value.trim();
-      item.sem2NameEn = sem2NameEn.value.trim();
-      item.sem2Teacher = sem2Teacher.value.trim();
-      item.isCompound = !!compoundCheck.checked;
-      item.compoundParts = Array.from(compoundRows.querySelectorAll(".tpl-compound-part-row")).map(row => {
+      if (!canEdit()) return;
+      const draft = { ...item };
+      draft.nameKo = nameKo.value.trim();
+      draft.nameEn = nameEn.value.trim();
+      draft.teacher = teacher.value.trim();
+      draft.language = language.value;
+      draft.schoolLevel = schoolLevel.value;
+      draft.useSemesterOverrides = sepCheck.checked;
+      draft.sem1NameKo = sem1NameKo.value.trim();
+      draft.sem1NameEn = sem1NameEn.value.trim();
+      draft.sem1Teacher = sem1Teacher.value.trim();
+      draft.sem2NameKo = sem2NameKo.value.trim();
+      draft.sem2NameEn = sem2NameEn.value.trim();
+      draft.sem2Teacher = sem2Teacher.value.trim();
+      draft.isCompound = !!compoundCheck.checked;
+      draft.compoundParts = Array.from(compoundRows.querySelectorAll(".tpl-compound-part-row")).map(row => {
         const inputs = row.querySelectorAll("input");
         return {
           id: row.dataset.partId || uid("part"),
@@ -524,19 +526,19 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
           credits: inputs[3]?.value.trim() || ""
         };
       }).filter(part => part.nameKo || part.nameEn || part.teacher || part.credits);
-      if (!item.isCompound) item.compoundParts = [];
+      if (!draft.isCompound) draft.compoundParts = [];
 
-      if (!item.nameKo && !item.nameEn && !(item.useSemesterOverrides && (item.sem1NameKo || item.sem1NameEn))) {
+      if (!draft.nameKo && !draft.nameEn && !(draft.useSemesterOverrides && (draft.sem1NameKo || draft.sem1NameEn || draft.sem2NameKo || draft.sem2NameEn))) {
         alert("한글명 또는 영문명을 입력해 주세요.");
         return;
       }
-      if (item.isCompound) {
-        const validParts = item.compoundParts.filter(part => (part.nameKo || part.nameEn) && part.teacher && parseCreditValue(part.credits) > 0);
+      if (draft.isCompound) {
+        const validParts = draft.compoundParts.filter(part => (part.nameKo || part.nameEn) && part.teacher && parseCreditValue(part.credits) > 0);
         if (validParts.length < 2) {
           alert("복합 과목은 과목명, 교사, 시수가 입력된 구성 과목이 2개 이상 필요합니다.");
           return;
         }
-        item.compoundParts = validParts;
+        draft.compoundParts = validParts;
         const expected = parseCreditValue(rowData?.credits);
         const actual = validParts.reduce((sum, part) => sum + parseCreditValue(part.credits), 0);
         if (expected > 0 && actual > 0 && Math.abs(expected - actual) > 0.001) {
@@ -544,11 +546,14 @@ export function openTemplateCardPopup(templateId = null, context = {}) {
         }
       }
       if (isNew) {
-        appState.templates.templates.push(item);
+        appState.templates.templates.push(draft);
+      } else {
+        Object.assign(item, draft);
       }
       scheduleSave("templates");
-      document.dispatchEvent(new CustomEvent("his:template-updated", { detail: { templateId: item.id, isNew } }));
+      document.dispatchEvent(new CustomEvent("his:template-updated", { detail: { templateId: draft.id, isNew } }));
       backdrop.remove();
+      onSave?.();
     });
     footer.appendChild(saveBtn);
   }
@@ -752,7 +757,7 @@ function getOrderedTracks(grades, category) {
   return orderTrackValues(tracks);
 }
 
-export function openBoardAcademicGroups(grades) {
+export function openBoardAcademicGroups(grades, onSave) {
   if (!canEdit()) return;
   openAcademicGroups(grades.map(grade => ({
     label: grade, rows: curriculum().gradeBoards[grade] || [], getTemplate: getTemplateById,
@@ -761,6 +766,7 @@ export function openBoardAcademicGroups(grades) {
       updateAcademicGroup(curriculum().gradeBoards[grade] || [], change);
       scheduleSave("curriculum");
       _onCurriculumChange();
+      onSave?.();
     },
   })));
 }

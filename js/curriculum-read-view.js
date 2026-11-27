@@ -103,7 +103,8 @@ function combineJointAssignments(rows, selectedTerm) {
       const joint = jointRows.get(lesson.id);
       for (const grade of lesson.grades) joint.grades.add(grade);
       for (const name of [subject.name, subject.english].filter(Boolean)) joint.subjects.add(name);
-      joint[term] ||= { name: lesson.name, total: lesson.hours, teacherTotal: lesson.hours };
+      joint[term] ||= { name: lesson.name, total: lesson.hours, teacherTotal: lesson.hours, members: [] };
+      joint[term].members.push({ grade: row.grade, id: row.id, name: subject.name || subject.english });
       if (selectedTerm) joint.subject = joint[term];
       ordinary[term] = null;
     }
@@ -152,7 +153,7 @@ function makeTable(labels) {
   return { table, wrap };
 }
 
-export function renderTeacherAssignmentTable(groups, { language = "ko", workload = false } = {}) {
+export function renderTeacherAssignmentTable(groups, { language = "ko", workload = false, makeCourseControl } = {}) {
   const en = language === "en";
   const { table, wrap } = makeTable(en
     ? ["Grade", "Category", "Semester 1 · NEIS", "Semester 2 · NEIS", "Hours / class", ...(workload ? ["Classes", "Course hours"] : [])]
@@ -183,12 +184,22 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
       header.append(badge);
     }
     body.insertRow().append(header);
-    for (const { grade, category, credits, sem1, sem2, joint } of group.rows) {
+    for (const { id, grade, category, credits, sem1, sem2, joint } of group.rows) {
       const row = body.insertRow();
       row.insertCell().textContent = grade;
       row.insertCell().textContent = joint && en ? "Joint lesson" : category;
-      appendCourse(row.insertCell(), sem1);
-      appendCourse(row.insertCell(), sem2);
+      for (const [term, subject] of [["sem1", sem1], ["sem2", sem2]]) {
+        const cell = row.insertCell();
+        const editCourse = makeCourseControl && !joint ? label => makeCourseControl(label, grade, id, term) : null;
+        appendCourse(cell, subject, false, editCourse);
+        if (makeCourseControl && joint) {
+          for (const member of subject?.members || []) {
+            const control = makeCourseControl(`${member.grade} ${member.name}`, member.grade, member.id, term);
+            control.classList.add("results-joint-member");
+            cell.append(control);
+          }
+        }
+      }
       row.insertCell().textContent = credits || "—";
       if (workload) {
         for (const field of ["classCount", "total"]) {
@@ -202,12 +213,17 @@ export function renderTeacherAssignmentTable(groups, { language = "ko", workload
   return wrap;
 }
 
-function appendCourse(cell, subject, includeTeacher = false) {
+function appendCourse(cell, subject, includeTeacher = false, editCourse = null) {
   cell.className = "faculty-course-cell";
   if (["Korean", "English", "Both"].includes(subject?.language)) cell.dataset.language = subject.language;
-  cell.append(create("strong", subject?.name || "—"));
+  const title = subject?.name || "—";
+  cell.append(editCourse && subject ? editCourse(title) : create("strong", title));
   if (subject?.english && subject.english !== subject.name) {
-    cell.append(small(includeTeacher ? subject.english : ` · ${subject.english}`));
+    const english = small(includeTeacher ? subject.english : ` · ${subject.english}`);
+    if (editCourse) {
+      english.replaceChildren(" · ", editCourse(subject.english));
+    }
+    cell.append(english);
   }
   if (includeTeacher && subject?.teachers.length) {
     const teacher = small(subject.teachers.map(item => item.name).join(", "));

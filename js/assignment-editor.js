@@ -1,6 +1,7 @@
 import { ACTIVE_SCHOOL_YEAR, GRADE_KEYS } from "./config.js?v=2026-07-15-room-availability-separation-r355";
 import { canEdit } from "./auth.js?v=r424";
 import { appState, saveCurriculumPaste } from "./state.js?v=r426";
+import { versioned } from "./version.js?v=r426";
 import { ensureDomains } from "./app-domains.js?v=r432";
 import { getCurriculumMode } from "./curriculum-mode.js?v=r401";
 import { readTsv } from "./curriculum-paste.js?v=r450-assignment";
@@ -56,6 +57,7 @@ export function attachAssignmentEditor() {
   const filter = workspace.querySelector("[data-grade]");
   const search = workspace.querySelector("[data-search]");
   const summary = workspace.querySelector("[data-summary]");
+  const academicGroups = workspace.querySelector("[data-academic-groups]");
   const previewButton = workspace.querySelector("[data-preview]");
   const save = workspace.querySelector("[data-save]");
   const message = workspace.querySelector("[role=status]");
@@ -220,6 +222,12 @@ export function attachAssignmentEditor() {
     return table(["교사", "학기", "담당 과목 수", "교사시수"], changes);
   }
 
+  function refreshSource() {
+    before = snapshot();
+    teachers = structuredClone(appState.teachers);
+    originals = new Map(assignmentRows(before, teachers).map(entry => [entry.key, entry]));
+  }
+
   async function start() {
     if (!canEdit() || getCurriculumMode() === "threeYear") {
       alert("연간 커리큘럼을 선택하고 편집 권한을 확인해 주세요.");
@@ -228,9 +236,7 @@ export function attachAssignmentEditor() {
     open.disabled = true;
     try {
       if (!(await ensureDomains(domains)) || !canEdit()) throw new Error("커리큘럼과 수강명단을 불러오지 못했습니다.");
-      before = snapshot();
-      teachers = structuredClone(appState.teachers);
-      originals = new Map(assignmentRows(before, teachers).map(entry => [entry.key, entry]));
+      refreshSource();
       drafts.clear();
       filter.value = search.value = "";
       semester.value = "sem1";
@@ -335,6 +341,27 @@ export function attachAssignmentEditor() {
       event.returnValue = "";
     }
   });
+  academicGroups.addEventListener("click", async () => {
+    if (saving || !canEdit()) return;
+    if (drafts.size) {
+      message.textContent = "과목 묶음을 편집하려면 수정 중인 수업배정을 먼저 저장해 주세요.";
+      return;
+    }
+    academicGroups.disabled = true;
+    try {
+      const { openBoardAcademicGroups } = await import(versioned("./curriculum.js"));
+      if (workspace.hidden || saving || !canEdit() || drafts.size) return;
+      openBoardAcademicGroups(filter.value ? [filter.value] : GRADE_KEYS, () => {
+        refreshSource();
+        invalidate();
+        draw();
+      });
+    } catch (error) {
+      message.textContent = "과목 묶음 창을 열지 못했습니다. " + error.message;
+    } finally {
+      academicGroups.disabled = saving;
+    }
+  });
   summary.addEventListener("click", () => {
     let current = before, note = "";
     if (drafts.size) {
@@ -356,7 +383,7 @@ export function attachAssignmentEditor() {
   async function saveChanges() {
     if (!preview || saving || !canEdit()) return;
     saving = true;
-    close.disabled = previewButton.disabled = save.disabled = reportSave.disabled = true;
+    close.disabled = academicGroups.disabled = previewButton.disabled = save.disabled = reportSave.disabled = true;
     matrix.inert = open.disabled = semester.disabled = details.disabled = resetWidths.disabled = filter.disabled = search.disabled = true;
     try {
       if (JSON.stringify(teachers) !== JSON.stringify(appState.teachers)) throw new Error("교사 데이터가 변경되었습니다. 화면을 다시 열어 주세요.");
@@ -372,7 +399,7 @@ export function attachAssignmentEditor() {
       (report.open ? reportStatus : message).textContent = error.message;
       save.disabled = reportSave.disabled = false;
     } finally {
-      saving = close.disabled = previewButton.disabled = matrix.inert =
+      saving = close.disabled = academicGroups.disabled = previewButton.disabled = matrix.inert =
         open.disabled = semester.disabled = details.disabled = resetWidths.disabled = filter.disabled = search.disabled = false;
     }
   }

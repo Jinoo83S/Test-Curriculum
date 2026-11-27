@@ -8,12 +8,27 @@
   <link id="his-main-css" rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="teacher-curriculum-view.css?v=r436" />
   <script>
-    window.HIS_APP_VERSION = "2026-11-25-joint-lessons-r451";
+    window.HIS_APP_VERSION = "2026-11-27-course-editing-r452";
     (function() {
       var link = document.getElementById("his-main-css");
       if (link) link.href = "style.css?v=" + encodeURIComponent(window.HIS_APP_VERSION);
     })();
   </script>
+  <style>
+    .results-course-button {
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: #185a99;
+      font: inherit;
+      text-align: inherit;
+      text-decoration: underline;
+      text-underline-offset: .16em;
+      cursor: pointer;
+    }
+    .results-course-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+    .results-joint-member { display: block; margin-top: 2px; }
+  </style>
   <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
 <body data-section="results" data-initial-view="results">
